@@ -1,0 +1,70 @@
+# Platform, lifecycle and release
+
+State: Draft · Revision: 2 · Updated: 2026-09-11 · Implementation: not started.
+
+Owner: G — Platform/release. Accepted scope and proposed behavior are separated below; concrete APIs, libraries and outstanding choices await the relevant feasibility work. See [contract workflow](README.md).
+
+## Build boundary
+
+| Boundary | Responsibility |
+| --- | --- |
+| Owns | Windows/macOS/Linux application shell, credentials, dialogs/OS integration, renderer isolation facilities, notification delivery, shutdown and personal packaging |
+| Consumes | Supplied shared design; Core checkpoint/unsent state; Calendar reminder intents; assistance job cancellation and runner state |
+| Produces | Consistent application shell, credential references, lifecycle/cancellation signals, notifications and installable GUI/engine/CLI packages |
+| Independent start | Minimal shell/renderer/credential prototypes and fake app jobs; validate the recommended Qt Quick baseline against mockups and the required platform matrix |
+
+Related: [mail UI](mail-ui.md), [calendar](calendar.md), [local assistance](local-ai.md), [desktop research](../research/desktop-stack.md).
+
+## Shared design, required OS behavior
+
+Windows, macOS and Linux are required. Linux includes Ubuntu, Arch and Omarchy; it is no longer optional. Maintain a tested release/architecture/compositor matrix, with Ubuntu LTS and recorded Arch/Omarchy snapshots. Exact version floors and CPU coverage remain to be pinned; begin with representative Windows x64, macOS Apple Silicon and Linux x64 systems rather than claiming every configuration.
+
+Use the same opinionated design on all OSes. Verify native Wayland (including the Omarchy desktop), supported X11/XWayland paths, IME/clipboard, file dialogs/portals, scaling, graphics, credentials and notifications. Do not require GNOME/KDE-specific infrastructure without a working path on the targeted Omarchy setup.
+
+The recommended baseline is a Rust engine/CLI and C++20/Qt Quick/QML GUI, connected through private local IPC; it is not yet a locked or measured stack. Build Rust components with Cargo and the GUI with CMake/Ninja, packaging compatible binaries together. In-process Rust/Qt bindings are not a required dependency. Core owns domain behavior and the engine protocol; Platform owns the presentation/OS adapter and release integration. QML expressions and the possible upstream WebEngine build tools are explicit considerations under the earlier preference to avoid an npm/Node application. See [desktop research](../research/desktop-stack.md).
+
+## Installation and upgrades
+
+End-user installation is a required product feature. Ship GUI, engine and CLI together with bundled or declared runtime dependencies and a working CLI launcher/PATH integration. Users do not compile source or install developer SDKs; a local model is optional and separately configured.
+
+Proposed routes: signed Windows installer, signed/notarized macOS distribution with a simple CLI installation path, prebuilt Ubuntu .deb and prebuilt Arch/Omarchy pacman package. Choose exact formats/channels through clean-machine tests; neither store publication nor a universal Linux bundle is required. See [distribution research](../research/linux-and-distribution.md).
+
+Supply application OAuth registration and direct user sign-in; developer/provider verification work belongs to release preparation rather than the user's install instructions. Verify first launch/OAuth, credential store availability, HTML resources/sandbox, desktop integration and CLI discovery. Upgrades must coordinate engine shutdown/migrations, keep data outside the installation directory and refuse incompatible schema rollback safely. Normal uninstall removes app/launchers, preserving user mail/drafts unless explicit data deletion was requested. Supply a maintained update route and dependency/license notices; broad public launch work remains separate.
+
+## App lifecycle
+
+Closing the main window quits the GUI and its session: save drafts/checkpoints, stop its synchronization and inference, and remove its scheduled reminders. No tray/menu-bar or startup service remains simply because the GUI was used.
+
+The full CLI can run independently. A separately invoked command or foreground watch owns its requested work, even with the GUI closed. Recommended implementation: one private on-demand local engine, active only for explicit GUI/CLI clients/jobs. When the last client ends, cancel/checkpoint and stop; queued durable intent alone does not keep the engine alive. CLI-only sessions do not emit GUI reminder notifications by default. See [CLI](cli.md) and [Core](core-storage.md).
+
+Closing a window must not kill an independently invoked CLI command or a user's separately installed model runner. A shared runner may retain its model for other apps, but no inference request continues without an active owning session.
+
+## Durable close and process ownership
+
+Never require a network acknowledgement to save a draft or quit. Cancel work according to the owning session and retain unconfirmed operations, including uncertain sends, for reconciliation. Explicit CLI operation status must distinguish durable acceptance from remote completion.
+
+Verify runner-side cancellation, client-disconnect recovery and engine exit after the last client. An independent foreground CLI watch is visible, explicit activity; no automatic detached helper is installed. Count GUI, engine, CLI and renderer resources separately and in aggregate; report local-runner incremental memory/VRAM separately.
+
+## Rendering, privacy, and recovery
+
+Treat message HTML and calendar descriptions as untrusted content. Sanitize and isolate rendering; it must have no privileged app bridge or script execution. Remote image loading is a product-controlled policy. Opening links or attachments uses explicit user actions.
+
+Keep tokens/passwords in the OS credential store and out of UI storage and logs. Exclude source mail, prompts and generated summaries from routine diagnostics. App-level encryption of message data, generated results and indexes is an open decision; credential storage alone does not encrypt cached mail. Account removal, backups, upgrades and index rebuilds must have explicit behavior for local drafts, retained attachments, category overrides, pending inference and cached results. Remove account-scoped model results and cancel its jobs when an account is removed.
+
+Keep the database and live indexes on local storage, outside cloud-synced folders. Add migration/recovery fixtures before real daily-driver use. No telemetry upload or central mail service is assumed.
+
+## Trust and recovery
+
+Proposed baseline: credentials in the OS credential store, account-scoped records, isolated HTML rendering and user-controlled remote content. Routine diagnostics contain no message contents, generated summaries, model prompts, credentials or private calendar URLs. The local model has no tools or provider credentials; validate category output before applying the configured policy. Rebuilds and resyncs preserve drafts, manual category overrides and pending operations. App-level mail-store encryption remains a separate choice from storing credentials securely.
+
+## Acceptance gates
+
+- Install GUI/engine/CLI from prebuilt packages on clean Windows, macOS, Ubuntu, Arch and Omarchy systems with no developer tools. Verify command discovery, Wayland/other supported sessions, input, scaling, keyring/portals and accessibility.
+- Close during GUI synchronization, drafting, notifications and inference; cancel that session and retain durable intent. Repeat with an independent CLI command/watch active, then end it and verify engine shutdown. No GUI reminder fires after close; no unrelated runner is killed.
+- Upgrade/reinstall/uninstall through the intended end-user path; preserve data and keep GUI/CLI schema/protocol versions compatible.
+- Isolate received HTML and control remote resources, with no script execution or privileged app bridge. Account removal, upgrades and recovery respect durable user data and clear account-scoped derived content.
+- Include every app/renderer process in resource measurements and report the external runner separately. See [quality](quality.md).
+
+## Open before affected behavior ships
+
+Pin OS/version/architecture support, the Rust/Qt/renderer/toolchain versions, package formats and trusted signing/update routes after the prototype and clean-install evidence. Finalize headless credential provisioning, local transport access checks and engine/client lifetime rules. Decide mail-store encryption, remote images and backup/export expectations. License/dependency review and deliverable installation are MVP work; app-store listings and a broad public launch remain optional later scope.

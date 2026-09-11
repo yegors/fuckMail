@@ -2,11 +2,17 @@
 
 Research date: 2026-09-10. Status: candidate under investigation, not an accepted implementation stack. This is source research and inspection of published interfaces; no native prototype or performance benchmark has run.
 
+Evaluation scope updated 2026-09-11 to include daily unread/starred triage, provider-category controls and optional local summaries. These requirements do not select Slint or change the human-only composer rule.
+
+## Current evaluation scope
+
+Updated 2026-09-11: Linux (Ubuntu, Arch/Omarchy), full CLI and smooth installation are now mandatory. The [current recommendation](desktop-stack.md) leads with a C++20/Qt Quick UI and Rust engine/CLI over private local IPC; Slint remains a UI alternative. Earlier Windows/macOS-focused examples below are historical source evidence, not the complete new release matrix. Evaluate the candidate on all required platforms using the supplied [nonfinal mockups](design-references.md).
+
 ## Assessment
 
 Rust + Slint + SQLite is a credible candidate for a visually polished Windows/macOS client without a JavaScript application or npm toolchain. Slint provides substantial control over layout and appearance. Its limits for this project are more likely to be HTML email, formatted composition and desktop integration than the ability to draw an attractive interface.
 
-Recommend evaluating this candidate first in phase 0, with Qt remaining a fallback. Visual quality is now an explicit founder requirement. The stack must demonstrate the desired appearance and mouse behavior on both operating systems before selection; source screenshots cannot establish how our app will feel.
+The earlier recommendation was to evaluate this candidate first. The subsequent design/CLI/Linux review favors a Qt Quick prototype; compare Slint against the same full set of requirements if evidence warrants it. The stack must demonstrate the desired appearance and mouse behavior on all required operating systems before selection; source screenshots cannot establish how our app will feel.
 
 ## What each part does
 
@@ -71,15 +77,15 @@ Sources: [colors and brushes](https://docs.slint.dev/latest/docs/slint/reference
 
 Slint is a native compiled UI toolkit, but its controls are generally drawn by Slint. It does not automatically provide an AppKit interface on macOS and a WinUI interface on Windows.
 
-Starting with Slint 1.16, Fluent is the default appearance across platforms. The maintainers plan to reduce support for other built-in styles, including the Cupertino-like style, while retaining platform-specific behavior. We should plan a deliberate, consistent application design and test platform behavior ourselves. Automatic macOS-native visual fidelity would be a poor reason to choose Slint. [Official style policy](https://slint.dev/blog/default-native-style-change).
+Starting with Slint 1.16, Fluent is the default appearance across platforms. The maintainers plan to reduce support for other built-in styles, including the Cupertino-like style, while retaining platform-specific behavior. We should plan a deliberate, consistent application design and test platform behavior ourselves. The founder now explicitly wants the same design across OSes, so visual conformity to macOS is not a selection criterion. [Official style policy](https://slint.dev/blog/default-native-style-change).
 
-For this product, propose a quiet desktop design: compact account navigation, well-spaced conversation rows, a readable conversation pane, restrained account colors and a calendar with clear event hierarchy. Visual quality should come from typography, alignment and predictable interaction. Shadows and animation can support those choices, but must not delay everyday actions. No particular palette or reading-pane geometry has been approved.
+The earlier exploratory visual proposal was a quiet desktop design: compact account navigation, well-spaced conversation rows, a readable conversation pane, restrained account colors and a calendar with clear event hierarchy. Visual quality should come from typography, alignment and predictable interaction. Shadows and animation can support those choices, but must not delay everyday actions. No particular palette or reading-pane geometry has been approved; the founder's forthcoming design takes precedence over this exploratory proposal.
 
 ## HTML reader and composer are feasibility gates
 
 Received email requires more than a styled label: tables, inline images, quotations, links, selection, copying, search highlights and inconsistent HTML/CSS need representative fixtures. `TextEdit` is a multiline text editor, not a documented complete HTML authoring surface. Do not silently reduce the accepted plain-text/HTML requirement to Markdown or plain text.
 
-Slint has a Servo integration example. Its May 2026 update describes hardware-accelerated rendering on macOS, Windows and other platforms; the current example README still explicitly labels Servo experimental and not ready for production. The update also lists a reusable WebView widget and multiple WebViews as future work. Recheck those details against the pinned revision before experimenting. [Integration update](https://slint.dev/blog/servo-with-slint-update), [current example and prerequisites](https://github.com/slint-ui/slint/tree/master/examples/servo).
+Slint has a Servo integration example. The current README checked 2026-09-11 exposes a reusable WebView wrapper but still labels Servo experimental and not ready for production. The May 2026 blog's future-work list should not be treated as the current feature inventory. Validate the pinned wrapper, required desktop behavior and packaging directly; experimental integration is not evidence that Slint cannot draw this design. [Integration update](https://slint.dev/blog/servo-with-slint-update), [current example and prerequisites](https://github.com/slint-ui/slint/tree/master/examples/servo).
 
 Possible evaluation paths are an isolated OS webview for received mail, the Servo experiment, or a restricted native document renderer with clearly measured fidelity. OS webview embedding in Slint is integration work, not assumed to be a ready-made cross-platform widget. Formatted composition needs its own design and editing implementation. If acceptable composition requires introducing the JS application tooling the founder rejected, reconsider the stack instead of quietly adding it.
 
@@ -93,9 +99,11 @@ Propose message-level indexes with account-scoped conversation results. Query, g
 
 ## Proposed phase 0 evaluation
 
-1. **Visual and interaction slice:** build a custom mail screen and calendar week view with realistic synthetic data, both light/dark treatments and actual window resizing. Review typography and scrolling on macOS and Windows. Palette and layout are proposed choices for that review.
-2. **Reader and composer slice:** render a representative HTML corpus; exercise selection, copying, inline images, quotations and a long conversation. Compose/reopen a formatted reply with account signature, links, lists and attachments. Resolve the renderer and editing strategy before committing to Slint.
-3. **Storage-backed scale slice:** connect SQLite/FTS5 and a paged model. Test the existing 100k/1m/3m message tiers, conversation search, concurrent ingestion, cancellation, index coverage and memory. Use the approximately 25 GB supplied store size as context, not a measured message count.
+Run this candidate-specific slice with the nonfinal references if needed; the [current stack context](desktop-stack.md) controls selection.
+
+1. **Visual and interaction slice:** build a custom mail screen and calendar week view with realistic synthetic data, light/dark treatments and window resizing. Include Unread/Starred conversation filters, category/sender chips, per-account view restoration, compact all-day rows, current/next meetings and Join. Review typography and scrolling on Windows, macOS, Ubuntu, Arch and Omarchy. Palette/layout remain proposed choices.
+2. **Reader and composer slice:** render a representative HTML corpus; exercise selection, copying, inline images, quotations, a long conversation and secondary plain-text fallback. Display optional local summaries with source access and partial/stale states. Compose/reopen a human-written formatted reply with signature, links, lists and attachments; no AI authoring. Resolve rendering/editing before committing to Slint.
+3. **Storage-backed scale slice:** connect SQLite/FTS5 and a paged model. Test 100k/1m/3m message tiers, account/category search, accurate triage counts, concurrent ingestion and optional inference, cancellation, coverage and memory. Use the approximately 25 GB supplied store size as context, not a measured message count.
 4. **Platform slice:** verify file dialogs and required attachment interactions, IME/clipboard, accessibility, DPI, notifications and complete process exit on close. Record build/deployment dependencies and the selected Slint licensing route before distribution.
 
-Selection requires an appealing interface, responsive measured behavior and a credible complete reader/composer on both required platforms. A beautiful mock-data screen alone is insufficient. If these gates fail, record the specific limitation and compare the Qt fallback. No implementation effort estimate or pass result is asserted here.
+Selection requires an appealing interface, responsive measured behavior and a credible complete reader/composer on all required platforms, including headless CLI and package installation. A beautiful mock-data screen alone is insufficient. If these gates fail, record the specific limitation and compare other candidates against the same design. No implementation effort estimate or pass result is asserted here.
