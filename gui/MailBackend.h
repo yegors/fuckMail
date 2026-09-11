@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QElapsedTimer>
 #include <QJsonObject>
 #include <QLocalSocket>
 #include <QTimer>
@@ -127,9 +128,11 @@ private:
     QLocalSocket m_socket;
     QTimer m_connectTimer, m_pollTimer, m_searchTimer, m_draftTimer, m_viewTimer;
     QByteArray m_buffer;
-    qint64 m_sequence = 0, m_revision = -1, m_connectStarted = 0, m_enginePid = 0;
+    QElapsedTimer m_startupClock;
+    qint64 m_sequence = 0, m_revision = -1, m_enginePid = 0, m_nextLaunch = 0;
     int m_generation = 0, m_listGeneration = 0, m_nextOffset = -1;
-    bool m_connected = false, m_loading = false, m_launched = false;
+    int m_launchAttempts = 0, m_launchDelay = 1000;
+    bool m_connected = false, m_loading = false;
     bool m_mutatingConversation = false;
     bool m_draftDirty = false, m_savingDraft = false, m_shutdown = false;
     std::function<void()> m_afterDraftSave;

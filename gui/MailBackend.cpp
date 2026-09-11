@@ -4,6 +4,7 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
@@ -33,7 +34,12 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent)
             m_connectTimer.stop(); fail(trustError); m_socket.abort(); return;
         }
         request("hello", {}, {{"token", m_token}, {"client", "gui"}}, [this](auto, bool ok) {
-            if (!ok) { m_socket.abort(); return; }
+            if (!ok) {
+                // A rejected response already supplied a fatal error. A socket
+                // disappearing before hello can be a writer still shutting down.
+                if (!m_error.isEmpty()) m_connectTimer.stop();
+                m_socket.abort(); return;
+            }
             m_connectTimer.stop();
             m_connected = true; m_error.clear();
             emit connectedChanged(); emit errorChanged();
@@ -43,12 +49,14 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent)
         });
     });
     connect(&m_socket, &QLocalSocket::disconnected, this, [this] {
+        const auto wasConnected = m_connected;
         m_connected = false; m_pollTimer.stop(); emit connectedChanged();
         m_outgoing.clear(); m_inFlight.clear(); m_buffer.clear();
         auto pending = std::move(m_pending); m_pending.clear();
         for (auto &item : pending) item.callback({}, false);
-        if (!m_shutdown) fail("The local engine disconnected. Your unsaved reply remains here. Reconnect to continue.");
-        else finishShutdown();
+        if (m_shutdown) finishShutdown();
+        else if ((wasConnected || !m_connectTimer.isActive()) && m_error.isEmpty())
+            fail("The local engine disconnected. Your unsaved reply remains here. Reconnect to continue.");
     });
     connect(&m_socket, &QLocalSocket::errorOccurred, this, [this](auto) {
         if (m_connected) fail(m_socket.errorString());
@@ -83,12 +91,13 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent)
 
 void MailBackend::start() {
     if (m_connected || m_socket.state() == QLocalSocket::ConnectingState) return;
-    clearError(); m_shutdown = false; m_buffer.clear(); m_launched = false; m_connectStarted = QDateTime::currentMSecsSinceEpoch();
+    clearError(); m_shutdown = false; m_buffer.clear(); m_startupClock.start();
+    m_launchAttempts = 0; m_launchDelay = 1000; m_nextLaunch = 0;
     m_connectTimer.start(); attemptConnection();
 }
 
 void MailBackend::attemptConnection() {
-    if (QDateTime::currentMSecsSinceEpoch() - m_connectStarted > 30000) {
+    if (m_startupClock.elapsed() >= 30000) {
         m_connectTimer.stop(); m_socket.abort(); fail("Cannot start the local engine. Check that fm-engine is installed beside the app, then reconnect."); return;
     }
     if (m_socket.state() != QLocalSocket::UnconnectedState) return;
@@ -99,20 +108,31 @@ void MailBackend::attemptConnection() {
         m_token = info["token"].toString();
         m_enginePid = info["pid"].toInteger();
         auto endpoint = info["endpoint"].toString();
-        if (info["protocol"].toInt() == 1 && !endpoint.isEmpty() && !m_token.isEmpty()) {
+        if (info["protocol"].toInt() != 1 || endpoint.isEmpty() || m_token.isEmpty()) {
+            m_connectTimer.stop(); fail("The local engine discovery is incompatible. Install matching GUI and engine binaries."); return;
+        }
+        {
 #ifdef Q_OS_WIN
             if (endpoint.startsWith("\\\\.\\pipe\\")) endpoint = endpoint.mid(9);
 #endif
             m_socket.connectToServer(endpoint);
         }
     }
-    if (!m_launched) {
-        m_launched = true;
+    if (m_launchAttempts < 10 && m_startupClock.elapsed() >= m_nextLaunch) {
+        // Detached children keep their independent CLI-owned lifetime. Startup
+        // retries are bounded; discovery can disappear before the old lock closes.
+        ++m_launchAttempts;
+        m_nextLaunch = m_startupClock.elapsed() + m_launchDelay;
+        m_launchDelay = qMin(m_launchDelay * 2, 4000);
         QProcess process;
         process.setProgram(m_engine); process.setArguments({"--profile", m_profile});
         process.setStandardOutputFile(QProcess::nullDevice());
         process.setStandardErrorFile(QProcess::nullDevice());
-        if (!process.startDetached()) fail("Could not launch fm-engine. Use --engine to select its executable.");
+        if (!process.startDetached()) {
+            m_connectTimer.stop(); fail("Could not launch fm-engine. Use --engine to select its executable.");
+        }
+        else if (qEnvironmentVariableIsSet("FM_GUI_TEST_TRACE"))
+            qInfo() << "GUI engine launch attempt" << m_launchAttempts;
     }
 }
 

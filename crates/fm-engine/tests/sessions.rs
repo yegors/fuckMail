@@ -1,6 +1,7 @@
 use fm_ipc::{Client, Discovery};
 use serde_json::{json, Value};
 use std::{
+    io::{BufRead, BufReader as StdBufReader},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     time::Duration,
@@ -267,6 +268,84 @@ async fn paired_clients_share_durable_state_and_explicit_lifetimes() {
         text
     );
     drop(reopened);
+    wait_stopped(&profile).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn startup_recovers_when_a_previous_writer_releases_its_lock() {
+    let temp = tempfile::tempdir().unwrap();
+    let profile = fm_ipc::private_profile(&temp.path().join("profile")).unwrap();
+    // Model the real shutdown interval after discovery disappears but before
+    // SQLite closes and releases the previous engine's exclusive writer lock.
+    let previous_writer = fm_core::Store::open(&profile).unwrap();
+    let reconnect_profile = profile.clone();
+    let reconnect = tokio::spawn(async move { client(&reconnect_profile).await });
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    drop(previous_writer);
+    let mut next = reconnect.await.unwrap();
+    ok(next.call("status", None, json!({})).await.unwrap());
+    drop(next);
+    wait_stopped(&profile).await;
+}
+
+// CTest supplies the built native GUI; plain cargo runs have no Qt build.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "Requires the actual native GUI; invoked by CTest gui-startup-recovery"]
+async fn gui_startup_recovers_after_writer_closes() {
+    let executable = std::env::var_os("FM_GUI_TEST_EXECUTABLE")
+        .expect("CTest must provide the built native GUI executable");
+    let temp = tempfile::tempdir().unwrap();
+    let profile = fm_ipc::private_profile(&temp.path().join("profile")).unwrap();
+    let previous_writer = fm_core::Store::open(&profile).unwrap();
+    let mut gui = OwnedEngine(
+        Command::new(executable)
+            .args(["--smoke", "--engine"])
+            .arg(engine())
+            .arg("--profile")
+            .arg(&profile)
+            .env("QT_QPA_PLATFORM", "offscreen")
+            .env("QT_QUICK_BACKEND", "software")
+            .env("QT_FORCE_STDERR_LOGGING", "1")
+            .env("FM_GUI_TEST_TRACE", "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let stderr = gui.0.stderr.take().unwrap();
+    let (retry_seen, mut retries) = tokio::sync::mpsc::unbounded_channel();
+    let log_reader = std::thread::spawn(move || {
+        for line in StdBufReader::new(stderr).lines().map_while(Result::ok) {
+            eprintln!("{line}");
+            if line.contains("GUI engine launch attempt 2") {
+                let _ = retry_seen.send(());
+            }
+        }
+    });
+    // Observe a real second launch while the lock remains held. A slow Windows
+    // Qt load cannot pass by starting only after a fixed sleep has expired.
+    tokio::time::timeout(Duration::from_secs(35), retries.recv())
+        .await
+        .expect("GUI never retried unavailable startup while the writer lock was held")
+        .expect("GUI exited before retrying startup");
+    drop(previous_writer);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(35);
+    let status = loop {
+        if let Some(status) = gui.0.try_wait().unwrap() {
+            break status;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "GUI did not recover after releasing the writer lock"
+        );
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    log_reader.join().unwrap();
+    assert!(
+        status.success(),
+        "GUI failed after unavailable startup: {status}"
+    );
     wait_stopped(&profile).await;
 }
 

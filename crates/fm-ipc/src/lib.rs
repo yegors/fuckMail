@@ -272,38 +272,105 @@ impl Client {
     pub async fn connect(profile: &Path, engine: Option<&Path>) -> io::Result<Self> {
         let profile = private_profile(profile)?;
         let until = tokio::time::Instant::now() + STARTUP_TIMEOUT;
-        let mut launched = false;
         let mut child: Option<tokio::process::Child> = None;
+        let mut next_launch = tokio::time::Instant::now();
+        let mut retry_delay = Duration::from_secs(1);
+        let mut launches = 0;
+        let mut last_connection_failure = String::from("discovery unavailable");
+        let mut last_exit = None;
         loop {
-            if let Ok(discovery) = read_discovery(&profile) {
-                if let Ok(stream) = connect(&discovery).await {
-                    let mut client = Self {
-                        stream: BufReader::new(stream),
-                        next_id: 0,
-                    };
-                    let hello = client
-                        .call(
-                            "hello",
-                            None,
-                            json!({"token":discovery.token,"client":"cli"}),
+            if tokio::time::Instant::now() >= until {
+                return Err(io::Error::new(io::ErrorKind::TimedOut, format!(
+                    "engine did not become ready after {launches} launch attempts; last connection: {last_connection_failure}; last engine exit: {last_exit:?}; check profile permissions and compatible binaries"
+                )));
+            }
+            match read_discovery(&profile) {
+                Ok(discovery) => match tokio::time::timeout_at(until, connect(&discovery)).await? {
+                    Ok(stream) => {
+                        let mut client = Self {
+                            stream: BufReader::new(stream),
+                            next_id: 0,
+                        };
+                        let hello = match tokio::time::timeout_at(
+                            until,
+                            client.call(
+                                "hello",
+                                None,
+                                json!({"token":discovery.token,"client":"cli"}),
+                            ),
                         )
-                        .await?;
-                    if hello.get("ok") == Some(&Value::Bool(true)) {
-                        // Reap our child asynchronously while this client process exists.
-                        if let Some(mut process) = child {
-                            tokio::spawn(async move {
-                                let _ = process.wait().await;
-                            });
+                        .await?
+                        {
+                            Ok(hello) => hello,
+                            Err(e)
+                                if matches!(
+                                    e.kind(),
+                                    io::ErrorKind::UnexpectedEof
+                                        | io::ErrorKind::ConnectionReset
+                                        | io::ErrorKind::BrokenPipe
+                                        | io::ErrorKind::ConnectionAborted
+                                        | io::ErrorKind::NotConnected
+                                ) =>
+                            {
+                                // The previous writer may accept a socket just
+                                // before shutdown. Retry transport loss only;
+                                // malformed/authentication responses stay fatal.
+                                last_connection_failure =
+                                    format!("pre-authentication transport {:?}", e.kind());
+                                tokio::time::sleep_until(
+                                    (tokio::time::Instant::now() + Duration::from_millis(70))
+                                        .min(until),
+                                )
+                                .await;
+                                continue;
+                            }
+                            Err(e) => return Err(e),
+                        };
+                        if hello.get("ok") == Some(&Value::Bool(true)) {
+                            // Reap our child asynchronously while this client process exists.
+                            if let Some(mut process) = child {
+                                tokio::spawn(async move {
+                                    let _ = process.wait().await;
+                                });
+                            }
+                            return Ok(client);
                         }
-                        return Ok(client);
+                        return Err(io::Error::new(
+                            io::ErrorKind::PermissionDenied,
+                            "engine rejected handshake",
+                        ));
                     }
-                    return Err(io::Error::new(
-                        io::ErrorKind::PermissionDenied,
-                        "engine rejected handshake",
-                    ));
+                    Err(e) => {
+                        if matches!(
+                            e.kind(),
+                            io::ErrorKind::PermissionDenied | io::ErrorKind::InvalidData
+                        ) {
+                            return Err(e);
+                        }
+                        last_connection_failure = format!("local transport {:?}", e.kind());
+                    }
+                },
+                Err(e) => {
+                    if matches!(
+                        e.kind(),
+                        io::ErrorKind::PermissionDenied | io::ErrorKind::InvalidData
+                    ) {
+                        return Err(e);
+                    }
+                    last_connection_failure = format!("discovery {:?}", e.kind());
                 }
             }
-            if !launched {
+            if let Some(process) = child.as_mut() {
+                if let Some(status) = process.try_wait()? {
+                    // Reap our exact child. A losing startup can exit while the
+                    // old writer is still closing after discovery was removed.
+                    last_exit = Some(status.to_string());
+                    child = None;
+                    next_launch = tokio::time::Instant::now() + retry_delay;
+                    retry_delay = (retry_delay * 2).min(Duration::from_secs(4));
+                }
+            }
+            if child.is_none() && launches < 10 && tokio::time::Instant::now() >= next_launch {
                 let binary = match engine {
                     Some(p) => p.to_owned(),
                     None => std::env::current_exe()?.with_file_name(if cfg!(windows) {
@@ -322,12 +389,12 @@ impl Client {
                 #[cfg(windows)]
                 command.creation_flags(0x08000000); // CREATE_NO_WINDOW, no hidden startup service.
                 child=Some(command.spawn().map_err(|e|io::Error::new(e.kind(),format!("cannot start engine: {e}; install fm-engine beside fm or pass --engine")))?);
-                launched = true;
+                launches += 1;
             }
-            if tokio::time::Instant::now() >= until {
-                return Err(io::Error::new(io::ErrorKind::TimedOut,"engine did not become ready; check profile permissions and compatible binaries"));
-            }
-            tokio::time::sleep(Duration::from_millis(70)).await;
+            tokio::time::sleep_until(
+                (tokio::time::Instant::now() + Duration::from_millis(70)).min(until),
+            )
+            .await;
         }
     }
 
@@ -358,6 +425,105 @@ impl Client {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    fn fake_engine() -> (tempfile::TempDir, PathBuf, tokio::net::UnixListener) {
+        let temp = tempfile::tempdir().unwrap();
+        let profile = private_profile(&temp.path().join("profile")).unwrap();
+        let d = Discovery {
+            protocol: 1,
+            pid: std::process::id(),
+            endpoint: endpoint(&profile).unwrap(),
+            token: random_token(),
+        };
+        let listener = tokio::net::UnixListener::bind(&d.endpoint).unwrap();
+        write_discovery(&profile, &d).unwrap();
+        (temp, profile, listener)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn startup_retries_transport_loss_after_accept_before_hello_reply() {
+        let (_temp, profile, listener) = fake_engine();
+        let server = tokio::spawn(async move {
+            let (first, _) = listener.accept().await.unwrap();
+            let mut first = BufReader::new(first);
+            read_frame(&mut first).await.unwrap().unwrap();
+            // The old writer accepted our socket, then closed during shutdown.
+            drop(first);
+            let (next, _) = listener.accept().await.unwrap();
+            let mut next = BufReader::new(next);
+            let hello: Value =
+                serde_json::from_slice(&read_frame(&mut next).await.unwrap().unwrap()).unwrap();
+            write_frame(
+                next.get_mut(),
+                &response(hello["id"].as_str().unwrap(), json!({"protocol":1})),
+            )
+            .await
+            .unwrap();
+            let request: Value =
+                serde_json::from_slice(&read_frame(&mut next).await.unwrap().unwrap()).unwrap();
+            write_frame(
+                next.get_mut(),
+                &response(request["id"].as_str().unwrap(), json!({"recovered":true})),
+            )
+            .await
+            .unwrap();
+        });
+        // No engine executable is provided: recovery must reconnect to the
+        // existing endpoint rather than needlessly launch a replacement.
+        let mut client =
+            tokio::time::timeout(Duration::from_secs(3), Client::connect(&profile, None))
+                .await
+                .unwrap()
+                .unwrap();
+        assert_eq!(
+            client.call("status", None, json!({})).await.unwrap()["result"]["recovered"],
+            true
+        );
+        server.await.unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn startup_does_not_retry_auth_or_protocol_rejection() {
+        for wrong_version in [false, true] {
+            let (_temp, profile, listener) = fake_engine();
+            let server = tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap();
+                let mut stream = BufReader::new(stream);
+                let hello: Value =
+                    serde_json::from_slice(&read_frame(&mut stream).await.unwrap().unwrap())
+                        .unwrap();
+                let mut rejected = error(
+                    hello["id"].as_str().unwrap(),
+                    "unauthorized",
+                    "fixture rejection",
+                );
+                if wrong_version {
+                    rejected["version"] = json!(999);
+                }
+                write_frame(stream.get_mut(), &rejected).await.unwrap();
+            });
+            let error =
+                match tokio::time::timeout(Duration::from_secs(2), Client::connect(&profile, None))
+                    .await
+                    .unwrap()
+                {
+                    Err(error) => error,
+                    Ok(_) => panic!("rejected engine must not authenticate"),
+                };
+            assert_eq!(
+                error.kind(),
+                if wrong_version {
+                    io::ErrorKind::InvalidData
+                } else {
+                    io::ErrorKind::PermissionDenied
+                }
+            );
+            server.await.unwrap();
+        }
+    }
+
     #[tokio::test]
     async fn framing_is_bounded_and_handles_fragmentation() {
         let (mut writer, reader) = tokio::io::duplex(32);

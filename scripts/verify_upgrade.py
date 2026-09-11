@@ -125,15 +125,24 @@ class Check:
 def durable_snapshot(profile):
     # Read-only inspection after the owned engine exits. Compare logical content;
     # harmless SQLite journal/header housekeeping is not a data-reset assertion.
-    db = sqlite3.connect((profile / "store.sqlite3").as_uri() + "?mode=ro", uri=True)
+    wal = profile / "store.sqlite3-wal"
+    require(not wal.exists() or wal.stat().st_size == 0,
+            "Cannot inspect an immutable snapshot while uncheckpointed WAL data exists")
+    # On this Mac's Python SQLite runtime, the closed fixture failed mode=ro but
+    # immutable inspection passed. It avoids sidecars, and is safe only
+    # after the owned writer exited and the WAL check above succeeded.
+    db = sqlite3.connect((profile / "store.sqlite3").as_uri() + "?mode=ro&immutable=1", uri=True)
     try:
         schema = db.execute("PRAGMA user_version").fetchone()[0]
         digest = hashlib.sha256("\n".join(db.iterdump()).encode("utf-8")).hexdigest()
+        counts = {name: db.execute("SELECT COUNT(*) FROM " + name).fetchone()[0]
+                  for name in ("messages", "attachments", "drafts", "operations")}
     finally:
         db.close()
     blobs = {path.name: sha256(path) for path in sorted((profile / "blobs").iterdir())
              if path.is_file()}
-    return {"schema": schema, "logical_database_sha256": digest, "retained_blobs": blobs}
+    return {"schema": schema, "logical_database_sha256": digest,
+            "record_counts": counts, "retained_blobs": blobs}
 
 
 def check_upgrade(old, new, report):
@@ -167,8 +176,11 @@ def check_upgrade(old, new, report):
             require(check.call(new, "flag", flag_params) == flagged, "Compatible new client changed an old receipt")
             require(check.pid() == old_pid, "New client replaced the explicit old engine owner")
             check.finish_owners(old_owner, old_engine)
+            old_snapshot = durable_snapshot(check.profile)
             report["compatible_coexistence"] = "passed"
             report["old_final_owner_shutdown"] = "passed"
+            report["before_upgrade_counts"] = old_snapshot["record_counts"]
+            print("Passed compatible coexistence and old final-owner shutdown", flush=True)
 
             new_engine = check.start_engine(new, "new-engine")
             new_owner = check.start_owner(new, "new-owner")
@@ -190,9 +202,21 @@ def check_upgrade(old, new, report):
                     "Closing the upgraded GUI ended the independent CLI owner")
             check.finish_owners(new_owner, new_engine)
             before = durable_snapshot(check.profile)
+            require(all(before["retained_blobs"].get(name) == digest
+                        for name, digest in old_snapshot["retained_blobs"].items()),
+                    "Migration lost or changed a previously retained blob")
+            require(all(before["record_counts"][name] == old_snapshot["record_counts"][name]
+                        for name in ("messages", "attachments", "drafts")),
+                    "Migration changed message, attachment or draft record counts")
+            require(before["record_counts"]["operations"] >= old_snapshot["record_counts"]["operations"],
+                    "Migration lost recorded operation receipts")
+            report["after_upgrade_counts"] = before["record_counts"]
+            report["preexisting_blob_count"] = len(old_snapshot["retained_blobs"])
+            report["migration_retains_old_blob_hashes"] = "passed"
             report["migration_and_exact_receipt_replay"] = "passed"
             report["new_gui_with_independent_cli_owner"] = "passed"
             report["new_final_owner_shutdown"] = "passed"
+            print("Passed migration, retained bytes, receipt replay and new GUI smoke", flush=True)
 
             rollback, output = check.spawn(old["fm-engine"], "--profile", check.profile,
                                             label="old-engine-rollback")
@@ -228,7 +252,10 @@ def main():
     parser.add_argument("--report", type=Path, required=True, help="Write a JSON evidence report")
     args = parser.parse_args()
     report = {"host": platform.platform(), "architecture": platform.machine(),
-              "synthetic_only": True, "sdk_environment": "cleared", "result": "failed"}
+              "synthetic_only": True, "sdk_environment": "cleared", "result": "failed",
+              "verifier_sha256": sha256(Path(__file__)),
+              "limits": ["GUI --smoke is launched with the upgraded profile; source honors that option. The independent CLI owner PID stays unchanged, but the script does not instrument the GUI handshake.",
+                         "This is unsigned development-package replacement evidence, not an automatic updater, physical input or OS keychain test."]}
     started = time.monotonic()
     try:
         old, report["old_package"] = package(args.old_bin)

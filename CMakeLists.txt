@@ -92,4 +92,10 @@ if(BUILD_TESTING)
     add_test(NAME gui-integration COMMAND "$<TARGET_FILE:fuckmail-gui>" --self-test)
     set_tests_properties(gui-integration PROPERTIES TIMEOUT 90
         ENVIRONMENT "${FM_GUI_TEST_ENV};FM_GUI_TEST_TRACE=1")
+    add_test(NAME gui-startup-recovery COMMAND "${FM_CARGO}" test -p fm-engine --test sessions
+        --locked ${FM_CARGO_PROFILE_ARGS} --target-dir "${CMAKE_SOURCE_DIR}/target"
+        gui_startup_recovers_after_writer_closes -- --ignored --exact --nocapture)
+    set_tests_properties(gui-startup-recovery PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        TIMEOUT 90 FIXTURES_REQUIRED rust_test_binaries RESOURCE_LOCK fm_cargo
+        ENVIRONMENT "${FM_GUI_TEST_ENV};FM_GUI_TEST_EXECUTABLE=$<TARGET_FILE:fuckmail-gui>")
 endif()

@@ -1,6 +1,6 @@
 # Current status
 
-As of 2026-09-11. **Phase 0 implementation active. Google-first MVP readiness: 0% (0 of 9 whole areas verified).** The full schema 4 Mac suite passes all 7 CTests. Calendar and fake-assistance store integration, retained MIME captures, provider checkpoints and engine recovery are implemented and tested. The native Cocoa workflow has been exercised with synthetic data. Final Windows/Ubuntu CI and actual packaged upgrade verification are underway; previous native failures and their fixes remain explicit in [Phase 0 execution evidence](research/phase-0-execution.md).
+As of 2026-09-11. **Phase 0 implementation active. Google-first MVP readiness: 0% (0 of 9 whole areas verified).** Calendar, fake assistance, retained MIME captures, provider checkpoints and engine recovery now share the schema 4 store. Mac and Ubuntu passed native tests and relocated packages at `ac77528`; Windows passed every Qt test but exposed a client restart race. Rust and Qt now use bounded startup recovery, proven by actual held-store and handshake-disconnect regressions. The Mac combined suite passes 8 CTests; the final native CI rerun is next. Actual Mac package migration preserved all retained blobs and drafts and safely refused downgrade. See [Phase 0 execution evidence](research/phase-0-execution.md).
 
 ## Established direction
 
