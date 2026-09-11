@@ -1,6 +1,6 @@
 # Core and storage
 
-State: Draft · Revision: 3 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 4 · Updated: 2026-09-11 · Implementation: not started.
 
 Owner: A — Core/storage. These are living specifications of accepted requirements and proposed behavior; exact types, libraries and unresolved details are not committed. See [contract workflow](README.md).
 
@@ -14,6 +14,14 @@ Owner: A — Core/storage. These are living specifications of accepted requireme
 | Independent start | Synthetic records and fake providers; publish shared types and fixture revision before parallel consumers implement against them |
 
 Related: [triage](triage.md), [search](search.md), [platform](platform.md), [storage research](../research/search-storage.md).
+
+Revision 4 links the initial shared-boundary handoff to [Phase 0](../plans/phase-0.md). Affected consumers: Gmail, IMAP/SMTP, Search, Mail UI, Calendar, Platform, Local assistance and CLI. The area remains Draft; no wire types or schema have been implemented.
+
+## First shared-boundary handoff
+
+P0-01 defines synthetic identity/state expectations; P0-03 and P0-10 prove storage and client behavior. Before a production consumer starts, publish the relevant agreed interface/fixture revision covering account/message/conversation identities, calendar series/occurrence identity when needed, revisions/cursors, snapshot action targets, operation outcomes, capabilities, coverage and session ownership. Define representation and serialization in the actual chosen implementation, with Rust/Qt contract tests; do not let each adapter invent its own IDs or error model.
+
+The first slice needs a bounded page/query, one journaled action, source/blob availability and an explicit event view, not every future API. Keep later provider/inference capabilities open behind the same ownership rules. Mark only that resolved slice ready; full Core readiness still requires retention, migration and all applicable recovery decisions/gates. The [development plan](../development-plan.md) sets when unresolved choices become blocking.
 
 ## Shape
 

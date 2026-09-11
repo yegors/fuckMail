@@ -22,6 +22,14 @@ vLLM's GPU installation documentation specifies Linux and describes WSL as a Win
 
 Engineering implications: inference is optional, bounded and separate from indexing; record model/content/category versions, preserve manual corrections and test cancellation against the actual runner. Summaries are derived reader content and never replace original-text search. Measure inference RAM/VRAM and cold/warm latency separately from the off-mode app budget. No particular model, throughput, confidence threshold or summary quality has been accepted or measured.
 
+## Phase 0 staging
+
+The [Phase 0 plan](../plans/phase-0.md) separates fake-runner boundary tests from live runner and quality evidence. First exercise Off, unavailable/invalid/abstaining/late output, mapping changes and newer manual corrections with synthetic received mail. Core must reject stale or disallowed results before any provider operation; summaries retain source IDs/coverage and cannot touch unpublished drafts.
+
+When a supported same-machine setup is available, record the runner/model/version, local-only configuration, weights availability and one bounded classification/summary result. Structured-output support does not prove accuracy or local execution. Current primary docs continue to describe schema output for Ollama and vLLM; validate our HTTP adapter against the actual configuration. [Ollama structured outputs](https://docs.ollama.com/capabilities/structured-outputs), [vLLM structured outputs](https://docs.vllm.ai/en/latest/features/structured_outputs/).
+
+Observe server-side cancellation and resource use after ending the owning session; a client disconnect is not a pass by itself. If a supported cancellation path is unavailable, record that runner as unverified and resolve the contract conflict before enabling it. Do not kill an unrelated/shared runner or silently relax close behavior. Missing runner/GPU access does not block manual mail or the core fixture slice. Full labeled category/summary evaluation, both supported adapters and agreed thresholds remain later feature gates; no model download, live inference or quality measurement occurred here.
+
 ## Next experiment
 
 P0-08: Evaluate the same synthetic classification/summary fixtures through local Ollama and a supported local vLLM setup. Record local-only configuration, model/schema compatibility, quality, cold/warm latency, memory/VRAM and cancellation. Do not make a vLLM installation a prerequisite for a working Windows/macOS app; record supported runner/platform combinations explicitly.

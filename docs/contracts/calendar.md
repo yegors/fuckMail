@@ -1,6 +1,6 @@
 # Calendar, feeds and reminders
 
-State: Draft · Revision: 2 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 3 · Updated: 2026-09-11 · Implementation: not started.
 
 Owner: F — Calendar. Accepted scope and proposed behavior are separated below; concrete APIs, libraries and outstanding choices await the relevant feasibility work. See [contract workflow](README.md).
 
@@ -14,6 +14,8 @@ Owner: F — Calendar. Accepted scope and proposed behavior are separated below;
 | Independent start | Calendar/ICS fixtures and mocked local API, including recurrence exceptions, time zones and simultaneous events |
 
 Related: [core](core-storage.md), [Gmail](gmail.md), [IMAP/SMTP](imap-smtp.md), [platform](platform.md), [calendar research](../research/calendar.md).
+
+Revision 3 records the closer nonfinal week/strip direction and its handoff gaps. Affected consumers/partners: Mail UI (footer placement and shared shell), Core (bounded permission-aware occurrence views), Platform (time/focus/lifecycle) and CLI (same permitted calendar fields and operations). No default overlay selection, final layout or new API is accepted.
 
 ## Calendar
 
@@ -42,7 +44,9 @@ Today's calendar is a required strip at the bottom of every mail screen, includi
 
 Calendar owns event content, occurrence identity, current/next computation, coverage and reminder/Join behavior. Mail UI owns the strip's placement and resizing with the mail shell. Supply a bounded day view with explicit selected calendar identities and date/time-zone context; keep the strip and full calendar on the same state, including date rollover and event changes. Both streams can use the same synthetic event fixture before a provider is available.
 
-The proposed horizontal timeline makes elapsed/remaining time and event durations readable. Preserve overlaps and all-day overflow, distinguish empty from stale/unloaded, and offer event details, Join where available and a route to the full calendar. Which calendars appear while switching mailboxes is still open; the strip itself remains visible.
+The proposed horizontal timeline makes elapsed/remaining time and event durations readable. The [closer pair](../research/design-references.md) shows a slim footer with next event/countdown and current-time marker on mail and the full week calendar. Retaining it on the full calendar is current visual direction, not a new accepted visibility rule. If retained while browsing another date/week, clearly keep the footer on today. Example day ranges and statistics are not fixed requirements or measured status.
+
+Preserve overlaps and all-day overflow, distinguish empty from stale/unloaded, and offer event details, Join where available and a route to the full calendar. Which calendars appear while switching mailboxes is still open; the strip itself remains visible on mail. The week reference suggests an active-account event grid with subdued Busy · other-account context. Do not infer overlay defaults from it. Respect provider free/busy and private-field restrictions in the data supplied to the grid, footer, tooltips, search and CLI; UI styling alone is insufficient. Distinguish voluntary busy-only display from provider-limited availability. A gap in displayed events is not guaranteed free time.
 
 ## Calendar consistency
 
@@ -58,11 +62,12 @@ Serve agenda, current/next status and calendar search from the same bounded even
 
 - Exercise applicable calendar views/queries, editing/recurrence, RSVP, feeds and permissions through the headless CLI as well as the GUI, preserving the same event/operation state.
 - Feed the persistent bottom strip and full calendar from the same occurrence state. Check mailbox/view switches, compact windows, day rollover, no events, overlapping/all-day events and stale/offline coverage; the strip must not disappear from mail screens or imply that unloaded calendars are empty.
-- Day/week/month/agenda, cached search and current/next status agree on the same event/occurrence identity. Show true overlaps, all-day hidden counts, selected calendar identities and search coverage.
+- Day/week/month/agenda, cached search and current/next status agree on the same event/occurrence identity. Show true overlaps, all-day hidden counts, selected calendar identities and search coverage. The pictured Day/Week/Month controls do not remove agenda or event search.
+- Review the relevant final calendar design before its UI slice. Exercise a week that does not contain today with a today footer if retained, restricted Busy overlays, early/late events outside the example time span, simultaneous/all-day overflow and permission changes. Restricted event details must not leak through alternative views or CLI output.
 - Test one-occurrence, series and following-occurrence edits, exceptions, DST/all-day boundaries, organizer changes, RSVP, cancellation and remote concurrent edits without silent rule simplification or duplicate invitations.
 - Recover expired sync tokens and changed permissions; keep a valid cached feed after a failed refresh and remove feed events only after a complete valid refresh. Feed URLs stay out of logs; feeds grant no edit/RSVP capability.
 - Join opens the conference URL while preserving physical location and RSVP; acknowledgement survives refresh for that occurrence and reconciles on rescheduling. GUI close stops its reminders; reopen reconciles before scheduling upcoming alerts. CLI-only calendar operations share event state and do not create a hidden reminder service.
 
 ## Open before affected behavior ships
 
-Resolve which calendars populate the strip on mailbox changes, timeline range/overflow, recurrence edit controls, reminder horizon and running-app alert preferences. Bottom-strip placement and presence on all mail screens are already settled. Define invitation handling across accounts and event conflict rules. No CalDAV editor or shared-calendar ACL administration is required for MVP. Calendar correctness is an early integration gate, not work postponed until the mail UI is polished.
+Resolve which calendars populate the strip on mailbox changes, Busy overlay display/permissions, whether to retain the footer on full-calendar views, timeline range/overflow and statistics, calendar search scope, agenda entry, recurrence edit controls, reminder horizon and running-app alert preferences. Static event blocks do not define drag/create/reschedule gestures. Final mockups are expected closer to UI implementation. Bottom-strip placement and presence on all mail screens are already settled. Define invitation handling across accounts and event conflict rules. No CalDAV editor or shared-calendar ACL administration is required for MVP. Calendar correctness is an early integration gate, not work postponed until the mail UI is polished.

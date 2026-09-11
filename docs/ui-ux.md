@@ -1,18 +1,36 @@
 # Visual design and interaction brief
 
-Updated 2026-09-11. Working brief for the founder's collaboration with Claude Design. This describes the elements and behavior to design; no final screens, palette or dimensions have been selected. Nonfinal references now guide a proposed technical baseline. Confirmed direction is separated from proposed treatments.
+Updated 2026-09-11. Working brief for the founder's collaboration with Claude Design. Two closer mail/calendar mockups now guide the layout, following the three earlier mood references. They are still not final; the founder will supply final mockups closer to UI implementation. Confirmed product behavior, current visual direction and unresolved interactions remain separate. No design or stack freeze is implied.
 
 ## Supplied visual references
 
-The founder supplied three mood/layout mockups on 2026-09-11 for technology choices. They are not final or exact designs. [Reference notes and unchanged image copies](research/design-references.md) record what each suggests.
+The latest references are [closer mail](research/assets/2026-09-11/closer-mail.png) and [closer calendar](research/assets/2026-09-11/closer-calendar.png). Use these first for future screen work. [Reference notes and unchanged image copies](research/design-references.md) distinguish observations from product decisions.
+
+The earlier mood/layout references remain useful history:
 
 - [Mockup 1](research/assets/2026-09-11/mockup-01.png): dark, restrained interface with strong headings, mono metadata and a multi-calendar bottom timeline.
 - [Mockup 2](research/assets/2026-09-11/mockup-02.png): serif-led treatment, small caps and red marks emphasizing deferred mail.
 - [Mockup 3](research/assets/2026-09-11/mockup-03.png): a denser sidebar/list/reader with visible counts and labels.
 
-The third image's sidebar agenda does not replace the confirmed bottom strip. “Done/Finished,” keyboard hints, grouping, mail-arrival ticks, specific fonts/colors and sample sync/AI states are reference content, not newly accepted behavior. Validate text selection, long subjects, contrast and scaling with real fixtures. Do not force received HTML into the mockup's typography at the expense of content fidelity.
+The earlier third image's sidebar agenda does not replace the confirmed bottom strip; both closer screens now show that strip. Sample counts, dates, “Done,” timeline markers and sync/AI states are mock content. Validate text selection, long subjects, contrast and scaling with real fixtures. Do not force received HTML into the mockup's typography at the expense of content fidelity.
 
 A full CLI and smooth installation are now required alongside these screens. The CLI exposes the same product behavior without a window; it does not need a visual copy of every screen. The [stack recommendation](research/desktop-stack.md) can be tested while detailed visual design continues.
+
+## Current visual direction
+
+Use the closer pair as the working composition, while final styling and interactions remain open:
+
+| Region | Direction in the closer mockups | Behavior still to settle |
+| --- | --- | --- |
+| Shared top bar | Mail/Calendar switch, separate account tabs with compact counts, search, date/time and sync status | Label count units and coverage; account changes and calendar search must have explicit scope |
+| Mail list | Left conversation pane; compact subject-first rows with sender/member count, time, selection and unread dots; delayed and done groups | Group precedence for a conversation that is both unread and starred; read triggers, ordering and access to all mail scopes |
+| Reader | Right pane with category chips, Reply/Delay/Done actions, expressive heading, optional local summary, latest visible member and an earlier-messages expander | Exact command targets, default member expansion, safe summary states and complete human composition |
+| Calendar | Full-width week grid, date range/account heading, Day/Week/Month/Today controls, understated event blocks and a current-time line | Agenda entry, all-day/overlap handling, calendar selection, event editing and permission states |
+| Today footer | Thin full-width timeline below both screens, next meeting/countdown, current-time marker and compact day context | Density/overflow, event identity, available actions and whether this placement also becomes final for full calendar |
+
+The restrained dark canvas, serif display headings and simpler body/metadata text are the current visual direction. Exact fonts, colors, borders and dimensions are unselected. Quiet styling still needs legible secondary text, visible focus and state markers that work without color alone. Do not infer pixel-perfect behavior from static mockups.
+
+The two-pane mail layout carries the current direction more closely than the old sidebar design. It must still offer Inbox, Unread, Starred, drafts, sent mail, folders/categories and account setup; their absence from the visible mockup is a handoff gap. Reply-all, forward, new composition, recipients/signature/attachments and durable draft recovery remain necessary even though no composer is pictured.
 
 ## What the interface should make real
 
@@ -34,7 +52,7 @@ Use one opinionated design across Windows, macOS and Linux (Ubuntu, Arch/Omarchy
 
 For this brief, “mailbox” is interpreted as a connected account (personal/work), consistent with separate accounts and no unified inbox. Folders, labels and categories remain scopes within that account. The selector's exact form—tabs, buttons or another control—is open.
 
-Proposed pane arrangement for design exploration: conversation list on the left, reader/composer on the right. The resizable split is confirmed; its orientation, default ratio and dimensions are not yet selected.
+The closer mail mockup establishes the current visual direction as conversation list on the left and reader on the right. Retain a resizable divider; exact ratio, minimum sizes, composer placement and compact-window adaptation await final design. The screenshot's apparent width is not a fixed specification.
 
 ```text
 +-----------------------------------------------------------+
@@ -61,7 +79,9 @@ Restore each account's selected conversation/member, filters and reading positio
 
 ## Make read and star states legible
 
-The following treatments and wording are proposals to test with the design:
+The following treatments and wording are proposals to test with the design. The closer mockup's **Delay** can express the accepted star/hold meaning; it does not authorize scheduled snooze or automatic resurfacing. **Done** still needs an explicit command definition: it cannot silently bundle mark-read, unstar and archive, or clear future replies. Do not create a separate synchronized Done state merely to match the screenshot. Read and unstarred is not proof that an action outside the app was completed.
+
+Review/delayed/done groups must handle overlapping flags. A conversation with unread and starred members keeps both facts visible even if shown only once in a combined list. Account totals and list conversation counts need distinct labels, complete scope and pending/coverage context. The sample account tabs' unlabeled number pairs do not settle this.
 
 | State or action | Meaning to communicate | Proposed expression |
 | --- | --- | --- |
@@ -78,7 +98,7 @@ Make old holds easy to notice and revisit. Show elapsed age when known and explo
 
 Unread and starred are independent: starring unread mail does not mark it read; reading starred mail does not remove its hold. A conversation can be in both views. The design must explain when a command targets one message versus existing members of the conversation.
 
-Counts stay honest across filters, archive and folder moves. Show incomplete sync and pending/failed changes without claiming the day is clear. When the open conversation leaves an Unread filter, let the user finish reading it before navigating away. Read-on-open timing is still undecided.
+Counts stay honest across filters, archive and folder moves. Show incomplete sync and pending/failed changes without claiming the day is clear. When the open conversation leaves an Unread filter, let the user finish reading it before navigating away. Read-on-open timing is still undecided. Collapsing earlier messages must preserve a route to every member; search reveals its matching message even when it would normally be collapsed. A local summary or an unopened collapsed member is not evidence that the user reviewed that message.
 
 ## Today's calendar strip
 
@@ -90,13 +110,17 @@ Design for overlapping meetings, all-day events and busy days. Preserve calendar
 
 Provide a clear route to the full calendar and a Join action when the event has a conference link. Joining acknowledges that occurrence's reminder only; it does not change RSVP or claim attendance. Keep physical location separate from the conference link. Alerts remain governed by running-app preferences; the strip does not add a new notification policy.
 
-Which calendars appear while switching mailboxes remains open: current-account calendars or an explicitly selected set. Always show their identities. This does not merge mail accounts, and it does not reopen whether the strip itself is visible. Timeline range, height, overflow and compact-window treatment remain design choices.
+Which calendars appear while switching mailboxes remains open: current-account calendars or an explicitly selected set. The closer pair shows named events for the active account and Busy · account placeholders for others. This is a proposal for calendar context, not permission to expose hidden titles/attendees or a decision to enable every account by default. Calendar permissions must govern the data supplied to every surface, including tooltips, search, summaries and CLI output. Distinguish a voluntary busy-only presentation from provider-limited availability.
+
+This does not merge mail accounts or reopen whether the strip itself is visible. Timeline range, height, overflow and compact-window treatment remain design choices. The depicted 07:00–21:00 span is an example, not an event cutoff. “Time left,” “meetings ahead” and arrival markers need clear definitions and coverage before inclusion; free space on selected calendars is not guaranteed availability.
 
 ## Dedicated calendar
 
 Keep day/week/month/agenda navigation, search, calendar visibility and event details/editing available in a dedicated workspace. Include recurring-event edits, invitations/RSVP, shared-calendar permissions and read-only subscriptions. The bottom strip and full calendar must represent the same events and occurrence state.
 
-Use the same typography, event identity and interaction language as the strip. Returning to mail should restore the user's place. The bottom-strip requirement applies to mail screens; its treatment inside the full calendar is open.
+Use the same typography, event identity and interaction language as the strip. Returning to mail should restore the user's place. The closer week mockup also keeps the today strip at the bottom: carry this as the proposed full-calendar treatment, without expanding the accepted mail-screen requirement by inference. If retained while browsing another date/week, the footer must clearly remain today rather than adopt the grid's date silently.
+
+The week reference uses understated event blocks, subdued other-account busy markers and a current-day/current-time accent. It does not define drag-to-create, drag-to-reschedule or recurrence-edit gestures. Agenda remains required even though its tab is absent. Calendar search must search events with explicit scope; the pictured mail search placeholder is not a specification for calendar search.
 
 ## States to include in design iterations
 
@@ -110,6 +134,19 @@ Use the same typography, event identity and interaction language as the strip. R
 - Optional assistance: absent/disabled, category suggestion and generated summary with source access; normal reading/composition still works.
 
 These are review scenarios for the existing product, not additional app areas. Visual direction, colors, typography, density, final copy, selector treatment, pane orientation and compact behavior should emerge from the founder/Claude design iterations. Use the reader/composer and calendar slice to validate the recommended stack on all required desktops; final styling can continue evolving.
+
+## Handoff before UI implementation
+
+Final mockups are expected closer to UI implementation. Feasibility and headless engine work can proceed against the existing contract once implementation is requested; production screens and interactions use the relevant reviewed final design revision. Avoid making hidden layout or action decisions during that earlier work.
+
+The focused handoff should resolve these gaps for the slice being built, rather than freezing every later screen now:
+
+- **Mail:** account and folder/category navigation, New/Reply/Reply-all/Forward entry points, search results, count labels, mixed unread/starred rows, Delay/Done targets and read-on-open behavior.
+- **Reader/composer:** earlier-message expansion, matching-message navigation, full HTML and blocked/allowed remote content states, summary absent/stale/error states, attachments, plain-text/HTML composition, signatures and send/recovery states.
+- **Calendar:** visibility/Busy overlay policy, day/week/month/agenda plus search, event details/edit/RSVP, recurrence choices, all-day/overlap overflow, time zones and the footer while viewing another date.
+- **Shared shell:** minimum supported window and scaling, split resizing, mouse/keyboard focus, loading/offline/empty/error states, setup/settings and how sync freshness differs from incomplete history or pending writes.
+
+Record only the selected slice's settled interactions in its living contract, with affected consumers and fixtures. The visual mockups do not resolve provider behavior, renderer safety or data consistency.
 
 ## Related specifications
 

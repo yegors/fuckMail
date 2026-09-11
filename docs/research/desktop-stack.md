@@ -6,7 +6,7 @@ Build boundary: [Platform contract](../contracts/platform.md).
 
 ## Current decision context
 
-The founder supplied three nonfinal [mockups](design-references.md) and made Linux (Ubuntu, Arch/Omarchy), a full CLI for third-party agents and smooth installation mandatory. Modern tools are preferred when they improve the result; maturity is an advantage when it reduces integration risk. One visual design applies to Windows, macOS and Linux.
+The founder supplied three early nonfinal [mockups](design-references.md), then a closer mail/calendar pair while reserving final designs for production UI work, and made Linux (Ubuntu, Arch/Omarchy), a full CLI for third-party agents and smooth installation mandatory. Modern tools are preferred when they improve the result; maturity is an advantage when it reduces integration risk. One visual design applies to Windows, macOS and Linux.
 
 The references are sufficient to recommend a technical baseline while visual design continues. This is a recommendation for the first implementation spike, not a completed feasibility result or founder-approved version lock. Earlier Slint-first/Qt-fallback ordering is superseded by this comparison. The subsequent founder-supplied Rust-core critique changes the recommended engine language while retaining Qt Quick and the existing on-demand process boundary. The attachment is analysis to evaluate, not authority to lock a stack or start implementation.
 
@@ -104,6 +104,10 @@ For a build maintained through this collaboration, I recommend accepting the ext
 ## What the comparison must settle
 
 Compare the supplied design, reader/composer fidelity, storage-backed scrolling, accessibility, dependencies and packaging on Windows, macOS and the required Linux configurations. The recommended Rust engine plus C++/Qt UI leaves two toolchains, protocol coordination, UI lifetime/thread correctness and Qt component costs to the implementation. An all-C++ engine reduces language count but gives up Rust's compiler-enforced ownership checks. Rust/Slint offers a different UI boundary but still needs credible rich-email and desktop integration. Neither language proves mailbox performance. Keep the database benchmark independent of the UI language.
+
+## Execution plan
+
+Use the [development plan](../development-plan.md) and [Phase 0 packets](../plans/phase-0.md) to validate this baseline. The closer references reinforce compact custom mail/calendar surfaces but do not resolve reader/composer behavior, Done/Delay semantics, Busy visibility or platform support. Final mockups gate the corresponding production UI slice; provisional feasibility surfaces and headless work can proceed earlier. Record versions and measured gates when execution happens, not in advance.
 
 ## Next experiment
 

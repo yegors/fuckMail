@@ -15,7 +15,8 @@ fuckMail is a personal desktop mail and calendar client. This repo is still in t
 2. [docs/north-star.md](docs/north-star.md) and [docs/product-scope.md](docs/product-scope.md) — what the product is and is not
 3. [docs/decisions.md](docs/decisions.md) — accepted choices vs proposals vs open questions
 4. The owning file under [docs/contracts/](docs/contracts/README.md) or [docs/research/](docs/research/README.md) for the area you are touching
-5. [docs/ui-ux.md](docs/ui-ux.md) for screen structure; [docs/README.md](docs/README.md) for where new writing belongs
+5. [docs/development-plan.md](docs/development-plan.md) and the approaching phase under [docs/plans/phase-0.md](docs/plans/phase-0.md) — sequence, start packet, dependencies and evidence gates
+6. [docs/ui-ux.md](docs/ui-ux.md) for screen structure; [docs/README.md](docs/README.md) for where new writing belongs
 
 Do not invent product behavior, stack locks or “done” features from memory. If a doc and a later decision disagree, the later decision wins; do not rewrite old decision entries.
 
@@ -23,7 +24,7 @@ Do not invent product behavior, stack locks or “done” features from memory. 
 
 - Planning only unless the user clearly asks to implement or prototype.
 - Recommended stack is **not locked**: Rust engine and CLI, C++20 / Qt Quick UI, SQLite/FTS5, private local IPC. Validate before treating it as decided.
-- Mockups are visual direction, not final UI. Bottom calendar strip stays; the sidebar agenda in mockup 3 does not replace it.
+- The closer mail/calendar pair is current visual direction; three earlier mockups remain historical. Final mockups arrive closer to production UI implementation. Bottom calendar strip stays; no screenshot implicitly chooses Done/Delay effects, read triggers or Busy-overlay permissions.
 - Contracts are drafts. Do not invent placeholder APIs, fake benchmarks or pretend prose is a test suite.
 - Readiness stays 0% until a required area is implemented and verified. Docs, screenshots and unrun tests do not count.
 - Do not start a feature workstream, pick versions or connect real mailboxes unless asked.
@@ -44,7 +45,8 @@ Follow [docs/README.md](docs/README.md):
 1. Evidence and comparisons go in a scoped `docs/research/` file.
 2. Decisions and Q&A are appended to `docs/decisions.md` (new ID, ISO timestamp). Never edit or delete old entries.
 3. Living behavior belongs in the owning `docs/contracts/` file. Bump its revision and name affected consumers.
-4. Update `docs/status.md` and the root README when scope, active work or readiness changes.
+4. Update the phased plan when sequence or dependencies change; expand only the approaching phase.
+5. Update `docs/status.md` and the root README when scope, active work or readiness changes.
 
 Do not create empty speculative docs. Prefer editing the owning file over copying it. When code exists, reuse existing functions instead of duplicating them.
 
@@ -52,7 +54,9 @@ Never commit secrets, real mailbox dumps, tokens or auth material.
 
 ## When implementation is requested
 
-- Name the contract, revision and what evidence will count as done before writing code.
+- Start with the next packet in the development plan; currently P0-00 plus the small-fixture portion of P0-01. Inspect actual tools and test-host access before installing or assuming they exist.
+- Name the packet, scoped contract revision, fixture revision and what evidence will count as done before writing code. Feasibility can begin against Draft contracts; production consumers need the relevant shared boundary agreed. Do not mark a whole feature Ready from one passing slice.
+- Keep detailed planning focused on the next phase. Preserve completed evidence and append pivots; missing credentials, final mockups, runners or remote test hosts block their affected gate, not unrelated authorized work.
 - Keep engine/CLI and UI on the agreed boundary. GUI and CLI share one store and one command/query model.
 - Integrate small end-to-end slices. Do not build a second schema to unblock a module.
 - Record measured results in the owning research file and quality contract, then update status.

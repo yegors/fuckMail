@@ -31,6 +31,42 @@ Qt WebEngine adds runtime/helper resources, Linux sandbox integration and macOS 
 
 Audit the exact Qt modules and third-party dependencies before choosing the distribution license. Some Qt modules have different licensing terms; “Qt” is not a single blanket grant. Prefer a maintained release and track browser-component updates rather than promising an unspecified LTS entitlement. [Qt licensing](https://doc.qt.io/qt-6/licensing.html).
 
-## Next experiment
+## Build and validation baseline to investigate first
 
-P0-11: install GUI/engine/CLI on clean supported systems with no developer tools, discover the CLI, authenticate, render mail, launch a headless query, upgrade and uninstall while checking retained data. Include Ubuntu, Arch and Omarchy desktop sessions rather than a Linux container alone. Record package size, first-run steps, dependency resolution, CLI PATH/alias behavior, signing/update mechanism and any required system integration.
+Keep Cargo and CMake as independent builds joined at test fixtures and package staging. Cargo supports a shared workspace/lockfile for Rust packages; Qt's CMake deployment tooling can help stage GUI dependencies, but still needs platform packaging and runtime verification. Do not add Corrosion, CXX-Qt, a generated Rust/C++ ABI or an npm application pipeline merely to orchestrate separate executables. When implementation begins, record reproducible build commands and pin proven dependencies/toolchains together; no version is selected by this document. [Cargo workspaces](https://doc.rust-lang.org/cargo/reference/workspaces.html), [Qt CMake deployment](https://doc.qt.io/qt-6/cmake-deployment.html).
+
+Candidate first matrix, subject to available devices and the selected Qt/WebEngine release:
+
+| Target | Build candidate | Required execution environment |
+| --- | --- | --- |
+| Windows x64 | Stable Rust MSVC target; C++20 with supported MSVC; CMake/Ninja and prebuilt Qt/Quick/WebEngine | Fresh standard-user Windows installation; test shell command discovery, renderer helpers, clipboard/IME, credentials and scaling |
+| macOS Apple Silicon | Stable Rust Apple target; Apple Clang/Xcode supported by Qt; matched Qt/renderer artifacts | Actual Mac or appropriate macOS test host, including GUI and Keychain; exercise downloaded-app launch/signing separately from developer launch |
+| Ubuntu x64 | Stable Rust GNU target; supported GCC/Clang and Qt build from a controlled LTS baseline | Recorded Ubuntu LTS desktop with Wayland and any claimed X11 path; test also with no display session for CLI |
+| Arch x64 | Build/stage against a recorded Arch snapshot; identify declared system libraries and app-private bundled libraries | Fresh Arch desktop with recorded compositor, portal/keyring availability and system packages |
+| Omarchy x64 | Validate compatibility of the chosen Arch package on a recorded Omarchy installation | Its actual configured desktop; a generic Arch container pass is insufficient |
+
+Windows ARM, Intel Mac, Linux ARM and exact OS floors remain inventory decisions, not silently promised or rejected architectures. Start with the representative configurations already proposed in Platform; add the founder's actual hardware before declaring supported coverage. Rust target support describes compiler/standard-library support, not Qt, keyring or whole-package compatibility. [Rust target tiers](https://doc.rust-lang.org/rustc/platform-support.html).
+
+The current Qt 6.11 platform page lists Ubuntu 22.04/24.04 and MSVC 2022 among its tested configurations. Its Linux binary notes currently give different glibc statements in different sections. Inspect the actual selected artifacts' linked requirements and run them on the intended minimum system; do not infer a floor from a generic paragraph. WebEngine's requirements can be narrower than Qt's: notably, Windows MinGW and static WebEngine builds are unsupported in the checked documentation. Prefer matched prebuilt Qt modules initially; source-building WebEngine brings upstream Node/Python and native-tool dependencies even though our app has no Node product pipeline. [Qt platform matrix](https://doc.qt.io/qt-6/supported-platforms.html), [WebEngine build constraints](https://doc.qt.io/qt-6/qtwebengine-platform-notes.html).
+
+**Local observation, 2026-09-11:** a read-only PowerShell PATH lookup found Git, but not rustc, cargo, cmake, ninja, cl, qmake/qmake6, qtpaths6 or ctest. This only records that session's command visibility, not machine-wide installation absence. No compiler, SDK or dependency was installed. First execution must inspect existing installations and provision missing tools before claiming the workspace is buildable.
+
+Future CI should separate deterministic Rust/core tests and shared protocol fixtures from Qt model/renderer tests and native package smoke checks. Build Windows/macOS/Linux artifacts early; clean desktop acceptance remains a separate evidence lane for graphics, input, credentials and lifecycle. Cache locked dependencies without masking fresh-checkout failures. Record runner image/tool versions; unavailable Mac/Linux runners are an explicit outstanding gate, not a pass inferred from Windows.
+
+## P0-11: package the feasibility slice early
+
+Prerequisites: later authorization to implement/prototype; compatible engine/CLI/GUI artifacts from P0-10; renderer/composer slice from P0-04; recorded native test machines/VMs and a decision on how dependencies are supplied. Use synthetic mail and a fake credential round trip first. Live OAuth follows the provider packet and account authorization; it is not needed to discover missing Qt libraries.
+
+| Stage | Future package work | Exit evidence |
+| --- | --- | --- |
+| First smoke package | Stage all three binaries and Qt/QML/WebEngine helpers/resources; create a simple per-platform installer/package using the routes above | A fresh user can launch the fixture GUI and invoke a headless query from a new terminal without developer tools or a model |
+| Shared installation/profile | Resolve engine location from the installation, independent of shell working directory; exercise Unicode/spaced paths and same-profile GUI/CLI | One engine/profile, correct runtime discovery and no writes into the program directory; no accidental reliance on developer PATH |
+| Upgrade/recovery rehearsal | Install a second fixture build with a deliberate schema/protocol transition, active-client checks and an interrupted migration case | Compatible components upgraded together; old binaries refuse unsupported data; authored fixtures survive recovery and normal uninstall |
+| Signing/channel feasibility | Identify Windows signing/alias route, macOS Developer ID/notarization access, and Linux package signing/update source | Concrete prerequisites and actual launch warnings recorded; missing signing credentials remain an open delivery gate |
+| MVP finishing | Final signed packages, normal OAuth setup, maintained updates, release notes/licenses and complete required desktop checks | Repeatable clean installation, upgrade/recovery and uninstall evidence across the agreed matrix |
+
+Unsigned local smoke artifacts can prove dependency closure and packaging structure, but do not pass the smooth trusted-distribution gate. Signing accounts/certificates, notarization service access and update hosting are external prerequisites to resolve before final delivery, without installing an always-on application service.
+
+Headless does not imply an unlocked credential store. Verify the chosen Rust credential adapter on Windows/macOS and a real Secret Service provider on each Linux setup; no provider or unlocked session is guaranteed by merely compiling for Linux. An unavailable/locked store must yield an actionable noninteractive error and an explicit setup path. Test GUI and CLI against the same credential references. [Secret Service specification](https://specifications.freedesktop.org/secret-service/latest/).
+
+**Record for each attempt:** artifact/source version, architecture, OS/distro/compositor, toolchain and Qt modules, package size, runtime library requirements, first-run steps, CLI discovery, sandbox/keyring result, signing state and retained-data behavior. Measure installed disk and runtime memory separately. The first fixture package supports the stack decision; polished distribution and the full upgrade matrix remain release work. All checks are planned, not run.

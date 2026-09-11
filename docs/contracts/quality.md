@@ -2,9 +2,31 @@
 
 Updated 2026-09-11. Proposed budgets, not measured results. Required behavior includes fast sender/subject/body search, responsive daily triage, conversation-only mail, full offline messages/attachments, reliable calendar views and optional local classification/summaries on Windows/macOS/Linux. The founder specified high-end machines. Exact devices, mailbox message counts and local models remain unmeasured.
 
-State: Draft · Revision: 1 · Implementation/evidence: not started. Owner: G — Platform/release coordinates; each workstream supplies its own fixtures and evidence. This is a shared acceptance contract, not a separate application feature.
+State: Draft · Revision: 2 · Implementation/evidence: not started. Owner: G — Platform/release coordinates; each workstream supplies its own fixtures and evidence. This is a shared acceptance contract, not a separate application feature.
 
 Consumes versioned builds, synthetic fixtures, hardware/runner metadata and workstream results. Produces reproducible measurements and pass/fail or explicitly renegotiated gates. Start independently with fixture definitions; there are no benchmark commands or results yet.
+
+Revision 2 connects [Phase 0](../plans/phase-0.md) to reusable fixtures and evidence gates. Affected consumers: every workstream, especially Core/CLI/Platform for the first shared slice. No fixtures, harness or measured results exist yet.
+
+## Fixture and verification foundation
+
+Create these artifacts during P0-01 and their consuming experiments; this table describes inputs and expected evidence, not tests that already exist.
+
+| Fixture family | Owner and scenarios | Verification purpose |
+| --- | --- | --- |
+| Identity and triage | A: separate accounts, colliding provider IDs, mixed unread/star states, later thread replies, archived/folder mail, partial coverage | Correct account scope, snapshot actions and totals independent of loaded rows/filters |
+| Source mail and drafts | C/E: varied MIME/encodings/quoting, inline resources, malformed inputs, large parts and authored draft/signature/attachment cases | Preserve original bytes, extracted fields and attachments; round-trip human content and control reader resources |
+| Sync and durable operations | A/B/C/F: paginated deltas, expired cursors, partial moves, stale revisions, crash points, acceptance-unknown send and Sent-copy failure | No skipped checkpoint, lost authored work or automatic duplicate send; provider outcomes remain distinct |
+| Protocol and lifecycle | A/I/G: version mismatch, concurrent clients, locked credentials, disconnected/slow consumers and final-client exit | Same semantics from Rust CLI and Qt adapter; bounded memory, one writer and explicit recovery |
+| Calendar | F: independently expected occurrences, time-zone changes, exceptions, permissions, overlaps/all-day, RSVP and stale feeds | One correct event view for full calendar, strip and CLI; no title/field access beyond actual permission |
+| Assistance | H/A: off/unavailable, invalid/abstaining/late output, changed mappings/manual overrides, new thread members | Manual use unaffected; only permitted filing; faithful source/coverage handling and cancellation |
+| Scale and packaging | D/G: seeded varied corpus plus clean installation/profile fixtures | Repeatable retrieval/ingestion measurements and actual GUI/CLI/renderer behavior on required targets |
+
+Version small fixture manifests and expected outcomes, record provenance/licenses and keep private content and generated bulk data out of source control. Shared boundary tests use the same fixture revision in Rust and C++; calendar expected results must not be generated solely by the recurrence library under test. A provider mock demonstrates our response to its input, not the real provider's behavior.
+
+When code exists, layer fast domain/fixture tests, shared-protocol and crash/recovery integration tests, local protocol sinks, GUI interaction/rendering checks and clean-install/live-provider checks. Run the relevant layer for each slice and publish exact successful commands with the implementation. Start CI with headless/build checks on available supported runners; actual OS/desktop/keyring tests remain separate evidence. No speculative test scripts or CI configuration are added by this plan.
+
+A result records build/dependency versions, fixture revision/seed, OS/architecture/hardware/display session, executed command, expected/observed outcome and pass/fail/blocked status. Only executed checks can pass. Blocked platform or account rows remain visible while independent work proceeds. Use the existing budgets below, not a new per-plan definition of readiness.
 
 ## Representative workload
 

@@ -2,7 +2,7 @@
 
 Living specifications for the major areas of fuckMail. Each is an independently implementable work unit once its consumed interfaces and fixture revision are agreed. Current state: **all Draft; each file records its revision; implementation has not started**. This framework supports future parallel work. The current [stack recommendation](../research/desktop-stack.md) is a Rust engine/CLI with a C++20/Qt Quick UI over private local IPC; no implementation tasks have started.
 
-The founder is collaborating with Claude Design on one design for every OS; [ui-ux.md](../ui-ux.md) records confirmed screen structure and design proposals. The supplied nonfinal mockups guide the technical prototype while visual design continues. Keep requirements separate from proposed implementation details and use [status](../status.md) for delivery phases, active work and readiness.
+The founder is collaborating with Claude Design on one design for every OS; [ui-ux.md](../ui-ux.md) records confirmed screen structure and design proposals. The supplied nonfinal mockups guide the technical prototype while visual design continues. Keep requirements separate from proposed implementation details and use the [development plan](../development-plan.md) for phases/dependencies and [status](../status.md) for active work and readiness. The detailed [Phase 0 packets](../plans/phase-0.md) can begin as feasibility work when implementation is requested; Draft feature contracts do not block their own investigations.
 
 ## Parallel workstreams
 
@@ -95,4 +95,6 @@ Every area file contains its state/revision, owner, what it owns, consumed input
 
 Changing a contract increments its revision and identifies affected consumers. Append significant choices, pivots and Q&A to [decisions](../decisions.md); update consumers and fixtures together for shared-interface changes. A contract may return to Draft/Ready when scope changes, while earlier decisions and evidence remain in history. State is per area; readiness for parallel implementation is not the same as shipped-feature readiness.
 
-Before assigning a work unit, name its contract/revision, code ownership after the tree exists, consumed fixture version and completion evidence. During implementation, integrate small end-to-end slices frequently. Record measured results in the relevant research topic and quality contract, then update status. Do not open new workstreams for out-of-scope integrations.
+A scoped slice can be ready while the overall feature remains Draft. Record that slice explicitly in the contract: resolved behavior, consumed interface/fixture revision, owner, acceptance evidence and remaining work. Do not silently promote the whole area or imply that prose is executable. Phase 0 investigation packets may begin against Draft contracts because their purpose is to resolve those boundaries; their resulting interfaces must be agreed before independent production consumers implement them.
+
+Before assigning a work unit, name its phase packet and scoped contract/revision, code ownership after the tree exists, consumed fixture version and completion evidence. During implementation, integrate small end-to-end slices frequently. Record measured results in the relevant research topic and quality contract, then update status. Do not open new workstreams for out-of-scope integrations.

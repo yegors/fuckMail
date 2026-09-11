@@ -1,6 +1,6 @@
 # Mail UI, reader and human composer
 
-State: Draft · Revision: 2 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 3 · Updated: 2026-09-11 · Implementation: not started.
 
 Owner: E — Mail UI. These are living specifications of accepted requirements and proposed behavior; exact types, libraries and unresolved details are not committed. See [contract workflow](README.md).
 
@@ -15,13 +15,19 @@ Owner: E — Mail UI. These are living specifications of accepted requirements a
 
 Related: [core](core-storage.md), [triage](triage.md), [search](search.md), [platform](platform.md), [HTML research](../research/html-mail.md).
 
+Revision 3 records the closer nonfinal mail/calendar direction and the final-design handoff gates. Affected consumers/partners: Core and Triage (member flags, counts and actions), Search (collapsed matching members), Calendar (shared footer), Local assistance (summary states), Platform (renderer, focus/scaling) and CLI (the same command semantics). No shared API or accepted action mapping is introduced.
+
 ## Design constraint
 
-The same opinionated layout, components and visual identity apply on Windows, macOS and Linux. The [visual design brief](../ui-ux.md) fixes mailbox selection at the top, a resizable split mail workspace and today's calendar strip at the bottom of every mail screen. A full calendar remains available. Pane orientation, ratio and palette remain open; supplied mockups guide a recommended Qt Quick baseline while design continues. Platform input and accessibility still need to work.
+The same opinionated layout, components and visual identity apply on Windows, macOS and Linux. The [visual design brief](../ui-ux.md) fixes mailbox selection at the top, a resizable split mail workspace and today's calendar strip at the bottom of every mail screen. A full calendar remains available. The [closer mockups](../research/design-references.md) guide a compact shared top bar and a left conversation list/right reader. Ratio, compact adaptation, palette and detailed behavior remain open. Final mockups are expected closer to UI implementation; this direction is not a frozen screen specification. Platform input and accessibility still need to work.
 
 Propose a conversation list beside the reader/composer, with independent scrolling, usable minimum pane sizes and remembered split position. Keep the calendar strip visible across all mail scopes, search, reading and composition, including during scrolling/resizing. Mail UI owns placement and consumes Calendar's event projection; it must not create a second event/reminder store. Preserve the existing draft's account identity when switching mailboxes.
 
 Stars must visibly mean deferred action, with proposed explanatory copy and honest hold age from [triage](triage.md). Read state and action completion remain distinct.
+
+The closer list groups review, delayed and done mail; its reader uses Reply/Delay/Done controls, category chips, an optional local summary and collapsed earlier messages. Treat these as presentation proposals. Delay may express the native star hold; it adds no timed snooze. Resolve Done before implementation: do not silently bundle read/unstar/archive, create another completion state or include future replies in an old action. Mixed unread/starred conversations retain both facts and truthful account totals regardless of group placement. Label conversation counts separately from underlying message totals.
+
+A collapsed thread must preserve access to all members and reveal the exact matching search message. Expansion/selection/read triggers remain undecided; a summary or hidden member is not evidence of review. Keep optional summaries absent when disabled/unavailable, and show source, stale and failure state when applicable. Attachment availability and sync status reflect actual coverage, not the sample badge text.
 
 ## Mail workflows
 
@@ -63,7 +69,8 @@ The composer exposes no model-generated writing, rewrite, autocomplete or send p
 - Read HTML and plain-text fixtures; copy/select text, handle links/attachments and show bounded progress for long conversations. The isolated renderer has no scripts or privileged app bridge; coordinate its resources and shutdown with Platform.
 - Compose, save/reopen and send a human-written plain-text/HTML draft with signature, recipients and attachments from the correct account. Recovery follows Core's send states, including acceptance unknown. No AI writing controls or draft access exist.
 - Triage and file while background sync/inference runs; keep the open conversation readable when it leaves Unread, show pending/error state and preserve honest account totals.
+- Before building the affected UI slice, review its final design and resolve entry points absent from the mockups: Inbox/Unread/Starred, folders/categories, drafts/sent, new composition, Reply-all/Forward, setup and account-scoped search. Exercise mixed read/star groups and collapsed search matches without inventing new provider states. Confirm loading, offline, summary-off, failure, compact-window and focus/scaling states.
 
 ## Open before affected behavior ships
 
-Validate the recommended toolkit/renderer/editor with the nonfinal references on every required platform. Resolve conversation ordering, read-on-open timing, action targets, restrained formatting and signature format. Decide whether drafts synchronize to other clients; local durability is required. See [Slint](../research/slint-ui.md) for retained candidate-specific UI gates, not a selected implementation.
+Validate the recommended toolkit/renderer/editor with the nonfinal references on every required platform. Production screens and interactions wait for the relevant founder-supplied final design; provisional functional surfaces and feasibility fixtures need not. Resolve conversation/group ordering, labeled count units, read-on-open and collapsed-member behavior, Delay/Done action targets, search scope, access to hidden navigation, restrained formatting and signature format. Decide whether drafts synchronize to other clients; local durability is required. See [Slint](../research/slint-ui.md) for retained candidate-specific UI gates, not a selected implementation.
