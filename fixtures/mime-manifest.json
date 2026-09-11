@@ -1,0 +1,89 @@
+{
+  "fixture_revision": 1,
+  "synthetic": true,
+  "description": "Independent MIME expectations. Source hashes establish byte preservation; contains/not-contains checks deliberately allow harmless whitespace variation. attachment_count excludes inline_count. No external resource fetching is permitted.",
+  "messages": [
+    {
+      "path": "messages/plain-utf8.eml",
+      "source_sha256": "694031c570c14582d4ffe9b9193e1933d064b69fc07b968c0cf90212d25985cd",
+      "source_size": 534,
+      "expected_text_contains": [
+        "The Frankfurt review is ready.",
+        "Café budget: €42.",
+        "日本語の確認 — спасибо.",
+        "> Can you send the revised figures?"
+      ],
+      "attachment_count": 0,
+      "inline_count": 0
+    },
+    {
+      "path": "messages/multipart-alternative.eml",
+      "source_sha256": "d3cf35cee81564276745d1ad9a0857ba64d804874867f3b5308c8716f20a89d7",
+      "source_size": 581,
+      "expected_text_contains": [
+        "Three of four recommend hiring. Please review before Monday."
+      ],
+      "expected_text_not_contains": [
+        "<strong>"
+      ],
+      "attachment_count": 0,
+      "inline_count": 0,
+      "preferred_body": "text/plain"
+    },
+    {
+      "path": "messages/html-only.eml",
+      "source_sha256": "a1c2bceecd7607cc7d4bca659bb5ae14f21f7842b7f46a892367da031b7f39d5",
+      "source_size": 812,
+      "expected_text_contains": [
+        "Weekly availability",
+        "99.97% uptime & one resolved incident.",
+        "Read the report",
+        "Review the Frankfurt maintenance window."
+      ],
+      "expected_text_not_contains": [
+        "SCRIPT_MUST_NOT_APPEAR",
+        "window.fixtureSecret",
+        "background:",
+        "onerror=",
+        "<script",
+        "<iframe",
+        "<form"
+      ],
+      "attachment_count": 0,
+      "inline_count": 0,
+      "network_requests_allowed": 0
+    },
+    {
+      "path": "messages/inline-and-attachment.eml",
+      "source_sha256": "a8fad5042fd1b70a9855b3350a672bfffc1f91cc766b72d05d52a8142d7b5e96",
+      "source_size": 1016,
+      "expected_text_contains": [
+        "Deployment notes attached."
+      ],
+      "attachment_count": 1,
+      "inline_count": 1,
+      "attachments": [
+        {
+          "name": "deployment-notes.txt",
+          "sha256": "0bd6ee2b9b25e0e7e069f84eb175b7ecfc7c55f7d3f7b84aef79348c3e695f90"
+        },
+        {
+          "name": "logo.png",
+          "content_id": "fixture-logo",
+          "sha256": "36db88ec0edf5d67057323009a65cd0003b42844c802f0fb188e020892d8eddf"
+        }
+      ]
+    },
+    {
+      "path": "messages/malformed-encoding.eml",
+      "source_sha256": "2f507afb93baa3f30b099efe51d99c93ea1c8db23cf23dada4ead7c5d4b7672e",
+      "source_size": 332,
+      "expected_text_contains": [
+        "Readable beginning."
+      ],
+      "attachment_count": 0,
+      "inline_count": 0,
+      "expected_behavior": "No panic, retain exact source; surface useful decoded fallback rather than discard the message."
+    }
+  ]
+}

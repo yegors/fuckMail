@@ -1,6 +1,6 @@
 # Current status
 
-As of 2026-09-11. **Pre-implementation. Google-first MVP readiness: 0% (0 of 9 required areas verified).** Documentation and mockups exist; application code, build configuration, executables, tests, installers and measured results do not.
+As of 2026-09-11. **Phase 0 synthetic foundation completed on the available hosts. Google-first MVP readiness remains 0/9 whole areas verified.** Runtime checkpoint `204fa62` is pushed on `codex/phase-0`. Native macOS 15, Windows Server 2022 and Ubuntu 24.04 CI each passed all 8 CTests, relocated packaged GUI/CLI/runtime checks and artifact retention. The Mac native desktop walkthrough and actual schema 2→4 packaged upgrade/downgrade-refusal checks also pass. See [Phase 0 execution evidence](research/phase-0-execution.md) for exact sources, commands, artifacts and limits. No live Google account or model is connected.
 
 ## Established direction
 
@@ -8,29 +8,29 @@ As of 2026-09-11. **Pre-implementation. Google-first MVP readiness: 0% (0 of 9 r
 
 Done/Delayed are explicit user decisions. Local classification only distinguishes human correspondence, automated senders/lists and user-defined noise, applying configured category/scope tags. It cannot mark mail reviewed or decide action state. Summaries and classification remain optional to enable; manual first use does not wait for models.
 
-The proposed stack remains Rust engine/CLI, C++20/Qt Quick/QML UI, private local IPC and SQLite/FTS5. QML expressions are accepted, with no Node.js or separate JS compilation/bundling pipeline. WebEngine is not a first-build prerequisite. Under D011 the [updated mail/calendar/settings originals](research/design-references.md) now guide the initial phase. Settings is explicitly incomplete: general shell/navigation plumbing only, ignoring the pictured switches. No application code, setup or model/provider connection was added during this reference update.
+The proposed stack remains Rust engine/CLI, C++20/Qt Quick/QML UI, private local IPC and SQLite/FTS5. QML expressions are accepted, with no Node.js or separate JS compilation/bundling pipeline. WebEngine is not a first-build prerequisite. Under D011 the [updated mail/calendar/settings originals](research/design-references.md) now guide the initial phase. Settings is explicitly incomplete: general shell/navigation plumbing only, ignoring the pictured switches. That reference update was documentation only; the later Phase 0 goal authorized implementation. No live provider or model has been connected.
 
 ## Next work
 
-No implementation workstream is active. When authorized, start P0-00 plus the small-fixture part of P0-01, then join P0-03/P0-10 storage/engine/CLI with P0-04's functional text/composer GUI. Exercise private IPC permissions, account scope, concurrency and recovery while the interface is still small. Google OAuth, MIME and Google calendar work proceed in their scoped packets. See the [plan](development-plan.md) and [Phase 0](plans/phase-0.md).
+Try the [runnable fixture app and CLI](build-development.md), review the initial screens and refine the remaining local workflows in Phase 1. The foundation already covers account-scoped conversations/search, retained attachments, literal read/star/category actions, durable drafts, a shared week/today calendar, settings navigation and both-client recovery. The next local slice should add the remaining calendar edit and composer interactions through the same engine/CLI/GUI boundary; detailed settings and composite Done/Delayed behavior still need reviewed designs/decisions. Phase 1 implementation has not started.
 
-The [proposed first deliverable](plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) is a runnable synthetic-mail GUI/CLI slice plus repeatable Mac/Windows development and native CI builds. Under D010, both the work Mac and home Windows PC are development hosts. This request defines scope; implementation and tool installation have not begun.
+Before actual Google accounts, implement/test the OS credential-store adapter and settle OAuth access plus real-data retention/encryption/recovery policy. Full history, live sending/calendar operations and founder Google dogfooding remain later milestones. Legacy transports remain deferred.
 
-Read-only inspection of this Apple Silicon Mac found Git, Homebrew Rust/Cargo and Apple compiler/SDK tools; CMake, Ninja, rustup and Qt commands were not on PATH. The earlier Windows observation found Git and not its listed build commands. These are limited observations, not complete installation audits or selected tool versions; see [host evidence and proposed setup](research/linux-and-distribution.md#development-on-the-work-mac-and-home-windows-pc). Windows details and repository CI access remain to inspect. Missing access blocks its evidence row, not unrelated work.
+On the home Windows PC, pull `codex/phase-0`, run `scripts/dev.ps1 bootstrap`, then `doctor`, `test` and `run`. This is source/tooling handoff; do not copy profiles, credentials or SDK/build directories between machines through Git. Physical Windows and Linux desktop/input/keyring checks remain unverified; CI does not replace them.
 
 ## Google-first readiness
 
 | Required area | State | Verified |
 | --- | --- | --- |
-| [Core/offline storage](contracts/core-storage.md) | Not started; Draft | No |
-| [Gmail/Workspace](contracts/gmail.md) | Not started; Draft | No |
-| [Mail UI/composition](contracts/mail-ui.md) | Not started; Draft | No |
-| [Search](contracts/search.md) | Not started; Draft | No |
-| [Triage/categories](contracts/triage.md) | Not started; Draft | No |
-| [Google Calendar](contracts/calendar.md) | Not started; Draft | No |
-| [Optional local assistance](contracts/local-ai.md) | Not started; Draft | No |
-| [Platform/install/lifecycle](contracts/platform.md) | Not started; Draft | No |
-| [CLI](contracts/cli.md) | Not started; Draft | No |
+| [Core/offline storage](contracts/core-storage.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Gmail/Workspace](contracts/gmail.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Mail UI/composition](contracts/mail-ui.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Search](contracts/search.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Triage/categories](contracts/triage.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Google Calendar](contracts/calendar.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Optional local assistance](contracts/local-ai.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Platform/install/lifecycle](contracts/platform.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [CLI](contracts/cli.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
 
 The denominator changed from ten to nine under D009: IMAP/SMTP is now a deferred area, and external subscriptions are outside the current Calendar gates. This is a reporting scope change, not progress. Local assistance remains an intended capability, optional to enable. Partial CLI or text-only GUI delivery can satisfy the first usable slice without marking its entire feature Verified. Record completed slice evidence explicitly; docs and screenshots do not count.
 
@@ -40,7 +40,7 @@ The Google-first release still requires its applicable quality and OS gates. It 
 
 | Phase | Outcome | State |
 | --- | --- | --- |
-| 0 — Paired foundation | Native builds, small fixtures, storage, private engine/CLI/GUI, text/composer and Google prerequisites | Prepared; not started |
+| 0 — Paired foundation | Native builds, small fixtures, storage, private engine/CLI/GUI, text/composer and Google prerequisites | Completed on available hosts; external/physical gates explicit |
 | 1 — First usable local slice | Both interfaces use real shared state for synthetic mail/calendar, drafts, search and explicit actions | Planned |
 | 2 — Google daily workflows | Gmail/Workspace and Google Calendar, growing CLI with GUI; controlled founder use | Planned |
 | 3 — Google completion and dogfooding | Usable Google GUI and CLI, expanded designs, later best-effort HTML/local assistance, recovery/performance and delivery evidence | Planned |

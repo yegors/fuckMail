@@ -1,6 +1,10 @@
 # CLI and external agent interface
 
-State: Draft · Revision: 1 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 3 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
+
+Revision 3 records the next Phase 0 integration checkpoint. The draft response adds authored HTML and retained attachment IDs; structured draft_save can preserve or explicitly clear them. Existing plain-text commands clear stale HTML when changing the body. Lost-response replay survives an actual test-engine kill. Consumers: Core, Qt UI and MIME; protocol/fixture revisions remain 1.
+
+Revision 2 records D012’s implemented experimental slice. The implemented partial `fm` CLI is documented in [local protocol](../local-protocol.md); `fm --help` is the current command reference. It shares the engine with Qt and has no Qt dependency. Consumers: Core, Mail UI and Platform. Future command descriptions below retain their proposed status.
 
 Revision 1 applies D009: a small real CLI ships in the first usable GUI slice; coverage grows with Google workflows. Legacy transport/feed commands are deferred until founder dogfooding. Affected consumers: Core, Mail UI, Gmail, Calendar, Local assistance and Platform.
 

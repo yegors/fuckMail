@@ -1,0 +1,5 @@
+# Identical source bytes on both developer hosts.
+* text=auto eol=lf
+# Wire-format MIME fixtures have intentional CRLF and recorded SHA-256 values.
+fixtures/messages/*.eml -text whitespace=cr-at-eol
+*.png binary

@@ -1,0 +1,8 @@
+From: Status Robot <status@service.example>
+To: Alex <alex@windscribe.example>
+Message-ID: <html-only@fixture.example>
+Subject: Weekly service availability
+MIME-Version: 1.0
+Content-Type: text/html; charset=UTF-8
+
+<!doctype html><html><head><style>body { background: url(https://invalid.example/tracker); }</style><script>window.fixtureSecret = "SCRIPT_MUST_NOT_APPEAR";</script></head><body><h1>Weekly availability</h1><p>99.97% uptime &amp; one resolved incident.</p><img src="https://invalid.example/pixel" onerror="alert(1)" alt="Tracking pixel"><iframe src="https://invalid.example/frame"></iframe><form action="https://invalid.example/submit"><input name="token"></form><p><a href="https://status.example/report">Read the report</a></p><p>Review the Frankfurt maintenance window.</p></body></html>

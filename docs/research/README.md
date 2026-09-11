@@ -1,9 +1,15 @@
 # Research index
 
-Evidence, alternatives and experiments organized by subject. This index is navigation, not a general research notebook. Initial source checks were on 2026-09-10; exec-buddy/category/local-runner work and QML references were added or checked on 2026-09-11. The reorganization does not revalidate every external source. No application prototype or benchmark has run.
+Evidence, alternatives and experiments organized by subject. This index is navigation, not a general research notebook. Initial source checks were on 2026-09-10; exec-buddy/category/local-runner work and QML references were added or checked on 2026-09-11. The reorganization does not revalidate every external source. Phase 0 execution reports below distinguish tested synthetic behavior from live-provider and platform gaps.
 
 | Scope | Existing material | Build contract |
 | --- | --- | --- |
+| [Phase 0 execution](phase-0-execution.md) | Native experiment evidence and outstanding gates | [Quality](../contracts/quality.md) |
+| [Google feasibility execution](google-feasibility-execution.md) | Fake transport/auth/journal tests and live prerequisites | [Gmail](../contracts/gmail.md) |
+| [MIME feasibility execution](mime-feasibility-execution.md) | Shared parser/builder/capture and retained-content tests | [Mail UI](../contracts/mail-ui.md) |
+| [Calendar Core execution](calendar-core-execution.md) | Atomic fake sync/write receipts, retained recurrence identity, per-calendar permissions and shared display-zone boundaries/order | [Calendar](../contracts/calendar.md), [Core](../contracts/core-storage.md) |
+| [Durable fake-assistance execution](local-assistance-execution.md) | Core source snapshots, permitted category transactions, stale/manual precedence and replay | [Local assistance](../contracts/local-ai.md) |
+| [Search feasibility execution](search-feasibility-execution.md) | Measured 100k index experiment and limits | [Search](../contracts/search.md) |
 | [Desktop stack and QML](desktop-stack.md) | Rust engine/CLI + C++20/Qt Quick UI recommendation, external-analysis assessment and feasibility gates | [Platform](../contracts/platform.md) |
 | [Slint UI investigation](slint-ui.md) | Published examples, toolkit capabilities, reader/composer and platform gaps | [Mail UI](../contracts/mail-ui.md) |
 | [HTML mail](html-mail.md) | Text-first reading, later best-effort HTML, human composition and content isolation | [Mail UI](../contracts/mail-ui.md) |

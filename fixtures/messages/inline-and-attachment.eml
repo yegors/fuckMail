@@ -1,0 +1,29 @@
+From: Maya <maya@windscribe.example>
+To: Alex <alex@windscribe.example>
+Message-ID: <inline-attachment@fixture.example>
+Subject: Deployment notes and inline logo
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="mixed-boundary"
+
+--mixed-boundary
+Content-Type: multipart/related; boundary="related-boundary"
+
+--related-boundary
+Content-Type: text/html; charset=UTF-8
+
+<p>Deployment notes attached.</p><img src="cid:fixture-logo" alt="Logo">
+--related-boundary
+Content-Type: image/png
+Content-ID: <fixture-logo>
+Content-Disposition: inline; filename="logo.png"
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJ1sAAAAASUVORK5CYII=
+--related-boundary--
+--mixed-boundary
+Content-Type: text/plain; charset=UTF-8; name="deployment-notes.txt"
+Content-Disposition: attachment; filename="deployment-notes.txt"
+Content-Transfer-Encoding: base64
+
+RnJhbmtmdXJ0IGRlcGxveW1lbnQ6IGNoZWNrIHRoZSByb2xsYmFjayBwbGFuLgo=
+--mixed-boundary--

@@ -1,0 +1,7 @@
+{
+  "messages": [
+    {"id": "m-shared", "threadId": "t-common"},
+    {"id": "m-tail", "threadId": "t-common"}
+  ],
+  "resultSizeEstimate": 2
+}

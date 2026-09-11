@@ -11,7 +11,10 @@ fuckMail is a personal, opinionated mail/calendar client for large separate acco
 | [Product scope](product-scope.md) | Accepted requirements, intended workflows and exclusions |
 | [Visual design and UX](ui-ux.md) | Working brief for the founder/Claude design collaboration: screen elements, layout, state meanings and review scenarios |
 | [Development plan](development-plan.md) | Full phased route, integration milestones, ownership and decisions to resolve as needed |
-| [Phase 0 execution backlog](plans/phase-0.md) | Detailed future starting packets, prerequisites, outputs, evidence and pivot triggers |
+| [Phase 0 execution backlog](plans/phase-0.md) | Detailed active packets, prerequisites, outputs, evidence and pivot triggers |
+| [Development commands](build-development.md) | Repeatable Mac/Windows bootstrap, build, test, run and packaging |
+| [Local protocol](local-protocol.md) | Implemented synthetic CLI/GUI command boundary and limits |
+| [Phase 0 execution evidence](research/phase-0-execution.md) | Observed checks, artifacts and remaining gates |
 | [Current status](status.md) | What exists, what is active/next, what is deferred or excluded, and evidence for readiness |
 | [Decision log](decisions.md) | Append-only timestamped decisions, pivots and Q&A |
 | [Research index](research/README.md) | Evidence, alternatives and experiments organized by subject |

@@ -1,0 +1,9 @@
+From: Fixture Sender <sender@personal.example>
+To: Alex <alex@personal.example>
+Message-ID: <malformed@fixture.example>
+Subject: Malformed transfer encoding fixture
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: quoted-printable
+
+Readable beginning. Broken escape =ZZ and incomplete =

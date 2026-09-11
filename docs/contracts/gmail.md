@@ -1,6 +1,10 @@
 # Gmail provider
 
-State: Draft · Revision: 1 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 3 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
+
+Revision 3 records the next Phase 0 integration checkpoint. The fake provider now publishes complete pages and FTS changes atomically with Core checkpoints and replay receipts. Staged or failed pages stay invisible, and pending manual flags/categories win over observed labels. Shared corpus imports verify retained bytes and safe text. Consumers: Core, Search, MIME, Triage and assistance. Real authorization and HTTP remain separate gates.
+
+Revision 2 records D012’s implemented experimental slice. The fake transport, OAuth/PKCE, token-coordination and uncertain-send experiments are implemented; [execution evidence](../research/google-feasibility-execution.md) records prerequisites and limits. No live account has been connected. Consumers: Core, MIME, Calendar and Platform.
 
 Revision 1 applies D009: Gmail/Workspace APIs are the first mail transport, including send; shared MIME handling stays early while IMAP/SMTP are deferred. Affected consumers: Core, Mail UI, Calendar, Triage, Local assistance and CLI.
 

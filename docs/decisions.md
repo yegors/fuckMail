@@ -220,3 +220,27 @@ Affected: Platform Draft revision 4 (Core, Mail UI, CLI and Quality consumers), 
 **P18 — Refine P17's visual deliverable:** use a small read-only fixture week instead of only a GUI agenda, keep today's footer and the CLI range query on shared event data, and add enter/leave settings to the acceptance walkthrough. Mail retains the bounded search/read/attachment/explicit-flag/durable-draft workflows. Full calendar editing/recurrence, live sending, models, detailed settings and legacy protocols remain later work. Done/Delayed mappings, read triggers and Busy overlay policy remain open; the screenshots do not decide them.
 
 Three full-resolution PNGs were copied to research assets and verified byte-for-byte with recorded dimensions and SHA-256. Only assets and documentation changed in this reference update. Affected: UI brief, design/desktop research and indexes, Mail UI and Calendar Draft revision 5, Phase 0/development plans, product scope, status, root README and agent guidance. Core, Platform, Triage, Search, CLI and Quality consume the clarified boundary. Previous decisions remain unchanged; Google-first readiness remains 0/9.
+
+
+## 2026-09-11T20:24:18Z — D012: Execute the complete Phase 0 and checkpoint native work
+
+**Outcome: implementation active under the founder’s goal, with a requested commit/push checkpoint.** The active objective is to execute Phase 0 end to end so the app compiles and works as documented. The earlier planning-only boundary is superseded for Phase 0 implementation, native tool setup and synthetic verification. Real account/model access retains its separate boundary. The first runnable slice is a checkpoint within the phase; passing it does not complete every Phase 0 requirement.
+
+**Experimental implementation choices:** Rust 1.88.0 engine/CLI, Qt 6.11.2 Quick/QML with C++20, SQLite/FTS5 through bundled rusqlite, versioned bounded NDJSON over private native local streams, and one on-demand writer. Exact build inputs live in lockfiles and the toolchain manifest. These choices have native Mac evidence; they are not a production or all-platform qualification. No Node.js, JavaScript compilation pipeline or WebEngine was introduced.
+
+**Observed correction:** the rrule 0.14.0 candidate shifted a nonexistent DST wall time and consumed COUNT. The experiment retains a narrowly patched, licensed copy with independently expected gap/overlap tests; see its patch record. Search measurement also exposed repeated FTS scans during page hydration; the corrected page query has retained before/after measurements. Neither finding is concealed by the original recommendation.
+
+**Checkpoint reporting:** preserve source, tests, source fixtures, build/CI configuration and evidence in Git. Keep SDKs, binaries, disposable profiles and credentials out. A checkpoint can be in progress; mark only observed results as passing. Continue the full goal across remaining packaging, native CI, recovery and integration gates. No full Google-first area is Verified yet.
+
+Affected: Core revision 6, CLI 2, Mail UI 6, Calendar 6, Gmail 2, Search 1, Triage 3, Local assistance 3, Platform 5 and Quality 4, plus status, plans and development/protocol/evidence documentation. Prior entries remain unchanged.
+
+
+## 2026-09-11T22:45:57Z — D013: completed synthetic foundation and next handoff
+
+**Outcome: the founder's complete Phase 0 goal is fulfilled on available hosts.** Runtime checkpoint `204fa62` passes eight native CTests and relocated development-package checks on macOS 15 ARM64, Windows Server 2022 x64 and Ubuntu 24.04 x64. The Mac desktop walkthrough and actual old/new packaged schema 2→4 migration, preserved drafts/content/receipts and safe old-engine refusal also pass. [Execution evidence](research/phase-0-execution.md) retains exact sources, failed attempts, corrections, logs, artifact identities and limits.
+
+The experiment now integrates provider/calendar/assistance fakes with the same durable Core store. Native CI found and drove fixes for Linux ICU packaging/selection, Windows discovery ownership, and bounded client recovery while a prior writer closes. The final application retains one writer, explicit GUI/CLI lifetimes, private IPC, literal human actions and the model-free manual workflow.
+
+**Qualification remains scoped.** This does not lock production architecture, qualify physical other-host input/keyrings, connect a live account/model, establish complete offline storage at large scale, or complete trusted distribution. Whole Google-first readiness remains 0/9; existing decisions about designs, Done/Delayed, settings, real-data policy and deferred legacy protocols are unchanged. Phase 1 is the next local workflow refinement, not automatically authorized live-provider work.
+
+Affected: status, root/agent guidance, Phase 0/development plan and execution evidence. Core 8, Calendar 7, Local assistance 4, Triage 4, Platform 7, Gmail 3, Mail UI 7, CLI 3, Search 1 and Quality 4 retain their scoped contracts and Draft whole-area status. Development handoff uses the same Git branch and native scripts; profiles, SDKs and credentials stay local.

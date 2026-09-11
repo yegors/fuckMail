@@ -1,6 +1,12 @@
 # Core and storage
 
-State: Draft · Revision: 5 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 8 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
+
+Revision 8 records the integrated Phase 0 experiment. Schema 4 adds completed calendar-batch checkpoints/visibility/write receipts and validated fake-assistance policies/results/intents to the existing store. Calendar permissions filter the shared projection; assistance rechecks retained source/provider/manual/policy stamps inside its apply transaction. Consumers: Calendar, Local assistance, Gmail, Qt UI, CLI and Platform.
+
+Revision 7 records the next Phase 0 integration checkpoint. Schema 3 joins fake Google pages, normalized source text/FTS, provider checkpoints and durable receipts in the one store; pending human actions survive reconciliation. Authored HTML and retained draft attachments round-trip through capture. Per-request SQL cancellation, abrupt engine termination/replay and schema 1/2 migration are tested. Consumers: Gmail, CLI, Qt UI, MIME, Search, Calendar and assistance.
+
+Revision 6 records D012’s implemented experimental slice. Protocol 1 and fixture 1 now have a single SQLite writer, bounded queries, independent flags, durable drafts/views and recorded operation responses. See [local protocol](../local-protocol.md) and [fixture contract](../../fixtures/README.md). Consumers: CLI, Qt UI, Search, Gmail, Calendar and assistance. Full provider reconciliation, retention policy and migration/recovery qualification remain open.
 
 Revision 5 applies D009: Google-first scope, paired early GUI/CLI, retained MIME/text without an initial HTML renderer, and user-owned action state. Affected consumers: Gmail, Search, Mail UI, Calendar, Triage, Local assistance, Platform and CLI; future IMAP/SMTP contracts stay deferred.
 

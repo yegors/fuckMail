@@ -1,0 +1,108 @@
+name: Native build and fixture tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, windows-2022, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Restore project SDKs and Rust downloads
+        id: sdk_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            .tools
+          key: native-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/bootstrap-requirements.txt', 'scripts/toolchain.json', 'rust-toolchain.toml') }}
+      - name: Restore incremental Rust build
+        id: rust_cache
+        uses: actions/cache/restore@v4
+        with:
+          path: target
+          key: rust-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
+          restore-keys: |
+            rust-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-
+      - name: Linux native dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libgl1-mesa-dev libegl1 libopengl0 libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1 libxcb-render-util0
+      - name: Bootstrap (Unix)
+        id: bootstrap_unix
+        if: runner.os != 'Windows'
+        run: scripts/dev.sh bootstrap
+      - name: Bootstrap (Windows)
+        id: bootstrap_windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/dev.ps1 bootstrap
+      - name: Native fixture tests (Unix)
+        id: test_unix
+        if: runner.os != 'Windows'
+        run: scripts/dev.sh test --preset release
+      - name: Native fixture tests (Windows)
+        id: test_windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/dev.ps1 test --preset release
+      - name: Package and isolated runtime smoke (Unix)
+        if: runner.os != 'Windows'
+        run: scripts/dev.sh package --preset release
+      - name: Package and isolated runtime smoke (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/dev.ps1 package --preset release
+      - name: Retain development package
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuckmail-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+      - name: Retain native test and configure logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-logs-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          path: |
+            build/**/Testing/Temporary/*.log
+            build/**/CMakeFiles/CMakeConfigureLog.yaml
+            dist/**/build-manifest.json
+            aqtinstall.log
+          if-no-files-found: ignore
+
+      # Keep successful acquisition/compilation even when a later runtime test
+      # fails. Every restored build still executes the full native test suite.
+      - name: Save acquired SDKs and Rust downloads
+        if: always() && !cancelled() && steps.sdk_cache.outputs.cache-hit != 'true' && (steps.bootstrap_unix.outcome == 'success' || steps.bootstrap_windows.outcome == 'success')
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .tools
+          key: ${{ steps.sdk_cache.outputs.cache-primary-key }}
+      - name: Save compiled Rust work
+        if: always() && !cancelled() && steps.rust_cache.outputs.cache-hit != 'true' && (steps.test_unix.outcome == 'success' || steps.test_unix.outcome == 'failure' || steps.test_windows.outcome == 'success' || steps.test_windows.outcome == 'failure')
+        uses: actions/cache/save@v4
+        with:
+          path: target
+          key: ${{ steps.rust_cache.outputs.cache-primary-key }}

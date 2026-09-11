@@ -1,6 +1,12 @@
 # Platform, lifecycle and release
 
-State: Draft · Revision: 4 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 7 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
+
+Revision 7 records the final Phase 0 platform corrections and packaged upgrade verifier. Windows discovery creation explicitly sets the process-user owner and private DACL, with a native named-pipe trust test; startup allowance is 30 seconds and offscreen tests use system fonts. Rust/Qt now retry startup while a previous store writer finishes closing; retries are bounded and preserve explicit GUI/CLI ownership. Linux category focus preserves reply selection. Developer launchers use CMake's generated executable path. Available-host native/package results and actual Mac schema 2→4 handoff/refusal evidence are recorded in [execution evidence](../research/phase-0-execution.md). Consumers: Core, CLI, Qt UI and Quality. Physical desktop/keyring qualification and trusted delivery remain separate gates.
+
+Revision 6 records the next Phase 0 integration checkpoint. Mac CI has passed build, tests and relocated package checks. Native Windows compilation passed, but its test compilation exceeded the original execution timeout and GUI failures still need diagnostics. Linux bootstrap now installs the official Qt ICU archive. Consumers: Core, CLI, Qt UI and Quality; physical Windows/Linux desktop qualification remains unverified.
+
+Revision 5 records D012’s implemented experimental slice. Pinned native developer tooling and Mac/Windows wrappers now exist; commands and observed host evidence are in [development setup](../build-development.md). Native CI jobs and package recipes require actual runner/runtime results. Consumers: Core, CLI, GUI and Quality. No trusted release or physical Windows/Linux desktop qualification is claimed.
 
 Revision 4 applies D010: development alternates between the work Mac and home Windows PC, with reproducible native setup, shared commands and explicit handoff/CI evidence. D009's QML/no-Node and paired GUI/CLI boundaries remain. Affected consumers: Core, Mail UI, CLI and Quality.
 
