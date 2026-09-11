@@ -56,8 +56,15 @@ install(PROGRAMS
     "${FM_RUST_BIN_DIR}/fm-engine${CMAKE_EXECUTABLE_SUFFIX}"
     "${FM_RUST_BIN_DIR}/fm${CMAKE_EXECUTABLE_SUFFIX}"
     DESTINATION "${FM_INSTALL_BIN}")
+# The normal OS plugin remains selected by Qt. Ship offscreen too so the exact
+# relocated development artifact can run its headless integration checks in CI.
+if(APPLE)
+    install(FILES "$<TARGET_FILE:Qt6::QOffscreenIntegrationPlugin>"
+        DESTINATION "fuckmail-gui.app/Contents/PlugIns/platforms")
+endif()
 qt_generate_deploy_qml_app_script(
     TARGET fuckmail-gui OUTPUT_SCRIPT FM_DEPLOY_SCRIPT
+    INCLUDE_PLUGINS qoffscreen
     NO_UNSUPPORTED_PLATFORM_ERROR)
 install(SCRIPT "${FM_DEPLOY_SCRIPT}")
 

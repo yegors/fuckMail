@@ -205,7 +205,7 @@ def verify_engine_stopped(profile):
 def verify_package(preset, stage):
     env = package_environment()
     with tempfile.TemporaryDirectory(prefix="fuckmail-package-check-") as scratch:
-        scratch = Path(scratch)
+        scratch = Path(scratch).resolve()
         relocated = scratch / "relocated package"
         shutil.copytree(stage, relocated, symlinks=True)
         gui = gui_binary(preset, relocated)
