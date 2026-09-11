@@ -1,6 +1,8 @@
 # IMAP and SMTP provider
 
-State: Draft · Revision: 0 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 1 · Updated: 2026-09-11 · Implementation: not started.
+
+Revision 1 applies D009: this entire protocol area is deferred until founder dogfooding of working Google GUI and CLI workflows. Retain this specification for that later phase; it is not an early dependency or Google-first readiness gate. Shared MIME work needed by Gmail remains active elsewhere. Affected consumers: Core, Calendar, Triage, Platform, CLI and Quality.
 
 Owner: C — IMAP/SMTP. Accepted scope and proposed behavior are separated below; concrete APIs, libraries and outstanding choices await the relevant feasibility work. See [contract workflow](README.md).
 
@@ -17,7 +19,7 @@ Related: [core](core-storage.md), [triage](triage.md), [calendar invitations](ca
 
 ## Required behavior
 
-Support the required non-Google accounts through IMAP and SMTP. Discover capabilities rather than requiring every server to implement rev2, QRESYNC or MOVE. Use account/mailbox/UIDVALIDITY/UID remote identities and stable local mappings; sequence numbers and Internet Message-ID alone are insufficient. Thread by reference headers with conservative fallback, never subject equality alone.
+In the later protocol phase, support agreed non-Google accounts through IMAP and SMTP. All current founder mailboxes use Google APIs; do not activate this work before Google GUI/CLI dogfooding. Discover capabilities rather than requiring every server to implement rev2, QRESYNC or MOVE. Use account/mailbox/UIDVALIDITY/UID remote identities and stable local mappings; sequence numbers and Internet Message-ID alone are insufficient. Thread by reference headers with conservative fallback, never subject equality alone.
 
 Use IDLE where supported for change hints, with bounded polling/reconciliation fallback. Fetch all required history and attachments through resumable queues and expose separate coverage. Preserve pending intent across UIDVALIDITY changes or resynchronization; infer removals only from an applicable complete inventory.
 

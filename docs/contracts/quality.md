@@ -1,14 +1,18 @@
 # Quality, performance and release acceptance
 
-Updated 2026-09-11. Proposed budgets, not measured results. Required behavior includes fast sender/subject/body search, responsive daily triage, conversation-only mail, full offline messages/attachments, reliable calendar views and optional local classification/summaries on Windows/macOS/Linux. The founder specified high-end machines. Exact devices, mailbox message counts and local models remain unmeasured.
+Updated 2026-09-11. Proposed budgets, not measured results. Google-first required behavior includes fast sender/subject/body search, responsive user-owned daily triage, conversation-only mail, full offline messages/attachments, reliable Google calendar views and optional local classification/summaries on Windows/macOS/Linux. The founder specified high-end machines. Exact devices, mailbox message counts and local models remain unmeasured.
 
-State: Draft · Revision: 2 · Implementation/evidence: not started. Owner: G — Platform/release coordinates; each workstream supplies its own fixtures and evidence. This is a shared acceptance contract, not a separate application feature.
+State: Draft · Revision: 3 · Implementation/evidence: not started. Owner: G — Platform/release coordinates; each workstream supplies its own fixtures and evidence. This is a shared acceptance contract, not a separate application feature.
+
+Revision 3 applies D009: separate first usable, Google dogfood and later-protocol evidence. Best-effort HTML comes later; full browser fidelity and legacy protocols do not gate first use. Affected consumers: all workstreams. Current Google-first readiness denominator is nine.
 
 Consumes versioned builds, synthetic fixtures, hardware/runner metadata and workstream results. Produces reproducible measurements and pass/fail or explicitly renegotiated gates. Start independently with fixture definitions; there are no benchmark commands or results yet.
 
 Revision 2 connects [Phase 0](../plans/phase-0.md) to reusable fixtures and evidence gates. Affected consumers: every workstream, especially Core/CLI/Platform for the first shared slice. No fixtures, harness or measured results exist yet.
 
 ## Fixture and verification foundation
+
+Current gates are scoped to the Google-first product (nine areas); IMAP/SMTP and external iCalendar subscriptions do not count until the later protocol phase. First usability requires a real GUI plus useful partial CLI, readable text including HTML-only inputs, human drafts and basic mail/calendar behavior. Expand CLI/GUI parity with each Google workflow. The founder must dogfood usable Google clients before legacy implementation begins; document actual scenarios and failures, not merely an installed build. Best-effort HTML is later work and does not block initial use or select the toolkit.
 
 Create these artifacts during P0-01 and their consuming experiments; this table describes inputs and expected evidence, not tests that already exist.
 
@@ -76,22 +80,22 @@ For known-item tasks, propose the desired conversation appearing in the first 10
 
 Acceptance scenarios include interruption during initial import, expired provider cursors, remote deletions during backfill, concurrent edits from another device, low disk space, index rebuild during reading, lost submission acknowledgements, revoked calendar permissions, and daylight-saving transitions. Verify that unsent drafts survive restart and that stale index entries never expose removed-account data.
 
-Add classification during manual/provider edits, renamed category destinations, interrupted IMAP folder moves, stale summaries after new replies, unavailable runners, cancellation and account removal during inference. Preserve reading position, manual corrections and unread/star counts. A model result must never silently revert a newer user choice or complete a held action.
+Add classification during manual/provider edits, renamed category destinations, interrupted IMAP folder moves in the later protocol phase, stale summaries after new replies, unavailable runners, cancellation and account removal during inference. Preserve reading position, manual corrections and unread/star counts. A model result must never silently revert a newer user choice or complete a held action.
 
 ## Triage and local-model usefulness
 
 During the proposed daily-driver trial, evaluate whether the founder can review new mail, complete action holds and reach zero unread/zero starred within each account's agreed scope. Record remaining holds and why they remain without automatically clearing them. Verify that archived/category-folder unread mail counts, filtered-out work is still discoverable, and partial synchronization or pending writes cannot produce an unqualified all-clear. The daily zero goal is a workflow outcome, not a benchmark guarantee that incoming mail stops or every action finishes that day.
 
-Build a labeled synthetic/consented-local fixture set with the configured categories, ambiguous mail, human replies from automated-looking addresses, newsletters, receipts, multiple languages and new messages within old conversations. Measure per-category precision/recall, abstention, invalid-output rate, manual-correction rate and incorrect filing separately. Model-reported confidence alone is insufficient to enable auto-filing. Choose and record acceptance thresholds before the trial; validate Ollama and vLLM adapters against their actual models and supported platforms.
+Build a labeled synthetic/consented-local fixture set with the configured categories, ambiguous mail, human replies from automated-looking addresses, newsletters, receipts, multiple languages and new messages within old conversations. Measure per-category precision/recall, abstention, invalid-output rate, manual-correction rate and incorrect filing separately. Model-reported confidence alone is insufficient to enable auto-filing. Choose and record acceptance thresholds before enabling automatic classification in the trial; validate Ollama and vLLM adapters against their actual models and supported platforms.
 
 Evaluate summaries for factual fidelity, attribution to the included messages, preservation of key requests/dates, appropriate length, and explicit partial/stale coverage. Test text that contains instructions without allowing it to control application behavior. Original-text search must work identically with summaries disabled, missing or incorrect. Evaluate calendar search on organizer/attendee/location/title examples and known occurrence coverage separately from mail search.
 
 
-## Required release evidence
+## Required Google-first release evidence
 
-Mail: separate account identity, correct conversation grouping, fast scoped search, human-only plain-text/HTML composition and signatures, full offline messages/attachments, reliable Gmail/IMAP/SMTP, durable drafts and uncertain-send recovery. Add accurate Unread/Starred filters and account totals, explicit action holds, manual/provider category persistence and view restoration. Filing, generated summaries and filter changes must not create a false daily all-clear.
+Mail: separate account identity, correct conversation grouping, fast scoped search, human-only plain-text/HTML composition and signatures, full offline messages/attachments, reliable Gmail API retrieval/submission, durable drafts and uncertain-send recovery. Add accurate Unread/Starred filters and account totals, explicit action holds, manual/provider category persistence and view restoration. Filing, generated summaries and filter changes must not create a false daily all-clear.
 
-Calendar: all four views, search/coverage, compact all-day rows, concurrent/current-next events, create/edit, recurrence exceptions/time zones, invitations/RSVP, shared permissions, read-only subscriptions, and running-app reminders. Verify Join opens the meeting link and acknowledges only that occurrence's reminder. Test conflicting edits and changes made in Google Calendar separately from ordinary CRUD.
+Calendar: all four views, search/coverage, compact all-day rows, concurrent/current-next events, create/edit, recurrence exceptions/time zones, invitations/RSVP, shared permissions and running-app reminders. External read-only subscriptions have a later protocol gate. Verify Join opens the meeting link and acknowledges only that occurrence's reminder. Test conflicting edits and changes made in Google Calendar separately from ordinary CRUD.
 
 Local assistance: disabled/unconfigured/manual operation, Suggest and configured Auto-apply, independent summaries, both runner adapters on supported local setups, correction precedence, unknown/invalid/stale output, source-linked partial/stale summaries, explicit historical batches, unavailable-runner fallback, no cloud execution, no composer access and verified cancellation on close. Set category quality acceptance thresholds from labeled fixtures before enabling automatic filing in the founder trial.
 
@@ -101,7 +105,7 @@ Smooth installation, trusted signing where applicable, a maintained update route
 
 ## CLI and installation gates
 
-Test complete applicable workflow coverage, JSON/schema compatibility, pagination/streams, exit codes, explicit noninteractive authentication errors, file/stdin payloads, operation IDs and partial outcomes. Compare GUI and CLI effects against the same core fixtures. Verify concurrent clients, cancellation, protocol mismatches and uncertain-send recovery without opening a GUI or requiring a display server.
+For the first usable slice, test its useful partial CLI alongside the GUI; grow to complete applicable Google workflow coverage before the pre-legacy dogfood gate. Test JSON/schema compatibility, pagination/streams, exit codes, explicit noninteractive authentication errors, file/stdin payloads, operation IDs and partial outcomes. Compare GUI and CLI effects against the same core fixtures. Verify concurrent clients, cancellation, protocol mismatches and uncertain-send recovery without opening a GUI or requiring a display server.
 
 Measure cold CLI command startup, warm-engine query latency, stream backpressure and engine memory separately from rendering; set numeric CLI budgets after the first prototype. Keep existing interaction budgets during concurrent CLI work and indexing.
 

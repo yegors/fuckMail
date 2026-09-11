@@ -1,5 +1,7 @@
 # Rust + Slint + SQLite: UI investigation
 
+**Scope update under D009 (2026-09-11):** the gallery and capability research are retained. Earlier full-HTML feasibility/selection gates below are historical: human mail/text extraction and editing come first; best-effort HTML display is later and does not select the toolkit. See [current stack assessment](desktop-stack.md) and [current content scope](html-mail.md).
+
 Research date: 2026-09-10. Status: candidate under investigation, not an accepted implementation stack. This is source research and inspection of published interfaces; no native prototype or performance benchmark has run.
 
 Evaluation scope updated 2026-09-11 to include daily unread/starred triage, provider-category controls and optional local summaries. These requirements do not select Slint or change the human-only composer rule.

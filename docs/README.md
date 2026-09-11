@@ -1,6 +1,6 @@
 # Documentation index
 
-fuckMail is a personal, opinionated mail/calendar client for large separate accounts. Windows, macOS and required Linux targets share one design. The full CLI supports external agent workflows; nonfinal mockups guide the current stack recommendation. The daily objective is zero unread and zero starred mail, with complete offline history, reliable calendar behavior, provider-native categories and optional local classification/summaries. Humans write the email.
+fuckMail is a personal, opinionated mail/calendar client for large separate accounts. Windows, macOS and required Linux targets share one design. A small CLI starts beside the GUI and grows to support Google/external-agent workflows; nonfinal mockups guide the current stack recommendation. Google is the first product; IMAP/SMTP and external iCalendar subscriptions follow founder dogfooding. Human mail is text-first with later best-effort HTML. The daily objective is user-achieved zero unread and zero starred mail, with complete offline history, reliable calendar behavior, provider-native categories and optional local classification/summaries. Humans write the email.
 
 ## Start here
 
@@ -18,7 +18,7 @@ fuckMail is a personal, opinionated mail/calendar client for large separate acco
 | [Contract index](contracts/README.md) | Living build specifications, including the full CLI, ownership and integration gates |
 | [Current stack recommendation](research/desktop-stack.md) | Rust engine/CLI + C++20/Qt Quick UI proposal, alternatives and evidence needed |
 | [Installation research](research/linux-and-distribution.md) | Required Linux targets and simple GUI/CLI delivery |
-| [Mockup references](research/design-references.md) | Supplied visual direction; not final screens |
+| [Mockup references](research/design-references.md) | Current initial-phase mail/calendar/settings trio and unchanged historical originals; settings controls are incomplete |
 
 ## Where information belongs
 

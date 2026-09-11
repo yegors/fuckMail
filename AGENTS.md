@@ -11,7 +11,7 @@ fuckMail is a personal desktop mail and calendar client. This repo is still in t
 
 ## Read first
 
-1. [docs/status.md](docs/status.md) — what exists, what is next, readiness (currently 0/10)
+1. [docs/status.md](docs/status.md) — what exists, what is next, Google-first readiness (currently 0/9)
 2. [docs/north-star.md](docs/north-star.md) and [docs/product-scope.md](docs/product-scope.md) — what the product is and is not
 3. [docs/decisions.md](docs/decisions.md) — accepted choices vs proposals vs open questions
 4. The owning file under [docs/contracts/](docs/contracts/README.md) or [docs/research/](docs/research/README.md) for the area you are touching
@@ -24,18 +24,21 @@ Do not invent product behavior, stack locks or “done” features from memory. 
 
 - Planning only unless the user clearly asks to implement or prototype.
 - Recommended stack is **not locked**: Rust engine and CLI, C++20 / Qt Quick UI, SQLite/FTS5, private local IPC. Validate before treating it as decided.
-- The closer mail/calendar pair is current visual direction; three earlier mockups remain historical. Final mockups arrive closer to production UI implementation. Bottom calendar strip stays; no screenshot implicitly chooses Done/Delay effects, read triggers or Busy-overlay permissions.
+- The latest initial-phase mail/calendar/settings trio is current visual direction; the earlier pair and three mood references remain historical. Settings is incomplete: lay general shell/navigation plumbing and ignore the pictured Mail/Calendar switches until the founder fleshes it out. Bottom calendar strip stays; no screenshot implicitly chooses Done/Delay effects, read triggers, Busy-overlay permissions, Fastmail support or a model dependency.
 - Contracts are drafts. Do not invent placeholder APIs, fake benchmarks or pretend prose is a test suite.
 - Readiness stays 0% until a required area is implemented and verified. Docs, screenshots and unrun tests do not count.
 - Do not start a feature workstream, pick versions or connect real mailboxes unless asked.
+
+- Google APIs are the first product. Do not start IMAP/SMTP or external iCalendar subscription work until the founder has dogfooded working Google GUI and CLI workflows. Preserve their specs as deferred.
+- Start with readable text and human composition. Best-effort received HTML display is later work, not a WebEngine/stack gate. Preserve MIME, HTML sources and attachments; text extraction and Google recurrence/invitations stay early.
 
 ## Product constraints agents must not drift
 
 - Mail and calendar only. Separate accounts. Conversation-only browsing. No unified inbox.
 - Unread = unreviewed. Star = action left for later. Daily aim: zero unread and zero starred through real work, not auto-clear.
-- Humans write email. Optional local models may classify and summarize only.
-- GUI close ends GUI work. CLI is a full second interface with its own explicit lifetime. No default always-on service.
-- Windows, macOS and Linux (Ubuntu, Arch, Omarchy). One shared visual design. No JS/TS app or npm/Node product pipeline.
+- Humans write email. Only the user chooses Done/Delayed. Optional local models tag human correspondence versus automation/user-defined noise and category/scope, and may summarize; they never complete, delay or mark mail reviewed.
+- GUI close ends GUI work. CLI is a second interface with its own explicit lifetime. Build a small real CLI and GUI together, expanding shared workflows incrementally. No default always-on service.
+- Windows, macOS and Linux (Ubuntu, Arch, Omarchy). One shared visual design. QML syntax is accepted; no Node.js or separate JS/TS compilation/bundling pipeline.
 - Out of scope: tasks, contacts app, dashboards, AI writing, assistant chat, semantic search, editable CalDAV, app-operated remote services.
 
 ## How to change the repo

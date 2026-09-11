@@ -1,56 +1,50 @@
 # fuckMail
 
-fuckMail is an opinionated desktop mail and calendar client for large, separate accounts. The goal is fast local search, complete offline messages and attachments, a calendar you can trust, and a daily workflow that ends with zero unread and zero starred mail. A star means an action has been left for later and is still outstanding.
+A personal mail and calendar client for large, separate Google accounts. Fast local search, complete offline messages and attachments, reliable calendars, and a deliberate shared design on Windows, macOS and Linux (Ubuntu, Arch and Omarchy).
 
-It is being designed for Windows, macOS and Linux, including Ubuntu, Arch and Omarchy, with the same opinionated visual design on every OS. A full CLI ships alongside the GUI for humans and third-party agents. Humans write email for humans: optional local models can classify and summarize mail, while composition stays human.
+Human correspondence comes first. Unread means unreviewed; stars mean action left for later. The user alone chooses Done/Delayed. Optional local models distinguish human mail, bots/lists and user-defined noise, apply configured category/scope tags and summarize. Humans write replies.
 
-## Current readiness
+## Current state
 
-**0% of the planned MVP is verified: 0 of 10 required feature areas.** This is a documentation-stage project. No application features are implemented yet, and there is no runnable build or benchmark result. Nonfinal mockups now guide a recommended Rust engine/CLI with a C++20 + Qt Quick/QML UI and SQLite/FTS5. Final versions and feasibility remain unverified; the closer mail/calendar mockups remain nonfinal. The [phased development plan](docs/development-plan.md) and [detailed Phase 0 backlog](docs/plans/phase-0.md) are prepared for future execution. This is readiness to begin feasibility, not a claim that tools, contracts or application features are verified.
+**Documentation only. Google-first MVP readiness: 0/9 required areas verified.** No application, build, tests, installer or measured result exists yet. [Status](docs/status.md) records the milestone and evidence rules; [decisions](docs/decisions.md) preserves the changes in scope.
 
-| Planned feature | Build status |
+| Google-first feature area | Build status |
 | --- | --- |
-| [Core and offline storage](docs/contracts/core-storage.md) | Not started |
+| [Core and complete offline storage](docs/contracts/core-storage.md) | Not started |
 | [Gmail / Google Workspace](docs/contracts/gmail.md) | Not started |
-| [IMAP/SMTP](docs/contracts/imap-smtp.md) | Not started |
 | [Mail UI and human composition](docs/contracts/mail-ui.md) | Not started |
 | [Local search](docs/contracts/search.md) | Not started |
-| [Unread/star triage and categories](docs/contracts/triage.md) | Not started |
-| [Calendar and read-only feeds](docs/contracts/calendar.md) | Not started |
+| [User-owned triage and categories](docs/contracts/triage.md) | Not started |
+| [Google Calendar](docs/contracts/calendar.md) | Not started |
 | [Optional local classification/summaries](docs/contracts/local-ai.md) | Not started |
-| [Windows/macOS/Linux installation and lifecycle](docs/contracts/platform.md) | Not started |
-| [Full CLI and external agent interface](docs/contracts/cli.md) | Not started |
+| [Platform installation and lifecycle](docs/contracts/platform.md) | Not started |
+| [CLI alongside the GUI](docs/contracts/cli.md) | Not started |
 
-Readiness counts fully verified areas, including their required OS, installation, GUI/CLI and recovery gates. It measures delivered scope, not time remaining; writing the plan does not increase it. See [current status](docs/status.md) for the definition, next work and exclusions.
+IMAP, SMTP and external iCalendar subscriptions are deferred until the founder has dogfooded working Google GUI and CLI workflows. Their retained contracts are future scope, not missing first-milestone requirements. CalDAV and a broad public launch remain separately deferred. The denominator changed from ten to nine because IMAP/SMTP left the current target, not because anything was built.
 
-## What the product is for
+## Delivery direction
 
-- **Process mail:** separate accounts, conversation-only browsing, temporary starred action holds and honest unread/starred totals.
-- **Find and keep everything:** fast sender/subject/body search and complete offline messages and attachments.
-- **Manage meetings:** Google Calendar, day/week/month/agenda, recurrence, invitations/RSVP, shared calendars, reminders and read-only iCalendar subscriptions.
-- **Organize in the mailbox:** configurable Gmail labels or IMAP folders, applied manually or by optional local Ollama/vLLM classification. Local summaries help with reading.
+- Build a small real CLI and GUI together against one engine/store; grow command coverage with each Google workflow. Do not finish a CLI monolith before the GUI.
+- Use Gmail and Google Calendar APIs for all current personal/Workspace accounts, including sending, with durable OAuth and provider reconciliation.
+- Begin with readable text, human replies/signatures and attachments. Preserve source MIME and safely extract text from HTML-only messages. Add best-effort HTML display later; browser-level visual fidelity is not required.
+- Follow the [initial-phase mail/calendar/settings references](docs/research/design-references.md): accounts at the top, a resizable conversation list/reader, inline reply and persistent bottom calendar strip. Settings is shell/navigation plumbing only; detailed controls await the expanded design.
+- Close ends GUI-owned work/reminders. Explicit independent CLI sessions have their own lifetimes. No default always-on service.
 
-Consumer Gmail and Google Workspace mail/calendar are required through the Google APIs; IMAP/SMTP is also required. Closing quits the GUI and its work; separately invoked CLI commands have explicit lifetimes. Tasks, contacts, widget dashboards, unrelated integrations and AI email writing are outside the product.
+The [proposed stack](docs/research/desktop-stack.md) is a Rust engine/CLI, C++20 + Qt Quick/QML UI, private local IPC and SQLite/FTS5 with retained blobs. QML expressions are accepted; Node.js and a separate JS/TS compilation/bundling pipeline are excluded. An HTML engine is a later component choice. No stack versions are locked.
 
-## How the pieces fit together
+The app operates locally and connects directly to Google; optional models run on the same machine. Tasks, a contacts app, dashboards, built-in AI writing/chat and semantic search remain out of scope.
 
-The planned desktop UI uses a local core for records, durable operations and search. Provider adapters connect directly to mail/calendar services; optional classification and summaries use a configured same-machine model runner. There is no app-operated remote service. The [recommended stack](docs/research/desktop-stack.md) uses a Rust engine and CLI, a C++20/Qt Quick UI, SQLite/FTS5 and an isolated HTML renderer. GUI and CLI access the engine through private local IPC. It is a proposed baseline awaiting prototype and packaging evidence.
+## Next execution
 
-The [build contracts](docs/contracts/README.md) define responsibilities and interfaces so the areas can be implemented in parallel once the shared contract baseline is agreed. End-user installation should deliver GUI and CLI without developer tools or a required model. There are no binaries or build/install commands to publish yet.
+When asked to implement, start [P0-00 and the small-fixture part of P0-01](docs/plans/phase-0.md), then connect the engine, small CLI and functional GUI early. Prove shared state, IPC access, account boundaries, draft recovery and useful search. Final designs and later protocols do not block these experiments.
 
-## Development entry point
+The [proposed first deliverable](docs/plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) is a runnable synthetic-mail desktop app and small CLI, with repeatable setup/build/test commands and native CI builds for development on the work Mac and home Windows PC. No tools have been installed or implementation started.
 
-When implementation is requested, start with [Phase 0: P0-00 and the small-fixture portion of P0-01](docs/plans/phase-0.md): inspect tools/test-host access, establish reproducible builds and shared synthetic fixtures, then prove engine/CLI/UI coordination and durable storage. Final mockups arrive closer to production UI work. Provider, model and platform evidence have their own gates so missing external access does not stall unrelated work.
-
-The plan becomes less detailed in later phases and is revised after each evidence gate. See [AGENTS.md](AGENTS.md) for execution/documentation rules. No code, dependency installation, account connection or model download has been performed in this planning pass.
+The [development plan](docs/development-plan.md) proceeds from the paired local slice to real Google workflows and founder dogfooding, then legacy protocols. All-platform installation and quality remain product requirements; unavailable hosts are unverified, not assumed passes.
 
 ## Documentation
 
-- [Documentation index](docs/README.md): where current and future documentation belongs.
-- [North star](docs/north-star.md) and [product scope](docs/product-scope.md): the intended experience and its limits.
-- [Visual design brief](docs/ui-ux.md): UI principles, top mailbox selection, resizable mail split and persistent bottom calendar strip.
-- [Development plan](docs/development-plan.md) and [Phase 0 backlog](docs/plans/phase-0.md): phased outcomes, immediate work packets, dependencies and decision gates.
-- [Current status](docs/status.md): built, next, excluded and deferred work, with readiness evidence.
-- [Research by scope](docs/research/README.md): findings, sources, tradeoffs and experiments, including the [stack recommendation](docs/research/desktop-stack.md) and [installation plan](docs/research/linux-and-distribution.md).
-- [Build contracts](docs/contracts/README.md): living specifications, owners, dependencies and acceptance gates.
-- [Decision log](docs/decisions.md): timestamped decisions, pivots and Q&A, appended chronologically.
+- [Index](docs/README.md), [north star](docs/north-star.md), [scope](docs/product-scope.md) and [UI/UX](docs/ui-ux.md).
+- [Status](docs/status.md), [development plan](docs/development-plan.md) and [Phase 0 packets](docs/plans/phase-0.md).
+- [Contracts](docs/contracts/README.md), [scoped research](docs/research/README.md) and [decision history](docs/decisions.md).
+- [Agent instructions](AGENTS.md).

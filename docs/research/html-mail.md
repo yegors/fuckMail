@@ -1,42 +1,41 @@
-# HTML mail: reader and human composer
+# Mail content: text first, best-effort HTML later
 
-Sources checked 2026-09-10; reorganized 2026-09-11. Documentation/source evidence and proposals only; no app prototype, live account flow or benchmark has run. Recheck version-sensitive claims before implementation.
+Source checks previously recorded on 2026-09-10/11. Product direction updated 2026-09-11 under [D009](../decisions.md); this update adds no new renderer benchmark. Owner: [Mail UI](../contracts/mail-ui.md).
 
-Build boundary: [Mail UI contract](../contracts/mail-ui.md).
+## Current requirement
 
-## HTML mail without a JS application stack
+The founder mainly reads and replies to human correspondence. Received HTML display is useful for occasional automated/newsletter mail but can be added later, with good-enough readability rather than browser-level fidelity. It is no longer a first-usable or toolkit-selection gate. Preserve original source content and attachments even when displaying text.
 
-Reading HTML messages and authoring formatted replies are distinct components. Qt's rich-text editor can edit plain/rich text and serialize HTML, but its document renderer supports a defined HTML/CSS subset. It is a plausible composer, not proof of full compatibility with received email layouts. [QTextEdit](https://doc.qt.io/qt-6/qtextedit.html), [supported HTML subset](https://doc.qt.io/qt-6/richtext-html-subset.html)
+The earlier WebEngine-first recommendation below has been superseded as the baseline. Qt Quick remains the proposed UI, but no browser engine is now required to start. QML syntax is accepted; Node.js and separate JS compilation/bundling are excluded. A later renderer must fit that native build boundary.
 
-For more complete received-message rendering, Qt WebEngine offers a C++ interface backed by Chromium; an OS-specific HTML view is another integration direction. Restrict the renderer to message content, disable page scripts and privileged bridges, and control external resources. This introduces browser-engine code and resource costs, even though we author no JS application or npm pipeline. Qt exposes a setting for disabling JavaScript; that setting alone is not the complete isolation policy. [Qt WebEngine overview](https://doc.qt.io/qt-6/qtwebengine-overview.html), [renderer settings](https://doc.qt.io/qt-6/qwebenginesettings.html)
+## Early content work that remains necessary
 
-Eliminating browser engines entirely would narrow the rendering choices and may reduce HTML email fidelity. Evaluate that tradeoff with representative messages rather than quietly replacing HTML with plain text. The user's objection to the JS ecosystem does not by itself establish a ban on an isolated HTML renderer.
+Gmail still exchanges MIME messages. Decode multipart content, choose an available plain-text part and safely extract readable text from HTML-only messages. Human-origin messages can also be HTML-only or contain rich signatures; sender classification must not determine whether their content is accessible. Preserve links, quotations, attachment identity and original bytes. Text extraction must not execute scripts or fetch remote resources.
 
-## Next experiment
+Use the same parser/text representation for search, CLI and the GUI. Keep source HTML for later viewing and retain all attachments offline. No silent blank message or discarded source is acceptable merely because HTML display is deferred.
 
-P0-04 (reader/composer), with P0-05 (MIME): compare sanitization, MIME processing and editor/renderer libraries with representative received email and authored drafts; record packaging and license constraints. Include tables, quotations, selection/copying, inline images, plain-text fallback, signatures and attachments. Measure native list/calendar cost separately from the HTML surface and its subprocesses.
+The human composer is a separate concern. Plain replies, signatures, recipients, attachments and durable drafts are early requirements; restrained formatted composition remains intended. Qt text/document facilities are candidates for that scope. Validate undo/IME, quoting and save/reopen/MIME round trips without requiring an HTML browser. [Qt Quick TextEdit](https://doc.qt.io/qt-6/qml-qtquick-textedit.html), [text editor example](https://doc.qt.io/qt-6/qtquickcontrols-texteditor-example.html).
 
-The [current desktop recommendation](desktop-stack.md) uses Qt Quick/QML with an isolated WebEngine reader; neither a basic rich-text widget nor an attractive shell proves full mail fidelity.
+## Later display options
 
-## Qt Quick composer evaluation
-
-QML TextEdit supports formatted text, and Qt's Controls example demonstrates rich-text editing. Use this as a candidate for the restrained human composer, not as evidence of full received-email HTML fidelity. Validate signatures, lists/links, quoted replies, clipboard sanitization, attachments, draft round trips and MIME generation. A QWidget QTextEdit is not a drop-in QML control. [TextEdit](https://doc.qt.io/qt-6/qml-qtquick-textedit.html), [editor example](https://doc.qt.io/qt-6/qtquickcontrols-texteditor-example.html).
-
-Run reader/composer tests on Windows, macOS, Ubuntu, Arch and Omarchy. Browser rendering belongs only in the GUI; the shared core and headless CLI read normalized text/source without loading a renderer. Preserve original HTML rather than restyling every received message to imitate the typography in the mockups.
-
-## Phase 0 reader/composer slice
-
-Checked 2026-09-11. P0-04 owns the integrated Qt reader/composer experiment; P0-05 owns shared MIME/library evaluation. Use the same local fixture corpus so rendering, indexing and outgoing mail do not evolve separate interpretations.
-
-One concrete integration limit: QML WebEngineView's `loadHtml` has an approximately 2 MB limit after percent encoding. Loading a whole long conversation as one HTML string is therefore not an adequate design. Evaluate a restricted custom URL scheme backed by approved message resources, with bounded visible/expanded message rendering and explicit origin/resource policy. Qt supplies a scheme-handler API, but its configuration can grant wider access; it is a building block rather than a complete mail-content boundary. [WebEngineView loading limits](https://doc.qt.io/qt-6/qml-qtwebengine-webengineview.html#loadHtml-method), [custom scheme handler](https://doc.qt.io/qt-6/qwebengineurlschemehandler.html)
-
-The closer mockups' collapsed earlier messages make bounded thread presentation plausible. The prototype must nevertheless expose every original message and attachment, preserve selection/reading position and keep a long thread usable when expanded. A local summary is separate metadata, never replacement content or outgoing draft text.
-
-| Question | Input and required output | Acceptance and fallback |
+| Candidate | Why evaluate it | Limits and evidence needed |
 | --- | --- | --- |
-| Can the received-mail surface preserve fidelity? | Local MIME fixtures: nested quotations, tables/newsletters, Unicode, inline CID images, large HTML, long threads and missing attachments. Output screenshots and a content/fidelity checklist on required desktops, plus latency and process-memory measurements. | Readable original content and working selection/copy; no silent truncation at string-load limits; list/calendar remain responsive. If cost is high, adjust renderer reuse and bounded presentation before proposing a less capable renderer. Plain text remains an explicit fallback, not proof HTML support passed. |
-| Can content loading stay inside its intended boundary? | Harmless local fixtures containing scripts, remote image/style URLs, navigation and non-message resource references. Output observed resource requests and allowed user-triggered link behavior. | Page scripts and privileged bridges are absent; rendering does not fetch blocked external resources or arbitrary local files. Select the remote-content policy before live mail; do not mistake script disabling for complete isolation. Failed isolation blocks live HTML reading, while synthetic UI work can continue. |
-| Can humans compose without a web editor? | QML TextEdit/TextDocument prototype with supported formatting, signature, links, quoted reply, clipboard input and attachments; pass draft content to the Rust MIME candidate. Output reopen/round-trip comparisons and captured messages through a local sink. | Text, formatting and attachments survive edit/save/restart; correct account and reply headers; GUI close preserves the last durably saved draft. Check IME, undo, selection and scaling across desktops. If the QML facilities fail, investigate a contained Qt document/editor adapter before reopening the UI stack; do not add AI writing. |
-| Does the shared boundary work? | Reader/editor attached to a fixture-backed engine through the proposed IPC, with delayed bodies, attachment downloads, disconnect and restart. Output event traces and visible pending/error states. | The GUI receives only needed content, the engine owns durable drafts and MIME, the CLI works with no renderer, and the bottom strip stays responsive. No direct GUI database access or alternate draft schema to make the demo work. |
+| Qt rich-text/document display | An explicit limited HTML/CSS implementation may meet the relaxed reading requirement with fewer dependencies | Useful formatting/images/links and safe resource policy; complex newsletter layouts may simplify. It is a subset renderer, not proof that all email follows that subset |
+| Isolated Qt WebEngine | Broader layout support if actual readability needs justify its cost | Chromium helpers, memory, updates and deployment; use a dependency route without requiring Node in our build |
+| Another native/OS component | Compare only when a concrete gap remains | Cross-platform integration, content access, maintenance and resource policy still need evidence |
 
-The clean-install experiment must include the renderer subprocess/resources and composer, not just an empty Qt window. Measure total GUI/renderer resource use separately from the engine and optional model runner. Final fonts, colors, dimensions and composer layout await the founder's final mockups; these feasibility questions do not.
+Qt documents its supported rich-text HTML subset. Real email markup is not a single reliably restricted language; the agreed simplification is our presentation target, not a guarantee about incoming content. [Supported subset](https://doc.qt.io/qt-6/richtext-html-subset.html).
+
+If WebEngine is later considered, its browser/helper process architecture and build constraints must be counted. Building it from source requires upstream tools including Node; this cannot silently become our required build path. Its `loadHtml` string size limit also makes concatenating an entire long thread an unsuitable assumption. Controlled per-message resources and bounded rendering remain possible evaluation paths, not accepted APIs. [Architecture](https://doc.qt.io/qt-6/qtwebengine-overview.html), [platform/build notes](https://doc.qt.io/qt-6/qtwebengine-platform-notes.html), [loadHtml limit](https://doc.qt.io/qt-6/qml-qtwebengine-webengineview.html#loadHtml-method).
+
+## What good enough means
+
+Proposed later fixture review: readable authored text, usable links, useful inline images when permitted, understandable quotations/basic formatting and a clear text fallback. Layout differences, simplified tables or omitted decorative styling are acceptable candidates for founder review. Do not require pixel equivalence with Gmail or a browser. Do not silently truncate important text or drop offline attachments.
+
+Reduced visual fidelity does not relax isolation: no message scripts, privileged app bridge, arbitrary local-file access or unrequested remote content. Test harmless fixtures and actual resource requests. A limited document renderer needs a resource policy too; it is not automatically safe because it is not Chromium.
+
+## Execution
+
+P0-05 proves MIME, safe text extraction and shared outgoing serialization. P0-04 proves text reading, human composition and shared GUI/CLI state. Both are early. Later Google polish evaluates HTML viewing when the founder needs it, against this narrower readability target. No HTML-engine experiment blocks the first paired-client milestone.
+
+Keep evidence for source preservation, readability, editor round trips and any later renderer memory/isolation separate. Original source and text search remain usable regardless of whether the HTML component is enabled or installed.

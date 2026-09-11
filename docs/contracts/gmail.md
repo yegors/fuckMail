@@ -1,6 +1,8 @@
 # Gmail provider
 
-State: Draft · Revision: 0 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 1 · Updated: 2026-09-11 · Implementation: not started.
+
+Revision 1 applies D009: Gmail/Workspace APIs are the first mail transport, including send; shared MIME handling stays early while IMAP/SMTP are deferred. Affected consumers: Core, Mail UI, Calendar, Triage, Local assistance and CLI.
 
 Owner: B — Gmail. Accepted scope and proposed behavior are separated below; concrete APIs, libraries and outstanding choices await the relevant feasibility work. See [contract workflow](README.md).
 

@@ -1,6 +1,8 @@
 # Optional local classification and summaries
 
-State: Draft · Revision: 1 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 2 · Updated: 2026-09-11 · Implementation: not started.
+
+Revision 2 applies D009: classifier intent is human correspondence versus bots/lists/user-defined noise and category/scope tagging; Done/Delayed remain user actions. Google-label integration comes first. Affected consumers: Core, Triage, Mail UI, Gmail, Platform and CLI.
 
 Owner: H — Local assistance. These are living specifications of accepted requirements and proposed behavior; exact types, libraries and unresolved details are not committed. See [contract workflow](README.md).
 
@@ -17,6 +19,8 @@ Related: [triage policy](triage.md), [core](core-storage.md), [mail UI](mail-ui.
 
 ## Optional local assistance
 
+The classifier answers the user-defined distinction between human correspondence, bots/mailing lists and personal noise/spam, plus the appropriate account/category/scope tags. These definitions are configurable; it is not a universal spam detector. It never decides Done/Delayed or makes mail reviewed. Implement tag application through Gmail labels first; IMAP auto-filing waits for the later protocol phase. An inferred noise/spam category is not authorization for Gmail system Spam/Trash routing.
+
 Classification and summarization are optional MVP capabilities. All manual workflows work without a model installed or running. Connect to a user-configured, locally executing Ollama or vLLM service; choose endpoint and installed model in settings and test availability. The default setup uses loopback on the same machine. Model installation/weights are explicit setup, not an automatic application download. No hosted-model fallback or cloud-routed model is allowed, including through a local proxy. See [runner research](../research/local-ai.md) for runner capabilities and platform constraints.
 
 Proposed settings are per account, with independently enabled summaries and classification:
@@ -25,7 +29,7 @@ Proposed settings are per account, with independently enabled summaries and clas
 | --- | --- |
 | Off / manual (default) | The user assigns provider labels/folders. No automatic inference runs. |
 | Suggest | The local model proposes configured categories; the user accepts or corrects them. Provider state changes only on acceptance. |
-| Auto-apply configured categories | After the user enables the policy, the app validates model output and applies only mapped, permitted category operations. Configuration explicitly states whether this includes Gmail archiving or IMAP folder moves. Routine valid results need no per-message approval. Uncertain, unmapped or stale results remain for review. |
+| Auto-apply configured categories | After the user enables the policy, validate output and apply mapped Gmail category/scope labels. Tagging does not remove Inbox or choose Done/Delayed; filing is a separate user action. Routine valid tag results need no per-message approval. Uncertain, unmapped or stale results remain for review. Define any IMAP folder-filing policy when that later phase starts. |
 
 The model classifies incoming mail and summarizes messages/conversations. A conversation summary may include existing human-written sent replies as context, so it reflects the actual exchange; unpublished drafts are excluded. It does not compose, rewrite, autocomplete or send email, alter drafts/signatures, generate task lists or meeting briefings, or control read/unread, stars, trash, spam, permanent deletion or calendar actions. Human authorship is a product rule: humans write email for humans. Existing provider rules continue to operate independently.
 

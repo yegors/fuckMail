@@ -1,6 +1,8 @@
 # Platform, lifecycle and release
 
-State: Draft · Revision: 2 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 4 · Updated: 2026-09-11 · Implementation: not started.
+
+Revision 4 applies D010: development alternates between the work Mac and home Windows PC, with reproducible native setup, shared commands and explicit handoff/CI evidence. D009's QML/no-Node and paired GUI/CLI boundaries remain. Affected consumers: Core, Mail UI, CLI and Quality.
 
 Owner: G — Platform/release. Accepted scope and proposed behavior are separated below; concrete APIs, libraries and outstanding choices await the relevant feasibility work. See [contract workflow](README.md).
 
@@ -21,15 +23,27 @@ Windows, macOS and Linux are required. Linux includes Ubuntu, Arch and Omarchy; 
 
 Use the same opinionated design on all OSes. Verify native Wayland (including the Omarchy desktop), supported X11/XWayland paths, IME/clipboard, file dialogs/portals, scaling, graphics, credentials and notifications. Do not require GNOME/KDE-specific infrastructure without a working path on the targeted Omarchy setup.
 
-The recommended baseline is a Rust engine/CLI and C++20/Qt Quick/QML GUI, connected through private local IPC; it is not yet a locked or measured stack. Build Rust components with Cargo and the GUI with CMake/Ninja, packaging compatible binaries together. In-process Rust/Qt bindings are not a required dependency. Core owns domain behavior and the engine protocol; Platform owns the presentation/OS adapter and release integration. QML expressions and the possible upstream WebEngine build tools are explicit considerations under the earlier preference to avoid an npm/Node application. See [desktop research](../research/desktop-stack.md).
+The recommended baseline is a Rust engine/CLI and C++20/Qt Quick/QML GUI, connected through private local IPC; it is not yet a locked or measured stack. Build Rust components with Cargo and the GUI with CMake/Ninja, packaging compatible binaries together. In-process Rust/Qt bindings are not a required dependency. Core owns domain behavior and the engine protocol; Platform owns the presentation/OS adapter and release integration. QML expressions are accepted. The product build must not require Node.js or a separate JavaScript compilation/bundling pipeline. An upstream WebEngine source build requiring Node is not an acceptable default prerequisite; received HTML is later work and any chosen dependency route must respect this boundary. See [desktop research](../research/desktop-stack.md).
 
 ## Installation and upgrades
+
+### Development on both founder machines
+
+macOS and Windows are active development hosts from the first implementation package. Supply repeatable setup, diagnostic, build, test, run and development-package entry points usable by the founder and coding agents. Pin mutually compatible Rust/Qt/native build dependencies after validating them; keep machine-specific SDK paths outside tracked configuration. Reuse shared orchestration and fixtures, with thin native shell/PowerShell setup where OS differences require it.
+
+Use native macOS and Windows CI builds to catch regressions on the other host and retain versioned development artifacts and failure logs. Local and CI builds consume the same dependency/configuration inputs. Caches may accelerate incremental work but must not be required for a clean build. Test actual desktop behavior on the corresponding machine; CI compilation alone does not verify its graphics/input or credential store. Linux's existing product gates remain required.
+
+Transfer source, lockfiles, fixtures and an accurate handoff/status record through Git. Build caches, local SDK paths, live profiles/databases and credentials remain machine-local; do not use a cloud-synced database as a development handoff. Record the source revision, commands, verified host and outstanding checks so the next session can resume without relying on chat history. The [first deliverable](../plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) uses synthetic data and requires no provider secrets in CI.
+
+### Application delivery
+
+First smoke packages contain the engine, a small CLI and a working GUI. They need not bundle WebEngine or any other HTML display engine. Later renderer packages add their own resource/isolation/update checks before that capability ships. Pair GUI and CLI from the first slice to test local IPC access, permissions and ownership rather than building the entire CLI first.
 
 End-user installation is a required product feature. Ship GUI, engine and CLI together with bundled or declared runtime dependencies and a working CLI launcher/PATH integration. Users do not compile source or install developer SDKs; a local model is optional and separately configured.
 
 Proposed routes: signed Windows installer, signed/notarized macOS distribution with a simple CLI installation path, prebuilt Ubuntu .deb and prebuilt Arch/Omarchy pacman package. Choose exact formats/channels through clean-machine tests; neither store publication nor a universal Linux bundle is required. See [distribution research](../research/linux-and-distribution.md).
 
-Supply application OAuth registration and direct user sign-in; developer/provider verification work belongs to release preparation rather than the user's install instructions. Verify first launch/OAuth, credential store availability, HTML resources/sandbox, desktop integration and CLI discovery. Upgrades must coordinate engine shutdown/migrations, keep data outside the installation directory and refuse incompatible schema rollback safely. Normal uninstall removes app/launchers, preserving user mail/drafts unless explicit data deletion was requested. Supply a maintained update route and dependency/license notices; broad public launch work remains separate.
+Supply application OAuth registration and direct user sign-in; developer/provider verification work belongs to release preparation rather than the user's install instructions. Verify first launch/OAuth, credential store availability, text/composer resources, desktop integration and CLI discovery. Upgrades must coordinate engine shutdown/migrations, keep data outside the installation directory and refuse incompatible schema rollback safely. Normal uninstall removes app/launchers, preserving user mail/drafts unless explicit data deletion was requested. Supply a maintained update route and dependency/license notices; broad public launch work remains separate.
 
 ## App lifecycle
 

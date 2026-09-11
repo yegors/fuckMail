@@ -1,133 +1,103 @@
 # Development plan
 
-Updated 2026-09-11. **Plan prepared; execution has not started.** This is the route for Codex to build the product when implementation is requested. No application code, build files, test harness or installer is being added in this planning pass. MVP readiness remains **0/10 verified**.
+Updated 2026-09-11 under [D009–D011](decisions.md). **Planning only; no execution started. Google-first readiness: 0/9 verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
 
-[Status](status.md) records progress; [contracts](contracts/README.md) own behavior; [research](research/README.md) owns evidence; [decisions](decisions.md) records changes. This plan owns sequence, dependencies and the next execution slice. [Phase 0](plans/phase-0.md) contains the detailed starting backlog. Do not copy implementation specifications into competing plans.
+## Delivery direction
 
-## Direction and planning horizon
+Build for the founder's actual Google accounts first. Rust engine/CLI, C++20/Qt Quick/QML UI, private local IPC and SQLite/FTS5 remain the proposed baseline. QML syntax is accepted; Node.js and a separate JavaScript compilation/bundling pipeline are excluded. No stack or version lock is implied.
 
-Use the proposed Rust engine/CLI, C++20/Qt Quick/QML UI, private local IPC and SQLite/FTS5 baseline for feasibility work. Keep one engine, one schema and one operation journal. The [stack assessment](research/desktop-stack.md) is a recommendation, not proof or a version lock.
+The first usable milestone includes a real GUI and a useful partial CLI. Implement the same small workflows in both, then expand their coverage together. IPC access, permission checks, account isolation, concurrency and recovery need both clients early; the GUI must not wait for exhaustive CLI commands or polished automation tooling.
 
-The [closer mail/calendar references](research/design-references.md) guide structure. Final mockups will arrive closer to UI implementation; they are not a prerequisite for headless work or disposable rendering/input experiments. Review the relevant final screen/state set before implementing its production screens and interactions. Do not infer Done/Delay effects, count definitions or calendar permissions from sample pixels.
+Prioritize human correspondence and replies. Decode MIME, preserve original HTML/attachments and safely extract text from HTML-only mail from the start. Received HTML display can arrive later with best-effort readability. Browser-level fidelity, WebEngine packaging and legacy protocol compatibility are not early gates.
 
-Planning detail deliberately decreases with distance:
+The user always chooses Done/Delayed. Classification supplies user-defined human/automation/noise and category/scope tags; it never changes review/action state. The latest mail/calendar/settings references now guide the initial slice. The founder explicitly requests settings plumbing only and says to ignore its unfinished switches. Remaining production interactions use the reviewed design for their slice.
 
-- **Phase 0:** concrete investigation packets, prerequisites, outputs, pass/fail criteria and pivot triggers.
-- **Phase 1:** small implementation slices with integration gates; refine exact tasks after Phase 0.
-- **Phases 2–4:** product outcomes, dependencies and release evidence; expand only the next phase when it approaches.
-- **Later:** scope labels only. No speculative APIs, dates, staffing estimates or comprehensive ticket inventory.
+IMAP, SMTP and external iCalendar URL support start only after the founder has dogfooded working Google GUI and CLI workflows. Retain their research and future contracts without implementing transports/feeds or making them early dependencies. MIME and Google recurrence/invitation representations remain needed.
 
-A phase is an integration milestone, not a rule that every stream must wait for the previous stream. Research, platform work, protocol fixtures and calendar work start early. Within an authorized phase, continue independent work when an external dependency blocks one packet; do not silently count the blocked evidence as passed.
-
-## Phases
+## Phases and evidence
 
 | Phase | Deliverable | Exit evidence |
 | --- | --- | --- |
-| 0 — Prove the foundation | Reproducible builds, a private Rust engine/CLI and Qt adapter experiment, safe local persistence, early mail/calendar feasibility and installation evidence | A recorded baseline for the next slice, shared contract/fixture revision and clear open gates; see the narrower entry rule below |
-| 1 — Local product slice | Synthetic mail and calendar flow through the real store, engine, CLI and minimal GUI; durable human drafts and honest triage | Both interfaces agree; restart, offline content, account separation, cancellation and coverage work without any provider/model |
-| 2 — Google daily workflows | Consumer Gmail and Google Workspace mail/calendar, account setup, human composition, provider-native labels and full-history acquisition | Controlled real-account interoperability, durable sign-in, correct sync/operations and useful daily mail/calendar behavior |
-| 3 — Required completeness | IMAP/SMTP, complete calendar/feed/invitation behavior, optional Ollama/vLLM classification/summaries and remaining CLI/GUI coverage | Every required capability has integrated behavior and domain tests; no Google-only or read-only MVP shortcut |
-| 4 — Daily-driver release | Verified performance/recovery, reviewed final design, smooth packages/updates and founder trial on required platforms | All ten area contracts and applicable platform/quality gates pass; honest readiness update |
-| Later | Editable CalDAV, possible open-source/public launch | Separate requirements and decisions; no effect on current MVP completion |
+| 0 — Prove the paired foundation | Native builds, shared small fixtures, one engine/store, small CLI and text/composer GUI, Google prerequisites | Shared query/action through both clients; bounded state, private access and durable recovery; available-host evidence |
+| 1 — First usable local slice | Synthetic mail/calendar through the actual engine, GUI and CLI; search, attachments, explicit flags and human drafts | Both clients agree; restart/offline/permission and account-isolation checks pass; incomplete CLI and nonfinal presentation are explicit |
+| 2 — Google daily workflows | Gmail/Workspace mail and Google Calendar, setup, sending, full-history acquisition and an incrementally growing CLI | Real Google flows work; controlled founder use begins; no IMAP/SMTP/feed prerequisites |
+| 3 — Google completion and dogfooding | Usable Google GUI and CLI; complete Google calendar/actions, expanded designs, intended local assistance and later best-effort HTML; delivery/quality evidence | Actual founder workflows, defects and retests recorded; Google-first release gates separately verified on required platforms |
+| 4 — Later protocol support | IMAP, SMTP and external iCalendar subscriptions | Start only after founder Google GUI/CLI dogfooding; then prove their own interoperability and recovery |
+| Later | Editable CalDAV; possible broad public/open-source launch | Separate decisions |
 
-## Phase 0: remove expensive uncertainty first
+Phase detail decreases with distance. Only [Phase 0](plans/phase-0.md) has detailed packets. Refine the next slice from evidence rather than writing every future API in advance. Missing provider access, final design or test hosts blocks only the affected evidence.
 
-Execute the [Phase 0 work packets](plans/phase-0.md). Start with tool/access inventory and a small deterministic fixture baseline. Then run these independent tracks against shared identities and scenarios:
+The [proposed first self-contained package](plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) draws a small runnable synthetic-mail slice from Phases 0/1, with repeatable development on the founder's Mac and Windows PC. It has its own bounded walkthrough and native build evidence; it does not wait for all Phase 0 experiments or complete the entire phase.
 
-1. **Core/CLI/storage:** Qt-free Rust build, private local IPC, one engine per profile, SQLite/FTS5, durable draft/action/blob recovery and bounded queries.
-2. **Qt/platform:** list and calendar surfaces, received HTML and human composer, required desktop input, and first installable fixture packages.
-3. **Providers/calendar:** sustainable Google OAuth setup, synthetic Gmail deltas, MIME/IMAP/SMTP capability and outcome tests, recurrence/time-zone and feed fixtures.
-4. **Triage/assistance:** independent unread/star state, mapped categories and late-result rejection with fakes; optional runner capability/cancellation checks when a supported local setup is available.
+## Phase 0: a GUI before a CLI monolith
 
-Do not spend this phase polishing the entire app, downloading real historical mail, selecting a permanent model, or implementing every command.
+Start P0-00 and the small-fixture part of P0-01. Join Core/CLI/storage (P0-03/P0-10) with Qt GUI/input/composition (P0-04) promptly. The first boundary needs capability discovery, a bounded account-scoped query, an explicit journaled action, a durable draft and a small event view. It does not need every final command.
 
-**Entry to Phase 1 is per ready slice.** Require a recorded provisional stack/build choice on available target systems, a passing core/CLI/Qt boundary slice, draft/operation/blob persistence evidence, correct basic FTS queries and the consumed shared fixture/interface revision. The Qt UI slice additionally needs reader/composer feasibility; a provider slice needs its own library/identity prerequisites.
+Use shared fixtures for MIME/text/attachment processing (P0-05), Google OAuth/sync setup (P0-02), Google recurrence/invitations (P0-06), and user-owned state/category behavior (P0-07/P0-09). Fake assistance can validate forbidden state changes without a model (P0-08). Package the small GUI/CLI slice early (P0-11), without a mandatory HTML engine.
 
-A missing Mac or Omarchy test host does not stop independent local-core work, but the platform row stays unverified and no all-platform stack or release claim follows. Run cross-platform smoke packages early; do not postpone discovering a fundamental renderer/IPC/credential issue until release. Million-message benchmarks, sustained real-account refresh, complete IMAP coverage, model quality and polished signing remain explicit gates before their affected behavior ships.
+Entry to Phase 1 is per ready slice: proven native build on available hosts, the private client/engine boundary, persistence, basic FTS and shared consumed identities/fixtures. The GUI needs readable text and a credible human editor, not a full received-HTML renderer. Missing Linux/Mac evidence stays unverified; independent work can continue.
 
-At the gate, record chosen versions/features and evidence in the owning research/contracts, with a dated decision. Keep alternatives only where a specific test failed. If a pivot would reduce accepted behavior or change the product experience, bring the concrete tradeoff to the founder; otherwise resolve routine implementation choices within the authorized work.
+Do not implement legacy transports/feeds, an exhaustive CLI grammar, a model installation manager or final visual polish in this phase. Record versions and measured outcomes only after work runs.
 
-## Phase 1: a small real local product
+## Phase 1: the first usable local milestone
 
-Refine these slices into executable tasks at Phase 0's gate. They use synthetic accounts/providers and the actual shared engine; fixtures are not a separate mock application that later gets discarded.
+| Slice | Shared implementation and evidence |
+| --- | --- |
+| Workspace and ownership | GUI plus CLI connect to one engine; version negotiation, permission checks, concurrent launch and shutdown have deliberate behavior |
+| Mail and search | Ingest synthetic Gmail-shaped mail, search/open exact conversation members and access retained attachments; both interfaces agree on account/coverage |
+| Human actions and drafts | Explicit read/star/unstar/category actions and durable human reply/draft content; local MIME capture and restart recovery; no classifier-owned Done/Delayed |
+| Calendar and shell | One Google-shaped day/week and bottom strip from a shared occurrence view; basic CLI range queries and journaled event edits; preserve reading position |
 
-| Slice | Owners and prerequisites | Integrated behavior and completion evidence |
-| --- | --- | --- |
-| 1A — Workspace and ownership | A/G/I; proven build, IPC and storage approach | Create only the needed modules, migrations, protocol/client code and test entry points. Start one engine, connect CLI and GUI, inspect capabilities, and shut down correctly. Concurrent launches and version errors have deliberate outcomes. |
-| 1B — Local mail and search | A/D/E/I; agreed message/conversation identity and source fixtures | Ingest/replay messages, index sender/subject/body, page/search/open a matching conversation member, and save/open retained attachments. GUI/CLI agree on account scope and incomplete coverage while ingestion continues. |
-| 1C — Triage and human drafts | A/E/I plus B/C fake adapters; agreed read/star targets and mutation states | Review, hold, categorize and explicitly clear a hold; preserve mixed flags, new arrivals and manual overrides. Save/reopen a human-written plain/HTML draft and attachment. Capture outgoing MIME in a local sink; uncertainty never causes blind resubmission. |
-| 1D — Calendar and shared shell | F/E/G/I; bounded occurrence/permission fixtures | Render one day/week and today's strip from the same occurrence view, edit a synthetic event through the journal, exercise stale/overlap/all-day cases, and preserve mail reading position. No separate calendar store or UI-only permission logic. |
+The GUI is functional and provisional, not a throwaway app with a second store. The CLI exposes the operations this slice actually implements. Record missing command coverage; do not mark the whole CLI Verified or wait for it to be finished before shipping this slice.
 
-The minimal GUI in this phase is provisional functional scaffolding with explicit low-level actions and replaceable presentation. It does not freeze production screens or unresolved interaction choices; the relevant final mockups govern their later implementation.
-
-These are integration slices, not four serial teams. Search, Calendar, provider fakes and the Qt adapter can proceed independently after A publishes the relevant shared boundary. No stream invents an alternate schema to unblock itself.
-
-Before Phase 2, demonstrate the source-to-store-to-search-to-reader-to-durable-action path and its CLI equivalent, plus one calendar occurrence/edit path. Interrupt transactions, lose a client, restart during a draft/blob write and run with no model or network. First packages launch the same binaries used in those tests. Expand the 100k query experiment toward the primary scale tier while the functional slice grows.
+Before live Google work, prove source-to-store-to-search-to-reader-to-durable-action plus a draft and calendar edit in both clients. Exercise account boundaries, stale revisions, cancellation, lost clients and interrupted blob writes with no model/network. Use a local MIME capture/API fake, not an SMTP transport prerequisite.
 
 ## Phase 2: Google mail and calendar together
 
-Connect consumer Gmail and Workspace accounts separately through the shared engine. Implement account setup, durable OAuth/credential references, recent-first useful content, resumable full inventory/body/attachment acquisition, adaptive sync, labels and read/star reconciliation, human compose/reply/forward/signatures, and recovery for uncertain submission.
+Implement consumer Gmail and Workspace setup, durable desktop OAuth, recent-first access with resumable full body/attachment retention, history reconciliation, labels/flags, signatures, human reply/forward/send and uncertain-submission recovery. All send/retrieve operations use Google APIs; one shared MIME interpretation serves GUI and CLI.
 
-Build Google Calendar alongside mail: discovery and permissions, sync, bounded views and the strip, ordinary event edits, then recurring edits and invitation ownership as their fixtures pass. A successful Gmail demo must not defer Calendar's core correctness until the end.
+Develop Google Calendar alongside mail: discovery/permissions, sync, day/week/month/agenda, bottom strip, event edits, recurrence, invitations/RSVP and reminders as their fixtures pass. Recurrence/ICS representations used inside Google are not external-feed support.
 
-Use the [Google](research/gmail.md) and [calendar](research/calendar.md) investigations for live checks. Workspace admin policy, project access and controlled recipients are explicit prerequisites when needed. C36 keeps public verification deferred for the current personal audience; sustainable OAuth still needs evidence. Do not call an expiring test login a daily-driver configuration.
+Add CLI commands as their GUI/core workflows become usable. Begin controlled founder use on the available machine when the data/recovery gates are safe; a partial command set is expected initially. Record missing functionality rather than expanding into IMAP/SMTP to satisfy the old plan.
 
-Bring the relevant final mockups into production UI slices as they arrive. Initial real-account use may be deliberately limited while import, recovery and UI states mature; report those limits honestly. Provider mutations require the established journal and account/target rules, with controlled test data before primary daily use.
+Durable auth, full offline progress and calendar correctness are core product work. Retention, account removal with unsent work, encryption and recovery must be settled before committing affected real-data behavior. Workspace access/admin restrictions have explicit gates.
 
-Exit on coherent mail/calendar workflows with assistance off, useful local search during backfill, offline access to completed content, cross-client reconciliation and recoverable failures. Full initial download coverage remains measurable; a recent-only cache cannot satisfy the final offline gate. IMAP/SMTP and full calendar fixtures continue in parallel.
+## Phase 3: complete and dogfood the Google product
 
-## Phase 3: complete required behavior
+Refine this phase from actual use. Finish the agreed Google GUI/CLI workflows, calendar edge cases, navigation/settings, human composition and failure/recovery screens. Full Google workflow access is the intended CLI outcome; command completeness evolves with the product, not ahead of it.
 
-Replan from Phase 2 evidence instead of freezing a long implementation list today. Deliver the remaining required capabilities through the same interfaces:
+Add optional local classification/summaries through the proven manual labeling path. Classify human correspondence, bots/lists and user-defined noise/category/scope; preserve manual precedence and explicit user Done/Delayed. Assistance stays off by default and does not block initial manual use.
 
-- Required IMAP/SMTP servers: capability negotiation, reconnect/reconciliation, durable local identity through folder moves, complete offline content, human submission and Sent-copy/uncertain-outcome handling.
-- Calendar completeness: day/week/month/agenda, search, recurrence and exceptions, invitations/RSVP, shared/limited permissions, read-only feeds, current/next/Join and running-session reminders.
-- Optional local assistance: Ollama and supported same-machine vLLM, independent classification/summary settings, manual/Suggest/configured Auto-apply, correction precedence, source-linked stale/partial summaries and tested cancellation. No AI authorship or cloud fallback.
-- Complete CLI coverage alongside each capability, including configuration, structured results, bulk/partial operations, bounded watch and actionable headless failures. GUI-only presentation controls need no artificial CLI equivalent.
-- Remaining setup/settings, navigation, composition/recovery and dense/empty/error UI states from reviewed design slices.
+Add best-effort received HTML display in this later phase. Evaluate a limited document renderer against real reading needs before adding a browser engine. Preserve original content, useful links/images and text fallback; visual fidelity is not a browser conformance exercise. Isolation and resource policy remain required. HTML composition and received-content rendering are separate components.
 
-Dependencies remain explicit: classification applies through proven manual filing, summaries consume preserved source content, recurrence precedes recurring edit UI, provider access controls apply before displaying shared data, and notifications use the agreed session lifetime.
+Use the [quality contract](contracts/quality.md) for million-message/search, import responsiveness, durable drafts, resource/lifecycle and all-platform delivery evidence. Measure all shipped processes; do not count a deferred renderer's hypothetical overhead as a current dependency.
 
-Exit with no missing required area hidden behind a polished Google path. Library/server/model/platform limits are documented and resolved or brought back as explicit scope decisions; they cannot quietly shrink the MVP.
+Record founder dogfooding with both Google clients: actual tasks, failures, fixes and retests. A two-week trial remains a suggestion, not a fixed user requirement. Google-only software is now the intended first product. A launch screenshot, CLI smoke command or mock account is insufficient evidence of daily use.
 
-## Phase 4: earn daily-driver readiness
+## Phase 4: protocols after experience
 
-Use the [quality contract](contracts/quality.md) as the release authority. Test the primary million-message and meaningful offline-content scenarios, then growth/stress cases; measure grouping/snippets, UI paint, import contention, renderer processes and local inference separately. Tune evidence-backed bottlenecks before replacing a stack component.
+Begin only after working Google GUI and CLI workflows have been dogfooded by the founder. Revisit the retained [IMAP/SMTP contract](contracts/imap-smtp.md) and deferred subscription sections of [Calendar](contracts/calendar.md), based on concrete non-Google needs and the proven engine boundary.
 
-Exercise interrupted imports/migrations/downloads, low disk, cursor expiry, concurrent edits, missing/locked credentials, uncertain sends, revoked calendar access, time-zone transitions and runner shutdown. Complete installation, CLI discovery, update/recovery and uninstall on Windows, macOS, Ubuntu, Arch and Omarchy. Resolve signing, dependency notices and the maintained update route for the actual personal distribution before treating delivery as smooth.
+Implement capability-driven IMAP sync/folder moves, SMTP submission/Sent recovery and external read-only iCalendar subscriptions. Add their CLI/GUI affordances together. Preserve Gmail behavior; do not retrofit the early product into a lowest-common-denominator protocol model. Expand readiness reporting explicitly when this work becomes active.
 
-Run the proposed two-week founder trial only after core reliability and real-account behavior are fit for daily use. Observe whether the app replaces eM Client, finds old mail and supports zero unread/zero starred through real review/action. Record unresolved holds without auto-clearing them. A trial on one machine does not substitute for the platform matrix.
+## Ownership and parallel work
 
-Each of the ten required areas becomes Verified only with its contract and applicable shared gates satisfied. Failed budgets or changed scope need a recorded decision; neither screenshots nor unrun tests raise the percentage.
+The [contract index](contracts/README.md) defines owners. A owns domain/schema/protocol; B owns Gmail; F owns Google Calendar; E/G own Qt presentation/platform; I owns CLI commands; D owns search; H owns optional classification/summaries. C's legacy transports remain dormant until Phase 4. Shared MIME work needed by Gmail proceeds with A/B/E and the mail-library owner, without activating SMTP/IMAP.
 
-## Work ownership and future repository shape
+Use one Rust workspace and one Qt application with shared small fixtures when implementation begins. Protocol types do not import Qt/storage; GUI and CLI never write the store directly. Start coarse and split only at actual ownership boundaries. Do not build a separate CLI engine or alternate calendar schema.
 
-The [contract index](contracts/README.md) defines A–I. A owns shared schema/protocol changes; G coordinates packaging/quality; other owners produce compatible adapters and evidence. Parallel work uses a named contract revision and shared fixture revision, then integrates small end-to-end changes.
+## Decisions when needed
 
-Proposed locations below are for implementation later; they are not directories or APIs being scaffolded now:
-
-| Location | Ownership and intended purpose |
-| --- | --- |
-| Rust workspace: engine/core, protocol/client, CLI and only then justified adapters | A owns persistence/domain/protocol; I owns command surface; B/C/F/H own provider/assistance modules |
-| Qt desktop application directory | E/G own C++ presentation adapters and QML; F supplies calendar view behavior |
-| Shared small fixtures and integration tests | A coordinates identity/revision manifests; every stream contributes domain cases |
-| Build/package/CI definitions | G owns reproducible Cargo/CMake builds, artifact staging and platform jobs |
-| Generated corpora and local profiles outside tracked source | No real mail/tokens, huge fixture blobs or mutable user state in the repository |
-
-Choose physical directory/crate names during the first authorized bootstrap. Keep dependencies one-way: protocol types do not import storage or Qt; UI/CLI call the engine; providers return normalized data and operation outcomes; the engine alone persists intent; inference returns data without tools. Start with coarse modules and split where an independent boundary actually exists.
-
-## Decisions at the point they become necessary
-
-| Decision or missing input | Latest responsible point | Work that can proceed before it |
+| Decision | Needed before | Independent work still possible |
 | --- | --- | --- |
-| Actual toolchains, Qt artifacts, supported machines/OS floors and license/dependency route | Phase 0 build/packaging choice; every advertised platform before release | Documentation, synthetic fixture design and available-host experiments |
-| ID/revision/cursor/operation/occurrence representation and protocol framing | Before consumers implement the relevant shared boundary | Isolated library and renderer experiments |
-| Done/Delay targets, read trigger, mixed-state grouping and account count scope | Before production triage interaction; new mail must remain independent | Explicit low-level read/star commands and nonfinal visual experiments |
-| Trash/spam scope, remote deletion, removal of accounts with unsent work, encryption at rest and recovery/export scope | Before real-store/migration or destructive-retention behavior is committed | Disposable synthetic storage/recovery experiments |
-| Google project/admin access, sustained personal/Workspace auth, actual non-Google providers | Before the corresponding real-account gate | Mock sync, library evaluation, local sink and UI work |
-| Final screen/state designs, calendar overlays, small-window behavior and remote-content presentation | Before production implementation of that UI slice | Headless work, renderer/input feasibility and fake data views |
-| Runner/model availability and local-only/cancellation support | Before enabling that runner; quality thresholds before Auto-apply trial | Manual flows, fake inference and stale-result tests |
-| Signing identities and update distribution | Before trusted personal delivery; investigate during Phase 0 | Explicitly identified local smoke packages |
+| Actual tools, native dependency route, host matrix | Claimed build/install support | Synthetic fixtures and available-host experiments |
+| IDs, revisions, framing, request scope and access policy | Each shared client boundary | Isolated editor/library experiments |
+| Exact Done/Delayed effects, read triggers and counts | Corresponding production interaction; user ownership is already settled | Explicit low-level commands and functional GUI |
+| Retention/deletion, encryption, unsent work and recovery | Affected real-data schema/destructive behavior | Disposable synthetic stores |
+| Google project/admin access | Live personal/Workspace gate | Local fixtures and paired client work |
+| Remaining design details, settings controls, overlay visibility | Corresponding production behavior | Initial mail/calendar references and settings shell/navigation plumbing |
+| Best-effort HTML component/resources | Later HTML display | Text-based reading/replies |
+| Local runner quality/locality/cancellation | Enabling that runner/policy | Manual labeling and fake inference |
+| Non-Google providers and feed cases | Phase 4, after actual Google dogfooding | Google product improvement |
 
-This is a just-in-time decision list, not a request for another broad interview. At each phase boundary, preserve completed evidence, append pivots, update affected contracts and expand only the next executable slice. Keep [status](status.md) short and current; use scoped research for the detailed outcomes.
-
+Append changes to decisions, update consumed contract revisions and retain executed evidence. No planning artifact substitutes for running the slice.

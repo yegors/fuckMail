@@ -1,61 +1,56 @@
 # Current status
 
-As of 2026-09-11. **Pre-implementation. MVP readiness: 0% (0 of 10 required feature areas verified).** This repository contains documentation only: no application code, build configuration, executable, automated test harness or measured application results.
+As of 2026-09-11. **Pre-implementation. Google-first MVP readiness: 0% (0 of 9 required areas verified).** Documentation and mockups exist; application code, build configuration, executables, tests, installers and measured results do not.
 
-## Built and established
+## Established direction
 
-The product direction and scope are documented. Existing provider/toolkit research, the exec-buddy source review, triage/local-assistance behavior and proposed performance gates have been organized by scope. Research and contract indexes, ownership boundaries and an append-only decision log are in place. This is planning progress; it does not count as a built application feature.
+[D009](decisions.md) supersedes the earlier broad protocol/HTML gates. All current accounts use Google APIs. The first usable milestone includes both a small CLI and a GUI against one engine. Grow their workflows together, and have the founder dogfood usable Google clients before beginning IMAP/SMTP or external iCalendar subscriptions. Text-first reading and safe extraction remain early; best-effort received HTML display is later work.
 
-## Building now and next
+Done/Delayed are explicit user decisions. Local classification only distinguishes human correspondence, automated senders/lists and user-defined noise, applying configured category/scope tags. It cannot mark mail reviewed or decide action state. Summaries and classification remain optional to enable; manual first use does not wait for models.
 
-**Planning complete for the next execution stage; implementation not started.** The closer mail/calendar [mockups](research/design-references.md) are documented alongside three earlier references. Final mockups will arrive closer to production UI implementation. [UI/UX](ui-ux.md) preserves open action/state/overlay decisions rather than adopting them from sample screens.
+The proposed stack remains Rust engine/CLI, C++20/Qt Quick/QML UI, private local IPC and SQLite/FTS5. QML expressions are accepted, with no Node.js or separate JS compilation/bundling pipeline. WebEngine is not a first-build prerequisite. Under D011 the [updated mail/calendar/settings originals](research/design-references.md) now guide the initial phase. Settings is explicitly incomplete: general shell/navigation plumbing only, ignoring the pictured switches. No application code, setup or model/provider connection was added during this reference update.
 
-The [development plan](development-plan.md) covers all phases; [Phase 0](plans/phase-0.md) specifies immediate packets, owners, dependencies, evidence and pivot triggers. Start P0-00 plus the small-fixture portion of P0-01 when asked to implement: inspect tools/test-host access, establish reproducible builds and shared synthetic inputs. Then prove private engine/CLI/UI coordination, durable storage and reader/composer feasibility while Google/protocol/calendar investigations proceed.
+## Next work
 
-The stack remains a [proposal](research/desktop-stack.md): Rust engine/CLI, C++20/Qt Quick UI, SQLite/FTS5 and private local IPC. No versions are locked, no feature workstream is active and all area contracts remain Draft. Scoped readiness is recorded only after the consumed interface/fixture choices are resolved. Planning readiness does not mean the build environment is installed or the product can run.
+No implementation workstream is active. When authorized, start P0-00 plus the small-fixture part of P0-01, then join P0-03/P0-10 storage/engine/CLI with P0-04's functional text/composer GUI. Exercise private IPC permissions, account scope, concurrency and recovery while the interface is still small. Google OAuth, MIME and Google calendar work proceed in their scoped packets. See the [plan](development-plan.md) and [Phase 0](plans/phase-0.md).
 
-Current environment evidence is only a Windows PowerShell PATH lookup finding Git and not the listed Rust/Qt/build commands; existing installations outside that PATH were not audited. Other test hosts, Google project/admin access, actual non-Google providers, signing identities and local runners are unverified dependencies. Their missing evidence blocks the relevant gate, not independent work. See the plan's just-in-time decision list.
+The [proposed first deliverable](plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) is a runnable synthetic-mail GUI/CLI slice plus repeatable Mac/Windows development and native CI builds. Under D010, both the work Mac and home Windows PC are development hosts. This request defines scope; implementation and tool installation have not begun.
 
-## Feature readiness
+Read-only inspection of this Apple Silicon Mac found Git, Homebrew Rust/Cargo and Apple compiler/SDK tools; CMake, Ninja, rustup and Qt commands were not on PATH. The earlier Windows observation found Git and not its listed build commands. These are limited observations, not complete installation audits or selected tool versions; see [host evidence and proposed setup](research/linux-and-distribution.md#development-on-the-work-mac-and-home-windows-pc). Windows details and repository CI access remain to inspect. Missing access blocks its evidence row, not unrelated work.
 
-| Required feature area | Build state | Verified for daily use |
+## Google-first readiness
+
+| Required area | State | Verified |
 | --- | --- | --- |
-| [Core and offline storage](contracts/core-storage.md) | Not started; contract draft | No |
-| [Gmail](contracts/gmail.md) | Not started; contract draft | No |
-| [IMAP/SMTP](contracts/imap-smtp.md) | Not started; contract draft | No |
-| [Mail UI and human composition](contracts/mail-ui.md) | Not started; contract draft | No |
-| [Local search](contracts/search.md) | Not started; contract draft | No |
-| [Unread/star triage and categories](contracts/triage.md) | Not started; contract draft | No |
-| [Calendar and read-only feeds](contracts/calendar.md) | Not started; contract draft | No |
-| [Optional local classification/summaries](contracts/local-ai.md) | Not started; contract draft | No |
-| [Windows/macOS/Linux installation and lifecycle](contracts/platform.md) | Not started; contract draft | No |
-| [Full CLI and external agent interface](contracts/cli.md) | Not started; contract draft | No |
+| [Core/offline storage](contracts/core-storage.md) | Not started; Draft | No |
+| [Gmail/Workspace](contracts/gmail.md) | Not started; Draft | No |
+| [Mail UI/composition](contracts/mail-ui.md) | Not started; Draft | No |
+| [Search](contracts/search.md) | Not started; Draft | No |
+| [Triage/categories](contracts/triage.md) | Not started; Draft | No |
+| [Google Calendar](contracts/calendar.md) | Not started; Draft | No |
+| [Optional local assistance](contracts/local-ai.md) | Not started; Draft | No |
+| [Platform/install/lifecycle](contracts/platform.md) | Not started; Draft | No |
+| [CLI](contracts/cli.md) | Not started; Draft | No |
 
-The headline percentage counts fully verified required areas divided by these ten areas. Partial implementation is described in the table but does not count as a delivered area until its contract and applicable [quality/release gates](contracts/quality.md) pass. It is a scope-completion measure, not an estimate of effort or time remaining. Documentation, screenshots and unrun tests do not count. All required OS/distro and GUI/CLI gates must pass; optional enabling of AI does not remove its implemented-capability gate. The denominator changed from 9 to 10 on 2026-09-11 when the full CLI became a separate required area; Linux and smooth installation expand the existing Platform area. If scope changes again, append a decision and identify the revised denominator here.
+The denominator changed from ten to nine under D009: IMAP/SMTP is now a deferred area, and external subscriptions are outside the current Calendar gates. This is a reporting scope change, not progress. Local assistance remains an intended capability, optional to enable. Partial CLI or text-only GUI delivery can satisfy the first usable slice without marking its entire feature Verified. Record completed slice evidence explicitly; docs and screenshots do not count.
+
+The Google-first release still requires its applicable quality and OS gates. It does not require pixel-perfect HTML or later protocol compatibility. First use, fuller Google dogfooding and all-platform release verification are distinct evidence: none proves the others automatically.
 
 ## Phase overview
 
-Detailed sequencing lives in the [development plan](development-plan.md); avoid maintaining a second task list here.
-
-| Phase | Intended outcome | Current state |
+| Phase | Outcome | State |
 | --- | --- | --- |
-| 0 — Foundation feasibility | Build/fixtures, engine/CLI/storage, Qt reader/composer, early provider/calendar and installation evidence | Detailed packets prepared; unstarted |
-| 1 — Local product slice | Shared synthetic mail/calendar workflows, human drafts, triage and search through both interfaces | Outlined; expand after initial evidence |
-| 2 — Google daily workflows | Consumer Gmail/Workspace mail and calendar with reliable setup, sync and full-history acquisition | Outcome-level plan |
-| 3 — Required completeness | IMAP/SMTP, complete calendar/feeds, optional local assistance and full applicable CLI/GUI coverage | Outcome-level plan |
-| 4 — Daily-driver release | Performance/recovery, final design, trusted simple installation and founder trial | Outcome-level plan |
-| Later | Editable CalDAV and possible public/open-source launch | Separate future scope |
+| 0 — Paired foundation | Native builds, small fixtures, storage, private engine/CLI/GUI, text/composer and Google prerequisites | Prepared; not started |
+| 1 — First usable local slice | Both interfaces use real shared state for synthetic mail/calendar, drafts, search and explicit actions | Planned |
+| 2 — Google daily workflows | Gmail/Workspace and Google Calendar, growing CLI with GUI; controlled founder use | Planned |
+| 3 — Google completion and dogfooding | Usable Google GUI and CLI, expanded designs, later best-effort HTML/local assistance, recovery/performance and delivery evidence | Planned |
+| 4 — Later protocols | IMAP, SMTP and external iCalendar subscriptions, only after actual Google dogfooding | Deferred; not started |
+| Later | CalDAV and possible public/open-source launch | Separate scope |
 
-Calendar and IMAP/SMTP feasibility begin in Phase 0; installation and CLI are developed alongside the product. Later phase detail is intentionally provisional. A local fixture slice or Google-only demo does not satisfy MVP.
+## Evidence and gates
 
-## Not building
+The supplied approximately 25 GB eM Client snapshot is a disk footprint, not a verified message count. Research, published examples and mockups are not benchmark results. No account has been connected during planning.
 
-Excluded product areas: tasks, a contacts application, widget dashboards, unified mailboxes, individual-message browsing mode, broad integrations/assistant chat and app-operated remote processing. Built-in AI writing, rewriting, autocomplete, sending, cloud fallback, task generation, meeting briefings and embeddings/semantic search are excluded. External agent flows use the CLI under caller control; explicit CLI sessions can run with the GUI closed. No hidden GUI work/reminders continue after close. Separate OS-specific visual designs and an npm/Node application pipeline are not planned.
+Before legacy work begins, record which Google GUI/CLI workflows the founder used, issues found and fixes/retests. A proposed two-week trial is an evaluation suggestion, not an accepted fixed duration. Future protocol coverage has its own readiness reporting and cannot retroactively block the earlier Google milestone.
 
-Deferred beyond MVP: editable CalDAV and broad open-source/public-launch/store work. Linux, installers, CLI discovery and a maintained update/recovery route are in MVP. Further proposed deferrals and unaccepted integrations are listed in [product scope](product-scope.md); they are not hidden MVP work.
-
-## Evidence and outstanding gates
-
-No mailbox was accessed during planning; exec-buddy was inspected as source only. The supplied approximately 25 GB eM Client disk snapshot is not a verified message/account inventory. Slint screenshots are published examples, and every performance/model-quality number is a proposed target, not a result.
-
-Current gates are reproducible build/shared fixtures, stack/renderer/composer feasibility against the supplied references, headless CLI/engine behavior, actual devices/provider inventory, Ubuntu/Arch/Omarchy desktop compatibility, clean installation and the shared type/fixture baseline. Track evidence in the relevant scoped research file and [quality](contracts/quality.md), update this page as work changes, and append decisions to [the log](decisions.md).
+Upcoming inputs include actual build/test hosts, Google OAuth/admin access, retention/encryption/recovery policy before real storage, and reviewed UI actions/overlays. Models and later HTML dependencies have separate gates. The existing exclusions, full offline requirement and explicit GUI/CLI lifetime rules remain unchanged.

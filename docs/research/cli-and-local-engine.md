@@ -1,5 +1,7 @@
 # CLI and the shared local engine
 
+**Delivery update under D009 (2026-09-11):** implement a small real CLI and GUI together, using both for IPC access, account scope, concurrency and recovery experiments. Expand command coverage with each Google workflow. A full CLI catalogue is not a prerequisite for GUI work; both clients must be usable and dogfooded on Google before legacy adapters start.
+
 Research date: 2026-09-11. CLI scope is accepted; process/transport choices here are recommendations, with no prototype or benchmark. Build boundary: [CLI contract](../contracts/cli.md) and [Core](../contracts/core-storage.md).
 
 ## What changes with a full CLI

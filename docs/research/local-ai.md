@@ -1,5 +1,7 @@
 # Local classification and summarization: Ollama and vLLM
 
+**Classifier intent clarified by D009 (2026-09-11):** tag human correspondence versus bots/lists/user-defined noise and the configured account/category/scope. Only the user chooses Done/Delayed. A classifier tag never marks mail reviewed or changes read/star state, and a personal spam/noise category does not authorize Gmail system Spam/Trash routing. Gmail labels are the first integration; IMAP filing experiments wait for the post-dogfood phase.
+
 Sources checked 2026-09-11; reorganized 2026-09-11. Documentation/source evidence and proposals only; no app prototype, live account flow or benchmark has run. Recheck version-sensitive claims before implementation.
 
 Build boundary: [Local assistance contract](../contracts/local-ai.md).

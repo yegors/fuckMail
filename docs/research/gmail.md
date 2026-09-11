@@ -1,5 +1,7 @@
 # Gmail: synchronization, authorization and quotas
 
+**D009 scope (2026-09-11):** Gmail and Google Calendar cover all current accounts. Retrieval and sending use Google APIs, with shared MIME parsing/building and text extraction. A small CLI grows beside the GUI; neither SMTP transport nor a received-HTML display engine is an early dependency.
+
 Sources checked 2026-09-10; category sources rechecked 2026-09-11; reorganized 2026-09-11. Documentation/source evidence and proposals only; no app prototype, live account flow or benchmark has run. Recheck version-sensitive claims before implementation.
 
 Build boundary: [Gmail contract](../contracts/gmail.md).

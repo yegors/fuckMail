@@ -1,6 +1,8 @@
 # CLI and external agent interface
 
-State: Draft · Revision: 0 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 1 · Updated: 2026-09-11 · Implementation: not started.
+
+Revision 1 applies D009: a small real CLI ships in the first usable GUI slice; coverage grows with Google workflows. Legacy transport/feed commands are deferred until founder dogfooding. Affected consumers: Core, Mail UI, Gmail, Calendar, Local assistance and Platform.
 
 Owner: I — CLI. A full, feature-rich CLI is required alongside the desktop UI on Windows, macOS and Linux. Third-party agents use it for external workflows. Exact command names and schemas below are proposals; this is not a runnable command reference.
 
@@ -17,18 +19,20 @@ The GUI and CLI are peer clients of the same local core. Providers, search, cale
 
 ## Required functional coverage
 
+Coverage below is the intended product surface, delivered incrementally. The first usable slice includes account selection, bounded conversation list/search/read, one explicit flag action, a durable human draft path and basic calendar queries alongside the GUI. Setup/sync/send/edit commands arrive with their corresponding Google workflows. Do not finish all command grammar, streaming, bulk tooling or assistance commands before building the GUI. By the pre-legacy dogfood gate, both interfaces must cover the agreed everyday Google workflows and be exercised by the founder. IMAP/SMTP and external-feed commands enter only with the later adapters.
+
 | Area | CLI capabilities |
 | --- | --- |
 | Accounts and setup | Discover/select accounts, inspect provider capabilities, configure accounts/categories/local assistance, initiate explicit authentication and report actionable setup state |
 | Mail and search | List/search conversations, inspect specific messages/headers/bodies and source representations, fetch/save attachments, expose full offline/index coverage |
 | Mail management | Read/unread, star/unstar, labels/folders, category mappings, archive/trash/restore and explicitly scoped bulk operations with provider-specific semantics |
 | Human-authored mail | Create/edit/reopen drafts, recipients/signatures/attachments, reply/reply-all/forward and explicit submission; preserve uncertain-send handling |
-| Calendar | Calendar visibility/permissions, day/range/agenda and event search, event CRUD, recurrence/exception scope, invitations/RSVP, shared calendars and read-only feeds |
+| Calendar | Google calendar visibility/permissions, day/range/agenda/search, event edits, recurrence, RSVP and shared calendars; read-only feed commands later |
 | Optional assistance | Inspect/configure mode and runner availability, request allowed local classification/summaries, accept/correct results and cancel an explicitly scoped batch |
 | Operations | Explicit sync, inspect progress/errors/pending operations, retry or cancel where valid, coverage, version/capability/schema discovery and useful diagnostics |
 | Change consumption | An explicitly invoked foreground watch/change stream with cursors, reconnection and bounded output for external automation |
 
-GUI-only presentation controls need no artificial command equivalent. Every applicable core workflow is reachable through CLI; a read-only exporter or search-only utility does not meet this requirement. Unsupported provider capabilities return explicit errors, not invented parity. MCP servers, hosted-agent integrations and built-in scheduling are not prerequisites; external tools can wrap the CLI.
+GUI-only presentation controls need no artificial command equivalent. Every applicable core workflow is eventually reachable through CLI; a read-only exporter is not the final product. A useful partial CLI is explicitly acceptable at the first milestone and grows with the GUI. Unsupported provider capabilities return explicit errors, not invented parity. MCP servers, hosted-agent integrations and built-in scheduling are not prerequisites; external tools can wrap the CLI.
 
 ## Interface rules for agents
 
@@ -57,7 +61,7 @@ Use a private authenticated local transport with OS-appropriate access checks, p
 
 ## Acceptance gates
 
-- Exercise mail, categories, human draft/submission, calendar and sync through CLI-only fixtures on every required platform, including Linux with no display session. Initial OAuth/keyring setup has its own explicit prerequisites.
+- Exercise implemented Google mail, labels, human draft/submission, calendar and sync through CLI-only fixtures on every required platform, including Linux with no display session. Initial OAuth/keyring setup has its own explicit prerequisites.
 - Run the same operations through GUI and CLI and compare resulting state, coverage, flags, category overrides and provider outcomes.
 - Validate JSON schemas, pagination, Unicode/multiline input, binary outputs, exit codes, noninteractive failures, partial batches and cancellation.
 - Race GUI edits and multiple CLI clients, restart the engine and repeat a client request ID; preserve drafts/newer intent and never blindly resubmit an uncertain send.

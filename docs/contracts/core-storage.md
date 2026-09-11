@@ -1,6 +1,8 @@
 # Core and storage
 
-State: Draft · Revision: 4 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 5 · Updated: 2026-09-11 · Implementation: not started.
+
+Revision 5 applies D009: Google-first scope, paired early GUI/CLI, retained MIME/text without an initial HTML renderer, and user-owned action state. Affected consumers: Gmail, Search, Mail UI, Calendar, Triage, Local assistance, Platform and CLI; future IMAP/SMTP contracts stay deferred.
 
 Owner: A — Core/storage. These are living specifications of accepted requirements and proposed behavior; exact types, libraries and unresolved details are not committed. See [contract workflow](README.md).
 
@@ -25,9 +27,11 @@ The first slice needs a bounded page/query, one journaled action, source/blob av
 
 ## Shape
 
+Current delivery scope is Gmail/Google Calendar first, with both GUI and a small CLI using this same boundary immediately. MIME decoding, original source retention, text extraction and outgoing MIME remain required. Neither a full HTML renderer nor IMAP/SMTP/external-feed adapters are initial prerequisites. Preserve extensible identities and capabilities without implementing unused adapters. User-selected Done/Delayed and classifier tags are distinct state domains; inference never supplies read/star/completion commands.
+
 Use one local application core for the desktop GUI and a full headless CLI on Windows, macOS and Linux, including Ubuntu, Arch and Omarchy. Both clients read the same local views and submit the same validated commands. Provider synchronization, parsing, indexing, storage and optional local inference work run outside the UI's event loop. Direct provider access with no app-operated remote server is required; optional inference connects to the user's local Ollama/vLLM service. Mail navigation and search stay within the selected account and render conversations. The 2026-09-11 requirements are detailed in [triage](triage.md) and [local assistance](local-ai.md).
 
-Use a native desktop toolkit for navigation, lists, calendar and composition. No JavaScript/TypeScript application layer, npm/Node toolchain, Electron shell or Tauri web frontend is planned. Recommend a private, versioned local IPC boundary to one on-demand engine. Keep the domain/API implementation independent of Qt Quick and WebEngine so CLI use requires no display or renderer. No remote control server is required.
+Use a native desktop toolkit for navigation, lists, calendar and composition. QML expressions are acceptable; no Node.js or separate JavaScript/TypeScript compilation/bundling pipeline is planned. Recommend a private, versioned local IPC boundary to one on-demand engine. Keep the domain/API implementation independent of Qt Quick and WebEngine so CLI use requires no display or renderer. No remote control server is required.
 
 The revised recommendation is a Qt-free Rust engine and Rust CLI, with a C++20/Qt Quick UI accessing the same engine over private local IPC. The engine owns all domain behavior and persistence; the GUI owns presentation models, input, composition widgets and renderer integration. Neither client writes the database directly. No in-process Rust/Qt binding is required for this proposal. See [desktop research](../research/desktop-stack.md) and [HTML research](../research/html-mail.md). Language, transport and library choices remain subject to prototype evidence; the module boundaries below are independent of that choice.
 
@@ -41,8 +45,8 @@ flowchart TD
     CORE --> BLOBS[Message and attachment storage]
     CORE --> SYNC[Bounded sync scheduler]
     SYNC --> GOOGLE[Gmail and Google Calendar adapters]
-    SYNC --> STANDARD[IMAP and SMTP adapters]
-    SYNC --> FEEDS[Read-only iCalendar subscriptions]
+    SYNC -. After Google dogfooding .-> STANDARD[IMAP and SMTP adapters]
+    SYNC -. After Google dogfooding .-> FEEDS[Read-only iCalendar subscriptions]
     SYNC -. Post-MVP .-> DAV[Editable CalDAV adapter]
     GOOGLE --> PROVIDERS[User's providers]
     STANDARD --> PROVIDERS

@@ -1,6 +1,8 @@
 # Daily triage and mailbox categories
 
-State: Draft · Revision: 1 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 2 · Updated: 2026-09-11 · Implementation: not started.
+
+Revision 2 applies D009: the user alone chooses Done/Delayed; classification supplies account-specific human/automation/noise and category/scope labels without changing review/action state. Gmail mappings are first; IMAP mappings are deferred. Affected consumers: Core, Mail UI, Gmail, Local assistance and CLI.
 
 Owner: A — Core/storage; E — Mail UI and H — Local assistance consume the policy. These are living specifications of accepted requirements and proposed behavior; exact types, libraries and unresolved details are not committed. See [contract workflow](README.md).
 
@@ -16,6 +18,8 @@ Owner: A — Core/storage; E — Mail UI and H — Local assistance consume the 
 Related: [Gmail](gmail.md), [IMAP/SMTP](imap-smtp.md), [local assistance](local-ai.md).
 
 ## A finished day
+
+The user always chooses Done or Delayed, regardless of classifier output. A model may suggest or apply configured category/scope labels under policy, but it cannot mark mail read, star/unstar it, resolve it or postpone it. The personal meaning of spam/noise is a classification label, not permission to use Gmail system Spam, Trash or deletion. “Needs my attention” is a tag, never proof that review occurred. Exact Done flag/archive effects remain to define in the UI handoff; ownership is no longer open.
 
 The desired end-of-day state is zero unread messages and zero starred messages in each account's agreed mail scope. Unread means the user has not reviewed the message. Starring an email means delaying an action: it remains outstanding, even if work has begun. Remove the star when that action is complete. The UI must communicate deferred action rather than presenting stars as a permanent favorites collection. This is a personal workflow goal, not an instruction to automatically clear indicators or hide unfinished work.
 
@@ -44,6 +48,8 @@ Propose applying Star to the selected message, or the latest received message wh
 Account totals span its synchronized mail scope, including archived mail and configured category folders. Changing a folder, category, sender filter, or People/Automated filter must not manufacture a zero-work state. Keep scope, incomplete synchronization, and pending/failed provider writes visible. Spam/trash inclusion remains the existing retention-scope decision and must be stated rather than silently changing the meaning of zero. Do not provide an unqualified all-clear while coverage is incomplete or state changes await confirmation. Accounts retain separate navigation and counts; there is no unified inbox.
 
 ## Configurable categories using provider storage
+
+First-product intent: distinguish human correspondence from automated senders, mailing lists and user-defined noise, then assign the configured category and scope within that account. The user defines these meanings; human mail is not automatically important and automated mail is not automatically unwanted. Uncertain mail may remain unclassified and visible. Implement Gmail labels first. The IMAP folder behavior below is retained for the later protocol phase only.
 
 Categories belong to the user's mailbox organization. Each account has configurable category names, short descriptions for classification, and mappings to actual Gmail labels or IMAP folders. Example optional categories are People, Automated, Receipts, Newsletters and Work updates; none is a fixed taxonomy. People/Automated is a filter over the chosen mapping, not a separate hidden AI classification system. The user may leave mail unclassified or choose another category.
 

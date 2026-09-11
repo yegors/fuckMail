@@ -10,15 +10,15 @@ The founder is collaborating with Claude Design on one design for every OS; [ui-
 | --- | --- | --- | --- |
 | [A — Core and storage](core-storage.md) | Identifiers, schema, migrations, journal, retention, triage projections, category mappings/overrides, inference provenance and recovery | Synthetic fixtures and provider/model fakes | Owns shared schema and query/command contracts; bounded writes and durable checkpoints |
 | [B — Gmail](gmail.md) | Desktop auth, backfill/deltas, labels/categories, read/star state, attachments and draft/send mapping | Fake transport and provider fixtures | A's identities/checkpoints/operations; F's invitations; H's allowed category application |
-| [C — IMAP/SMTP](imap-smtp.md) | Capabilities, category-folder moves, read/flag state, threading, reconciliation and submission/sent copy | Local protocol fixtures and library experiments | A's contracts without Gmail multi-label assumptions; supported-server matrix and durable move outcomes |
+| [C — IMAP/SMTP (deferred)](imap-smtp.md) | Capabilities, category-folder moves, read/flag state, threading, reconciliation and submission/sent copy | After Google GUI/CLI dogfooding: local protocol fixtures and library experiments | A's contracts without Gmail multi-label assumptions; supported-server matrix and durable move outcomes |
 | [D — Search](search.md) | Sender/subject/body parsing/indexing, ranking, coverage and benchmarks | Generated normalized messages/conversations | A's record/change contract; conversation results with matching-message snippets for E and I |
 | [E — Mail UI](mail-ui.md) | Unread/Starred conversation workflow, sender/category chips, view restoration, reader/local summaries, human-only composer and signatures | Mock local API and realistic datasets | A/D/F/H interfaces, including Calendar's bounded today view; responsive pending states; no direct provider/model networking or schema ownership |
-| [F — Calendar](calendar.md) | Google/feeds, recurrence, views/search, compact all-day/current-next presentation, conference links and reminders | Calendar/ICS fixtures and mocked application API | A's event/version model, B/C's invitations, G's lifecycle/notifications; Join acknowledgement distinct from RSVP |
+| [F — Calendar](calendar.md) | Google first; feeds after dogfooding, recurrence, views/search, compact all-day/current-next presentation, conference links and reminders | Google-shaped event/recurrence fixtures and mocked application API; external feeds later | A's event/version model, B/C's invitations, G's lifecycle/notifications; Join acknowledgement distinct from RSVP |
 | [G — Platform and release](platform.md) | Windows/macOS/Linux shell, credential store, close/quit lifecycle, notifications, installers and OS integration | Minimal shell prototypes | Starts in phase 0; owns platform integration and verifies GUI close, explicit CLI lifetimes and final-engine shutdown |
 | [H — Local assistance](local-ai.md) | Ollama/vLLM adapters, modes/settings, bounded classification/summary queue, result validation and evaluation | Fake runner, synthetic received mail and configured category fixtures | A's revisions/overrides/journal; B/C apply permitted changes; E displays results; G verifies local execution/cancellation |
-| [I — CLI](cli.md) | Full mail/calendar/account/sync command surface, JSON schemas, exit/error semantics, help/completions and foreground streams | Fake engine and structured workflow fixtures | A owns the shared protocol/store/journal; B/C/D/F/H provide domain operations; G installs the CLI and validates headless lifecycle |
+| [I — CLI](cli.md) | Small useful CLI with the first GUI, growing Google workflow coverage, JSON schemas, exit/error semantics, help/completions and foreground streams | Fake engine and structured workflow fixtures | A owns the shared protocol/store/journal; B/C/D/F/H provide domain operations; G installs the CLI and validates headless lifecycle |
 
-These are ownership boundaries, not a requirement for simultaneous contributors. A small team can combine roles. Keep one owner for shared API and schema changes; each stream owns its tests and diagnostics. Linux, including Ubuntu, Arch and Omarchy, is required alongside Windows/macOS. GUI, CLI and installation are joint release gates. The local-assistance capability is in MVP, but enabling it is optional; manual workflows have independent completion gates.
+These are ownership boundaries, not a requirement for simultaneous contributors. A small team can combine roles. Keep one owner for shared API and schema changes; each stream owns its tests and diagnostics. Linux, including Ubuntu, Arch and Omarchy, is required alongside Windows/macOS. GUI, CLI and installation are joint Google-first release gates. The first usable slice needs a real but incomplete CLI alongside the GUI; never finish the full command surface before GUI iteration. IMAP/SMTP and external subscriptions are deferred until actual founder Google GUI/CLI dogfooding. The local-assistance capability is in MVP, but enabling it is optional; manual workflows have independent completion gates.
 
 ## Shared specifications
 
@@ -40,7 +40,7 @@ These are shared constraints, not extra teams editing every module. Core remains
 | Search | Sender/subject/body query and filters, current account, stable conversation IDs with matching message IDs/snippets, coverage and index generation |
 | Triage and categories | Message-level unread/star state; conversation projection and account totals independent of view filters; category IDs mapped to provider labels/folders; pending operation provenance and manual overrides |
 | Local inference | Optional capability, account/message scope, content/model/policy versions, bounded text input, validated category IDs and summary output, abstention, cancellation and no provider tools |
-| Calendar feeds | Read-only source identity, refresh/freshness state, last valid snapshot and bounded recurrence expansion |
+| Calendar feeds — deferred | Read-only source identity, refresh/freshness state, last valid snapshot and bounded recurrence expansion |
 | Storage | Single schema owner, versioned migrations, transaction rules, retention classes and recovery procedure |
 
 Adapters expose differences explicitly. The common layer must not pretend Gmail labels, IMAP folders, provider threading, and calendar scheduling behave identically.
@@ -62,14 +62,12 @@ flowchart LR
     P0[Design review and feasibility] --> A[Core contracts and storage]
     P0 --> UX[Mouse-first UX fixtures]
     A --> B[Gmail]
-    A --> C[IMAP and SMTP]
     A --> D[Conversation search]
-    A --> F[Google Calendar and iCalendar feeds]
+    A --> F[Google Calendar]
     A --> H[Optional local classification and summaries]
-    A --> CLI[Full headless CLI]
+    A --> CLI[Small CLI growing beside GUI]
     UX --> E[Mail UI and composer]
     B --> I[Integrated daily driver]
-    C --> I
     D --> I
     F --> I
     E --> I
@@ -77,10 +75,12 @@ flowchart LR
     CLI --> I
     P0 --> G[Windows macOS and Linux installation]
     G --> I
-    I --> MVP[Performance and reliability gates]
+    I --> MVP[Google performance and reliability]
+    I --> DOG[Founder Google GUI and CLI dogfooding]
+    DOG --> LEG[Later IMAP SMTP and iCalendar subscriptions]
 ```
 
-The arrows show integration dependencies, not a ban on independent implementation with fakes. A contract-ready UI/search/provider slice need not wait for a live account; all consumers agree the same shared type and fixture revision first. Calendar and protocol feasibility run early. No contributor should invent a second schema or incompatible interface to unblock its own module.
+The arrows show integration dependencies, not a ban on independent implementation with fakes. A contract-ready UI/search/provider slice need not wait for a live account; all consumers agree the same shared type and fixture revision first. Google Calendar and shared MIME feasibility run early; legacy transports and external subscriptions do not. The Google-first scope has nine required areas, with C deferred. No contributor should invent a second schema or incompatible interface to unblock its own module.
 
 ## Contract format and readiness
 

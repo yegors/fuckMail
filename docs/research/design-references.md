@@ -1,10 +1,32 @@
 # Mockup references and technical implications
 
-Received 2026-09-11 from the founder. The latest pair is closer to the intended product, but still not final; final mockups will arrive closer to UI implementation. Local copies preserve every supplied PNG unchanged. Text, example accounts, dates and status inside the images are mock content, not behavior specifications or implementation evidence.
+**D011 handoff update (2026-09-11):** the founder supplied updated mail, calendar and settings mockups for the initial phase. These three images are now the working visual reference. D009's text-first, user-owned action and Google-first boundaries and D010's bounded paired-client/development package remain in force.
 
-## Closer mail and calendar direction
+Received 2026-09-11 from the founder. Local copies preserve every supplied PNG unchanged. Text, example accounts, dates, version numbers and status inside the images are mock content, not instructions, new provider requirements or implementation evidence. The initial-phase references supersede the earlier pair visually; they do not freeze all future screens or interactions.
 
-Use these references before the earlier mood images. Their structure informs the working [UI/UX brief](../ui-ux.md); the founder has not frozen fonts, dimensions, interaction details or the stack.
+## Current initial-phase mail, calendar and settings
+
+| Reference | Observed treatment | Initial-phase use |
+| --- | --- | --- |
+| [Initial mail](assets/2026-09-11/initial-mail.png) | Compact top Mail/Calendar/account bar and settings gear; Inbox/Sent with category chips; review/delayed/done groups; right reader, earlier-message expander and offline attachment; an inline reply composer with recipient, explicit From, subject, Send/Discard and draft copy | Apply the split layout and inline durable plain-text reply. Keep account identity visible and draft state truthful. Sender/subject/body search, retained attachments and explicit user flags use the shared engine/CLI |
+| [Initial calendar](assets/2026-09-11/initial-calendar.png) | Full-width week, active-day/time accent, understated event blocks, Busy entries from other accounts, Day/Week/Month/Today controls and the shared footer | Propose a read-only fixture week for the first desktop slice, using the same range data as the CLI and today's footer. Editing, recurrence expansion and the other finished views remain later slices |
+| [Initial settings](assets/2026-09-11/initial-settings.png) | Left navigation for Mailboxes & calendars, Local model, Mail, Calendar and Shortcuts; account cards with display name/address/provider, Mail/Calendar switches, freshness/indexing status and Add mailbox; Done/Esc returns to the app; top account bar and today footer remain | The founder clarified that settings is incomplete: ignore the switches and lay only general plumbing. Establish the page shell, routing/return navigation and shared account context. Detailed controls, cards and subpages await the next design |
+| All three | Near-black surfaces, compact sans-serif headings/body text, muted borders, restrained amber time accents, generous empty space and a persistent bottom timeline | Prefer this typography direction over the earlier serif treatment. Exact fonts, dimensions and colors remain unselected. Check secondary-text legibility, focus, compact windows and Mac/Windows scaling |
+
+### Scope and interaction notes
+
+- **Provider/model samples:** the settings card naming Fastmail does not supersede the founder's all-Google requirement. Use Google-shaped synthetic accounts initially. The Qwen summary, Local model entry, activity sparkline, arrivals/time-left statistics and version 0.9.2 are examples, not first-slice dependencies or measured values. Hide unavailable assistance and omit unimplemented analytics; no fabricated live status.
+- **Composer:** visible To/From/subject and inline editing clarify placement. The first slice saves drafts; the pictured Send button does not authorize provider sending. Do not show a success state for a local save. Settings' Done is a navigation action, distinct from mail's unresolved Done mapping.
+- **Settings clarification:** the founder explicitly said to ignore the Mail/Calendar switches and build only the general plumbing; the settings mockup is incomplete. No toggle semantics need choosing now. Do not invent synchronization, visibility, account removal or data deletion behavior from those controls. Other sidebar labels and account cards remain illustrative, not a settings-feature checklist.
+- **Coverage:** freshness, fetched history, text indexing and attachment availability are different states. A single pictured progress bar does not settle their aggregation; recent sync or completed text indexing cannot claim all attachments are offline. Use explicit fixture state and label it synthetic in the prototype.
+- **Busy and footer:** carry the pictured footer across mail, calendar and settings as the initial-phase composition. Keep it on today when the week grid browses another date. Cross-account Busy entries still need explicit visibility and permitted fields; a gray title is not an access rule.
+- **Remaining actions:** Done/Delayed targets, automatic read behavior and mixed read/star group precedence remain open. The newer account tabs show a single count, but units/scope still need labels. Category names are user-defined examples. Missing new-message, reply-all, forward, draft navigation and event-edit states remain future design work.
+
+This is enough visual direction for the proposed synthetic slice, with settings limited to plumbing. Receiving these references does not add real-account access, model installation or live sending to that scope.
+
+## Previous closer mail and calendar direction
+
+Retain this pair and its observations as history. The initial-phase trio above takes precedence for new screen work. Shared behavior still comes from the [UI/UX brief](../ui-ux.md) and contracts.
 
 | Reference | Observed treatment | Product and implementation implication |
 | --- | --- | --- |
@@ -42,6 +64,14 @@ Retain these for visual history, not as competing final designs.
 The old third image's sidebar agenda does not supersede the confirmed bottom strip. Specific fonts/colors, keyboard hints, “Done/Finished” semantics and example AI results were not accepted by inclusion in an image. Bundled fonts, if chosen, need redistribution rights and fallback/Unicode testing; font names cannot be established from these images alone.
 
 ## Asset provenance
+
+The three initial-phase originals were copied from the supplied clipboard files without resizing or editing. Source and destination bytes and SHA-256 match.
+
+| Repo copy | Supplied clipboard file | Dimensions | Bytes | SHA-256 |
+| --- | --- | --- | --- | --- |
+| [initial-mail.png](assets/2026-09-11/initial-mail.png) | codex-clipboard-90fdf7f0-6f12-4912-94fd-c5ec02cdca7c.png | 4518 × 2868 | 770157 | `5c5611746939a1578377c488da0052104ef2451fcf4d3d15e612eebe2aed3d6d` |
+| [initial-calendar.png](assets/2026-09-11/initial-calendar.png) | codex-clipboard-ffd9d0d3-66b7-4b71-bc99-f5c3163b885a.png | 4524 × 2866 | 509802 | `fb7825bb6cfae83a5a1c923c44724a8a3970715964fa31ee547a6440771ab907` |
+| [initial-settings.png](assets/2026-09-11/initial-settings.png) | codex-clipboard-37e2282d-1e0f-4882-beaa-a8af99792fa0.png | 4520 × 2870 | 490390 | `0a1a1efbf01a29c725bc142c8d363c79984677ed50d3ca8f6f14f71cc41a6787` |
 
 The two closer originals were copied from the supplied clipboard attachments on 2026-09-11. SHA-256 was compared before/after copying; both copies match exactly. They have not been resized or edited.
 

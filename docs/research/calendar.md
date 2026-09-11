@@ -1,5 +1,7 @@
 # Calendar: Google, subscriptions and recurrence
 
+**Current phase scope under D009 (2026-09-11):** Google Calendar is first. Recurrence, time zones, invitations and relevant iCalendar representations remain early work. External iCalendar URL fetching/subscriptions and their old early experiments below are deferred until founder Google GUI/CLI dogfooding; CalDAV remains separately deferred.
+
 Sources checked 2026-09-10; reorganized 2026-09-11. Documentation/source evidence and proposals only; no app prototype, live account flow or benchmark has run. Recheck version-sensitive claims before implementation.
 
 Build boundary: [Calendar contract](../contracts/calendar.md).
@@ -12,7 +14,7 @@ CalDAV provides calendar access over WebDAV; iCalendar defines the event represe
 
 Recurring series contain rules and exceptions. Google warns against updating every occurrence individually to change a series. Recommendation: preserve series identity and exceptions, expand only a bounded view window, and test occurrence/series edits independently. [Google recurring events](https://developers.google.com/workspace/calendar/api/guides/recurringevents)
 
-Read-only URL subscriptions are a separate, simpler integration: periodically retrieve the iCalendar feed, cache a successfully parsed snapshot, and render it locally. They provide visibility, not an editable calendar or scheduling endpoint. The founder explicitly requires these in MVP and has deferred editable CalDAV. [iCalendar format](https://www.rfc-editor.org/rfc/rfc5545)
+Read-only URL subscriptions are a separate integration: periodically retrieve an iCalendar feed, cache a successfully parsed snapshot, and render it locally. They provide visibility, not an editable calendar or scheduling endpoint. D009 defers their implementation until after Google GUI/CLI dogfooding; editable CalDAV remains separately deferred. [iCalendar format](https://www.rfc-editor.org/rfc/rfc5545)
 
 Calendar has per-project/per-user quotas and operational limits, including bursts of writes. Measure polling and recurrence edits with the actual project; avoid rewriting large sets of occurrences to represent a series edit. [Calendar usage limits](https://developers.google.com/workspace/calendar/api/guides/quota)
 
@@ -20,7 +22,7 @@ Calendar has per-project/per-user quotas and operational limits, including burst
 
 P0-05 (calendar): evaluate maintained iCalendar and recurrence libraries, packaging and licenses. Editable CalDAV library selection can wait until its later phase.
 
-P0-06 (calendar): exercise recurring-event edits, organizer updates, attendee RSVP, permission changes and read-only feeds early. Design the full calendar fixtures before promising a daily driver. Mail invitation transport is coordinated with the Gmail and IMAP/SMTP contracts.
+P0-06 (calendar): exercise Google recurring-event edits, organizer updates, attendee RSVP and permission changes early. External-feed experiments are deferred. Coordinate current mail invitation transport with Gmail; the IMAP/SMTP contract joins only in the later phase.
 
 ## Phase 0 scope and library feasibility
 
@@ -38,7 +40,7 @@ If the Rust shortlist cannot preserve required recurrence/time-zone behavior, co
 | --- | --- | --- |
 | P0-05: Is the local calendar representation sufficient? | Synthetic RFC examples and Google/ICS-shaped fixtures for all-day/floating/zoned times, DST boundaries, monthly rules, RDATE/EXDATE, moved/canceled occurrences and custom VTIMEZONE. Output expected versus actual bounded occurrence sets, round trips, measured cost and candidate limitations. | Series identity, exceptions and original data survive; unsupported rules/zones remain explicit instead of silently changing event times. Investigate libical for material gaps. Local Google expansion and feed expansion must share occurrence semantics even if adapters differ. |
 | P0-06A: Can Google edits and sync converge? | Mock paginated deltas including token 410, concurrent organizer edits, attendee RSVP, permission loss and occurrence/series/following edits. Output operation/checkpoint traces and an invitation-notification ownership table. | Recovery retains pending intent; edits preserve unaffected exceptions; exactly one responsible path requests attendee notifications. Later verify with authorized consumer/Workspace test calendars and controlled recipients; fake success cannot prove Google behavior. |
-| P0-06B: Are subscriptions dependable offline? | Local HTTP feed fixtures for valid updates, removals, redirects, not-modified responses, unavailable/truncated feeds and changed time zones. Output snapshot/refresh coverage and occurrence comparisons. | Only a complete valid refresh replaces cached data; stale state is visible; private feed URLs stay out of diagnostics. Parser limitations or feed errors do not discard the last good calendar. |
+| Deferred after Google dogfooding (formerly P0-06B): Are subscriptions dependable offline? | Local HTTP feed fixtures for valid updates, removals, redirects, not-modified responses, unavailable/truncated feeds and changed time zones. Output snapshot/refresh coverage and occurrence comparisons. | Only a complete valid refresh replaces cached data; stale state is visible; private feed URLs stay out of diagnostics. Parser limitations or feed errors do not discard the last good calendar. |
 | P0-06C: Can both UIs consume one event view? | The same synthetic occurrences for full calendar, today's strip and CLI, including overlaps, all-day events, other-account busy overlays and stale coverage. Output cross-interface comparisons without final styling. | Times, occurrence identity, permissions and freshness agree. An overlay may suppress a title for display but must not claim server permission it lacks. Final visibility defaults stay a design decision. |
 
 Calendar work can begin with these fixtures before OAuth or final UI design. Actual shared-calendar permissions, Workspace policy, invitation notification behavior and sustained sync require later account access; public verification and editable CalDAV remain deferred.

@@ -1,166 +1,138 @@
-# Phase 0 — foundation and feasibility
+# Phase 0 — paired foundation and Google feasibility
 
-Updated 2026-09-11. **Prepared for a future implementation start; not executed.** This backlog is detailed enough to begin controlled feasibility work when requested. It does not mark feature contracts Ready or create a runnable build. [Development plan](../development-plan.md) owns the full sequence.
+Updated 2026-09-11 under [D009–D011](../decisions.md). **Future execution plan; not started.** [Development plan](../development-plan.md) owns sequence; [contracts](../contracts/README.md) own behavior. All areas remain Draft.
 
-## Starting position
+## Starting point
 
-The repo has product/research/contracts, an append-only decision log, three earlier visual references and the closer mail/calendar pair. It has no code, dependency manifests, tests, CI or installers. A 2026-09-11 read-only lookup in this Windows PowerShell environment found Git on PATH, but not Rust/Cargo, CMake/Ninja/CTest, MSVC cl or Qt command tools. That is not a machine-wide installation audit. Reinspect the environment when execution begins; do not start by blindly reinstalling tools.
+The repo contains docs and nonfinal mockups only. Read-only inspection now covers this Apple Silicon Mac as well as the earlier Windows PATH lookup; see the [host observations](../research/linux-and-distribution.md#development-on-the-work-mac-and-home-windows-pc). Missing dependencies and the actual Windows configuration need inspection/setup when implementation is requested.
 
-Proposed baseline: Rust engine/CLI, C++20/Qt Quick/QML GUI, SQLite/FTS5 with retained blobs, private on-demand engine IPC. Versions, library features and platform floors are selected from evidence during this phase. Final visual mockups and real provider credentials are not prerequisites for synthetic work.
+Proposed baseline: Rust engine and small CLI, C++20/Qt Quick/QML GUI, private local IPC, SQLite/FTS5 and retained content. QML expressions are accepted; Node.js and a separate JavaScript compilation/bundling pipeline are excluded. WebEngine is not required for this phase. No versions are selected.
 
-## How to begin
+## Start and order
 
-The first authorized task is **P0-00 plus the small-fixture part of P0-01**. Read current status/decisions and the affected contract revisions, inspect the existing development environment and accessible test hosts, then create the smallest reproducible build/test foundation. Record exact successful commands only after they exist and run; no command in this plan claims to be runnable today.
+### Proposed first deliverable: a runnable desktop slice on Mac and Windows
 
-Give each execution packet:
+Under [D010](../decisions.md), development must move between the founder's work Mac and home Windows PC. The first work package combines the bounded portions of P0-00/P0-01/P0-03/P0-10/P0-04/P0-11 below. It is a proposal for the next implementation task, not authorization to start or a claim that all Phase 0 gates fit in it.
 
-- its owner and contract revision, explicit purpose and prerequisites;
-- the fixture/input revision and code paths it owns once created;
-- a small deliverable and observable verification result;
-- unresolved cases, consumer impact and a proceed/change/blocked outcome.
+**What the founder can use:** a Qt Quick desktop app, a small headless Rust CLI and one Rust engine/SQLite store. Seed a disposable profile with two synthetic accounts, a few hundred messages in conversations, a small attachment corpus and a week's calendar events. Follow the [D011 initial-phase references](../research/design-references.md): top accounts, split reader, inline reply, persistent calendar footer and settings shell. Detailed settings controls remain excluded per founder clarification.
 
-A missing credential, Mac, Linux desktop, signing identity or runner is an external dependency for that evidence row. Keep the row unverified and continue independent work. Do not install a model, contact a real mailbox or send mail as a side effect of a synthetic feasibility packet.
+The acceptance walkthrough is deliberately small:
 
-## Order and concurrency
+1. Launch the app, switch accounts, search by sender or subject/body keywords, and open a conversation and its retained attachment.
+2. Explicitly change read/star state from either client and observe the same scoped state from the other. Use these literal actions until Done/Delayed mappings are reviewed.
+3. Write and save a plain-text reply draft; close/restart and recover its content. No actual sending in this work package.
+4. View a read-only fixture week using the latest calendar composition, with today's events also in the persistent footer and a CLI range query. Event editing, recurrence expansion and the other complete views are subsequent slices.
+5. Exercise concurrent clients, stale/invalid requests, account scoping, draft persistence and final-client shutdown through the actual local IPC boundary.
+6. Enter/leave the settings shell while preserving the selected account, prior mail/calendar position, any draft and today's footer. Ignore the pictured Mail/Calendar switches; no detailed settings, provider/model setup or generic configuration framework is needed.
 
-1. P0-00 establishes available tools/hosts and the minimum build; P0-01 establishes a small shared synthetic fixture manifest.
-2. P0-10's protocol skeleton and P0-03's storage slice start together after agreeing identity/operation concepts, then combine for one durable action.
-3. P0-04 Qt reader/composer and P0-05 MIME/IMAP/SMTP plus P0-06 recurrence/feed experiments can run alongside the engine with the same source fixtures.
-4. P0-02 prepares Google setup immediately; real authentication waits for the account/project/admin access needed for that test.
-5. P0-07/P0-09 connect semantics and interface behavior; P0-11 packages the combined fixture slice on required systems early.
-6. P0-08 starts with fake inference and configuration/cancellation questions. Model quality and the full workload/compatibility matrix continue before their feature gates.
+**Development deliverables:** compatible pinned tool/dependency versions, repeatable Mac shell and Windows PowerShell setup, common build/test/run/package entry points, a diagnostic command, dependency caches, native macOS/Windows CI jobs with retained development artifacts, and an agent-readable setup/handoff guide. Shared configuration should own the work; OS wrappers handle installation and native tool discovery. Track source/configuration/fixtures in Git, with machine paths, build output, profiles and credentials kept local. A fixture reset must target only its disposable profile.
 
-These P0 identifiers retain the existing research experiment map; **P0-00** is the added bootstrap packet. Substeps in research narrow a packet, not a competing backlog.
+**Completion evidence:** launch/use the slice on this Mac, run both native CI builds and applicable automated tests, and retain exact source/tool/runner versions plus the artifacts and walkthrough. Verify the physical home Windows GUI/input/runtime when that machine becomes available; CI is not evidence of its desktop behavior. Record an unavailable runner as blocked evidence. Linux remains a product requirement; its full distro/desktop qualification belongs to later gates.
 
-## P0-00 — reproducible builds and host access
+This package has no Google-account, final-design, model or signing prerequisite. Development artifacts can be unsigned; trusted distribution is later work. Full CLI coverage, real provider sync/send, calendar editing/recurrence, large-corpus performance claims, complete settings and received-HTML display are outside this bounded deliverable. The persistent store and IPC are intended to grow into the Google client. Resolve failures in the proposed stack before expanding features.
 
-**Owners:** G with A/I/E. **Contracts:** Platform, Core, CLI, Mail UI. **Input:** current repository, PATH/development-tool inventory, target availability and [distribution research](../research/linux-and-distribution.md).
+### Packet sequence
 
-Later execution will create a minimal Cargo workspace for a Qt-free engine/client and a separate CMake/Ninja Qt application, with only enough packaging/test setup to run the experiments. Inspect current Rust, compiler, Qt Quick/WebEngine and build-tool compatibility first; start with maintained matched artifacts. Record native/TLS/SQLite dependencies and relevant license/release-access conditions before pinning. Do not introduce a Rust/Qt ABI bridge simply to launch separate executables.
+Start **P0-00 plus the small-fixture part of P0-01**. Pair P0-03/P0-10 with P0-04 early: a useful CLI and functional GUI must exercise the same engine before the CLI command surface grows large. Test IPC permissions, account scope and recovery through both clients.
 
-Use Windows x64, macOS Apple Silicon and Ubuntu/Arch/Omarchy x64 as the candidate starting matrix, then reconcile actual founder hardware and Qt support. Build/test Rust and Qt separately; stage compatible artifacts together. Add CI on available supported runners once these commands work locally; CI containers can test headless code and package construction, but cannot prove desktop/keyring/Wayland or downloaded-app behavior.
+P0-02 prepares Google access, P0-05 handles shared MIME/text/outgoing content, P0-06 covers Google calendar semantics, P0-07/P0-09 cover user actions/categories, and P0-11 packages the small pair. P0-08 can use a fake runner; models are not a first-use prerequisite. Legacy IMAP/SMTP and external calendar feed experiments previously attached to these IDs are deferred to Phase 4. Their research remains available.
 
-**Output/pass:** recorded toolchain/dependency versions and commands, a headless Rust executable/test entry point, a Qt surface that loads its required modules, and an available/unavailable matrix for build, desktop and clean-install hosts. Every claimed host must have execution evidence; absent hosts remain explicit. **Pivot:** replace incompatible artifact/tool choices before spreading them into feature modules. See P0-11 for package behavior. An empty window alone does not pass reader/composer feasibility.
+Each packet names its purpose, owning contract revision, consumed fixture revision, small output and observed pass/fail/blocked result. Missing hosts, credentials or final designs block their own evidence row. This documentation update does not authorize implementation, real account access or model installation.
 
-## P0-01 — identities, small fixtures and scale inventory
+## P0-00 — native build and host inventory
 
-**Owners:** A/D/F, with every consumer. **Input:** Core, Triage, Calendar and [Quality](../contracts/quality.md), plus [storage research](../research/search-storage.md). No private mail is required.
+**Owners:** G/A/I/E. Inspect Rust, C++ compiler, Qt Quick/text modules, Cargo, CMake/Ninja and available desktop/test hosts. Create the smallest reproducible Rust workspace and Qt application when asked to implement. No ABI bridge is required for separate executables.
 
-Define the first fixture manifest before independent consumers encode different assumptions. Include several separate accounts with deliberately colliding remote-looking IDs; provider message and local conversation IDs; independent flags; mixed labels/folders; long threads; source MIME; complete/missing/partial blobs; durable drafts/operations; recurring events/exceptions and restricted calendars. Specify expected state transitions and retrieval results as data to create during execution.
+Candidate targets remain Windows x64, macOS Apple Silicon, Ubuntu/Arch/Omarchy x64, subject to actual hardware and supported artifacts. Use normal native builds without a Node/JS build step. Pin versions only after they run. A later HTML dependency must not enter the bootstrap by accident.
 
-Keep the first correctness corpus small. Separately design a seeded generator for the existing 100k rapid, 1m primary and 3m stress tiers, and meaningful 25 GB/100 GB content scenarios. Retain seeds/manifests and small licensed/synthetic examples in source control; generate large output outside it. The user's 25 GB disk snapshot is not a message count or a throughput result.
+**Pass:** actual commands/versions, a Rust test/executable, a Qt surface, and an honest available/unavailable host matrix. Missing hosts stay unverified; no all-platform claim follows from one build.
 
-**Output/pass:** agreed identity relationships and fixture revision, expected outcomes, reproducible generation design and hardware/coverage fields. P0-10 later verifies that both clients interpret those identities and flags consistently; creating this initial manifest does not depend on those clients already existing. **Defer:** actual provider/message inventory and full scale runs until needed; do not make private data acquisition a bootstrap prerequisite.
+## P0-01 — small shared fixtures and scale design
 
-## P0-10 — one engine, two clients, a bounded protocol
+**Owners:** A/D/F with consumers. Define separate Google-shaped accounts with colliding remote-looking IDs, local message/conversation identities, mixed labels/read/star flags, long threads, MIME sources, HTML-only inputs, present/missing/partial attachments, human drafts, operation states, recurring events and limited permissions.
 
-**Owners:** A/I/G/E. **Prerequisites:** P0-00, small P0-01 identities; P0-03 for the durable portion. **Evidence:** [CLI/engine research](../research/cli-and-local-engine.md).
+Include classifier results for human correspondence, bots/lists, noise, ambiguity and account/category/scope tags. Expected outcomes must show that tags cannot create Done/Delayed or change read/star state. The initial fixture is small; design the seeded 100k/1m/3m and 25 GB/100 GB scenarios separately. The existing 25 GB snapshot is not a message count.
 
-Test a Rust engine and Rust CLI with a C++ Qt presentation adapter over a private local byte stream: named pipes on Windows, Unix sockets on Unix-like platforms are the first candidates. Evaluate explicit length-framed UTF-8 JSON with bounded frames; do not assume internal framing must equal public CLI JSON/NDJSON. Choose framing/schema details in the experiment rather than adding untested APIs to contracts now.
+**Pass:** agreed identities, fixture revision and independent expected outcomes. Keep small synthetic fixtures in source; generate bulk content outside it. Do not implement IMAP folder moves or HTTP calendar feeds for this first manifest.
 
-Start with version/capability discovery, one account-scoped paginated query, one snapshot-targeted flag change, operation status, cancellation and a bounded change subscription. Define stale revisions/cursors, partial outcomes and an explicit resnapshot after a stream gap. Keep binary attachments out of JSON row pages. Share protocol definitions and golden fixtures, with both Rust and C++ tested against them.
+## P0-10 — one engine, a small CLI and the GUI
 
-Prove profile exclusivity separately from endpoint naming and authentication. Check OS-specific access, concurrent launches, stale discovery, client crash, slow consumer, engine restart and incompatible versions. GUI and CLI needing the same work have separate interests: closing one cannot cancel the other's valid request. Engine/CLI startup must require neither display nor Qt renderer. End the engine after the last active client/job; durable queued intent alone is not a keep-alive.
+**Owners:** A/I/G/E. With P0-00/P0-01 and P0-03's durable portion, test a private local stream: Windows named pipes and Unix sockets are candidates. Evaluate versioned bounded framing, account-scoped paging, one journaled flag action, draft save/status, a calendar range query and cancellation. Binary attachments stay out of JSON row pages.
 
-**Output/pass:** cross-language fixture tests, one-writer/lifetime traces, action parity, bounded queues, stderr/stdout behavior and startup/memory measurements. The Qt model loads pages and preserves selection on GUI-thread updates. **Pivot:** fix transport/lifecycle behavior before committing interfaces; consider an in-process bridge only against a demonstrated process-boundary problem. A working loopback server is not evidence of the required private local boundary.
+Use the same command/query fixtures from Rust CLI and Qt adapters. Test access/peer permissions independently of endpoint naming, concurrent launches, stale revisions, slow/disconnected clients, engine restart and incompatible versions. An account selector in the GUI is not an engine permission check.
 
-## P0-03 — persistence, blobs and useful search
+GUI and CLI own explicit sessions; ending one must not cancel another's valid work. Stop the engine when the last owner ends; durable queued intent is not a keep-alive. CLI must run without Qt/display dependencies.
 
-**Owners:** A/D, consuming P0-01; integrate with I/E through P0-10. **Evidence:** [storage research](../research/search-storage.md).
+**Pass:** both clients see and change the same scoped state; one writer, bounded queues, deliberate errors and recovery; documented permission/lifetime traces. Do not implement every command, completion or watch feature before joining the GUI. Resolve the shared boundary from this evidence before expanding it.
 
-Evaluate rusqlite with controlled SQLite/FTS5 features. Start with a dedicated writer, bounded reads, short transactions and explicit durability policy. No database transaction spans network/model awaits. Prove persisted intent and checkpoint ordering before tuning. Compare a simple FTS design against external-content indexing only where its consistency/size tradeoff matters.
+## P0-03 — durable storage and useful search
 
-Exercise replay, interrupted migration/transaction, draft/operation persistence and blob staging/finalization. SQLite and external files are not one atomic transaction: test interruptions before/after each commitment, including staged draft attachments. A process kill tests process-crash recovery, not power-loss durability. Design coherent preservation/restoration for migrations without quietly adding a full user-facing backup product.
+**Owners:** A/D with I/E. Evaluate controlled SQLite/FTS5 via a Rust adapter, short transactions, bounded reads and one writer. Never hold a transaction across network/model awaits. Start with replay, draft/action/checkpoint ordering and blob staging/finalization; SQLite and files do not form one automatic atomic transaction.
 
-Query sender names/addresses, subject and body with account filtering, conversation grouping and matching-message snippets. State partial sender and punctuation/language behavior. Deletions, edits and account removal must reach the index; summaries never become replacement source text.
+Keep source MIME, HTML and attachments even when the reader shows text. Index normalized source text, not generated summaries. Test sender punctuation/partial matching, subject/body queries, account filtering, conversation grouping and matching snippets. Add a 100k report after small correctness passes; retain the larger tiers for later evidence.
 
-**Output/pass:** correct small-fixture state/query results, recovery trace, actual SQLite features, draft/blob/operation survival and an initial 100k ingestion/query report. Record query plans and p50/p95/p99 with cache/host metadata. **Pivot:** inspect schema/query/hydration/locking first; evaluate Tantivy only if agreed retrieval or performance remains unmet. The million-message and full-content scenarios carry forward before performance readiness.
+**Pass:** persisted drafts/actions/content survive tested interruptions, basic queries are correct and both clients consume bounded results. Record actual cache/host/query-plan/p50/p95/p99 context. A process kill is not proof of power-loss durability. Disposable fixtures can precede real-data retention/encryption decisions.
 
-## P0-04 — received HTML and human composition in Qt
+## P0-04 — functional text reader and human composer
 
-**Owners:** E/G with A/C/F fixtures. **Prerequisites:** Qt build and shared MIME/event inputs; P0-05 supplies the serializer/local sink for outgoing round trips, and P0-10 joins the integrated slice. Renderer/input exploration can start before those integrations. **Evidence:** [HTML](../research/html-mail.md), [desktop stack](../research/desktop-stack.md) and [UI brief](../ui-ux.md).
+**Owners:** E/G with A/B/F/I. Build from the latest initial-phase trio: top account context, resizable conversation list/reader, accessible earlier members, inline reply and today's bottom calendar strip across mail/calendar/settings. Join the actual engine/CLI slice promptly. Settings is shell/navigation plumbing only; the founder said to ignore its unfinished switches. Exact fonts, compact behavior and detailed later controls still need refinement.
 
-Prototype only the closer shell structure: top context bar, resizable list/reader, collapsed thread members, local-summary placeholder, compact today strip and a calendar surface. Inspect input, selection, scaling, accessibility hooks and scrolling with realistic row lengths. Fonts, exact spacing, Done behavior and production screen composition remain open.
+Read plain-text parts and safely extracted text from HTML-only fixtures. Verify quotations, links, Unicode, copy/selection, long threads, attachments and unavailable-content states. Preserve original sources. A Qt text/document composer should support human replies, signatures, undo/IME and durable drafts; try the restrained formatting already intended without introducing a web editor prerequisite.
 
-Use the isolated WebEngine candidate with harmless synthetic mail. Validate tables, quoted content, Unicode, CID resources, very large HTML and long expanded threads. Its string-loading size limit means the experiment must evaluate controlled message-resource loading rather than concatenating an entire thread. Test blocked remote/local resource references and disabled scripts/privileged bridges without real mailbox content.
+Round-trip draft text/formatting/attachments through the shared Rust MIME path and a local Gmail API fake/capture sink. Test account switching and permission failures, updates/disconnects, draft restart and UI responsiveness. Do not implement an SMTP server/client as a prerequisite.
 
-Exercise QML text/document composition: manual plain/HTML input, reply quoting, links/lists, signatures, clipboard/IME/undo and attachments. Round-trip through durable drafts and the single Rust MIME serialization path into a local capture sink. Keep the strip usable during body retrieval and editing.
+**Pass:** readable human mail, a recoverable authored draft, shared scoped state and usable mouse/input behavior in both clients. This gate excludes received-HTML visual fidelity and WebEngine. Best-effort HTML viewing moves to the later Google polish phase with separate resource/isolation tests. Source parsing and safe text extraction remain early.
 
-**Output/pass:** fidelity/input screenshots and observations, preserved text/attachment checksums, no unexpected resource access, draft restart behavior and GUI/renderer memory/latency. Expanded members and matching search messages remain reachable. **Pivot:** fix content loading/editor integration first; change renderer/toolkit only if a material requirement remains unsupported. Production screens and interactions await their reviewed final design slice; the feasibility presentation remains provisional.
+## P0-02 — Google setup, sync and sending
 
-## P0-02 — sustainable Google setup and import strategy
+**Owners:** B/F/G/I. Plan installed-app OAuth/PKCE, shared credential references and coordinated token refresh for Gmail/Google Calendar. Consumer plus Workspace access needs a viable audience/admin strategy and durable token policy. Use fakes until account/project access is authorized.
 
-**Owners:** B/F/G/I. **Input:** [Gmail research](../research/gmail.md), [Calendar research](../research/calendar.md), Core operation/checkpoint fixtures.
+Mock retrieval/history paging, expired cursors, rate limits, interrupted attachments, label/flag edits and Gmail API sending. Preserve durable intent and ambiguous outcomes. Shared MIME generation remains needed; SMTP transport does not.
 
-Prepare the method-to-scope map, installed-app browser/PKCE flow, OS credential-reference handling, consent/reconnect UX and actionable CLI errors with synthetic endpoints. Plan one coordinated refresh path for shared Google authorization. Consumer Gmail plus Workspace requires an audience strategy that actually covers both; a single-organization Internal configuration cannot be assumed sufficient.
+**Pass:** source-backed setup prerequisites and correct synthetic reconciliation/send states, followed later by actual personal/Workspace auth longevity and controlled live workflow evidence. Missing access blocks only the live row. Do not infer import duration or full offline coverage from a recent-mail demo.
 
-Later authorized live checks need an accessible Cloud project, consumer account, Workspace account/admin policy and controlled test calendars/recipients. Record publishing/verification state, actual granted access, quota behavior, refresh after restart and sustained token policy. External Testing token lifetime and Workspace trust exceptions require explicit handling; one login is insufficient. Public verification remains deferred under C36 unless distribution changes.
+## P0-05 — MIME and readable content, not legacy transports
 
-Mock recent retrieval/history pages, expired cursors, rate limiting and interrupted attachments while preserving local intent. Record time-to-useful-data and full acquisition progress only once measured; never extrapolate an import promise from mailbox size alone.
+**Owners:** A/B/E with the mail-library owner. Evaluate incoming MIME parsing, outgoing message building and text extraction using the shared corpus. Existing mail-parser and lettre builder candidates may be tested without enabling SMTP transport. Record maintained versions/features/licenses only when chosen for the experiment.
 
-**Output/pass:** viable setup/dependency record, correct synthetic checkpoint/reconciliation trace and later live evidence per account type. **Blocked rule:** absent admin/project/account access blocks that live row, not local engine/UI work. No policy bypass or silent recent-only retention workaround.
+Test encodings, multipart/alternative, HTML-only human mail, inline resources, attachments, quoting, correct reply headers and malformed/large bounded inputs. Retain originals and compare decoded content/checksums. Generated MIME is captured locally or passed through a Gmail API fake; GUI and CLI share one serializer.
 
-## P0-05 — mail library and submission behavior
+**Pass:** useful extracted content and preserved human draft/signature/attachment round trips. No browser-level HTML rendering required. IMAP session libraries, SMTP submission peers and folder-move experiments stay in the retained research until the post-dogfood phase.
 
-**Owners:** C/B/A, with E/F consumers. **Input:** [IMAP/SMTP shortlist](../research/imap-smtp.md) and shared source/draft fixtures.
+## P0-06 — Google calendar identity and time
 
-Evaluate incoming MIME, one outgoing MIME builder, IMAP session support and SMTP transport against required capabilities. First candidates are mail-parser, lettre builder/transport and async-imap/imap-proto; these are a test shortlist, not selected dependencies. Record maintenance, native/runtime features, licenses, cancellation and resource behavior.
+**Owners:** F/A with B/E/I/G. Test Google event/series/occurrence identity, permissions, time zones, all-day dates, recurrence exceptions, moved/canceled instances and bounded day/range projections. Compare expected occurrences independently of the selected library. Google recurrence and invitation representations may require iCalendar parsing even though external subscriptions are deferred.
 
-Use scripted local protocol peers and a local SMTP capture sink for UIDVALIDITY changes, disconnects, optional-extension absence, destination UID mapping, partial moves, rejected submission and lost acknowledgement. Keep originals and compare decoded parts/content checksums. Share outgoing serialization with Gmail; no second composer format.
+Mock sync token expiry/pagination, edits, RSVP and permission changes. One path owns attendee notifications. Full calendar, footer and CLI receive the same permitted fields; styling is not access control.
 
-**Output/pass:** explicit baseline/optional capability matrix, preserved local identity/content/flags, bounded parser failures and distinct rejected/accepted/unknown send outcomes. Sent-copy failure cannot trigger resubmission. **Pivot:** change a library or add a contained adapter for a proven gap; do not default to inventing an entire IMAP or MIME implementation. Actual non-Google service coverage is a later live gate.
+**Pass:** correct fixture occurrences, shared identity, event mutation and notification ownership. Live Google/Workspace tests require later authorized access. No external feed fetching/subscription settings/cache work in this phase.
 
-## P0-06 — calendar identity and time correctness
+## P0-07/P0-09 — user actions and category labels
 
-**Owners:** F/A, with B/C/E/I/G. **Input:** [calendar investigation](../research/calendar.md) and P0-01 calendar fixtures.
+**Owners:** A/E/B/F/I with H fake output. Prove independent unread/stars, truthful account totals, new replies after a snapshot action, mixed thread labels and manual correction precedence. Use explicit read/star/unstar actions until the reviewed Done/Delayed button mappings exist.
 
-Evaluate parsing plus bounded recurrence/time-zone expansion, including all-day/floating/local times, daylight-saving gaps/overlaps, exceptions, moved/canceled instances, custom time zones and unusual rules. Compare the Rust shortlist against independent expected occurrences; investigate libical only for demonstrated gaps. Do not silently simplify an unsupported series.
+Classification may tag user-defined human/automated/noise categories and scope in Gmail. It cannot choose completion/delay, mark mail reviewed or send it to Gmail system Spam/Trash. Test that filtering a category never silently completes its mail. Preserve account reading position and shared calendar context.
 
-Mock Google token expiry, pagination, edits/RSVP/permission changes, and read-only HTTP feeds with valid/invalid/stale snapshots. Define which path owns attendee notifications. Feed refresh failures preserve the last valid calendar. Test identical permitted event/time/coverage values in CLI, full calendar and today strip.
+**Pass:** the same explicit actions and label outcomes through GUI/CLI, with no classifier-owned state transitions or manufactured zero counts. IMAP folder mappings are deferred, not implemented via a second category engine.
 
-**Output/pass:** agreed series/occurrence identity and permission representation, expected expansion windows, recovery/edit traces and notification ownership. **Defer:** actual Google/Workspace shared-calendar behavior and controlled invitation delivery until authorized account access. **Pivot:** fix the affected adapter/recurrence component before encoding a lossy event schema.
+## P0-08 — fake assistance boundary
 
-## P0-07 and P0-09 — native state and product behavior
+**Owners:** H/A/G/I. Start with absent/off/invalid/late/abstaining fake outputs. Manual Gmail labeling works first. Summaries retain source/coverage and exclude unpublished drafts; newer manual/provider state wins. Explicit scope and bounded cancellation apply to each job.
 
-**Owners:** A/E/B/C/F/I, with H fake output. **Input:** [Triage](../contracts/triage.md), [UI handoff](../ui-ux.md) and shared identities.
+Later, when a supported same-machine Ollama/vLLM setup is available and authorized, verify local execution, structured results and actual server cancellation. Do not download models for bootstrap or block initial GUI/CLI use on model quality.
 
-Prove unread and starred independence, message-level provider truth with conversation views, account totals independent of visible pages/filters, mixed thread membership, late incoming replies and pending/incomplete states. Apply categories as Gmail labels or an explicit IMAP primary-folder move, preserving unrelated labels/flags and local content.
+**Pass:** no inference when off, only validated configured category output, no Done/Delayed/read/star effect and stale-result rejection. Actual runner quality/locality/cancellation remains unverified until tested before enabling it.
 
-Use explicit mark-read/star/unstar commands for early tests. Do not infer that mockup Done means archive/read/unstar or that Delay schedules a snooze. Record the unresolved interaction for the relevant UI handoff. Test restoration of selection/reading position and one today/full-calendar shared view without final styling.
+## P0-11 — install the small pair early
 
-**Output/pass:** expected transition table exercised through both clients, no false zero after filing/filtering, no stale overwrite of manual corrections, and clear ownership of outstanding UI decisions. These fixtures become regression cases for the first real product slices. **Pivot:** clarify the product action before implementing ambiguous combined behavior; preserve accepted native-state semantics.
+**Owners:** G and artifact owners. Package the actual engine, useful partial CLI, Qt text/composer GUI and required runtime resources. No mandatory WebEngine/helpers in the first package. Test candidate Windows/macOS/Ubuntu/Arch/Omarchy routes on available hosts, with explicit missing evidence elsewhere.
 
-## P0-08 — assistance boundary before model quality
+Verify standard-user launch, fresh-terminal CLI discovery, shared profile, private IPC access, locked credentials, graphics/input, final-client shutdown and coordinated upgrades. No developer tools or model required for use. Recheck renderer dependencies separately if HTML viewing later adds them.
 
-**Owners:** H/A/G/I, with B/C/E consumers. **Input:** [local-model research](../research/local-ai.md) and synthetic received-mail/category fixtures.
+**Pass:** recorded install/runtime/dependency results with retained fixture data. Unsigned smoke packages can establish packaging behavior but not trusted delivery; signing/notarization/update access remains a release gate. A container build is not desktop/keyring evidence.
 
-First use a fake runner: off means no polling/inference; invalid/late/abstaining results are data, never commands; newer manual/provider changes win. Summaries preserve source identity/coverage and exclude unpublished drafts. Reuse manual filing and the operation journal for permitted classification.
+## First integration checkpoint
 
-When a supported local setup is available, evaluate one small bounded job through Ollama and a supported same-machine vLLM environment. Record local-only configuration/weights, schema compatibility, cold/warm resources and whether cancellation actually stops server work. Closing a connection alone does not prove cancellation; do not terminate a runner used by other apps.
+One synthetic message arrives, becomes searchable, opens with its attachment and receives an explicit user flag action through both clients. A human draft survives closing/restart. One calendar occurrence appears in full view, footer and CLI with the same permissions. Exercise concurrent clients and stale/mismatched requests. No model, SMTP/IMAP, external feed or HTML display engine is needed.
 
-**Output/pass:** disabled/manual behavior, stale-result tests, supported-runner matrix and actual cancellation evidence before enabling that runner. Full per-category quality thresholds and summary evaluation continue before Auto-apply/daily use. **Pivot:** keep that runner integration unverified if locality or cancellation cannot meet the contract; bring a material requirement conflict back with evidence. No cloud fallback, new authoring feature or silent scope reduction.
-
-## P0-11 — install the fixture slice early
-
-**Owners:** G with all artifact owners. **Prerequisites:** P0-00 and a joined P0-03/P0-04/P0-10 slice. **Evidence:** [distribution research](../research/linux-and-distribution.md).
-
-Produce explicit development smoke packages containing engine, CLI, Qt GUI, reader/composer and runtime resources. Try the proposed Windows installer, macOS app/CLI route, Ubuntu .deb and Arch/Omarchy pacman package. Test standard-user launch, fresh-terminal command discovery, shared profile, locked/unavailable credentials, rendering sandbox, scaling/input and shutdown on real desktop environments.
-
-Keep user data separate from installed binaries; try replacement/upgrade with a fixture profile and incompatible engine/client versions. Inspect actual Linux artifact dependencies rather than trusting a generic glibc note. An Arch container build does not establish Omarchy desktop support.
-
-**Output/pass:** per-target install/runtime checklist, package/dependency sizes and preserved fixture data, with missing hosts plainly unverified. Early unsigned/local packages may establish staging behavior, but are not trusted end-user delivery. Signing/notarization, update distribution, final OAuth and full upgrade/uninstall matrices remain release gates. **Pivot:** repair package/launcher/runtime choices while the app is still small; do not disable the renderer sandbox to make it launch.
-
-## The first integration checkpoint
-
-Demonstrate one synthetic message arriving, becoming searchable, opening with its attachment, and receiving a durable explicit flag action through GUI and CLI. Restart it. Add one calendar occurrence visible in both full view and today's strip, and one human draft that survives closing. Use the actual engine/process boundary, with no model installed.
-
-Record the baseline and promote only the consumed slice of a contract after its interface/fixture/acceptance choices are settled. Whole feature contracts can remain Draft with an explicitly Ready slice; name that scope when assigning work. The [contract workflow](../contracts/README.md) defines readiness.
-
-Before expanding Phase 1, publish evidence for available platforms and list the remaining provider, model, scale, final-design and release dependencies with their latest responsible gates. No single spike proves the complete product.
-
-## Evidence to retain
-
-For each experiment keep source/dependency versions, build revision, fixture seed/manifest, hardware/OS/display session, exact executed commands, expected/observed results and pass/fail/blocked status. Store small non-sensitive reports with the owning research topic and link them from status; do not pre-create empty report files or commit generated multi-gigabyte corpora.
-
-Changes to behavior or the chosen baseline get an append-only decision and updated consumer contracts. A benchmark report must include the full measurement boundary from Quality; a screenshot, successful compile or localhost response is not a reliability or readiness result.
-
+Record the consumed contract/fixture revision, build versions, exact commands, hardware/OS/session and observed outcomes. Promote only the passing slice. Final designs, Google access, larger scale tests and platform gaps remain explicit; a small successful slice does not prove the whole product. Legacy work stays deferred until later actual founder Google GUI/CLI dogfooding.
