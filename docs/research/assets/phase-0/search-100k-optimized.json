@@ -1,0 +1,99 @@
+{
+  "cache_context": "One reopened SQLite connection after bulk seed/checkpoint; OS filesystem cache was not cleared. Per-query first sample followed by 40 warm samples. No ingestion or inference during measurement.",
+  "coverage_limits": "Index density fixture with shared retained synthetic source; not 25 GB mailbox, attachment-throughput, 1m/3m, OS-cold, concurrent-ingestion or power-loss evidence.",
+  "database_bytes": 126177280,
+  "experiment": "100k generated SQLite/FTS5 message rows through Store.handle",
+  "fixture_revision": 1,
+  "generated_messages": 100000,
+  "queries": [
+    {
+      "account": "windscribe",
+      "field": "sender",
+      "first_query_ms": 56.120458,
+      "query": "sender punctuation",
+      "returned": 20,
+      "terms": "o'hara+build@windscribe.example",
+      "warm_iterations": 40,
+      "warm_p50_ms": 54.719958,
+      "warm_p95_ms": 58.025667000000006,
+      "warm_p99_ms": 58.12575
+    },
+    {
+      "account": "personal",
+      "field": "sender",
+      "first_query_ms": 28.841042,
+      "query": "sender account isolation",
+      "returned": 0,
+      "terms": "o'hara+build@windscribe.example",
+      "warm_iterations": 40,
+      "warm_p50_ms": 29.054375,
+      "warm_p95_ms": 29.708583,
+      "warm_p99_ms": 29.876083
+    },
+    {
+      "account": "windscribe",
+      "field": "subject",
+      "first_query_ms": 2.025125,
+      "query": "rare subject",
+      "returned": 10,
+      "terms": "needlequarter",
+      "warm_iterations": 40,
+      "warm_p50_ms": 1.849459,
+      "warm_p95_ms": 2.242792,
+      "warm_p99_ms": 2.297416
+    },
+    {
+      "account": "windscribe",
+      "field": "body",
+      "first_query_ms": 2.6905840000000003,
+      "query": "rare body",
+      "returned": 20,
+      "terms": "ultraquartz",
+      "warm_iterations": 40,
+      "warm_p50_ms": 2.551583,
+      "warm_p95_ms": 2.844667,
+      "warm_p99_ms": 2.852542
+    },
+    {
+      "account": "personal",
+      "field": "body",
+      "first_query_ms": 47.976290999999996,
+      "query": "common body",
+      "returned": 20,
+      "terms": "deployment",
+      "warm_iterations": 40,
+      "warm_p50_ms": 48.255125,
+      "warm_p95_ms": 58.653999999999996,
+      "warm_p99_ms": 68.362709
+    },
+    {
+      "account": "personal",
+      "field": "body",
+      "first_query_ms": 48.921583999999996,
+      "query": "unicode body",
+      "returned": 20,
+      "terms": "cafe \u65e5\u672c\u8a9e",
+      "warm_iterations": 40,
+      "warm_p50_ms": 49.393209,
+      "warm_p95_ms": 51.120084000000006,
+      "warm_p99_ms": 51.584666
+    }
+  ],
+  "query_plan": [
+    "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+    "LIST SUBQUERY 2",
+    "SCAN message_fts VIRTUAL TABLE INDEX 0:M3",
+    "CORRELATED SCALAR SUBQUERY 1",
+    "SEARCH mc USING COVERING INDEX sqlite_autoindex_message_categories_1 (account=? AND message_id=? AND category_id=?)",
+    "USE TEMP B-TREE FOR GROUP BY",
+    "USE TEMP B-TREE FOR ORDER BY"
+  ],
+  "seed_seconds": 3.3176525,
+  "sqlite_version": "3.46.0",
+  "target_arch": "aarch64",
+  "target_os": "macos",
+  "total_messages_including_small_fixture": 100286,
+  "command": "cargo test -p fm-core --release search_100k -- --ignored --nocapture",
+  "variant": "One FTS matching pass per page and bounded metadata/selected-body hydration",
+  "host_concurrency": "Other development work on the same host was not suspended; no benchmark ingestion or inference ran during samples."
+}

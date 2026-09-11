@@ -6,19 +6,19 @@ Human correspondence comes first. Unread means unreviewed; stars mean action lef
 
 ## Current state
 
-**Documentation only. Google-first MVP readiness: 0/9 required areas verified.** No application, build, tests, installer or measured result exists yet. [Status](docs/status.md) records the milestone and evidence rules; [decisions](docs/decisions.md) preserves the changes in scope.
+**Phase 0 implementation in progress. Google-first MVP readiness: 0/9 whole areas verified.** Rust/Qt source, fixtures and native tooling are being integrated; no complete Phase 0 result is claimed yet. See [development commands](docs/build-development.md), [status](docs/status.md) and the [Phase 0 plan](docs/plans/phase-0.md).
 
 | Google-first feature area | Build status |
 | --- | --- |
-| [Core and complete offline storage](docs/contracts/core-storage.md) | Not started |
-| [Gmail / Google Workspace](docs/contracts/gmail.md) | Not started |
-| [Mail UI and human composition](docs/contracts/mail-ui.md) | Not started |
-| [Local search](docs/contracts/search.md) | Not started |
-| [User-owned triage and categories](docs/contracts/triage.md) | Not started |
-| [Google Calendar](docs/contracts/calendar.md) | Not started |
-| [Optional local classification/summaries](docs/contracts/local-ai.md) | Not started |
-| [Platform installation and lifecycle](docs/contracts/platform.md) | Not started |
-| [CLI alongside the GUI](docs/contracts/cli.md) | Not started |
+| [Core and complete offline storage](docs/contracts/core-storage.md) | Phase 0 experiment in progress |
+| [Gmail / Google Workspace](docs/contracts/gmail.md) | Phase 0 experiment in progress |
+| [Mail UI and human composition](docs/contracts/mail-ui.md) | Phase 0 experiment in progress |
+| [Local search](docs/contracts/search.md) | Phase 0 experiment in progress |
+| [User-owned triage and categories](docs/contracts/triage.md) | Phase 0 experiment in progress |
+| [Google Calendar](docs/contracts/calendar.md) | Phase 0 experiment in progress |
+| [Optional local classification/summaries](docs/contracts/local-ai.md) | Phase 0 experiment in progress |
+| [Platform installation and lifecycle](docs/contracts/platform.md) | Phase 0 experiment in progress |
+| [CLI alongside the GUI](docs/contracts/cli.md) | Phase 0 experiment in progress |
 
 IMAP, SMTP and external iCalendar subscriptions are deferred until the founder has dogfooded working Google GUI and CLI workflows. Their retained contracts are future scope, not missing first-milestone requirements. CalDAV and a broad public launch remain separately deferred. The denominator changed from ten to nine because IMAP/SMTP left the current target, not because anything was built.
 
@@ -30,15 +30,15 @@ IMAP, SMTP and external iCalendar subscriptions are deferred until the founder h
 - Follow the [initial-phase mail/calendar/settings references](docs/research/design-references.md): accounts at the top, a resizable conversation list/reader, inline reply and persistent bottom calendar strip. Settings is shell/navigation plumbing only; detailed controls await the expanded design.
 - Close ends GUI-owned work/reminders. Explicit independent CLI sessions have their own lifetimes. No default always-on service.
 
-The [proposed stack](docs/research/desktop-stack.md) is a Rust engine/CLI, C++20 + Qt Quick/QML UI, private local IPC and SQLite/FTS5 with retained blobs. QML expressions are accepted; Node.js and a separate JS/TS compilation/bundling pipeline are excluded. An HTML engine is a later component choice. No stack versions are locked.
+The [proposed stack](docs/research/desktop-stack.md) is a Rust engine/CLI, C++20 + Qt Quick/QML UI, private local IPC and SQLite/FTS5 with retained blobs. QML expressions are accepted; Node.js and a separate JS/TS compilation/bundling pipeline are excluded. An HTML engine is a later component choice. Experiment versions are pinned in `rust-toolchain.toml`, `Cargo.lock` and `scripts/toolchain.json`; this does not establish production readiness.
 
 The app operates locally and connects directly to Google; optional models run on the same machine. Tasks, a contacts app, dashboards, built-in AI writing/chat and semantic search remain out of scope.
 
 ## Next execution
 
-When asked to implement, start [P0-00 and the small-fixture part of P0-01](docs/plans/phase-0.md), then connect the engine, small CLI and functional GUI early. Prove shared state, IPC access, account boundaries, draft recovery and useful search. Final designs and later protocols do not block these experiments.
+Implementation began with [P0-00 and the small-fixture part of P0-01](docs/plans/phase-0.md), then joined the engine, small CLI and functional GUI. Prove shared state, IPC access, account boundaries, draft recovery and useful search. Final designs and later protocols do not block these experiments.
 
-The [proposed first deliverable](docs/plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) is a runnable synthetic-mail desktop app and small CLI, with repeatable setup/build/test commands and native CI builds for development on the work Mac and home Windows PC. No tools have been installed or implementation started.
+The [first deliverable](docs/plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) is a runnable synthetic-mail desktop app and small CLI, with repeatable setup/build/test commands and native CI builds for development on the work Mac and home Windows PC. Its implementation is now underway; tools live in the ignored `.tools` directory.
 
 The [development plan](docs/development-plan.md) proceeds from the paired local slice to real Google workflows and founder dogfooding, then legacy protocols. All-platform installation and quality remain product requirements; unavailable hosts are unverified, not assumed passes.
 

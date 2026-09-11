@@ -1,0 +1,39 @@
+#include <QGuiApplication>
+#include <QDebug>
+#include <QFont>
+#include <QTextCursor>
+#include <QTextDocument>
+#include <QTextDocumentFragment>
+
+// P0-04 feasibility probe only. The initial GUI persists plain text; formatted
+// drafts will join the shared schema before exposing formatting controls.
+int main(int argc, char **argv) {
+    QGuiApplication app(argc, argv);
+    QTextDocument document;
+    document.setUndoRedoEnabled(true);
+    const QString authored = QString::fromUtf8("Hello Maya,\nMontréal at 14:00 — confirmed.\n");
+    QTextCursor cursor(&document);
+    cursor.insertText(authored);
+    if (document.toPlainText() != authored) return 1;
+    cursor.setPosition(6); cursor.setPosition(10, QTextCursor::KeepAnchor);
+    if (cursor.selectedText() != "Maya") return 2;
+    QTextCharFormat bold;
+    bold.setFontWeight(QFont::Bold);
+    cursor.mergeCharFormat(bold);
+    auto exported = document.toHtml();
+    if (!exported.contains("font-weight:700") || document.toPlainText() != authored) return 3;
+    document.undo();
+    if (document.toHtml().contains("font-weight:700") || document.toPlainText() != authored) return 4;
+    document.redo();
+    QTextDocument restored;
+    restored.setHtml(document.toHtml());
+    if (restored.toPlainText() != authored) return 5;
+    QTextCursor restoredCursor(&restored);
+    restoredCursor.setPosition(6); restoredCursor.setPosition(10, QTextCursor::KeepAnchor);
+    if (restoredCursor.charFormat().fontWeight() != QFont::Bold) return 6;
+    QTextCharFormat emphasis; emphasis.setFontItalic(true);
+    restoredCursor.mergeCharFormat(emphasis);
+    if (!restored.toHtml().contains("font-style:italic")) return 7;
+    qInfo() << "Composer probe passed: exact Unicode text, selection, bold/italic, undo/redo, native HTML round-trip. GUI draft persistence remains plain text.";
+    return 0;
+}

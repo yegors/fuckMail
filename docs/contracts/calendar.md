@@ -1,6 +1,8 @@
 # Calendar, feeds and reminders
 
-State: Draft · Revision: 5 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 6 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+
+Revision 6 records D012’s implemented experimental slice. Google-shaped source events now feed the shared read-only CLI/week/footer projection. Independent recurrence, permission, edit-plan and sync-cursor tests live in [fm-calendar](../../crates/fm-calendar/README.md), including a documented upstream DST correction. Live Google editing, reminders and provider-store orchestration remain incomplete. Consumers: Core, GUI, CLI and Gmail.
 
 Revision 5 applies D011: the latest week reference and shared today footer across mail/calendar/settings guide the initial slice. A fixture week is proposed before full calendar editing; pictured settings switches have no specified behavior. D009's Google-first/deferred-feed scope remains. Affected consumers: Core, Mail UI, Platform, CLI and Quality.
 

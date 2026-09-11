@@ -1,0 +1,8 @@
+{
+  "history": [
+    {"id": "105", "messagesAdded": [{"message": {"id": "m-during-import", "threadId": "t-common"}}]},
+    {"id": "109", "labelsAdded": [{"message": {"id": "m-shared", "threadId": "t-common"}, "labelIds": ["UNREAD", "Label_human"]}]}
+  ],
+  "nextPageToken": "fixture-history-2",
+  "historyId": "120"
+}

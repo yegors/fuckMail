@@ -1,0 +1,47 @@
+qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
+    main.cpp
+    MailBackend.cpp
+    MailBackend.h
+    CalendarLayout.cpp
+    CalendarLayout.h
+    GuiSelfTest.cpp
+    GuiSelfTest.h
+    IpcTrust.cpp
+    IpcTrust.h
+)
+set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+qt_add_qml_module(fuckmail-gui
+    URI FuckMail
+    VERSION 1.0
+    QML_FILES Main.qml Theme.qml FmButton.qml FmToolTip.qml MailView.qml CalendarView.qml SettingsView.qml TodayStrip.qml
+)
+target_link_libraries(fuckmail-gui PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
+target_compile_features(fuckmail-gui PRIVATE cxx_std_20)
+if(WIN32)
+    target_link_libraries(fuckmail-gui PRIVATE advapi32)
+endif()
+set_target_properties(fuckmail-gui PROPERTIES
+    MACOSX_BUNDLE_BUNDLE_NAME "fuckMail"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.fuckmail.desktop"
+    MACOSX_BUNDLE_BUNDLE_VERSION "0.1.0"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
+)
+if(BUILD_TESTING AND NOT WIN32)
+    add_executable(gui-ipc-trust-test IpcTrustTest.cpp IpcTrust.cpp)
+    target_link_libraries(gui-ipc-trust-test PRIVATE Qt6::Core Qt6::Network)
+    add_test(NAME gui-ipc-trust COMMAND gui-ipc-trust-test)
+    set_tests_properties(gui-ipc-trust PROPERTIES TIMEOUT 10)
+endif()
+if(BUILD_TESTING)
+    add_executable(gui-composer-probe ComposerProbe.cpp)
+    target_link_libraries(gui-composer-probe PRIVATE Qt6::Gui)
+    add_test(NAME gui-composer-probe COMMAND gui-composer-probe)
+    set_tests_properties(gui-composer-probe PROPERTIES TIMEOUT 10 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
+if(BUILD_TESTING)
+    add_executable(gui-calendar-layout-test CalendarLayoutTest.cpp CalendarLayout.cpp)
+    target_link_libraries(gui-calendar-layout-test PRIVATE Qt6::Core)
+    add_test(NAME gui-calendar-layout COMMAND gui-calendar-layout-test)
+    set_tests_properties(gui-calendar-layout PROPERTIES TIMEOUT 10)
+endif()

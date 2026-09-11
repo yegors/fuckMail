@@ -1,0 +1,16 @@
+From: Aisha Raman <aisha@windscribe.example>
+To: Alex <alex@windscribe.example>
+Message-ID: <alternative@fixture.example>
+Subject: Hiring feedback
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="alternative-boundary"
+
+--alternative-boundary
+Content-Type: text/plain; charset=UTF-8
+
+Three of four recommend hiring. Please review before Monday.
+--alternative-boundary
+Content-Type: text/html; charset=UTF-8
+
+<html><body><p>Three of four recommend <strong>hiring</strong>.</p><p>Please review before Monday.</p></body></html>
+--alternative-boundary--

@@ -1,0 +1,45 @@
+# Phase 0 Google feasibility execution
+
+P0-02, 2026-09-11. Consumes Gmail contract revision 1 and synthetic fixture revision **google-p0-v1**. This is a tested provider boundary with deterministic transports and in-memory contract stores. It does not authenticate to Google, send real messages, implement a second mail database, or prove SQLite/power-loss durability.
+
+## Implemented and measured
+
+`cargo test -p fm-google --locked` passed **15 integration tests** on this arm64 Mac using Rust 1.88.0. The crate compiles with `oauth2` 5.0.0 (HTTP defaults disabled; timing-resistant secret comparison enabled), `base64` 0.22.1, `serde`/`serde_json` and `sha2`; exact resolved versions are in Cargo.lock. The tests are included by the normal workspace test command.
+
+| Boundary | Actual test evidence |
+| --- | --- |
+| Inventory/history | Two list pages, a repeated message ID, deliberately misleading size estimates and two history pages. Mail arriving during import is found from the initial history baseline. Final history ID advances only after the last successful commit. |
+| Recovery | A failed page commit or interrupted message retrieval retains the old token/checkpoint. Partial source staging is replayable. Expiry transitions to a new staged scan generation without clearing drafts or pending user intent. |
+| Account scope | Every fake transport request carries the account identity. A plan for one account fails the other account's expected-checkpoint comparison despite colliding Google-looking IDs. |
+| Source/attachments | Raw base64url MIME is preserved for Core's parser. Wrong response identity, malformed encoding, size mismatch and partial attachments are rejected. Verified attachment bytes produce the independently expected SHA-256. |
+| Provider errors | HTTP-shaped quota, permission, authorization and history-expiry failures are distinguished. Read retries respect a supplied delay and stop after the bounded attempt budget. Diagnostic errors exclude provider body text. |
+| Sending | Journal compare-and-swap persists InFlight before the single transport call. Missing acknowledgement or failure to persist the receipt recovers as acceptance unknown. Reusing the operation does not call transport again. Changed MIME does not reuse prior intent. |
+| OAuth/refresh | A system-browser authorization URL carries random S256 PKCE, random state and an IPv4 loopback redirect. Callback consumes its verifier and rejects wrong state. Eight simultaneous mail/calendar-style requests perform one refresh. New access is returned only after vault persistence; revocation requires reconnect. |
+
+The fixture manifest and API-shaped JSON are under [fm-google/tests/fixtures](../../crates/fm-google/tests/fixtures/README.md). These tests prove the stated state-machine and integration-contract behavior in memory. They do not establish provider latency, actual quota, mailbox coverage, HTTP cancellation, OS keychain behavior or cross-machine OAuth longevity.
+
+## Integration with the one engine/store
+
+- `sync::GmailTransport` supplies list/history/raw-message responses for an explicit local account. A future HTTP adapter selects that account's credential reference and authenticates requests; it cannot infer account identity from a remote message ID.
+- `sync::advance` decodes and stages one full source at a time through `PageStore::stage_message`, then calls `commit_page` before returning the next checkpoint. Core must make the final content/reference/checkpoint update atomic and compare the expected account, generation and revision. No Core transaction may span a network request. Replayed stages are idempotent.
+- `Checkpoint::begin_delta` and `restart_full` return plans that must also be committed before using their next checkpoint. Capture a current provider history baseline before initial inventory. Completing the listing is not completing catch-up. `resultSizeEstimate` is never coverage evidence.
+- An absent ID in a listing never triggers removal by itself. Only an explicit history deletion or message-get 404 yields a provider tombstone candidate. Core's retention policy still protects local authored drafts and unresolved operations. These plans do not erase retained blobs.
+- Historical label events request a fresh full message. Core reconciles observed labels against newer manual journal intent rather than blindly applying old add/remove events to read/star state.
+- `send::submit_once` consumes bytes from the shared MIME builder. `SendJournal::transition` binds immutable account/operation/hash intent with compare-and-swap. Uncertain operations require reconciliation and user-visible handling; Gmail has not been assumed to supply our local idempotency guarantee.
+- `CredentialVault` is an engine-only integration seam for the OS credential store. One `TokenCoordinator` instance is shared by Gmail and Calendar. Its synchronous lock/transport interface is tested here; actual asynchronous HTTP, cancellation and keychain adapter behavior still need integration tests before live use.
+
+Responses have explicit size/page/change limits. Raw MIME is limited to 40 MiB per decoded message, listing to 500 IDs per page and a scan to 10,000 pages before an actionable failure. These are current feasibility limits, not silent truncation. Long imports need a persistent resumable adapter and measured scheduling before dogfooding.
+
+## Source-backed setup before live access
+
+Register a **Desktop app** OAuth client in a Google Cloud project and enable Gmail/Calendar APIs. Launch the user's system browser; bind the short-lived loopback listener before constructing the redirect URL. Validate state, keep the verifier in the engine and exchange it once. The helper prepares this flow; no callback server or token HTTP exchange is implemented here. A distributed desktop client secret cannot be relied on as a confidential credential. [Google installed-app OAuth](https://developers.google.com/identity/protocols/oauth2/native-app), [oauth2 library](https://docs.rs/oauth2/5.0.0/oauth2/).
+
+For the mixed personal Gmail/Workspace audience, use an External audience unless deliberately separating projects. An Internal project cannot serve the consumer account. Workspace administrators can block an app independently of its publishing or verification state; obtain the actual organizations' access policy. Google's current Trusted-app exceptions are organization-specific, not evidence that this founder's accounts qualify. [OAuth app states and administrator controls](https://developers.google.com/identity/protocols/oauth2/production-readiness/overview).
+
+External Testing normally issues seven-day refresh tokens for mail/calendar scopes. A one-time successful login will not validate daily-driver access. Record the project's publishing state, applicable personal-use exception, granted scopes, successful restart/refresh, later revocation/reconnect and sustained refresh beyond that interval where applicable. Personal use has a documented verification exception, but public distribution changes the review requirements. No promise of permanent refresh tokens is made. [Token expiration](https://developers.google.com/identity/protocols/oauth2#expiration), [verification exceptions](https://developers.google.com/identity/protocols/oauth2/production-readiness/restricted-scope-verification).
+
+The helper currently prepares `gmail.modify`, `calendar.events` and `calendar.calendarlist.readonly`. Confirm these against the final method inventory and returned grants before connecting an account; missing permissions must be visible, not silently assumed. No contacts, tasks or unrelated Google scope is requested. Complete OS-vault wiring, token rotation, actual HTTP error handling/cancellation and the retention/encryption choices before real mailbox data is stored.
+
+Gmail documents history expiry as 404 and requires full synchronization. The implementation preserves its initial history baseline while paging and only promotes the final cursor after applied work. API errors use bounded retry guidance; sending is handled separately because read retry policy must not duplicate a submission after an ambiguous response. [Gmail synchronization](https://developers.google.com/workspace/gmail/api/guides/sync), [history.list](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.history/list), [Gmail errors](https://developers.google.com/workspace/gmail/api/guides/handle-errors), [messages.send](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/send).
+
+**Still unverified:** real personal/Workspace authorization, actual project quotas and backfill speed, real provider writes, cross-client reconciliation, OS credential stores, HTTP/TLS and transport cancellation, persistent Core checkpoint integration, and sustained dogfooding. No credentials or Google account access were required or used for this packet.

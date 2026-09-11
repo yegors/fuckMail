@@ -1,6 +1,8 @@
 # Daily triage and mailbox categories
 
-State: Draft · Revision: 2 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 3 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+
+Revision 3 records D012’s implemented experimental slice. Synthetic manual read/star/category actions share one journal through both clients; mixed member snapshots preserve independent state. Exact Done/Delayed button mappings remain open. Consumers: Core, GUI, CLI, Gmail and assistance. No classifier can issue action-state commands.
 
 Revision 2 applies D009: the user alone chooses Done/Delayed; classification supplies account-specific human/automation/noise and category/scope labels without changing review/action state. Gmail mappings are first; IMAP mappings are deferred. Affected consumers: Core, Mail UI, Gmail, Local assistance and CLI.
 

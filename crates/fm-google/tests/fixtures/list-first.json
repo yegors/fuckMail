@@ -1,0 +1,8 @@
+{
+  "messages": [
+    {"id": "m-shared", "threadId": "t-common"},
+    {"id": "m-old", "threadId": "t-old"}
+  ],
+  "nextPageToken": "fixture-page-2",
+  "resultSizeEstimate": 900
+}

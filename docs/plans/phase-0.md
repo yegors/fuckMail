@@ -1,18 +1,18 @@
 # Phase 0 — paired foundation and Google feasibility
 
-Updated 2026-09-11 under [D009–D011](../decisions.md). **Future execution plan; not started.** [Development plan](../development-plan.md) owns sequence; [contracts](../contracts/README.md) own behavior. All areas remain Draft.
+Updated 2026-09-11 under [D009–D011](../decisions.md), with implementation now authorized by the founder's Phase 0 goal. **Execution in progress; completion unproven.** [Development plan](../development-plan.md) owns sequence; [contracts](../contracts/README.md) own behavior. All whole feature areas remain Draft.
 
 ## Starting point
 
-The repo contains docs and nonfinal mockups only. Read-only inspection now covers this Apple Silicon Mac as well as the earlier Windows PATH lookup; see the [host observations](../research/linux-and-distribution.md#development-on-the-work-mac-and-home-windows-pc). Missing dependencies and the actual Windows configuration need inspection/setup when implementation is requested.
+The repo now contains native source, fixtures and tooling alongside the documentation and nonfinal mockups. Read-only inspection now covers this Apple Silicon Mac as well as the earlier Windows PATH lookup; see the [host observations](../research/linux-and-distribution.md#development-on-the-work-mac-and-home-windows-pc). Mac dependencies are installed in the ignored `.tools` directory; the physical Windows configuration still needs inspection/setup.
 
-Proposed baseline: Rust engine and small CLI, C++20/Qt Quick/QML GUI, private local IPC, SQLite/FTS5 and retained content. QML expressions are accepted; Node.js and a separate JavaScript compilation/bundling pipeline are excluded. WebEngine is not required for this phase. No versions are selected.
+Proposed baseline: Rust engine and small CLI, C++20/Qt Quick/QML GUI, private local IPC, SQLite/FTS5 and retained content. QML expressions are accepted; Node.js and a separate JavaScript compilation/bundling pipeline are excluded. WebEngine is not required for this phase. Experiment versions are now pinned in the build files; full platform qualification is pending.
 
 ## Start and order
 
 ### Proposed first deliverable: a runnable desktop slice on Mac and Windows
 
-Under [D010](../decisions.md), development must move between the founder's work Mac and home Windows PC. The first work package combines the bounded portions of P0-00/P0-01/P0-03/P0-10/P0-04/P0-11 below. It is a proposal for the next implementation task, not authorization to start or a claim that all Phase 0 gates fit in it.
+Under [D010](../decisions.md), development must move between the founder's work Mac and home Windows PC. The first work package combines the bounded portions of P0-00/P0-01/P0-03/P0-10/P0-04/P0-11 below. Implementation of this package is active under the founder’s Phase 0 goal. It is only the first integration checkpoint within the full phase.
 
 **What the founder can use:** a Qt Quick desktop app, a small headless Rust CLI and one Rust engine/SQLite store. Seed a disposable profile with two synthetic accounts, a few hundred messages in conversations, a small attachment corpus and a week's calendar events. Follow the [D011 initial-phase references](../research/design-references.md): top accounts, split reader, inline reply, persistent calendar footer and settings shell. Detailed settings controls remain excluded per founder clarification.
 
@@ -37,11 +37,11 @@ Start **P0-00 plus the small-fixture part of P0-01**. Pair P0-03/P0-10 with P0-0
 
 P0-02 prepares Google access, P0-05 handles shared MIME/text/outgoing content, P0-06 covers Google calendar semantics, P0-07/P0-09 cover user actions/categories, and P0-11 packages the small pair. P0-08 can use a fake runner; models are not a first-use prerequisite. Legacy IMAP/SMTP and external calendar feed experiments previously attached to these IDs are deferred to Phase 4. Their research remains available.
 
-Each packet names its purpose, owning contract revision, consumed fixture revision, small output and observed pass/fail/blocked result. Missing hosts, credentials or final designs block their own evidence row. This documentation update does not authorize implementation, real account access or model installation.
+Each packet names its purpose, owning contract revision, consumed fixture revision, small output and observed pass/fail/blocked result. Missing hosts, credentials or final designs block their own evidence row. The later Phase 0 goal authorizes implementation and native setup. Real account access and model installation keep their separate boundaries.
 
 ## P0-00 — native build and host inventory
 
-**Owners:** G/A/I/E. Inspect Rust, C++ compiler, Qt Quick/text modules, Cargo, CMake/Ninja and available desktop/test hosts. Create the smallest reproducible Rust workspace and Qt application when asked to implement. No ABI bridge is required for separate executables.
+**Owners:** G/A/I/E. Inspect Rust, C++ compiler, Qt Quick/text modules, Cargo, CMake/Ninja and available desktop/test hosts. The current Rust workspace and Qt application implement this experiment. No ABI bridge is required for separate executables.
 
 Candidate targets remain Windows x64, macOS Apple Silicon, Ubuntu/Arch/Omarchy x64, subject to actual hardware and supported artifacts. Use normal native builds without a Node/JS build step. Pin versions only after they run. A later HTML dependency must not enter the bootstrap by accident.
 

@@ -1,6 +1,8 @@
 # Mail UI, reader and human composer
 
-State: Draft · Revision: 5 · Updated: 2026-09-11 · Implementation: not started.
+State: Draft · Revision: 6 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+
+Revision 6 records D012’s implemented experimental slice. The Qt reader, Unicode plain-text draft, shared account/search state, read-only week/footer and settings shell now run against the engine. The Qt formatting experiment and shared MIME builder are tested separately; no live sending is enabled. Consumers: Core, CLI, Calendar, Platform and MIME. See [GUI evidence](../../gui/README.md).
 
 Revision 5 applies D011: the initial-phase trio guides the shell and inline reply; settings is plumbing only, with pictured switches ignored per founder clarification. D009's text-first, user-owned actions and paired-client boundaries remain. Affected consumers: Core, Calendar, Platform, Triage, Search and CLI.
 

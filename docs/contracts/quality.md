@@ -2,11 +2,11 @@
 
 Updated 2026-09-11. Proposed budgets, not measured results. Google-first required behavior includes fast sender/subject/body search, responsive user-owned daily triage, conversation-only mail, full offline messages/attachments, reliable Google calendar views and optional local classification/summaries on Windows/macOS/Linux. The founder specified high-end machines. Exact devices, mailbox message counts and local models remain unmeasured.
 
-State: Draft · Revision: 3 · Implementation/evidence: not started. Owner: G — Platform/release coordinates; each workstream supplies its own fixtures and evidence. This is a shared acceptance contract, not a separate application feature.
+State: Draft · Revision: 4 · Implementation/evidence: Phase 0 in progress. Owner: G — Platform/release coordinates; each workstream supplies its own fixtures and evidence. This is a shared acceptance contract, not a separate application feature.
 
 Revision 3 applies D009: separate first usable, Google dogfood and later-protocol evidence. Best-effort HTML comes later; full browser fidelity and legacy protocols do not gate first use. Affected consumers: all workstreams. Current Google-first readiness denominator is nine.
 
-Consumes versioned builds, synthetic fixtures, hardware/runner metadata and workstream results. Produces reproducible measurements and pass/fail or explicitly renegotiated gates. Start independently with fixture definitions; there are no benchmark commands or results yet.
+Consumes versioned builds, synthetic fixtures, hardware/runner metadata and workstream results. Produces reproducible measurements and pass/fail or explicitly renegotiated gates. Start independently with fixture definitions; measured experiment results now live in [Phase 0 evidence](../research/phase-0-execution.md) and the search report. Proposed product budgets are distinct from those measurements.
 
 Revision 2 connects [Phase 0](../plans/phase-0.md) to reusable fixtures and evidence gates. Affected consumers: every workstream, especially Core/CLI/Platform for the first shared slice. No fixtures, harness or measured results exist yet.
 
@@ -114,3 +114,6 @@ Run installation, first launch, terminal command discovery, update, recovery and
 ## Open before claiming readiness
 
 Agree the actual reference devices, account/provider inventory, corpus and language mix, inference model/platform matrix, quality thresholds and peak-import budget. Numeric budgets above remain proposals. An unrun test is not a pass; every feature in [status](../status.md) currently has zero verified release gates. Record failed targets and any accepted revisions in [decisions](../decisions.md), and link reproducible evidence here when it exists.
+
+
+Revision 4 records D012: retain native command/test results, synthetic corpus definitions, search percentile/cache context and explicit unverified platform/live-provider gates. All workstreams consume this evidence rule. No small experiment promotes a complete feature to Verified.

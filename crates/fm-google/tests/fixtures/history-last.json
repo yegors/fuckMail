@@ -1,0 +1,7 @@
+{
+  "history": [
+    {"id": "115", "messagesDeleted": [{"message": {"id": "m-old", "threadId": "t-old"}}]},
+    {"id": "118", "labelsRemoved": [{"message": {"id": "m-tail", "threadId": "t-common"}, "labelIds": ["STARRED"]}]}
+  ],
+  "historyId": "120"
+}

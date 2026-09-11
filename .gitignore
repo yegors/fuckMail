@@ -1,0 +1,27 @@
+# Developer SDKs, generated binaries and machine-local settings
+/.tools/
+/target/
+/build/
+/dist/
+/CMakeUserPresets.json
+/.cache/
+/.venv/
+**/__pycache__/
+*.pyc
+.DS_Store
+
+# Local disposable and real profiles, credentials and SQLite sidecars
+/.profiles/
+/profiles/
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.db-wal
+*.db-shm
+.env
+.env.*
+!.env.example
+
+# aqt installer diagnostic output
+/aqtinstall.log
