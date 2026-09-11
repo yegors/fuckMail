@@ -1,5 +1,8 @@
-//! Shared human-authored MIME construction. No transport, AI, file reads or database.
+//! Shared incoming text extraction and human-authored MIME construction.
+//! No transport, AI, file reads or database.
+mod incoming;
 use ammonia::{Builder as HtmlCleaner, UrlRelative};
+pub use incoming::{extract_incoming_text, IncomingError};
 use lettre::message::{
     header::{ContentTransferEncoding, ContentType},
     Attachment, Mailbox, Message, MultiPart, SinglePart,

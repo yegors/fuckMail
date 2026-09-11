@@ -39,7 +39,7 @@ Current bounds: 1 MiB for each authored body/signature input, 100 recipients, 10
 
 ## Remaining integration and limits
 
-The interactive GUI currently persists plain authored drafts. The Qt formatting/IME probe and this serializer establish that restrained formatting can cross the native boundary; they do not claim finished rich-draft GUI persistence or a formatting toolbar. Core's shared writer still owns durable draft/reply/attachment state and the final capture/send operation. No incoming parser, database or provider transport was forked here.
+The interactive GUI currently uses a plain authoring surface. The Qt formatting/IME probe and this serializer establish that restrained formatting can cross the native boundary; a later integration in this packet adds shared persistence for optional HTML and retained attachment references, as recorded below. A complete interactive formatting toolbar remains separate. Core's shared writer owns durable draft/reply/attachment state and the final capture operation. No separate database or provider transport was introduced here.
 
 The source/attachment corpus check deliberately distinguishes parsing from safe readable extraction: mail-parser can offer a synthesized HTML accessor for a plain MIME part, so the tests inspect actual MIME content types when asserting alternatives. Core's own extraction test results must establish script/style exclusion for incoming HTML-only mail.
 
@@ -56,3 +56,25 @@ Staging writes a private temporary file, flushes it, atomically renames it withi
 The path returned to GUI/CLI is an independently verified copy under the private `exports` directory with a derived safe basename and preserved ordinary extension, allowing native application associations to work. Raw provider filenames cannot select directories or overwrite a user-chosen destination. Opening/editing this copy cannot alter the retained original. Both newly copied and reused exports are checked before returning; a modified cached export fails verification rather than being silently accepted. These copies and staging orphans currently have no garbage-collection policy.
 
 Unix file and directory flushing was exercised on macOS. Windows uses flushed files and same-volume rename, while portable Rust does not expose the same directory-fsync operation. Windows/Linux native execution, OS attachment associations, disk-full interruption and physical power-loss durability remain separate validation gates; Unix symlink tests do not claim Windows reparse-point execution evidence.
+
+## Durable synthetic draft capture
+
+[Core capture](../../crates/fm-core/src/capture.rs) connects the persisted draft to `fm-mail` and `fm-google::submit_once` through the same SQLite store. The explicit `draft_capture` diagnostic accepts an account, conversation ID, request ID and expected draft revision. Optional `outcome: "unknown"` exercises uncertainty locally. It has no network transport, never clears the draft, and does not enable live sending.
+
+The operation builds MIME once using the saved human text, trusted account From/signature and verified original reply headers. Immutable MIME is staged before the journal's Prepared record is committed. A separate transaction persists InFlight before the synthetic transport is called, and another records its receipt. An in-flight operation found after restart becomes AcceptanceUnknown; neither it nor a recorded acceptance is resubmitted. A repeated request ID returns the original captured content even if the user has since edited the draft. Changed parameters conflict; a new capture with a stale draft revision is rejected.
+
+The initial schema-2 capture check passed five tests on this Mac with `cargo test -p fm-core capture::tests --locked`:
+
+- Exact Unicode, From/To, signature and reply headers survive capture and close/reopen replay; later draft edits remain intact.
+- A controlled interruption after durable InFlight recovers as unknown, with zero additional calls to the observed synthetic transport.
+- Explicit uncertainty and an injected SQLite receipt-commit failure cannot cause resubmission.
+- Prepared content resumes from its existing bytes; changed request parameters, stale revisions and cross-account conversation references are rejected.
+- The retained [schema-v1 baseline](../../fixtures/schema-v1.sql) migrates to schema 2 without changing drafts, views, message flags or prior operation responses; capture then works against the migrated store.
+
+These tests exercise real SQLite journal transactions and filesystem retention. The interruption uses a controlled Rust panic after dispatch, followed by closing/reopening the store; it is not an OS kill or physical power-loss test. The synthetic receipt means local capture only, never Google acceptance or recipient delivery. Its returned `.eml` path is a verified private export, and `attempts_started` records durable intent to attempt rather than claiming remote receipt.
+
+Schema 3 extends persisted drafts with nullable `body_html` and an array of retained attachment IDs. **Nine capture tests now pass**, alongside strict Core Clippy. The additional evidence uses an [actual Qt 6.11.2 QTextDocument export](../../fixtures/composer-qt.html) and its [exact plain counterpart](../../fixtures/composer-qt.txt): both authored sources and an existing verified attachment survive save, close/reopen and local MIME capture. Decoding the resulting alternative preserves the plain Unicode text and signature exactly, retains Qt bold/italic emphasis, and reproduces the attachment bytes and checksum. The HTML source stored in the draft remains exact; the outgoing alternative passes through the documented sanitizer.
+
+`draft_save` accepts optional `body_html` and `attachment_ids`; `draft_get` returns both plus attachment display metadata. Omitted IDs preserve the prior selection, while an explicit empty array removes it. An older plain-only client that changes the text clears the previous HTML alternative, avoiding stale rich content in later capture; an unchanged plain body preserves it. Explicit null clears HTML. Cross-account, duplicate, missing/partial or excessive attachment selections fail without replacing the prior authored draft. Capture verifies referenced bytes again before serialization and still checks the requested draft revision.
+
+The migration tests now cover both retained schema 1 and an independently constructed schema-2 profile upgrading to the current schema version. Existing plain drafts receive null HTML and empty attachment references. A schema-2 accepted capture keeps its exact journal JSON and MIME bytes, and replay after upgrade makes zero new transport calls. Regular retained attachments are exercised here; a full interactive attachment picker, authored inline-CID selection and live provider submission are not implied by these checks.

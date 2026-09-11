@@ -1,6 +1,8 @@
 # Mail UI, reader and human composer
 
-State: Draft · Revision: 6 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+State: Draft · Revision: 7 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+
+Revision 7 records the next Phase 0 integration checkpoint. Explicit configured-category assignment now joins the shared snapshot actions, with actual QML mouse input and independent CLI readback. Qt-exported formatting and attachments round-trip through persisted Core/MIME capture; the interactive composer remains plain text. Consumers: Core, CLI, MIME, Triage and Platform.
 
 Revision 6 records D012’s implemented experimental slice. The Qt reader, Unicode plain-text draft, shared account/search state, read-only week/footer and settings shell now run against the engine. The Qt formatting experiment and shared MIME builder are tested separately; no live sending is enabled. Consumers: Core, CLI, Calendar, Platform and MIME. See [GUI evidence](../../gui/README.md).
 

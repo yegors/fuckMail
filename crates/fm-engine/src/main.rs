@@ -8,7 +8,7 @@ use std::{
     io,
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc,
     },
     time::Duration,
@@ -31,6 +31,55 @@ struct Args {
 struct Work {
     request: Request,
     reply: oneshot::Sender<Value>,
+    cancelled: Arc<AtomicBool>,
+}
+
+struct RequestOwner(Arc<AtomicBool>);
+impl Drop for RequestOwner {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
+
+#[cfg(test)]
+mod session_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn disconnect_marks_only_that_queued_request_cancelled() {
+        let (client, server) = tokio::io::duplex(8192);
+        let mut client = BufReader::new(client);
+        let (queue, mut receive) = mpsc::channel(1);
+        let task = tokio::spawn(session(
+            Box::new(server),
+            Arc::new("fixture-token".into()),
+            queue,
+        ));
+        fm_ipc::write_frame(
+            client.get_mut(),
+            &json!({"version":1,"id":"hello","method":"hello","params":{"token":"fixture-token"}}),
+        )
+        .await
+        .unwrap();
+        let hello: Value =
+            serde_json::from_slice(&fm_ipc::read_frame(&mut client).await.unwrap().unwrap())
+                .unwrap();
+        assert_eq!(hello["ok"], true);
+        fm_ipc::write_frame(client.get_mut(), &json!({"version":1,"id":"queued","method":"draft_save","account":"windscribe","params":{"body":"unfinished"}})).await.unwrap();
+        let work = tokio::time::timeout(Duration::from_secs(2), receive.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!work.cancelled.load(Ordering::Acquire));
+        drop(client);
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(work.cancelled.load(Ordering::Acquire));
+        assert!(work.reply.is_closed());
+    }
 }
 
 #[cfg(unix)]
@@ -193,11 +242,13 @@ async fn session(
         }
         let id = request.id.clone();
         let (reply_tx, reply_rx) = oneshot::channel();
+        let request_owner = RequestOwner(Arc::new(AtomicBool::new(false)));
         // Bounded global work queue, one request in flight per connection.
         if queue
             .try_send(Work {
                 request,
                 reply: reply_tx,
+                cancelled: Arc::clone(&request_owner.0),
             })
             .is_err()
         {
@@ -208,7 +259,7 @@ async fn session(
             .await?;
             continue;
         }
-        // A disconnected owner must not leave queued reads running. Once a
+        // A disconnected owner cancels its queued work and active SQL reads. Once a
         // mutation has begun its short transaction, finish its durable outcome;
         // the same request_id can recover that outcome after reconnecting.
         let reply = tokio::select! {
@@ -295,10 +346,11 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
             let id = work.request.id;
-            let result = store.handle(
+            let result = store.handle_cancellable(
                 &work.request.method,
                 work.request.account.as_deref(),
                 work.request.params,
+                work.cancelled,
             );
             let reply = match result {
                 Ok(result) => response(&id, result),

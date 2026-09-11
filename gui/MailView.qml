@@ -14,6 +14,9 @@ Item {
         let row = backend.conversations.find(function(c) { return c.id === backend.selectedId })
         return row && row.matching_message_ids ? row.matching_message_ids : []
     }
+    function categoryCount(id) {
+        return members.filter(function(message) { return (message.categories || []).indexOf(id) >= 0 }).length
+    }
 
     function restorePosition() {
         restoring = true
@@ -158,6 +161,51 @@ Item {
                         visible: mail.members.length > 0
                         RowLayout {
                             Layout.fillWidth: true; spacing: 5
+                            FmButton {
+                                id: categoriesButton; objectName: "categoryAssignmentButton"
+                                text: "Categories"; outlined: true
+                                onClicked: categoryPopup.open()
+                                Popup {
+                                    id: categoryPopup; objectName: "categoryAssignmentPopup"
+                                    y: categoriesButton.height + 6; width: 350; padding: 14
+                                    focus: true; closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                                    background: Rectangle { color: Theme.surface; border.color: Theme.line; radius: 5 }
+                                    contentItem: ColumnLayout {
+                                        spacing: 9
+                                        Text { text: "Categories"; color: Theme.text; font.pixelSize: 14; font.bold: true }
+                                        Text { Layout.fillWidth: true; text: "Apply to the " + mail.members.length + " messages shown."; color: Theme.muted; font.pixelSize: 11 }
+                                        Repeater {
+                                            model: backend.categories
+                                            RowLayout {
+                                                required property var modelData
+                                                property int memberCount: mail.categoryCount(modelData.id)
+                                                Layout.fillWidth: true
+                                                Text { Layout.fillWidth: true; text: modelData.name; color: Theme.text; font.pixelSize: 12; textFormat: Text.PlainText }
+                                                Text { text: memberCount === 0 ? "None" : memberCount === mail.members.length ? "All" : memberCount + " of " + mail.members.length; color: Theme.muted; font.pixelSize: 11 }
+                                                FmButton {
+                                                    objectName: "categoryAdd_" + modelData.id
+                                                    text: memberCount === mail.members.length ? "Clear" : "Apply"
+                                                    enabled: !backend.mutationInFlight
+                                                    outlined: true; font.pixelSize: 11
+                                                    onClicked: backend.setCategoryMembership(modelData.id, memberCount !== mail.members.length)
+                                                }
+                                                FmButton {
+                                                    visible: memberCount > 0 && memberCount < mail.members.length
+                                                    text: "Clear"; font.pixelSize: 11; enabled: !backend.mutationInFlight
+                                                    onClicked: backend.setCategoryMembership(modelData.id, false)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            Item { Layout.fillWidth: true }
+                            FmButton { text: "↶  Reply"; prominent: true; onClicked: { composer.forceActiveFocus(); reader.contentY = Math.max(0, composerFrame.y - 180) } }
+                            FmButton { text: mail.anyStarred ? "★  Clear star" : "☆  Star"; outlined: true; enabled: !backend.mutationInFlight; tip: "Explicitly " + (mail.anyStarred ? "remove the action hold from" : "leave action for later on") + " these " + mail.members.length + " messages"; onClicked: backend.setStarred(!mail.anyStarred) }
+                            FmButton { text: mail.anyUnread ? "✓  Mark read" : "Mark unread"; outlined: true; enabled: !backend.mutationInFlight; tip: "Change read state on the " + mail.members.length + " currently shown conversation members only"; onClicked: backend.setRead(mail.anyUnread) }
+                        }
+                        Flow {
+                            Layout.fillWidth: true; spacing: 5; visible: (mail.thread.categories || []).length > 0
                             Repeater {
                                 model: mail.thread.categories || []
                                 Rectangle {
@@ -166,10 +214,6 @@ Item {
                                     Text { id: category; anchors.centerIn: parent; text: modelData.name; color: Theme.muted; font.pixelSize: 10; textFormat: Text.PlainText }
                                 }
                             }
-                            Item { Layout.fillWidth: true }
-                            FmButton { text: "↶  Reply"; prominent: true; onClicked: { composer.forceActiveFocus(); reader.contentY = Math.max(0, composerFrame.y - 180) } }
-                            FmButton { text: mail.anyStarred ? "★  Clear star" : "☆  Star"; outlined: true; tip: "Explicitly " + (mail.anyStarred ? "remove the action hold from" : "leave action for later on") + " these " + mail.members.length + " messages"; onClicked: backend.setStarred(!mail.anyStarred) }
-                            FmButton { text: mail.anyUnread ? "✓  Mark read" : "Mark unread"; outlined: true; tip: "Change read state on the " + mail.members.length + " currently shown conversation members only"; onClicked: backend.setRead(mail.anyUnread) }
                         }
                         Text { text: mail.thread.subject || ""; color: Theme.text; font.pixelSize: 25; font.bold: true; wrapMode: Text.Wrap; Layout.fillWidth: true; textFormat: Text.PlainText }
                         Text { text: mail.members.length + " messages  ·  " + (backend.currentAccount.name || "") + "  ·  stored on this machine"; color: Theme.muted; font.pixelSize: 11 }

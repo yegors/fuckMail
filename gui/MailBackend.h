@@ -31,6 +31,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QString draftStatus READ draftStatus NOTIFY draftChanged)
     Q_PROPERTY(bool connected READ connected NOTIFY connectedChanged)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
+    Q_PROPERTY(bool mutationInFlight READ mutationInFlight NOTIFY mutationChanged)
     Q_PROPERTY(bool hasMore READ hasMore NOTIFY conversationsChanged)
     Q_PROPERTY(QString weekStart READ weekStart NOTIFY eventsChanged)
     Q_PROPERTY(QString fixtureToday READ fixtureToday NOTIFY eventsChanged)
@@ -54,6 +55,7 @@ public:
     QString draftStatus() const { return m_draftStatus; }
     bool connected() const { return m_connected; }
     bool loading() const { return m_loading; }
+    bool mutationInFlight() const { return m_mutatingConversation; }
     bool hasMore() const { return m_nextOffset >= 0; }
     QString weekStart() const { return m_weekStart; }
     QString fixtureToday() const { return m_fixtureToday; }
@@ -68,6 +70,7 @@ public:
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void setRead(bool read);
     Q_INVOKABLE void setStarred(bool starred);
+    Q_INVOKABLE void setCategoryMembership(const QString &categoryId, bool present);
     Q_INVOKABLE void editDraft(const QString &body);
     Q_INVOKABLE void saveDraft();
     Q_INVOKABLE void openAttachment(const QString &id);
@@ -82,6 +85,7 @@ signals:
     void accountsChanged();
     void conversationsChanged();
     void loadingChanged();
+    void mutationChanged();
     void conversationChanged();
     void draftChanged();
     void eventsChanged();
@@ -107,6 +111,7 @@ private:
     void loadConversation(bool loadDraft);
     void loadCalendar();
     void flag(const QString &name, bool value);
+    void mutateConversation(const QString &method, QJsonObject params);
     void saveView(const QString &account);
     void finishShutdown();
     QJsonObject mutation() const;
@@ -125,6 +130,7 @@ private:
     qint64 m_sequence = 0, m_revision = -1, m_connectStarted = 0, m_enginePid = 0;
     int m_generation = 0, m_listGeneration = 0, m_nextOffset = -1;
     bool m_connected = false, m_loading = false, m_launched = false;
+    bool m_mutatingConversation = false;
     bool m_draftDirty = false, m_savingDraft = false, m_shutdown = false;
     std::function<void()> m_afterDraftSave;
     QSet<QString> m_viewSaving, m_viewDirty;

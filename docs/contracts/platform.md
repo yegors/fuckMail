@@ -1,6 +1,8 @@
 # Platform, lifecycle and release
 
-State: Draft · Revision: 5 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+State: Draft · Revision: 6 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+
+Revision 6 records the next Phase 0 integration checkpoint. Mac CI has passed build, tests and relocated package checks. Native Windows compilation passed, but its test compilation exceeded the original execution timeout and GUI failures still need diagnostics. Linux bootstrap now installs the official Qt ICU archive. Consumers: Core, CLI, Qt UI and Quality; physical Windows/Linux desktop qualification remains unverified.
 
 Revision 5 records D012’s implemented experimental slice. Pinned native developer tooling and Mac/Windows wrappers now exist; commands and observed host evidence are in [development setup](../build-development.md). Native CI jobs and package recipes require actual runner/runtime results. Consumers: Core, CLI, GUI and Quality. No trusted release or physical Windows/Linux desktop qualification is claimed.
 

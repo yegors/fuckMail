@@ -1,6 +1,8 @@
 # CLI and external agent interface
 
-State: Draft · Revision: 2 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+State: Draft · Revision: 3 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+
+Revision 3 records the next Phase 0 integration checkpoint. The draft response adds authored HTML and retained attachment IDs; structured draft_save can preserve or explicitly clear them. Existing plain-text commands clear stale HTML when changing the body. Lost-response replay survives an actual test-engine kill. Consumers: Core, Qt UI and MIME; protocol/fixture revisions remain 1.
 
 Revision 2 records D012’s implemented experimental slice. The implemented partial `fm` CLI is documented in [local protocol](../local-protocol.md); `fm --help` is the current command reference. It shares the engine with Qt and has no Qt dependency. Consumers: Core, Mail UI and Platform. Future command descriptions below retain their proposed status.
 

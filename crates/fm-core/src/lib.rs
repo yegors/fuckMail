@@ -8,12 +8,14 @@ use std::{
 };
 #[cfg(test)]
 mod benchmark;
+mod cancellation;
 mod capture;
 mod content;
 mod fixture;
+pub mod google_store;
 mod mutations;
 mod queries;
-pub const SCHEMA_VERSION: u32 = 2;
+pub const SCHEMA_VERSION: u32 = 3;
 pub const FIXTURE_REVISION: u32 = 1;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -81,6 +83,16 @@ impl Store {
         }
         if version == 1 {
             db.execute_batch(include_str!("migration-002.sql"))?;
+        }
+        // Read the committed version again: a fresh profile starts at the same
+        // historical schema used by upgrade fixtures, then follows these steps.
+        let version: u32 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 2 {
+            db.execute_batch(&format!(
+                "BEGIN IMMEDIATE;\n{}\n{}\nPRAGMA user_version=3;\nCOMMIT;",
+                include_str!("migration-003-drafts.sql"),
+                include_str!("migration-003-google.sql")
+            ))?;
         }
         let mut store = Self {
             db,

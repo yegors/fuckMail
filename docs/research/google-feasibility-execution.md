@@ -1,6 +1,6 @@
 # Phase 0 Google feasibility execution
 
-P0-02, 2026-09-11. Consumes Gmail contract revision 1 and synthetic fixture revision **google-p0-v1**. This is a tested provider boundary with deterministic transports and in-memory contract stores. It does not authenticate to Google, send real messages, implement a second mail database, or prove SQLite/power-loss durability.
+P0-02/03, 2026-09-11. Consumes Gmail contract revision 1 and synthetic fixture revisions **google-p0-v1** and **1**. The first provider tests use deterministic transports and in-memory contract stores; the follow-up below connects that boundary to the actual Core SQLite store. This does not authenticate to Google, send real messages, implement a second mail database, or prove hardware power-loss durability.
 
 ## Implemented and measured
 
@@ -30,6 +30,19 @@ The fixture manifest and API-shaped JSON are under [fm-google/tests/fixtures](..
 
 Responses have explicit size/page/change limits. Raw MIME is limited to 40 MiB per decoded message, listing to 500 IDs per page and a scan to 10,000 pages before an actionable failure. These are current feasibility limits, not silent truncation. Long imports need a persistent resumable adapter and measured scheduling before dogfooding.
 
+## Core SQLite integration follow-up, 2026-09-11
+
+`cargo test -p fm-core google_store::tests -- --nocapture` passed **7 tests**, using only disposable synthetic profiles on this arm64 Mac. `cargo clippy -p fm-core --all-targets -- -D warnings` passed. The store adapter is [google_store.rs](../../crates/fm-core/src/google_store.rs); executable assertions are [google_store_tests.rs](../../crates/fm-core/src/google_store_tests.rs). Schema 3 adds account-scoped checkpoint, staging, page receipt, observed label, manual intent and category-label mapping records to the same database.
+
+- Original MIME and decoded attachments are hash-verified and published before referencing SQL writes. A complete page atomically publishes normalized messages, FTS rows, observed labels and the checkpoint. No transaction spans transport calls or blob hashing.
+- Two inventory pages, repeated IDs, catch-up mail, misleading inventory estimates and identical remote IDs in two accounts go through actual Core search and conversation queries. Account-derived local identities remain separate. Exact page replay returns its prior receipt; changed data under the same expected checkpoint is rejected.
+- Interrupted retrieval leaves staged bytes durable but invisible to queries. Closing/reopening the store and retrying completes the page. A controlled SQL failure on the second inserted message rolls back the first message, its FTS entry, provider state, checkpoint and page receipt; reopening and retrying uses the retained stages successfully. This is transaction/restart evidence, not an abrupt process-kill or hardware-power-loss test.
+- Rate limiting leaves the checkpoint unchanged. History expiry survives reopen; a replacement scan does not interpret absence as deletion. Explicit deletions clear provider inbox/sent membership while retaining the local message, source, search text, attachments, drafts and pending human intent.
+- Flags/categories changed after provider staging are read inside the commit transaction. Pending manual read/star/category values override the provider snapshot, and an equal observed value does not implicitly acknowledge a pending operation. The acknowledged-write transport that can resolve these intents remains later integration work.
+- All five MIME corpus files import through shared safe text extraction. Tests compare retained source bytes and independent manifest SHA-256 values, check visible text/unsafe-text exclusions, search the HTML-only fallback, and verify decoded inline/attachment checksums. Missing or corrupted staged content prevents cursor advancement.
+
+Current normalized import bounds are 256 KiB text, 50 attachments, 4 KiB sender/recipient fields, 16 KiB subject and 1 KiB attachment name. Exceeding them rejects the page without advancing its checkpoint; nothing is silently truncated. These bounds and the 40 MiB raw-source limit need deliberate treatment before importing arbitrary large real mail. Old attachment records remain retained when newer provider content differs, protecting existing draft references; garbage collection is not implemented. The source/coverage query still reports full archive verification as unknown.
+
 ## Source-backed setup before live access
 
 Register a **Desktop app** OAuth client in a Google Cloud project and enable Gmail/Calendar APIs. Launch the user's system browser; bind the short-lived loopback listener before constructing the redirect URL. Validate state, keep the verifier in the engine and exchange it once. The helper prepares this flow; no callback server or token HTTP exchange is implemented here. A distributed desktop client secret cannot be relied on as a confidential credential. [Google installed-app OAuth](https://developers.google.com/identity/protocols/oauth2/native-app), [oauth2 library](https://docs.rs/oauth2/5.0.0/oauth2/).
@@ -42,4 +55,4 @@ The helper currently prepares `gmail.modify`, `calendar.events` and `calendar.ca
 
 Gmail documents history expiry as 404 and requires full synchronization. The implementation preserves its initial history baseline while paging and only promotes the final cursor after applied work. API errors use bounded retry guidance; sending is handled separately because read retry policy must not duplicate a submission after an ambiguous response. [Gmail synchronization](https://developers.google.com/workspace/gmail/api/guides/sync), [history.list](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.history/list), [Gmail errors](https://developers.google.com/workspace/gmail/api/guides/handle-errors), [messages.send](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/send).
 
-**Still unverified:** real personal/Workspace authorization, actual project quotas and backfill speed, real provider writes, cross-client reconciliation, OS credential stores, HTTP/TLS and transport cancellation, persistent Core checkpoint integration, and sustained dogfooding. No credentials or Google account access were required or used for this packet.
+**Still unverified:** real personal/Workspace authorization, actual project quotas and backfill speed, real provider writes, cross-client reconciliation, OS credential stores, HTTP/TLS and transport cancellation, abrupt interruption during a Google page transaction, and sustained dogfooding. No credentials or Google account access were required or used for this packet.

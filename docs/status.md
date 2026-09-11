@@ -1,6 +1,6 @@
 # Current status
 
-As of 2026-09-11. **Phase 0 implementation active. Google-first MVP readiness: 0% (0 of 9 whole areas verified).** The founder has authorized Phase 0 end to end. Native tooling, Rust/Qt source and synthetic fixtures are being integrated. Native Rust tests and the Qt integration walkthrough now pass on this Mac. The relocated Mac package also passes GUI/CLI/runtime checks. Native CI is running; the remaining full Phase 0 integration/recovery gates are explicit in the evidence report. See [Phase 0 execution evidence](research/phase-0-execution.md).
+As of 2026-09-11. **Phase 0 implementation active. Google-first MVP readiness: 0% (0 of 9 whole areas verified).** The founder has authorized Phase 0 end to end. Native tooling, Rust/Qt source and synthetic fixtures are being integrated. Native Rust tests and the Qt integration walkthrough now pass on this Mac. The relocated Mac package also passes GUI/CLI/runtime checks. The first Mac CI job passed. Windows compiled but failed tests; Linux exposed a now-fixed Qt ICU bootstrap dependency. A later local schema 3 checkpoint passes all 7 CTests, including provider/draft/recovery integration. Calendar/assistance store integration and native CI remain explicit gates in the evidence report. See [Phase 0 execution evidence](research/phase-0-execution.md).
 
 ## Established direction
 

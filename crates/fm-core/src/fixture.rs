@@ -55,13 +55,8 @@ impl Store {
                     } else {
                         format!("From: {sender} <{email}>\r\nTo: {recipient}\r\nSubject: {subject}\r\nMessage-ID: <{mid}@fixture.example>\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n{body}").into_bytes()
                     };
-                    let parsed = mail_parser::MessageParser::default()
-                        .parse(&raw)
-                        .ok_or_else(|| err("invalid_fixture", "Cannot parse fixture MIME"))?;
-                    let text = parsed
-                        .body_text(0)
-                        .map(|s| s.into_owned())
-                        .unwrap_or_default();
+                    let text = fm_mail::extract_incoming_text(&raw)
+                        .map_err(|_| err("invalid_fixture", "Cannot extract fixture MIME text"))?;
                     let hash = self.stage_blob(&raw)?;
                     messages.push(Message {
                         account: account.into(),

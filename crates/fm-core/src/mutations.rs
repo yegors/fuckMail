@@ -24,7 +24,14 @@ impl Store {
                 "expected_revision",
                 "request_id",
             ],
-            "draft_save" => &["conversation_id", "body", "expected_revision", "request_id"],
+            "draft_save" => &[
+                "conversation_id",
+                "body",
+                "body_html",
+                "attachment_ids",
+                "expected_revision",
+                "request_id",
+            ],
             "view_save" => &["view", "expected_revision", "request_id"],
             _ => return Err(err("unsupported_method", "Unknown mutation")),
         };
@@ -98,6 +105,11 @@ impl Store {
                     for message in &targets {
                         tx.execute("UPDATE messages SET unread=COALESCE(?1,unread),starred=COALESCE(?2,starred),revision=revision+1 WHERE account=?3 AND id=?4",
                             params![read.map(|v| !v), starred, account, message])?;
+                        for (field, value) in [("read", read), ("starred", starred)] {
+                            if let Some(value) = value {
+                                record_manual_intent(&tx, account, message, field, "", value)?;
+                            }
+                        }
                     }
                 } else {
                     let category = string(p, "category_id")?;
@@ -122,6 +134,7 @@ impl Store {
                             "UPDATE messages SET revision=revision+1 WHERE account=?1 AND id=?2",
                             params![account, message],
                         )?;
+                        record_manual_intent(&tx, account, message, "category", category, present)?;
                     }
                 }
                 tx.execute(
@@ -149,17 +162,82 @@ impl Store {
                         "Conversation does not exist in this account",
                     ));
                 }
-                let current: i64 = tx
+                let (current, old_body, old_html, old_attachments): (i64,String,Option<String>,String) = tx
                     .query_row(
-                        "SELECT revision FROM drafts WHERE account=?1 AND conversation_id=?2",
+                        "SELECT revision,body,body_html,attachments_json FROM drafts WHERE account=?1 AND conversation_id=?2",
                         params![account, conversation],
-                        |r| r.get(0),
+                        |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)),
                     )
                     .optional()?
-                    .unwrap_or(0);
+                    .unwrap_or((0,String::new(),None,"[]".into()));
                 check_revision(expected, current)?;
-                tx.execute("INSERT INTO drafts(account,conversation_id,body,revision) VALUES(?1,?2,?3,?4) ON CONFLICT(account,conversation_id) DO UPDATE SET body=excluded.body,revision=excluded.revision",
-                    params![account, conversation, body, next_revision(current)?])?;
+                let body_html = match p.get("body_html") {
+                    Some(Value::Null) => None,
+                    Some(Value::String(html)) if html.len() <= 256 * 1024 => Some(html.clone()),
+                    Some(_) => {
+                        return Err(err(
+                            "invalid_request",
+                            "Draft HTML must be null or a string of at most 256 KiB",
+                        ))
+                    }
+                    None if old_body == body => old_html,
+                    None => None, // A plain-only client must not leave stale rich text behind.
+                };
+                let attachments_json = match p.get("attachment_ids") {
+                    None => old_attachments,
+                    Some(value) => {
+                        let ids =
+                            value
+                                .as_array()
+                                .filter(|ids| ids.len() <= 50)
+                                .ok_or_else(|| {
+                                    err(
+                                        "invalid_request",
+                                        "Draft attachment_ids must contain at most 50 identifiers",
+                                    )
+                                })?;
+                        let mut seen = HashSet::new();
+                        let mut total = 0u64;
+                        for value in ids {
+                            let attachment = value.as_str().ok_or_else(|| {
+                                err(
+                                    "invalid_request",
+                                    "Draft attachment identifier must be a string",
+                                )
+                            })?;
+                            id(attachment)?;
+                            if !seen.insert(attachment) {
+                                return Err(err(
+                                    "invalid_request",
+                                    "Draft repeats an attachment identifier",
+                                ));
+                            }
+                            let row: Option<(String,i64,String)> = tx.query_row("SELECT state,size,blob_hash FROM attachments WHERE account=?1 AND id=?2",params![account,attachment],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+                            let (state, size, hash) = row.ok_or_else(|| {
+                                err("not_found", "Draft attachment is not in this account")
+                            })?;
+                            let size = u64::try_from(size).map_err(|_| {
+                                err("content_unavailable", "Draft attachment size is invalid")
+                            })?;
+                            total = total
+                                .checked_add(size)
+                                .filter(|total| *total <= fm_mail::MAX_ATTACHMENT_BYTES as u64)
+                                .ok_or_else(|| {
+                                    err("invalid_request", "Draft attachments exceed 25 MiB")
+                                })?;
+                            if state != "available" {
+                                return Err(err(
+                                    "content_unavailable",
+                                    "Draft attachment is not fully retained",
+                                ));
+                            }
+                            self.verified_blob(&hash, size)?;
+                        }
+                        serde_json::to_string(ids)?
+                    }
+                };
+                tx.execute("INSERT INTO drafts(account,conversation_id,body,revision,body_html,attachments_json) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(account,conversation_id) DO UPDATE SET body=excluded.body,revision=excluded.revision,body_html=excluded.body_html,attachments_json=excluded.attachments_json",
+                    params![account, conversation, body, next_revision(current)?,body_html,attachments_json])?;
                 self.draft(account, conversation)?
             }
             "view_save" => {
@@ -199,6 +277,24 @@ fn next_revision(current: i64) -> Result<i64> {
     current
         .checked_add(1)
         .ok_or_else(|| err("storage_error", "Revision exhausted"))
+}
+// A newer provider snapshot must not overwrite an unacknowledged human action.
+// These local overlays share the mutation transaction and its exact message set.
+fn record_manual_intent(
+    tx: &rusqlite::Transaction<'_>,
+    account: &str,
+    message: &str,
+    field: &str,
+    category: &str,
+    value: bool,
+) -> Result<()> {
+    tx.execute(
+        "INSERT INTO google_manual_intents(account,message_id,field,category_id,value,revision)
+         SELECT account,id,?3,?4,?5,revision FROM messages WHERE account=?1 AND id=?2
+         ON CONFLICT(account,message_id,field,category_id) DO UPDATE SET value=excluded.value,revision=excluded.revision",
+        params![account, message, field, category, value],
+    )?;
+    Ok(())
 }
 fn check_revision(expected: i64, actual: i64) -> Result<()> {
     if expected != actual {

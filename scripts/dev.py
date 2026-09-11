@@ -170,6 +170,7 @@ def package_environment():
         env["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
     env["QT_QPA_PLATFORM"] = "offscreen"
     env["QT_QUICK_BACKEND"] = "software"
+    env["QT_FORCE_STDERR_LOGGING"] = "1"
     return env
 
 

@@ -4,8 +4,20 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QInputMethodEvent>
+#include <QJsonArray>
+#include <QKeyEvent>
+#include <QMouseEvent>
 #include <QQuickItem>
+#include <QQuickWindow>
 #include <QDebug>
+
+namespace {
+QQuickItem *visualChild(QQuickItem *parent, const QString &name) {
+    if (parent->objectName() == name) return parent;
+    for (auto child : parent->childItems()) if (auto found = visualChild(child, name)) return found;
+    return nullptr;
+}
+}
 
 GuiSelfTest::GuiSelfTest(MailBackend &backend, QObject *window, QString profile, QString engine, QObject *parent)
     : QObject(parent), m_backend(backend), m_window(window), m_profile(std::move(profile)), m_engine(std::move(engine)) {
@@ -17,6 +29,33 @@ bool GuiSelfTest::membersHave(const char *flag, bool value) const {
     const auto members = m_backend.conversation().value("messages").toList();
     if (members.isEmpty()) return false;
     for (const auto &member : members) if (member.toMap().value(QLatin1String(flag)).toBool() != value) return false;
+    return true;
+}
+bool GuiSelfTest::membersCategorized(bool present) const {
+    const auto members = m_backend.conversation().value("messages").toList();
+    if (members.isEmpty()) return false;
+    for (const auto &member : members) {
+        if (member.toMap()["categories"].toStringList().contains("finance") != present) return false;
+    }
+    return true;
+}
+bool GuiSelfTest::editorStateIntact() const {
+    const auto editor = m_window->findChild<QQuickItem *>("replyComposer");
+    return editor && editor->property("text").toString() == m_authored &&
+        editor->property("cursorPosition").toInt() == 10 &&
+        editor->property("selectionStart").toInt() == 6 &&
+        editor->property("selectionEnd").toInt() == 10;
+}
+bool GuiSelfTest::click(const QString &objectName) {
+    auto window = qobject_cast<QQuickWindow *>(m_window);
+    auto item = window ? visualChild(window->contentItem(), objectName) : nullptr;
+    if (!item || !window || !item->isVisible() || !item->isEnabled()) return false;
+    const QPointF position = item->mapToScene({item->width() / 2, item->height() / 2});
+    const QPointF global = window->mapToGlobal(position.toPoint());
+    QMouseEvent press(QEvent::MouseButtonPress, position, global, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent release(QEvent::MouseButtonRelease, position, global, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(window, &press);
+    QCoreApplication::sendEvent(window, &release);
     return true;
 }
 void GuiSelfTest::failed(const QString &message) {
@@ -41,6 +80,10 @@ void GuiSelfTest::cli(const QStringList &arguments, std::function<void(const QJs
     m_cli.start(program, QStringList{"--profile", m_profile, "--engine", m_engine, "--account", "windscribe", "--json"} + arguments);
 }
 void GuiSelfTest::step() {
+    if (qEnvironmentVariableIsSet("FM_GUI_TEST_TRACE") && m_lastTracedStage != m_stage) {
+        qInfo() << "GUI self-test stage" << m_stage;
+        m_lastTracedStage = m_stage;
+    }
     if (++m_ticks > 700) { failed(QString("Timed out waiting for the real GUI/engine state (unread=%1, starred=%2, today=%3).").arg(membersHave("unread", true)).arg(membersHave("starred", true)).arg(m_backend.todayEvents().size())); return; }
     if (!m_backend.error().isEmpty()) { failed(m_backend.error()); return; }
     switch (m_stage) {
@@ -72,9 +115,43 @@ void GuiSelfTest::step() {
             QInputMethodEvent input; input.setCommitString(m_authored);
             QCoreApplication::sendEvent(editor, &input);
             if (m_backend.draft()["body"].toString() != m_authored) { failed("Unicode text input did not reach the durable draft adapter."); return; }
-            m_backend.saveDraft(); ++m_stage;
+            editor->setProperty("cursorPosition", 6);
+            for (int index = 0; index < 4; ++index) {
+                QKeyEvent select(QEvent::KeyPress, Qt::Key_Right, Qt::ShiftModifier);
+                QCoreApplication::sendEvent(editor, &select);
+            }
+            if (!editorStateIntact()) { failed("Native keyboard selection did not retain the authored text and cursor."); return; }
+            m_stage = 22;
         }
         break;
+    case 22:
+        if (!click("categoryAssignmentButton")) return;
+        m_stage = 23; break;
+    case 23:
+        if (!click("categoryAdd_finance")) return;
+        m_stage = 24; break;
+    case 24:
+        if (m_backend.mutationInFlight() || m_backend.loading() || !membersCategorized(true)) return;
+        if (!editorStateIntact()) { failed("Category assignment changed the editor's text, cursor or selection."); return; }
+        m_stage = 25;
+        cli({"mail", "read", m_id}, [this](auto result) {
+            for (const auto &member : result["messages"].toArray()) {
+                if (!member.toObject()["categories"].toArray().contains("finance")) { failed("CLI did not observe the category assigned through the QML action."); return; }
+            }
+        });
+        break;
+    case 25:
+        m_stage = 26;
+        cli({"mail", "category", m_id, "finance", "--remove"}, [](auto) {});
+        break;
+    case 26:
+        if (!membersCategorized(false)) return;
+        if (!editorStateIntact()) { failed("The CLI category refresh changed the editor's text, cursor or selection."); return; }
+        {
+            QKeyEvent escape(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+            QCoreApplication::sendEvent(m_window, &escape);
+        }
+        m_backend.saveDraft(); m_stage = 3; break;
     case 3:
         if (m_backend.draftStatus() != "Saved on this machine") return;
         ++m_stage;
@@ -114,7 +191,7 @@ void GuiSelfTest::step() {
         m_backend.showFixtureWeek(); m_window->setProperty("workspace", "mail"); ++m_stage; break;
     case 9:
         if (m_backend.events().isEmpty()) return;
-        qInfo().noquote() << "GUI self-test passed: real IPC, bounded paging retained on refresh, explicit independent flags, CLI-observed Unicode draft, account/search/selection restoration, settings and calendar/today isolation.";
+        qInfo().noquote() << "GUI self-test passed: real IPC, bounded paging retained on refresh, explicit flags/categories with CLI readback, mouse category action and keyboard selection preservation, CLI-observed Unicode draft, account/search/selection restoration, settings and calendar/today isolation.";
         m_timer.stop(); m_backend.shutdown(); break;
     }
 }

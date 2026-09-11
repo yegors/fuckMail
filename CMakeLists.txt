@@ -69,14 +69,21 @@ qt_generate_deploy_qml_app_script(
 install(SCRIPT "${FM_DEPLOY_SCRIPT}")
 
 if(BUILD_TESTING)
+    # Optimized test binaries require their own cold compilation (including dev
+    # dependencies). Do not charge that build against the execution watchdog.
+    add_test(NAME rust-test-build COMMAND "${FM_CARGO}" test --workspace --locked --no-run
+        ${FM_CARGO_PROFILE_ARGS} --target-dir "${CMAKE_SOURCE_DIR}/target")
+    set_tests_properties(rust-test-build PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        TIMEOUT 900 FIXTURES_SETUP rust_test_binaries RESOURCE_LOCK fm_cargo)
     add_test(NAME rust-workspace COMMAND "${FM_CARGO}" test --workspace --locked
         ${FM_CARGO_PROFILE_ARGS} --target-dir "${CMAKE_SOURCE_DIR}/target")
-    set_tests_properties(rust-workspace PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}" TIMEOUT 180)
+    set_tests_properties(rust-workspace PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        TIMEOUT 180 FIXTURES_REQUIRED rust_test_binaries RESOURCE_LOCK fm_cargo)
     # --smoke exercises a disposable profile and must exit nonzero on load/IPC errors.
     add_test(NAME gui-smoke COMMAND "$<TARGET_FILE:fuckmail-gui>" --smoke)
     set_tests_properties(gui-smoke PROPERTIES TIMEOUT 45
-        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_FORCE_STDERR_LOGGING=1")
     add_test(NAME gui-integration COMMAND "$<TARGET_FILE:fuckmail-gui>" --self-test)
     set_tests_properties(gui-integration PROPERTIES TIMEOUT 90
-        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software")
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_FORCE_STDERR_LOGGING=1;FM_GUI_TEST_TRACE=1")
 endif()

@@ -323,7 +323,24 @@ fn shared_incoming_corpus_retains_sources_and_attachment_hashes() {
         }
         assert_eq!(inline, entry["inline_count"].as_u64().unwrap());
         assert_eq!(regular, entry["attachment_count"].as_u64().unwrap());
-        // Core owns safe HTML-to-text fallback; raw parsing alone does not assert its policy.
+        // This is the exact shared path Core uses for seed and provider imports.
+        let text = extract_incoming_text(&source).unwrap();
+        for expected in entry["expected_text_contains"].as_array().unwrap() {
+            assert!(
+                text.contains(expected.as_str().unwrap()),
+                "{}: {text:?}",
+                entry["path"]
+            );
+        }
+        if let Some(excluded) = entry["expected_text_not_contains"].as_array() {
+            for unexpected in excluded {
+                assert!(
+                    !text.contains(unexpected.as_str().unwrap()),
+                    "{}: {text:?}",
+                    entry["path"]
+                );
+            }
+        }
     }
 }
 

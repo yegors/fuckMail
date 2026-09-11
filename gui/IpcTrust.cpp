@@ -28,24 +28,30 @@ QByteArray processUser(HANDLE process) {
     CloseHandle(token);
     return ok ? data : QByteArray{};
 }
-bool privateWindowsPath(const QString &path, bool directory) {
+bool privateWindowsPath(const QString &path, bool directory, QString &error) {
+    const auto reject = [&error](const QString &reason) { error = reason; return false; };
     const auto wide = reinterpret_cast<LPCWSTR>(path.utf16());
     auto attributes = GetFileAttributesW(wide);
-    if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_REPARSE_POINT) || bool(attributes & FILE_ATTRIBUTE_DIRECTORY) != directory) return false;
+    if (attributes == INVALID_FILE_ATTRIBUTES) return reject("cannot inspect file attributes (Windows error " + QString::number(GetLastError()) + ")");
+    if (attributes & FILE_ATTRIBUTE_REPARSE_POINT) return reject("reparse points are not allowed");
+    if (bool(attributes & FILE_ATTRIBUTE_DIRECTORY) != directory) return reject("unexpected file type");
     auto current = processUser(GetCurrentProcess());
-    if (current.isEmpty()) return false;
+    if (current.isEmpty()) return reject("cannot inspect this process's user token");
     const auto sid = reinterpret_cast<TOKEN_USER *>(current.data())->User.Sid;
     PSID owner = nullptr; PACL dacl = nullptr; PSECURITY_DESCRIPTOR security = nullptr;
-    if (GetNamedSecurityInfoW(wide, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, &owner, nullptr, &dacl, nullptr, &security) != ERROR_SUCCESS) return false;
+    const auto status = GetNamedSecurityInfoW(wide, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION, &owner, nullptr, &dacl, nullptr, &security);
+    if (status != ERROR_SUCCESS) return reject("cannot inspect ownership and permissions (Windows error " + QString::number(status) + ")");
     bool ok = owner && EqualSid(owner, sid) && dacl;
+    if (!owner || !EqualSid(owner, sid)) error = "owner is not the current process user";
+    else if (!dacl) error = "permission list is absent";
     if (ok) for (DWORD index = 0; index < dacl->AceCount; ++index) {
         void *raw = nullptr;
-        if (!GetAce(dacl, index, &raw)) { ok = false; break; }
+        if (!GetAce(dacl, index, &raw)) { ok = false; error = "cannot inspect a permission entry"; break; }
         const auto header = static_cast<ACE_HEADER *>(raw);
         if (header->AceType == ACCESS_ALLOWED_ACE_TYPE) {
             const auto ace = static_cast<ACCESS_ALLOWED_ACE *>(raw);
-            if (ace->Mask && !EqualSid(&ace->SidStart, sid)) { ok = false; break; }
-        } else if (header->AceType != ACCESS_DENIED_ACE_TYPE) { ok = false; break; }
+            if (ace->Mask && !EqualSid(&ace->SidStart, sid)) { ok = false; error = "a permission entry grants another identity access"; break; }
+        } else if (header->AceType != ACCESS_DENIED_ACE_TYPE) { ok = false; error = "unsupported permission entry type"; break; }
     }
     LocalFree(security); return ok;
 }
@@ -62,9 +68,9 @@ QJsonObject readPrivateDiscovery(const QString &profile, QString &error) {
 #ifdef Q_OS_WIN
     const auto path = QDir(profile).filePath("engine.json");
     if (!QFileInfo::exists(path)) return {};
-    if (!privateWindowsPath(profile, true) || !privateWindowsPath(path, false)) {
-        error = "The local profile or discovery file is not private to this Windows user."; return {};
-    }
+    QString reason;
+    if (!privateWindowsPath(profile, true, reason)) { error = "The Windows profile is not private: " + reason + "."; return {}; }
+    if (!privateWindowsPath(path, false, reason)) { error = "The Windows engine discovery file is not private: " + reason + "."; return {}; }
     discovery.setFileName(path);
     if (!discovery.open(QIODevice::ReadOnly)) { error = "Cannot read the private engine discovery file."; return {}; }
 #else

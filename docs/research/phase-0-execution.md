@@ -29,14 +29,11 @@ Native rendered captures (synthetic data, 2880 × 1900): [mail](assets/phase-0/m
 
 ## Remaining local work before the full phase can close
 
-1. Commit a paginated fake Gmail import/history update, normalized messages, FTS changes and provider checkpoint through Core; prove restart and replay ordering.
-2. Extend the persisted draft/capture experiment to authored formatting and a retained attachment, then test crash/unknown outcomes and schema migration. The plain Unicode capture/reopen test now passes.
-3. Assert the incoming MIME manifest’s visible-text and unsafe-text exclusions through the exact Core extraction path.
-4. Add explicit GUI assignment of configured categories and a CLI readback; filtering alone is not assignment.
-5. Consume permitted fake assistance through a Core transaction that rechecks source/policy/manual/provider stamps. Independent validator tests are insufficient.
-6. Apply completed calendar sync/edit/RSVP fake outcomes to the one store; incomplete batches must retain the previous view and cursor.
-7. Test real engine termination, lost-response replay, queued disconnect/cancellation and slow-client isolation beyond graceful restart.
-8. Relocated Mac package verification is complete; finish remaining upgrade checks and actual native CI jobs. Physical other-host, live-provider and real-runner evidence remains separately unverified.
+The schema 3 checkpoint closes the earlier local gaps for paginated fake Gmail/Core/FTS commits, persisted formatting/attachment captures, exact MIME extraction, explicit GUI category assignment and engine kill/replay/cancellation. The evidence below and linked tests identify their limits. Remaining work:
+
+1. Consume permitted fake assistance through a Core transaction that rechecks source/policy/manual/provider stamps. Independent validator tests are insufficient.
+2. Apply completed calendar sync/edit/RSVP fake outcomes to the one store; incomplete batches must retain the previous view and cursor.
+3. Finish actual native Windows/Linux tests and packaged runtime checks, then refresh the Mac package for the final Phase 0 source. Physical other-host, live-provider and real-runner evidence remains separately unverified.
 
 This list preserves the full Phase 0 scope; it does not add legacy protocols, browser-accurate HTML, a finished CLI, signing or larger benchmark tiers to the first foundation gate.
 
@@ -47,4 +44,15 @@ This list preserves the full Phase 0 scope; it does not add legacy protocols, br
 
 Generated archive: `dist/fuckmail-darwin-arm64.tar.gz` (about 53 MiB), SHA-256 `80d5cb9defb71c9ab9f08220c5265b3542b5a0fd2fbe98b1641f09748f5e122b`. Its manifest records `8b8230f` plus the two packaging changes subsequently committed as `02d33ca`; it does not mislabel that pre-commit archive as a clean release build. Exact logs are in ignored `build/verification/native-test-final.log`, `native-package.log` and `package-runtime.log`.
 
-[Native CI run for 02d33ca](https://github.com/yegors/fuckMail/actions/runs/34645947282) started for macOS, Windows and Ubuntu. At this recording it is in progress, not a passing result. The HTTPS Git token lacked workflow scope; the authorized GitHub connector created the workflow, that commit was merged locally, and the remaining push succeeded. No credentials were exposed or changed.
+[Native CI run for 02d33ca](https://github.com/yegors/fuckMail/actions/runs/34645947282) started for macOS, Windows and Ubuntu. Its Mac job passed build, native tests, packaging and artifact retention. Windows compiled Rust and Qt successfully but test compilation exceeded the 180-second execution watchdog, and its GUI smoke/integration checks failed without useful logs. Ubuntu bootstrap failed because Qt’s separate ICU archive was absent. Commit `17f3699` fixes and locally reproduces the ICU loader issue; the next checkpoint separates test compilation and enables useful Windows GUI diagnostics. Neither failed native job is counted as passing. The HTTPS Git token lacked workflow scope; the authorized GitHub connector created the workflow, that commit was merged locally, and the remaining push succeeded. No credentials were exposed or changed.
+
+
+## Schema 3 integration checkpoint
+
+`cargo test -p fm-core` passed 27 unit tests, 2 coverage tests, 7 mutation tests and 5 search tests (one larger benchmark remains explicitly ignored). This includes 7 actual Google-to-Core integration cases and 9 persisted MIME capture/recovery/migration cases. [Google evidence](google-feasibility-execution.md) and [MIME evidence](mime-feasibility-execution.md) record the exact assertions and import bounds.
+
+Root's `cargo test -p fm-engine --locked --offline` passed 6 actual socket/process integration tests plus a session cancellation test. The new process test owns and forcibly terminates only its own engine child after another client observes a saved draft; the original sender never consumes its response. Reopening and replaying recovers the recorded response, and replay after a newer edit cannot overwrite that edit. A partial-frame owner cannot stall an independent client, and disconnect releases its lifetime. A session test verifies queued-request cancellation; Core tests interrupt an active SQLite read and verify the next owner is unaffected. The first parallel kill test hit its shorter 10-second fixture-startup timeout; the isolated run passed, and aligning the test with the CLI's 15-second startup bound passed the full suite. This is not a power-loss claim.
+
+The full Mac `scripts/dev.sh test` run passed **7/7 CTests in 93.39 seconds**: separate Rust test compilation, complete Rust workspace execution, GUI smoke, GUI/CLI integration, IPC trust, composer probe and calendar layout. Log: `build/verification/schema3-native-test.log`. GUI integration includes actual QML category-button mouse input, independent CLI readback/removal, and preserving authored Unicode and selection across updates. The native Cocoa app also opens on this Mac; a desktop screenshot/launch alone does not prove every physical input behavior.
+
+Incoming text now shares `fm_mail::extract_incoming_text` between fixture seed and fake provider import. All five independent MIME expectations check visible text, unsafe-text exclusions and exact retained sources through Core. Authored Qt formatting remains a document-export feasibility path through persisted drafts/MIME capture; the interactive GUI composer remains plain text. No model or live sending was enabled.

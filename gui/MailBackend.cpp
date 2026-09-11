@@ -284,18 +284,27 @@ void MailBackend::loadConversation(bool loadDraft) {
 
 QJsonObject MailBackend::mutation() const { return {{"request_id", uuid()}}; }
 void MailBackend::flag(const QString &name, bool value) {
-    if (m_conversation.isEmpty()) return;
-    auto params = mutation(); params["id"] = m_selected;
+    mutateConversation("flag", {{name, value}});
+}
+void MailBackend::mutateConversation(const QString &method, QJsonObject params) {
+    if (m_conversation.isEmpty() || m_mutatingConversation) return;
+    params["request_id"] = uuid(); params["id"] = m_selected;
     params["message_ids"] = QJsonArray::fromVariantList(m_conversation["message_ids"].toList());
-    params["expected_revision"] = m_conversation["revision"].toLongLong(); params[name] = value;
+    params["expected_revision"] = m_conversation["revision"].toLongLong();
     const auto id = m_selected, account = m_account;
-    request("flag", account, params, [this, id, account](auto result, bool ok) {
+    m_mutatingConversation = true; emit mutationChanged();
+    request(method, account, params, [this, id, account](auto result, bool ok) {
+        m_mutatingConversation = false; emit mutationChanged();
         if (ok && id == m_selected && account == m_account) { m_conversation = result.toVariantMap(); emit conversationChanged(); }
-        refresh();
+        if (m_shutdown) finishShutdown();
+        else refresh();
     });
 }
 void MailBackend::setRead(bool read) { flag("read", read); }
 void MailBackend::setStarred(bool starred) { flag("starred", starred); }
+void MailBackend::setCategoryMembership(const QString &categoryId, bool present) {
+    mutateConversation("set_category", {{"category_id", categoryId}, {"present", present}});
+}
 
 void MailBackend::editDraft(const QString &body) {
     if (m_draft.isEmpty() || body == m_draft["body"].toString()) return;
@@ -396,6 +405,6 @@ void MailBackend::shutdown() {
     saveDraft(); finishShutdown();
 }
 void MailBackend::finishShutdown() {
-    if (!m_shutdown || m_draftDirty || m_savingDraft || !m_viewSaving.isEmpty()) return;
+    if (!m_shutdown || m_draftDirty || m_savingDraft || m_mutatingConversation || !m_viewSaving.isEmpty()) return;
     m_socket.disconnectFromServer(); emit shutdownReady();
 }

@@ -2,9 +2,10 @@ use fm_ipc::{Client, Discovery};
 use serde_json::{json, Value};
 use std::{
     path::{Path, PathBuf},
+    process::{Child, Command, Stdio},
     time::Duration,
 };
-use tokio::io::BufReader;
+use tokio::io::{AsyncWriteExt, BufReader};
 
 fn engine() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_fm-engine"))
@@ -41,6 +42,147 @@ async fn wait_stopped(profile: &Path) {
         );
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+}
+
+// Own the exact process handle used by kill tests; never kill a PID merely
+// because a profile/discovery file names it, and clean up on assertion failure.
+struct OwnedEngine(Child);
+impl Drop for OwnedEngine {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+async fn owned_engine(profile: &Path) -> OwnedEngine {
+    let mut process = OwnedEngine(
+        Command::new(engine())
+            .arg("--profile")
+            .arg(profile)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .unwrap(),
+    );
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    loop {
+        if fm_ipc::read_discovery(profile).is_ok_and(|d| d.pid == process.0.id()) {
+            break;
+        }
+        assert!(
+            process.0.try_wait().unwrap().is_none(),
+            "owned engine exited during startup"
+        );
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "owned engine startup timed out"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    process
+}
+async fn raw_owner(d: &Discovery) -> BufReader<fm_ipc::AnyStream> {
+    let mut stream = BufReader::new(fm_ipc::connect(d).await.unwrap());
+    fm_ipc::write_frame(
+        stream.get_mut(),
+        &json!({"version":1,"id":"hello","method":"hello","params":{"token":d.token}}),
+    )
+    .await
+    .unwrap();
+    let hello: Value =
+        serde_json::from_slice(&fm_ipc::read_frame(&mut stream).await.unwrap().unwrap()).unwrap();
+    assert_eq!(hello["ok"], true);
+    stream
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn killed_engine_recovers_an_unread_draft_receipt_without_repeating_it() {
+    let temp = tempfile::tempdir().unwrap();
+    let profile = temp.path().join("profile");
+    let mut process = owned_engine(&profile).await;
+    let mut observer = client(&profile).await;
+    let discovery = fm_ipc::read_discovery(&profile).unwrap();
+    let mut sender = raw_owner(&discovery).await;
+    let params = json!({"conversation_id":"windscribe-thread-000", "body":"Human reply after restart — 日本語", "expected_revision":0, "request_id":"lost-draft-receipt"});
+    fm_ipc::write_frame(sender.get_mut(), &json!({"version":1,"id":"lost","method":"draft_save","account":"windscribe","params":params})).await.unwrap();
+    // Do not read the sender's reply. An independent owner observes the durable
+    // effect before the OS terminates the process, so replay must find its receipt.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    let saved = loop {
+        let draft = ok(observer
+            .call(
+                "draft_get",
+                Some("windscribe"),
+                json!({"conversation_id":"windscribe-thread-000"}),
+            )
+            .await
+            .unwrap());
+        if draft["revision"] == 1 {
+            break draft;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "draft did not commit"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    process.0.kill().unwrap();
+    assert!(!process.0.wait().unwrap().success());
+    drop(sender);
+    drop(observer);
+    let mut reopened = client(&profile).await;
+    assert_eq!(
+        ok(reopened
+            .call("draft_save", Some("windscribe"), params.clone())
+            .await
+            .unwrap()),
+        saved
+    );
+    let newer = ok(reopened.call("draft_save", Some("windscribe"), json!({"conversation_id":"windscribe-thread-000", "body":"Later author edit", "expected_revision":1, "request_id":"later-edit"})).await.unwrap());
+    assert_eq!(newer["revision"], 2);
+    assert_eq!(
+        ok(reopened
+            .call("draft_save", Some("windscribe"), params)
+            .await
+            .unwrap()),
+        saved
+    );
+    assert_eq!(
+        ok(reopened
+            .call(
+                "draft_get",
+                Some("windscribe"),
+                json!({"conversation_id":"windscribe-thread-000"})
+            )
+            .await
+            .unwrap()),
+        newer
+    );
+    drop(reopened);
+    wait_stopped(&profile).await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn partial_frame_owner_does_not_stall_another_client_or_keep_engine_after_disconnect() {
+    let temp = tempfile::tempdir().unwrap();
+    let profile = temp.path().join("profile");
+    let mut other = client(&profile).await;
+    let discovery = fm_ipc::read_discovery(&profile).unwrap();
+    let mut slow = raw_owner(&discovery).await;
+    slow.get_mut().write_all(b"{\"version\":").await.unwrap();
+    let status = tokio::time::timeout(
+        Duration::from_secs(3),
+        other.call("status", None, json!({})),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    ok(status);
+    drop(other);
+    tokio::time::sleep(Duration::from_millis(600)).await;
+    assert_eq!(fm_ipc::read_discovery(&profile).unwrap().pid, discovery.pid);
+    drop(slow);
+    wait_stopped(&profile).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

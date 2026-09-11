@@ -215,15 +215,26 @@ impl Store {
     }
     pub(crate) fn draft(&self, account: &str, cid: &str) -> Result<Value> {
         let conversation = self.conversation(account, cid)?;
-        let (body, revision) = self
+        let (body, revision, body_html, attachments_json) = self
             .db
             .query_row(
-                "SELECT body,revision FROM drafts WHERE account=?1 AND conversation_id=?2",
+                "SELECT body,revision,body_html,attachments_json FROM drafts WHERE account=?1 AND conversation_id=?2",
                 params![account, cid],
-                |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?,r.get::<_,Option<String>>(2)?,r.get::<_,String>(3)?)),
             )
             .optional()?
-            .unwrap_or_default();
+            .unwrap_or((String::new(),0,None,"[]".into()));
+        let attachment_ids: Vec<String> = serde_json::from_str(&attachments_json)?;
+        if attachment_ids.len() > 50 {
+            return Err(err(
+                "storage_error",
+                "Draft attachment references exceed their bound",
+            ));
+        }
+        let attachments = attachment_ids.iter().map(|id| {
+            self.db.query_row("SELECT name,mime_type,size,state FROM attachments WHERE account=?1 AND id=?2",params![account,id],|row|Ok(json!({"id":id,"name":row.get::<_,String>(0)?,"mime_type":row.get::<_,String>(1)?,"size":row.get::<_,i64>(2)?,"state":row.get::<_,String>(3)?})))
+                .optional().map(|row|row.unwrap_or_else(||json!({"id":id,"state":"missing"})))
+        }).collect::<std::result::Result<Vec<_>,_>>()?;
         let from: String =
             self.db
                 .query_row("SELECT email FROM accounts WHERE id=?1", [account], |r| {
@@ -232,7 +243,7 @@ impl Store {
         let to =
             conversation["messages"].as_array().unwrap().last().unwrap()["sender_email"].clone();
         Ok(
-            json!({"conversation_id":cid,"body":body,"to":to,"from":from,"subject":format!("Re: {}",conversation["subject"].as_str().unwrap()),"revision":revision,"attachments":[]}),
+            json!({"conversation_id":cid,"body":body,"body_html":body_html,"attachment_ids":attachment_ids,"to":to,"from":from,"subject":format!("Re: {}",conversation["subject"].as_str().unwrap()),"revision":revision,"attachments":attachments}),
         )
     }
     pub(crate) fn view(&self, account: &str) -> Result<Value> {

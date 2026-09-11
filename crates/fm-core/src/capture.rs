@@ -5,7 +5,7 @@ use fm_google::send::{
     submit_once, SendJournal, SendOperation, SendState, SubmissionResult, SubmissionTransport,
 };
 use fm_google::{AccountId, GoogleError};
-use fm_mail::{AccountIdentity, Address, ComposeRequest};
+use fm_mail::{AccountIdentity, Address, ComposeRequest, StagedAttachment};
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -216,6 +216,7 @@ impl Store {
             "{:x}",
             Sha256::digest(format!("{account}\0{}", request.request_id).as_bytes())
         );
+        let attachments = self.capture_attachments(account, &draft)?;
         let composed = fm_mail::build_mail(
             &ComposeRequest {
                 account_id: account.to_owned(),
@@ -230,14 +231,14 @@ impl Store {
                 bcc: vec![],
                 subject: draft["subject"].as_str().unwrap_or("").to_owned(),
                 body_text: draft["body"].as_str().unwrap_or("").to_owned(),
-                body_html: None,
+                body_html: draft["body_html"].as_str().map(str::to_owned),
                 message_id: format!("<capture-{operation_digest}@fuckmail.invalid>"),
                 reply_to_message_id,
                 references,
                 timestamp_secs: created_at,
             },
             &identity,
-            &[],
+            &attachments,
         )
         .map_err(|_| {
             err(
@@ -288,6 +289,65 @@ impl Store {
         tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
         tx.commit()?;
         Ok(record)
+    }
+
+    fn capture_attachments(&self, account: &str, draft: &Value) -> Result<Vec<StagedAttachment>> {
+        let Some(ids) = draft.get("attachment_ids") else {
+            return Ok(vec![]);
+        };
+        let ids = ids
+            .as_array()
+            .ok_or_else(|| err("invalid_draft", "Draft attachment references are malformed"))?;
+        if ids.len() > 50 {
+            return Err(err("invalid_draft", "Draft has too many attachments"));
+        }
+        let mut seen = std::collections::HashSet::new();
+        let mut staged = Vec::new();
+        let mut total = 0u64;
+        for id in ids {
+            let id = id
+                .as_str()
+                .ok_or_else(|| err("invalid_draft", "Draft attachment reference is malformed"))?;
+            crate::id(id)?;
+            if !seen.insert(id) {
+                return Err(err(
+                    "invalid_draft",
+                    "Draft repeats an attachment reference",
+                ));
+            }
+            let row: Option<(String,String,i64,String,String)> = self.db.query_row(
+                "SELECT name,mime_type,size,state,blob_hash FROM attachments WHERE account=?1 AND id=?2",[account,id],
+                |row|Ok((row.get(0)?,row.get(1)?,row.get(2)?,row.get(3)?,row.get(4)?))).optional()?;
+            let (name, content_type, size, state, hash) =
+                row.ok_or_else(|| err("not_found", "Draft attachment is not in this account"))?;
+            let size = u64::try_from(size)
+                .map_err(|_| err("content_unavailable", "Draft attachment size is invalid"))?;
+            total = total
+                .checked_add(size)
+                .filter(|total| *total <= fm_mail::MAX_ATTACHMENT_BYTES as u64)
+                .ok_or_else(|| {
+                    err(
+                        "invalid_draft",
+                        "Draft attachments exceed the MIME byte limit",
+                    )
+                })?;
+            if state != "available" {
+                return Err(err(
+                    "content_unavailable",
+                    "Draft attachment is not fully retained",
+                ));
+            }
+            let bytes = self.capture_bytes(&hash, size)?;
+            staged.push(StagedAttachment {
+                account_id: account.to_owned(),
+                filename: name,
+                content_type,
+                bytes,
+                sha256: hash,
+                content_id: None,
+            });
+        }
+        Ok(staged)
     }
 
     fn capture_bytes(&self, hash: &str, size: u64) -> Result<Vec<u8>> {
@@ -427,6 +487,7 @@ impl SubmissionTransport for LocalCapture {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mail_parser::MimeHeaders;
     const ACCOUNT: &str = "windscribe";
     const THREAD: &str = "windscribe-thread-000";
 
@@ -437,6 +498,487 @@ mod tests {
 
     fn capture_params(draft: &Value, request_id: &str) -> Value {
         json!({"conversation_id":THREAD,"expected_revision":draft["revision"],"request_id":request_id})
+    }
+
+    #[test]
+    fn actual_qt_formatting_and_retained_attachment_survive_draft_restart_and_capture() {
+        let temporary = tempfile::tempdir().unwrap();
+        let profile = temporary.path().join("profile");
+        let mut store = Store::open(&profile).unwrap();
+        let plain = include_str!("../../../fixtures/composer-qt.txt");
+        let html = include_str!("../../../fixtures/composer-qt.html");
+        let attachment_id = "windscribe-attachment-0";
+        let draft = store.handle("draft_save",Some(ACCOUNT),json!({"conversation_id":THREAD,"body":plain,"body_html":html,"attachment_ids":[attachment_id],"expected_revision":0,"request_id":"save-qt-rich"})).unwrap();
+        assert_eq!(draft["body"], plain);
+        assert_eq!(draft["body_html"], html);
+        assert_eq!(draft["attachment_ids"], json!([attachment_id]));
+        let (hash, size): (String, u64) = store
+            .db
+            .query_row(
+                "SELECT blob_hash,size FROM attachments WHERE account=?1 AND id=?2",
+                [ACCOUNT, attachment_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        let attachment_bytes = store.capture_bytes(&hash, size).unwrap();
+        drop(store);
+        let mut reopened = Store::open(&profile).unwrap();
+        assert_eq!(reopened.draft(ACCOUNT, THREAD).unwrap(), draft);
+        let result = reopened
+            .handle(
+                "draft_capture",
+                Some(ACCOUNT),
+                capture_params(&draft, "capture-qt-rich"),
+            )
+            .unwrap();
+        let raw = std::fs::read(result["path"].as_str().unwrap()).unwrap();
+        let parsed = mail_parser::MessageParser::default().parse(&raw).unwrap();
+        assert_eq!(
+            parsed.body_text(0).unwrap(),
+            format!("{plain}\n\n-- \n—\nWindscribe")
+        );
+        let alternative = parsed.body_html(0).unwrap();
+        assert!(alternative.contains("font-weight:700"));
+        assert!(alternative.contains("font-style:italic"));
+        assert!(alternative.contains("Montréal"));
+        assert!(!alternative.contains("<style"));
+        let attachments = parsed.attachments().collect::<Vec<_>>();
+        assert_eq!(attachments.len(), 1);
+        assert_eq!(attachments[0].attachment_name(), Some("Q3-infra-v4-0.txt"));
+        assert_eq!(attachments[0].contents(), attachment_bytes);
+        assert_eq!(
+            format!("{:x}", Sha256::digest(attachments[0].contents())),
+            hash
+        );
+        assert_eq!(reopened.draft(ACCOUNT, THREAD).unwrap(), draft);
+        assert_eq!(result["network_used"], false);
+    }
+
+    #[test]
+    fn older_plain_clients_clear_stale_html_and_preserve_selected_attachments() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&temporary.path().join("profile")).unwrap();
+        let plain = include_str!("../../../fixtures/composer-qt.txt");
+        let html = include_str!("../../../fixtures/composer-qt.html");
+        let rich = store.handle("draft_save",Some(ACCOUNT),json!({"conversation_id":THREAD,"body":plain,"body_html":html,"attachment_ids":["windscribe-attachment-0"],"expected_revision":0,"request_id":"rich-initial"})).unwrap();
+        let unchanged = save(&mut store, plain, "old-client-same-body");
+        assert_eq!(unchanged["body_html"], html);
+        assert_eq!(unchanged["attachment_ids"], rich["attachment_ids"]);
+        let changed = save(&mut store, "New plain human wording", "old-client-new-body");
+        assert!(changed["body_html"].is_null());
+        assert_eq!(changed["attachment_ids"], rich["attachment_ids"]);
+        let cleared = store.handle("draft_save",Some(ACCOUNT),json!({"conversation_id":THREAD,"body":changed["body"],"body_html":null,"attachment_ids":[],"expected_revision":changed["revision"],"request_id":"clear-optional-fields"})).unwrap();
+        assert!(cleared["body_html"].is_null());
+        assert_eq!(cleared["attachment_ids"], json!([]));
+    }
+
+    #[test]
+    fn invalid_or_cross_account_attachments_cannot_replace_an_authored_draft() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&temporary.path().join("profile")).unwrap();
+        let saved = save(&mut store, "Preserve this authored draft", "save-preserve");
+        for (number, ids, code) in [
+            (0, json!(["personal-attachment-0"]), "not_found"),
+            (1, json!(["windscribe-attachment-1"]), "content_unavailable"),
+            (2, json!(["windscribe-attachment-2"]), "content_unavailable"),
+            (
+                3,
+                json!(["windscribe-attachment-0", "windscribe-attachment-0"]),
+                "invalid_request",
+            ),
+            (4, json!(["../store.sqlite3"]), "not_found"),
+        ] {
+            let error = store.handle("draft_save",Some(ACCOUNT),json!({"conversation_id":THREAD,"body":"Rejected edit","attachment_ids":ids,"expected_revision":saved["revision"],"request_id":format!("invalid-attachment-{number}")})).unwrap_err();
+            assert_eq!(error.code, code);
+            assert_eq!(store.draft(ACCOUNT, THREAD).unwrap(), saved);
+        }
+        let too_large = "x".repeat(256 * 1024 + 1);
+        assert_eq!(store.handle("draft_save",Some(ACCOUNT),json!({"conversation_id":THREAD,"body":"Rejected edit","body_html":too_large,"expected_revision":saved["revision"],"request_id":"large-html"})).unwrap_err().code,"invalid_request");
+        assert_eq!(store.draft(ACCOUNT, THREAD).unwrap(), saved);
+    }
+
+    struct ObservedTransport {
+        calls: usize,
+        interrupt: bool,
+        unknown: bool,
+    }
+    impl SubmissionTransport for ObservedTransport {
+        fn send(&mut self, _: &AccountId, _: &[u8]) -> SubmissionResult {
+            self.calls += 1;
+            assert!(
+                !self.interrupt,
+                "simulated interruption after durable InFlight"
+            );
+            if self.unknown {
+                SubmissionResult::NoDefinitiveResponse
+            } else {
+                SubmissionResult::Accepted {
+                    message_id: "local-receipt".into(),
+                    thread_id: THREAD.into(),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn interrupted_in_flight_capture_recovers_unknown_without_repeat_transport_call() {
+        let temporary = tempfile::tempdir().unwrap();
+        let profile = temporary.path().join("profile");
+        let mut store = Store::open(&profile).unwrap();
+        let draft = save(
+            &mut store,
+            "Human draft survives interruption",
+            "save-interrupted",
+        );
+        let params = capture_params(&draft, "interrupted-capture");
+        let request = CaptureRequest::parse(&params).unwrap();
+        let mut transport = ObservedTransport {
+            calls: 0,
+            interrupt: true,
+            unknown: false,
+        };
+        assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+            || store.capture_with_transport(ACCOUNT, &request, &mut transport)
+        ))
+        .is_err());
+        assert_eq!(transport.calls, 1);
+        assert_eq!(
+            load_record(&store.db, ACCOUNT, request.request_id)
+                .unwrap()
+                .unwrap()
+                .operation
+                .state,
+            SendState::InFlight
+        );
+        drop(store);
+        let mut reopened = Store::open(&profile).unwrap();
+        assert_eq!(
+            load_record(&reopened.db, ACCOUNT, request.request_id)
+                .unwrap()
+                .unwrap()
+                .operation
+                .state,
+            SendState::AcceptanceUnknown
+        );
+        let mut retry = ObservedTransport {
+            calls: 0,
+            interrupt: false,
+            unknown: false,
+        };
+        for _ in 0..2 {
+            let result = reopened
+                .capture_with_transport(ACCOUNT, &request, &mut retry)
+                .unwrap();
+            assert_eq!(result["state"], "acceptance_unknown");
+            assert_eq!(result["attempts_started"], 1);
+        }
+        assert_eq!(retry.calls, 0);
+        assert_eq!(reopened.draft(ACCOUNT, THREAD).unwrap(), draft);
+    }
+
+    #[test]
+    fn explicit_unknown_and_failed_receipt_commit_never_resubmit() {
+        let temporary = tempfile::tempdir().unwrap();
+        let profile = temporary.path().join("profile");
+        let mut store = Store::open(&profile).unwrap();
+        let draft = save(&mut store, "Keep this exact draft", "save-unknown");
+        let mut params = capture_params(&draft, "unknown-capture");
+        params["outcome"] = json!("unknown");
+        let result = store
+            .handle("draft_capture", Some(ACCOUNT), params.clone())
+            .unwrap();
+        assert_eq!(result["state"], "acceptance_unknown");
+        assert_eq!(
+            store
+                .handle("draft_capture", Some(ACCOUNT), params)
+                .unwrap(),
+            result
+        );
+        let params = capture_params(&draft, "receipt-commit-failure");
+        let request = CaptureRequest::parse(&params).unwrap();
+        store.db.execute_batch("CREATE TRIGGER fail_capture_receipt BEFORE UPDATE ON capture_operations WHEN instr(NEW.json,'\"Accepted\"')>0 BEGIN SELECT RAISE(ABORT,'fixture receipt commit interruption'); END;").unwrap();
+        let mut transport = ObservedTransport {
+            calls: 0,
+            interrupt: false,
+            unknown: false,
+        };
+        assert_eq!(
+            store
+                .capture_with_transport(ACCOUNT, &request, &mut transport)
+                .unwrap_err()
+                .code,
+            "capture_error"
+        );
+        assert_eq!(transport.calls, 1);
+        assert_eq!(
+            load_record(&store.db, ACCOUNT, request.request_id)
+                .unwrap()
+                .unwrap()
+                .operation
+                .state,
+            SendState::InFlight
+        );
+        store
+            .db
+            .execute_batch("DROP TRIGGER fail_capture_receipt")
+            .unwrap();
+        drop(store);
+        let mut reopened = Store::open(&profile).unwrap();
+        let result = reopened
+            .capture_with_transport(ACCOUNT, &request, &mut transport)
+            .unwrap();
+        assert_eq!(result["state"], "acceptance_unknown");
+        assert_eq!(transport.calls, 1);
+        assert_eq!(reopened.draft(ACCOUNT, THREAD).unwrap(), draft);
+    }
+
+    #[test]
+    fn prepared_capture_resumes_immutable_bytes_and_parameter_conflicts_are_rejected() {
+        let temporary = tempfile::tempdir().unwrap();
+        let profile = temporary.path().join("profile");
+        let mut store = Store::open(&profile).unwrap();
+        let draft = save(&mut store, "Prepared before interruption", "save-prepared");
+        let params = capture_params(&draft, "prepared-capture");
+        let request = CaptureRequest::parse(&params).unwrap();
+        let original = store.prepare_capture(ACCOUNT, &request).unwrap();
+        assert_eq!(original.attempts_started, 0);
+        drop(store);
+        let mut reopened = Store::open(&profile).unwrap();
+        let later = save(
+            &mut reopened,
+            "Later revision remains separate",
+            "save-newer",
+        );
+        let mut transport = ObservedTransport {
+            calls: 0,
+            interrupt: false,
+            unknown: false,
+        };
+        let result = reopened
+            .capture_with_transport(ACCOUNT, &request, &mut transport)
+            .unwrap();
+        assert_eq!(result["sha256"], original.operation.mime_sha256);
+        assert_eq!(transport.calls, 1);
+        let mut conflicting = params.clone();
+        conflicting["outcome"] = json!("unknown");
+        assert_eq!(
+            reopened
+                .handle("draft_capture", Some(ACCOUNT), conflicting)
+                .unwrap_err()
+                .code,
+            "request_id_conflict"
+        );
+        let mut stale = params;
+        stale["request_id"] = json!("new-but-stale");
+        assert_eq!(
+            reopened
+                .handle("draft_capture", Some(ACCOUNT), stale)
+                .unwrap_err()
+                .code,
+            "stale_revision"
+        );
+        let cross = capture_params(&later, "cross-account");
+        assert_eq!(
+            reopened
+                .handle("draft_capture", Some("personal"), cross)
+                .unwrap_err()
+                .code,
+            "not_found"
+        );
+        assert_eq!(reopened.draft(ACCOUNT, THREAD).unwrap(), later);
+        assert_eq!(
+            reopened
+                .db
+                .query_row("SELECT COUNT(*) FROM capture_operations", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+    }
+
+    #[test]
+    fn v1_migration_preserves_authored_drafts_views_flags_and_operation_journal() {
+        let temporary = tempfile::tempdir().unwrap();
+        let profile = temporary.path().join("profile");
+        std::fs::create_dir(&profile).unwrap();
+        let db = Connection::open(profile.join("store.sqlite3")).unwrap();
+        db.execute_batch(include_str!("../../../fixtures/schema-v1.sql"))
+            .unwrap();
+        let mut old = Store {
+            db,
+            profile: profile.clone(),
+            _lock: std::fs::File::create(profile.join("store.lock")).unwrap(),
+        };
+        old.seed().unwrap();
+        // Populate the retained v1 SQL shape directly: newer mutation/query
+        // implementations must never be prerequisites for creating old data.
+        let draft = json!({"conversation_id":THREAD,"body":"Migration preserves 日本語 and human words","revision":9});
+        old.db
+            .execute(
+                "INSERT INTO drafts(account,conversation_id,body,revision) VALUES(?1,?2,?3,9)",
+                params![ACCOUNT, THREAD, draft["body"].as_str().unwrap()],
+            )
+            .unwrap();
+        old.db.execute("INSERT INTO operations(account,request_id,fingerprint,result_json) VALUES(?1,'old-save','preserved-fingerprint',?2)",params![ACCOUNT,serde_json::to_string(&draft).unwrap()]).unwrap();
+        old.db
+            .execute(
+                "INSERT INTO views(account,revision,json) VALUES(?1,7,?2)",
+                params![ACCOUNT, r#"{"query":"keep this view","folder":"sent"}"#],
+            )
+            .unwrap();
+        old.db
+            .execute(
+                "UPDATE messages SET unread=0,starred=1 WHERE account=?1 AND conversation_id=?2",
+                [ACCOUNT, THREAD],
+            )
+            .unwrap();
+        let old_view = old.view(ACCOUNT).unwrap();
+        let journal: String = old
+            .db
+            .query_row(
+                "SELECT result_json FROM operations WHERE account=?1 AND request_id='old-save'",
+                [ACCOUNT],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            old.db
+                .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+                .unwrap(),
+            1
+        );
+        drop(old);
+        let mut migrated = Store::open(&profile).unwrap();
+        assert_eq!(
+            migrated
+                .db
+                .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+                .unwrap(),
+            crate::SCHEMA_VERSION
+        );
+        let migrated_draft = migrated.draft(ACCOUNT, THREAD).unwrap();
+        assert_eq!(migrated_draft["body"], draft["body"]);
+        assert_eq!(migrated_draft["revision"], draft["revision"]);
+        assert_eq!(migrated.view(ACCOUNT).unwrap(), old_view);
+        assert_eq!(
+            migrated
+                .db
+                .query_row(
+                    "SELECT result_json FROM operations WHERE account=?1 AND request_id='old-save'",
+                    [ACCOUNT],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            journal
+        );
+        assert_eq!(migrated.db.query_row("SELECT COUNT(*) FROM messages WHERE account=?1 AND conversation_id=?2 AND unread=0 AND starred=1",[ACCOUNT,THREAD],|row|row.get::<_,i64>(0)).unwrap(),3);
+        let captured = migrated
+            .handle(
+                "draft_capture",
+                Some(ACCOUNT),
+                capture_params(&draft, "after-migration"),
+            )
+            .unwrap();
+        assert_eq!(captured["state"], "accepted");
+        assert_eq!(
+            migrated
+                .db
+                .query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))
+                .unwrap(),
+            "ok"
+        );
+    }
+
+    #[test]
+    fn actual_v2_profile_upgrade_preserves_accepted_capture_without_resubmission() {
+        let temporary = tempfile::tempdir().unwrap();
+        let profile = temporary.path().join("profile");
+        std::fs::create_dir(&profile).unwrap();
+        let db = Connection::open(profile.join("store.sqlite3")).unwrap();
+        db.execute_batch(include_str!("../../../fixtures/schema-v1.sql"))
+            .unwrap();
+        db.execute_batch(include_str!("migration-002.sql")).unwrap();
+        let mut old = Store {
+            db,
+            profile: profile.clone(),
+            _lock: std::fs::File::create(profile.join("store.lock")).unwrap(),
+        };
+        old.seed().unwrap();
+        old.db.execute("INSERT INTO drafts(account,conversation_id,body,revision) VALUES(?1,?2,'Human v2 draft remains intact',4)",[ACCOUNT,THREAD]).unwrap();
+        old.db
+            .execute(
+                "INSERT INTO views(account,revision,json) VALUES(?1,2,'{\"query\":\"v2 query\"}')",
+                [ACCOUNT],
+            )
+            .unwrap();
+        let mime = b"From: you@windscribe.example\r\nTo: maya@windscribe.example\r\nSubject: v2 retained capture\r\nMessage-ID: <v2-capture@fixture.example>\r\n\r\nHuman v2 draft remains intact";
+        let hash = old.stage_blob(mime).unwrap();
+        let mut operation =
+            SendOperation::prepared(AccountId::new(ACCOUNT).unwrap(), "v2-capture".into(), mime)
+                .unwrap();
+        operation.state = SendState::Accepted {
+            message_id: "v2-local-receipt".into(),
+            thread_id: THREAD.into(),
+        };
+        let record = CaptureRecord {
+            conversation_id: THREAD.into(),
+            draft_revision: 4,
+            outcome: Outcome::Accepted,
+            size: mime.len() as u64,
+            created_at: 1_788_800_000,
+            attempts_started: 1,
+            operation,
+        };
+        let original_json = serde_json::to_string(&record).unwrap();
+        old.db.execute("INSERT INTO capture_operations(account,id,json,blob_hash) VALUES(?1,'v2-capture',?2,?3)",params![ACCOUNT,original_json,hash]).unwrap();
+        assert_eq!(
+            old.db
+                .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+                .unwrap(),
+            2
+        );
+        drop(old);
+        let mut upgraded = Store::open(&profile).unwrap();
+        assert_eq!(
+            upgraded
+                .db
+                .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+                .unwrap(),
+            crate::SCHEMA_VERSION
+        );
+        let draft = upgraded.draft(ACCOUNT, THREAD).unwrap();
+        assert_eq!(draft["body"], "Human v2 draft remains intact");
+        assert_eq!(draft["revision"], 4);
+        assert!(draft["body_html"].is_null());
+        assert_eq!(draft["attachment_ids"], json!([]));
+        assert_eq!(upgraded.view(ACCOUNT).unwrap()["view"]["query"], "v2 query");
+        assert_eq!(
+            upgraded
+                .db
+                .query_row(
+                    "SELECT json FROM capture_operations WHERE account=?1 AND id='v2-capture'",
+                    [ACCOUNT],
+                    |row| row.get::<_, String>(0)
+                )
+                .unwrap(),
+            original_json
+        );
+        let params = capture_params(&draft, "v2-capture");
+        let request = CaptureRequest::parse(&params).unwrap();
+        let mut transport = ObservedTransport {
+            calls: 0,
+            interrupt: false,
+            unknown: false,
+        };
+        let replay = upgraded
+            .capture_with_transport(ACCOUNT, &request, &mut transport)
+            .unwrap();
+        assert_eq!(transport.calls, 0);
+        assert_eq!(replay["state"], "accepted");
+        assert_eq!(
+            std::fs::read(replay["path"].as_str().unwrap()).unwrap(),
+            mime
+        );
     }
 
     #[test]

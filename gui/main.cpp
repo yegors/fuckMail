@@ -3,6 +3,7 @@
 
 #include <QCommandLineParser>
 #include <QDir>
+#include <QDebug>
 #include <QFile>
 #include <QFont>
 #include <QGuiApplication>
@@ -61,6 +62,13 @@ int main(int argc, char **argv) {
 #endif
     );
     MailBackend backend(profile, program);
+    if (parser.isSet("smoke") || parser.isSet("self-test")) {
+        QObject::connect(&backend, &MailBackend::errorChanged, &app, [&] {
+            if (backend.error().isEmpty()) return;
+            qCritical().noquote() << "GUI startup/integration error:" << backend.error();
+            QCoreApplication::exit(5);
+        });
+    }
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("backend", &backend);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
@@ -77,7 +85,10 @@ int main(int argc, char **argv) {
             if (parser.isSet("smoke")) backend.shutdown();
         });
     });
-    if (parser.isSet("smoke")) QTimer::singleShot(40000, &app, [] { QCoreApplication::exit(3); });
+    if (parser.isSet("smoke")) QTimer::singleShot(40000, &app, [] {
+        qCritical() << "GUI smoke timed out before loading a conversation.";
+        QCoreApplication::exit(3);
+    });
     engine.loadFromModule("FuckMail", "Main");
     if (parser.isSet("screenshot") && !engine.rootObjects().isEmpty()) {
         auto root = engine.rootObjects().first();
