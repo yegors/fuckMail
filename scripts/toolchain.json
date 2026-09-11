@@ -3,10 +3,36 @@
   "cmake": "3.31.6",
   "ninja": "1.11.1.4",
   "aqtinstall": "3.3.0",
-  "qt_archives": ["qtbase", "qtdeclarative", "qttools", "qtsvg", "qttranslations"],
+  "qt_archives": [
+    "qtbase",
+    "qtdeclarative",
+    "qttools",
+    "qtsvg",
+    "qttranslations"
+  ],
   "targets": {
-    "Darwin": {"aqt_host": "mac", "aqt_arch": "clang_64", "qt_dir": "macos"},
-    "Windows": {"aqt_host": "windows", "aqt_arch": "win64_msvc2022_64", "qt_dir": "msvc2022_64"},
-    "Linux": {"aqt_host": "linux", "aqt_arch": "linux_gcc_64", "qt_dir": "gcc_64"}
+    "Darwin": {
+      "aqt_host": "mac",
+      "aqt_arch": "clang_64",
+      "qt_dir": "macos"
+    },
+    "Windows": {
+      "aqt_host": "windows",
+      "aqt_arch": "win64_msvc2022_64",
+      "qt_dir": "msvc2022_64"
+    },
+    "Linux": {
+      "aqt_host": "linux",
+      "aqt_arch": "linux_gcc_64",
+      "qt_dir": "gcc_64",
+      "extra_archives": [
+        "icu"
+      ],
+      "required_sdk_files": [
+        "lib/libicudata.so.73",
+        "lib/libicui18n.so.73",
+        "lib/libicuuc.so.73"
+      ]
+    }
   }
 }

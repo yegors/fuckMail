@@ -76,12 +76,22 @@ def bootstrap():
         stamp.write_text(digest)
     env = environment()
     target = CONFIG["targets"][HOST]
-    qtpaths = Path(env["FM_QT_ROOT"]) / "bin" / ("qtpaths" + SUFFIX)
-    if not qtpaths.exists():
-        if "FM_QT_ROOT" in os.environ:
+    qt = Path(env["FM_QT_ROOT"])
+    qtpaths = qt / "bin" / ("qtpaths" + SUFFIX)
+    extra = target.get("extra_archives", [])
+    # Some official kits put mandatory runtime libraries in separate archives.
+    # Repair the managed SDK even when an earlier partial install has qtpaths.
+    missing = [name for name in target.get("required_sdk_files", []) if not (qt / name).exists()]
+    managed = "FM_QT_ROOT" not in os.environ
+    if not qtpaths.exists() or (managed and missing):
+        if not managed:
             raise RuntimeError("FM_QT_ROOT does not contain the selected Qt kit; unset it to provision the project kit")
+        archives = extra if qtpaths.exists() else CONFIG["qt_archives"] + extra
         run(PYTHON, ROOT / "scripts/bootstrap_qt.py", "install-qt", target["aqt_host"], "desktop", CONFIG["qt"],
-            target["aqt_arch"], "-O", TOOLS / "Qt", "--archives", *CONFIG["qt_archives"], env=env)
+            target["aqt_arch"], "-O", TOOLS / "Qt", "--archives", *archives, env=env)
+        missing = [name for name in target.get("required_sdk_files", []) if not (qt / name).exists()]
+        if missing:
+            raise RuntimeError("Official Qt kit is incomplete after acquisition: " + ", ".join(missing))
     selected = rust_version()
     compiler = shutil.which("rustc", path=env["PATH"])
     actual = run(compiler, "--version", env=env, capture=True).split()[1] if compiler else None
