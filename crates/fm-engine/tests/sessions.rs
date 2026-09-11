@@ -64,7 +64,7 @@ async fn owned_engine(profile: &Path) -> OwnedEngine {
             .spawn()
             .unwrap(),
     );
-    let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
+    let deadline = tokio::time::Instant::now() + fm_ipc::STARTUP_TIMEOUT;
     loop {
         if fm_ipc::read_discovery(profile).is_ok_and(|d| d.pid == process.0.id()) {
             break;

@@ -143,6 +143,18 @@ pub struct Window {
     pub calendar_zone: Tz,
 }
 impl Window {
+    /// Resolve displayed date boundaries once. Timed event source/recurrence
+    /// zones remain independent of the zone defining this visible date range.
+    pub fn from_dates(from: NaiveDate, to: NaiveDate, view_zone: &str) -> Result<Self> {
+        let zone: Tz = view_zone
+            .parse()
+            .map_err(|_| error("unsupported_zone", "Invalid view time zone"))?;
+        Self::new(
+            EventTime::Date { date: from }.utc(zone)?,
+            EventTime::Date { date: to }.utc(zone)?,
+            zone,
+        )
+    }
     pub fn new(from: DateTime<Utc>, to: DateTime<Utc>, calendar_zone: Tz) -> Result<Self> {
         if to <= from || to - from > Duration::days(MAX_WINDOW_DAYS) {
             return Err(error(
@@ -621,18 +633,37 @@ pub fn project_google_events(
     to: NaiveDate,
     access: Access,
 ) -> Result<Vec<Value>> {
+    project_google_events_in_window(
+        account,
+        calendar,
+        calendar_zone,
+        sources,
+        Window::from_dates(from, to, calendar_zone)?,
+        access,
+    )
+}
+
+/// Project calendars with distinct source zones into one common display window.
+/// `calendar_zone` normalizes provider source and recurrence. `window` determines
+/// which displayed dates/instants are visible, including stable all-day dates.
+pub fn project_google_events_in_window(
+    account: &str,
+    calendar: &str,
+    calendar_zone: &str,
+    sources: &[Value],
+    window: Window,
+    access: Access,
+) -> Result<Vec<Value>> {
     if sources.len() > 5000 {
         return Err(error(
             "limit_exceeded",
             "Too many source events for one projection",
         ));
     }
-    let zone: Tz = calendar_zone
+    Window::new(window.from, window.to, window.calendar_zone)?;
+    let _: Tz = calendar_zone
         .parse()
         .map_err(|_| error("unsupported_zone", "Invalid calendar zone"))?;
-    let from_time = EventTime::Date { date: from }.utc(zone)?;
-    let to_time = EventTime::Date { date: to }.utc(zone)?;
-    let window = Window::new(from_time, to_time, zone)?;
     let events = sources
         .iter()
         .map(|source| normalize(account, calendar, calendar_zone, source))
@@ -715,11 +746,46 @@ pub fn project_google_events(
             }
         }
     }
-    output.sort_by(|a, b| {
-        a["start"]
-            .as_str()
-            .cmp(&b["start"].as_str())
-            .then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
-    });
+    sort_projected_events(&mut output, window)?;
     Ok(output)
+}
+
+/// Stable shared ordering: displayed date, all-day before timed on that date,
+/// then the actual timed instant and identity. Offset timestamp text is not an
+/// ordering key. All-day source dates are never converted into another date.
+pub fn sort_projected_events(rows: &mut Vec<Value>, window: Window) -> Result<()> {
+    if rows.len() > MAX_OCCURRENCES as usize {
+        return Err(error("limit_exceeded", "Too many projected rows to order"));
+    }
+    let keys = rows
+        .iter()
+        .map(|row| {
+            let start = string(row, "start")?;
+            let id = row["id"]
+                .as_str()
+                .ok_or_else(|| error("invalid_identity", "Projected row has no identity"))?
+                .to_owned();
+            if row["all_day"] == true {
+                let date = NaiveDate::parse_from_str(start, "%Y-%m-%d")
+                    .map_err(|_| error("invalid_time", "Invalid projected all-day date"))?;
+                Ok((date, false, None, id))
+            } else {
+                let instant = DateTime::parse_from_rfc3339(start)
+                    .map_err(|_| error("invalid_time", "Invalid projected instant"))?;
+                Ok((
+                    instant.with_timezone(&window.calendar_zone).date_naive(),
+                    true,
+                    Some(instant),
+                    id,
+                ))
+            }
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut keyed = keys
+        .into_iter()
+        .zip(std::mem::take(rows))
+        .collect::<Vec<_>>();
+    keyed.sort_by(|a, b| a.0.cmp(&b.0));
+    *rows = keyed.into_iter().map(|(_, row)| row).collect();
+    Ok(())
 }

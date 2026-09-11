@@ -1,6 +1,6 @@
 # Current status
 
-As of 2026-09-11. **Phase 0 implementation active. Google-first MVP readiness: 0% (0 of 9 whole areas verified).** The founder has authorized Phase 0 end to end. Native tooling, Rust/Qt source and synthetic fixtures are being integrated. Native Rust tests and the Qt integration walkthrough now pass on this Mac. The relocated Mac package also passes GUI/CLI/runtime checks. The first Mac CI job passed. Windows compiled but failed tests; Linux exposed a now-fixed Qt ICU bootstrap dependency. A later local schema 3 checkpoint passes all 7 CTests, including provider/draft/recovery integration. Calendar/assistance store integration and native CI remain explicit gates in the evidence report. See [Phase 0 execution evidence](research/phase-0-execution.md).
+As of 2026-09-11. **Phase 0 implementation active. Google-first MVP readiness: 0% (0 of 9 whole areas verified).** The full schema 4 Mac suite passes all 7 CTests. Calendar and fake-assistance store integration, retained MIME captures, provider checkpoints and engine recovery are implemented and tested. The native Cocoa workflow has been exercised with synthetic data. Final Windows/Ubuntu CI and actual packaged upgrade verification are underway; previous native failures and their fixes remain explicit in [Phase 0 execution evidence](research/phase-0-execution.md).
 
 ## Established direction
 
@@ -12,11 +12,9 @@ The proposed stack remains Rust engine/CLI, C++20/Qt Quick/QML UI, private local
 
 ## Next work
 
-P0-00/P0-01/P0-03/P0-10/P0-04 are in progress: native build tooling, small fixtures/storage, an on-demand engine and paired CLI/GUI. Google fake-provider feasibility is proceeding alongside integration. Private IPC permissions, account scope, concurrency and recovery are explicit checks. See [development commands](build-development.md), the [plan](development-plan.md) and [Phase 0](plans/phase-0.md). Passing only the first synthetic checkpoint will not complete all Phase 0 packets.
+The full synthetic Phase 0 implementation is at native verification: rerun Windows/Ubuntu tests and packaging, refresh the final Mac package, and execute old/new artifact handoff and safe downgrade refusal. The [first deliverable](plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) is already usable on this Mac with fixtures; no live Google account or model is connected. See [development commands](build-development.md), the [plan](development-plan.md) and [execution evidence](research/phase-0-execution.md).
 
-The [first deliverable](plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) is a runnable synthetic-mail GUI/CLI slice plus repeatable Mac/Windows development and native CI builds. Under D010, both the work Mac and home Windows PC are development hosts. Native tools are installed locally; Windows/Linux runtime and repository CI results remain to verify.
-
-Read-only inspection of this Apple Silicon Mac found Git, Homebrew Rust/Cargo and Apple compiler/SDK tools; CMake, Ninja, rustup and Qt commands were not on PATH. The earlier Windows observation found Git and not its listed build commands. These are limited observations, not complete installation audits or selected tool versions; see [host evidence and proposed setup](research/linux-and-distribution.md#development-on-the-work-mac-and-home-windows-pc). Windows desktop details remain to inspect. Repository push access is established; native CI results remain pending. Missing access blocks its evidence row, not unrelated work.
+Both the work Mac and home Windows PC are development hosts under D010. Native CI compiles all three targets; CI results do not prove physical Windows input, Linux desktop integration or OS keyrings. Those rows stay unverified until their hosts/adapters are available. Repository push access and the native workflow are established.
 
 ## Google-first readiness
 

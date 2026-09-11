@@ -1,6 +1,8 @@
 # Optional local classification and summaries
 
-State: Draft · Revision: 3 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+State: Draft · Revision: 4 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+
+Revision 4 records the integrated Phase 0 experiment. The existing fake validator now feeds a durable Core transaction, with retained-source context, manual/provider/policy/mapping stamps, permitted category intent and summary provenance/replay. No IPC method or actual model is enabled. Consumers: Core, Gmail, Triage, Mail UI and Platform. See [execution evidence](../research/local-assistance-execution.md).
 
 Revision 3 records D012’s implemented experimental slice. The [fake assistance boundary](../../crates/fm-assist/README.md) validates scope, configured category output, coverage and stale/canceled results without a model. Full durable Core application and real runner validation remain separate gates. Consumers: Core, Triage, GUI, CLI and Platform.
 

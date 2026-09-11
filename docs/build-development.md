@@ -39,9 +39,9 @@ Ubuntu 24.04 uses the same `scripts/dev.sh` commands after installing a C++ comp
 | CLI help | `scripts/dev.sh cli -- --help` | `./scripts/dev.ps1 cli -- --help` |
 | Optimized development package | `scripts/dev.sh package --preset release` | `./scripts/dev.ps1 package --preset release` |
 
-GUI/CLI arguments follow `--`, for example `scripts/dev.sh run -- --profile /absolute/local/demo-profile`. Use the same profile for both clients. The engine creates a private profile directory; a new profile's parent must already exist. The normal demo is synthetic and never authenticates with a provider. Do not point test commands at a real mailbox profile.
+GUI/CLI arguments follow `--`, for example `scripts/dev.sh run -- --profile /absolute/local/demo-profile`. Use the same profile for both clients. The engine creates a private profile directory, including missing parent directories. The normal demo is synthetic and never authenticates with a provider. Do not point test commands at a real mailbox profile.
 
-`--preset dev` is the default; `release` uses optimized Rust and C++ builds. Both use the tracked [CMake presets](../CMakePresets.json), [tool inputs](../scripts/toolchain.json), [Python dependency lock](../scripts/bootstrap-requirements.txt) and Rust toolchain/lockfile. Builds copy `fm` and `fm-engine` beside the GUI executable so engine discovery is the same as in the package. The CLI itself does not load Qt or need a display.
+`--preset dev` is the default; `release` uses optimized Rust and C++ builds. Both use the tracked [CMake presets](../CMakePresets.json), [tool inputs](../scripts/toolchain.json), [Python dependency lock](../scripts/bootstrap-requirements.txt) and Rust toolchain/lockfile. Builds copy `fm` and `fm-engine` beside the GUI executable so engine discovery is the same as in the package. The developer launcher reads CMake’s generated executable path, including the different Windows build-directory layout. The CLI itself does not load Qt or need a display.
 
 An advanced Qt-only compilation is available with CMake `-DFM_GUI_ONLY=ON` in a separate build directory while editing UI. It deliberately excludes engine integration, tests and installation; it is not a working app or an acceptance result. Standard dev/release presets always build the complete slice.
 
@@ -69,6 +69,14 @@ The native workflow runs on `macos-15`, `windows-2022` and `ubuntu-24.04`, using
 Packages land in `dist/`. macOS contains `fuckmail-gui.app` with `fm` and `fm-engine` in `Contents/MacOS`; Windows/Linux place the three executables in `bin`. Qt's deployment step stages required libraries/plugins/QML resources. Package smoke clears developer Qt/engine overrides, uses a disposable profile and checks the installed executable. A build manifest records source commit, dirty state, tools and host. Archives are unsigned development artifacts; signing/notarization, a finished installer, PATH integration and full clean-machine qualification remain separate gates.
 
 For a fresh terminal, invoke the bundled CLI by its absolute path or add its containing directory to that terminal's PATH. No global CLI launcher is installed automatically. Move/copy the package directory to install the development build; remove that directory to uninstall. Profiles remain outside installation/build output. This is not a final upgrade or migration system.
+
+The portable `scripts/verify_upgrade.py` checks two preserved packages with different schema versions. Pass each directory containing the three executables, plus a report path; on macOS that directory is inside `fuckmail-gui.app/Contents/MacOS`, on Windows/Linux it is `bin`:
+
+```sh
+python3 scripts/verify_upgrade.py --old-bin /absolute/old/package/bin --new-bin /absolute/new/package/bin --report build/verification/package-upgrade.json
+```
+
+On Windows use `python` and native absolute paths. The script creates its own disposable synthetic profile; it has no existing-profile argument. It checks compatible old/new client coexistence, explicit owner shutdown, Unicode draft/flag/receipt preservation, schema migration, the new GUI against the upgraded profile and refusal of an incompatible old engine without resetting data. It starts and cleans up only its own subprocess handles; discovery PIDs are never terminated. The JSON report preserves the exact package manifests, including dirty state, and executable hashes. A report counts as evidence only after an actual passing run; this developer check is not an automatic updater or physical keychain/input qualification.
 
 Before changing machines, commit and push source, lockfiles, fixtures and accurate status. On the other host, pull the same branch/revision, run bootstrap once, then doctor/test. Never transfer `.tools`, `target`, `build`, `dist`, tokens or live SQLite profiles through Git or a cloud folder. Generate synthetic data locally. Keep any real mail, draft or credential handoff separate from source control.
 

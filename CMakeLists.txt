@@ -69,6 +69,12 @@ qt_generate_deploy_qml_app_script(
 install(SCRIPT "${FM_DEPLOY_SCRIPT}")
 
 if(BUILD_TESTING)
+    set(FM_GUI_TEST_ENV "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_FORCE_STDERR_LOGGING=1")
+    if(WIN32)
+        # Offscreen uses Qt's basic font database, not the Windows platform
+        # font database. Read the host's normal fonts; do not bundle SDK fonts.
+        list(APPEND FM_GUI_TEST_ENV "QT_QPA_FONTDIR=$ENV{SystemRoot}/Fonts")
+    endif()
     # Optimized test binaries require their own cold compilation (including dev
     # dependencies). Do not charge that build against the execution watchdog.
     add_test(NAME rust-test-build COMMAND "${FM_CARGO}" test --workspace --locked --no-run
@@ -82,8 +88,8 @@ if(BUILD_TESTING)
     # --smoke exercises a disposable profile and must exit nonzero on load/IPC errors.
     add_test(NAME gui-smoke COMMAND "$<TARGET_FILE:fuckmail-gui>" --smoke)
     set_tests_properties(gui-smoke PROPERTIES TIMEOUT 45
-        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_FORCE_STDERR_LOGGING=1")
+        ENVIRONMENT "${FM_GUI_TEST_ENV}")
     add_test(NAME gui-integration COMMAND "$<TARGET_FILE:fuckmail-gui>" --self-test)
     set_tests_properties(gui-integration PROPERTIES TIMEOUT 90
-        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_FORCE_STDERR_LOGGING=1;FM_GUI_TEST_TRACE=1")
+        ENVIRONMENT "${FM_GUI_TEST_ENV};FM_GUI_TEST_TRACE=1")
 endif()

@@ -2,7 +2,7 @@
 
 **Current phase scope under D009 (2026-09-11):** Google Calendar is first. Recurrence, time zones, invitations and relevant iCalendar representations remain early work. External iCalendar URL fetching/subscriptions and their old early experiments below are deferred until founder Google GUI/CLI dogfooding; CalDAV remains separately deferred.
 
-Sources checked 2026-09-10; reorganized 2026-09-11. Documentation/source evidence and proposals only; no app prototype, live account flow or benchmark has run. Recheck version-sensitive claims before implementation.
+Sources checked 2026-09-10; reorganized 2026-09-11. The original research below records source evidence and proposals. The subsequent [calendar library experiment](../../crates/fm-calendar/README.md) and [Core integration execution](calendar-core-execution.md) now provide synthetic implementation/test evidence. No live calendar account flow is claimed; the external sources below have not been revalidated by these local tests.
 
 Build boundary: [Calendar contract](../contracts/calendar.md).
 
@@ -18,7 +18,7 @@ Read-only URL subscriptions are a separate integration: periodically retrieve an
 
 Calendar has per-project/per-user quotas and operational limits, including bursts of writes. Measure polling and recurrence edits with the actual project; avoid rewriting large sets of occurrences to represent a series edit. [Calendar usage limits](https://developers.google.com/workspace/calendar/api/guides/quota)
 
-## Next experiments
+## Original experiment proposals
 
 P0-05 (calendar): evaluate maintained iCalendar and recurrence libraries, packaging and licenses. Editable CalDAV library selection can wait until its later phase.
 

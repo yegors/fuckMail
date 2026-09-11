@@ -1,8 +1,17 @@
 //! Narrow Windows security adapter. Named pipes reject remote clients and use
 //! an explicit DACL for the process user; default pipe ACLs are not sufficient.
-use std::{ffi::c_void, io, os::windows::ffi::OsStrExt, path::Path, ptr};
+use std::{
+    ffi::c_void,
+    fs::File,
+    io,
+    os::windows::{ffi::OsStrExt, io::FromRawHandle},
+    path::Path,
+    ptr,
+};
 use windows_sys::Win32::{
-    Foundation::{CloseHandle, LocalFree, ERROR_ALREADY_EXISTS},
+    Foundation::{
+        CloseHandle, LocalFree, ERROR_ALREADY_EXISTS, GENERIC_WRITE, INVALID_HANDLE_VALUE,
+    },
     Security::{
         Authorization::{
             ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW,
@@ -12,7 +21,9 @@ use windows_sys::Win32::{
         OWNER_SECURITY_INFORMATION, PROTECTED_DACL_SECURITY_INFORMATION, SECURITY_ATTRIBUTES,
         TOKEN_QUERY, TOKEN_USER,
     },
-    Storage::FileSystem::CreateDirectoryW,
+    Storage::FileSystem::{
+        CreateDirectoryW, CreateFileW, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, FILE_SHARE_READ,
+    },
     System::{
         Pipes::GetNamedPipeServerProcessId,
         Threading::{
@@ -138,6 +149,29 @@ impl Drop for Security {
     }
 }
 
+/// Creation sets the owner as well as the DACL. An elevated Windows process can
+/// otherwise inherit a private DACL while assigning Administrators as owner.
+pub fn create_private_file(path: &Path) -> io::Result<File> {
+    let security = Security::user_only(false)?;
+    let attributes = security.attributes();
+    let name = wide(path.as_os_str());
+    unsafe {
+        let handle = CreateFileW(
+            name.as_ptr(),
+            GENERIC_WRITE,
+            FILE_SHARE_READ,
+            &attributes,
+            CREATE_NEW,
+            FILE_ATTRIBUTE_NORMAL,
+            ptr::null_mut(),
+        );
+        if handle == INVALID_HANDLE_VALUE {
+            return Err(io::Error::last_os_error());
+        }
+        Ok(File::from_raw_handle(handle))
+    }
+}
+
 pub fn private_profile(path: &Path) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -192,4 +226,42 @@ pub fn private_profile(path: &Path) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn private_file_has_explicit_process_user_owner() {
+        let temp = tempfile::tempdir().unwrap();
+        let profile = temp.path().join("profile");
+        private_profile(&profile).unwrap();
+        let path = profile.join("discovery.json");
+        drop(create_private_file(&path).unwrap());
+        let name = wide(path.as_os_str());
+        unsafe {
+            let mut owner = ptr::null_mut();
+            let mut descriptor = ptr::null_mut();
+            assert_eq!(
+                GetNamedSecurityInfoW(
+                    name.as_ptr(),
+                    SE_FILE_OBJECT,
+                    OWNER_SECURITY_INFORMATION,
+                    &mut owner,
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    ptr::null_mut(),
+                    &mut descriptor
+                ),
+                0
+            );
+            let owner_sid = sid_string(owner);
+            LocalFree(descriptor);
+            assert_eq!(owner_sid.unwrap(), user_sid().unwrap());
+        }
+        assert!(
+            create_private_file(&path).is_err(),
+            "existing content must not be replaced"
+        );
+    }
 }

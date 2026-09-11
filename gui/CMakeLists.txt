@@ -26,8 +26,17 @@ set_target_properties(fuckmail-gui PROPERTIES
     MACOSX_BUNDLE_BUNDLE_VERSION "0.1.0"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "0.1.0"
 )
-if(BUILD_TESTING AND NOT WIN32)
-    add_executable(gui-ipc-trust-test IpcTrustTest.cpp IpcTrust.cpp)
+# Qt's Windows runtime layout differs from the Unix subdirectory layout. Let
+# developer launchers consume the generator's actual path rather than guess it.
+file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/gui-executable-path.txt"
+    CONTENT "$<TARGET_FILE:fuckmail-gui>\n")
+if(BUILD_TESTING)
+    if(WIN32)
+        add_executable(gui-ipc-trust-test IpcTrustWindowsTest.cpp IpcTrust.cpp)
+        target_link_libraries(gui-ipc-trust-test PRIVATE advapi32)
+    else()
+        add_executable(gui-ipc-trust-test IpcTrustTest.cpp IpcTrust.cpp)
+    endif()
     target_link_libraries(gui-ipc-trust-test PRIVATE Qt6::Core Qt6::Network)
     add_test(NAME gui-ipc-trust COMMAND gui-ipc-trust-test)
     set_tests_properties(gui-ipc-trust PROPERTIES TIMEOUT 10)

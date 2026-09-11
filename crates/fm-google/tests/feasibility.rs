@@ -2,7 +2,7 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use fm_google::{attachment::*, auth::*, send::*, sync::*, *};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, Mutex,
 };
 
@@ -687,4 +687,68 @@ fn refreshed_tokens_are_not_returned_before_vault_persistence() {
         coordinator.access_token(&account("work"), 200, &expired_vault(false), &revoked),
         Err(GoogleError::ReauthorizationRequired)
     );
+}
+
+#[test]
+fn locked_vault_read_releases_no_token_and_never_refreshes_or_falls_back() {
+    struct LockableVault {
+        locked: AtomicBool,
+        loads: AtomicUsize,
+        writes: AtomicUsize,
+        token: StoredToken,
+    }
+    impl CredentialVault for LockableVault {
+        fn load(&self, id: &AccountId) -> Result<Option<StoredToken>, GoogleError> {
+            assert_eq!(id, &account("work"));
+            self.loads.fetch_add(1, Ordering::SeqCst);
+            if self.locked.load(Ordering::SeqCst) {
+                return Err(GoogleError::StoreUnavailable);
+            }
+            Ok(Some(self.token.clone()))
+        }
+        fn store(&self, _: &AccountId, _: StoredToken) -> Result<(), GoogleError> {
+            self.writes.fetch_add(1, Ordering::SeqCst);
+            Err(GoogleError::StoreUnavailable)
+        }
+    }
+    let vault = LockableVault {
+        locked: AtomicBool::new(true),
+        loads: AtomicUsize::new(0),
+        writes: AtomicUsize::new(0),
+        token: StoredToken {
+            access_token: "synthetic-unexpired-vault-token".into(),
+            refresh_token: "synthetic-refresh".into(),
+            expires_at_secs: 4000,
+        },
+    };
+    let transport = RefreshFake::default();
+    let coordinator = TokenCoordinator::default();
+    // A locked/unavailable vault is an error, not an absent token, permission to
+    // refresh, or a reason to create another (plaintext) credential store.
+    assert_eq!(
+        coordinator.access_token(&account("work"), 200, &vault, &transport),
+        Err(GoogleError::StoreUnavailable)
+    );
+    assert_eq!(transport.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(vault.writes.load(Ordering::SeqCst), 0);
+
+    // An explicit subsequent unlock works; the coordinator still must not cache
+    // that token as a fallback when the same vault later becomes unavailable.
+    vault.locked.store(false, Ordering::SeqCst);
+    assert_eq!(
+        coordinator.access_token(&account("work"), 200, &vault, &transport),
+        Ok("synthetic-unexpired-vault-token".into())
+    );
+    vault.locked.store(true, Ordering::SeqCst);
+    for now in [200, 5000] {
+        assert_eq!(
+            coordinator.access_token(&account("work"), now, &vault, &transport),
+            Err(GoogleError::StoreUnavailable)
+        );
+    }
+    assert_eq!(vault.loads.load(Ordering::SeqCst), 4);
+    assert_eq!(vault.writes.load(Ordering::SeqCst), 0);
+    assert_eq!(transport.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(vault.token.access_token, "synthetic-unexpired-vault-token");
+    assert_eq!(vault.token.refresh_token, "synthetic-refresh");
 }

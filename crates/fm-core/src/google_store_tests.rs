@@ -561,3 +561,106 @@ fn mime_corpus_import_preserves_bytes_visible_search_and_attachment_checksums() 
         .any(|row| row["id"] == local_id("thread", "windscribe", "thread-corpus-2")));
     assert!(search(&mut store, "windscribe", "SCRIPT_MUST_NOT_APPEAR").is_empty());
 }
+
+#[test]
+fn accepted_assistance_category_survives_provider_observation_but_manual_value_wins() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut store = Store::open(tmp.path()).unwrap();
+    store
+        .google_map_category("windscribe", "finance", "Label_finance")
+        .unwrap();
+    let mut cp = store.google_begin_full("windscribe", "100").unwrap();
+    GooglePageStore::new(&mut store)
+        .stage_message(
+            &cp,
+            content(raw("a", "assistedcategory", &["INBOX", "UNREAD"])),
+        )
+        .unwrap();
+    let plan = prepare_full_page(&cp, list(&["a"], None)).unwrap();
+    commit(&mut store, &mut cp, plan);
+    let original = detail(&mut store, "windscribe", "a");
+    let mid = original["messages"][0]["id"].as_str().unwrap();
+    // The assistance module separately verifies source/policy stamps before this
+    // accepted-intent record exists. This test isolates provider reconciliation.
+    store.db.execute("INSERT INTO assist_category_intents(account,message_id,category_id,value,revision,request_id) VALUES('windscribe',?1,'finance',1,1,'accepted-fake-result')",[mid]).unwrap();
+    GooglePageStore::new(&mut store)
+        .stage_message(
+            &cp,
+            content(raw("a", "assistedcategory", &["INBOX", "UNREAD"])),
+        )
+        .unwrap();
+    let plan = prepare_history_page(&cp, history(&["a"], &[], "130")).unwrap();
+    commit(&mut store, &mut cp, plan);
+    let applied = detail(&mut store, "windscribe", "a");
+    assert!(applied["messages"][0]["categories"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|c| c == "finance"));
+    assert_eq!(applied["messages"][0]["unread"], true);
+    assert_eq!(applied["messages"][0]["starred"], false);
+    store.handle("set_category",Some("windscribe"),json!({"id":applied["id"],"expected_revision":applied["revision"],"request_id":"human-rejects-tag","message_ids":[applied["messages"][0]["id"]],"category_id":"finance","present":false})).unwrap();
+    let plan = cp.begin_delta().unwrap();
+    commit(&mut store, &mut cp, plan);
+    GooglePageStore::new(&mut store)
+        .stage_message(
+            &cp,
+            content(raw(
+                "a",
+                "assistedcategory",
+                &["INBOX", "UNREAD", "Label_finance"],
+            )),
+        )
+        .unwrap();
+    let plan = prepare_history_page(&cp, history(&["a"], &[], "140")).unwrap();
+    commit(&mut store, &mut cp, plan);
+    assert!(
+        detail(&mut store, "windscribe", "a")["messages"][0]["categories"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[test]
+fn category_mappings_reject_all_system_ids_and_existing_invalid_mapping_blocks_import() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut store = Store::open(tmp.path()).unwrap();
+    for label in [
+        "INBOX",
+        "SENT",
+        "UNREAD",
+        "STARRED",
+        "SPAM",
+        "TRASH",
+        "DRAFT",
+        "IMPORTANT",
+        "CHAT",
+        "CATEGORY_PERSONAL",
+        "CATEGORY_FUTURE",
+        "category_social",
+    ] {
+        assert_eq!(
+            store
+                .google_map_category("windscribe", "finance", label)
+                .unwrap_err()
+                .code,
+            "invalid_request"
+        );
+    }
+    store.db.execute("INSERT INTO google_category_labels(account,category_id,provider_label_id) VALUES('windscribe','finance','DRAFT')",[]).unwrap();
+    let cp = store.google_begin_full("windscribe", "100").unwrap();
+    let plan = prepare_full_page(&cp, list(&["a"], None)).unwrap();
+    GooglePageStore::new(&mut store)
+        .stage_message(
+            &cp,
+            content(raw("a", "invalidmapping", &["INBOX", "DRAFT"])),
+        )
+        .unwrap();
+    assert!(matches!(
+        GooglePageStore::new(&mut store).commit_page(&plan),
+        Err(GoogleError::InvalidResponse(_))
+    ));
+    assert_eq!(store.google_checkpoint("windscribe").unwrap(), Some(cp));
+    assert!(search(&mut store, "windscribe", "invalidmapping").is_empty());
+}

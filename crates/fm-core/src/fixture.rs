@@ -167,6 +167,13 @@ impl Store {
                 )?;
             }
         }
+        // Upgrade tests deliberately seed the historical v2 schema. Its calendar
+        // metadata is populated by migration 4, after the old profile is reopened.
+        let version: u32 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        if version >= 4 {
+            tx.execute("INSERT OR IGNORE INTO calendar_sync_state(account,calendar_id,query_fingerprint,time_zone,access,sync_token,revision) SELECT DISTINCT account,calendar_id,'fixture-calendar-v1','America/Toronto','reader',NULL,0 FROM calendar_sources",[])?;
+            tx.execute("INSERT OR IGNORE INTO calendar_event_state(account,calendar_id,event_id,visible,observed_json) SELECT account,calendar_id,event_id,1,json FROM calendar_sources",[])?;
+        }
         tx.execute(
             "INSERT INTO meta VALUES('fixture_revision',?1)",
             [FIXTURE_REVISION],

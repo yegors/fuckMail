@@ -16,6 +16,7 @@ pub const MAX_FRAME: usize = 1024 * 1024;
 pub const MAX_CLIENTS: usize = 16;
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 pub const IO_TIMEOUT: Duration = Duration::from_secs(15);
+pub const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -178,14 +179,16 @@ pub fn read_discovery(profile: &Path) -> io::Result<Discovery> {
 pub fn write_discovery(profile: &Path, d: &Discovery) -> io::Result<()> {
     use std::io::Write;
     let temp = profile.join(format!(".engine-{}.json", d.pid));
-    let mut opts = std::fs::OpenOptions::new();
-    opts.write(true).create_new(true);
     #[cfg(unix)]
-    {
+    let mut f = {
         use std::os::unix::fs::OpenOptionsExt;
+        let mut opts = std::fs::OpenOptions::new();
+        opts.write(true).create_new(true);
         opts.mode(0o600);
-    }
-    let mut f = opts.open(&temp)?;
+        opts.open(&temp)?
+    };
+    #[cfg(windows)]
+    let mut f = windows::create_private_file(&temp)?;
     serde_json::to_writer(&mut f, d)?;
     f.write_all(b"\n")?;
     f.sync_all()?;
@@ -268,7 +271,7 @@ pub struct Client {
 impl Client {
     pub async fn connect(profile: &Path, engine: Option<&Path>) -> io::Result<Self> {
         let profile = private_profile(profile)?;
-        let until = tokio::time::Instant::now() + Duration::from_secs(15);
+        let until = tokio::time::Instant::now() + STARTUP_TIMEOUT;
         let mut launched = false;
         let mut child: Option<tokio::process::Child> = None;
         loop {

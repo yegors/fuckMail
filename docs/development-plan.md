@@ -1,6 +1,6 @@
 # Development plan
 
-Updated 2026-09-11 under [D009–D011](decisions.md). **Planning only; no execution started. Google-first readiness: 0/9 verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
+Updated 2026-09-11 under [D009–D012](decisions.md). **Phase 0 implementation and verification are active. Google-first readiness: 0/9 whole areas verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
 
 ## Delivery direction
 

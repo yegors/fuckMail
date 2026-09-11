@@ -41,47 +41,6 @@ impl Drop for RequestOwner {
     }
 }
 
-#[cfg(test)]
-mod session_tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn disconnect_marks_only_that_queued_request_cancelled() {
-        let (client, server) = tokio::io::duplex(8192);
-        let mut client = BufReader::new(client);
-        let (queue, mut receive) = mpsc::channel(1);
-        let task = tokio::spawn(session(
-            Box::new(server),
-            Arc::new("fixture-token".into()),
-            queue,
-        ));
-        fm_ipc::write_frame(
-            client.get_mut(),
-            &json!({"version":1,"id":"hello","method":"hello","params":{"token":"fixture-token"}}),
-        )
-        .await
-        .unwrap();
-        let hello: Value =
-            serde_json::from_slice(&fm_ipc::read_frame(&mut client).await.unwrap().unwrap())
-                .unwrap();
-        assert_eq!(hello["ok"], true);
-        fm_ipc::write_frame(client.get_mut(), &json!({"version":1,"id":"queued","method":"draft_save","account":"windscribe","params":{"body":"unfinished"}})).await.unwrap();
-        let work = tokio::time::timeout(Duration::from_secs(2), receive.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(!work.cancelled.load(Ordering::Acquire));
-        drop(client);
-        tokio::time::timeout(Duration::from_secs(2), task)
-            .await
-            .unwrap()
-            .unwrap()
-            .unwrap();
-        assert!(work.cancelled.load(Ordering::Acquire));
-        assert!(work.reply.is_closed());
-    }
-}
-
 #[cfg(unix)]
 type Listener = tokio::net::UnixListener;
 #[cfg(windows)]
@@ -398,4 +357,45 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         let _ = worker.join();
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod session_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn disconnect_marks_only_that_queued_request_cancelled() {
+        let (client, server) = tokio::io::duplex(8192);
+        let mut client = BufReader::new(client);
+        let (queue, mut receive) = mpsc::channel(1);
+        let task = tokio::spawn(session(
+            Box::new(server),
+            Arc::new("fixture-token".into()),
+            queue,
+        ));
+        fm_ipc::write_frame(
+            client.get_mut(),
+            &json!({"version":1,"id":"hello","method":"hello","params":{"token":"fixture-token"}}),
+        )
+        .await
+        .unwrap();
+        let hello: Value =
+            serde_json::from_slice(&fm_ipc::read_frame(&mut client).await.unwrap().unwrap())
+                .unwrap();
+        assert_eq!(hello["ok"], true);
+        fm_ipc::write_frame(client.get_mut(), &json!({"version":1,"id":"queued","method":"draft_save","account":"windscribe","params":{"body":"unfinished"}})).await.unwrap();
+        let work = tokio::time::timeout(Duration::from_secs(2), receive.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!work.cancelled.load(Ordering::Acquire));
+        drop(client);
+        tokio::time::timeout(Duration::from_secs(2), task)
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(work.cancelled.load(Ordering::Acquire));
+        assert!(work.reply.is_closed());
+    }
 }

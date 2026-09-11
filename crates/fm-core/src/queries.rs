@@ -273,28 +273,9 @@ impl Store {
         if end <= start || (end - start).num_days() > 42 {
             return Err(err("invalid_request", "Calendar range must be 1–42 days"));
         }
-        let mut stmt = self.db.prepare(
-            "SELECT json FROM calendar_sources WHERE account=?1 ORDER BY event_id LIMIT 5001",
-        )?;
-        let raw = stmt
-            .query_map([account], |r| r.get::<_, String>(0))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        let sources = raw
-            .iter()
-            .map(|j| serde_json::from_str(j))
-            .collect::<std::result::Result<Vec<Value>, _>>()?;
-        let events = fm_calendar::project_google_events(
-            account,
-            "primary",
-            "America/Toronto",
-            &sources,
-            start,
-            end,
-            fm_calendar::Access::Reader,
-        )
-        .map_err(|e| err(e.code, &e.message))?;
+        let events = self.project_cached_calendars(account, start, end)?;
         Ok(
-            json!({"events":events,"from":from,"to":to,"time_zone":"America/Toronto","fixture_today":FIXTURE_TODAY}),
+            json!({"events":events,"from":from,"to":to,"time_zone":crate::calendar_store::CALENDAR_VIEW_ZONE,"fixture_today":FIXTURE_TODAY}),
         )
     }
 }

@@ -41,10 +41,13 @@ bool GuiSelfTest::membersCategorized(bool present) const {
 }
 bool GuiSelfTest::editorStateIntact() const {
     const auto editor = m_window->findChild<QQuickItem *>("replyComposer");
-    return editor && editor->property("text").toString() == m_authored &&
+    const auto intact = editor && editor->property("text").toString() == m_authored &&
         editor->property("cursorPosition").toInt() == 10 &&
         editor->property("selectionStart").toInt() == 6 &&
         editor->property("selectionEnd").toInt() == 10;
+    if (!intact && editor) qWarning() << "Editor state: authored text matches=" << (editor->property("text").toString() == m_authored)
+        << "cursor=" << editor->property("cursorPosition") << "selection=" << editor->property("selectionStart") << editor->property("selectionEnd");
+    return intact;
 }
 bool GuiSelfTest::click(const QString &objectName) {
     auto window = qobject_cast<QQuickWindow *>(m_window);

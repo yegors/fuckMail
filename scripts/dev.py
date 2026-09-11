@@ -151,10 +151,15 @@ def configure_build(preset):
 
 
 def gui_binary(preset, installed=None):
-    base = Path(installed) if installed else ROOT / "build" / preset / "gui"
+    if installed is None:
+        metadata = ROOT / "build" / preset / "gui-executable-path.txt"
+        if not metadata.exists():
+            raise RuntimeError("GUI build path is unavailable; run build first")
+        return Path(metadata.read_text(encoding="utf-8").strip())
+    base = Path(installed)
     if HOST == "Darwin":
         return base / "fuckmail-gui.app" / "Contents" / "MacOS" / "fuckmail-gui"
-    return base / ("bin" if installed else "") / ("fuckmail-gui" + SUFFIX)
+    return base / "bin" / ("fuckmail-gui" + SUFFIX)
 
 
 def package_environment():
@@ -166,6 +171,7 @@ def package_environment():
     if WINDOWS:
         system = Path(env.get("SystemRoot", r"C:\Windows"))
         env["PATH"] = os.pathsep.join([str(system / "System32"), str(system)])
+        env["QT_QPA_FONTDIR"] = str(system / "Fonts")
     else:
         env["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
     env["QT_QPA_PLATFORM"] = "offscreen"

@@ -1,6 +1,8 @@
 # Core and storage
 
-State: Draft · Revision: 7 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+State: Draft · Revision: 8 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+
+Revision 8 records the integrated Phase 0 experiment. Schema 4 adds completed calendar-batch checkpoints/visibility/write receipts and validated fake-assistance policies/results/intents to the existing store. Calendar permissions filter the shared projection; assistance rechecks retained source/provider/manual/policy stamps inside its apply transaction. Consumers: Calendar, Local assistance, Gmail, Qt UI, CLI and Platform.
 
 Revision 7 records the next Phase 0 integration checkpoint. Schema 3 joins fake Google pages, normalized source text/FTS, provider checkpoints and durable receipts in the one store; pending human actions survive reconciliation. Authored HTML and retained draft attachments round-trip through capture. Per-request SQL cancellation, abrupt engine termination/replay and schema 1/2 migration are tested. Consumers: Gmail, CLI, Qt UI, MIME, Search, Calendar and assistance.
 

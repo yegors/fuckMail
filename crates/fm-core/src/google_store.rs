@@ -136,7 +136,7 @@ impl Store {
         crate::id(account)?;
         crate::id(category)?;
         crate::id(provider_label)?;
-        if ["INBOX", "SENT", "UNREAD", "STARRED", "SPAM", "TRASH"].contains(&provider_label) {
+        if is_system_label(provider_label) {
             return Err(err(
                 "invalid_request",
                 "Category mappings cannot target Gmail system labels",
@@ -213,6 +213,22 @@ struct StagedMessage {
 
 fn storage_error(_: impl std::fmt::Debug) -> GoogleError {
     GoogleError::StoreUnavailable
+}
+pub(crate) fn is_system_label(label: &str) -> bool {
+    let label = label.to_ascii_uppercase();
+    [
+        "INBOX",
+        "SENT",
+        "UNREAD",
+        "STARRED",
+        "SPAM",
+        "TRASH",
+        "DRAFT",
+        "IMPORTANT",
+        "CHAT",
+    ]
+    .contains(&label.as_str())
+        || label.starts_with("CATEGORY_")
 }
 fn bounded_header(value: &str, maximum: usize) -> std::result::Result<String, GoogleError> {
     if value.len() > maximum {
@@ -421,7 +437,16 @@ fn publish_message(
         .map_err(storage_error)?;
     for (category, label) in mappings {
         let manual:Option<bool>=db.query_row("SELECT value FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field='category' AND category_id=?3",params![account,mid,category],|r|r.get(0)).optional().map_err(storage_error)?;
-        if manual.unwrap_or(labels.contains(label.as_str())) {
+        let assisted:Option<bool>=db.query_row("SELECT value FROM assist_category_intents WHERE account=?1 AND message_id=?2 AND category_id=?3",params![account,mid,category],|r|r.get(0)).optional().map_err(storage_error)?;
+        if is_system_label(&label) {
+            return Err(GoogleError::InvalidResponse(
+                "Category mapping targets a system label",
+            ));
+        }
+        if manual
+            .or(assisted)
+            .unwrap_or(labels.contains(label.as_str()))
+        {
             db.execute("INSERT OR IGNORE INTO message_categories(account,message_id,category_id) VALUES(?1,?2,?3)",params![account,mid,category]).map_err(storage_error)?;
         } else {
             db.execute("DELETE FROM message_categories WHERE account=?1 AND message_id=?2 AND category_id=?3",params![account,mid,category]).map_err(storage_error)?;

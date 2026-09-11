@@ -6,8 +6,10 @@ use std::{
     fs::{File, OpenOptions},
     path::{Path, PathBuf},
 };
+pub mod assist_store;
 #[cfg(test)]
 mod benchmark;
+pub mod calendar_store;
 mod cancellation;
 mod capture;
 mod content;
@@ -15,7 +17,7 @@ mod fixture;
 pub mod google_store;
 mod mutations;
 mod queries;
-pub const SCHEMA_VERSION: u32 = 3;
+pub const SCHEMA_VERSION: u32 = 4;
 pub const FIXTURE_REVISION: u32 = 1;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -92,6 +94,14 @@ impl Store {
                 "BEGIN IMMEDIATE;\n{}\n{}\nPRAGMA user_version=3;\nCOMMIT;",
                 include_str!("migration-003-drafts.sql"),
                 include_str!("migration-003-google.sql")
+            ))?;
+        }
+        let version: u32 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 3 {
+            db.execute_batch(&format!(
+                "BEGIN IMMEDIATE;\n{}\n{}\nPRAGMA user_version=4;\nCOMMIT;",
+                include_str!("migration-004-calendar.sql"),
+                include_str!("migration-004-assist.sql")
             ))?;
         }
         let mut store = Self {

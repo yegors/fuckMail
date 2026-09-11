@@ -94,6 +94,8 @@ pub struct RefreshResult {
 }
 
 pub trait CredentialVault: Send + Sync {
+    /// Locked/unavailable storage returns StoreUnavailable, not Ok(None).
+    /// The coordinator propagates that failure without another credential source.
     fn load(&self, account: &AccountId) -> Result<Option<StoredToken>, GoogleError>;
     fn store(&self, account: &AccountId, token: StoredToken) -> Result<(), GoogleError>;
 }

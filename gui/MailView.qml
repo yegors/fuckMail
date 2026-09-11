@@ -297,6 +297,7 @@ Item {
                                     placeholderText: "Write your reply…"
                                     placeholderTextColor: Theme.subtle; color: Theme.text
                                     textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; selectByMouse: true
+                                    persistentSelection: true
                                     enabled: Object.keys(backend.draft).length > 0
                                     font.pixelSize: 14; padding: 13
                                     onTextChanged: if (activeFocus) backend.editDraft(text)

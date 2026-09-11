@@ -6,17 +6,17 @@ The development host is macOS 15.7.7 on arm64, Apple Clang 17 / SDK 26.2, Rust/C
 
 | Packet | Observed evidence | Remaining gate |
 | --- | --- | --- |
-| P0-00 | Rust workspace builds; Qt Quick native surface builds; repeatable bootstrap/doctor succeeds on Mac | Native Windows/Linux CI and physical desktop qualification |
-| P0-01 | Fixture 1: two isolated accounts, 220 conversations / 286 messages, mixed flags/categories, long thread, retained/missing/partial attachments, read-only calendar sources; five independently checked MIME source files | Broader interruption/provider-operation/assistance integration corpus and larger scale tiers |
-| P0-03 | Durable mutation/replay tests, scoped search correctness, staged/verified blobs and safe attachment exports; measured [100k search experiment](search-feasibility-execution.md) | Remaining interruption/checkpoint and real retention/encryption decisions; larger performance tiers |
-| P0-10 | Real Rust engine/CLI tests pass: paired state, exact retry, draft restart, final-owner shutdown, simultaneous launches, stale endpoint, private handshake/version/account errors. Qt integration walkthrough passes on Mac | Packaged and native other-OS runs; expanded disconnect/cancellation and upgrade evidence |
-| P0-04 | Qt integration passes actual Unicode editor input, CLI draft readback, account/search/selection restoration, read/star independence, settings return, bounded pages and week/today isolation. Separate Qt document probe passes formatting/undo/redo | Complete package/native input checks; persisted draft-to-capture integration; later fuller composer UX |
-| P0-02 | [15 Google fake tests](google-feasibility-execution.md), source-backed installed-app/Workspace prerequisites | Durable Core provider checkpoint integration; no live account/auth longevity evidence |
-| P0-05 | [9 MIME tests and retained-content tests](mime-feasibility-execution.md), exact author/signature/attachment round trips into a local Gmail capture | Persisted Core draft/capture path and remaining interruption integration |
-| P0-06 | [17 independent calendar tests](../../crates/fm-calendar/README.md) plus 299 upstream tests with a documented DST patch; one Core projection supplies GUI week/footer and CLI | Live Google edits/RSVP and full provider-store orchestration are later; no remote calendar exercised |
-| P0-07/09 | Explicit snapshot-scoped read/star/category actions persist, replay and remain independent; newer incoming member is not silently affected | Full provider reconciliation/manual override interaction |
-| P0-08 | [7 fake-boundary tests](../../crates/fm-assist/README.md): off/absent, invalid/unmapped/stale output, source coverage/draft exclusion and owner cancellation | Durable Core application transaction and real runner evidence before enabling a model |
-| P0-11 | Mac archive relocates successfully; packaged GUI/CLI, bundled Qt loading and final-owner shutdown pass with SDK environment cleared | Native CI artifacts, remaining upgrade checks and physical other-host rows |
+| P0-00 | Pinned Rust/Qt tools build on Mac, Windows and Ubuntu; Mac native tests/package pass; Linux ICU acquisition repaired | Latest Windows/Linux test/package rerun and physical desktop qualification |
+| P0-01 | Fixture 1: two isolated accounts, 220 conversations / 286 messages; independent MIME, provider/capture, calendar and fake-assistance expectations | 1m/3m and 25 GB/100 GB workloads are later measured tiers |
+| P0-03 | One schema 4 store, durable journals/checkpoints, staged verified blobs, interruption/replay and scoped FTS; measured [100k search experiment](search-feasibility-execution.md) | Package upgrade execution; real retention/encryption policy before live data; larger performance tiers |
+| P0-10 | Actual engine/CLI/Qt shared state, private transport, independent owners, SQL cancellation, partial frames, process kill and exact receipt recovery | Final native other-OS execution and packaged upgrade/old-client behavior |
+| P0-04 | Actual Qt mouse/input/category workflow, persisted Unicode draft and selection, account/search/settings restoration, calendar footer; Qt formatting export reaches the shared persisted MIME capture | Final native other-OS checks; physical Windows/Linux input and later fuller composer UX |
+| P0-02 | [16 Google fake tests](google-feasibility-execution.md), 9 Google/Core cases, durable page/checkpoint/FTS commits and manual precedence; installed-app/Workspace prerequisites | Actual OS vault and live personal/Workspace auth longevity before live accounts |
+| P0-05 | [Independent MIME corpus and capture tests](mime-feasibility-execution.md), exact originals/decoded content, persisted authored formatting/attachments and recoverable fake sending | Later received HTML presentation and real sending; neither is a synthetic-phase dependency |
+| P0-06 | [Calendar/Core integration](calendar-core-execution.md): 8 store tests, 17 independent calendar tests, 299 upstream tests with a documented DST patch; completed batch, edit/RSVP receipts, ACL changes, shared zoned projection | Live Google operations and fuller calendar GUI/CLI editing are later slices |
+| P0-07/09 | Snapshot-scoped read/star/category actions through both clients; manual > permitted assistance > provider label reconciliation; new members unaffected by old snapshots | Reviewed composite Done/Delayed UX and live provider reconciliation |
+| P0-08 | [6 Core application tests](local-assistance-execution.md) plus 7 fake-boundary tests; durable source/policy/manual/provider rechecks, replay and no review/action changes | Real runner/locality/cancellation before enabling a model |
+| P0-11 | Mac relocated archive passes bundled runtime/GUI/CLI/lifetime checks; Windows/Linux build results and identified fixes retained | Final native packages and actual old/new artifact handoff; physical OS vault/input and trusted delivery stay separately unverified |
 
 `cargo test --workspace --locked --offline` passed on this Mac, including actual local-socket engine integration. The first full CTest run exposed two GUI failures: asynchronous request pipelining violated the one-request-per-connection boundary, and initial polling could miss an early external change. Both were corrected and the GUI's native integration test then passed. The subsequent combined `scripts/dev.sh test` run passed all 6 CTests in 60.82 seconds: Rust workspace, GUI smoke, GUI/CLI integration, IPC trust, composer probe and calendar layout. Mac package verification subsequently passed. Log: `build/verification/native-test.log` (generated, not committed).
 
@@ -27,16 +27,11 @@ Native rendered captures (synthetic data, 2880 × 1900): [mail](assets/phase-0/m
 `cargo clippy --workspace --all-targets --locked --offline -- -D warnings` passes on the Mac.
 
 
-## Remaining local work before the full phase can close
+## Remaining available-host verification
 
-The schema 3 checkpoint closes the earlier local gaps for paginated fake Gmail/Core/FTS commits, persisted formatting/attachment captures, exact MIME extraction, explicit GUI category assignment and engine kill/replay/cancellation. The evidence below and linked tests identify their limits. Remaining work:
+Schema 3 closed the paginated fake Gmail/Core/FTS, persisted capture, source extraction, category GUI and engine interruption gaps. Schema 4 now integrates completed Google calendar batches/edit/RSVP acknowledgments and validated fake assistance into the same store. Their scoped reports record limits and independent regressions.
 
-1. Consume permitted fake assistance through a Core transaction that rechecks source/policy/manual/provider stamps. Independent validator tests are insufficient.
-2. Apply completed calendar sync/edit/RSVP fake outcomes to the one store; incomplete batches must retain the previous view and cursor.
-3. Finish actual native Windows/Linux tests and packaged runtime checks, then refresh the Mac package for the final Phase 0 source. Physical other-host, live-provider and real-runner evidence remains separately unverified.
-
-This list preserves the full Phase 0 scope; it does not add legacy protocols, browser-accurate HTML, a finished CLI, signing or larger benchmark tiers to the first foundation gate.
-
+The current closure gates are the final combined Mac suite, latest Windows/Ubuntu native tests and packages, and actual old/new package upgrade/rollback-refusal execution. Physical other-host input/keyrings, live provider access, real model execution, trusted distribution and larger benchmark tiers stay separately unverified. Those are not silently counted as passing or confused with the synthetic foundation.
 
 ## Pushed native checkpoint
 
@@ -56,3 +51,14 @@ Root's `cargo test -p fm-engine --locked --offline` passed 6 actual socket/proce
 The full Mac `scripts/dev.sh test` run passed **7/7 CTests in 93.39 seconds**: separate Rust test compilation, complete Rust workspace execution, GUI smoke, GUI/CLI integration, IPC trust, composer probe and calendar layout. Log: `build/verification/schema3-native-test.log`. GUI integration includes actual QML category-button mouse input, independent CLI readback/removal, and preserving authored Unicode and selection across updates. The native Cocoa app also opens on this Mac; a desktop screenshot/launch alone does not prove every physical input behavior.
 
 Incoming text now shares `fm_mail::extract_incoming_text` between fixture seed and fake provider import. All five independent MIME expectations check visible text, unsafe-text exclusions and exact retained sources through Core. Authored Qt formatting remains a document-export feasibility path through persisted drafts/MIME capture; the interactive GUI composer remains plain text. No model or live sending was enabled.
+
+
+## Schema 4 integration checkpoint
+
+The final Mac `scripts/dev.sh test` run passed **7/7 CTests in 138.29 seconds**, including the complete Rust workspace (125.28 seconds), GUI/CLI integration, private IPC, composer and calendar layout. Log: `build/verification/schema4-final-native-test.log`. Strict workspace Clippy passes after moving test modules to the end of their Rust files; that cleanup changes no runtime behavior.
+
+Calendar sources, complete batch checkpoints, edit/RSVP acknowledgments and permitted fake assistance now persist through Core. The [calendar report](calendar-core-execution.md) includes independently reproduced fixes for cross-calendar day boundaries and chronological sorting of different UTC offsets. The [assistance report](local-assistance-execution.md) records source/policy/manual/provider checks in the application transaction. A locked fake vault rejects both cached and expired token use without refreshing or falling back to plaintext; real OS vault adapters remain unimplemented and must be verified before live accounts.
+
+The native Cocoa walkthrough used an explicitly disposable profile: actual mouse input saved a Unicode draft, category application was read back independently by the CLI, calendar/settings/account/search navigation preserved state, and closing the final owner removed engine discovery. The final package upgrade script will exercise this behavior across actual old/new binaries; its result is still pending at this checkpoint.
+
+[CI for schema 3](https://github.com/yegors/fuckMail/actions/runs/34648653748) passed on Mac. Ubuntu passed Rust and four Qt checks but lost reply selection when a category popup took focus. Windows completed cold compilation but found a private discovery-file owner mismatch and a fixture-startup timeout. The next source checkpoint sets the explicit Windows process-user owner at file creation, adds an actual Windows trust test, aligns client startup bounds to 30 seconds, uses system fonts for offscreen Windows tests and preserves Linux reply selection. These fixes retain the owner/ACL validation; their native rerun remains required.

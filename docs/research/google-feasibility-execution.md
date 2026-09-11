@@ -4,7 +4,7 @@ P0-02/03, 2026-09-11. Consumes Gmail contract revision 1 and synthetic fixture r
 
 ## Implemented and measured
 
-`cargo test -p fm-google --locked` passed **15 integration tests** on this arm64 Mac using Rust 1.88.0. The crate compiles with `oauth2` 5.0.0 (HTTP defaults disabled; timing-resistant secret comparison enabled), `base64` 0.22.1, `serde`/`serde_json` and `sha2`; exact resolved versions are in Cargo.lock. The tests are included by the normal workspace test command.
+`cargo test -p fm-google --locked --offline` passed **16 integration tests** on this arm64 Mac using Rust 1.88.0. The crate compiles with `oauth2` 5.0.0 (HTTP defaults disabled; timing-resistant secret comparison enabled), `base64` 0.22.1, `serde`/`serde_json` and `sha2`; exact resolved versions are in Cargo.lock. The tests are included by the normal workspace test command.
 
 | Boundary | Actual test evidence |
 | --- | --- |
@@ -15,8 +15,11 @@ P0-02/03, 2026-09-11. Consumes Gmail contract revision 1 and synthetic fixture r
 | Provider errors | HTTP-shaped quota, permission, authorization and history-expiry failures are distinguished. Read retries respect a supplied delay and stop after the bounded attempt budget. Diagnostic errors exclude provider body text. |
 | Sending | Journal compare-and-swap persists InFlight before the single transport call. Missing acknowledgement or failure to persist the receipt recovers as acceptance unknown. Reusing the operation does not call transport again. Changed MIME does not reuse prior intent. |
 | OAuth/refresh | A system-browser authorization URL carries random S256 PKCE, random state and an IPv4 loopback redirect. Callback consumes its verifier and rejects wrong state. Eight simultaneous mail/calendar-style requests perform one refresh. New access is returned only after vault persistence; revocation requires reconnect. |
+| Locked/unavailable vault | An initial failed fake-vault read returns `StoreUnavailable`, releases no token and makes zero refresh or credential-write calls. After an explicit fake unlock returns a valid token, locking again refuses both unexpired and expired access; no previously returned token becomes a coordinator fallback. |
 
 The fixture manifest and API-shaped JSON are under [fm-google/tests/fixtures](../../crates/fm-google/tests/fixtures/README.md). These tests prove the stated state-machine and integration-contract behavior in memory. They do not establish provider latency, actual quota, mailbox coverage, HTTP cancellation, OS keychain behavior or cross-machine OAuth longevity.
+
+The locked-vault follow-up also passed `cargo clippy -p fm-google --all-targets --locked --offline -- -D warnings`. The existing coordinator already propagates the failed read, so no runtime fallback or new credential backend was added. This proves the fake adapter policy, including no token-store write or alternate credential-source path; it does not test macOS Keychain, Windows Credential Manager or a Linux secret service. Actual OS vault locked/unavailable behavior remains unverified before live accounts. No real secrets, keychain locks or OS settings were used.
 
 ## Integration with the one engine/store
 
@@ -42,6 +45,8 @@ Responses have explicit size/page/change limits. Raw MIME is limited to 40 MiB p
 - All five MIME corpus files import through shared safe text extraction. Tests compare retained source bytes and independent manifest SHA-256 values, check visible text/unsafe-text exclusions, search the HTML-only fallback, and verify decoded inline/attachment checksums. Missing or corrupted staged content prevents cursor advancement.
 
 Current normalized import bounds are 256 KiB text, 50 attachments, 4 KiB sender/recipient fields, 16 KiB subject and 1 KiB attachment name. Exceeding them rejects the page without advancing its checkpoint; nothing is silently truncated. These bounds and the 40 MiB raw-source limit need deliberate treatment before importing arbitrary large real mail. Old attachment records remain retained when newer provider content differs, protecting existing draft references; garbage collection is not implemented. The source/coverage query still reports full archive verification as unknown.
+
+Schema 4 adds two tested reconciliation cases, for **nine Core Google tests** in total: an accepted fake assistance category intent survives a provider observation but loses to an explicit human value; category mappings reject Gmail system IDs including DRAFT, IMPORTANT, CHAT and the CATEGORY_* family. Reconciliation also rejects an older invalid mapping rather than turning it into category state. Source/draft/read/star ownership remains unchanged.
 
 ## Source-backed setup before live access
 
