@@ -1,6 +1,6 @@
 # Mail UI, reader and human composer
 
-State: Draft · Revision: 7 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+State: Draft · Revision: 7 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
 
 Revision 7 records the next Phase 0 integration checkpoint. Explicit configured-category assignment now joins the shared snapshot actions, with actual QML mouse input and independent CLI readback. Qt-exported formatting and attachments round-trip through persisted Core/MIME capture; the interactive composer remains plain text. Consumers: Core, CLI, MIME, Triage and Platform.
 

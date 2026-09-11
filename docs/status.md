@@ -1,6 +1,6 @@
 # Current status
 
-As of 2026-09-11. **Phase 0 implementation active. Google-first MVP readiness: 0% (0 of 9 whole areas verified).** Calendar, fake assistance, retained MIME captures, provider checkpoints and engine recovery now share the schema 4 store. Mac and Ubuntu passed native tests and relocated packages at `ac77528`; Windows passed every Qt test but exposed a client restart race. Rust and Qt now use bounded startup recovery, proven by actual held-store and handshake-disconnect regressions. The Mac combined suite passes 8 CTests; the final native CI rerun is next. Actual Mac package migration preserved all retained blobs and drafts and safely refused downgrade. See [Phase 0 execution evidence](research/phase-0-execution.md).
+As of 2026-09-11. **Phase 0 synthetic foundation completed on the available hosts. Google-first MVP readiness remains 0/9 whole areas verified.** Runtime checkpoint `204fa62` is pushed on `codex/phase-0`. Native macOS 15, Windows Server 2022 and Ubuntu 24.04 CI each passed all 8 CTests, relocated packaged GUI/CLI/runtime checks and artifact retention. The Mac native desktop walkthrough and actual schema 2→4 packaged upgrade/downgrade-refusal checks also pass. See [Phase 0 execution evidence](research/phase-0-execution.md) for exact sources, commands, artifacts and limits. No live Google account or model is connected.
 
 ## Established direction
 
@@ -12,23 +12,25 @@ The proposed stack remains Rust engine/CLI, C++20/Qt Quick/QML UI, private local
 
 ## Next work
 
-The full synthetic Phase 0 implementation is at native verification: rerun Windows/Ubuntu tests and packaging, refresh the final Mac package, and execute old/new artifact handoff and safe downgrade refusal. The [first deliverable](plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) is already usable on this Mac with fixtures; no live Google account or model is connected. See [development commands](build-development.md), the [plan](development-plan.md) and [execution evidence](research/phase-0-execution.md).
+Try the [runnable fixture app and CLI](build-development.md), review the initial screens and refine the remaining local workflows in Phase 1. The foundation already covers account-scoped conversations/search, retained attachments, literal read/star/category actions, durable drafts, a shared week/today calendar, settings navigation and both-client recovery. The next local slice should add the remaining calendar edit and composer interactions through the same engine/CLI/GUI boundary; detailed settings and composite Done/Delayed behavior still need reviewed designs/decisions. Phase 1 implementation has not started.
 
-Both the work Mac and home Windows PC are development hosts under D010. Native CI compiles all three targets; CI results do not prove physical Windows input, Linux desktop integration or OS keyrings. Those rows stay unverified until their hosts/adapters are available. Repository push access and the native workflow are established.
+Before actual Google accounts, implement/test the OS credential-store adapter and settle OAuth access plus real-data retention/encryption/recovery policy. Full history, live sending/calendar operations and founder Google dogfooding remain later milestones. Legacy transports remain deferred.
+
+On the home Windows PC, pull `codex/phase-0`, run `scripts/dev.ps1 bootstrap`, then `doctor`, `test` and `run`. This is source/tooling handoff; do not copy profiles, credentials or SDK/build directories between machines through Git. Physical Windows and Linux desktop/input/keyring checks remain unverified; CI does not replace them.
 
 ## Google-first readiness
 
 | Required area | State | Verified |
 | --- | --- | --- |
-| [Core/offline storage](contracts/core-storage.md) | Experiment in progress; whole area Draft | No |
-| [Gmail/Workspace](contracts/gmail.md) | Experiment in progress; whole area Draft | No |
-| [Mail UI/composition](contracts/mail-ui.md) | Experiment in progress; whole area Draft | No |
-| [Search](contracts/search.md) | Experiment in progress; whole area Draft | No |
-| [Triage/categories](contracts/triage.md) | Experiment in progress; whole area Draft | No |
-| [Google Calendar](contracts/calendar.md) | Experiment in progress; whole area Draft | No |
-| [Optional local assistance](contracts/local-ai.md) | Experiment in progress; whole area Draft | No |
-| [Platform/install/lifecycle](contracts/platform.md) | Experiment in progress; whole area Draft | No |
-| [CLI](contracts/cli.md) | Experiment in progress; whole area Draft | No |
+| [Core/offline storage](contracts/core-storage.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Gmail/Workspace](contracts/gmail.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Mail UI/composition](contracts/mail-ui.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Search](contracts/search.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Triage/categories](contracts/triage.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Google Calendar](contracts/calendar.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Optional local assistance](contracts/local-ai.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Platform/install/lifecycle](contracts/platform.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [CLI](contracts/cli.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
 
 The denominator changed from ten to nine under D009: IMAP/SMTP is now a deferred area, and external subscriptions are outside the current Calendar gates. This is a reporting scope change, not progress. Local assistance remains an intended capability, optional to enable. Partial CLI or text-only GUI delivery can satisfy the first usable slice without marking its entire feature Verified. Record completed slice evidence explicitly; docs and screenshots do not count.
 
@@ -38,7 +40,7 @@ The Google-first release still requires its applicable quality and OS gates. It 
 
 | Phase | Outcome | State |
 | --- | --- | --- |
-| 0 — Paired foundation | Native builds, small fixtures, storage, private engine/CLI/GUI, text/composer and Google prerequisites | Implementation and verification in progress |
+| 0 — Paired foundation | Native builds, small fixtures, storage, private engine/CLI/GUI, text/composer and Google prerequisites | Completed on available hosts; external/physical gates explicit |
 | 1 — First usable local slice | Both interfaces use real shared state for synthetic mail/calendar, drafts, search and explicit actions | Planned |
 | 2 — Google daily workflows | Gmail/Workspace and Google Calendar, growing CLI with GUI; controlled founder use | Planned |
 | 3 — Google completion and dogfooding | Usable Google GUI and CLI, expanded designs, later best-effort HTML/local assistance, recovery/performance and delivery evidence | Planned |

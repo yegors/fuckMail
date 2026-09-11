@@ -2,7 +2,7 @@
 
 Updated 2026-09-11. Proposed budgets, not measured results. Google-first required behavior includes fast sender/subject/body search, responsive user-owned daily triage, conversation-only mail, full offline messages/attachments, reliable Google calendar views and optional local classification/summaries on Windows/macOS/Linux. The founder specified high-end machines. Exact devices, mailbox message counts and local models remain unmeasured.
 
-State: Draft · Revision: 4 · Implementation/evidence: Phase 0 in progress. Owner: G — Platform/release coordinates; each workstream supplies its own fixtures and evidence. This is a shared acceptance contract, not a separate application feature.
+State: Draft · Revision: 4 · Implementation/evidence: Phase 0 synthetic results recorded; whole area remains Draft. Owner: G — Platform/release coordinates; each workstream supplies its own fixtures and evidence. This is a shared acceptance contract, not a separate application feature.
 
 Revision 3 applies D009: separate first usable, Google dogfood and later-protocol evidence. Best-effort HTML comes later; full browser fidelity and legacy protocols do not gate first use. Affected consumers: all workstreams. Current Google-first readiness denominator is nine.
 

@@ -1,6 +1,6 @@
 # Core and storage
 
-State: Draft · Revision: 8 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+State: Draft · Revision: 8 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
 
 Revision 8 records the integrated Phase 0 experiment. Schema 4 adds completed calendar-batch checkpoints/visibility/write receipts and validated fake-assistance policies/results/intents to the existing store. Calendar permissions filter the shared projection; assistance rechecks retained source/provider/manual/policy stamps inside its apply transaction. Consumers: Calendar, Local assistance, Gmail, Qt UI, CLI and Platform.
 

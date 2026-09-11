@@ -1,6 +1,6 @@
 # Phase 0 — paired foundation and Google feasibility
 
-Updated 2026-09-11 under [D009–D011](../decisions.md), with implementation now authorized by the founder's Phase 0 goal. **Execution in progress; completion unproven.** [Development plan](../development-plan.md) owns sequence; [contracts](../contracts/README.md) own behavior. All whole feature areas remain Draft.
+Updated 2026-09-11 under [D009–D011](../decisions.md), with implementation now authorized by the founder's Phase 0 goal. **Synthetic foundation completed on available hosts at runtime checkpoint `204fa62`.** See [execution evidence](../research/phase-0-execution.md): native Mac/Windows/Ubuntu tests/packages, Mac desktop input and actual package upgrade/refusal pass. Physical other-host, actual credentials/providers/models, trusted delivery and larger performance tiers remain explicitly unverified. [Development plan](../development-plan.md) owns sequence; [contracts](../contracts/README.md) own behavior. All whole feature areas remain Draft.
 
 ## Starting point
 
@@ -12,7 +12,7 @@ Proposed baseline: Rust engine and small CLI, C++20/Qt Quick/QML GUI, private lo
 
 ### Proposed first deliverable: a runnable desktop slice on Mac and Windows
 
-Under [D010](../decisions.md), development must move between the founder's work Mac and home Windows PC. The first work package combines the bounded portions of P0-00/P0-01/P0-03/P0-10/P0-04/P0-11 below. Implementation of this package is active under the founder’s Phase 0 goal. It is only the first integration checkpoint within the full phase.
+Under [D010](../decisions.md), development must move between the founder's work Mac and home Windows PC. The first work package combines the bounded portions of P0-00/P0-01/P0-03/P0-10/P0-04/P0-11 below. This package and the remaining synthetic Phase 0 packets are implemented and verified on available hosts under the founder’s full Phase 0 goal. The original packet descriptions below retain their scope; execution results live in the linked evidence.
 
 **What the founder can use:** a Qt Quick desktop app, a small headless Rust CLI and one Rust engine/SQLite store. Seed a disposable profile with two synthetic accounts, a few hundred messages in conversations, a small attachment corpus and a week's calendar events. Follow the [D011 initial-phase references](../research/design-references.md): top accounts, split reader, inline reply, persistent calendar footer and settings shell. Detailed settings controls remain excluded per founder clarification.
 

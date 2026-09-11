@@ -1,22 +1,22 @@
 # Phase 0 execution evidence
 
-Recorded 2026-09-11. Implementation checkpoint on `codex/phase-0`, based on `14f4eca`; native implementation checkpoint `02d33ca` is pushed. This is a running evidence record, not a claim that Phase 0 or the Google-first MVP is complete.
+Recorded 2026-09-11. Implementation checkpoint on `codex/phase-0`, based on `14f4eca`; latest native implementation checkpoint `204fa62` is pushed; earlier results below retain their exact source attribution. **The synthetic Phase 0 foundation is complete on available hosts.** The final run below passed native tests and packages on Mac, Windows and Ubuntu. This does not complete the Google-first MVP or the separately listed physical/live-provider/release gates. Earlier checkpoint sections preserve failures and corrections as history.
 
 The development host is macOS 15.7.7 on arm64, Apple Clang 17 / SDK 26.2, Rust/Cargo 1.88.0, Qt 6.11.2, CMake 3.31.6 and the pinned Ninja distribution. [Development setup](../build-development.md) owns exact commands and provisioning observations. Dependencies live in ignored `.tools`; user data lives outside the build/package directories.
 
-| Packet | Observed evidence | Remaining gate |
+| Packet | Observed evidence | Remaining qualification beyond the synthetic foundation |
 | --- | --- | --- |
-| P0-00 | Pinned Rust/Qt tools build on Mac, Windows and Ubuntu; Mac native tests/package pass; Linux ICU acquisition repaired | Latest Windows/Linux test/package rerun and physical desktop qualification |
+| P0-00 | Pinned Rust/Qt tools build/test/package on Mac, Windows and Ubuntu; all final CI jobs pass | Physical home-PC and Linux desktop qualification |
 | P0-01 | Fixture 1: two isolated accounts, 220 conversations / 286 messages; independent MIME, provider/capture, calendar and fake-assistance expectations | 1m/3m and 25 GB/100 GB workloads are later measured tiers |
-| P0-03 | One schema 4 store, durable journals/checkpoints, staged verified blobs, interruption/replay and scoped FTS; measured [100k search experiment](search-feasibility-execution.md) | Package upgrade execution; real retention/encryption policy before live data; larger performance tiers |
-| P0-10 | Actual engine/CLI/Qt shared state, private transport, independent owners, SQL cancellation, partial frames, process kill and exact receipt recovery | Final native other-OS execution and packaged upgrade/old-client behavior |
-| P0-04 | Actual Qt mouse/input/category workflow, persisted Unicode draft and selection, account/search/settings restoration, calendar footer; Qt formatting export reaches the shared persisted MIME capture | Final native other-OS checks; physical Windows/Linux input and later fuller composer UX |
+| P0-03 | One schema 4 store, durable journals/checkpoints, staged verified blobs, interruption/replay and scoped FTS; measured [100k search experiment](search-feasibility-execution.md) | Real retention/encryption policy before live data; larger performance tiers |
+| P0-10 | Actual engine/CLI/Qt shared state, private transport, independent owners, SQL cancellation, partial frames, process kill and exact receipt recovery | Physical other-host behavior and later wider protocol/schema evolution |
+| P0-04 | Actual Qt mouse/input/category workflow, persisted Unicode draft and selection, account/search/settings restoration, calendar footer; Qt formatting export reaches the shared persisted MIME capture | Physical Windows/Linux input and later fuller composer UX |
 | P0-02 | [16 Google fake tests](google-feasibility-execution.md), 9 Google/Core cases, durable page/checkpoint/FTS commits and manual precedence; installed-app/Workspace prerequisites | Actual OS vault and live personal/Workspace auth longevity before live accounts |
 | P0-05 | [Independent MIME corpus and capture tests](mime-feasibility-execution.md), exact originals/decoded content, persisted authored formatting/attachments and recoverable fake sending | Later received HTML presentation and real sending; neither is a synthetic-phase dependency |
 | P0-06 | [Calendar/Core integration](calendar-core-execution.md): 8 store tests, 17 independent calendar tests, 299 upstream tests with a documented DST patch; completed batch, edit/RSVP receipts, ACL changes, shared zoned projection | Live Google operations and fuller calendar GUI/CLI editing are later slices |
 | P0-07/09 | Snapshot-scoped read/star/category actions through both clients; manual > permitted assistance > provider label reconciliation; new members unaffected by old snapshots | Reviewed composite Done/Delayed UX and live provider reconciliation |
 | P0-08 | [6 Core application tests](local-assistance-execution.md) plus 7 fake-boundary tests; durable source/policy/manual/provider rechecks, replay and no review/action changes | Real runner/locality/cancellation before enabling a model |
-| P0-11 | Mac relocated archive passes bundled runtime/GUI/CLI/lifetime checks; Windows/Linux build results and identified fixes retained | Final native packages and actual old/new artifact handoff; physical OS vault/input and trusted delivery stay separately unverified |
+| P0-11 | All three native packages pass bundled runtime/GUI/CLI/lifetime checks; actual Mac old/new artifact handoff and downgrade refusal pass | Physical OS vault/input, Windows/Linux artifact upgrade execution and trusted delivery remain unverified |
 
 `cargo test --workspace --locked --offline` passed on this Mac, including actual local-socket engine integration. The first full CTest run exposed two GUI failures: asynchronous request pipelining violated the one-request-per-connection boundary, and initial polling could miss an early external change. Both were corrected and the GUI's native integration test then passed. The subsequent combined `scripts/dev.sh test` run passed all 6 CTests in 60.82 seconds: Rust workspace, GUI smoke, GUI/CLI integration, IPC trust, composer probe and calendar layout. Mac package verification subsequently passed. Log: `build/verification/native-test.log` (generated, not committed).
 
@@ -27,11 +27,11 @@ Native rendered captures (synthetic data, 2880 × 1900): [mail](assets/phase-0/m
 `cargo clippy --workspace --all-targets --locked --offline -- -D warnings` passes on the Mac.
 
 
-## Remaining available-host verification
+## Available-host closure and separate gates
 
 Schema 3 closed the paginated fake Gmail/Core/FTS, persisted capture, source extraction, category GUI and engine interruption gaps. Schema 4 now integrates completed Google calendar batches/edit/RSVP acknowledgments and validated fake assistance into the same store. Their scoped reports record limits and independent regressions.
 
-The final combined Mac suite, clean Mac package and actual old/new package upgrade/rollback-refusal checks now pass. The remaining available-host closure gate is the latest Windows/Ubuntu native tests and packages. Physical other-host input/keyrings, live provider access, real model execution, trusted distribution and larger benchmark tiers stay separately unverified. Those are not silently counted as passing or confused with the synthetic foundation.
+The final native suites and relocated packages pass on Mac, Windows and Ubuntu. The Mac desktop walkthrough and actual old/new package upgrade/rollback-refusal checks also pass. No available-host synthetic Phase 0 closure item remains. Physical other-host input/keyrings, live provider access, real model execution, trusted distribution and larger benchmark tiers stay separately unverified. Those are not silently counted as passing or confused with the synthetic foundation.
 
 ## Pushed native checkpoint
 
@@ -102,3 +102,30 @@ The full Mac `scripts/dev.sh test` run passed **8/8 CTests in 145.59 seconds** a
 A subsequent focused IPC review wrapped transport connect and hello in the same absolute deadline, and added retry for a pre-authentication EOF/reset while keeping malformed, incompatible and authentication failures fatal. The actual Unix-socket test failed before the correction with `UnexpectedEof` and passes after; all four IPC tests and strict Clippy pass. The native CI rerun will execute the full suite on this final combined source. The GUI uses a monotonic QElapsedTimer; both clients cap launch attempts/backoff and do not kill another client's engine. The original under-lock endpoint cleanup order is preserved.
 
 Logs: ignored `build/verification/restart-final-native-test.log`, `engine-lock-restart-before.log`, `gui-lock-restart-after.log`, and `startup-hello-before.log` / `startup-hello-after.log`. The compiled-cache workflow change is committed separately as `1557d81`.
+
+
+## Clean package after startup recovery
+
+The Mac dev package at clean `204fa62642ef545815c0b5b5d44a80b56c601f5d` passed isolated runtime verification with developer SDK/Qt/engine paths cleared: CLI help/search, GUI smoke/integration and final-owner shutdown. Log: ignored `build/verification/restart-final-package.log`.
+
+The current `dist/fuckmail-darwin-arm64.tar.gz` is 56,069,228 bytes, SHA-256 `2fd8070d6b1544b87da4520568d37a848a16373863c98b6857f816ea14812e92`. Its manifest records clean source and the actual dev preset/host/tools. This supersedes the earlier local archive at the same generated path; earlier CI artifacts and recorded hashes retain their own source attribution.
+
+
+The same actual package-upgrade walkthrough passed against clean `204fa62` in **105.18 seconds**. Report: ignored `build/verification/package-upgrade-final.json`, SHA-256 `dce848eeff3e4940fd0ca9b1653708e625c42d568c2f4f43236e846369dc4eb9`; log: `package-upgrade-final.log`. The report's verifier hash matches the committed script. All coexistence, normal-owner shutdown, schema 2→4, exact draft/receipt/flag, retained content, old-schema refusal and newer reopen assertions passed again. Message/attachment/draft counts stayed 286/6/1, and all 286 preexisting blob hashes survived.
+
+
+## Final native CI and Phase 0 closure
+
+[Run 34653745693](https://github.com/yegors/fuckMail/actions/runs/34653745693) completed **successfully on all three hosts**, using runtime source `204fa62642ef545815c0b5b5d44a80b56c601f5d`. Each host passed all eight CTests: Rust test compilation, complete applicable Rust workspace execution, GUI smoke, GUI/CLI integration, actual GUI startup recovery, native IPC trust, composer and calendar layout. Both Rust and GUI restart regressions are covered. No test timeout or privacy/authentication check was weakened to obtain a pass.
+
+| Runner | CTests | CTest total | Cold test compilation | Rust execution | GUI startup recovery | Package artifact ID |
+| --- | --- | --- | --- | --- | --- | --- |
+| macOS 15 ARM64 | 8/8 | 149.27 s | 114.10 s | 23.96 s | 3.83 s | 10284737947 |
+| Ubuntu 24.04 x64 | 8/8 | 270.93 s | 243.67 s | 17.22 s | 5.10 s | 10284548323 |
+| Windows Server 2022 x64 | 8/8 | 592.31 s | 427.65 s | 145.86 s | 7.32 s | 10285153863 |
+
+All three also passed relocated package verification with SDK/Qt/engine overrides removed: packaged GUI smoke/self-test, fresh-terminal CLI query and final-owner shutdown. Package artifact names are `fuckmail-{macOS-ARM64,Linux-X64,Windows-X64}-204fa62642ef545815c0b5b5d44a80b56c601f5d`; native logs have artifact IDs 10285152293, 10284428489 and 10285133850 respectively. The observed retention expiry is 2026-12-10. The final Windows SDK and compiled-Rust caches saved successfully for subsequent runs.
+
+Generated detailed evidence is retained locally as `build/verification/native-ci-204fa62.json` and `{macos,linux,windows}-ci-204fa62.log`. The JSON records all 24 CTest outcomes, runner/package results, artifact names/IDs/digests/expiry and limitations. GitHub artifact digests hash the uploaded ZIP wrappers, not the inner development archives; the local Mac archive has its independently recorded checksum above. CI artifacts remain accessible through the linked run while retained.
+
+This closes the founder's complete synthetic Phase 0 goal, including the provider/calendar/assistance fakes, durable integration and interruption/upgrade checks. Whole Google-first feature readiness remains 0/9. Physical Windows/Linux input/compositors/keyrings, actual OAuth/Google workflows, real local models, larger performance/retention tiers and trusted public distribution remain separately unverified. The next implementation is a reviewed Phase 1 local workflow slice; no live account access, legacy protocol work or model installation follows automatically from this completion.

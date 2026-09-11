@@ -1,6 +1,6 @@
 # Daily triage and mailbox categories
 
-State: Draft · Revision: 4 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+State: Draft · Revision: 4 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
 
 Revision 4 records the integrated Phase 0 experiment. Manual category intent takes precedence over accepted assistance intent and provider observations. GUI category Apply/Clear uses the same message snapshot and durable operation response as the CLI. Categories preserve read/star state; configured mappings reject Gmail system labels. Consumers: Core, Gmail, Local assistance, Mail UI and CLI.
 

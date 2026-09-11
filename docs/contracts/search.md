@@ -1,6 +1,6 @@
 # Local mail search
 
-State: Draft · Revision: 1 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+State: Draft · Revision: 1 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
 
 Revision 1 records D012’s implemented experimental slice. SQLite FTS5 sender/subject/body prefix-AND search now returns account-scoped conversations and matching-member IDs. The measured 100k experiment and limitations are in [execution evidence](../research/search-feasibility-execution.md). Consumers: Core, Qt UI, CLI and Quality. Larger corpora and real mailbox import are unverified.
 

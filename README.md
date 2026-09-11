@@ -6,19 +6,19 @@ Human correspondence comes first. Unread means unreviewed; stars mean action lef
 
 ## Current state
 
-**Phase 0 implementation in progress. Google-first MVP readiness: 0/9 whole areas verified.** Rust/Qt source, fixtures and native tooling are being integrated; no complete Phase 0 result is claimed yet. See [development commands](docs/build-development.md), [status](docs/status.md) and the [Phase 0 plan](docs/plans/phase-0.md).
+**Phase 0 synthetic foundation completed on available hosts. Google-first MVP readiness: 0/9 whole areas verified.** The Qt desktop app and Rust CLI run against one store. Native Mac/Windows/Ubuntu CI, packaged runtime checks, and the Mac upgrade/recovery walkthrough pass at runtime checkpoint `204fa62`. Real Google accounts remain a later milestone. See [development commands](docs/build-development.md), [status](docs/status.md) and the [Phase 0 plan](docs/plans/phase-0.md).
 
 | Google-first feature area | Build status |
 | --- | --- |
-| [Core and complete offline storage](docs/contracts/core-storage.md) | Phase 0 experiment in progress |
-| [Gmail / Google Workspace](docs/contracts/gmail.md) | Phase 0 experiment in progress |
-| [Mail UI and human composition](docs/contracts/mail-ui.md) | Phase 0 experiment in progress |
-| [Local search](docs/contracts/search.md) | Phase 0 experiment in progress |
-| [User-owned triage and categories](docs/contracts/triage.md) | Phase 0 experiment in progress |
-| [Google Calendar](docs/contracts/calendar.md) | Phase 0 experiment in progress |
-| [Optional local classification/summaries](docs/contracts/local-ai.md) | Phase 0 experiment in progress |
-| [Platform installation and lifecycle](docs/contracts/platform.md) | Phase 0 experiment in progress |
-| [CLI alongside the GUI](docs/contracts/cli.md) | Phase 0 experiment in progress |
+| [Core and complete offline storage](docs/contracts/core-storage.md) | Phase 0 synthetic evidence; whole area Draft |
+| [Gmail / Google Workspace](docs/contracts/gmail.md) | Phase 0 synthetic evidence; whole area Draft |
+| [Mail UI and human composition](docs/contracts/mail-ui.md) | Phase 0 synthetic evidence; whole area Draft |
+| [Local search](docs/contracts/search.md) | Phase 0 synthetic evidence; whole area Draft |
+| [User-owned triage and categories](docs/contracts/triage.md) | Phase 0 synthetic evidence; whole area Draft |
+| [Google Calendar](docs/contracts/calendar.md) | Phase 0 synthetic evidence; whole area Draft |
+| [Optional local classification/summaries](docs/contracts/local-ai.md) | Phase 0 synthetic evidence; whole area Draft |
+| [Platform installation and lifecycle](docs/contracts/platform.md) | Phase 0 synthetic evidence; whole area Draft |
+| [CLI alongside the GUI](docs/contracts/cli.md) | Phase 0 synthetic evidence; whole area Draft |
 
 IMAP, SMTP and external iCalendar subscriptions are deferred until the founder has dogfooded working Google GUI and CLI workflows. Their retained contracts are future scope, not missing first-milestone requirements. CalDAV and a broad public launch remain separately deferred. The denominator changed from ten to nine because IMAP/SMTP left the current target, not because anything was built.
 
@@ -36,9 +36,9 @@ The app operates locally and connects directly to Google; optional models run on
 
 ## Next execution
 
-Implementation began with [P0-00 and the small-fixture part of P0-01](docs/plans/phase-0.md), then joined the engine, small CLI and functional GUI. Prove shared state, IPC access, account boundaries, draft recovery and useful search. Final designs and later protocols do not block these experiments.
+Phase 0 has joined the engine, small CLI and functional GUI and verified shared state, IPC access, account boundaries, draft recovery, useful search and native packages. Next, review the working screens and refine Phase 1 local calendar/composer interactions before actual Google workflows. See the [execution evidence](docs/research/phase-0-execution.md) for completed packets and explicit remaining gates.
 
-The [first deliverable](docs/plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) is a runnable synthetic-mail desktop app and small CLI, with repeatable setup/build/test commands and native CI builds for development on the work Mac and home Windows PC. Its implementation is now underway; tools live in the ignored `.tools` directory.
+The [first deliverable](docs/plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) is a runnable synthetic-mail desktop app and small CLI, with repeatable setup/build/test commands and native CI builds for development on the work Mac and home Windows PC. It is implemented and verified on available hosts; tools live in the ignored `.tools` directory. Run `scripts/dev.sh run` on this Mac. On Windows, run `scripts/dev.ps1 bootstrap`, then `test` and `run` from PowerShell. Physical home-PC input/runtime still needs its own check.
 
 The [development plan](docs/development-plan.md) proceeds from the paired local slice to real Google workflows and founder dogfooding, then legacy protocols. All-platform installation and quality remain product requirements; unavailable hosts are unverified, not assumed passes.
 

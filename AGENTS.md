@@ -1,6 +1,6 @@
 # Agent instructions
 
-fuckMail is a personal desktop mail and calendar client. **Phase 0 implementation is active** under the founder's goal to execute it end to end. Rust engine/CLI, Qt Quick GUI, shared fixtures and native build tooling are being integrated. Treat `docs/status.md` and recorded execution evidence as the source of truth; source files or an isolated compile do not prove the full milestone.
+fuckMail is a personal desktop mail and calendar client. **Phase 0 synthetic foundation is complete on available hosts** under the founder's end-to-end goal. Rust engine/CLI, Qt Quick GUI, shared fixtures and native tooling pass Mac/Windows/Ubuntu CI and packaged runtime checks at `204fa62`. The Mac upgrade/refusal walkthrough also passes. Treat `docs/status.md` and recorded execution evidence as the source of truth; source files or an isolated compile do not prove the full milestone.
 
 ## Talk to the user
 
@@ -27,7 +27,7 @@ Do not invent product behavior, stack locks or “done” features from memory. 
 - The latest initial-phase mail/calendar/settings trio is current visual direction; the earlier pair and three mood references remain historical. Settings is incomplete: lay general shell/navigation plumbing and ignore the pictured Mail/Calendar switches until the founder fleshes it out. Bottom calendar strip stays; no screenshot implicitly chooses Done/Delay effects, read triggers, Busy-overlay permissions, Fastmail support or a model dependency.
 - Contracts are drafts. Do not invent placeholder APIs, fake benchmarks or pretend prose is a test suite.
 - Readiness stays 0% until a required area is implemented and verified. Docs, screenshots and unrun tests do not count.
-- Build and verify the Phase 0 packets. Tool versions are now recorded in `rust-toolchain.toml` and `scripts/toolchain.json`; real mailbox connection remains separate from the synthetic phase.
+- Preserve the completed Phase 0 evidence; do not restart its packets. Refine the next Phase 1 slice when implementation is requested. Tool versions are now recorded in `rust-toolchain.toml` and `scripts/toolchain.json`; real mailbox connection remains separate from the synthetic phase.
 
 - Google APIs are the first product. Do not start IMAP/SMTP or external iCalendar subscription work until the founder has dogfooded working Google GUI and CLI workflows. Preserve their specs as deferred.
 - Start with readable text and human composition. Best-effort received HTML display is later work, not a WebEngine/stack gate. Preserve MIME, HTML sources and attachments; text extraction and Google recurrence/invitations stay early.
@@ -57,7 +57,7 @@ Never commit secrets, real mailbox dumps, tokens or auth material.
 
 ## When implementation is requested
 
-- Start with the next packet in the development plan; currently P0-00 plus the small-fixture portion of P0-01. Inspect actual tools and test-host access before installing or assuming they exist.
+- Start from the verified foundation in status/evidence and refine the next Phase 1 slice. Phase 0 is complete on available hosts; full feature areas, physical other-host input/keyrings, live Google workflows and trusted distribution remain unverified. Inspect actual tools and host access before installing or assuming they exist.
 - Name the packet, scoped contract revision, fixture revision and what evidence will count as done before writing code. Feasibility can begin against Draft contracts; production consumers need the relevant shared boundary agreed. Do not mark a whole feature Ready from one passing slice.
 - Keep detailed planning focused on the next phase. Preserve completed evidence and append pivots; missing credentials, final mockups, runners or remote test hosts block their affected gate, not unrelated authorized work.
 - Keep engine/CLI and UI on the agreed boundary. GUI and CLI share one store and one command/query model.

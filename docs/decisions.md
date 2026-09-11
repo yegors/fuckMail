@@ -233,3 +233,14 @@ Three full-resolution PNGs were copied to research assets and verified byte-for-
 **Checkpoint reporting:** preserve source, tests, source fixtures, build/CI configuration and evidence in Git. Keep SDKs, binaries, disposable profiles and credentials out. A checkpoint can be in progress; mark only observed results as passing. Continue the full goal across remaining packaging, native CI, recovery and integration gates. No full Google-first area is Verified yet.
 
 Affected: Core revision 6, CLI 2, Mail UI 6, Calendar 6, Gmail 2, Search 1, Triage 3, Local assistance 3, Platform 5 and Quality 4, plus status, plans and development/protocol/evidence documentation. Prior entries remain unchanged.
+
+
+## 2026-09-11T22:45:57Z — D013: completed synthetic foundation and next handoff
+
+**Outcome: the founder's complete Phase 0 goal is fulfilled on available hosts.** Runtime checkpoint `204fa62` passes eight native CTests and relocated development-package checks on macOS 15 ARM64, Windows Server 2022 x64 and Ubuntu 24.04 x64. The Mac desktop walkthrough and actual old/new packaged schema 2→4 migration, preserved drafts/content/receipts and safe old-engine refusal also pass. [Execution evidence](research/phase-0-execution.md) retains exact sources, failed attempts, corrections, logs, artifact identities and limits.
+
+The experiment now integrates provider/calendar/assistance fakes with the same durable Core store. Native CI found and drove fixes for Linux ICU packaging/selection, Windows discovery ownership, and bounded client recovery while a prior writer closes. The final application retains one writer, explicit GUI/CLI lifetimes, private IPC, literal human actions and the model-free manual workflow.
+
+**Qualification remains scoped.** This does not lock production architecture, qualify physical other-host input/keyrings, connect a live account/model, establish complete offline storage at large scale, or complete trusted distribution. Whole Google-first readiness remains 0/9; existing decisions about designs, Done/Delayed, settings, real-data policy and deferred legacy protocols are unchanged. Phase 1 is the next local workflow refinement, not automatically authorized live-provider work.
+
+Affected: status, root/agent guidance, Phase 0/development plan and execution evidence. Core 8, Calendar 7, Local assistance 4, Triage 4, Platform 7, Gmail 3, Mail UI 7, CLI 3, Search 1 and Quality 4 retain their scoped contracts and Draft whole-area status. Development handoff uses the same Git branch and native scripts; profiles, SDKs and credentials stay local.

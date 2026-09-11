@@ -1,6 +1,6 @@
 # Gmail provider
 
-State: Draft · Revision: 3 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+State: Draft · Revision: 3 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
 
 Revision 3 records the next Phase 0 integration checkpoint. The fake provider now publishes complete pages and FTS changes atomically with Core checkpoints and replay receipts. Staged or failed pages stay invisible, and pending manual flags/categories win over observed labels. Shared corpus imports verify retained bytes and safe text. Consumers: Core, Search, MIME, Triage and assistance. Real authorization and HTTP remain separate gates.
 

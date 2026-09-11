@@ -1,6 +1,6 @@
 # Optional local classification and summaries
 
-State: Draft · Revision: 4 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+State: Draft · Revision: 4 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
 
 Revision 4 records the integrated Phase 0 experiment. The existing fake validator now feeds a durable Core transaction, with retained-source context, manual/provider/policy/mapping stamps, permitted category intent and summary provenance/replay. No IPC method or actual model is enabled. Consumers: Core, Gmail, Triage, Mail UI and Platform. See [execution evidence](../research/local-assistance-execution.md).
 

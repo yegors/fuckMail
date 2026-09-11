@@ -1,10 +1,10 @@
 # Development plan
 
-Updated 2026-09-11 under [D009–D012](decisions.md). **Phase 0 implementation and verification are active. Google-first readiness: 0/9 whole areas verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
+Updated 2026-09-11 under [D009–D013](decisions.md). **Phase 0 synthetic foundation is complete on available hosts; Phase 1 has not started. Google-first readiness: 0/9 whole areas verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
 
 ## Delivery direction
 
-Build for the founder's actual Google accounts first. Rust engine/CLI, C++20/Qt Quick/QML UI, private local IPC and SQLite/FTS5 remain the proposed baseline. QML syntax is accepted; Node.js and a separate JavaScript compilation/bundling pipeline are excluded. No stack or version lock is implied.
+Build for the founder's actual Google accounts first. Rust engine/CLI, C++20/Qt Quick/QML UI, private local IPC and SQLite/FTS5 remain the proposed baseline. QML syntax is accepted; Node.js and a separate JavaScript compilation/bundling pipeline are excluded. Experimental versions are pinned and have native evidence; production qualification remains separate.
 
 The first usable milestone includes a real GUI and a useful partial CLI. Implement the same small workflows in both, then expand their coverage together. IPC access, permission checks, account isolation, concurrency and recovery need both clients early; the GUI must not wait for exhaustive CLI commands or polished automation tooling.
 
@@ -27,9 +27,11 @@ IMAP, SMTP and external iCalendar URL support start only after the founder has d
 
 Phase detail decreases with distance. Only [Phase 0](plans/phase-0.md) has detailed packets. Refine the next slice from evidence rather than writing every future API in advance. Missing provider access, final design or test hosts blocks only the affected evidence.
 
-The [proposed first self-contained package](plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) draws a small runnable synthetic-mail slice from Phases 0/1, with repeatable development on the founder's Mac and Windows PC. It has its own bounded walkthrough and native build evidence; it does not wait for all Phase 0 experiments or complete the entire phase.
+The [first self-contained package](plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) delivered a small runnable synthetic-mail slice from Phases 0/1, with repeatable development on the founder's Mac and Windows PC. Its bounded walkthrough and native build evidence are part of the now-completed Phase 0 experiments.
 
 ## Phase 0: a GUI before a CLI monolith
+
+The packets below have been executed for the synthetic foundation; [execution evidence](research/phase-0-execution.md) records all available-host results and the separate physical/live-provider gates. Do not repeat this foundation as new work.
 
 Start P0-00 and the small-fixture part of P0-01. Join Core/CLI/storage (P0-03/P0-10) with Qt GUI/input/composition (P0-04) promptly. The first boundary needs capability discovery, a bounded account-scoped query, an explicit journaled action, a durable draft and a small event view. It does not need every final command.
 

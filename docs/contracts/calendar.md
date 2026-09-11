@@ -1,6 +1,6 @@
 # Calendar, feeds and reminders
 
-State: Draft · Revision: 7 · Updated: 2026-09-11 · Implementation: Phase 0 in progress.
+State: Draft · Revision: 7 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
 
 Revision 7 records the integrated Phase 0 experiment. Completed fake Google batches, retained cancellations and ETag-scoped edit/RSVP acknowledgements now commit through Core. Account/calendar permissions and time zones reach the same GUI/footer/CLI projection, and ACL changes advance the polling revision atomically. Consumers: Core, Gmail, Mail UI, CLI and Platform. Live sending and full interactive event editors remain later gates.
 
