@@ -396,3 +396,52 @@ Reader actions now sit at the right edge and wrap beneath labels at narrow width
 ### P1-10 complete Windows release checks
 
 The final-source [release03 run](assets/phase-1/p1-10-windows/reports/p1-10-full-release-03.log) passes **9/9 CTests in 158.15 seconds**, including the complete Rust workspace and a **53.39-second** native GUI workflow/restart check. The [full test output](assets/phase-1/p1-10-windows/reports/p1-10-full-release-03-lasttest.log) includes the unchanged strict compact-tab geometry check, deliberate-click/flag-receipt race, retained draft/discard behavior, independent CLI readback, all four composition modes and calendar operations. Earlier failures remain retained. Source is frozen for the clean development-package and packaged timing checks; P1-10 remains active until those finish and final-source CI is recorded.
+
+### P1-10 final Windows package — 25b8b1e
+
+Recorded 2026-09-12. **Windows P1-10 acceptance passes at clean source `25b8b1e4ebeec225ece0869673dabe45c6d615ab`. Final-source Mac/Windows/Ubuntu CI remains pending publication; Phase 1 is not complete and no next phase has begun.** This source uses the same Mail UI 13 / Quality 10, schema 7, fresh fixture 3 and additive protocol 1 boundary. Later documentation/evidence commits do not change this measured runtime.
+
+`scripts/dev.ps1 package --preset release` passes SDK-free relocated CLI help/query, final CLI-owner shutdown, GUI smoke, the complete native GUI/restart walkthrough and final GUI-owner shutdown. The [package report](assets/phase-1/p1-10-windows/reports/p1-10-package-01.json) records the clean manifest, executable identities and [full build/runtime log](assets/phase-1/p1-10-windows/reports/p1-10-package-01.log). The unsigned development ZIP is `dist/fuckmail-windows-amd64.zip`, **65,736,026 bytes**, SHA-256 **`035b4a193563643d5b02f54f5b89ff5f8b6936b7240e57814d2b7bbd723a1616`**. The previous schema-7 `8743162` ZIP remains preserved at `dist/baselines/fuckmail-windows-amd64-schema7-8743162.zip`, SHA-256 `7272051bd6cb6da27653e0fcdf3ed3bf5d721c8267bc5079ecae39d553002814`. Earlier schema4/schema5 upgrade/refusal evidence retains its original source; no migration changed in this spike and those historical upgrade runs were not repeated.
+
+The [second immutable archive manifest](assets/phase-1/p1-10-windows/manifest-02.json) retains **186 additional original files** and chains the first manifest's hash. Eight complete GUI reports are in [raw-gui-reports-02.zip](assets/phase-1/p1-10-windows/raw-gui-reports-02.zip); each theme has 30 final-package PNGs in [Graphite](assets/phase-1/p1-10-windows/resize-captures-graphite-02.zip), [Paper](assets/phase-1/p1-10-windows/resize-captures-paper-02.zip) and [Harbour](assets/phase-1/p1-10-windows/resize-captures-harbour-02.zip). Other wrappers/logs/control captures are directly readable under `reports/` and `visuals/`. Every direct copy and uncompressed ZIP entry is SHA-256 verified against its preserved original. The second manifest SHA-256 is `fb6fa8467e8ee6dacd2cfb015f5bb19560dc931d06bb86a094c3c02726939b26`. Both checkpoints preserve failed and partial development measurements alongside final acceptance.
+
+#### Packaged navigation and concurrent search
+
+The final measurements use the packaged executables with SDK paths absent, native Windows D3D11 at DPR 1.25 and owned disposable synthetic profiles. Each route receives 100 real native mouse/keyboard inputs after one excluded warmup. A counted observation requires the matching account/model/visible member/body and generation-matched `frameSwapped`; ordinary polling and read-on-open remain enabled. The SQLite oracle independently checks source identity, while before/after checks preserve received sources, attachments, authored drafts and captures.
+
+| Profile and route | p50 ms | p95 ms | p99 ms | Observations/result |
+| --- | ---: | ---: | ---: | --- |
+| 100k mailbox click | 62.44 | **91.62** | 161.07 | 100, pass |
+| 100k Tab | 66.07 | **84.79** | 107.88 | 100, pass |
+| 100k Shift+Tab | 61.84 | **81.58** | 88.15 | 100, pass |
+| 100k Side Project reader | 9.04 | **78.32** | 85.38 | 100, pass |
+| 100k Windscribe reader, 52,610 conversations | 45.25 | **91.73** | 102.07 | 100, pass |
+| Fresh mailbox click | — | **91.05** | See raw report | 100, pass |
+| Fresh Tab | — | **84.37** | See raw report | 100, pass |
+| Fresh Shift+Tab | — | **83.61** | See raw report | 100, pass |
+| Fresh Side Project reader | — | **85.65** | See raw report | 100, pass |
+
+The [large-profile run](assets/phase-1/p1-10-windows/reports/p1-10-navigation-100k-package-01.json) completes in **44.656 seconds**, with all 500 identity checks passing. The [fresh run](assets/phase-1/p1-10-windows/reports/p1-10-navigation-fresh-package-01.json) completes in **39.094 seconds**, with all 400 passing. Each route meets the unchanged **100 ms p95** budget; this does not claim every observation is below 100 ms. Compared with the original four-route baseline, mailbox p95 falls from 251–266 ms to 82–92 ms, approximately threefold. There is no original large-Windscribe-reader baseline: the original fourth route is Side Project, even in the 100k profile.
+
+The [packaged concurrent-search run](assets/phase-1/p1-10-windows/reports/p1-10-search-ingestion-package-01.json) completes in **71.281 seconds**. Rare-subject/body/grouped/combined-filter p95 is **64.5375 / 74.7479 / 108.1766 / 164.5791 ms**, with 100 target/reset pairs per class, all below the unchanged 200 ms target. The independent [ingestion record](assets/phase-1/p1-10-windows/reports/p1-10-search-ingestion-package-01.ingestion.json) establishes **5,000 arrivals in 200 atomic pages**, increasing actual source count from 102,929 to 107,929. The four class windows overlap 49/48/46/48 committed pages respectively. The original closed seed remains unchanged at SHA-256 `2c13f9c17780613e6a24bc6ea9df52bd3aeed262c5955b7be6699c46976c2d40`. Both navigation runs and search terminate their GUI/engine successfully.
+
+#### Packaged resize and visual acceptance
+
+The unchanged resize harness offers 160 elapsed-clock 16 ms slots per workspace, with timed presentation separate from PNG readback. All three final wrappers pass: [Graphite](assets/phase-1/p1-10-windows/reports/p1-10-resize-graphite-package-01.json), [Paper](assets/phase-1/p1-10-windows/reports/p1-10-resize-paper-package-01.json), [Harbour](assets/phase-1/p1-10-windows/reports/p1-10-resize-harbour-package-01.json). Full offer/generation/geometry/frame data are retained in the raw GUI archive.
+
+| Theme/workspace | Offered / skipped slots / matched geometry frames | Offer→swap p95 / max ms | All swap intervals p95 / max ms |
+| --- | --- | ---: | ---: |
+| Graphite Mail | 160 / 0 / 160 | **10.27 / 11.14** | **11.96 / 15.48** |
+| Graphite Calendar | 160 / 0 / 160 | **7.44 / 14.11** | **14.39 / 16.70** |
+| Paper Mail | 157 / 3 / 157 | **9.82 / 13.08** | **10.95 / 16.99** |
+| Paper Calendar | 160 / 0 / 159 | **7.87 / 12.44** | **14.78 / 19.02** |
+| Harbour Mail | 160 / 0 / 160 | **10.49 / 13.27** | **11.51 / 16.54** |
+| Harbour Calendar | 160 / 0 / 158 | **7.40 / 9.11** | **14.79 / 25.79** |
+
+The finite traces show no sustained stall; Harbour Calendar retains a **25.79 ms** maximum swap interval rather than hiding the tail. Coalesced offers and timer-slot alignment remain separate from dropped displayed frames, as explained above. All three separate nonzero calendar exercises retain `contentY=48` / top hour 2 across A→B→A with zero measured device-pixel anchor error. The logs contain no QML warning; Harbour's timer-to-vsync animation-driver message is informational. Package correctness tests separately exercise offscreen/software rendering, including the preserved Canvas fallback.
+
+The [final render review](assets/phase-1/p1-10-windows/reports/p1-10-render-review-package-01.json) examines all 30 capture metadata records per theme. Each theme has **839 aligned one-physical-pixel rules**, no sampled structural path changing its fill color, and zero geometry/color differences after returning to A for all 76 Mail and 74 Calendar line paths. Each of the 15 Mail images per theme has exactly one distinct divider-color pixel at all three sampled cross-sections; duplicate sample coordinates are deduplicated. This directly addresses the baseline's alternating physical coverage at 125% scaling. It does not claim rounded control borders or every transformed scene item are covered by the axis-aligned helper.
+
+Nine final-package control PNGs are visually reviewed: regular 1440×900 empty composer, compact 1000×650 large-text filled footer, and compact large-text conversation 005 with Reply/Reply all/Forward/Delay, for each palette. The primary local capture text is legible when enabled and disabled; restored authored text enables the action. Reader actions occupy the right edge and wrap below labels in compact windows. Recipient links, attachments and footer controls fit their allocated width. The [Graphite](assets/phase-1/p1-10-windows/visuals/p1-10-visual-graphite-compact-actions-package-01.gui.png), [Paper](assets/phase-1/p1-10-windows/visuals/p1-10-visual-paper-compact-actions-package-01.gui.png) and [Harbour](assets/phase-1/p1-10-windows/visuals/p1-10-visual-harbour-compact-actions-package-01.gui.png) action captures retain the maximum actual control set. Representative final Mail resize11 and Calendar resize06 images in each theme retain readable labels, consistent rules and the intended hatches. The synthetic action remains **Capture locally**, with no delivery claim.
+
+These are native programmatic-input/resize measurements and saved GPU captures on the recorded Windows host. `frameSwapped` queues presentation; PNG readback may render again. They cannot establish physical edge-drag scanout, every display scale, other-host GPU behavior, clipboard/IME or accessibility. The founder's paused physical desktop-input automation was not resumed. New-source Mac/Windows/Ubuntu CI and package retention must still be recorded after publication; the green `791254d` run verifies P1-09 only. Live Google/OAuth/model, real-data policy and trusted distribution gates remain separate, and whole Google-first readiness remains **0/9**.

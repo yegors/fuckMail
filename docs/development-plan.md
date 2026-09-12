@@ -1,6 +1,6 @@
 # Development plan
 
-Updated 2026-09-12 under [D009–D018](decisions.md). **Phase 0 synthetic foundation is complete on available hosts; Phase 1 implementation and acceptance are active. Google-first readiness: 0/9 whole areas verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
+Updated 2026-09-12 under [D009–D019](decisions.md). **Phase 0 synthetic foundation is complete on available hosts; Phase 1 implementation and acceptance are active. Google-first readiness: 0/9 whole areas verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
 
 ## Delivery direction
 
@@ -15,6 +15,8 @@ The user always chooses Done/Delayed. Classification supplies user-defined human
 IMAP, SMTP and external iCalendar URL support start only after the founder has dogfooded working Google GUI and CLI workflows. Retain their research and future contracts without implementing transports/feeds or making them early dependencies. MIME and Google recurrence/invitation representations remain needed.
 
 ## Phases and evidence
+
+P1-10's [Windows acceptance at `25b8b1e`](research/phase-1-execution.md#p1-10-final-windows-package--25b8b1e) passes release/package, measured navigation, concurrent search and three-theme resize/visual checks. Final-source Mac/Windows/Ubuntu CI remains pending publication before Phase 1 closes or another phase begins. Earlier P1-09 CI passes remain scoped to `791254d`.
 
 | Phase | Deliverable | Exit evidence |
 | --- | --- | --- |

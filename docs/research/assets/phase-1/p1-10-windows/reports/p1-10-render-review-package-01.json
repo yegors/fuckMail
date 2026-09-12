@@ -1,0 +1,780 @@
+{
+  "source": "25b8b1e4ebeec225ece0869673dabe45c6d615ab",
+  "themes": {
+    "graphite": {
+      "capture_count": 30,
+      "aligned_one_pixel_rules": 839,
+      "misaligned_one_pixel_rules": [],
+      "changing_fill_paths": [],
+      "returned_geometry": [
+        {
+          "workspace": "mail",
+          "matched_line_paths": 76,
+          "differences": [],
+          "first_only": [],
+          "last_only": []
+        },
+        {
+          "workspace": "calendar",
+          "matched_line_paths": 74,
+          "differences": [],
+          "first_only": [],
+          "last_only": []
+        }
+      ],
+      "mail_divider": [
+        {
+          "capture": "mail-settled-0.png",
+          "fill_argb": "#ff2a2c31",
+          "device_rect": [
+            800,
+            70,
+            1,
+            675
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-settled-1.png",
+          "fill_argb": "#ff2a2c31",
+          "device_rect": [
+            725,
+            70,
+            1,
+            650
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-settled-2.png",
+          "fill_argb": "#ff2a2c31",
+          "device_rect": [
+            800,
+            70,
+            1,
+            675
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-00.png",
+          "fill_argb": "#ff2a2c31",
+          "device_rect": [
+            796,
+            70,
+            1,
+            675
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-01.png",
+          "fill_argb": "#ff2a2c31",
+          "device_rect": [
+            797,
+            70,
+            1,
+            676.25
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-02.png",
+          "fill_argb": "#ff2a2c31",
+          "device_rect": [
+            798,
+            70,
+            1,
+            677.5
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-03.png",
+          "fill_argb": "#ff2a2c31",
+          "device_rect": [
+            798,
+            70,
+            1,
+            678.75
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-04.png",
+          "fill_argb": "#ff2a2c31",
+          "device_rect": [
+            799,
+            70,
+            1,
+            675
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-05.png",
+          "fill_argb": "#ff2a2c31",
+          "device_rect": [
+            799,
+            70,
+            1,
+            676.25
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-06.png",
+          "fill_argb": "#ff2a2c31",
+          "device_rect": [
+            800,
+            70,
+            1,
+            677.5
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-07.png",
+          "fill_argb": "#ff2a2c31",
+          "device_rect": [
+            801,
+            70,
+            1,
+            678.75
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-08.png",
+          "fill_argb": "#ff2a2c31",
+          "device_rect": [
+            801,
+            70,
+            1,
+            675
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-09.png",
+          "fill_argb": "#ff2a2c31",
+          "device_rect": [
+            802,
+            70,
+            1,
+            676.25
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-10.png",
+          "fill_argb": "#ff2a2c31",
+          "device_rect": [
+            803,
+            70,
+            1,
+            677.5
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-11.png",
+          "fill_argb": "#ff2a2c31",
+          "device_rect": [
+            803,
+            70,
+            1,
+            678.75
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        }
+      ],
+      "calendar_scroll_passed": true,
+      "visually_reviewed": [
+        "p1-10-resize-graphite-package-01.gui-captures/mail-resize-11.png",
+        "p1-10-resize-graphite-package-01.gui-captures/calendar-resize-06.png",
+        "p1-10-visual-graphite-regular-empty-package-01.gui.png",
+        "p1-10-visual-graphite-compact-footer-package-01.gui.png",
+        "p1-10-visual-graphite-compact-actions-package-01.gui.png"
+      ],
+      "visual_observation": "Readable enabled/disabled local capture and reader action text; right-aligned reader actions wrap at compact width; composer/footer controls fit. Mail/Calendar rules, timeline hatches and labels render consistently in reviewed saved images."
+    },
+    "paper": {
+      "capture_count": 30,
+      "aligned_one_pixel_rules": 839,
+      "misaligned_one_pixel_rules": [],
+      "changing_fill_paths": [],
+      "returned_geometry": [
+        {
+          "workspace": "mail",
+          "matched_line_paths": 76,
+          "differences": [],
+          "first_only": [],
+          "last_only": []
+        },
+        {
+          "workspace": "calendar",
+          "matched_line_paths": 74,
+          "differences": [],
+          "first_only": [],
+          "last_only": []
+        }
+      ],
+      "mail_divider": [
+        {
+          "capture": "mail-settled-0.png",
+          "fill_argb": "#ffcfc6b7",
+          "device_rect": [
+            800,
+            70,
+            1,
+            675
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-settled-1.png",
+          "fill_argb": "#ffcfc6b7",
+          "device_rect": [
+            725,
+            70,
+            1,
+            650
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-settled-2.png",
+          "fill_argb": "#ffcfc6b7",
+          "device_rect": [
+            800,
+            70,
+            1,
+            675
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-00.png",
+          "fill_argb": "#ffcfc6b7",
+          "device_rect": [
+            796,
+            70,
+            1,
+            675
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-01.png",
+          "fill_argb": "#ffcfc6b7",
+          "device_rect": [
+            797,
+            70,
+            1,
+            676.25
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-02.png",
+          "fill_argb": "#ffcfc6b7",
+          "device_rect": [
+            798,
+            70,
+            1,
+            677.5
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-03.png",
+          "fill_argb": "#ffcfc6b7",
+          "device_rect": [
+            798,
+            70,
+            1,
+            678.75
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-04.png",
+          "fill_argb": "#ffcfc6b7",
+          "device_rect": [
+            799,
+            70,
+            1,
+            675
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-05.png",
+          "fill_argb": "#ffcfc6b7",
+          "device_rect": [
+            799,
+            70,
+            1,
+            676.25
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-06.png",
+          "fill_argb": "#ffcfc6b7",
+          "device_rect": [
+            800,
+            70,
+            1,
+            677.5
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-07.png",
+          "fill_argb": "#ffcfc6b7",
+          "device_rect": [
+            801,
+            70,
+            1,
+            678.75
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-08.png",
+          "fill_argb": "#ffcfc6b7",
+          "device_rect": [
+            801,
+            70,
+            1,
+            675
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-09.png",
+          "fill_argb": "#ffcfc6b7",
+          "device_rect": [
+            802,
+            70,
+            1,
+            676.25
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-10.png",
+          "fill_argb": "#ffcfc6b7",
+          "device_rect": [
+            803,
+            70,
+            1,
+            677.5
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-11.png",
+          "fill_argb": "#ffcfc6b7",
+          "device_rect": [
+            803,
+            70,
+            1,
+            678.75
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        }
+      ],
+      "calendar_scroll_passed": true,
+      "visually_reviewed": [
+        "p1-10-resize-paper-package-01.gui-captures/mail-resize-11.png",
+        "p1-10-resize-paper-package-01.gui-captures/calendar-resize-06.png",
+        "p1-10-visual-paper-regular-empty-package-01.gui.png",
+        "p1-10-visual-paper-compact-footer-package-01.gui.png",
+        "p1-10-visual-paper-compact-actions-package-01.gui.png"
+      ],
+      "visual_observation": "Readable enabled/disabled local capture and reader action text; right-aligned reader actions wrap at compact width; composer/footer controls fit. Mail/Calendar rules, timeline hatches and labels render consistently in reviewed saved images."
+    },
+    "harbour": {
+      "capture_count": 30,
+      "aligned_one_pixel_rules": 839,
+      "misaligned_one_pixel_rules": [],
+      "changing_fill_paths": [],
+      "returned_geometry": [
+        {
+          "workspace": "mail",
+          "matched_line_paths": 76,
+          "differences": [],
+          "first_only": [],
+          "last_only": []
+        },
+        {
+          "workspace": "calendar",
+          "matched_line_paths": 74,
+          "differences": [],
+          "first_only": [],
+          "last_only": []
+        }
+      ],
+      "mail_divider": [
+        {
+          "capture": "mail-settled-0.png",
+          "fill_argb": "#ff273345",
+          "device_rect": [
+            800,
+            70,
+            1,
+            675
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-settled-1.png",
+          "fill_argb": "#ff273345",
+          "device_rect": [
+            725,
+            70,
+            1,
+            650
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-settled-2.png",
+          "fill_argb": "#ff273345",
+          "device_rect": [
+            800,
+            70,
+            1,
+            675
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-00.png",
+          "fill_argb": "#ff273345",
+          "device_rect": [
+            796,
+            70,
+            1,
+            675
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-01.png",
+          "fill_argb": "#ff273345",
+          "device_rect": [
+            797,
+            70,
+            1,
+            676.25
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-02.png",
+          "fill_argb": "#ff273345",
+          "device_rect": [
+            798,
+            70,
+            1,
+            677.5
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-03.png",
+          "fill_argb": "#ff273345",
+          "device_rect": [
+            798,
+            70,
+            1,
+            678.75
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-04.png",
+          "fill_argb": "#ff273345",
+          "device_rect": [
+            799,
+            70,
+            1,
+            675
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-05.png",
+          "fill_argb": "#ff273345",
+          "device_rect": [
+            799,
+            70,
+            1,
+            676.25
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-06.png",
+          "fill_argb": "#ff273345",
+          "device_rect": [
+            800,
+            70,
+            1,
+            677.5
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-07.png",
+          "fill_argb": "#ff273345",
+          "device_rect": [
+            801,
+            70,
+            1,
+            678.75
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-08.png",
+          "fill_argb": "#ff273345",
+          "device_rect": [
+            801,
+            70,
+            1,
+            675
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-09.png",
+          "fill_argb": "#ff273345",
+          "device_rect": [
+            802,
+            70,
+            1,
+            676.25
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-10.png",
+          "fill_argb": "#ff273345",
+          "device_rect": [
+            803,
+            70,
+            1,
+            677.5
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        },
+        {
+          "capture": "mail-resize-11.png",
+          "fill_argb": "#ff273345",
+          "device_rect": [
+            803,
+            70,
+            1,
+            678.75
+          ],
+          "unique_fill_pixels_per_sampled_row": [
+            1,
+            1,
+            1
+          ]
+        }
+      ],
+      "calendar_scroll_passed": true,
+      "visually_reviewed": [
+        "p1-10-resize-harbour-package-01.gui-captures/mail-resize-11.png",
+        "p1-10-resize-harbour-package-01.gui-captures/calendar-resize-06.png",
+        "p1-10-visual-harbour-regular-empty-package-01.gui.png",
+        "p1-10-visual-harbour-compact-footer-package-01.gui.png",
+        "p1-10-visual-harbour-compact-actions-package-01.gui.png"
+      ],
+      "visual_observation": "Readable enabled/disabled local capture and reader action text; right-aligned reader actions wrap at compact width; composer/footer controls fit. Mail/Calendar rules, timeline hatches and labels render consistently in reviewed saved images."
+    }
+  },
+  "scope": "Saved native D3D11 captures and metadata at DPR 1.25; no physical scanout claim"
+}
