@@ -8,6 +8,8 @@ Revision 3 applies D009: separate first usable, Google dogfood and later-protoco
 
 Consumes versioned builds, synthetic fixtures, hardware/runner metadata and workstream results. Produces reproducible measurements and pass/fail or explicitly renegotiated gates. Start independently with fixture definitions; measured experiment results now live in [Phase 0 evidence](../research/phase-0-execution.md) and the search report. Proposed product budgets are distinct from those measurements.
 
+Home Windows evidence, 2026-09-11: the planning checkpoint `5bed257` (runtime unchanged from `204fa62`, fixture 1/schema 4/protocol 1) passed 8/8 dev CTests in 69.13 seconds and 8/8 release CTests in 95.63 seconds, including test compilation but excluding the initial application build. A scoped developer-tool correction then enabled packaging with project-local Rust. Relocated GUI/CLI, final-owner shutdown and native D3D11/RTX 5090 rendering passed. [The handoff record](../research/phase-0-execution.md#home-windows-handoff-before-phase-1) preserves the failed packaging attempt, correction, package hash and remaining manual checks. These are development-host checks, not performance-budget or whole-feature release passes; readiness remains 0/9.
+
 Revision 2 connects [Phase 0](../plans/phase-0.md) to reusable fixtures and evidence gates. Affected consumers: every workstream, especially Core/CLI/Platform for the first shared slice. No fixtures, harness or measured results exist yet.
 
 ## Fixture and verification foundation

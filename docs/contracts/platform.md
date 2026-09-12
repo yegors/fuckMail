@@ -1,6 +1,8 @@
 # Platform, lifecycle and release
 
-State: Draft · Revision: 7 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
+State: Draft · Revision: 8 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
+
+Revision 8 records the home Windows handoff correction: developer subprocesses resolve bare executable names through the selected project PATH before spawning, so packaging works with project-local Rust and no global Rust installation. The existing compiler/SDK are reused; no global PATH change or runtime/schema/protocol change is introduced. Dev/release CTests, relocated packaging and native Windows/D3D11 rendering now pass on the founder's PC. Consumers: developer tooling, Core/CLI/GUI build and Quality. See [Windows evidence](../research/phase-0-execution.md#home-windows-handoff-before-phase-1); manual input, accessibility, wider scaling and OS vault checks remain separate.
 
 Revision 7 records the final Phase 0 platform corrections and packaged upgrade verifier. Windows discovery creation explicitly sets the process-user owner and private DACL, with a native named-pipe trust test; startup allowance is 30 seconds and offscreen tests use system fonts. Rust/Qt now retry startup while a previous store writer finishes closing; retries are bounded and preserve explicit GUI/CLI ownership. Linux category focus preserves reply selection. Developer launchers use CMake's generated executable path. Available-host native/package results and actual Mac schema 2→4 handoff/refusal evidence are recorded in [execution evidence](../research/phase-0-execution.md). Consumers: Core, CLI, Qt UI and Quality. Physical desktop/keyring qualification and trusted delivery remain separate gates.
 

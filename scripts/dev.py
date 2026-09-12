@@ -27,6 +27,12 @@ PYTHON = VENV_BIN / ("python.exe" if WINDOWS else "python")
 
 def run(*args, env=None, cwd=ROOT, capture=False, timeout=None):
     args = [str(arg) for arg in args]
+    # Windows resolves the executable before applying the child's PATH. Resolve
+    # bare tool names here so project-local Rust works without a global install.
+    if WINDOWS and env is not None and Path(args[0]).name == args[0]:
+        executable = shutil.which(args[0], path=env.get("PATH", os.defpath))
+        if executable:
+            args[0] = executable
     print("+ " + subprocess.list2cmdline(args), flush=True)
     result = subprocess.run(args, cwd=str(cwd), env=env, check=True,
                             text=True, stdout=subprocess.PIPE if capture else None, timeout=timeout)

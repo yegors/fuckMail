@@ -26,6 +26,8 @@ Bootstrap detects existing tools, creates `.tools/bootstrap`, installs locked Py
 
 macOS requires Apple Command Line Tools (`xcode-select --install` if absent). On Windows the wrapper imports an existing VS 2022 C++ environment. During bootstrap it can use `winget` to install missing Visual Studio 2022 C++ Build Tools/Windows SDK and Python 3.11; system installation may show an OS elevation prompt. Existing VS installations without the C++ workload need that workload added. Normal developer commands do not install tools. Initial Windows coverage is x64, not ARM64 or a WSL build.
 
+Windows subprocess launches resolve bare tool names against the selected project environment before spawning. This allows package-manifest commands to find project-local Rust even when the terminal has no global `rustc` or `cargo`; no global PATH change is required.
+
 Ubuntu 24.04 uses the same `scripts/dev.sh` commands after installing a C++ compiler, Python with venv support and the native graphics libraries listed in [the native workflow](../.github/workflows/native.yml). Linux SDK acquisition is included; Arch/Omarchy desktops and other release floors still need their own execution evidence.
 
 ## Everyday commands
@@ -83,6 +85,8 @@ Before changing machines, commit and push source, lockfiles, fixtures and accura
 Qt modules have their own open-source licenses and third-party notices; Rust packages have individual licenses too. Public distribution requires a complete dependency/license inventory and the appropriate notices/source availability, not just these links. The current dependency/source route is inspectable, but this document does not claim the public-release license audit is complete. [Qt licensing](https://doc.qt.io/qt-6/licensing.html), [Qt source archives](https://download.qt.io/official_releases/qt/6.11/6.11.2/submodules/).
 
 ## Observed setup evidence
+
+2026-09-11, home Windows PC: Windows 11 Pro build 26200 x64, Ryzen 7 9800X3D, 128 GB installed RAM and RTX 5090. Existing Python 3.11.9, VS Build Tools 2022 17.14/MSVC 19.44 and Windows SDK 10.0.26100.0 were reused. Bootstrap installed the pinned project-local tools; doctor, dev/release builds and all eight CTests in each preset passed. Packaging exposed and drove the project-local executable-lookup correction above. The corrected release package passes relocated SDK-free GUI/CLI checks and native Windows/D3D11 rendering with system-only PATH. A schema-4 archive is retained under `dist/baselines/`; exact provenance, hashes, logs and limits are in [Windows handoff evidence](research/phase-0-execution.md#home-windows-handoff-before-phase-1). Phase 1 implementation has not started.
 
 Final Phase 0 runtime source `204fa62` passed all eight CTests and relocated packaged GUI/CLI checks on native macOS 15 ARM64, Windows Server 2022 x64 and Ubuntu 24.04 x64 CI. The native Mac desktop walkthrough and actual packaged schema 2→4 upgrade/refusal checks also pass. See [complete execution evidence](research/phase-0-execution.md). This does not qualify the physical home Windows PC, Linux desktops or OS keyrings.
 

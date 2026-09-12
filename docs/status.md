@@ -16,7 +16,7 @@ Start from the prepared [Phase 1 packets](plans/phase-1.md). P1-00 defines the n
 
 Before actual Google accounts, implement/test the OS credential-store adapter and settle OAuth access plus real-data retention/encryption/recovery policy. Full history, live sending/calendar operations and founder Google dogfooding remain later milestones. Legacy transports remain deferred.
 
-On the home Windows PC, pull `codex/phase-0`, run `scripts/dev.ps1 bootstrap`, then `doctor`, `test` and `run`. This is source/tooling handoff; do not copy profiles, credentials or SDK/build directories between machines through Git. Physical Windows and Linux desktop/input/keyring checks remain unverified; CI does not replace them.
+The home Windows 11 PC is ready for Phase 1 development at planning checkpoint `5bed257` on `codex/phase-1-plan`, with a local Windows tool-lookup correction. Bootstrap/doctor, dev and release builds (8/8 CTests each), relocated package checks and native Direct3D 11 rendering on the RTX 5090 pass. The schema-4 package is preserved locally for Phase 1 migration checks; see [Windows handoff evidence](research/phase-0-execution.md#home-windows-handoff-before-phase-1). Run `scripts/dev.ps1 run` from PowerShell. Do not copy profiles, credentials or SDK/build directories through Git. Manual Windows clipboard/IME/accessibility and wider scaling checks, OS keyrings and physical Linux desktop checks remain unverified.
 
 ## Google-first readiness
 
