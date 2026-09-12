@@ -1,6 +1,8 @@
 # Daily triage and mailbox categories
 
-State: Draft · Revision: 4 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
+State: Draft · Revision: 5 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; Phase 1 planned; whole area remains Draft.
+
+Revision 5 applies D014: read-on-open is confirmed, Done clears unread and stars, and Delay remains an untimed hold. Phase 1 proposes explicit existing-member snapshots, overlapping-flag group rules and labeled conversation/message counts on the shared native GUI/CLI boundary. No timed snooze or local completion state is introduced. Consumers: Core, Mail UI, Search, Gmail, CLI and Local assistance.
 
 Revision 4 records the integrated Phase 0 experiment. Manual category intent takes precedence over accepted assistance intent and provider observations. GUI category Apply/Clear uses the same message snapshot and durable operation response as the CLI. Categories preserve read/star state; configured mappings reject Gmail system labels. Consumers: Core, Gmail, Local assistance, Mail UI and CLI.
 
@@ -23,16 +25,16 @@ Related: [Gmail](gmail.md), [IMAP/SMTP](imap-smtp.md), [local assistance](local-
 
 ## A finished day
 
-The user always chooses Done or Delayed, regardless of classifier output. A model may suggest or apply configured category/scope labels under policy, but it cannot mark mail read, star/unstar it, resolve it or postpone it. The personal meaning of spam/noise is a classification label, not permission to use Gmail system Spam, Trash or deletion. “Needs my attention” is a tag, never proof that review occurred. Exact Done flag/archive effects remain to define in the UI handoff; ownership is no longer open.
+The user always chooses Done or Delayed, regardless of classifier output. Done clears unread and stars on the explicitly targeted existing members; it does not archive or clear future replies. Delay is an untimed star hold. Read-on-open is a user-triggered reading convention, separate from either action. A model may suggest or apply configured category/scope labels under policy, but cannot mark mail read, star/unstar it, resolve it or postpone it. The personal meaning of spam/noise is a classification label, not permission to use Gmail system Spam, Trash or deletion. “Needs my attention” is a tag, never proof that review occurred.
 
 The desired end-of-day state is zero unread messages and zero starred messages in each account's agreed mail scope. Unread means the user has not reviewed the message. Starring an email means delaying an action: it remains outstanding, even if work has begun. Remove the star when that action is complete. The UI must communicate deferred action rather than presenting stars as a permanent favorites collection. This is a personal workflow goal, not an instruction to automatically clear indicators or hide unfinished work.
 
 Proposed daily flow:
 
-1. Open an account's Unread conversation filter and review new mail. Show the relevant unread messages within each conversation.
+1. Open an account's Unread conversation filter and review new mail. A successful user-activated open marks the loaded member snapshot read; show the relevant messages and preserve access to collapsed members.
 2. Assign the appropriate configured categories manually, accept a local model's suggestion, or use configured automatic classification/filing.
-3. Mark reviewed messages read. If action remains, star the relevant message and continue the work from the Starred conversation filter.
-4. Write replies personally, complete any other action, then explicitly remove the hold. Sending a reply alone does not prove all action is complete.
+3. If action remains, use Delay to set an untimed star hold and continue from the Starred conversation filter. Explicit read/unread controls remain available.
+4. Write replies personally, complete any other action, then choose Done to clear unread and stars on the targeted existing members, or explicitly remove the hold. Sending a reply alone does not prove all action is complete.
 5. Check the account's unread and starred totals. Categorizing, moving, archiving, generating a summary, or changing a filter never clears read/star state by itself.
 
 The app should make remaining work easy to find, including older holds. Propose showing the date a hold was set when known and an oldest-holds sort. For stars first discovered during synchronization, distinguish first observed locally from the unknown original star date. No tasks area, overdue scoring, streaks, or guilt notifications are needed. A legitimate unfinished action remains visible across days.
@@ -45,9 +47,15 @@ The [visual design brief](../ui-ux.md) makes deferred action explicit through pr
 
 The UI remains conversation-only. A conversation appears in Unread if any in-scope member is unread, and in Starred if any in-scope member is starred. Show conversation counts in those filters and make underlying message counts available in their detail; either can be zero only when every corresponding in-scope message is clear. A conversation can appear in both filters, but appears once within each.
 
+Proposed Phase 1 combined-list grouping: show a conversation once in To review if any member is unread, otherwise in Delayed if any member is starred, otherwise in Done. A conversation in To review can still carry a hold marker. Done is the presentation of read/unstarred state, not another stored flag or evidence that external work was completed. Keep an open conversation pinned in place until the user navigates away when read-on-open changes its group.
+
+Proposed count labels: account-tab badges and list/group totals count conversations and identify that unit in visible detail/tooltips; unread/starred account totals count underlying messages over the stated synchronized account scope. Counts for filtered results describe that filter and must not replace account totals. A mixed conversation contributes to both independent unread/starred totals even when displayed in only one group. Coverage and pending/failure state qualify any zero-work claim.
+
 Use native provider state: Gmail's UNREAD/STARRED system labels and IMAP's Seen/Flagged flags (an unset Seen flag means unread). The category taxonomy uses user labels/folders separately from these states; it must not substitute a local-only read/star system.
 
-Propose applying Star to the selected message, or the latest received message when invoked from a conversation row. A clearly named conversation action can clear stars on the existing member messages. Likewise, marking a whole conversation read applies to its known members at the time of the command; a later incoming message remains unread. Keep message-level provider state even though browsing is by conversation. Ordinary read-on-open timing remains a UX choice; classification and summaries never trigger it.
+Proposed Phase 1 action targets: Delay sets Star on the explicitly selected received member, or the latest received member when invoked from a conversation row. Undelay clears existing stars on the displayed conversation snapshot so an older held member is not left invisibly outstanding. Done clears both unread and stars for that existing-member snapshot in one durable operation. Keep message-level provider state even though browsing is by conversation. New members are excluded from old actions.
+
+Read-on-open is confirmed. Proposed trigger: after a user-activated conversation load succeeds, issue the shared read command for the loaded existing-member snapshot, including collapsed members. Prefetch, background refresh, automatic initial selection/restore, classification, summaries and CLI read queries never trigger it. A later-arriving member remains unread. Record the snapshot and operation receipt so reconnect/replay cannot broaden the action or clear new mail. This convention does not assert that every collapsed member was inspected.
 
 Account totals span its synchronized mail scope, including archived mail and configured category folders. Changing a folder, category, sender filter, or People/Automated filter must not manufacture a zero-work state. Keep scope, incomplete synchronization, and pending/failed provider writes visible. Spam/trash inclusion remains the existing retention-scope decision and must be stated rather than silently changing the meaning of zero. Do not provide an unqualified all-clear while coverage is incomplete or state changes await confirmation. Accounts retain separate navigation and counts; there is no unified inbox.
 
@@ -69,18 +77,19 @@ Propose single-primary-category definitions for an account that needs equivalent
 
 ## Mutation contract
 
-Persist explicit read/star/category commands through the same operation journal as other mail edits. Preserve the user's reading position during refresh and pending mutations. Derive Unread/Starred conversation views from message flags, with account-wide totals over the agreed synchronized scope; include archived/category-folder mail and mark incomplete coverage. Moving or labeling mail does not complete triage. A command acts on a snapshot of the selected member IDs; a new message does not inherit a previously completed read/unstar command.
+Persist read-on-open and explicit read/star/Done/category commands through the same operation journal as other mail edits. Done changes unread and stars atomically for its member snapshot; a partial flag change is not completion. Preserve the user's reading position during refresh and pending mutations. Derive Unread/Starred conversation views from message flags, with account-wide totals over the agreed synchronized scope; include archived/category-folder mail and mark incomplete coverage. Moving or labeling mail does not complete triage. A command acts on a snapshot of the selected member IDs; a new message does not inherit a previously completed read/unstar command.
 
 Category definitions map to provider destinations per account. Gmail classification may add/remove configured category labels while retaining unrelated memberships; Inbox removal is a separate configured filing action. Generic IMAP classification selects a primary folder and journals a move, preserving local content/conversation identity as remote UIDs change. Negotiate MOVE or an explicitly tested fallback without broadly expunging unrelated messages. Do not represent multiple Gmail-like categories by copying IMAP messages across folders. Missing/renamed destinations and partial thread moves require visible reconciliation.
 
 ## Acceptance gates
 
 - Distinguish unread attention from deferred starred action in the UI. Show a recent and an older hold, with known versus first-observed age represented honestly; neither reading nor sending auto-clears a star.
-- Review a conversation, mark its inspected message read, star it while taking action, file it, write a reply personally, then unstar explicitly. Confirm the resulting provider states from another client.
+- Open a conversation, verify read-on-open against its loaded snapshot, Delay while taking action, file it, write a reply personally, then choose Done. Verify the independent flags, group/count projections and exact journal replay from the other local client in Phase 1; confirm provider state in the later Google phase.
+- Add a new member during read/Done processing and leave it unread and untouched by the older command. Failed loads, prefetch, background refresh, automatic restore and CLI queries must not mark mail read. Undelay must clear an older held member in the explicitly targeted snapshot without changing unread state.
 - Archive a still-unread Gmail message or move it into an IMAP category folder: account Unread still includes it. A hidden category or incomplete import cannot produce a false all-clear.
 - Classify a new reply in an already labeled/starred conversation without clearing its unread state, assigning unrelated categories to older members, or clearing another outstanding hold.
 - Correct a category while inference is in flight, change it in another mail client, rename/delete a mapped destination, interrupt a move, and restart. Preserve the newer choice and surface unresolved provider actions.
 
 ## Open before affected behavior ships
 
-Agree read-on-open timing, conversation-row Star targets, old-hold presentation, final count scope including spam/trash, and category setup UX. Category names/descriptions and provider destinations are user configuration, not a fixed taxonomy. Filing and inference must never clear unread/stars to manufacture completion.
+Name and test the proposed read-on-open trigger, action snapshots, group precedence and count units in the Phase 1 packet. Refine old-hold presentation, final count scope including spam/trash, and category setup UX before their affected real-account workflows ship. Category names/descriptions and provider destinations are user configuration, not a fixed taxonomy. Filing and inference must never clear unread/stars to manufacture completion. Phase 1 uses local synthetic state; real provider writes and local-model execution remain later work.

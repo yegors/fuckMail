@@ -1,6 +1,8 @@
 # CLI and external agent interface
 
-State: Draft · Revision: 3 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
+State: Draft · Revision: 4 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; Phase 1 changes planned, not implemented; whole area remains Draft.
+
+Revision 4 applies D014 and the [Phase 1 plan](../plans/phase-1.md): query/action, reply/capture and combined-calendar parity grows alongside the updated GUI. Consumers: Core, Mail UI, Triage, Search, Calendar and Platform. Current runtime remains schema 4, protocol 1 and fixture 1; this revision does not invent executable command names or mark planned commands implemented.
 
 Revision 3 records the next Phase 0 integration checkpoint. The draft response adds authored HTML and retained attachment IDs; structured draft_save can preserve or explicitly clear them. Existing plain-text commands clear stale HTML when changing the body. Lost-response replay survives an actual test-engine kill. Consumers: Core, Qt UI and MIME; protocol/fixture revisions remain 1.
 
@@ -21,9 +23,20 @@ Owner: I — CLI. A full, feature-rich CLI is required alongside the desktop UI 
 
 The GUI and CLI are peer clients of the same local core. Providers, search, calendar and category policies have one implementation and one store. CLI is a public product interface; direct SQL, scraping the UI or changing private database files is not its API.
 
+## Phase 1 boundary — planned
+
+Add CLI coverage with each shared GUI workflow. P1-00 records the supported request/output shapes, capabilities, bounds and command grammar before consumers use them. The existing `fm --help`, [local protocol](../local-protocol.md) and [fixture API](../../fixtures/README.md) remain the runnable reference until implementation changes them.
+
+- **Mail queries/actions:** typed sender/status/category/attachment/date filters, stable conversation grouping in Inbox and Sent, explicit count units and honest coverage. Reveal matching-member IDs. Expose explicit review, atomic snapshot Done (read and clear stars), and untimed Delay/undelay using the same journal and stale-revision rules as the GUI. Fetching source content is separate from the GUI's user-open-triggered review action; an external reader cannot silently mark mail reviewed.
+- **Replies:** save/read plain or formatted authored content, account signatures and selected retained attachments; explicit discard and local MIME capture with replayable operation outcomes and bounded capture inspection linked to the original conversation. Saved signature content/revision participates in the captured content guarantee; a local capture never claims provider delivery. The CLI accepts content through bounded files/stdin and preserves the draft on uncertain capture. New mail, forward and local-file attachment import can follow in Phase 2; live submission is outside Phase 1.
+- **Calendar:** query the same combined account/calendar scope, permitted event details and bounded occurrences as day/week/month/agenda and the mail timeline. Preserve each event's owning account/calendar on output and require that target for a mutation. Add bounded nonrecurring create/edit and self-RSVP through deterministic fake acknowledgement; recurring-series edits and live writes stay deferred.
+- **Settings/state:** expose the shared local settings or diagnostics required to inspect and verify supported behavior. Mouse gestures, animation and layout controls need no artificial CLI equivalent. Do not add credential setup, fake OAuth completion, model downloads or legacy-provider commands to fill out the prototype's pictured settings.
+
+Each packet verifies GUI-to-CLI and CLI-to-GUI readback where applicable, restart/replay, foreign-account rejection and stale revisions. Calendar scope/permissions apply before serialization in either interface; query filtering cannot fabricate all-clear or offline-complete status. Retain explicit client lifetimes and last-owner shutdown. Extend the small real CLI incrementally; exhaustive grammar, long-lived streaming and bulk tooling remain later product work.
+
 ## Required functional coverage
 
-Coverage below is the intended product surface, delivered incrementally. The first usable slice includes account selection, bounded conversation list/search/read, one explicit flag action, a durable human draft path and basic calendar queries alongside the GUI. Setup/sync/send/edit commands arrive with their corresponding Google workflows. Do not finish all command grammar, streaming, bulk tooling or assistance commands before building the GUI. By the pre-legacy dogfood gate, both interfaces must cover the agreed everyday Google workflows and be exercised by the founder. IMAP/SMTP and external-feed commands enter only with the later adapters.
+Coverage below is the intended product surface, delivered incrementally. Phase 0 provides account selection, bounded conversation list/search/read, explicit flag/category actions, durable human drafts/capture and basic calendar queries alongside the GUI. Phase 1 expands the local workflows above, including a bounded calendar edit slice; setup/sync/live submission arrive with their corresponding Google workflows. Do not finish all command grammar, streaming, bulk tooling or assistance commands before expanding the GUI. By the pre-legacy dogfood gate, both interfaces must cover the agreed everyday Google workflows and be exercised by the founder. IMAP/SMTP and external-feed commands enter only with the later adapters.
 
 | Area | CLI capabilities |
 | --- | --- |

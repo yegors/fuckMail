@@ -6,7 +6,7 @@ Human correspondence comes first. Unread means unreviewed; stars mean action lef
 
 ## Current state
 
-**Phase 0 synthetic foundation completed on available hosts. Google-first MVP readiness: 0/9 whole areas verified.** The Qt desktop app and Rust CLI run against one store. Native Mac/Windows/Ubuntu CI, packaged runtime checks, and the Mac upgrade/recovery walkthrough pass at runtime checkpoint `204fa62`. Real Google accounts remain a later milestone. See [development commands](docs/build-development.md), [status](docs/status.md) and the [Phase 0 plan](docs/plans/phase-0.md).
+**Phase 0 completed on available hosts; Phase 1 plan ready, implementation not started. Google-first MVP readiness: 0/9 whole areas verified.** The Qt desktop app and Rust CLI run against one store. Native Mac/Windows/Ubuntu CI, packaged runtime checks, and the Mac upgrade/recovery walkthrough pass at runtime checkpoint `204fa62`. Real Google accounts remain a later milestone. See [development commands](docs/build-development.md), [status](docs/status.md) and the [Phase 1 plan](docs/plans/phase-1.md).
 
 | Google-first feature area | Build status |
 | --- | --- |
@@ -27,7 +27,7 @@ IMAP, SMTP and external iCalendar subscriptions are deferred until the founder h
 - Build a small real CLI and GUI together against one engine/store; grow command coverage with each Google workflow. Do not finish a CLI monolith before the GUI.
 - Use Gmail and Google Calendar APIs for all current personal/Workspace accounts, including sending, with durable OAuth and provider reconciliation.
 - Begin with readable text, human replies/signatures and attachments. Preserve source MIME and safely extract text from HTML-only messages. Add best-effort HTML display later; browser-level visual fidelity is not required.
-- Follow the [initial-phase mail/calendar/settings references](docs/research/design-references.md): accounts at the top, a resizable conversation list/reader, inline reply and persistent bottom calendar strip. Settings is shell/navigation plumbing only; detailed controls await the expanded design.
+- Follow the [Flight Progress v2 HTML reference](docs/research/flight-progress-v2.md): accounts at the top, a resizable conversation list/reader, inline reply, combined calendar, browsable timeline only in Mail and local settings. Read-on-open is confirmed; Done clears unread and stars; Delay is an untimed hold.
 - Close ends GUI-owned work/reminders. Explicit independent CLI sessions have their own lifetimes. No default always-on service.
 
 The [proposed stack](docs/research/desktop-stack.md) is a Rust engine/CLI, C++20 + Qt Quick/QML UI, private local IPC and SQLite/FTS5 with retained blobs. QML expressions are accepted; Node.js and a separate JS/TS compilation/bundling pipeline are excluded. An HTML engine is a later component choice. Experiment versions are pinned in `rust-toolchain.toml`, `Cargo.lock` and `scripts/toolchain.json`; this does not establish production readiness.
@@ -36,7 +36,7 @@ The app operates locally and connects directly to Google; optional models run on
 
 ## Next execution
 
-Phase 0 has joined the engine, small CLI and functional GUI and verified shared state, IPC access, account boundaries, draft recovery, useful search and native packages. Next, review the working screens and refine Phase 1 local calendar/composer interactions before actual Google workflows. See the [execution evidence](docs/research/phase-0-execution.md) for completed packets and explicit remaining gates.
+Phase 0 joined the engine, small CLI and functional GUI and verified shared state, IPC access, account boundaries, draft recovery, search and native packages. The [Phase 1 plan](docs/plans/phase-1.md) is prepared: adopt the updated native design, add real search/triage/preferences, combined calendar views/timeline, durable formatted replies/local capture and bounded calendar edits through both clients. Begin P1-00 shared boundaries, then work on mail and calendar in parallel. No live account or model is needed. See the [Phase 0 evidence](docs/research/phase-0-execution.md) for the completed baseline.
 
 The [first deliverable](docs/plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) is a runnable synthetic-mail desktop app and small CLI, with repeatable setup/build/test commands and native CI builds for development on the work Mac and home Windows PC. It is implemented and verified on available hosts; tools live in the ignored `.tools` directory. Run `scripts/dev.sh run` on this Mac. On Windows, run `scripts/dev.ps1 bootstrap`, then `test` and `run` from PowerShell. Physical home-PC input/runtime still needs its own check.
 
@@ -45,6 +45,6 @@ The [development plan](docs/development-plan.md) proceeds from the paired local 
 ## Documentation
 
 - [Index](docs/README.md), [north star](docs/north-star.md), [scope](docs/product-scope.md) and [UI/UX](docs/ui-ux.md).
-- [Status](docs/status.md), [development plan](docs/development-plan.md) and [Phase 0 packets](docs/plans/phase-0.md).
+- [Status](docs/status.md), [development plan](docs/development-plan.md), [Phase 1 packets](docs/plans/phase-1.md) and completed [Phase 0 packets](docs/plans/phase-0.md).
 - [Contracts](docs/contracts/README.md), [scoped research](docs/research/README.md) and [decision history](docs/decisions.md).
 - [Agent instructions](AGENTS.md).

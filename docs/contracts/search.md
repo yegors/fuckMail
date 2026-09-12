@@ -1,6 +1,8 @@
 # Local mail search
 
-State: Draft · Revision: 1 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
+State: Draft · Revision: 2 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; Phase 1 changes planned, not implemented; whole area remains Draft.
+
+Revision 2 defines the [Phase 1](../plans/phase-1.md) search boundary for the Flight Progress v2 design: real sender/source-text retrieval, typed filters, scoped conversation totals and matching-member navigation. Consumers: Core, Mail UI, Triage, CLI and Quality. Current runtime remains schema 4, protocol 1 and fixture 1.
 
 Revision 1 records D012’s implemented experimental slice. SQLite FTS5 sender/subject/body prefix-AND search now returns account-scoped conversations and matching-member IDs. The measured 100k experiment and limitations are in [execution evidence](../research/search-feasibility-execution.md). Consumers: Core, Qt UI, CLI and Quality. Larger corpora and real mailbox import are unverified.
 
@@ -16,6 +18,16 @@ Owner: D — Search. These are living specifications of accepted requirements an
 | Independent start | Generated normalized messages and deterministic queries; no live providers, UI framework or model required |
 
 Related: [core](core-storage.md), [mail UI](mail-ui.md), [quality](quality.md), [search/storage research](../research/search-storage.md).
+
+## Phase 1 boundary — planned
+
+The search panel and chips submit typed sender, status, category, attachment-presence and date filters to the shared engine. Sender filtering includes both display name and address; keyword search uses original subject/body and sender text. Derive review/delayed/done filters from the agreed read/star semantics. Keep search and totals within the selected mail account, group Sent as conversations too, and preserve exact matching message IDs through paging and refresh. Clicking a result reveals and scrolls to the matching member, including an earlier collapsed message.
+
+P1-00 fixes filter combination, date/time-zone boundaries, sorting, result/count units and validation before either client implements them. Keep ordinary words usable. Offer textual operators only when a parser validates and implements them; reject unsupported or malformed syntax clearly instead of silently ignoring it or treating a displayed operator as an unrelated keyword. UI filter chips and CLI structured arguments share the same query semantics. Do not search generated summaries, classifications or unsent drafts.
+
+Current implemented limits remain explicit: a 512-byte query, at most 32 Unicode alphanumeric prefix-AND tokens, 1–100 conversations per page, offset paging and at most 200 members per conversation. The existing field selector is all/sender/subject/body; typed status/date/attachment filters are not implemented yet. New grouping/filtering must preserve bounded responses and cancellation. Larger-thread transfer or a different cursor is a separate Core change if the delivered fixtures require it.
+
+Verify combined filters, sender/address variations, source-only matching, stable grouped pagination and matching-member reveal through both clients. Account totals cannot depend on the loaded page; filtered-empty, incomplete-index and no-outstanding-work states remain distinct. A result from an earlier query/account must not replace the current view. Extend the measured search workload only for changed paths and record actual results; Phase 0's 100k experiment does not establish million-message or concurrent-import performance.
 
 ## Search
 

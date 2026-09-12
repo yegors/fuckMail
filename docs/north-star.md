@@ -17,7 +17,7 @@ This wording incorporates the founder's brief, both interview rounds, and the 20
 9. **Humans write email for humans.** A configured local model may classify incoming mail and summarize messages/conversations. Writing, rewriting, autocompleting and sending email remain outside AI scope; the full manual workflow always works.
 10. **Organization belongs in the mailbox.** Use the user's configurable Gmail labels first and IMAP folders after Google dogfooding, with understandable provider-specific behavior. Manual and model-assisted classification share that organization, and manual corrections take precedence.
 11. **Two interfaces, one product.** A complete GUI and a feature-rich CLI use the same accounts, data and behavior. External agents can use the CLI without a GUI session. Installation delivers both smoothly; users do not assemble a developer environment. Prefer modern tools where useful, and mature technology when it serves the product better.
-12. **Time stays in view.** Today's calendar is a persistent bottom strip on every mail screen, alongside a dedicated full calendar. Mailboxes are selected at the top, and the main mail view is a resizable split. See the [visual design brief](ui-ux.md).
+12. **Time stays in view while reading mail.** A browsable bottom timeline appears on Mail screens, alongside a dedicated combined calendar with full permitted details across connected accounts. Mail remains account-separated, selected at the top, with a resizable split. See the [visual design brief](ui-ux.md).
 
 ## Proposed daily-driver acceptance story
 
