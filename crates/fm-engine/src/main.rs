@@ -5,6 +5,7 @@ use fm_ipc::{
 };
 use serde_json::{json, Value};
 use std::{
+    collections::VecDeque,
     io,
     path::{Path, PathBuf},
     sync::{
@@ -15,8 +16,9 @@ use std::{
 };
 use tokio::{
     io::{AsyncBufReadExt, BufReader},
-    sync::{mpsc, oneshot, Semaphore},
+    sync::{mpsc, oneshot, OwnedSemaphorePermit, Semaphore},
 };
+mod verification_fixture;
 
 #[derive(Parser)]
 #[command(
@@ -26,12 +28,47 @@ use tokio::{
 struct Args {
     #[arg(long)]
     profile: Option<PathBuf>,
+    #[arg(long, hide = true, value_enum)]
+    verification_fixture: Option<verification_fixture::Mode>,
 }
 
-struct Work {
+enum Work {
+    Request(ClientWork),
+    VerificationBatch(verification_fixture::Batch),
+}
+
+struct ClientWork {
     request: Request,
     reply: oneshot::Sender<Value>,
     cancelled: Arc<AtomicBool>,
+    _permit: OwnedSemaphorePermit,
+}
+
+const WORK_LIMIT: usize = 32;
+const FOREGROUND_BURST_LIMIT: usize = 4;
+
+#[derive(Default)]
+struct PendingWork {
+    requests: VecDeque<ClientWork>,
+    batches: VecDeque<verification_fixture::Batch>,
+    foreground_burst: usize,
+}
+impl PendingWork {
+    fn push(&mut self, work: Work) {
+        match work {
+            Work::Request(work) => self.requests.push_back(work),
+            Work::VerificationBatch(batch) => self.batches.push_back(batch),
+        }
+    }
+
+    fn request(&mut self, background_active: bool) -> Option<ClientWork> {
+        if background_active && self.foreground_burst >= FOREGROUND_BURST_LIMIT {
+            return None;
+        }
+        let work = self.requests.pop_front()?;
+        self.foreground_burst = self.foreground_burst.saturating_add(1);
+        Some(work)
+    }
 }
 
 struct RequestOwner(Arc<AtomicBool>);
@@ -78,7 +115,7 @@ fn pipe(
     options
         .first_pipe_instance(first)
         .reject_remote_clients(true)
-        .max_instances((MAX_CLIENTS + 1) as usize);
+        .max_instances(MAX_CLIENTS + 1);
     unsafe {
         options.create_with_security_attributes_raw(endpoint, std::ptr::from_mut(&mut attrs).cast())
     }
@@ -127,6 +164,8 @@ async fn session(
     stream: AnyStream,
     token: Arc<String>,
     queue: mpsc::Sender<Work>,
+    hello_metadata: Arc<Value>,
+    foreground_slots: Arc<Semaphore>,
 ) -> io::Result<()> {
     let mut stream = BufReader::new(stream);
     let hello = tokio::time::timeout(HANDSHAKE_TIMEOUT, fm_ipc::read_frame(&mut stream))
@@ -153,7 +192,11 @@ async fn session(
         fm_ipc::write_frame(stream.get_mut(), &reply).await?;
         return Ok(());
     }
-    fm_ipc::write_frame(stream.get_mut(),&response(&request.id,json!({"protocol":1,"schema_version":fm_core::SCHEMA_VERSION,"fixture_revision":1,"mode":"synthetic","max_frame_bytes":fm_ipc::MAX_FRAME,"max_page_size":100,"methods":["accounts","status","conversations","conversation","flag","draft_get","draft_save","draft_capture","calendar","attachment","categories","set_category","view_get","view_save"]}))).await?;
+    fm_ipc::write_frame(
+        stream.get_mut(),
+        &response(&request.id, (*hello_metadata).clone()),
+    )
+    .await?;
     loop {
         // An idle authenticated GUI/watch is an explicit owner, not a stale job.
         if stream.fill_buf().await?.is_empty() {
@@ -200,15 +243,25 @@ async fn session(
             continue;
         }
         let id = request.id.clone();
+        let Ok(permit) = foreground_slots.clone().try_acquire_owned() else {
+            fm_ipc::write_frame(
+                stream.get_mut(),
+                &error(&id, "busy", "engine work queue is full; retry later"),
+            )
+            .await?;
+            continue;
+        };
         let (reply_tx, reply_rx) = oneshot::channel();
         let request_owner = RequestOwner(Arc::new(AtomicBool::new(false)));
-        // Bounded global work queue, one request in flight per connection.
+        // The permit follows the job through the FIFO, priority queue and
+        // execution, including jobs whose clients disconnect while queued.
         if queue
-            .try_send(Work {
+            .try_send(Work::Request(ClientWork {
                 request,
                 reply: reply_tx,
                 cancelled: Arc::clone(&request_owner.0),
-            })
+                _permit: permit,
+            }))
             .is_err()
         {
             fm_ipc::write_frame(
@@ -271,8 +324,14 @@ async fn main() {
 }
 
 async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
+    if args.verification_fixture.is_some() && args.profile.is_none() {
+        return Err("verification fixtures require an explicit disposable profile".into());
+    }
     let profile = fm_ipc::private_profile(&args.profile.unwrap_or(fm_ipc::default_profile()?))?;
-    let store = match fm_core::Store::open(&profile) {
+    if let Some(mode) = args.verification_fixture {
+        verification_fixture::preflight(mode, &profile)?;
+    }
+    let mut store = match fm_core::Store::open(&profile) {
         Ok(s) => s,
         Err(e) => {
             // A launch race is benign only if the existing engine responds.
@@ -284,6 +343,11 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             return Err(format!("cannot open profile: {e}").into());
         }
     };
+    let mut fixture = args
+        .verification_fixture
+        .map(|mode| verification_fixture::Fixture::prepare(mode, &profile, &mut store))
+        .transpose()?;
+    let hello_metadata = Arc::new(handshake_metadata(&mut store)?);
     let endpoint = fm_ipc::endpoint(&profile)?;
     let mut listener = listen(&endpoint)?;
     let token = Arc::new(fm_ipc::random_token());
@@ -297,13 +361,84 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             token: token.to_string(),
         },
     )?;
-    let (queue, mut receive) = mpsc::channel::<Work>(32);
+    let (queue, mut receive) = mpsc::channel::<Work>(WORK_LIMIT);
+    let search_fixture = args.verification_fixture == Some(verification_fixture::Mode::Search);
+    let foreground_slots = Arc::new(Semaphore::new(if search_fixture {
+        WORK_LIMIT - verification_fixture::BACKGROUND_LIMIT
+    } else {
+        WORK_LIMIT
+    }));
+    let background_slots = Arc::new(Semaphore::new(verification_fixture::BACKGROUND_LIMIT));
+    let owners = Arc::new(AtomicUsize::new(0));
+    let authenticated_work = Arc::new(AtomicBool::new(false));
+    let schedule = Arc::new(verification_fixture::Schedule::default());
+    let worker_owners = owners.clone();
+    let worker_authenticated = authenticated_work.clone();
+    let worker_schedule = schedule.clone();
     let worker = std::thread::spawn(move || {
         let mut store = store;
-        while let Some(work) = receive.blocking_recv() {
+        let mut pending = PendingWork::default();
+        let mut ingestion = None;
+        let mut closed = false;
+        loop {
+            // Search mode has 16 foreground and 16 background permits. They
+            // remain attached to active and locally queued work, so draining
+            // this FIFO does not create another 32-job backlog (global max 32).
+            loop {
+                match receive.try_recv() {
+                    Ok(work) => pending.push(work),
+                    Err(mpsc::error::TryRecvError::Empty) => break,
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        closed = true;
+                        break;
+                    }
+                }
+            }
+            if worker_owners.load(Ordering::SeqCst) == 0 {
+                if let Some(fixture) = &mut fixture {
+                    if let Some(ingestion) = ingestion.take() {
+                        fixture.abandon_ingestion(&ingestion, "final_owner");
+                    }
+                    for batch in pending.batches.drain(..) {
+                        fixture.skip_without_owner(batch);
+                    }
+                }
+            }
+            let background_active = ingestion.is_some() || !pending.batches.is_empty();
+            let Some(work) = pending.request(background_active) else {
+                if background_active {
+                    pending.foreground_burst = 0;
+                    if let Some(fixture) = &mut fixture {
+                        if ingestion.is_none() {
+                            ingestion = pending
+                                .batches
+                                .pop_front()
+                                .and_then(|batch| fixture.begin_ingestion(batch));
+                        }
+                        if let Some(active) = &mut ingestion {
+                            if fixture.step_ingestion(&mut store, active) {
+                                ingestion = None;
+                            }
+                        }
+                    }
+                    continue;
+                }
+                if closed {
+                    break;
+                }
+                match receive.blocking_recv() {
+                    Some(work) => pending.push(work),
+                    None => closed = true,
+                }
+                continue;
+            };
             if work.reply.is_closed() {
                 continue;
             }
+            worker_authenticated.store(true, Ordering::Release);
+            let inject = fixture
+                .as_ref()
+                .is_some_and(|fixture| fixture.should_inject(&work.request));
             let id = work.request.id;
             let result = store.handle_cancellable(
                 &work.request.method,
@@ -311,33 +446,58 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 work.request.params,
                 work.cancelled,
             );
+            if inject && result.is_ok() {
+                if let Some(fixture) = &mut fixture {
+                    fixture.inject_snapshot(&mut store);
+                }
+            }
             let reply = match result {
                 Ok(result) => response(&id, result),
                 Err(e) => error(&id, &e.code, &e.message),
             };
             let _ = work.reply.send(reply);
         }
+        if let Some(fixture) = &mut fixture {
+            fixture.finish(&worker_schedule);
+        }
         // Dropping SQLite closes/checkpoints without bypassing the core's writer lock.
         drop(store);
     });
-    let owners = Arc::new(AtomicUsize::new(0));
     let slots = Arc::new(Semaphore::new(MAX_CLIENTS));
     let start = tokio::time::Instant::now();
     let mut ever_connected = false;
     let mut idle_since = None;
-    let mut tick = tokio::time::interval(Duration::from_millis(100));
+    let mut tick = tokio::time::interval(Duration::from_millis(verification_fixture::INTERVAL_MS));
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut next_batch = 0;
     loop {
         tokio::select! {
             incoming=accept(&mut listener)=>match incoming {
                 Ok(stream)=> {
                     let Ok(permit)=slots.clone().try_acquire_owned() else {drop(stream);continue;};
                     owners.fetch_add(1,Ordering::SeqCst);ever_connected=true;idle_since=None;
-                    let owner=Owner(owners.clone());let token=token.clone();let queue=queue.clone();
-                    tokio::spawn(async move {let _owner=owner;let _permit=permit;let _=session(stream,token,queue).await;});
+                    let owner=Owner(owners.clone());let token=token.clone();let queue=queue.clone();let hello_metadata=hello_metadata.clone();let foreground_slots=foreground_slots.clone();
+                    tokio::spawn(async move {let _owner=owner;let _permit=permit;let _=session(stream,token,queue,hello_metadata,foreground_slots).await;});
                 },
                 Err(e)=> {eprintln!("fm-engine: local accept failed: {}",e.kind());tokio::time::sleep(Duration::from_millis(50)).await;}
             },
             _=tick.tick()=> {
+                if args.verification_fixture == Some(verification_fixture::Mode::Search)
+                    && next_batch < verification_fixture::MAX_BATCHES
+                    && authenticated_work.load(Ordering::Acquire)
+                    && owners.load(Ordering::SeqCst) > 0 {
+                    schedule.attempt();
+                    if let Ok(permit) = background_slots.clone().try_acquire_owned() {
+                        let (batch,queued_unix_ms)=schedule.batch(next_batch,permit);
+                        match queue.try_send(Work::VerificationBatch(batch)) {
+                            Ok(())=>{schedule.queued(queued_unix_ms);next_batch+=1;},
+                            Err(mpsc::error::TrySendError::Full(_))=>{schedule.queue_full_retries.fetch_add(1,Ordering::Relaxed);},
+                            Err(mpsc::error::TrySendError::Closed(_))=>break,
+                        }
+                    } else {
+                        schedule.queue_full_retries.fetch_add(1,Ordering::Relaxed);
+                    }
+                }
                 if owners.load(Ordering::SeqCst)==0 {
                     if ever_connected {
                         let since=idle_since.get_or_insert_with(tokio::time::Instant::now);
@@ -359,19 +519,139 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
+    let status = store.handle("status", None, json!({}))?;
+    Ok(
+        json!({"protocol":PROTOCOL_VERSION,"schema_version":status["schema_version"],
+        "fixture_revision":status["fixture_revision"],"capabilities":status["capabilities"],
+        "mode":"synthetic","max_frame_bytes":fm_ipc::MAX_FRAME,"max_page_size":100,
+        "methods":["accounts","status","conversations","conversation","flag","draft_get",
+            "draft_save","draft_capture","calendar","attachment","categories","set_category",
+            "view_get","view_save","preferences_get","preferences_save","calendar_sources",
+            "calendar_combined","account_update","draft_discard","capture_history","calendar_write",
+            "calendar_write_ack","calendar_operations","drafts","draft_create","sender_summary"]}),
+    )
+}
+
 #[cfg(test)]
 mod session_tests {
     use super::*;
+
+    #[test]
+    fn foreground_overtakes_background_with_bounded_fair_work_and_owned_permits() {
+        let foreground = Arc::new(Semaphore::new(16));
+        let background = Arc::new(Semaphore::new(verification_fixture::BACKGROUND_LIMIT));
+        let schedule = verification_fixture::Schedule::default();
+        let (queue, mut receive) = mpsc::channel(WORK_LIMIT);
+        let mut replies = Vec::new();
+        for sequence in 0..16 {
+            let (batch, _) =
+                schedule.batch(sequence, background.clone().try_acquire_owned().unwrap());
+            queue
+                .try_send(Work::VerificationBatch(batch))
+                .unwrap_or_else(|_| panic!("background queue unexpectedly full"));
+        }
+        for sequence in 0..16 {
+            let (reply, rx) = oneshot::channel();
+            replies.push(rx);
+            queue.try_send(Work::Request(ClientWork {
+                request:serde_json::from_value(json!({"version":1,"id":sequence.to_string(),"method":"status","params":{}})).unwrap(),
+                reply,cancelled:Arc::new(AtomicBool::new(false)),_permit:foreground.clone().try_acquire_owned().unwrap(),
+            })).unwrap_or_else(|_|panic!("foreground capacity was consumed by background jobs"));
+        }
+        let mut pending = PendingWork::default();
+        while let Ok(work) = receive.try_recv() {
+            pending.push(work);
+        }
+        // FIFO is now empty, but no additional job can enter: the same permits
+        // are still held in the local queues, including a selected active batch.
+        let active = pending.batches.pop_front().unwrap();
+        assert!(foreground.clone().try_acquire_owned().is_err());
+        assert!(background.clone().try_acquire_owned().is_err());
+        for sequence in 0..FOREGROUND_BURST_LIMIT {
+            let request = pending.request(true).unwrap();
+            assert_eq!(request.request.id, sequence.to_string());
+        }
+        assert!(pending.request(true).is_none()); // the background step gets a turn
+        pending.foreground_burst = 0;
+        assert_eq!(pending.request(true).unwrap().request.id, "4");
+        assert_eq!(foreground.available_permits(), 5);
+        assert_eq!(background.available_permits(), 0);
+        drop(pending);
+        assert_eq!(foreground.available_permits(), 16);
+        assert_eq!(background.available_permits(), 15);
+        drop(active);
+        assert_eq!(background.available_permits(), 16);
+        drop(replies);
+    }
+
+    #[tokio::test]
+    async fn hello_preserves_migrated_fixture_revision_and_advertises_additive_methods() {
+        for expected_fixture in [1, 3] {
+            let temp = tempfile::tempdir().unwrap();
+            if expected_fixture == 1 {
+                let db = rusqlite::Connection::open(temp.path().join("store.sqlite3")).unwrap();
+                db.execute_batch(include_str!("../../fm-core/src/schema.sql"))
+                    .unwrap();
+                db.execute_batch("INSERT INTO meta VALUES('fixture_revision',1); INSERT INTO accounts VALUES('original','Original identity','original@example.test','synthetic');").unwrap();
+            }
+            let mut store = fm_core::Store::open(temp.path()).unwrap();
+            let metadata = Arc::new(handshake_metadata(&mut store).unwrap());
+            let (client, server) = tokio::io::duplex(8192);
+            let mut client = BufReader::new(client);
+            let (queue, _receive) = mpsc::channel(1);
+            let task = tokio::spawn(session(
+                Box::new(server),
+                Arc::new("fixture-token".into()),
+                queue,
+                metadata,
+                Arc::new(Semaphore::new(WORK_LIMIT)),
+            ));
+            fm_ipc::write_frame(client.get_mut(), &json!({"version":1,"id":"hello","method":"hello","params":{"token":"fixture-token"}})).await.unwrap();
+            let hello: Value =
+                serde_json::from_slice(&fm_ipc::read_frame(&mut client).await.unwrap().unwrap())
+                    .unwrap();
+            assert_eq!(hello["ok"], true);
+            assert_eq!(hello["result"]["protocol"], 1);
+            assert_eq!(hello["result"]["fixture_revision"], expected_fixture);
+            assert_eq!(hello["result"]["schema_version"], fm_core::SCHEMA_VERSION);
+            assert_eq!(hello["result"]["capabilities"]["phase1"], true);
+            assert_eq!(hello["result"]["capabilities"]["send"], false);
+            let methods = hello["result"]["methods"].as_array().unwrap();
+            for method in [
+                "conversations",
+                "flag",
+                "preferences_save",
+                "draft_discard",
+                "capture_history",
+                "calendar_combined",
+                "calendar_write",
+                "calendar_operations",
+            ] {
+                assert!(methods.contains(&json!(method)), "missing {method}");
+            }
+            assert!(!methods.contains(&json!("verification_fixture")));
+            drop(client);
+            tokio::time::timeout(Duration::from_secs(2), task)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+        }
+    }
 
     #[tokio::test]
     async fn disconnect_marks_only_that_queued_request_cancelled() {
         let (client, server) = tokio::io::duplex(8192);
         let mut client = BufReader::new(client);
         let (queue, mut receive) = mpsc::channel(1);
+        let foreground_slots = Arc::new(Semaphore::new(1));
         let task = tokio::spawn(session(
             Box::new(server),
             Arc::new("fixture-token".into()),
             queue,
+            Arc::new(json!({"protocol":1,"fixture_revision":2})),
+            foreground_slots.clone(),
         ));
         fm_ipc::write_frame(
             client.get_mut(),
@@ -388,6 +668,9 @@ mod session_tests {
             .await
             .unwrap()
             .unwrap();
+        let Work::Request(work) = work else {
+            panic!("expected client work")
+        };
         assert!(!work.cancelled.load(Ordering::Acquire));
         drop(client);
         tokio::time::timeout(Duration::from_secs(2), task)
@@ -397,5 +680,8 @@ mod session_tests {
             .unwrap();
         assert!(work.cancelled.load(Ordering::Acquire));
         assert!(work.reply.is_closed());
+        assert_eq!(foreground_slots.available_permits(), 0);
+        drop(work);
+        assert_eq!(foreground_slots.available_permits(), 1);
     }
 }

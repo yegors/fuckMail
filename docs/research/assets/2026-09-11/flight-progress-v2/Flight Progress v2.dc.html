@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet data-dc-atomics>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+html,body{margin:0;background:#0E0F11;color:#E9EAEC;font-family:'Geist',sans-serif;overflow:auto;min-width:1160px}
+a{color:#E9EAEC;text-decoration:none}a:hover{color:#fff}
+*{scrollbar-width:thin;scrollbar-color:rgba(233,234,236,.14) transparent}*::-webkit-scrollbar{width:6px;height:6px}*::-webkit-scrollbar-thumb{background:rgba(233,234,236,.14);border-radius:6px}*::-webkit-scrollbar-track{background:transparent}
+input::placeholder,textarea::placeholder{color:rgba(233,234,236,.35)}
+select{appearance:none;-webkit-appearance:none}select option{background:#131417;color:#E9EAEC}
+svg{fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;flex:none}
+@keyframes fpIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+@keyframes fpPulse{0%,100%{opacity:1}50%{opacity:.3}}
+</style>
+</helmet>
+<div onClick="{{ closePop }}" style="position:absolute;left:0;top:0;width:100%;height:100vh;min-width:1160px;min-height:600px;background:#0E0F11;color:#E9EAEC;font-family:'Geist',sans-serif;font-size:14px;line-height:1.4;font-variant-numeric:tabular-nums;overflow:hidden">
+  <div data-screen-label="Top bar" style="position:absolute;left:0;right:0;top:0;height:56px;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:0 24px;border-bottom:1px solid #232529">
+    <div style="display:flex;align-items:center;gap:16px;flex:none">
+      <div title="View — c toggles" style="display:flex;gap:2px;background:#131417;padding:2px;border-radius:6px">
+        <span onClick="{{ toMail }}" style="display:flex;align-items:center;gap:7px;height:28px;padding:0 12px;border-radius:4px;font-size:13px;font-weight:500;cursor:pointer;background:{{ mailBg }};color:{{ mailColor }};transition:background .2s"><svg width="13" height="13" viewBox="0 0 16 16"><rect x="2" y="3.5" width="12" height="9" rx="1.5"></rect><path d="m2.5 4.5 5.5 4.2 5.5-4.2"></path></svg><span>Mail</span></span>
+        <span onClick="{{ toCal }}" style="display:flex;align-items:center;gap:7px;height:28px;padding:0 12px;border-radius:4px;font-size:13px;font-weight:500;cursor:pointer;background:{{ calBg }};color:{{ calColor }};transition:background .2s"><svg width="13" height="13" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="10" rx="1"></rect><path d="M2.5 7h11M5.5 2v3M10.5 2v3"></path></svg><span>Calendar</span></span>
+      </div>
+      <div style="width:1px;height:20px;background:#232529"></div>
+      <div title="Accounts — the number is what's left to review" style="display:flex;gap:2px">
+        <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3"><span title="{{ t.title }}" onClick="{{ t.pick }}" style="display:flex;align-items:center;gap:8px;height:28px;padding:0 10px;border-radius:4px;font-size:13px;cursor:pointer;white-space:nowrap;color:{{ t.color }};background:{{ t.bg }};font-weight:{{ t.weight }};transition:background .15s" style-hover="background:{{ t.hoverBg }}"><svg width="14" height="14" viewBox="0 0 16 16" style="color:{{ t.iconColor }}"><path d="{{ t.icon }}"></path></svg><span>{{ t.name }}</span><span style="font-size:11.5px;font-weight:500;display:{{ t.badgeDisplay }};color:{{ t.badgeColor }}">{{ t.n }}</span></span></sc-for>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:14px;min-width:0;flex:1;justify-content:flex-end">
+      <div style="position:relative;flex:0 1 320px;min-width:180px">
+        <div style="display:flex;align-items:center;gap:10px;padding:0 12px;height:32px;background:#131417;border:1px solid {{ searchBorder }};border-radius:6px;box-sizing:border-box;transition:border-color .15s">
+          <svg width="14" height="14" viewBox="0 0 16 16" style="color:rgba(233,234,236,.45)"><circle cx="7" cy="7" r="4.5"></circle><path d="M10.5 10.5 14 14"></path></svg>
+          <input ref="{{ searchRef }}" value="{{ query }}" onChange="{{ setQuery }}" onFocus="{{ openSearch }}" placeholder="{{ searchPh }}" style="background:transparent;border:0;outline:0;color:#E9EAEC;font:inherit;font-size:13px;flex:1;min-width:0">
+          <sc-if value="{{ hasQuery }}" hint-placeholder-val="{{ false }}"><span onClick="{{ clearSearch }}" style="cursor:pointer;color:rgba(233,234,236,.45);display:flex"><svg width="12" height="12" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8"></path></svg></span></sc-if>
+          <span style="font-size:11px;color:rgba(233,234,236,.35);border:1px solid #232529;border-radius:3px;padding:1px 5px;line-height:1.3">⌘K</span>
+        </div>
+        <sc-if value="{{ searchOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;left:0;right:0;top:40px;min-width:440px;background:#131417;border:1px solid #2A2C31;border-radius:8px;box-shadow:0 24px 60px rgba(0,0,0,.6);padding:16px;z-index:20;animation:fpIn .18s ease-out;display:flex;flex-direction:column;gap:14px">
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:rgba(233,234,236,.45)"><span>Search {{ acctName }} — sender, words, or filters</span><span onClick="{{ closeSearch }}" style="cursor:pointer;border:1px solid #232529;border-radius:3px;padding:1px 6px;font-size:11px">Esc</span></div>
+            <div><div style="font-size:11px;color:rgba(233,234,236,.4);margin-bottom:8px">Looking in</div><div style="display:flex;gap:6px"><sc-for list="{{ scopeChips }}" as="c" hint-placeholder-count="2"><span onClick="{{ c.toggle }}" style="font-size:12px;padding:4px 10px;border-radius:999px;cursor:pointer;background:{{ c.bg }};color:{{ c.color }};border:1px solid {{ c.border }}">{{ c.name }}</span></sc-for></div></div>
+            <sc-if value="{{ inboxScope }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{ syntax }}" as="s" hint-placeholder-count="5"><span onClick="{{ s.apply }}" style="font-size:12px;padding:4px 8px;background:#191A1E;border-radius:4px;cursor:pointer;color:rgba(233,234,236,.75)" style-hover="background:#1F2126">{{ s.text }}</span></sc-for></div>
+              <div><div style="font-size:11px;color:rgba(233,234,236,.4);margin-bottom:8px">From</div><div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{ fromChips }}" as="c" hint-placeholder-count="5"><span onClick="{{ c.toggle }}" style="font-size:12px;padding:4px 10px;border-radius:999px;cursor:pointer;background:{{ c.bg }};color:{{ c.color }};border:1px solid {{ c.border }}">{{ c.name }}</span></sc-for></div></div>
+              <div><div style="font-size:11px;color:rgba(233,234,236,.4);margin-bottom:8px">Category</div><div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{ labelChips }}" as="c" hint-placeholder-count="6"><span onClick="{{ c.toggle }}" style="font-size:12px;padding:4px 10px;border-radius:999px;cursor:pointer;background:{{ c.bg }};color:{{ c.color }};border:1px solid {{ c.border }}">{{ c.name }}</span></sc-for></div></div>
+              <div><div style="font-size:11px;color:rgba(233,234,236,.4);margin-bottom:8px">Status</div><div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{ statusChips }}" as="c" hint-placeholder-count="3"><span onClick="{{ c.toggle }}" style="font-size:12px;padding:4px 10px;border-radius:999px;cursor:pointer;background:{{ c.bg }};color:{{ c.color }};border:1px solid {{ c.border }}">{{ c.name }}</span></sc-for></div></div>
+            </sc-if>
+            <sc-if value="{{ sentScope }}" hint-placeholder-val="{{ false }}"><div><div style="font-size:11px;color:rgba(233,234,236,.4);margin-bottom:8px">Sent</div><div style="display:flex;flex-wrap:wrap;gap:6px"><sc-for list="{{ dayChips }}" as="c" hint-placeholder-count="3"><span onClick="{{ c.toggle }}" style="font-size:12px;padding:4px 10px;border-radius:999px;cursor:pointer;background:{{ c.bg }};color:{{ c.color }};border:1px solid {{ c.border }}">{{ c.name }}</span></sc-for></div></div></sc-if>
+            <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #232529;padding-top:12px;font-size:12px;color:rgba(233,234,236,.45)"><span>{{ indexNote }}</span><span onClick="{{ clearFilters }}" style="cursor:pointer;color:#E9EAEC">Clear filters</span></div>
+          </div>
+        </sc-if>
+      </div>
+      <div style="width:1px;height:20px;background:#232529;flex:none"></div>
+      <div title="Local time" style="display:flex;align-items:baseline;gap:8px;white-space:nowrap;font-size:13px;flex:none"><span style="color:rgba(233,234,236,.62)">Fri 11 Sep</span><span style="color:#C9A36B;font-weight:500">10:42</span></div>
+      <div title="{{ syncTitle }}" style="display:flex;align-items:center;gap:7px;font-size:12px;color:rgba(233,234,236,.45);white-space:nowrap;flex:none"><svg width="13" height="13" viewBox="0 0 16 16"><path d="M13 8a5 5 0 0 1-8.7 3.4M3 8a5 5 0 0 1 8.7-3.4"></path><path d="M12.5 2.6v2.4h-2.4M3.5 13.4V11h2.4"></path></svg><span>{{ syncText }}</span></div>
+      <div style="width:1px;height:20px;background:#232529;flex:none"></div>
+      <span title="Settings — ," onClick="{{ toSettings }}" style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;flex:none;border-radius:6px;cursor:pointer;color:{{ gearColor }};background:{{ gearBg }};transition:background .2s" style-hover="background:{{ gearHover }}"><svg width="15" height="15" viewBox="0 0 24 24" style="stroke-width:1.8"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span>
+    </div>
+  </div>
+  <sc-if value="{{ isMail }}" hint-placeholder-val="{{ true }}">
+    <div data-screen-label="Mail" style="position:absolute;left:0;right:0;top:56px;bottom:{{ stripH }};display:grid;grid-template-columns:{{ splitCols }};overflow:hidden">
+      <div onMouseDown="{{ startDrag }}" title="Drag to resize" style="position:absolute;top:0;bottom:0;left:{{ splitLeft }};width:9px;margin-left:-4px;cursor:col-resize;z-index:5;display:flex;justify-content:center" style-hover="background:rgba(233,234,236,.05)"><span style="width:1px;height:100%;background:{{ splitLine }};transition:background .15s"></span></div>
+      <div style="border-right:1px solid #232529;display:flex;flex-direction:column;min-height:0;overflow:hidden">
+        <div style="padding:24px 24px 0">
+          <div style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px">
+            <span style="display:flex;align-items:baseline;gap:14px;min-width:0">
+              <span onClick="{{ toInbox }}" title="Inbox — s toggles" style="font-size:22px;font-weight:500;letter-spacing:-.02em;line-height:1;cursor:pointer;color:{{ inboxColor }};transition:color .15s" style-hover="color:#E9EAEC">Inbox</span>
+              <span onClick="{{ toSent }}" title="Sent — s toggles" style="font-size:22px;font-weight:500;letter-spacing:-.02em;line-height:1;cursor:pointer;color:{{ sentColor }};transition:color .15s" style-hover="color:#E9EAEC">Sent</span>
+              <span style="font-size:12.5px;color:rgba(233,234,236,.45);white-space:nowrap"><span style="color:#E9EAEC;font-weight:500">{{ sub1n }}</span> {{ sub1t }} · <span style="color:#E9EAEC;font-weight:500">{{ sub2n }}</span> {{ sub2t }}</span>
+            </span>
+            <span title="Mail volume, last 7 days — received (dim) and sent (bright) per day. Amber marks today." style="display:flex;align-items:flex-end;gap:12px;flex:none">
+              <span style="display:flex;align-items:flex-end;gap:5px;height:22px;position:relative;top:2px">
+                <sc-for list="{{ bars }}" as="b" hint-placeholder-count="7"><span title="{{ b.title }}" style="display:flex;align-items:flex-end;gap:1px;height:22px;position:relative"><span style="width:4px;height:{{ b.inH }};background:rgba(233,234,236,.26);border-radius:1px"></span><span style="width:4px;height:{{ b.outH }};background:#E9EAEC;border-radius:1px"></span><span style="position:absolute;left:0;right:0;bottom:-5px;height:2px;border-radius:1px;background:{{ b.mark }}"></span></span></sc-for>
+              </span>
+              <span style="font-size:12px;color:rgba(233,234,236,.5);white-space:nowrap;line-height:1"><span style="color:#E9EAEC;font-weight:500">{{ statIn }}</span> in · <span style="color:#E9EAEC;font-weight:500">{{ statOut }}</span> out · 7 days</span>
+            </span>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:16px;overflow:auto;padding-bottom:14px;border-bottom:1px solid #232529"><sc-for list="{{ rail }}" as="c" hint-placeholder-count="6"><span onClick="{{ c.toggle }}" style="flex:none;display:flex;gap:6px;align-items:baseline;font-size:12px;padding:5px 10px;border-radius:999px;cursor:pointer;background:{{ c.bg }};color:{{ c.color }};border:1px solid {{ c.border }}"><span>{{ c.name }}</span><span style="font-size:11px;opacity:.55">{{ c.n }}</span></span></sc-for></div>
+        </div>
+        <sc-if value="{{ filtering }}" hint-placeholder-val="{{ false }}"><div style="display:flex;align-items:center;gap:8px;margin:10px 24px 0;font-size:12px;color:rgba(233,234,236,.55)"><svg width="12" height="12" viewBox="0 0 16 16"><path d="M2.5 4h11M4.5 8h7M6.5 12h3"></path></svg><span>{{ filterText }}</span><span onClick="{{ clearFilters }}" style="cursor:pointer;color:#E9EAEC;margin-left:auto">Clear</span></div></sc-if>
+        <div style="flex:1;min-height:0;overflow:auto;padding:6px 0 16px">
+          <sc-if value="{{ inboxScope }}" hint-placeholder-val="{{ true }}">
+            <sc-if value="{{ clear }}" hint-placeholder-val="{{ false }}"><div style="margin:8px 24px 12px;padding:20px;background:#131417;border-radius:8px;animation:fpIn .4s ease-out;display:flex;gap:14px;align-items:flex-start"><svg width="18" height="18" viewBox="0 0 16 16" style="color:#C9A36B;margin-top:2px"><circle cx="8" cy="8" r="6"></circle><path d="m5.5 8.2 1.8 1.8 3.4-3.8"></path></svg><span><div style="font-size:15px;font-weight:500">Nothing to review, nothing delayed.</div><div style="font-size:13px;color:rgba(233,234,236,.55);margin-top:4px;line-height:1.5">The rest of the day is on the line below. <span onClick="{{ reset }}" style="cursor:pointer;color:#E9EAEC">Restore sample mail</span></div></span></div></sc-if>
+            <sc-for list="{{ unrev }}" as="c" hint-placeholder-count="4">
+              <div onClick="{{ c.open }}" style="display:flex;align-items:center;gap:14px;height:{{ rowH }};padding:0 24px;cursor:pointer;background:{{ c.bg }}" style-hover="background:#131417"><span style="width:6px;height:6px;border-radius:50%;background:{{ c.dot }};flex:none"></span><span style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px"><span style="display:flex;align-items:baseline;gap:8px;min-width:0"><span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.subject }}</span><span title="{{ c.n }} messages in this thread" style="font-size:11px;line-height:16px;padding:0 5px;border:1px solid #2A2C31;border-radius:3px;color:rgba(233,234,236,.6);display:{{ c.nDisplay }}">{{ c.n }}</span></span><span style="font-size:12px;color:rgba(233,234,236,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="color:rgba(233,234,236,.72)">{{ c.who }}</span>{{ c.rest }}</span></span><span style="flex:none;display:flex;align-items:center;gap:10px"><span style="font-size:11.5px;color:rgba(233,234,236,.5);padding:2px 7px;border:1px solid #232529;border-radius:4px;display:{{ c.labelDisplay }}">{{ c.label }}</span><span style="font-size:12px;color:rgba(233,234,236,.4);width:68px;text-align:right;white-space:nowrap">{{ c.time }}</span></span></div>
+            </sc-for>
+            <sc-if value="{{ hasDelayed }}" hint-placeholder-val="{{ true }}"><div style="display:flex;align-items:center;gap:12px;padding:16px 24px 6px;font-size:11.5px;color:rgba(233,234,236,.45)"><span>Delayed</span><span style="flex:1;height:1px;background:#232529"></span></div></sc-if>
+            <sc-for list="{{ delayed }}" as="c" hint-placeholder-count="3">
+              <div onClick="{{ c.open }}" style="display:flex;align-items:center;gap:14px;height:{{ rowH }};padding:0 24px;cursor:pointer;background:{{ c.bg }}" style-hover="background:#131417"><span style="width:6px;height:6px;border-radius:50%;border:1px solid rgba(233,234,236,.5);box-sizing:border-box;flex:none"></span><span style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px"><span style="display:flex;align-items:baseline;gap:8px;min-width:0"><span style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:rgba(233,234,236,.85)">{{ c.subject }}</span><span title="{{ c.n }} messages in this thread" style="font-size:11px;line-height:16px;padding:0 5px;border:1px solid #2A2C31;border-radius:3px;color:rgba(233,234,236,.6);display:{{ c.nDisplay }}">{{ c.n }}</span></span><span style="font-size:12px;color:rgba(233,234,236,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="color:rgba(233,234,236,.72)">{{ c.who }}</span>{{ c.rest }}</span></span><span style="flex:none;display:flex;align-items:center;gap:10px"><span style="font-size:11.5px;color:rgba(233,234,236,.5);padding:2px 7px;border:1px solid #232529;border-radius:4px;display:{{ c.labelDisplay }}">{{ c.label }}</span><span style="font-size:11.5px;font-weight:500;color:rgba(233,234,236,.75);padding:2px 7px;border:1px solid #3A3D44;border-radius:4px">Delayed</span><span style="font-size:12px;color:rgba(233,234,236,.4);width:68px;text-align:right;white-space:nowrap">{{ c.time }}</span></span></div>
+            </sc-for>
+            <sc-if value="{{ hasDone }}" hint-placeholder-val="{{ true }}"><div style="display:flex;align-items:center;gap:12px;padding:16px 24px 6px;font-size:11.5px;color:rgba(233,234,236,.45)"><span>Done</span><span style="flex:1;height:1px;background:#232529"></span></div></sc-if>
+            <sc-for list="{{ done }}" as="c" hint-placeholder-count="3">
+              <div onClick="{{ c.open }}" style="display:flex;align-items:center;gap:14px;height:44px;padding:0 24px;cursor:pointer;background:{{ c.bg }};color:rgba(233,234,236,.42)" style-hover="background:#131417"><span style="width:6px;flex:none"></span><span style="min-width:0;flex:1;display:flex;align-items:baseline;gap:8px;font-size:13.5px"><span style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.subject }} <span style="opacity:.7">· {{ c.who }}</span></span><span title="{{ c.n }} messages in this thread" style="font-size:11px;line-height:16px;padding:0 5px;border:1px solid #2A2C31;border-radius:3px;color:rgba(233,234,236,.6);display:{{ c.nDisplay }}">{{ c.n }}</span></span><span style="flex:none;font-size:12px;width:68px;text-align:right;white-space:nowrap">{{ c.time }}</span></div>
+            </sc-for>
+            <sc-if value="{{ noResults }}" hint-placeholder-val="{{ false }}"><div style="padding:22px 24px;font-size:13px;color:rgba(233,234,236,.5);line-height:1.5">Nothing in {{ acctName }} matches. Older mail is still indexing — try again in a while, or search another account.</div></sc-if>
+          </sc-if>
+          <sc-if value="{{ sentScope }}" hint-placeholder-val="{{ false }}">
+            <sc-for list="{{ sentGroups }}" as="g" hint-placeholder-count="2">
+              <div style="display:flex;align-items:center;gap:12px;padding:16px 24px 6px;font-size:11.5px;color:rgba(233,234,236,.45)"><span>{{ g.label }}</span><span style="opacity:.6">{{ g.n }}</span><span style="flex:1;height:1px;background:#232529"></span></div>
+              <sc-for list="{{ g.items }}" as="c" hint-placeholder-count="2">
+                <div onClick="{{ c.open }}" style="display:flex;align-items:center;gap:14px;height:{{ rowH }};padding:0 24px;cursor:pointer;background:{{ c.bg }}" style-hover="background:#131417"><svg width="12" height="12" viewBox="0 0 16 16" style="color:rgba(233,234,236,.4);margin:0 -3px"><path d="M3 8h9.5M9 4.5 12.5 8 9 11.5"></path></svg><span style="min-width:0;flex:1;display:flex;flex-direction:column;gap:2px"><span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:rgba(233,234,236,.9)">{{ c.subject }}</span><span style="font-size:12px;color:rgba(233,234,236,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"><span style="color:rgba(233,234,236,.72)">To {{ c.to }}</span> · {{ c.line }}</span></span><span style="flex:none;display:flex;align-items:center;gap:10px"><span style="font-size:11.5px;padding:2px 7px;border:1px solid {{ c.tagBorder }};color:{{ c.tagColor }};border-radius:4px;display:{{ c.tagDisplay }}">{{ c.tag }}</span><span style="font-size:12px;color:rgba(233,234,236,.4);width:68px;text-align:right;white-space:nowrap">{{ c.time }}</span></span></div>
+              </sc-for>
+            </sc-for>
+            <sc-if value="{{ noSent }}" hint-placeholder-val="{{ false }}"><div style="padding:22px 24px;font-size:13px;color:rgba(233,234,236,.5);line-height:1.5">Nothing sent from {{ acctName }} matches.</div></sc-if>
+          </sc-if>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;min-height:0;overflow:hidden">
+        <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ true }}">
+          <div style="padding:24px 40px 0">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:16px">
+              <span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+                <sc-for list="{{ sel.labels }}" as="l" hint-placeholder-count="2"><span title="{{ l.title }}" style="font-size:11.5px;padding:3px 9px;border:{{ l.border }};border-radius:4px;color:rgba(233,234,236,.7)">{{ l.name }}</span></sc-for>
+                <sc-if value="{{ sel.isSent }}" hint-placeholder-val="{{ false }}"><span style="font-size:11.5px;padding:3px 9px;border:1px solid rgba(233,234,236,.35);border-radius:4px;color:rgba(233,234,236,.7)">Sent · {{ acctName }}</span><span style="font-size:11.5px;padding:3px 9px;border:1px dashed rgba(233,234,236,.35);border-radius:4px;color:rgba(233,234,236,.7);display:{{ sel.statusDisplay }}">{{ sel.status }}</span></sc-if>
+              </span>
+              <sc-if value="{{ sel.isInbox }}" hint-placeholder-val="{{ true }}">
+                <span style="display:flex;gap:4px;flex:none">
+                  <span onClick="{{ startReply }}" style="display:flex;align-items:center;gap:7px;height:32px;padding:0 14px;background:#E9EAEC;color:#0E0F11;font-size:12.5px;font-weight:500;border-radius:5px;cursor:pointer"><svg width="14" height="14" viewBox="0 0 16 16"><path d="M6.5 4 3 7.5 6.5 11"></path><path d="M3 7.5h6a4 4 0 0 1 4 4V13"></path></svg><span>Reply</span></span>
+                  <span onClick="{{ toggleDelay }}" style="display:flex;align-items:center;gap:7px;height:32px;padding:0 14px;border:1px solid #2A2C31;font-size:12.5px;font-weight:500;border-radius:5px;cursor:pointer;box-sizing:border-box" style-hover="background:#131417"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"></circle><path d="M8 5v3.2l2 1.3"></path></svg><span>{{ sel.delayBtn }}</span></span>
+                  <span onClick="{{ finish }}" style="display:flex;align-items:center;gap:7px;height:32px;padding:0 14px;border:1px solid #2A2C31;font-size:12.5px;font-weight:500;border-radius:5px;cursor:pointer;box-sizing:border-box" style-hover="background:#131417"><svg width="14" height="14" viewBox="0 0 16 16"><path d="m3.5 8.5 3 3 6-7"></path></svg><span>Done</span></span>
+                  <span style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #2A2C31;border-radius:5px;cursor:pointer;box-sizing:border-box;color:rgba(233,234,236,.7)" style-hover="background:#131417"><svg width="14" height="14" viewBox="0 0 16 16" style="fill:currentColor;stroke:none"><circle cx="3.5" cy="8" r="1.2"></circle><circle cx="8" cy="8" r="1.2"></circle><circle cx="12.5" cy="8" r="1.2"></circle></svg></span>
+                </span>
+              </sc-if>
+              <sc-if value="{{ sel.isSent }}" hint-placeholder-val="{{ false }}">
+                <span style="display:flex;gap:4px;flex:none">
+                  <span onClick="{{ sel.toggleFollow }}" style="display:flex;align-items:center;gap:7px;height:32px;padding:0 14px;border:1px solid #2A2C31;font-size:12.5px;font-weight:500;border-radius:5px;cursor:pointer;box-sizing:border-box" style-hover="background:#131417"><svg width="14" height="14" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"></circle><path d="M8 5v3.2l2 1.3"></path></svg><span>{{ sel.followBtn }}</span></span>
+                  <span style="display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid #2A2C31;border-radius:5px;cursor:pointer;box-sizing:border-box;color:rgba(233,234,236,.7)" style-hover="background:#131417"><svg width="14" height="14" viewBox="0 0 16 16" style="fill:currentColor;stroke:none"><circle cx="3.5" cy="8" r="1.2"></circle><circle cx="8" cy="8" r="1.2"></circle><circle cx="12.5" cy="8" r="1.2"></circle></svg></span>
+                </span>
+              </sc-if>
+            </div>
+            <h1 style="margin:24px 0 0;font-size:28px;font-weight:500;letter-spacing:-.02em;line-height:1.15;text-wrap:pretty;max-width:720px">{{ sel.subject }}</h1>
+            <div style="display:flex;align-items:center;gap:10px;margin-top:14px"><span style="width:24px;height:24px;border-radius:50%;background:#191A1E;display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:500;color:rgba(233,234,236,.8)">{{ sel.initials }}</span><span style="font-size:13px;color:rgba(233,234,236,.62)">{{ sel.meta }}</span></div>
+            <sc-if value="{{ sel.hasSum }}" hint-placeholder-val="{{ true }}"><div style="margin-top:20px;padding:12px 14px;background:#131417;border-radius:6px;display:flex;gap:12px;align-items:flex-start;max-width:720px"><svg width="14" height="14" viewBox="0 0 16 16" style="color:rgba(233,234,236,.45);margin-top:3px"><path d="M4 2.5h5.5L12.5 5.5v8H4z"></path><path d="M6 8h4M6 10.5h4"></path></svg><span style="display:flex;flex-direction:column;gap:3px"><span style="font-size:11px;color:rgba(233,234,236,.4)">Summary · {{ modelShort }}, on this machine</span><span style="font-size:14px;line-height:1.5;color:rgba(233,234,236,.85)">{{ sel.sum }}</span></span></div></sc-if>
+          </div>
+        </sc-if>
+        <div style="flex:1;min-height:0;overflow:auto"><div style="padding:8px 40px 32px;max-width:800px;box-sizing:border-box">
+          <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ true }}">
+            <sc-if value="{{ sel.hasRe }}" hint-placeholder-val="{{ false }}"><div onClick="{{ sel.openRe }}" style="display:flex;align-items:center;gap:8px;margin-top:16px;font-size:12.5px;color:rgba(233,234,236,.5);cursor:pointer"><svg width="12" height="12" viewBox="0 0 16 16"><path d="M6.5 4 3 7.5 6.5 11"></path><path d="M3 7.5h6a4 4 0 0 1 4 4V13"></path></svg><span>In conversation <span style="color:#E9EAEC">{{ sel.reSubject }}</span> · open</span></div></sc-if>
+            <sc-if value="{{ sel.hasEarlier }}" hint-placeholder-val="{{ false }}"><div onClick="{{ sel.expand }}" style="display:flex;align-items:center;gap:12px;padding:16px 0 4px;font-size:12px;color:rgba(233,234,236,.5);cursor:pointer"><span style="flex:1;height:1px;background:#232529"></span><span style="display:flex;align-items:center;gap:6px"><svg width="12" height="12" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4"></path></svg><span>{{ sel.earlierLabel }}</span></span><span style="flex:1;height:1px;background:#232529"></span></div></sc-if>
+            <sc-for list="{{ sel.msgs }}" as="m" hint-placeholder-count="2">
+              <div style="padding:20px 0;border-bottom:1px solid #232529;animation:fpIn .3s ease-out">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:10px"><span style="font-weight:500;color:{{ m.color }}">{{ m.from }}</span><span style="color:rgba(233,234,236,.45);font-size:12px">{{ m.time }}</span></div>
+                <div style="font-size:15px;line-height:1.65;color:rgba(233,234,236,.9);text-wrap:pretty;white-space:pre-line">{{ m.body }}</div>
+              </div>
+            </sc-for>
+            <sc-if value="{{ sel.hasAtt }}" hint-placeholder-val="{{ true }}"><div style="margin-top:18px;display:inline-flex;align-items:center;gap:10px;height:34px;padding:0 12px;border:1px solid #2A2C31;border-radius:5px;font-size:12.5px;cursor:pointer" style-hover="background:#131417"><svg width="14" height="14" viewBox="0 0 16 16" style="color:rgba(233,234,236,.6)"><path d="M10.5 5.5 6 10a1.8 1.8 0 0 0 2.5 2.5l4.6-4.6a3.2 3.2 0 0 0-4.5-4.5L4 8"></path></svg><span>{{ sel.att }}</span><span style="color:rgba(233,234,236,.45)">· available offline</span></div></sc-if>
+            <sc-if value="{{ replying }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:22px;border:1px solid #2A2C31;border-radius:8px;background:#131417;animation:fpIn .25s ease-out">
+                <div style="display:flex;justify-content:space-between;gap:16px;padding:10px 14px;border-bottom:1px solid #232529;font-size:12.5px;color:rgba(233,234,236,.5)"><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">To <span style="color:#E9EAEC">{{ sel.who }}</span> · from <span style="color:#E9EAEC">{{ fromAddr }}</span></span><span style="white-space:nowrap">Re: {{ sel.subject }}</span></div>
+                <textarea value="{{ draft }}" onChange="{{ setDraft }}" placeholder="Write it yourself — nothing here drafts for you." style="display:block;width:100%;min-height:120px;background:transparent;border:0;outline:0;color:#E9EAEC;font:inherit;font-size:14.5px;line-height:1.6;padding:14px;box-sizing:border-box;resize:vertical"></textarea>
+                <div style="display:flex;align-items:center;gap:6px;padding:10px 14px;border-top:1px solid #232529"><span onClick="{{ send }}" style="height:32px;display:flex;align-items:center;padding:0 16px;background:{{ sendBg }};color:{{ sendColor }};font-size:12.5px;font-weight:500;border-radius:5px;cursor:pointer">Send</span><span onClick="{{ cancelReply }}" style="height:32px;display:flex;align-items:center;padding:0 14px;border:1px solid #2A2C31;font-size:12.5px;font-weight:500;border-radius:5px;cursor:pointer;box-sizing:border-box">Discard</span><span style="margin-left:auto;font-size:12px;color:rgba(233,234,236,.45)">Kept as a draft until it sends</span></div>
+              </div>
+            </sc-if>
+          </sc-if>
+          <sc-if value="{{ noSelInbox }}" hint-placeholder-val="{{ false }}"><div style="padding:18vh 0 0;max-width:640px;animation:fpIn .4s ease-out"><svg width="28" height="28" viewBox="0 0 16 16" style="color:#C9A36B"><circle cx="8" cy="8" r="6"></circle><path d="m5.5 8.2 1.8 1.8 3.4-3.8"></path></svg><div style="font-size:32px;font-weight:500;letter-spacing:-.02em;line-height:1.1;margin-top:18px">Clear.</div><div style="font-size:15px;color:rgba(233,234,236,.55);margin-top:12px;line-height:1.6">Nothing to review, nothing delayed in {{ acctName }}. Next on the line: <span style="color:#C9A36B">{{ nextTime }}</span> <span style="color:#E9EAEC">{{ nextTitle }}</span>.</div><div onClick="{{ reset }}" style="display:inline-block;margin-top:24px;font-size:13px;color:rgba(233,234,236,.5);cursor:pointer;border-bottom:1px solid rgba(233,234,236,.25)">Restore sample mail</div></div></sc-if>
+          <sc-if value="{{ noSelSent }}" hint-placeholder-val="{{ false }}"><div style="padding:18vh 0 0;max-width:640px;animation:fpIn .4s ease-out"><div style="font-size:32px;font-weight:500;letter-spacing:-.02em;line-height:1.1">Nothing here.</div><div style="font-size:15px;color:rgba(233,234,236,.55);margin-top:12px;line-height:1.6">No sent mail from {{ acctName }} matches. Clear the filter or pick another day.</div></div></sc-if>
+        </div></div>
+      </div>
+    </div>
+  </sc-if>
+  <sc-if value="{{ isCal }}" hint-placeholder-val="{{ false }}">
+    <div data-screen-label="Calendar" style="position:absolute;left:0;right:0;top:56px;bottom:0;display:flex;flex-direction:column;overflow:hidden;padding:0 24px;box-sizing:border-box">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:24px 0 16px">
+        <span style="display:flex;align-items:baseline;gap:12px;min-width:0"><span style="font-size:22px;font-weight:500;letter-spacing:-.02em;line-height:1;white-space:nowrap">{{ calTitle }}</span><span style="font-size:13px;color:rgba(233,234,236,.5);white-space:nowrap">{{ calSub }}</span></span>
+        <span style="display:flex;align-items:center;gap:12px;flex:none">
+          <span title="View — d, w, m" style="display:flex;gap:2px;background:#131417;padding:2px;border-radius:6px;font-size:12.5px"><sc-for list="{{ calViews }}" as="o" hint-placeholder-count="3"><span onClick="{{ o.pick }}" style="padding:5px 12px;border-radius:4px;cursor:pointer;background:{{ o.bg }};color:{{ o.color }};font-weight:{{ o.weight }}">{{ o.label }}</span></sc-for></span>
+          <span style="display:flex;align-items:stretch;height:30px;border:1px solid #2A2C31;border-radius:5px;font-size:12.5px;box-sizing:border-box;overflow:hidden">
+            <span onClick="{{ calPrev }}" title="Previous — ←" style="display:flex;align-items:center;justify-content:center;width:30px;cursor:pointer;color:rgba(233,234,236,.7)" style-hover="background:#131417"><svg width="12" height="12" viewBox="0 0 16 16"><path d="m10 4-4 4 4 4"></path></svg></span>
+            <span onClick="{{ calToday }}" title="Today — t" style="display:flex;align-items:center;padding:0 12px;cursor:pointer;border-left:1px solid #2A2C31;border-right:1px solid #2A2C31;color:{{ todayColor }}" style-hover="background:#131417">Today</span>
+            <span onClick="{{ calNext }}" title="Next — →" style="display:flex;align-items:center;justify-content:center;width:30px;cursor:pointer;color:rgba(233,234,236,.7)" style-hover="background:#131417"><svg width="12" height="12" viewBox="0 0 16 16"><path d="m6 4 4 4-4 4"></path></svg></span>
+          </span>
+        </span>
+      </div>
+      <sc-if value="{{ isWeek }}" hint-placeholder-val="{{ true }}">
+        <div style="display:grid;grid-template-columns:56px repeat(7,1fr)">
+          <span></span>
+          <sc-for list="{{ week }}" as="d" hint-placeholder-count="7"><div onClick="{{ d.openDay }}" title="Open day" style="padding:0 0 10px 10px;display:flex;gap:8px;align-items:baseline;border-bottom:1px solid {{ d.rule }};cursor:pointer"><span style="font-size:20px;font-weight:500;letter-spacing:-.02em;color:{{ d.numColor }}">{{ d.num }}</span><span style="font-size:12px;color:rgba(233,234,236,.5)">{{ d.name }}</span></div></sc-for>
+        </div>
+        <div style="flex:1;min-height:0;display:grid;grid-template-columns:56px repeat(7,1fr);padding-bottom:16px">
+          <div style="position:relative"><sc-for list="{{ hours }}" as="h" hint-placeholder-count="14"><span style="position:absolute;top:{{ h.top }};left:0;font-size:11px;color:rgba(233,234,236,.4);transform:translateY(-50%)">{{ h.label }}</span></sc-for></div>
+          <sc-for list="{{ week }}" as="d" hint-placeholder-count="7">
+            <div style="position:relative;overflow:hidden;border-left:1px solid #232529;background-color:{{ d.bg }};background-image:repeating-linear-gradient(to bottom,#1B1C20 0 1px,transparent 1px {{ hourPct }})">
+              <sc-for list="{{ d.events }}" as="ev" hint-placeholder-count="2"><div onClick="{{ ev.pick }}" title="{{ ev.tip }}" style="position:absolute;left:{{ ev.left }};right:{{ ev.right }};top:{{ ev.top }};height:{{ ev.height }};min-height:38px;margin:0 6px 0 4px;padding:5px 9px;background:{{ ev.fill }};border-left:2px solid {{ ev.rule }};border-top:{{ ev.dashed }};box-sizing:border-box;overflow:hidden;color:{{ ev.color }};border-radius:0 4px 4px 0;cursor:pointer" style-hover="background:#1F2126"><div style="font-size:11px;color:rgba(233,234,236,.5)">{{ ev.start }}</div><div style="font-size:12.5px;font-weight:500;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ ev.title }}</div></div></sc-for>
+              <sc-if value="{{ d.today }}" hint-placeholder-val="{{ false }}"><div style="position:absolute;left:0;right:0;top:{{ nowPct }};height:1px;background:#C9A36B;pointer-events:none"><span style="position:absolute;left:-4px;top:-4px;width:0;height:0;border-top:4.5px solid transparent;border-bottom:4.5px solid transparent;border-left:8px solid #C9A36B"></span></div></sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+      <sc-if value="{{ isDay }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:32px;padding-bottom:16px">
+          <div style="display:flex;flex-direction:column;min-height:0">
+            <div style="display:grid;grid-template-columns:56px 1fr"><span></span><div style="padding:0 0 10px 10px;display:flex;gap:8px;align-items:baseline;border-bottom:1px solid {{ day.rule }}"><span style="font-size:20px;font-weight:500;letter-spacing:-.02em;color:{{ day.numColor }}">{{ day.num }}</span><span style="font-size:12px;color:rgba(233,234,236,.5)">{{ day.name }}</span></div></div>
+            <div style="flex:1;min-height:0;display:grid;grid-template-columns:56px 1fr">
+              <div style="position:relative"><sc-for list="{{ hours }}" as="h" hint-placeholder-count="14"><span style="position:absolute;top:{{ h.top }};left:0;font-size:11px;color:rgba(233,234,236,.4);transform:translateY(-50%)">{{ h.label }}</span></sc-for></div>
+              <div style="position:relative;overflow:hidden;border-left:1px solid #232529;background-color:{{ day.bg }};background-image:repeating-linear-gradient(to bottom,#1B1C20 0 1px,transparent 1px {{ hourPct }})">
+                <sc-for list="{{ day.events }}" as="ev" hint-placeholder-count="3"><div onClick="{{ ev.pick }}" title="{{ ev.tip }}" style="position:absolute;left:{{ ev.left }};right:{{ ev.right }};top:{{ ev.top }};height:{{ ev.height }};min-height:38px;margin:0 6px 0 4px;padding:6px 12px;background:{{ ev.fill }};border-left:2px solid {{ ev.rule }};border-top:{{ ev.dashed }};box-sizing:border-box;overflow:hidden;color:{{ ev.color }};border-radius:0 4px 4px 0;cursor:pointer;display:flex;gap:14px;align-items:baseline" style-hover="background:#1F2126"><span style="font-size:11.5px;color:rgba(233,234,236,.5);white-space:nowrap">{{ ev.start }}</span><span style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ ev.title }}</span><span style="font-size:12px;color:rgba(233,234,236,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ ev.sub }}</span></div></sc-for>
+                <sc-if value="{{ day.today }}" hint-placeholder-val="{{ true }}"><div style="position:absolute;left:0;right:0;top:{{ nowPct }};height:1px;background:#C9A36B;pointer-events:none"><span style="position:absolute;left:-4px;top:-4px;width:0;height:0;border-top:4.5px solid transparent;border-bottom:4.5px solid transparent;border-left:8px solid #C9A36B"></span></div></sc-if>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;min-height:0;overflow:auto;padding-top:38px">
+            <sc-for list="{{ day.agenda }}" as="ev" hint-placeholder-count="4"><div onClick="{{ ev.pick }}" style="display:flex;gap:14px;padding:12px 0;border-bottom:1px solid #232529;cursor:pointer"><span style="width:92px;flex:none;font-size:12.5px;color:{{ ev.timeColor }};white-space:nowrap">{{ ev.range }}</span><span style="display:flex;flex-direction:column;gap:2px;min-width:0"><span style="font-size:13.5px;font-weight:500;color:{{ ev.color }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ ev.title }}</span><span style="font-size:12px;color:rgba(233,234,236,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ ev.sub }}</span></span></div></sc-for>
+            <sc-if value="{{ day.empty }}" hint-placeholder-val="{{ false }}"><div style="font-size:13px;color:rgba(233,234,236,.5);padding:12px 0">Nothing scheduled.</div></sc-if>
+          </div>
+        </div>
+      </sc-if>
+      <sc-if value="{{ isMonth }}" hint-placeholder-val="{{ false }}">
+        <div style="display:grid;grid-template-columns:repeat(7,1fr)"><sc-for list="{{ monthHead }}" as="h" hint-placeholder-count="7"><span style="padding:0 0 8px 10px;font-size:12px;color:rgba(233,234,236,.5)">{{ h.name }}</span></sc-for></div>
+        <div style="flex:1;min-height:0;display:grid;grid-template-columns:repeat(7,1fr);grid-template-rows:repeat({{ monthRows }},minmax(0,1fr));border-top:1px solid #232529;border-left:1px solid #232529;margin-bottom:16px">
+          <sc-for list="{{ monthCells }}" as="c" hint-placeholder-count="35">
+            <div style="border-right:1px solid #232529;border-bottom:1px solid #232529;padding:6px 8px 8px;min-height:0;overflow:hidden;background:{{ c.bg }};display:flex;flex-direction:column;gap:3px">
+              <span onClick="{{ c.openDay }}" title="Open day" style="font-size:13px;font-weight:500;color:{{ c.numColor }};cursor:pointer;align-self:flex-start;flex:none;padding:2px 6px;border-radius:4px;margin-left:-6px" style-hover="background:#191A1E">{{ c.num }}</span>
+              <sc-for list="{{ c.events }}" as="ev" hint-placeholder-count="2"><span onClick="{{ ev.pick }}" title="{{ ev.tip }}" style="flex:none;font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;color:{{ ev.color }};padding-left:6px;border-left:{{ ev.border }};line-height:1.3"><span style="color:rgba(233,234,236,.45)">{{ ev.start }}</span> {{ ev.title }}</span></sc-for>
+              <sc-if value="{{ c.hasMore }}" hint-placeholder-val="{{ false }}"><span onClick="{{ c.openDay }}" style="flex:none;font-size:11px;color:rgba(233,234,236,.45);cursor:pointer;padding-left:8px">+ {{ c.more }} more</span></sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+    </div>
+  </sc-if>
+  <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
+    <div data-screen-label="Settings" style="position:absolute;left:0;right:0;top:56px;bottom:0;display:grid;grid-template-columns:220px 1fr;overflow:hidden;animation:fpIn .2s ease-out">
+      <div style="border-right:1px solid #232529;padding:24px 16px 20px 24px;display:flex;flex-direction:column;gap:2px;box-sizing:border-box;min-height:0">
+        <div style="font-size:22px;font-weight:500;letter-spacing:-.02em;line-height:1;margin:0 0 20px 10px">Settings</div>
+        <span onClick="{{ stAccounts.pick }}" style="display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:5px;font-size:13px;cursor:pointer;color:{{ stAccounts.color }};background:{{ stAccounts.bg }};font-weight:{{ stAccounts.weight }}" style-hover="background:#131417"><svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="5" width="12" height="9" rx="1.5"></rect><path d="M4.5 5V3.5A1.5 1.5 0 0 1 6 2h4a1.5 1.5 0 0 1 1.5 1.5V5"></path></svg><span>Accounts</span></span>
+        <span onClick="{{ stModel.pick }}" style="display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:5px;font-size:13px;cursor:pointer;color:{{ stModel.color }};background:{{ stModel.bg }};font-weight:{{ stModel.weight }}" style-hover="background:#131417"><svg width="14" height="14" viewBox="0 0 16 16"><rect x="3.5" y="3.5" width="9" height="9" rx="1.5"></rect><path d="M6 1.5v2M10 1.5v2M6 12.5v2M10 12.5v2M1.5 6h2M1.5 10h2M12.5 6h2M12.5 10h2"></path></svg><span>Local model</span></span>
+        <span onClick="{{ stMail.pick }}" style="display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:5px;font-size:13px;cursor:pointer;color:{{ stMail.color }};background:{{ stMail.bg }};font-weight:{{ stMail.weight }}" style-hover="background:#131417"><svg width="14" height="14" viewBox="0 0 16 16"><rect x="2" y="3.5" width="12" height="9" rx="1.5"></rect><path d="m2.5 4.5 5.5 4.2 5.5-4.2"></path></svg><span>Mail</span></span>
+        <span onClick="{{ stCal.pick }}" style="display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:5px;font-size:13px;cursor:pointer;color:{{ stCal.color }};background:{{ stCal.bg }};font-weight:{{ stCal.weight }}" style-hover="background:#131417"><svg width="14" height="14" viewBox="0 0 16 16"><rect x="2.5" y="3.5" width="11" height="10" rx="1"></rect><path d="M2.5 7h11M5.5 2v3M10.5 2v3"></path></svg><span>Calendar</span></span>
+        <span onClick="{{ stKeys.pick }}" style="display:flex;align-items:center;gap:10px;height:32px;padding:0 10px;border-radius:5px;font-size:13px;cursor:pointer;color:{{ stKeys.color }};background:{{ stKeys.bg }};font-weight:{{ stKeys.weight }}" style-hover="background:#131417"><svg width="14" height="14" viewBox="0 0 16 16"><rect x="1.5" y="4" width="13" height="8" rx="1.5"></rect><path d="M4 7h1M7.5 7h1M11 7h1M5 9.5h6"></path></svg><span>Shortcuts</span></span>
+        <div style="margin-top:auto;font-size:11.5px;color:rgba(233,234,236,.35);line-height:1.5;padding:0 10px">Version 0.9.2 · everything here stays on this machine</div>
+      </div>
+      <div style="position:relative;min-height:0;display:flex;flex-direction:column">
+        <span onClick="{{ closeSettings }}" style="position:absolute;right:24px;top:22px;z-index:2;display:flex;align-items:center;gap:8px;height:32px;padding:0 12px;border:1px solid #2A2C31;border-radius:5px;font-size:12.5px;font-weight:500;cursor:pointer;box-sizing:border-box;background:#0E0F11" style-hover="background:#131417"><span>Done</span><span style="font-size:11px;color:rgba(233,234,236,.4);border:1px solid #232529;border-radius:3px;padding:0 5px;line-height:1.5">Esc</span></span>
+        <div style="flex:1;min-height:0;overflow:auto"><div style="padding:24px 40px 40px;max-width:720px;box-sizing:border-box">
+          <sc-if value="{{ isAccounts }}" hint-placeholder-val="{{ true }}">
+            <div style="font-size:22px;font-weight:500;letter-spacing:-.02em;line-height:1.1;padding-right:120px">Accounts</div>
+            <div style="font-size:13.5px;color:rgba(233,234,236,.55);margin-top:8px;line-height:1.5;text-wrap:pretty;max-width:560px">Each account brings its mail and calendar to this machine. Search, summaries and categories are built from that local copy. The display name is what the top bar shows.</div>
+            <div style="display:flex;flex-direction:column;gap:12px;margin-top:24px">
+              <sc-for list="{{ accounts }}" as="a" hint-placeholder-count="3">
+                <div style="border:1px solid #232529;border-radius:8px;padding:16px 18px;display:flex;flex-direction:column;gap:12px">
+                  <div style="display:flex;align-items:center;gap:12px">
+                    <span style="width:32px;height:32px;border-radius:6px;background:#131417;display:flex;align-items:center;justify-content:center;color:rgba(233,234,236,.85);flex:none"><svg width="15" height="15" viewBox="0 0 16 16"><path d="{{ a.icon }}"></path></svg></span>
+                    <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1">
+                      <input value="{{ a.name }}" onChange="{{ a.rename }}" title="Display name — shown in the top bar" style="background:transparent;border:0;border-bottom:1px dashed transparent;outline:0;color:#E9EAEC;font:inherit;font-size:14px;font-weight:500;padding:0;width:100%;box-sizing:border-box" style-hover="border-bottom-color:#2A2C31" style-focus="border-bottom-color:#3A3D44">
+                      <span style="font-size:12.5px;color:rgba(233,234,236,.5);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ a.addr }} · {{ a.provider }} · Mail and Calendar</span>
+                    </span>
+                    <span style="display:flex;align-items:center;gap:7px;font-size:12px;color:rgba(233,234,236,.45);white-space:nowrap;flex:none"><svg width="13" height="13" viewBox="0 0 16 16"><path d="M13 8a5 5 0 0 1-8.7 3.4M3 8a5 5 0 0 1 8.7-3.4"></path><path d="M12.5 2.6v2.4h-2.4M3.5 13.4V11h2.4"></path></svg><span>{{ a.status }}</span></span>
+                    <span onClick="{{ a.remove }}" title="Disconnect this account and delete its local copy" style="font-size:12px;color:rgba(233,234,236,.4);cursor:pointer;white-space:nowrap;flex:none;margin-left:6px" style-hover="color:#E9EAEC">Remove</span>
+                  </div>
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;padding-top:12px;border-top:1px solid #232529;font-size:12px;color:rgba(233,234,236,.45)"><span>{{ a.index }}</span><span>{{ a.idxW }}</span></div>
+                  <div style="height:2px;background:#1F2126;border-radius:1px;overflow:hidden;margin-top:-6px"><span style="display:block;height:100%;width:{{ a.idxW }};background:rgba(233,234,236,.45)"></span></div>
+                </div>
+              </sc-for>
+            </div>
+            <sc-if value="{{ addIdle }}" hint-placeholder-val="{{ true }}"><div style="margin-top:16px"><span onClick="{{ startAdd }}" style="display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 14px;border:1px solid #2A2C31;border-radius:5px;font-size:12.5px;font-weight:500;cursor:pointer;box-sizing:border-box" style-hover="background:#131417"><svg width="12" height="12" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"></path></svg><span>Add account</span></span></div></sc-if>
+            <sc-if value="{{ addOn }}" hint-placeholder-val="{{ false }}">
+              <div style="margin-top:16px;border:1px solid #2A2C31;border-radius:8px;background:#131417;padding:18px 20px 20px;animation:fpIn .2s ease-out;display:flex;flex-direction:column;gap:18px">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:16px">
+                  <span style="display:flex;align-items:baseline;gap:14px"><span style="font-size:15px;font-weight:500">Add account</span><span style="display:flex;gap:10px;font-size:11.5px"><sc-for list="{{ addSteps }}" as="s" hint-placeholder-count="4"><span style="color:{{ s.color }};font-weight:{{ s.weight }}">{{ s.label }}</span></sc-for></span></span>
+                  <span onClick="{{ cancelAdd }}" style="font-size:12px;color:rgba(233,234,236,.5);cursor:pointer" style-hover="color:#E9EAEC">Cancel</span>
+                </div>
+                <sc-if value="{{ addStep0 }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:flex;flex-direction:column;gap:6px"><sc-for list="{{ addProviders }}" as="p" hint-placeholder-count="3"><span onClick="{{ p.pick }}" style="display:flex;align-items:center;justify-content:space-between;gap:12px;height:44px;padding:0 14px;border:1px solid #2A2C31;border-radius:6px;cursor:pointer;font-size:13.5px" style-hover="background:#191A1E"><span>{{ p.name }}</span><span style="font-size:12px;color:rgba(233,234,236,.45)">{{ p.note }}</span></span></sc-for></div>
+                  <div style="font-size:12.5px;color:rgba(233,234,236,.5);line-height:1.5">Sign-in happens in your browser, with the provider. This app never sees your password — it receives a token, kept in the system keychain, that you can revoke from the provider at any time.</div>
+                </sc-if>
+                <sc-if value="{{ addStep1 }}" hint-placeholder-val="{{ false }}">
+                  <sc-if value="{{ addIdleStep }}" hint-placeholder-val="{{ true }}">
+                    <div style="display:flex;flex-direction:column;gap:12px;align-items:flex-start">
+                      <span onClick="{{ openBrowser }}" style="display:inline-flex;align-items:center;gap:10px;height:36px;padding:0 16px;background:#E9EAEC;color:#0E0F11;border-radius:5px;font-size:13px;font-weight:500;cursor:pointer"><svg width="14" height="14" viewBox="0 0 16 16"><path d="M9 3h4v4M13 3 7 9"></path><path d="M11 9.5V12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h2.5"></path></svg><span>Continue with {{ addShort }}</span></span>
+                      <span style="font-size:12.5px;color:rgba(233,234,236,.5);line-height:1.5">Opens <span style="color:#E9EAEC">{{ addHost }}</span> in your default browser. Sign in there; this window updates by itself when you are done.</span>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ addWaiting }}" hint-placeholder-val="{{ false }}">
+                    <div style="display:flex;align-items:center;gap:12px;font-size:13.5px"><span style="width:8px;height:8px;border-radius:50%;background:#C9A36B;animation:fpPulse 1.2s ease-in-out infinite"></span><span>Waiting for the browser…</span><span style="margin-left:auto;font-size:12px;color:rgba(233,234,236,.5);cursor:pointer" style-hover="color:#E9EAEC">Copy sign-in link</span></div>
+                  </sc-if>
+                </sc-if>
+                <sc-if value="{{ addStep2 }}" hint-placeholder-val="{{ false }}">
+                  <div style="font-size:13.5px">{{ addShort }} is asking you to grant this app:</div>
+                  <div style="display:flex;flex-direction:column;gap:10px;font-size:13.5px">
+                    <span style="display:flex;align-items:center;gap:10px"><svg width="14" height="14" viewBox="0 0 16 16" style="color:rgba(233,234,236,.7)"><path d="m3.5 8.5 3 3 6-7"></path></svg><span>Read, send and organise mail</span></span>
+                    <span style="display:flex;align-items:center;gap:10px"><svg width="14" height="14" viewBox="0 0 16 16" style="color:rgba(233,234,236,.7)"><path d="m3.5 8.5 3 3 6-7"></path></svg><span>Read and edit calendar events</span></span>
+                    <span style="display:flex;align-items:center;gap:10px"><svg width="14" height="14" viewBox="0 0 16 16" style="color:rgba(233,234,236,.7)"><path d="m3.5 8.5 3 3 6-7"></path></svg><span>See your name and address</span></span>
+                  </div>
+                  <div style="font-size:12.5px;color:rgba(233,234,236,.5);line-height:1.5">Send permission is needed for replies. Nothing is read until the first sync, and it all stays on this machine.</div>
+                  <sc-if value="{{ addIdleStep }}" hint-placeholder-val="{{ true }}"><div><span onClick="{{ allowAdd }}" style="display:inline-flex;align-items:center;height:36px;padding:0 16px;background:#E9EAEC;color:#0E0F11;border-radius:5px;font-size:13px;font-weight:500;cursor:pointer">Allow in browser</span></div></sc-if>
+                  <sc-if value="{{ addWaiting }}" hint-placeholder-val="{{ false }}"><div style="display:flex;align-items:center;gap:12px;font-size:13.5px"><span style="width:8px;height:8px;border-radius:50%;background:#C9A36B;animation:fpPulse 1.2s ease-in-out infinite"></span><span>Waiting for the browser…</span></div></sc-if>
+                </sc-if>
+                <sc-if value="{{ addStep3 }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid #232529;border-radius:6px;background:#0E0F11">
+                    <span style="width:32px;height:32px;border-radius:6px;background:#131417;display:flex;align-items:center;justify-content:center;color:rgba(233,234,236,.85);flex:none"><svg width="15" height="15" viewBox="0 0 16 16"><path d="{{ addIcon }}"></path></svg></span>
+                    <span style="display:flex;flex-direction:column;gap:2px;min-width:0;flex:1"><span style="font-size:14px;font-weight:500">Connected · {{ addAddr }}</span><span style="font-size:12.5px;color:rgba(233,234,236,.5)">{{ addProviderName }} · Mail and Calendar</span></span>
+                    <svg width="16" height="16" viewBox="0 0 16 16" style="color:#C9A36B"><circle cx="8" cy="8" r="6"></circle><path d="m5.5 8.2 1.8 1.8 3.4-3.8"></path></svg>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:14px;font-size:13.5px"><span style="color:rgba(233,234,236,.6);white-space:nowrap">Display name</span><input value="{{ addName }}" onChange="{{ setAddName }}" style="flex:0 1 220px;height:32px;background:#0E0F11;border:1px solid #2A2C31;border-radius:5px;color:#E9EAEC;font:inherit;font-size:13px;padding:0 10px;outline:0;box-sizing:border-box" style-focus="border-color:#3A3D44"><span style="font-size:12px;color:rgba(233,234,236,.45)">shown in the top bar</span></div>
+                  <div style="font-size:12.5px;color:rgba(233,234,236,.5);line-height:1.5">First sync has started. New mail shows up within minutes; the full index builds in the background and older mail becomes searchable as it lands.</div>
+                  <div><span onClick="{{ finishAdd }}" style="display:inline-flex;align-items:center;height:36px;padding:0 16px;background:#E9EAEC;color:#0E0F11;border-radius:5px;font-size:13px;font-weight:500;cursor:pointer">Done</span></div>
+                </sc-if>
+              </div>
+            </sc-if>
+          </sc-if>
+          <sc-if value="{{ isModel }}" hint-placeholder-val="{{ false }}">
+            <div style="font-size:22px;font-weight:500;letter-spacing:-.02em;line-height:1.1;padding-right:120px">Local model</div>
+            <div style="font-size:13.5px;color:rgba(233,234,236,.55);margin-top:8px;line-height:1.5;text-wrap:pretty;max-width:560px">Writes the one-line summaries in the list, the short summary above each thread, and the dashed category suggestions. It runs on this machine; mail never goes to a cloud model.</div>
+            <div style="margin-top:24px;padding:14px 16px;background:#131417;border-radius:8px;display:flex;align-items:center;gap:14px">
+              <span style="width:8px;height:8px;border-radius:50%;background:#E9EAEC;flex:none"></span>
+              <span style="display:flex;flex-direction:column;gap:3px;min-width:0;flex:1"><span style="font-size:14px;font-weight:500">Ready · {{ modelName }}</span><span style="font-size:12.5px;color:rgba(233,234,236,.5);line-height:1.45">Apple Silicon · ≈ 42 tok/s · about 1 s per summary · {{ nConv }} of {{ nConv }} conversations in {{ acctName }} summarised</span></span>
+              <span onClick="{{ requeue }}" style="display:flex;align-items:center;height:30px;padding:0 12px;border:1px solid #2A2C31;border-radius:5px;font-size:12px;font-weight:500;cursor:pointer;box-sizing:border-box;white-space:nowrap;color:{{ requeueColor }}" style-hover="background:#191A1E">{{ requeueText }}</span>
+            </div>
+            <div style="margin-top:24px;font-size:11.5px;color:rgba(233,234,236,.45);margin-bottom:8px">Model</div>
+            <div style="border:1px solid #232529;border-radius:8px;overflow:hidden">
+              <sc-for list="{{ models }}" as="m" hint-placeholder-count="3">
+                <div onClick="{{ m.pick }}" style="display:flex;align-items:center;gap:14px;padding:12px 16px;border-bottom:{{ m.border }};cursor:pointer;background:{{ m.bg }}" style-hover="background:#131417">
+                  <span style="width:14px;height:14px;border-radius:50%;border:1px solid {{ m.ring }};box-sizing:border-box;display:flex;align-items:center;justify-content:center;flex:none"><span style="width:6px;height:6px;border-radius:50%;background:{{ m.dot }}"></span></span>
+                  <span style="display:flex;flex-direction:column;gap:2px;flex:1;min-width:0"><span style="font-size:14px;color:{{ m.color }}">{{ m.name }}</span><span style="font-size:12px;color:rgba(233,234,236,.5)">{{ m.note }}</span></span>
+                  <span style="font-size:12px;color:rgba(233,234,236,.45);width:52px;text-align:right">{{ m.size }}</span>
+                  <span onClick="{{ m.act }}" style="font-size:12px;width:96px;text-align:right;color:{{ m.actColor }};cursor:{{ m.cursor }}">{{ m.action }}</span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="margin-top:14px;font-size:12.5px;color:rgba(233,234,236,.45);line-height:1.5">Switching models re-summarises new mail only; existing summaries are kept until you re-summarise.</div>
+          </sc-if>
+          <sc-if value="{{ isMailSt }}" hint-placeholder-val="{{ false }}">
+            <div style="font-size:22px;font-weight:500;letter-spacing:-.02em;line-height:1.1;padding-right:120px">Mail</div>
+            <div style="font-size:13.5px;color:rgba(233,234,236,.55);margin-top:8px;line-height:1.5;text-wrap:pretty;max-width:560px">Three states, no folders: to review, delayed, done. Delay is a decision about time, not importance.</div>
+            <div style="margin-top:16px"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:24px;padding:14px 0;border-bottom:1px solid #232529"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span>Delay until</span><span style="font-size:12.5px;color:rgba(233,234,236,.5);line-height:1.45">What d does. Delayed mail returns to the top of the list at that time.</span></span><span style="display:flex;gap:2px;background:#131417;padding:2px;border-radius:6px;font-size:12.5px;flex:none"><sc-for list="{{ delaySeg }}" as="o" hint-placeholder-count="3"><span onClick="{{ o.pick }}" style="padding:5px 12px;border-radius:4px;cursor:pointer;white-space:nowrap;background:{{ o.bg }};color:{{ o.color }};font-weight:{{ o.weight }}">{{ o.label }}</span></sc-for></span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:24px;padding:14px 0;border-bottom:1px solid #232529"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span>Row density</span><span style="font-size:12.5px;color:rgba(233,234,236,.5);line-height:1.45">Comfortable is 52 px a row; compact is 44.</span></span><span style="display:flex;gap:2px;background:#131417;padding:2px;border-radius:6px;font-size:12.5px;flex:none"><sc-for list="{{ densitySeg }}" as="o" hint-placeholder-count="2"><span onClick="{{ o.pick }}" style="padding:5px 12px;border-radius:4px;cursor:pointer;white-space:nowrap;background:{{ o.bg }};color:{{ o.color }};font-weight:{{ o.weight }}">{{ o.label }}</span></sc-for></span></div>
+          </sc-if>
+          <sc-if value="{{ isCalSt }}" hint-placeholder-val="{{ false }}">
+            <div style="font-size:22px;font-weight:500;letter-spacing:-.02em;line-height:1.1;padding-right:120px">Calendar</div>
+            <div style="font-size:13.5px;color:rgba(233,234,236,.55);margin-top:8px;line-height:1.5;text-wrap:pretty;max-width:560px">One combined feed across every account. Events from other accounts carry the account name in their details.</div>
+            <div style="margin-top:16px"></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:24px;padding:14px 0;border-bottom:1px solid #232529"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span>Grid hours</span><span style="font-size:12.5px;color:rgba(233,234,236,.5);line-height:1.45">The Day and Week grids show these hours.</span></span><span style="display:flex;align-items:center;gap:8px;flex:none;font-size:13px"><select value="{{ dayStartVal }}" onChange="{{ setDayStart }}" style="background:#131417;border:1px solid #2A2C31;border-radius:5px;color:#E9EAEC;font:inherit;font-size:13px;height:30px;padding:0 10px;cursor:pointer"><option value="6">06:00</option><option value="7">07:00</option><option value="8">08:00</option><option value="9">09:00</option></select><span style="color:rgba(233,234,236,.45)">to</span><select value="{{ dayEndVal }}" onChange="{{ setDayEnd }}" style="background:#131417;border:1px solid #2A2C31;border-radius:5px;color:#E9EAEC;font:inherit;font-size:13px;height:30px;padding:0 10px;cursor:pointer"><option value="18">18:00</option><option value="19">19:00</option><option value="20">20:00</option><option value="21">21:00</option><option value="22">22:00</option></select></span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:24px;padding:14px 0;border-bottom:1px solid #232529"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span>Timeline hours</span><span style="font-size:12.5px;color:rgba(233,234,236,.5);line-height:1.45">The strip under Mail. Drag it sideways for the next or previous day.</span></span><span style="display:flex;align-items:center;gap:8px;flex:none;font-size:13px"><select value="{{ tlStartVal }}" onChange="{{ setTlStart }}" style="background:#131417;border:1px solid #2A2C31;border-radius:5px;color:#E9EAEC;font:inherit;font-size:13px;height:30px;padding:0 10px;cursor:pointer"><option value="0">00:00</option><option value="5">05:00</option><option value="6">06:00</option><option value="7">07:00</option><option value="8">08:00</option><option value="9">09:00</option><option value="10">10:00</option></select><span style="color:rgba(233,234,236,.45)">to</span><select value="{{ tlEndVal }}" onChange="{{ setTlEnd }}" style="background:#131417;border:1px solid #2A2C31;border-radius:5px;color:#E9EAEC;font:inherit;font-size:13px;height:30px;padding:0 10px;cursor:pointer"><option value="17">17:00</option><option value="18">18:00</option><option value="19">19:00</option><option value="20">20:00</option><option value="21">21:00</option><option value="22">22:00</option><option value="23">23:00</option><option value="24">24:00</option></select></span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:24px;padding:14px 0;border-bottom:1px solid #232529"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span>Other accounts' events</span><span style="font-size:12.5px;color:rgba(233,234,236,.5);line-height:1.45">Show everything on one feed, or only the account you are in.</span></span><span style="display:flex;gap:2px;background:#131417;padding:2px;border-radius:6px;font-size:12.5px;flex:none"><sc-for list="{{ busySeg }}" as="o" hint-placeholder-count="2"><span onClick="{{ o.pick }}" style="padding:5px 12px;border-radius:4px;cursor:pointer;white-space:nowrap;background:{{ o.bg }};color:{{ o.color }};font-weight:{{ o.weight }}">{{ o.label }}</span></sc-for></span></div>
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:24px;padding:14px 0;border-bottom:1px solid #232529"><span style="display:flex;flex-direction:column;gap:3px;min-width:0"><span>Week starts on</span></span><span style="display:flex;gap:2px;background:#131417;padding:2px;border-radius:6px;font-size:12.5px;flex:none"><sc-for list="{{ weekSeg }}" as="o" hint-placeholder-count="2"><span onClick="{{ o.pick }}" style="padding:5px 12px;border-radius:4px;cursor:pointer;white-space:nowrap;background:{{ o.bg }};color:{{ o.color }};font-weight:{{ o.weight }}">{{ o.label }}</span></sc-for></span></div>
+          </sc-if>
+          <sc-if value="{{ isKeys }}" hint-placeholder-val="{{ false }}">
+            <div style="font-size:22px;font-weight:500;letter-spacing:-.02em;line-height:1.1;padding-right:120px">Shortcuts</div>
+            <div style="font-size:13.5px;color:rgba(233,234,236,.55);margin-top:8px;line-height:1.5;text-wrap:pretty;max-width:560px">Single keys, no modifiers. They work whenever the cursor is not in a text field.</div>
+            <div style="margin-top:24px;font-size:11.5px;color:rgba(233,234,236,.45)">Mail</div>
+            <div style="display:grid;grid-template-columns:132px 1fr;row-gap:14px;column-gap:20px;margin-top:12px;font-size:13.5px;align-items:center">
+              <span style="display:flex;gap:4px"><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">j</span><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">k</span></span><span>Next · previous conversation</span>
+              <span style="display:flex;gap:4px"><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">d</span></span><span>Delay · undelay</span>
+              <span style="display:flex;gap:4px"><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">e</span></span><span>Done</span>
+              <span style="display:flex;gap:4px"><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">r</span></span><span>Reply</span>
+              <span style="display:flex;gap:4px"><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">s</span></span><span>Inbox · Sent</span>
+              <span style="display:flex;gap:4px"><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">/</span><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">⌘K</span></span><span>Search</span>
+            </div>
+            <div style="margin-top:28px;font-size:11.5px;color:rgba(233,234,236,.45)">Calendar</div>
+            <div style="display:grid;grid-template-columns:132px 1fr;row-gap:14px;column-gap:20px;margin-top:12px;font-size:13.5px;align-items:center">
+              <span style="display:flex;gap:4px"><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">d</span><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">w</span><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">m</span></span><span>Day · Week · Month</span>
+              <span style="display:flex;gap:4px"><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">←</span><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">→</span></span><span>Previous · next</span>
+              <span style="display:flex;gap:4px"><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">t</span></span><span>Today</span>
+            </div>
+            <div style="margin-top:28px;font-size:11.5px;color:rgba(233,234,236,.45)">Everywhere</div>
+            <div style="display:grid;grid-template-columns:132px 1fr;row-gap:14px;column-gap:20px;margin-top:12px;font-size:13.5px;align-items:center">
+              <span style="display:flex;gap:4px"><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">c</span></span><span>Mail · Calendar</span>
+              <span style="display:flex;gap:4px"><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">,</span></span><span>Settings</span>
+              <span style="display:flex;gap:4px"><span style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border:1px solid #2A2C31;border-radius:4px;font-size:12px;color:rgba(233,234,236,.8);box-sizing:border-box">Esc</span></span><span>Close search, reply, event details or settings</span>
+            </div>
+          </sc-if>
+        </div></div>
+      </div>
+    </div>
+  </sc-if>
+  <sc-if value="{{ isMail }}" hint-placeholder-val="{{ true }}">
+  <div data-screen-label="Timeline" onMouseDown="{{ stripDown }}" title="Drag sideways for the next or previous day" style="position:absolute;left:0;right:0;bottom:0;height:{{ stripH }};box-sizing:border-box;border-top:1px solid #232529;background:#0B0C0E;padding:0 24px;overflow:hidden;cursor:{{ stripCursor }};user-select:none">
+    <div style="position:absolute;left:0;top:0;width:100%;height:100%;transform:translateX({{ stripDx }}px);transition:{{ stripTrans }}">
+      <sc-for list="{{ stripPanels }}" as="p" hint-placeholder-count="3">
+        <div style="position:absolute;left:{{ p.left }};top:0;width:100%;height:100%">
+          <sc-for list="{{ p.hourLabels }}" as="h" hint-placeholder-count="15"><span style="position:absolute;left:calc(24px + (100% - 48px) * {{ h.f }});top:8px;font-size:10.5px;line-height:1;color:{{ h.color }};transform:{{ h.tx }}">{{ h.label }}</span></sc-for>
+          <sc-for list="{{ p.hourLines }}" as="h" hint-placeholder-count="14"><span style="position:absolute;left:calc(24px + (100% - 48px) * {{ h.f }});top:24px;height:{{ gridH }};width:1px;background:#17181C"></span></sc-for>
+          <sc-for list="{{ p.overlaps }}" as="o" hint-placeholder-count="1"><span title="{{ o.tip }}" style="position:absolute;left:calc(24px + (100% - 48px) * {{ o.f }});width:max(3px, calc((100% - 48px) * {{ o.w }}));top:24px;height:{{ gridH }};background:repeating-linear-gradient(135deg,rgba(233,234,236,.16) 0 1px,transparent 1px 6px);pointer-events:none"></span></sc-for>
+          <sc-if value="{{ p.isToday }}" hint-placeholder-val="{{ true }}"><span style="position:absolute;left:calc(24px + (100% - 48px) * {{ nowF }});top:22px;width:1px;height:{{ nowH }};background:#C9A36B;pointer-events:none"></span><span style="position:absolute;left:calc(24px + (100% - 48px) * {{ nowF }});top:8px;font-size:10.5px;line-height:1;font-weight:500;color:#C9A36B;transform:translateX(-50%);background:#0B0C0E;padding:0 3px">{{ nowText }}</span></sc-if>
+          <sc-if value="{{ p.notToday }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;right:24px;top:6px;display:flex;gap:10px;font-size:11px;line-height:14px;background:#0B0C0E;padding:0 0 0 6px"><span style="color:rgba(233,234,236,.6);font-weight:500">{{ p.dateLabel }}</span><span onClick="{{ stripToday }}" style="color:#C9A36B;cursor:pointer" style-hover="color:#E9EAEC">Back to today</span></span></sc-if>
+          <sc-if value="{{ p.empty }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;left:24px;top:32px;font-size:11.5px;color:rgba(233,234,236,.4)">Nothing scheduled</span></sc-if>
+          <sc-for list="{{ p.blocks }}" as="b" hint-placeholder-count="6"><span onClick="{{ b.pick }}" onMouseEnter="{{ b.enter }}" onMouseLeave="{{ b.leave }}" title="{{ b.tip }}" style="position:absolute;left:calc(24px + (100% - 48px) * {{ b.f }});width:max(6px, calc((100% - 48px) * {{ b.w }}));top:{{ b.top }};height:22px;box-sizing:border-box;background:{{ b.bg }};border:{{ b.border }};border-left:2px solid {{ b.rule }};border-radius:0 3px 3px 0;cursor:pointer;transition:background .12s"></span></sc-for>
+          <sc-for list="{{ p.blocks }}" as="b" hint-placeholder-count="6"><span onClick="{{ b.pick }}" onMouseEnter="{{ b.enter }}" onMouseLeave="{{ b.leave }}" title="{{ b.tip }}" style="position:absolute;left:calc(32px + (100% - 48px) * {{ b.f }});top:{{ b.labelTop }};font-size:11.5px;line-height:14px;white-space:nowrap;cursor:pointer;color:{{ b.color }};font-weight:{{ b.weight }}">{{ b.label }}</span></sc-for>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+  </sc-if>
+  <sc-if value="{{ hasPop }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ stopProp }}" style="position:absolute;left:{{ pop.left }};top:{{ pop.top }};bottom:{{ pop.bottom }};width:300px;background:#131417;border:1px solid #2A2C31;border-radius:8px;box-shadow:0 24px 60px rgba(0,0,0,.6);padding:14px 16px;z-index:30;animation:fpIn .18s ease-out;display:flex;flex-direction:column;gap:10px;box-sizing:border-box">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start"><span style="font-size:15px;font-weight:500;line-height:1.3;text-wrap:pretty">{{ pop.title }}</span><span style="font-size:11.5px;color:rgba(233,234,236,.5);white-space:nowrap;padding-top:2px">{{ pop.acct }}</span></div>
+      <div style="display:flex;align-items:baseline;gap:8px;font-size:13px"><span style="color:#C9A36B;font-weight:500">{{ pop.range }}</span><span style="color:rgba(233,234,236,.5)">{{ pop.when }}</span></div>
+      <sc-if value="{{ pop.hasLoc }}" hint-placeholder-val="{{ false }}"><div style="display:flex;gap:9px;align-items:center;font-size:13px;color:rgba(233,234,236,.75)"><svg width="13" height="13" viewBox="0 0 16 16" style="color:rgba(233,234,236,.45)"><path d="M8 14s4.5-4.2 4.5-7.5a4.5 4.5 0 0 0-9 0C3.5 9.8 8 14 8 14z"></path><circle cx="8" cy="6.5" r="1.5"></circle></svg><span>{{ pop.loc }}</span></div></sc-if>
+      <sc-if value="{{ pop.hasLink }}" hint-placeholder-val="{{ false }}"><div style="display:flex;gap:9px;align-items:center;font-size:13px;color:rgba(233,234,236,.75)"><svg width="13" height="13" viewBox="0 0 16 16" style="color:rgba(233,234,236,.45)"><rect x="1.5" y="4" width="9" height="8" rx="1.5"></rect><path d="m10.5 7 4-2.5v7l-4-2.5"></path></svg><span>{{ pop.link }}</span><span style="color:rgba(233,234,236,.45)">· join</span></div></sc-if>
+      <sc-if value="{{ pop.hasPeople }}" hint-placeholder-val="{{ false }}"><div style="display:flex;gap:9px;align-items:flex-start;font-size:13px;color:rgba(233,234,236,.75);line-height:1.45"><svg width="13" height="13" viewBox="0 0 16 16" style="color:rgba(233,234,236,.45);margin-top:3px"><circle cx="6" cy="5.5" r="2.25"></circle><path d="M1.5 13a4.5 4.5 0 0 1 9 0M10.5 3.5a2.25 2.25 0 0 1 0 4.2M12 9.2a4.5 4.5 0 0 1 2.5 3.8"></path></svg><span>{{ pop.people }}</span></div></sc-if>
+      <sc-if value="{{ pop.hasConflict }}" hint-placeholder-val="{{ false }}"><div style="display:flex;gap:9px;align-items:flex-start;font-size:13px;color:#C9A36B;line-height:1.45"><span style="width:7px;height:7px;border-radius:50%;border:1.5px solid #C9A36B;box-sizing:border-box;margin-top:5px;flex:none"></span><span>Overlaps {{ pop.conflict }}</span></div></sc-if>
+      <div style="display:flex;align-items:center;gap:6px;padding-top:10px;border-top:1px solid #232529"><span onClick="{{ pop.action }}" style="display:inline-flex;align-items:center;height:28px;padding:0 12px;border:1px solid #2A2C31;border-radius:5px;font-size:12px;font-weight:500;cursor:pointer;box-sizing:border-box" style-hover="background:#191A1E">{{ pop.actionLabel }}</span><span style="margin-left:auto;font-size:11.5px;color:rgba(233,234,236,.45)">{{ pop.rel }}</span></div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;density&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Comfortable&quot;,&quot;Compact&quot;],&quot;default&quot;:&quot;Comfortable&quot;,&quot;tsType&quot;:&quot;'Comfortable' | 'Compact'&quot;,&quot;section&quot;:&quot;List&quot;},&quot;summaries&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;List&quot;},&quot;showBusy&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Calendar&quot;}}">
+class Component extends DCLogic {
+  static ACCTS = ['w', 'c', 'p'];
+  static INFO = {
+    w: { name: 'Windscribe', addr: 'you@windscribe.com', provider: 'Google Workspace', sync: 'Synced 10:41', index: 'Indexed 2021 → today · 2019–2020 still filling in', idxW: '92%', icon: 'M2 5h6.5a1.75 1.75 0 1 0-1.75-1.75M2 8.5h9.5a1.75 1.75 0 1 1-1.75 1.75M2 12h5.5' },
+    c: { name: 'Control D', addr: 'you@controld.com', provider: 'Fastmail', sync: 'Synced 10:41', index: 'Indexed 2023 → today · complete', idxW: '100%', icon: 'M2.5 5.5H4M7.5 5.5h6M2.5 10.5h6M12 10.5h1.5M5.75 3.75a1.75 1.75 0 1 0 0 3.5a1.75 1.75 0 1 0 0-3.5M10.25 8.75a1.75 1.75 0 1 0 0 3.5a1.75 1.75 0 1 0 0-3.5' },
+    p: { name: 'Personal', addr: 'you@gmail.com', provider: 'Gmail', sync: 'Synced 10:39', index: 'Indexed 2016 → today · 2014–2015 still filling in', idxW: '88%', icon: 'M8 2.75a2.5 2.5 0 1 0 0 5a2.5 2.5 0 1 0 0-5M3 13.5a5 5 0 0 1 10 0' }
+  };
+  static ICON_NEW = 'M2.5 4h11a.5.5 0 0 1 .5.5v7a.5.5 0 0 1-.5.5h-11a.5.5 0 0 1-.5-.5v-7a.5.5 0 0 1 .5-.5zM3 4.75 8 8.5l5-3.75';
+  static PROVIDERS = [
+    { id: 'google', name: 'Google Workspace / Gmail', short: 'Google', host: 'accounts.google.com', addr: 'you@acme.co', display: 'Acme', note: 'OAuth · mail and calendar' },
+    { id: 'ms', name: 'Microsoft 365 / Outlook', short: 'Microsoft', host: 'login.microsoftonline.com', addr: 'you@acme.co', display: 'Acme', note: 'OAuth · mail and calendar' },
+    { id: 'fastmail', name: 'Fastmail', short: 'Fastmail', host: 'app.fastmail.com', addr: 'you@fastmail.com', display: 'Fastmail', note: 'OAuth · JMAP' }
+  ];
+  static STATS = { w: { in: [3, 2, 14, 18, 11, 16], out: [1, 0, 6, 8, 4, 7] }, c: { in: [1, 0, 9, 7, 8, 6], out: [0, 0, 3, 4, 2, 5] }, p: { in: [4, 3, 2, 3, 1, 2], out: [1, 2, 0, 1, 0, 1] } };
+  static MODELS = [
+    { id: 'qwen', name: 'Qwen 2.5 · 7B Instruct', short: 'Qwen 2.5 7B', size: '4.7 GB', note: 'Best summaries · recommended', have: true },
+    { id: 'llama', name: 'Llama 3.2 · 3B', short: 'Llama 3.2 3B', size: '2.0 GB', note: 'Faster, lighter on battery', have: true },
+    { id: 'gemma', name: 'Gemma 3 · 4B', short: 'Gemma 3 4B', size: '2.5 GB', note: 'Stronger on non-English mail', have: false }];
+  static CONVOS = [
+    { id: 'w1', acct: 'w', who: 'Maya Lindqvist', n: 3, subject: 'Q3 infra review: v4 attached', t: 9.2, day: 0, unread: true, labels: [['Infra', 0], ['Finance', 1]], line: 'Two Frankfurt hosting calls needed before the 14:00 review.', sum: 'v4 of the Q3 infra review. Two open calls — renew the Frankfurt bare-metal contract at the new rate, or move 40% of that pool to the second provider — needed before the 14:00 review.', att: 'Q3-infra-v4.pdf · 4.2 MB', thread: [
+      { from: 'You', time: 'Wed 21:40', body: 'Maya — v3 is close. The bandwidth slide reads as a promise; make it a range and show the two drivers. Hold the Frankfurt renewal until we have the second quote.' },
+      { from: 'Maya Lindqvist', time: 'Thu 10:05', body: 'Understood. Bandwidth becomes a range with streaming and Pro upgrades called out. Draft v4 tonight.' },
+      { from: 'Maya Lindqvist', time: 'Fri 09:12', body: 'v4 attached. Reworked the bandwidth slide per your notes. Two open questions on Frankfurt: renew the bare-metal contract at the new rate, or move 40% of that pool to the second provider?\nNeed your call before the 14:00 review.' }] },
+    { id: 'w2', acct: 'w', who: 'Tomasz Nowak', n: 1, subject: 'App Store review — 3.1.2 rejected (5.4)', t: 8.55, day: 0, unread: true, labels: [['Apps', 0], ['Legal', 1]], line: 'Revised paywall copy is ready; resubmitting today keeps Monday.', sum: 'Apple rejected iOS 3.1.2 under guideline 5.4 over the ad-blocking phrasing on the paywall. Revised copy is ready; resubmitting today keeps the Monday release.', body: 'Rejected this morning under 5.4 — the reviewer objects to the “blocks ads” line on the paywall screen. I have revised copy ready that keeps the claim inside the R.O.B.E.R.T. description.\nIf you approve, I resubmit today and we keep the Monday release.' },
+    { id: 'w3', acct: 'w', who: 'Aisha Rahman', n: 2, subject: 'Head of Support — final loop', t: 16.42, day: 1, unread: true, labels: [['Hiring', 0]], line: '3 of 4 recommend hire; wants your read before Monday.', sum: 'Three of four interviewers recommend hire; one soft no on escalation experience at scale. Aisha wants your read before going back to the candidate on Monday.', body: 'All four interviewers have submitted. Three recommend hire; one is a soft no on escalation experience at scale. Panel notes are in the folder.\nI would like your read before we go back to him on Monday.' },
+    { id: 'w4', acct: 'w', who: 'Sam Okoro', n: 4, subject: 'Re: WireGuard relay 2.4.1 — rollout', t: 17.1, day: 1, unread: true, labels: [['Infra', 0]], line: 'Toronto clean since Thursday; wants Sat 06:00–10:00 UTC for the fleet.', sum: '2.4.1 has run clean on the Toronto pool since Thursday. Sam proposes the full fleet this weekend and needs the maintenance window approved.', body: 'Patched the Toronto pool Thursday morning, no handshake failures since. Proposing the full fleet this weekend — Saturday 06:00 to 10:00 UTC — if you approve the window. Rollback is the same as last time.' },
+    { id: 'w5', acct: 'w', who: 'Marcus Feld', n: 2, subject: 'Q4 planning, 18 Sep — agenda draft', t: 11.3, day: 1, star: true, labels: [['Planning', 0]], line: 'Wants 20 min on the Control D bundle before pricing; edits until Tuesday.', sum: 'Draft agenda for the 18 September planning day attached; Marcus asks for 20 minutes on the Control D bundle ahead of pricing. Edits open until Tuesday.', att: 'Q4-planning-agenda.pdf · 180 KB', body: 'Draft attached. I would like 20 minutes on the Control D bundle before pricing — it changes how the team reads the Pro tier. Edits welcome until Tuesday.' },
+    { id: 'w6', acct: 'w', who: 'Deel', n: 1, subject: 'September payroll — approve by Monday', t: 6, day: 1, star: true, labels: [['Finance', 1]], line: '46 people · 612,400 CAD · approve by Monday 12:00.', sum: 'September payroll for 46 people (612,400 CAD) is ready and needs approval by Monday 12:00.', body: 'Payroll for 46 people is ready for approval. Total 612,400 CAD, paid on 25 September. Approve by Monday 12:00 to meet the bank cut-off.' },
+    { id: 'w7', acct: 'w', who: 'Kristin Moe', n: 1, subject: 'RightsCon 2027 — sponsorship tiers', t: 9.5, day: 2, star: true, labels: [['Press', 0]], line: 'Three tiers; the workshop slot is held until Friday.', sum: 'Three sponsorship tiers; the workshop slot doubles speaking time at the highest price and is held until Friday.', att: 'RightsCon-2027-tiers.pdf · 6.1 MB', body: 'Three tiers. The workshop slot is the most expensive but doubles our speaking time; I am holding it until Friday. Deck attached.' },
+    { id: 'w8', acct: 'w', who: 'Windscribe Status', n: 1, subject: 'Weekly: uptime 99.97%, one incident', t: 18.03, day: 1, labels: [['Infra', 1]], line: 'One 40-min Frankfurt incident, patched Thursday.', body: 'Fleet uptime 99.97%. One unplanned incident, 40 minutes, Frankfurt relay — patched Thursday morning. Full report attached.' },
+    { id: 'w9', acct: 'w', who: 'Marcus Feld', n: 1, subject: 'Intro: Anke Voss, Teleos', t: 14.2, day: 1, labels: [['Partners', 0]], line: 'Anke runs partnerships at Teleos; over to you two.', body: 'Meet Anke — she runs partnerships at Teleos and has followed Windscribe since the router firmware demo. Anke, I will let the two of you take it from here.' },
+    { id: 'w10', acct: 'w', who: 'Northbridge Insurance', n: 1, subject: 'Cyber cover renewal — quote attached', t: 10.1, day: 2, labels: [['Finance', 1], ['Receipts', 1]], line: 'Renews 1 Oct · 38,400 CAD (+4%) · no cover changes.', att: 'Renewal-2026.pdf · 410 KB', body: 'Your policy renews 1 October. Premium 38,400 CAD, up 4% on last year. No changes to cover; the quote is attached.' },
+    { id: 'c1', acct: 'c', who: 'Tomas Berg', n: 1, subject: 'Friday: pilot call moved to 16:30', t: 8.78, day: 0, unread: true, labels: [['Partners', 0]], line: 'Kjell asked for later; Legal at 17:00 moved to Monday.', sum: 'The Nordic ISP pilot call moved to 16:30; Legal at 17:00 is cleared and can do Monday.', body: 'Kjell asked for later, so I took the 16:30 slot and cleared your 17:00 with Legal — they can do Monday.' },
+    { id: 'c2', acct: 'c', who: 'Kjell Aasland', n: 5, subject: 'Re: Resolver rollout — Nordic ISP pilot', t: 8.33, day: 0, unread: true, labels: [['Partners', 0], ['Legal', 1]], line: 'Commits to the two-region pilot if anycast is live before November.', sum: 'Kjell commits to the two-region pilot if the Oslo and Bergen anycast nodes are live before November; Procurement wants the DPA referenced in the MSA.', body: 'We can commit to the two-region pilot if the Oslo and Bergen anycast nodes are live before November. Procurement wants the DPA referenced in the MSA — I understand Legal has that countersigned now. Let us confirm the date on the call this afternoon.' },
+    { id: 'c3', acct: 'c', who: 'Dana Whitfield', n: 1, subject: 'Enterprise MSA — redlines', t: 22.23, day: 1, unread: true, labels: [['Enterprise', 0], ['Legal', 0]], line: 'SLA moved to 99.99% with credits; wants 30 min Mon or Tue.', sum: 'Redlines: the SLA moves to 99.99% with service credits, the rest is cleanup. Dana asks for 30 minutes Monday or Tuesday.', att: 'MSA-redlines.docx · 92 KB', body: 'Attached our redlines to the draft. The main change is the SLA: we have moved it to 99.99% with service credits, per our conversation in Oslo. The rest is cleanup.\nDo you have 30 minutes Monday or Tuesday to walk through it?' },
+    { id: 'c4', acct: 'c', who: 'Tomas Berg', n: 3, subject: 'SOC 2 — evidence checklist', t: 15.4, day: 2, star: true, labels: [['Enterprise', 0]], line: 'Four items on you: access reviews, vendor list, two sign-offs.', sum: 'Eleven evidence items still open; four need you — access reviews, the vendor list and two policy sign-offs.', body: 'Eleven items open, four on you: access reviews, the vendor list, the two policy sign-offs. Everything else I can close by Friday.' },
+    { id: 'c5', acct: 'c', who: 'Stripe', n: 1, subject: 'Your September invoice is ready', t: 15, day: 1, labels: [['Receipts', 1]], line: 'Invoice CD-0926 · 4,120 USD · scheduled 15 Sep.', body: 'Control D Inc. — invoice CD-0926 for 4,120.00 USD is available. Payment is scheduled for 15 September.' },
+    { id: 'c6', acct: 'c', who: 'Control D Legal', n: 1, subject: 'DPA countersigned — Nordic ISP', t: 16.5, day: 2, labels: [['Legal', 0]], line: 'Countersigned copy filed under Customers; Kjell copied.', att: 'DPA-Nordic-ISP-signed.pdf · 1.1 MB', body: 'Countersigned copy attached. Filed under Customers / Nordic ISP. Kjell has been copied.' },
+    { id: 'p1', acct: 'p', who: 'Elin', n: 1, subject: 'Sunday?', t: 7.97, day: 0, unread: true, labels: [['Family', 0]], line: 'Lunch at one on Sunday — bring the good coffee.', body: "Mum's asking if you're coming Sunday. I said probably. Prove me right — lunch is at one, and bring the good coffee." },
+    { id: 'p2', acct: 'p', who: 'Hanna Berge', n: 2, subject: 'Kitchen: contractor Thursday 8 am', t: 11.17, day: 2, star: true, labels: [['Home', 0]], line: 'Thursday 8:00; needs the fuse box and about two hours.', body: 'Confirming Thursday at 8. He will need access to the fuse box and about two hours.' },
+    { id: 'p3', acct: 'p', who: 'Nils', n: 1, subject: 'Booked: Richmond St, 19:00', t: 17.67, day: 1, labels: [], line: 'Table for two, window side — do not be late.', body: 'Table for two, window side. Do not be late this time.' },
+    { id: 'p4', acct: 'p', who: 'Air Canada', n: 1, subject: 'Booking confirmed — YYZ to SFO, 22 Sep', t: 9.4, day: 2, labels: [['Travel', 1], ['Receipts', 1]], line: 'AC759 · YYZ 08:40 → SFO 11:25 · ref 5KQ2LM.', body: 'AC759 departs Toronto 08:40, arrives San Francisco 11:25. Booking reference 5KQ2LM.' }
+  ];
+  static SENT = [
+    { id: 's_w1', acct: 'w', to: 'Anke Voss', subject: 'Re: Intro: Anke Voss, Teleos', t: 8.25, day: 0, re: 'w9', replied: false, att: 'Router-firmware-one-pager.pdf · 640 KB', line: 'Proposed Tuesday or Wednesday; sent the router one-pager.', body: 'Anke — good to meet you. Happy to talk next week; Tuesday or Wednesday afternoon works on my side. One-pager on the router firmware programme attached.' },
+    { id: 's_w2', acct: 'w', to: 'Marcus Feld', subject: 'Re: Q4 planning, 18 Sep — agenda draft', t: 9.97, day: 0, re: 'w5', replied: false, line: 'Fine with 20 min on the bundle; move pricing before lunch.', body: 'Fine with 20 minutes on the bundle. Move pricing before lunch — people fade after. Edits from me on Monday.' },
+    { id: 's_w3', acct: 'w', to: 'Sam Okoro', subject: 'Re: WireGuard relay 2.4.1 — rollout', t: 9.33, day: 1, re: 'w4', replied: true, line: 'Go on Toronto; want 24 h of handshake failure rates first.', body: 'Go ahead on the Toronto pool. Send me handshake failure rates after 24 hours before we talk about the fleet.' },
+    { id: 's_w4', acct: 'w', to: 'Kristin Moe', subject: 'Re: RightsCon 2027 — sponsorship tiers', t: 17.5, day: 1, re: 'w7', replied: false, line: 'Leaning workshop tier; what does the speaking slot commit us to?', body: 'Leaning towards the workshop tier. Before I say yes: what does the speaking slot commit us to, and who else is on that stage?' },
+    { id: 's_w5', acct: 'w', to: 'Maya Lindqvist', subject: 'Re: Q3 infra review: v3', t: 21.67, day: 2, re: 'w1', replied: true, line: 'Make bandwidth a range; hold Frankfurt until the second quote.', body: 'Maya — v3 is close. The bandwidth slide reads as a promise; make it a range and show the two drivers. Hold the Frankfurt renewal until we have the second quote.' },
+    { id: 's_w6', acct: 'w', to: 'Everyone at Windscribe', subject: 'Monday note — Q3 close', t: 18.08, day: 4, replied: null, line: 'Q3 closed +9% on Pro; thanked infra for the Frankfurt fix.', body: 'Q3 closed with Pro up 9% quarter on quarter and churn flat. Two things worth saying out loud: the Frankfurt fix on Thursday was clean work under pressure, and support handled the App Store outage without a single escalation reaching me. Q4 planning is on the 18th.' },
+    { id: 's_c1', acct: 'c', to: 'Tomas Berg', subject: 'Re: SOC 2 — evidence checklist', t: 8.67, day: 0, re: 'c4', replied: false, line: 'Signed both policies; access reviews by Monday.', body: 'Both policies signed and in the folder. Access reviews by Monday — I need Sam to pull the list first.' },
+    { id: 's_c2', acct: 'c', to: 'Kjell Aasland', subject: 'Re: Resolver rollout — Nordic ISP pilot', t: 16.17, day: 1, re: 'c2', replied: true, line: 'Oslo node live 20 Oct; asked Legal for the DPA reference.', body: 'Oslo anycast goes live 20 October, Bergen a week later. I have asked Legal to reference the DPA in the MSA so Procurement is covered. Talk at 16:30 Friday.' },
+    { id: 's_c3', acct: 'c', to: 'Dana Whitfield', subject: 'Enterprise MSA — draft', t: 15.37, day: 2, re: 'c3', replied: true, att: 'MSA-draft.docx · 88 KB', line: 'Sent the draft MSA; flagged the SLA clause as still open.', body: 'Draft MSA attached. The SLA clause is still open on our side — 99.9% is what we can sign today; anything above that needs the second Frankfurt site live.' },
+    { id: 's_c4', acct: 'c', to: 'Nordic ISP procurement', subject: 'Order form — two-region pilot', t: 10.25, day: 3, replied: false, line: 'Order form and DPA reference sent for signature.', body: 'Order form for the two-region pilot attached, with the DPA referenced in section 4 as requested. Kjell is copied.' },
+    { id: 's_p1', acct: 'p', to: 'Nils', subject: 'Re: Booked: Richmond St, 19:00', t: 17.83, day: 1, re: 'p3', replied: null, line: 'On time, promise — order the burrata if you are first.', body: 'On time, promise. Order the burrata if you get there first.' },
+    { id: 's_p2', acct: 'p', to: 'Hanna Berge', subject: 'Re: Kitchen: contractor Thursday 8 am', t: 12, day: 2, re: 'p2', replied: true, line: 'Confirmed Thursday 8:00; the fuse box is in the hallway cupboard.', body: 'Thursday at 8 works. The fuse box is in the hallway cupboard — I will leave it unlocked.' }
+  ];
+  static EVENTS = [
+    { rec: [1, 3, 5], a: 'w', s: 9.5, e: 10, title: 'Standup', link: 'Google Meet', people: ['Infra, Apps and Support leads'] },
+    { dom: 1, a: 'w', s: 10, e: 11, title: 'All hands', loc: 'Toronto office · Room 4', people: ['Everyone'] },
+    { dom: 2, a: 'c', s: 14, e: 15, title: 'Enterprise pipeline', link: 'Google Meet', people: ['Tomas Berg', 'Dana Whitfield'] },
+    { dom: 3, a: 'w', s: 13, e: 14, title: 'Board call', link: 'Zoom', people: ['Marcus Feld', 'Board'] },
+    { dom: 4, a: 'p', s: 19, e: 21, title: 'Dinner — Elin', loc: 'Home' },
+    { dom: 7, a: 'c', s: 13, e: 14, title: 'Control D leadership', link: 'Google Meet', people: ['Tomas Berg', 'Dana Whitfield', 'Legal'] },
+    { dom: 7, a: 'p', s: 18.5, e: 19.5, title: 'Yoga', loc: 'Studio, Ossington' },
+    { dom: 8, a: 'w', s: 10, e: 11.5, title: 'Infra review', loc: 'Toronto office · Room 2', people: ['Sam Okoro', 'Maya Lindqvist'] },
+    { dom: 8, a: 'w', s: 15, e: 16, title: '1:1 — Aisha', link: 'Google Meet', people: ['Aisha Rahman'] },
+    { dom: 8, a: 'c', s: 17, e: 18, title: 'Enterprise pipeline', link: 'Google Meet', people: ['Tomas Berg'] },
+    { dom: 9, a: 'c', s: 9, e: 10, title: 'Nordic ISP kickoff', link: 'Teams', people: ['Kjell Aasland', 'Tomas Berg'] },
+    { dom: 9, a: 'w', s: 14, e: 15, title: 'Router firmware review', loc: 'Toronto office · Room 4', people: ['Sam Okoro', 'Tomasz Nowak'] },
+    { dom: 9, a: 'p', s: 19.5, e: 21, title: 'Dinner — Elin', loc: 'Home' },
+    { dom: 10, a: 'p', s: 8, e: 9, title: 'Kitchen contractor', loc: 'Home', people: ['Hanna Berge'] },
+    { dom: 10, a: 'w', s: 13, e: 14, title: 'Head of Support debrief', link: 'Google Meet', people: ['Aisha Rahman', 'Panel'] },
+    { dom: 10, a: 'c', s: 16, e: 17, title: 'Legal — MSA redlines', link: 'Google Meet', people: ['Control D Legal', 'Dana Whitfield'] },
+    { dom: 11, a: 'p', s: 7.5, e: 8.25, title: 'Run — Elin', loc: 'High Park', people: ['Elin'] },
+    { dom: 11, a: 'c', s: 11, e: 12, title: 'SOC 2 review — Tomas', link: 'Google Meet', people: ['Tomas Berg'] },
+    { dom: 11, a: 'w', s: 13, e: 14, title: 'Lunch — Maya', loc: 'Bar Raval, College St', people: ['Maya Lindqvist'] },
+    { dom: 11, a: 'w', s: 14, e: 15.5, title: 'Q3 infra review', loc: 'Toronto office · Room 4', people: ['Maya Lindqvist', 'Sam Okoro', 'Marcus Feld'] },
+    { dom: 11, a: 'w', s: 15, e: 15.5, title: 'Press call — Kristin', link: 'Phone', people: ['Kristin Moe'] },
+    { dom: 11, a: 'c', s: 16.5, e: 17.25, title: 'Pilot call — Kjell', link: 'Teams', people: ['Kjell Aasland', 'Tomas Berg'] },
+    { dom: 11, a: 'p', s: 19, e: 21, title: 'Dinner — Nils', loc: 'Richmond St', people: ['Nils'] },
+    { dom: 12, a: 'p', s: 10, e: 11.5, title: 'Farmers market', loc: 'Evergreen Brick Works' },
+    { dom: 12, a: 'p', s: 16, e: 17.5, title: 'Sauna' },
+    { dom: 13, a: 'p', s: 13, e: 15, title: "Lunch at Mum's", people: ['Elin', 'Mum'] },
+    { dom: 14, a: 'w', s: 15, e: 16, title: 'Head of Support — offer call', link: 'Google Meet', people: ['Aisha Rahman'] },
+    { dom: 15, a: 'c', s: 10, e: 11, title: 'MSA walkthrough — Dana', link: 'Google Meet', people: ['Dana Whitfield'] },
+    { dom: 16, a: 'w', s: 14, e: 15.5, title: 'Teleos — Anke Voss', link: 'Google Meet', people: ['Anke Voss', 'Marcus Feld'] },
+    { dom: 18, a: 'w', s: 9, e: 17, title: 'Q4 planning day', loc: 'Offsite · Prince Edward County', people: ['Leadership'] },
+    { dom: 22, a: 'p', s: 8.67, e: 11.42, title: 'Flight AC759 · YYZ → SFO', loc: 'Pearson T1' },
+    { dom: 23, a: 'w', s: 10, e: 12, title: 'Partner meetings — SF', loc: 'SoMa' },
+    { dom: 23, a: 'c', s: 14, e: 15, title: 'Nordic ISP — go / no-go', link: 'Teams', people: ['Kjell Aasland'] },
+    { dom: 24, a: 'w', s: 9, e: 10, title: 'Podcast recording', loc: 'SF studio' },
+    { dom: 25, a: 'p', s: 18, e: 20, title: 'Flight AC758 · SFO → YYZ' },
+    { dom: 29, a: 'w', s: 13, e: 14, title: 'Cyber cover renewal — Northbridge', link: 'Phone' },
+    { dom: 30, a: 'c', s: 9, e: 10, title: 'SOC 2 auditor kickoff', link: 'Google Meet', people: ['Tomas Berg', 'Auditor'] }
+  ];
+  static TODAY = new Date(2026, 8, 11);
+  static NOW = 10.7;
+
+  state = { view: 'mail', prevView: 'mail', acct: 'w', scope: 'inbox', sel: 'auto', pin: null, read: {}, delay: {}, follow: {}, query: '', searchOpen: false, fFrom: '', fLabel: '', fStatus: '', fDay: '', replying: false, draft: '', expanded: {}, sent: {}, sentExtra: [], names: {}, removed: {}, added: [], add: null, stab: 'accounts', model: 'qwen', dl: {}, requeued: false, density: null, busy: null, dayStart: 7, dayEnd: 21, weekStart: 'mon', delayDefault: 'tomorrow', cview: 'week', anchor: 0, pop: null, hover: null, split: 0.5, tlStart: 7, tlEnd: 21, stripDay: 0, stripDx: 0, stripAnim: false, stripDragging: false };
+  searchRef = React.createRef();
+  componentDidMount() { this._key = e => this.onKey(e); window.addEventListener('keydown', this._key); this._rs = () => this.forceUpdate(); window.addEventListener('resize', this._rs); try { const sp = parseFloat(localStorage.getItem('fp2.split')); if (sp >= 0.3 && sp <= 0.7) this.setState({ split: sp }); } catch (e) {} }
+  startDrag(e) { e.preventDefault(); const rect = e.currentTarget.parentElement.getBoundingClientRect(); const move = ev => this.setState({ split: Math.min(0.7, Math.max(0.3, (ev.clientX - rect.left) / rect.width)), dragging: true }); const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); document.body.style.cursor = ''; document.body.style.userSelect = ''; this.setState({ dragging: false }); try { localStorage.setItem('fp2.split', String(this.state.split)); } catch (x) {} }; window.addEventListener('mousemove', move); window.addEventListener('mouseup', up); document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none'; this.setState({ dragging: true }); }
+  componentWillUnmount() { window.removeEventListener('keydown', this._key); window.removeEventListener('resize', this._rs); }
+  focusSearch() { const el = this.searchRef.current; if (el) { el.focus(); this.setState({ searchOpen: true }); } }
+  toggleSettings() { this.setState(s => s.view === 'settings' ? { view: s.prevView, pop: null } : { view: 'settings', prevView: s.view, searchOpen: false, replying: false, pop: null }); }
+  setScope(sc) { this.setState({ scope: sc, sel: 'auto', pin: null, replying: false, fDay: '', fLabel: '', fFrom: '', fStatus: '' }); }
+  accts() { const S = this.state; return Component.ACCTS.filter(k => !S.removed[k]).concat(S.added.map(a => a.key)); }
+  info(k) { return Component.INFO[k] || this.state.added.find(a => a.key === k) || Component.INFO.w; }
+  dispName(k) { return this.state.names[k] || this.info(k).name; }
+  addDays(d, n) { return new Date(d.getFullYear(), d.getMonth(), d.getDate() + n); }
+  anchorDate() { return this.addDays(Component.TODAY, this.state.anchor); }
+  stepCal(dir) { const S = this.state; if (S.cview === 'day') this.setState({ anchor: S.anchor + dir, pop: null }); else if (S.cview === 'week') this.setState({ anchor: S.anchor + 7 * dir, pop: null }); else { const a = this.anchorDate(), nd = new Date(a.getFullYear(), a.getMonth() + dir, 1); this.setState({ anchor: Math.round((nd - Component.TODAY) / 864e5), pop: null }); } }
+  openPop(key, ev, src) { ev.stopPropagation(); if (this._sd && this._sd.moved) return; this.setState({ pop: { key, x: ev.clientX, y: ev.clientY, src } }); }
+  stripDown(e) { if (e.button !== 0) return; const x0 = e.clientX, w = e.currentTarget.getBoundingClientRect().width; this._sd = { moved: false }; const move = ev => { const dx = ev.clientX - x0; if (Math.abs(dx) > 4) { this._sd.moved = true; this.setState({ stripDx: dx, stripAnim: false, stripDragging: true, pop: null }); } }; const up = ev => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); const dx = ev.clientX - x0; if (Math.abs(dx) > w * 0.18) { const dir = dx < 0 ? 1 : -1; this.setState({ stripDx: -dir * w, stripAnim: true, stripDragging: false }); setTimeout(() => this.setState(s => ({ stripDay: s.stripDay + dir, stripDx: 0, stripAnim: false, hover: null })), 230); } else this.setState({ stripDx: 0, stripAnim: true, stripDragging: false }); setTimeout(() => { this._sd = null; }, 0); }; window.addEventListener('mousemove', move); window.addEventListener('mouseup', up); }
+  closePop() { if (this.state.pop) this.setState({ pop: null }); }
+  onKey(e) {
+    const tag = (e.target && e.target.tagName) || '', S = this.state;
+    if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); this.focusSearch(); return; }
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') { if (e.key === 'Escape') { e.target.blur(); this.setState({ searchOpen: false }); } return; }
+    if (e.key === ',') { this.toggleSettings(); return; }
+    if (e.key === 'Escape' && S.pop) { this.setState({ pop: null }); return; }
+    if (S.view === 'settings') { if (e.key === 'Escape') this.setState({ view: S.prevView }); return; }
+    if (e.key === 'c') { this.setState(s => ({ view: s.view === 'mail' ? 'cal' : 'mail', pop: null })); return; }
+    if (S.view === 'cal') {
+      if (e.key === 'd') this.setState({ cview: 'day' }); else if (e.key === 'w') this.setState({ cview: 'week' }); else if (e.key === 'm') this.setState({ cview: 'month' });
+      else if (e.key === 't') this.setState({ anchor: 0 }); else if (e.key === 'ArrowLeft') this.stepCal(-1); else if (e.key === 'ArrowRight') this.stepCal(1);
+      return;
+    }
+    const o = this._order || [], i = o.indexOf(this._selId);
+    if (e.key === '/') { e.preventDefault(); this.focusSearch(); }
+    else if (e.key === 'j' && o.length) this.open(o[Math.min(i + 1, o.length - 1)]);
+    else if (e.key === 'k' && o.length) this.open(o[Math.max(i - 1, 0)]);
+    else if (e.key === 'd') this.toggleDelay();
+    else if (e.key === 'e') this.finish();
+    else if (e.key === 'r' && S.scope === 'inbox') this.setState({ replying: true });
+    else if (e.key === 's') this.setScope(S.scope === 'inbox' ? 'sent' : 'inbox');
+    else if (e.key === 'Escape') this.setState({ replying: false, searchOpen: false });
+  }
+  isRead(c) { return !!this.state.read[c.id] || !c.unread; }
+  isDelayed(c) { return (c.id in this.state.delay) ? this.state.delay[c.id] : !!c.star; }
+  open(id) {
+    if (String(id).startsWith('s_')) { this.setState({ sel: id, scope: 'sent', replying: false, draft: '', view: 'mail', searchOpen: false }); return; }
+    const c = Component.CONVOS.find(x => x.id === id); if (!c) return; const un = !this.isRead(c);
+    this.setState(s => ({ sel: id, scope: 'inbox', pin: un ? id : null, replying: false, draft: '', view: 'mail', searchOpen: false, read: Object.assign({}, s.read, { [id]: true }) }));
+  }
+  groups(list) { const pin = this.state.pin; return { unrev: list.filter(c => !this.isRead(c) || c.id === pin), delayed: list.filter(c => this.isRead(c) && c.id !== pin && this.isDelayed(c)), done: list.filter(c => this.isRead(c) && c.id !== pin && !this.isDelayed(c)) }; }
+  words() { return this.state.query.trim().toLowerCase().split(/\s+/).filter(Boolean); }
+  visible() {
+    const S = this.state, all = Component.CONVOS.filter(c => c.acct === S.acct);
+    let from = S.fFrom.toLowerCase(), label = S.fLabel.toLowerCase(), status = S.fStatus, att = false; const words = [];
+    this.words().forEach(tk => { const m = tk.match(/^(from|label|has|is|before|after):(.*)$/); if (!m) { words.push(tk); return; } if (m[1] === 'from') from = m[2]; else if (m[1] === 'label') label = m[2]; else if (m[1] === 'has' && m[2] === 'attachment') att = true; else if (m[1] === 'is') status = m[2]; });
+    return { all, list: all.filter(c => { const hay = (c.who + ' ' + c.subject + ' ' + (c.body || '') + ' ' + (c.sum || '') + ' ' + (c.line || '') + ' ' + (c.thread || []).map(t => t.body).join(' ')).toLowerCase(); if (words.some(w => !hay.includes(w))) return false; if (from && !c.who.toLowerCase().includes(from)) return false; if (label && !(c.labels || []).some(l => l[0].toLowerCase().includes(label))) return false; if (att && !c.att) return false; if (status === 'review' && this.isRead(c)) return false; if (status === 'delayed' && !this.isDelayed(c)) return false; if (status === 'done' && !(this.isRead(c) && !this.isDelayed(c))) return false; return true; }), active: !!(from || label || status || att || words.length) };
+  }
+  sentAll() { return Component.SENT.concat(this.state.sentExtra).filter(x => x.acct === this.state.acct); }
+  visibleSent() { const S = this.state, words = this.words().filter(w => !/^\w+:/.test(w)); return this.sentAll().filter(x => { if (S.fDay === '0' && x.day !== 0) return false; if (S.fDay === '1' && x.day !== 1) return false; if (S.fDay === 'older' && x.day < 2) return false; const hay = (x.to + ' ' + x.subject + ' ' + x.line + ' ' + x.body).toLowerCase(); return words.every(w => hay.includes(w)); }).sort((a, b) => a.day - b.day || b.t - a.t); }
+  current() {
+    const S = this.state;
+    if (S.scope === 'sent') { const l = this.visibleSent(); return S.sel === 'auto' ? (l[0] || null) : (this.sentAll().find(x => x.id === S.sel) || null); }
+    const v = this.visible(); if (S.sel === 'auto') { const g = this.groups(v.list); return g.unrev[0] || g.delayed[0] || g.done[0] || null; } return v.all.find(c => c.id === S.sel) || null;
+  }
+  toggleDelay() { if (this.state.scope !== 'inbox') return; const c = this.current(); if (!c) return; this.setState(s => ({ delay: Object.assign({}, s.delay, { [c.id]: !this.isDelayed(c) }) })); }
+  finish() { if (this.state.scope !== 'inbox') return; const c = this.current(); if (!c) return; const g = this.groups(this.visible().list); const nxt = g.unrev.concat(g.delayed).map(x => x.id).filter(id => id !== c.id)[0] || null; this.setState(s => ({ sel: nxt, pin: null, replying: false, read: Object.assign({}, s.read, { [c.id]: true }), delay: Object.assign({}, s.delay, { [c.id]: false }) })); }
+  send() {
+    const c = this.current(), body = this.state.draft.trim(); if (!c || !body || this.state.scope !== 'inbox') return;
+    const id = 's_x' + Date.now(), line = body.length > 72 ? body.slice(0, 70).replace(/\s+\S*$/, '') + '…' : body;
+    this.setState(s => ({ sent: Object.assign({}, s.sent, { [c.id]: (s.sent[c.id] || []).concat([{ from: 'You', time: 'Fri 10:42 · sending', body }]) }), sentExtra: s.sentExtra.concat([{ id, acct: s.acct, to: c.who, subject: 'Re: ' + c.subject.replace(/^Re: /, ''), t: 10.7, day: 0, re: c.id, replied: false, pending: true, line, body }]), draft: '', replying: false }));
+  }
+  pickAcct(k) { this.setState(s => ({ acct: k, sel: 'auto', pin: null, replying: false, query: '', fFrom: '', fLabel: '', fStatus: '', fDay: '', searchOpen: false, pop: null, view: s.view === 'settings' ? 'mail' : s.view })); }
+  removeAcct(k) { this.setState(s => { const removed = Object.assign({}, s.removed, { [k]: true }), added = s.added.filter(a => a.key !== k), left = Component.ACCTS.filter(x => !removed[x]).concat(added.map(a => a.key)); return { removed, added, acct: s.acct === k ? (left[0] || s.acct) : s.acct, sel: s.acct === k ? 'auto' : s.sel, pin: s.acct === k ? null : s.pin }; }); }
+  startAdd() { this.setState({ add: { step: 0, provider: null, waiting: false, name: '' } }); }
+  patchAdd(p) { this.setState(s => s.add ? { add: Object.assign({}, s.add, p) } : null); }
+  openBrowser() { this.patchAdd({ waiting: true }); setTimeout(() => this.setState(s => s.add && s.add.step === 1 ? { add: Object.assign({}, s.add, { step: 2, waiting: false }) } : null), 2200); }
+  allowAdd() { this.patchAdd({ waiting: true }); setTimeout(() => this.setState(s => { if (!s.add || s.add.step !== 2) return null; const p = Component.PROVIDERS.find(x => x.id === s.add.provider) || Component.PROVIDERS[0]; return { add: Object.assign({}, s.add, { step: 3, waiting: false, name: p.display }) }; }), 1600); }
+  finishAdd() { this.setState(s => { if (!s.add) return null; const p = Component.PROVIDERS.find(x => x.id === s.add.provider) || Component.PROVIDERS[0]; return { add: null, added: s.added.concat([{ key: 'n' + Date.now(), name: s.add.name.trim() || p.display, addr: p.addr, provider: p.name.split(' / ')[0], sync: 'First sync running', index: 'Indexing 2019 → today', idxW: '3%', icon: Component.ICON_NEW }]) }; }); }
+
+  renderVals() {
+    const S = this.state, NOW = Component.NOW, T0 = Component.TODAY, DN = ['Fri', 'Thu', 'Wed', 'Tue', 'Mon'], DL = ['Today', 'Yesterday', 'Wednesday', 'Tuesday', 'Monday'], C = Component.CONVOS, EV = Component.EVENTS;
+    const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'], DOWL = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const AMB = '#C9A36B', INK = '#E9EAEC', MUT = 'rgba(233,234,236,.5)';
+    const name = k => this.dispName(k), inf = k => this.info(k);
+    const compact = (S.density ?? this.props.density ?? 'Comfortable') === 'Compact', showBusy = S.busy ?? (this.props.showBusy ?? true), listSum = this.props.summaries ?? true;
+    const DS = S.dayStart, DE = S.dayEnd, LEN = DE - DS;
+    const pad = n => String(n).padStart(2, '0'), hm = t => { const h = Math.floor(t); return pad(h) + ':' + pad(Math.round((t - h) * 60)); };
+    const pct = t => ((t - DS) / LEN * 100).toFixed(3) + '%', span = (s, e) => ((e - s) / LEN * 100).toFixed(3) + '%', f24 = t => (Math.min(24, Math.max(0, t)) / 24).toFixed(4);
+    const ini = n => n.split(' ').slice(0, 2).map(w => w[0]).join('').toUpperCase();
+    const addD = (d, n) => this.addDays(d, n), same = (a, b) => a.getTime() === b.getTime(), ymd = d => d.getFullYear() + '-' + d.getMonth() + '-' + d.getDate();
+    const wsIdx = d => S.weekStart === 'sun' ? d.getDay() : (d.getDay() + 6) % 7;
+    const dur = (s, e) => { const m = Math.round((e - s) * 60); return m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '') : m + ' min'; };
+    const rel = h => { const m = Math.round(h * 60); return m >= 60 ? Math.floor(m / 60) + ' h ' + (m % 60) + ' min' : m + ' min'; };
+    const own = e => e.a === S.acct, ttl = e => e.title;
+    const evOn = d => EV.map((e, i) => ({ e, i, key: i + '@' + ymd(d), d })).filter(o => ((o.e.dom === d.getDate() && d.getMonth() === 8) || (o.e.rec && o.e.rec.includes(d.getDay()))) && (showBusy || own(o.e))).sort((a, b) => a.e.s - b.e.s);
+    const pick = (o, src) => ev => this.openPop(o.key, ev, src);
+    const inbox = S.scope === 'inbox', v = this.visible(), all = v.all, list = v.list, g = this.groups(list), sel = this.current();
+    const sentAllList = this.sentAll(), sentList = this.visibleSent();
+    const nU = all.filter(c => !this.isRead(c)).length, nD = all.filter(c => this.isDelayed(c)).length;
+    this._order = inbox ? g.unrev.concat(g.delayed, g.done).map(c => c.id) : sentList.map(x => x.id); this._selId = sel ? sel.id : null;
+    const row = c => { const L = c.labels || []; return { subject: c.subject, who: c.who, n: c.n, nDisplay: c.n > 1 ? 'inline-block' : 'none', rest: listSum && c.line ? ' · ' + c.line : '', time: (c.day ? DN[c.day] + ' ' : '') + hm(c.t), open: () => this.open(c.id), bg: sel && sel.id === c.id ? '#191A1E' : 'transparent', dot: this.isRead(c) ? 'transparent' : INK, label: L[0] ? L[0][0] : '', labelDisplay: L[0] ? 'inline-block' : 'none' }; };
+    const tagOf = x => x.pending ? ['Sending', '#3A3D44', 'rgba(233,234,236,.75)'] : S.follow[x.id] ? ['Follow up Mon 09:00', '#3A3D44', 'rgba(233,234,236,.75)'] : x.replied === false ? ['No reply yet', '#232529', MUT] : null;
+    const sentRow = x => { const tg = tagOf(x); return { subject: x.subject, to: x.to, line: x.line, time: (x.day ? DN[x.day] + ' ' : '') + hm(x.t), open: () => this.open(x.id), bg: sel && sel.id === x.id ? '#191A1E' : 'transparent', tag: tg ? tg[0] : '', tagBorder: tg ? tg[1] : 'transparent', tagColor: tg ? tg[2] : MUT, tagDisplay: tg ? 'inline-block' : 'none' }; };
+    const sentGroups = []; sentList.forEach(x => { let gr = sentGroups.find(q => q.day === x.day); if (!gr) { gr = { day: x.day, label: DL[x.day], items: [], n: 0 }; sentGroups.push(gr); } gr.items.push(sentRow(x)); gr.n++; });
+    const awaiting = sentAllList.filter(x => x.replied === false && !S.follow[x.id]).length;
+    const chip = (nm, on, toggle) => ({ name: nm, toggle, bg: on ? INK : 'transparent', color: on ? '#0E0F11' : 'rgba(233,234,236,.7)', border: on ? INK : '#2A2C31' });
+    const labelCounts = {}; all.forEach(c => (c.labels || []).forEach(l => { labelCounts[l[0]] = (labelCounts[l[0]] || 0) + 1; }));
+    const labelNames = Object.keys(labelCounts).sort((a, b) => labelCounts[b] - labelCounts[a] || a.localeCompare(b));
+    const senderCounts = {}; all.forEach(c => { senderCounts[c.who] = (senderCounts[c.who] || 0) + 1; });
+    const senders = Object.keys(senderCounts).sort((a, b) => senderCounts[b] - senderCounts[a] || a.localeCompare(b)).slice(0, 7);
+    const setF = p => this.setState(Object.assign({ sel: 'auto', pin: null }, p));
+    const nDay = d => sentAllList.filter(x => d === 'older' ? x.day >= 2 : x.day === +d).length;
+    const dayOpts = [['0', 'Today'], ['1', 'Yesterday'], ['older', 'Earlier this week']];
+    const dayChips = dayOpts.map(p => chip(p[1], S.fDay === p[0], () => setF({ fDay: S.fDay === p[0] ? '' : p[0] })));
+    const rail = inbox
+      ? [Object.assign(chip('All', !S.fLabel, () => setF({ fLabel: '' })), { n: all.length })].concat(labelNames.map(n => Object.assign(chip(n, S.fLabel === n, () => setF({ fLabel: S.fLabel === n ? '' : n })), { n: labelCounts[n] })))
+      : [Object.assign(chip('All', !S.fDay, () => setF({ fDay: '' })), { n: sentAllList.length })].concat(dayOpts.map((p, i) => Object.assign(dayChips[i], { n: nDay(p[0]) })));
+    // ---- today's timeline (24 h)
+    const todayEv = evOn(T0), nxt = todayEv.find(o => o.e.s > NOW);
+    const TS = S.tlStart, TE = S.tlEnd, TL = TE - TS, stripW = Math.max(1160, window.innerWidth || 0) - 48, pxh = stripW / TL, fx = t => ((t - TS) / TL).toFixed(4);
+    const hourLines = Array.from({ length: TL + 1 }, (_, i) => ({ f: fx(TS + i) }));
+    const buildPanel = off => {
+      const d = addD(T0, off), isT = off === 0, list = evOn(d).filter(o => o.e.e > TS && o.e.s < TE), nx = isT ? list.find(o => o.e.s > NOW) : null, overlaps = [], laneEnd = [], blocks = [];
+      list.forEach((o, i) => list.slice(i + 1).forEach(p => { if (p.e.s < o.e.e && p.e.e > o.e.s) { const s = Math.max(o.e.s, p.e.s), e = Math.min(o.e.e, p.e.e); overlaps.push({ f: fx(s), w: ((e - s) / TL).toFixed(4), tip: 'Overlap ' + hm(s) + ' – ' + hm(e) + ' · ' + o.e.title + ' and ' + p.e.title }); } }));
+      list.forEach(o => {
+        const e = o.e, past = off < 0 || (isT && e.e <= NOW), now = isT && e.s <= NOW && e.e > NOW, isNext = !!nx && o.key === nx.key, hov = S.hover === o.key;
+        const label = now ? e.title + ' · until ' + hm(e.e) : isNext ? hm(e.s) + ' ' + e.title : e.title;
+        const x0 = (Math.max(e.s, TS) - TS) * pxh, x1 = Math.max((Math.min(e.e, TE) - TS) * pxh, x0 + 8 + label.length * 6.6 + 8);
+        let L = laneEnd.findIndex(end => x0 >= end + 6); if (L < 0) { L = laneEnd.length; laneEnd.push(x1); } else laneEnd[L] = Math.max(laneEnd[L], x1);
+        blocks.push({ f: fx(Math.max(e.s, TS)), w: ((Math.min(e.e, TE) - Math.max(e.s, TS)) / TL).toFixed(4), top: (28 + L * 28) + 'px', labelTop: (32 + L * 28) + 'px', label, tip: hm(e.s) + ' – ' + hm(e.e) + ' · ' + e.title + (own(e) ? '' : ' · ' + name(e.a)),
+          bg: now ? (hov ? 'rgba(224,100,90,.3)' : 'rgba(224,100,90,.2)') : isNext ? (hov ? 'rgba(201,163,107,.32)' : 'rgba(201,163,107,.22)') : past ? (hov ? '#131417' : 'transparent') : (hov ? '#1F2126' : '#191A1E'),
+          border: past ? '1px solid #232529' : '0', rule: now ? '#E0645A' : isNext ? AMB : past ? '#3A3D44' : INK, color: now ? '#E0645A' : isNext ? AMB : past ? 'rgba(233,234,236,.4)' : INK, weight: now || isNext ? 500 : 400,
+          pick: pick(o, 'strip'), enter: () => this.setState({ hover: o.key }), leave: () => this.setState(s => s.hover === o.key ? { hover: null } : null) });
+      });
+      const hourLabels = Array.from({ length: TL + 1 }, (_, i) => ({ h: TS + i })).filter(o => !isT || Math.abs(o.h - NOW) > 0.42).map(o => ({ f: fx(o.h), label: pad(o.h), color: o.h % 3 === 0 || o.h === TS || o.h === TE ? 'rgba(233,234,236,.45)' : 'rgba(233,234,236,.28)', tx: o.h === TS ? 'none' : o.h === TE ? 'translateX(-100%)' : 'translateX(-50%)' }));
+      const relDay = off === 1 ? 'Tomorrow · ' : off === -1 ? 'Yesterday · ' : '';
+      return { blocks, overlaps, hourLabels, hourLines, lanes: Math.max(1, laneEnd.length), isToday: isT, notToday: !isT, empty: list.length === 0, dateLabel: relDay + DOWL[d.getDay()] + ' ' + d.getDate() + ' ' + MON[d.getMonth()] };
+    };
+    const stripPanels = [-1, 0, 1].map(i => Object.assign(buildPanel(S.stripDay + i), { left: (i * 100) + '%' }));
+    const lanes = stripPanels[1].lanes, gridH = 8 + lanes * 28, stripH = 24 + gridH + 8;
+    // ---- calendar
+    const anchor = this.anchorDate(), isTA = same(anchor, T0);
+    const evBlocks = (d, wide) => { const lst = evOn(d).filter(o => o.e.e > DS && o.e.s < DE); return lst.map((o, j) => { const e = o.e, o_ = own(e), prev = lst.slice(0, j).some(x => x.e.e > e.s), next = lst.slice(j + 1).some(x => x.e.s < e.e); return { start: wide ? hm(e.s) + ' – ' + hm(e.e) : hm(e.s), title: ttl(e), sub: wide ? (e.loc || e.link || (o_ ? '' : name(e.a))) : '', tip: hm(e.s) + ' – ' + hm(e.e) + ' · ' + ttl(e), top: pct(Math.max(e.s, DS)), height: span(Math.max(e.s, DS), Math.min(e.e, DE)), left: prev ? '50%' : '0', right: next ? '50%' : '0', fill: '#191A1E', rule: o_ ? INK : 'rgba(233,234,236,.45)', dashed: 'none', color: INK, pick: pick(o, 'cal') }; }); };
+    const openDayOf = d => () => this.setState({ cview: 'day', anchor: Math.round((d - T0) / 864e5), pop: null });
+    const wStart = addD(anchor, -wsIdx(anchor)), wDays = Array.from({ length: 7 }, (_, i) => addD(wStart, i)), wEnd = wDays[6];
+    const week = wDays.map(d => { const isT = same(d, T0); return { name: DOW[d.getDay()], num: d.getDate(), today: isT, rule: isT ? AMB : '#232529', numColor: isT ? AMB : INK, bg: isT ? '#121316' : 'transparent', events: evBlocks(d, false), openDay: openDayOf(d) }; });
+    const weekNo = 37 + Math.round((wStart - new Date(2026, 8, 7)) / 6.048e8);
+    const weekSub = wStart.getMonth() === wEnd.getMonth() ? wStart.getDate() + ' – ' + wEnd.getDate() + ' ' + MON[wStart.getMonth()] : wStart.getDate() + ' ' + MON[wStart.getMonth()] + ' – ' + wEnd.getDate() + ' ' + MON[wEnd.getMonth()];
+    const dEv = evOn(anchor);
+    const day = { num: anchor.getDate(), name: DOWL[anchor.getDay()], rule: isTA ? AMB : '#232529', numColor: isTA ? AMB : INK, bg: isTA ? '#121316' : 'transparent', today: isTA, events: evBlocks(anchor, true), empty: dEv.length === 0, agenda: dEv.map(o => { const e = o.e, o_ = own(e), past = isTA && e.e <= NOW, now = isTA && e.s <= NOW && e.e > NOW; return { range: hm(e.s) + ' – ' + hm(e.e), title: ttl(e), sub: [o_ ? '' : name(e.a), e.loc, e.link, e.people && e.people.join(', ')].filter(Boolean).join(' · '), color: past ? 'rgba(233,234,236,.45)' : INK, timeColor: now ? AMB : 'rgba(233,234,236,.5)', pick: pick(o, 'cal') }; }) };
+    const mStart = new Date(anchor.getFullYear(), anchor.getMonth(), 1), dim = new Date(anchor.getFullYear(), anchor.getMonth() + 1, 0).getDate(), gStart = addD(mStart, -wsIdx(mStart)), monthRows = Math.ceil((wsIdx(mStart) + dim) / 7);
+    let monthCount = 0;
+    const monthCells = Array.from({ length: monthRows * 7 }, (_, i) => { const d = addD(gStart, i), inM = d.getMonth() === anchor.getMonth(), isT = same(d, T0), lst = evOn(d); if (inM) monthCount += lst.length; return { num: d.getDate(), numColor: isT ? AMB : inM ? INK : 'rgba(233,234,236,.3)', bg: isT ? '#121316' : 'transparent', openDay: openDayOf(d), hasMore: lst.length > 3, more: lst.length - 3, events: lst.slice(0, 3).map(o => { const e = o.e, o_ = own(e); return { start: hm(e.s), title: e.title, color: inM ? INK : 'rgba(233,234,236,.45)', border: '2px solid ' + (inM ? (o_ ? INK : 'rgba(233,234,236,.45)') : '#3A3D44'), tip: hm(e.s) + ' – ' + hm(e.e) + ' · ' + ttl(e), pick: pick(o, 'cal') }; }) }; });
+    const monthHead = Array.from({ length: 7 }, (_, i) => ({ name: DOW[addD(gStart, i).getDay()] }));
+    const calTitle = S.cview === 'day' ? DOWL[anchor.getDay()] + ' ' + anchor.getDate() + ' ' + MON[anchor.getMonth()] : S.cview === 'week' ? 'Week ' + weekNo : MON[anchor.getMonth()] + ' ' + anchor.getFullYear();
+    const calSub = S.cview === 'day' ? (isTA ? 'Today · ' : '') + dEv.length + (dEv.length === 1 ? ' event' : ' events') + ' · ' + name(S.acct) : S.cview === 'week' ? weekSub + ' · ' + name(S.acct) : monthCount + ' events · ' + name(S.acct);
+    // ---- popover
+    let pop = null;
+    if (S.pop) {
+      const parts = S.pop.key.split(/[@-]/), e = EV[+parts[0]], dt = new Date(+parts[1], +parts[2], +parts[3]);
+      if (e) {
+        const isT = same(dt, T0), W = window.innerWidth, H = window.innerHeight, fromStrip = S.pop.src === 'strip', popConf = evOn(dt).filter(x => x.key !== S.pop.key && x.e.s < e.e && x.e.e > e.s);
+        const relTxt = isT ? (NOW < e.s ? 'in ' + rel(e.s - NOW) : NOW < e.e ? 'now · ends ' + hm(e.e) : 'ended ' + hm(e.e)) : '';
+        pop = { left: Math.max(16, Math.min(S.pop.x - 150, W - 316)) + 'px', top: fromStrip ? 'auto' : (S.pop.y + 14 + 240 > H ? Math.max(64, S.pop.y - 254) : S.pop.y + 14) + 'px', bottom: fromStrip ? (stripH + 12) + 'px' : 'auto',
+          title: e.title, acct: name(e.a), range: hm(e.s) + ' – ' + hm(e.e), when: (isT ? 'Today' : DOW[dt.getDay()] + ' ' + dt.getDate() + ' ' + MON[dt.getMonth()].slice(0, 3)) + ' · ' + dur(e.s, e.e),
+          hasLoc: !!e.loc, loc: e.loc || '', hasLink: !!e.link, link: e.link || '', hasPeople: !!(e.people && e.people.length), people: (e.people || []).join(', '), rel: relTxt, hasConflict: popConf.length > 0, conflict: popConf.map(x => x.e.title + ' (' + hm(x.e.s) + ' – ' + hm(x.e.e) + ')').join(', '),
+          actionLabel: S.view === 'cal' && S.cview === 'day' && same(dt, anchor) ? 'Close' : 'Open in Calendar',
+          action: ev => { ev.stopPropagation(); if (S.view === 'cal' && S.cview === 'day' && same(dt, anchor)) this.setState({ pop: null }); else this.setState({ view: 'cal', cview: 'day', anchor: Math.round((dt - T0) / 864e5), pop: null, searchOpen: false, replying: false }); } };
+      }
+    }
+    // ---- reading pane
+    const model = Component.MODELS.find(m => m.id === S.model) || Component.MODELS[0];
+    let selv = null;
+    if (sel && inbox) {
+      const base = sel.thread || [{ from: sel.who, time: DN[sel.day] + ' ' + hm(sel.t), body: sel.body || '' }];
+      const extra = S.sent[sel.id] || [], exp = !!S.expanded[sel.id], earlier = base.length - 1;
+      const msgs = (exp || earlier < 1 ? base : base.slice(-1)).concat(extra).map(m => ({ from: m.from, time: m.time, body: m.body, color: m.from === 'You' ? AMB : INK }));
+      selv = { isInbox: true, isSent: false, subject: sel.subject, who: sel.who, initials: ini(sel.who), meta: sel.who + ' · ' + (sel.n > 1 ? sel.n + ' messages' : '1 message') + ' · ' + DN[sel.day] + ' ' + hm(sel.t) + ' · ' + name(sel.acct), sum: sel.sum || '', hasSum: !!sel.sum, att: sel.att || '', hasAtt: !!sel.att, labels: (sel.labels || []).map(l => ({ name: l[0], border: (l[1] ? '1px dashed ' : '1px solid ') + 'rgba(233,234,236,.35)', title: l[1] ? 'Suggested on this machine — click to correct' : 'Label' })), msgs, hasEarlier: earlier >= 1 && !exp, earlierLabel: earlier + (earlier === 1 ? ' earlier message' : ' earlier messages'), expand: () => this.setState(s => ({ expanded: Object.assign({}, s.expanded, { [sel.id]: true }) })), delayBtn: this.isDelayed(sel) ? 'Undelay' : 'Delay', hasRe: false, status: '', statusDisplay: 'none' };
+    } else if (sel) {
+      const re = sel.re ? C.find(c => c.id === sel.re) : null, tg = tagOf(sel);
+      selv = { isInbox: false, isSent: true, subject: sel.subject, who: sel.to, initials: ini(sel.to), meta: 'To ' + sel.to + ' · ' + (sel.day ? DN[sel.day] : 'Today') + ' ' + hm(sel.t) + ' · from ' + inf(S.acct).addr, sum: '', hasSum: false, att: sel.att || '', hasAtt: !!sel.att, labels: [], msgs: [{ from: 'You', time: (sel.day ? DN[sel.day] : 'Fri') + ' ' + hm(sel.t) + (sel.pending ? ' · sending' : ''), body: sel.body, color: AMB }], hasEarlier: false, earlierLabel: '', expand: () => {}, delayBtn: '', hasRe: !!re, reSubject: re ? re.subject : '', openRe: () => this.open(sel.re), followBtn: S.follow[sel.id] ? 'Following up Mon 09:00' : 'Follow up', toggleFollow: () => this.setState(s => ({ follow: Object.assign({}, s.follow, { [sel.id]: !s.follow[sel.id] }) })), status: tg ? tg[0] : (sel.replied ? 'Replied' : ''), statusDisplay: tg || sel.replied ? 'inline-block' : 'none' };
+    }
+    // ---- stats, tabs, settings
+    const ST = Component.STATS[S.acct] || { in: [0, 0, 0, 0, 0, 0], out: [0, 0, 0, 0, 0, 0] }, ins = ST.in.concat([all.filter(c => c.day === 0).length]), outs = ST.out.concat([sentAllList.filter(x => x.day === 0).length]), mx = Math.max(1, ...ins, ...outs);
+    const DAYT = ['Sat 5', 'Sun 6', 'Mon 7', 'Tue 8', 'Wed 9', 'Thu 10', 'Today'];
+    const bars = ins.map((n, i) => ({ inH: Math.max(2, Math.round(n / mx * 22)) + 'px', outH: Math.max(2, Math.round(outs[i] / mx * 22)) + 'px', title: DAYT[i] + ' · ' + n + ' in · ' + outs[i] + ' out', mark: i === 6 ? AMB : 'transparent' }));
+    const isMail = S.view === 'mail', isCal = S.view === 'cal', isSettings = S.view === 'settings';
+    const filterBits = inbox ? [S.fFrom && 'From ' + S.fFrom, S.fLabel && S.fLabel, S.fStatus && ({ review: 'To review', delayed: 'Delayed', done: 'Done' })[S.fStatus], S.query.trim() && '“' + S.query.trim() + '”'].filter(Boolean) : [S.fDay && ({ 0: 'Today', 1: 'Yesterday', older: 'Earlier this week' })[S.fDay], S.query.trim() && '“' + S.query.trim() + '”'].filter(Boolean);
+    const filtering = inbox ? v.active : filterBits.length > 0, shown = inbox ? list.length : sentList.length;
+    const tabs = this.accts().map(k => { const l = C.filter(c => c.acct === k), on = k === S.acct, n = l.filter(c => !this.isRead(c)).length, nd = l.filter(c => this.isDelayed(c)).length; return { name: name(k), icon: inf(k).icon, n, badgeDisplay: n ? 'inline' : 'none', badgeColor: on ? INK : 'rgba(233,234,236,.5)', color: on ? INK : MUT, iconColor: on ? 'rgba(233,234,236,.85)' : 'rgba(233,234,236,.4)', bg: on ? '#191A1E' : 'transparent', hoverBg: on ? '#191A1E' : '#131417', weight: on ? 500 : 400, title: name(k) + ' · ' + inf(k).addr + ' · ' + n + ' to review, ' + nd + ' delayed', pick: () => this.pickAcct(k) }; });
+    const seg = (opts, cur, key) => opts.map(o => ({ label: o[1], bg: cur === o[0] ? '#1F2126' : 'transparent', color: cur === o[0] ? INK : MUT, weight: cur === o[0] ? 500 : 400, pick: () => this.setState({ [key]: o[0] }) }));
+    const nav = id => ({ pick: () => this.setState({ stab: id }), bg: S.stab === id ? '#191A1E' : 'transparent', color: S.stab === id ? INK : 'rgba(233,234,236,.6)', weight: S.stab === id ? 500 : 400 });
+    const accounts = this.accts().map(k => { const a = inf(k); return { icon: a.icon, name: name(k), addr: a.addr, provider: a.provider, status: a.sync, index: a.index, idxW: a.idxW, rename: e => this.setState(s => ({ names: Object.assign({}, s.names, { [k]: e.target.value }) })), remove: () => this.removeAcct(k) }; });
+    const A = S.add, prov = A && A.provider ? Component.PROVIDERS.find(p => p.id === A.provider) : Component.PROVIDERS[0];
+    const models = Component.MODELS.map((m, i) => { const have = m.have || S.dl[m.id] === 'done', dl = S.dl[m.id] === 'downloading', on = S.model === m.id; return { name: m.name, note: m.note, size: m.size, ring: on ? INK : '#3A3D44', dot: on ? INK : 'transparent', color: have ? INK : 'rgba(233,234,236,.55)', bg: on ? '#131417' : 'transparent', border: i < Component.MODELS.length - 1 ? '1px solid #232529' : '0', action: have ? 'Downloaded' : (dl ? 'Downloading…' : 'Download'), actColor: have ? 'rgba(233,234,236,.45)' : (dl ? AMB : INK), cursor: have || dl ? 'default' : 'pointer', pick: () => { if (have) this.setState({ model: m.id }); }, act: e => { e.stopPropagation(); if (have || dl) return; this.setState(s => ({ dl: Object.assign({}, s.dl, { [m.id]: 'downloading' }) })); setTimeout(() => this.setState(s => ({ dl: Object.assign({}, s.dl, { [m.id]: 'done' }) })), 1800); } }; });
+    const pending = S.sentExtra.filter(x => x.pending).length;
+    return {
+      isMail, isCal, isSettings, toMail: () => this.setState({ view: 'mail', pop: null }), toCal: () => this.setState({ view: 'cal', searchOpen: false, replying: false, pop: null }), toSettings: () => this.toggleSettings(), closeSettings: () => this.setState({ view: S.prevView }),
+      closePop: () => this.closePop(), stopProp: e => e.stopPropagation(), hasPop: !!pop, pop: pop || {},
+      mailBg: isMail ? INK : 'transparent', mailColor: isMail ? '#0E0F11' : MUT, calBg: isCal ? INK : 'transparent', calColor: isCal ? '#0E0F11' : MUT,
+      gearColor: isSettings ? '#0E0F11' : 'rgba(233,234,236,.6)', gearBg: isSettings ? INK : 'transparent', gearHover: isSettings ? INK : '#131417', tabs,
+      searchRef: this.searchRef, query: S.query, hasQuery: !!S.query, setQuery: e => this.setState({ query: e.target.value, sel: 'auto', pin: null }), openSearch: () => this.setState({ searchOpen: true }), closeSearch: () => this.setState({ searchOpen: false }), clearSearch: () => this.setState({ query: '', sel: 'auto', pin: null }), searchOpen: S.searchOpen && isMail, searchBorder: S.searchOpen ? '#3A3D44' : '#232529', searchPh: 'Search ' + name(S.acct) + (inbox ? '' : ' · sent'),
+      scopeChips: [['inbox', 'Inbox'], ['sent', 'Sent']].map(p => chip(p[1], S.scope === p[0], () => this.setScope(p[0]))),
+      syntax: ['from:maya', 'label:infra', 'has:attachment', 'is:delayed', 'before:2025'].map(t => ({ text: t, apply: () => this.setState({ query: (S.query.trim() + ' ' + t).trim(), sel: 'auto', pin: null }) })),
+      fromChips: senders.map(n => chip(n, S.fFrom === n, () => setF({ fFrom: S.fFrom === n ? '' : n }))),
+      labelChips: labelNames.map(n => chip(n, S.fLabel === n, () => setF({ fLabel: S.fLabel === n ? '' : n }))),
+      statusChips: [['review', 'To review'], ['delayed', 'Delayed'], ['done', 'Done']].map(p => chip(p[1], S.fStatus === p[0], () => setF({ fStatus: S.fStatus === p[0] ? '' : p[0] }))),
+      dayChips, indexNote: inf(S.acct).index + ' · attachments offline through 2024',
+      inboxScope: inbox, sentScope: !inbox, toInbox: () => this.setScope('inbox'), toSent: () => this.setScope('sent'), inboxColor: inbox ? INK : 'rgba(233,234,236,.32)', sentColor: inbox ? 'rgba(233,234,236,.32)' : INK,
+      sub1n: inbox ? nU : sentAllList.length, sub1t: inbox ? 'to review' : 'sent this week', sub2n: inbox ? nD : awaiting, sub2t: inbox ? 'delayed' : 'awaiting reply',
+      bars, statIn: ins.reduce((a, b) => a + b, 0), statOut: outs.reduce((a, b) => a + b, 0),
+      rail, filtering, filterText: filterBits.join(' · ') + ' — ' + shown + (shown === 1 ? (inbox ? ' conversation' : ' message') : (inbox ? ' conversations' : ' messages')), clearFilters: () => setF({ fFrom: '', fLabel: '', fStatus: '', fDay: '', query: '' }), noResults: v.active && list.length === 0, noSent: filtering && sentList.length === 0,
+      syncText: pending ? 'Synced 10:41 · ' + pending + ' pending' : 'Synced 10:41', syncTitle: 'Mail and calendar for all accounts, synced to this machine at 10:41',
+      acctName: name(S.acct), clear: nU === 0 && nD === 0 && !v.active, rowH: compact ? '44px' : '52px',
+      unrev: g.unrev.map(row), delayed: g.delayed.map(row), done: g.done.map(row), hasDelayed: g.delayed.length > 0, hasDone: g.done.length > 0, sentGroups,
+      hasSel: !!selv, noSelInbox: !selv && inbox, noSelSent: !selv && !inbox, sel: selv || {}, toggleDelay: () => this.toggleDelay(), finish: () => this.finish(), reset: () => this.setState({ read: {}, delay: {}, sent: {}, sentExtra: [], follow: {}, sel: 'auto', pin: null, query: '', fFrom: '', fLabel: '', fStatus: '', fDay: '' }),
+      replying: S.replying && !!selv && inbox, startReply: () => this.setState({ replying: true }), cancelReply: () => this.setState({ replying: false, draft: '' }), draft: S.draft, setDraft: e => this.setState({ draft: e.target.value }), send: () => this.send(), fromAddr: inf(S.acct).addr, sendBg: S.draft.trim() ? INK : '#2A2C31', sendColor: S.draft.trim() ? '#0E0F11' : MUT,
+      modelShort: model.short, modelName: model.name, nConv: all.length, models, requeue: () => { if (S.requeued) return; this.setState({ requeued: true }); setTimeout(() => this.setState({ requeued: false }), 2600); }, requeueText: S.requeued ? 'Queued · about ' + all.length + ' s' : 'Re-summarise ' + name(S.acct), requeueColor: S.requeued ? AMB : INK,
+      stAccounts: nav('accounts'), stModel: nav('model'), stMail: nav('mail'), stCal: nav('cal'), stKeys: nav('keys'), isAccounts: S.stab === 'accounts', isModel: S.stab === 'model', isMailSt: S.stab === 'mail', isCalSt: S.stab === 'cal', isKeys: S.stab === 'keys',
+      accounts, addIdle: !A, addOn: !!A, addStep0: !!A && A.step === 0, addStep1: !!A && A.step === 1, addStep2: !!A && A.step === 2, addStep3: !!A && A.step === 3, addWaiting: !!A && A.waiting, addIdleStep: !!A && !A.waiting,
+      addSteps: ['Provider', 'Sign in', 'Permissions', 'Connected'].map((l, i) => ({ label: l, color: A && A.step === i ? INK : A && A.step > i ? 'rgba(233,234,236,.6)' : 'rgba(233,234,236,.3)', weight: A && A.step === i ? 500 : 400 })),
+      addProviders: Component.PROVIDERS.map(p => ({ name: p.name, note: p.note, pick: () => this.patchAdd({ step: 1, provider: p.id }) })),
+      addShort: prov.short, addHost: prov.host, addAddr: prov.addr, addProviderName: prov.name.split(' / ')[0], addIcon: Component.ICON_NEW, addName: A ? A.name : '', setAddName: e => this.patchAdd({ name: e.target.value }),
+      startAdd: () => this.startAdd(), cancelAdd: () => this.setState({ add: null }), openBrowser: () => this.openBrowser(), allowAdd: () => this.allowAdd(), finishAdd: () => this.finishAdd(),
+      delaySeg: seg([['tomorrow', 'Tomorrow 08:00'], ['monday', 'Next Monday'], ['ask', 'Ask each time']], S.delayDefault, 'delayDefault'), densitySeg: seg([['Comfortable', 'Comfortable'], ['Compact', 'Compact']], compact ? 'Compact' : 'Comfortable', 'density'), busySeg: seg([[true, 'Show'], [false, 'Hide']], showBusy, 'busy'), weekSeg: seg([['mon', 'Monday'], ['sun', 'Sunday']], S.weekStart, 'weekStart'),
+      dayStartVal: String(DS), dayEndVal: String(DE), setDayStart: e => this.setState({ dayStart: +e.target.value }), setDayEnd: e => this.setState({ dayEnd: +e.target.value }), hourPct: (100 / LEN).toFixed(4) + '%',
+      calViews: seg([['day', 'Day'], ['week', 'Week'], ['month', 'Month']], S.cview, 'cview'), calPrev: () => this.stepCal(-1), calNext: () => this.stepCal(1), calToday: () => this.setState({ anchor: 0, pop: null }), todayColor: S.anchor === 0 ? INK : 'rgba(233,234,236,.7)',
+      isDay: S.cview === 'day', isWeek: S.cview === 'week', isMonth: S.cview === 'month', calTitle, calSub, week, day, monthHead, monthCells, monthRows, nowPct: pct(NOW), hours: Array.from({ length: LEN }, (_, i) => ({ label: hm(DS + i), top: (i / LEN * 100).toFixed(3) + '%' })),
+      stripPanels, stripH: stripH + 'px', gridH: gridH + 'px', nowH: (gridH + 4) + 'px', nowF: fx(NOW), nowText: hm(NOW), stripDx: S.stripDx, stripTrans: S.stripAnim ? 'transform .23s ease-out' : 'none', stripCursor: S.stripDragging ? 'grabbing' : 'grab', stripDown: e => this.stripDown(e), stripToday: e => { e.stopPropagation(); this.setState({ stripDay: 0, stripDx: 0, stripAnim: false }); },
+      tlStartVal: String(TS), tlEndVal: String(TE), setTlStart: e => this.setState({ tlStart: +e.target.value }), setTlEnd: e => this.setState({ tlEnd: +e.target.value }),
+      splitCols: (S.split * 100).toFixed(2) + '% minmax(0,1fr)', splitLeft: (S.split * 100).toFixed(2) + '%', splitLine: S.dragging ? '#C9A36B' : 'transparent', startDrag: e => this.startDrag(e)
+    };
+  }
+}
+</script>
+</body>
+</html>

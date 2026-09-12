@@ -208,7 +208,7 @@ impl Store {
         Ok(result)
     }
 
-    fn stored_calendar_event(
+    pub(crate) fn stored_calendar_event(
         &self,
         account: &str,
         calendar: &str,
@@ -257,7 +257,7 @@ impl Store {
         })
     }
 
-    fn calendar_prepare(
+    pub(crate) fn calendar_prepare(
         &mut self,
         target: &fm_calendar::EventKey,
         request_id: &str,
@@ -298,7 +298,10 @@ impl Store {
             |r| r.get(0),
         )?;
         let plan = build(&event, access, &actor)?;
-        let intent = json!({"request":request,"write":plan,"actor":actor});
+        let mut intent = json!({"request":request,"write":plan,"actor":actor});
+        if let Some(public_fingerprint) = request.get("public_fingerprint") {
+            intent["public_fingerprint"] = public_fingerprint.clone();
+        }
         self.db.execute("INSERT INTO calendar_write_operations(account,request_id,fingerprint,intent_json,result_json) VALUES(?1,?2,?3,?4,NULL)",params![target.account,request_id,fingerprint,serde_json::to_string(&intent)?])?;
         Ok(json!({"request_id":request_id,"intent":intent,"result":null}))
     }
@@ -453,9 +456,9 @@ fn access_name(access: Access) -> &'static str {
         Access::Owner => "owner",
     }
 }
-fn calendar_error(error: fm_calendar::CalendarError) -> crate::CoreError {
+pub(crate) fn calendar_error(error: fm_calendar::CalendarError) -> crate::CoreError {
     err(error.code, &error.message)
 }
-fn fingerprint(value: &Value) -> Result<String> {
+pub(crate) fn fingerprint(value: &Value) -> Result<String> {
     Ok(format!("{:x}", Sha256::digest(serde_json::to_vec(value)?)))
 }

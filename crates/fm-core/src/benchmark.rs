@@ -13,6 +13,11 @@ fn percentile(samples: &mut [Duration], quantile: f64) -> f64 {
 #[test]
 #[ignore = "Opt-in 100k search experiment: cargo test -p fm-core --release search_100k -- --ignored --nocapture"]
 fn search_100k() {
+    let iterations = std::env::var("FM_BENCHMARK_ITERATIONS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|v| (1..=1000).contains(v))
+        .unwrap_or(100);
     let temp = tempfile::tempdir().unwrap();
     let profile = temp.path().join("disposable-search-benchmark");
     let store = Store::open(&profile).unwrap();
@@ -144,7 +149,7 @@ fn search_100k() {
             assert_eq!(row["matching_message_ids"].as_array().unwrap().len(), 1);
         }
         let mut samples = Vec::new();
-        for _ in 0..40 {
+        for _ in 0..iterations {
             let started = Instant::now();
             let result = store
                 .handle("conversations", Some(account), request.clone())
@@ -159,23 +164,134 @@ fn search_100k() {
             "first_query_ms":first_ms,"warm_iterations":samples.len(),"warm_p50_ms":percentile(&mut samples,0.50),
             "warm_p95_ms":percentile(&mut samples,0.95),"warm_p99_ms":percentile(&mut samples,0.99)}));
     }
+    for (name, request) in [
+        (
+            "phase1 grouped first50",
+            json!({"grouped":true,"folder":"all","limit":50}),
+        ),
+        (
+            "phase1 combined filters first50",
+            json!({"query":"deployment","field":"body","grouped":true,"folder":"all","limit":50,"sender":"alex.o'hara+build@windscribe.example","status":"review","has_attachment":false,"after":"2026-09-01","before":"2026-09-12"}),
+        ),
+    ] {
+        let started = Instant::now();
+        let initial = store
+            .handle("conversations", Some("windscribe"), request.clone())
+            .unwrap();
+        let first_ms = started.elapsed().as_secs_f64() * 1000.0;
+        assert_eq!(initial["conversations"].as_array().unwrap().len(), 50);
+        let mut samples = Vec::new();
+        for _ in 0..iterations {
+            let started = Instant::now();
+            let result = store
+                .handle("conversations", Some("windscribe"), request.clone())
+                .unwrap();
+            samples.push(started.elapsed());
+            assert_eq!(result["conversations"], initial["conversations"]);
+        }
+        measurements.push(json!({"query":name,"account":"windscribe","request":request,"returned":50,"first_query_ms":first_ms,"warm_iterations":samples.len(),"warm_p50_ms":percentile(&mut samples,0.50),"warm_p95_ms":percentile(&mut samples,0.95),"warm_p99_ms":percentile(&mut samples,0.99)}));
+    }
+    let concurrent_ingestion = measure_queued_ingestion(&mut store, &source, iterations);
     let plan_sql = format!(
         "EXPLAIN QUERY PLAN {}",
-        crate::queries::search_page_sql(true)
+        crate::queries::search_matches_sql(
+            true,
+            &json!({"folder":"all","sender":"alex","status":"review","has_attachment":false,"after":"2026-09-01","before":"2026-09-12"})
+        )
     );
     let mut statement = store.db.prepare(&plan_sql).unwrap();
     let plan = statement
         .query_map(
-            params!["windscribe", "all", "", "body:(\"ultraquartz\"*)", 21, 0],
+            params![
+                "windscribe",
+                "all",
+                "",
+                "body:(\"deployment\"*)",
+                51,
+                0,
+                "%alex%",
+                "review",
+                Some(false),
+                "2026-09-01",
+                "2026-09-12",
+                ""
+            ],
             |r| r.get::<_, String>(3),
         )
         .unwrap()
         .collect::<std::result::Result<Vec<_>, _>>()
         .unwrap();
-    let report: Value = json!({"experiment":"100k generated SQLite/FTS5 message rows through Store.handle",
-        "fixture_revision":crate::FIXTURE_REVISION,"generated_messages":100000,"total_messages_including_small_fixture":message_count,
+    let mut report: Value = json!({"experiment":"100k generated SQLite/FTS5 message rows through Store.handle",
+        "fixture_revision":crate::FIXTURE_REVISION,"generated_messages":100000,"observations_per_class":iterations,"total_messages_including_small_fixture":message_count,
         "sqlite_version":rusqlite::version(),"target_os":std::env::consts::OS,"target_arch":std::env::consts::ARCH,
-        "seed_seconds":seed_seconds,"database_bytes":database_bytes,"cache_context":"One reopened SQLite connection after bulk seed/checkpoint; OS filesystem cache was not cleared. Per-query first sample followed by 40 warm samples. No ingestion or inference during measurement.",
-        "coverage_limits":"Index density fixture with shared retained synthetic source; not 25 GB mailbox, attachment-throughput, 1m/3m, OS-cold, concurrent-ingestion or power-loss evidence.","query_plan":plan,"queries":measurements});
-    println!("{}", serde_json::to_string_pretty(&report).unwrap());
+        "seed_seconds":seed_seconds,"database_bytes":database_bytes,"cache_context":"One reopened SQLite connection after bulk seed/checkpoint; OS filesystem cache was not cleared. Per-query warm observation counts recorded in each row. Static samples have no ingestion/inference. Concurrent-ingestion block uses independent producers and one serialized Store writer with bounded queue.",
+        "coverage_limits":"Index density fixture with shared retained synthetic source; not 25 GB mailbox, attachment-throughput, 1m/3m, OS-cold, real provider ingestion or power-loss evidence.","query_plan":plan,"queries":measurements,"concurrent_ingestion":concurrent_ingestion});
+    if std::env::var("FM_BENCHMARK_KEEP_PROFILE").as_deref() == Ok("1") {
+        // Only keep the newly generated tempfile; never overwrite an input profile.
+        let _retained_root = temp.keep();
+        report["retained_profile"] = json!(profile.to_string_lossy());
+    }
+    let encoded = serde_json::to_string_pretty(&report).unwrap();
+    if let Some(path) = std::env::var_os("FM_BENCHMARK_REPORT") {
+        std::fs::write(path, &encoded).unwrap();
+    }
+    println!("{encoded}");
+}
+
+// Independent synthetic insertion and search producers share one bounded worker
+// queue, matching Core's single-writer scheduling without bypassing writer locks.
+// SQL insertion is a normalized-row density diagnostic, not a provider importer.
+fn measure_queued_ingestion(store: &mut Store, source: &str, iterations: usize) -> Value {
+    enum Work {
+        Insert(usize),
+        Query(Instant, std::sync::mpsc::SyncSender<(Duration, Duration)>),
+    }
+    let mut search_samples = Vec::new();
+    let mut queued_samples = Vec::new();
+    let mut ingest_samples = Vec::new();
+    std::thread::scope(|scope| {
+        let (send, receive) = std::sync::mpsc::sync_channel::<Work>(2);
+        let worker=scope.spawn(move||{
+            let mut ingestion=Vec::new();
+            while let Ok(work)=receive.recv(){match work {
+                Work::Insert(batch)=>{
+                    let started=Instant::now();let tx=store.db.unchecked_transaction().unwrap();
+                    for index in 0..25 {
+                        let id=format!("ingest-{batch:03}-{index:02}");
+                        tx.execute("INSERT INTO conversations(account,id,subject,revision) VALUES('windscribe',?1,'Concurrent deployment',1)",[&id]).unwrap();
+                        tx.execute("INSERT INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision) VALUES('windscribe',?1,?1,?1,'Alex O’Hara','alex.o''hara+build@windscribe.example','you@windscribe.example','Concurrent deployment','New normalized deployment detail','2026-09-11T23:00:00Z',1,0,1,0,?2,1)",params![id,source]).unwrap();
+                        tx.execute("INSERT INTO message_fts(rowid,sender,subject,body) VALUES(?1,'Alex O’Hara alex.o''hara+build@windscribe.example','Concurrent deployment','New normalized deployment detail')",[tx.last_insert_rowid()]).unwrap();
+                    }
+                    tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'",[]).unwrap();tx.commit().unwrap();ingestion.push(started.elapsed());
+                },
+                Work::Query(queued,reply)=>{
+                    let started=Instant::now();
+                    let result=store.handle("conversations",Some("windscribe"),json!({"query":"deployment","field":"body","grouped":true,"folder":"all","limit":50,"sender":"alex","status":"review","has_attachment":false,"after":"2026-09-01","before":"2026-09-12"})).unwrap();
+                    assert_eq!(result["conversations"].as_array().unwrap().len(),50);
+                    assert_eq!(result["coverage"]["text_index_complete"],true);
+                    reply.send((started.elapsed(),queued.elapsed())).unwrap();
+                }
+            }}
+            ingestion
+        });
+        let ingest_send = send.clone();
+        let producer = scope.spawn(move || {
+            for batch in 0..iterations {
+                ingest_send.send(Work::Insert(batch)).unwrap();
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        });
+        for _ in 0..iterations {
+            let (reply, receive) = std::sync::mpsc::sync_channel(1);
+            send.send(Work::Query(Instant::now(), reply)).unwrap();
+            let (query, queue) = receive.recv().unwrap();
+            search_samples.push(query);
+            queued_samples.push(queue);
+        }
+        producer.join().unwrap();
+        drop(send);
+        ingest_samples = worker.join().unwrap();
+    });
+    assert_eq!(ingest_samples.len(), iterations);
+    json!({"model":"independent search and normalized-insertion producers; one serialized Store writer; bounded queue capacity 2; no parallel SQLite writer or provider transport","inserted_messages":iterations*25,"batches":iterations,"messages_per_batch":25,"query_observations":search_samples.len(),"core_query_p50_ms":percentile(&mut search_samples,0.5),"core_query_p95_ms":percentile(&mut search_samples,0.95),"core_query_p99_ms":percentile(&mut search_samples,0.99),"queue_to_response_p50_ms":percentile(&mut queued_samples,0.5),"queue_to_response_p95_ms":percentile(&mut queued_samples,0.95),"queue_to_response_p99_ms":percentile(&mut queued_samples,0.99),"ingestion_batch_p50_ms":percentile(&mut ingest_samples,0.5),"ingestion_batch_p95_ms":percentile(&mut ingest_samples,0.95),"ingestion_batch_p99_ms":percentile(&mut ingest_samples,0.99)})
 }

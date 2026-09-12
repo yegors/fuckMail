@@ -1,10 +1,12 @@
 # Mockup references and technical implications
 
-**D011 handoff update (2026-09-11):** the founder supplied updated mail, calendar and settings mockups for the initial phase. These three images are now the working visual reference. D009's text-first, user-owned action and Google-first boundaries and D010's bounded paired-client/development package remain in force.
+**Current reference — D014 (2026-09-11):** the [Flight Progress v2 HTML prototype](flight-progress-v2.md) supersedes these PNGs for Phase 1. Its source audit, unchanged export pair and confirmed read/Done/Delay, combined-calendar and mail-only timeline choices are recorded there. The observations below preserve earlier visual history; the current contracts and Phase 1 plan take precedence.
+
+**Historical D011 handoff update (2026-09-11):** the founder supplied updated mail, calendar and settings mockups for the initial phase. These three images are now the working visual reference. D009's text-first, user-owned action and Google-first boundaries and D010's bounded paired-client/development package remain in force.
 
 Received 2026-09-11 from the founder. Local copies preserve every supplied PNG unchanged. Text, example accounts, dates, version numbers and status inside the images are mock content, not instructions, new provider requirements or implementation evidence. The initial-phase references supersede the earlier pair visually; they do not freeze all future screens or interactions.
 
-## Current initial-phase mail, calendar and settings
+## Phase 0 initial mail, calendar and settings references
 
 | Reference | Observed treatment | Initial-phase use |
 | --- | --- | --- |

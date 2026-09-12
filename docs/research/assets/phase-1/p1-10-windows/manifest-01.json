@@ -1,0 +1,2677 @@
+{
+  "version": 1,
+  "retained_utc": "2026-09-12T17:33:31.8515714Z",
+  "checkpoint": "P1-10 baseline/intermediate archive01",
+  "source_root": "build/verification",
+  "originals_preserved": true,
+  "exclusions": [
+    "Executable snapshot directories and retained source seeds",
+    "In-progress native-regression-after logs",
+    "Future 05 and later runs; append a separately numbered archive rather than overwriting this one"
+  ],
+  "archives": [
+    {
+      "path": "raw-gui-reports-01.zip",
+      "bytes": 3731182,
+      "sha256": "f5f21df00bc30606b6c2f6d6cfe77b628b85f942655a58c85de9c8579abe67d6",
+      "entries": 16,
+      "verified_uncompressed_sha256": true
+    },
+    {
+      "path": "resize-captures-graphite-01.zip",
+      "bytes": 21468178,
+      "sha256": "931036711ea55061ea4966e0c94f9f74de81f11402f6587e522fccdd1fc1d920",
+      "entries": 90,
+      "verified_uncompressed_sha256": true
+    },
+    {
+      "path": "resize-captures-paper-01.zip",
+      "bytes": 21470562,
+      "sha256": "0a2de4a2f58d24663152ad6b7c9a6d8ddcde496adea1ff7ebc67ddb63e82aa2f",
+      "entries": 90,
+      "verified_uncompressed_sha256": true
+    },
+    {
+      "path": "resize-captures-harbour-01.zip",
+      "bytes": 21622846,
+      "sha256": "99f90ad551f5816e669a2510680f77d310d4790890242ecc3d41a9aae3c1f4e0",
+      "entries": 90,
+      "verified_uncompressed_sha256": true
+    }
+  ],
+  "files": [
+    {
+      "source": "build/verification/p1-10-navigation-100k-baseline-01.gui.json",
+      "bytes": 1952887,
+      "sha256": "bb2f2661c3537e2dd39167e205653b7ffa253d4f3751128f8235987da3d9f462",
+      "archive": "raw-gui-reports-01.zip",
+      "entry": "p1-10-navigation-100k-baseline-01.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-01.gui.json",
+      "bytes": 2134462,
+      "sha256": "5b3f5d87269c5446fb20af4451ed2cf2d4f8c27f498555a14cb5152f964ec21a",
+      "archive": "raw-gui-reports-01.zip",
+      "entry": "p1-10-navigation-100k-fixed-01.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-02.gui.json",
+      "bytes": 2243378,
+      "sha256": "8c60f96a63684ddd2065cda4e9f8f17c7e102eb4771593972f83ff0fe179d6cb",
+      "archive": "raw-gui-reports-01.zip",
+      "entry": "p1-10-navigation-100k-fixed-02.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-03.gui.json",
+      "bytes": 3093395,
+      "sha256": "e5cf498c7358aafd6112278414e7c2aa8fd9766eb67419a4a0c146d4e3b690d8",
+      "archive": "raw-gui-reports-01.zip",
+      "entry": "p1-10-navigation-100k-fixed-03.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-04.gui.json",
+      "bytes": 2367572,
+      "sha256": "6bafb76a240a922eac1dc618ab2200720482f7b0ef2a5b4085f61cf69c603296",
+      "archive": "raw-gui-reports-01.zip",
+      "entry": "p1-10-navigation-100k-fixed-04.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-fresh-baseline-01.gui.json",
+      "bytes": 2129533,
+      "sha256": "0b2cf51c50a4c01825a78e9b92bd45978c4e28c8e85424e704bb195dad2e18ff",
+      "archive": "raw-gui-reports-01.zip",
+      "entry": "p1-10-navigation-fresh-baseline-01.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-fresh-fixed-01.gui.json",
+      "bytes": 2135422,
+      "sha256": "2f90876c992c17f68482aebbf696030d1e731cc0d0d24008b0e67a650cff8503",
+      "archive": "raw-gui-reports-01.zip",
+      "entry": "p1-10-navigation-fresh-fixed-01.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui.json",
+      "bytes": 13822376,
+      "sha256": "48b586ec2f13c4688336a87b5f50a28be5590937211d910a8088001eb67f5fc8",
+      "archive": "raw-gui-reports-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui.json",
+      "bytes": 13932252,
+      "sha256": "b40dbca9c044000919f2c64e731c1bbb73ed11470599be0223547054b29da5ca",
+      "archive": "raw-gui-reports-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui.json",
+      "bytes": 13942375,
+      "sha256": "ffb9b9eb63d89bf1a93d991c73db4e0761be8be5c88c1fb988c47a567fab19af",
+      "archive": "raw-gui-reports-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui.json",
+      "bytes": 13830123,
+      "sha256": "cc127fc851d2011b19bdb6d3814dc5ea7ea1a9c9a82fc012bda321354ec4b9cd",
+      "archive": "raw-gui-reports-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui.json",
+      "bytes": 13835937,
+      "sha256": "9b61267f37812db8b9ec8fad6a5b52ff01e2a26f08796a664f7dfdf496e6ec4f",
+      "archive": "raw-gui-reports-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui.json",
+      "bytes": 13898179,
+      "sha256": "9e939481a4efa1209bc067ee74b53ddb0726efb986c74188b50509118f9cea1f",
+      "archive": "raw-gui-reports-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui.json",
+      "bytes": 13791477,
+      "sha256": "47ba7d4482a05773c5af5b7c52110a945bca28b307a3564280522c56ddd3e078",
+      "archive": "raw-gui-reports-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui.json",
+      "bytes": 13884954,
+      "sha256": "f8bd4f91f31afd48794b74461f257b7e03826d0d0cef5707e4a92a4b685f7d64",
+      "archive": "raw-gui-reports-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui.json",
+      "bytes": 13892662,
+      "sha256": "a9931d244cec978ed71e7558be204d0b126eb0d1d6715c765a581445934a68d9",
+      "archive": "raw-gui-reports-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-00.png",
+      "bytes": 121918,
+      "sha256": "2c79cb60c671c6f09b377986c85ec4c1e1966cf58aa3909a69181983329f6afd",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-01.png",
+      "bytes": 122318,
+      "sha256": "81c7dc91da090b7a33b1bc57482154e873cdac28312ebd787f73ed42c5cab44d",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-02.png",
+      "bytes": 118218,
+      "sha256": "4fa45f35bdae1b5a1a88722eac8c2c9a48b3d8c289f4716d8cb5311d182195c4",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-03.png",
+      "bytes": 123842,
+      "sha256": "2f03ce83629eee1cf61b09842e6f2266c6c473db0fccd9db87716bf06eb9d777",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-04.png",
+      "bytes": 121977,
+      "sha256": "39d82d1fb453255d5326d8725aa0e0af4b224f85f22ffd1cce296eb2c41bb0ff",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-05.png",
+      "bytes": 122030,
+      "sha256": "a1d11ac26d42874b7a4ecc6e486c3f11d4e550071e4906cb3ba3d75d60f4e25d",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-06.png",
+      "bytes": 112003,
+      "sha256": "6980c5c5b49a81426aaad4c6ac417cae21f9326f8e8ef57589e8d86447128296",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-07.png",
+      "bytes": 124078,
+      "sha256": "3439ef6501eab7635695f3dee1174eabab978cd50bf80b05c40ed14d44c18abf",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-08.png",
+      "bytes": 123025,
+      "sha256": "364f9fd2ed3522dd407acdd622875d0ad0f6a624b0bcb73840556d13061c1e5a",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-09.png",
+      "bytes": 121983,
+      "sha256": "8f2f792be8cf2935fa368b7113a5ebb9d7add2e147fb1fff09373139a95b1137",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-10.png",
+      "bytes": 117953,
+      "sha256": "2a00efe29c98531b85483ff6f62f61e89be94591043a61962f5b42191f578884",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-11.png",
+      "bytes": 123935,
+      "sha256": "9e910113555b7ed0f3123158c214891c7be25aa6bb616ffb79e558bee2dcd6e9",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/calendar-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/calendar-settled-0.png",
+      "bytes": 111325,
+      "sha256": "d34d2b8cc5a6d931054b993cc0ea4910d48fc01b2251cc0cc337af50516c284b",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/calendar-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/calendar-settled-1.png",
+      "bytes": 115376,
+      "sha256": "81e6fef0ccde67182e9ecc8c9c81afc644b611518dfce0f69397a2d0b83883b0",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/calendar-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/calendar-settled-2.png",
+      "bytes": 111325,
+      "sha256": "d34d2b8cc5a6d931054b993cc0ea4910d48fc01b2251cc0cc337af50516c284b",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/calendar-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-00.png",
+      "bytes": 381351,
+      "sha256": "fc690dff7716cd2a9367e43714fbcdc88fe8d374cdf8ea5ef148575a46a909e3",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-01.png",
+      "bytes": 381957,
+      "sha256": "769a649310c99cec00db4718102a4de07e5308a9ebe828c8c8dace9b23689aa8",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-02.png",
+      "bytes": 385175,
+      "sha256": "955d6df9c1c8c755877bcf47480cab96c75e91107ae29b79acc3e95050ee21b3",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-03.png",
+      "bytes": 384452,
+      "sha256": "c8349e1a2a4afb6e1a6bd2dd9811733b6cf16d6a56f38766128803b78dd5cdf0",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-04.png",
+      "bytes": 376988,
+      "sha256": "6189931afc163f720c37d873fd9dbe72a4209ef59323e8e44512a2b3921e5193",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-05.png",
+      "bytes": 376042,
+      "sha256": "7a706094daf98bb6fcd507997848441ee976f0d811d88524787e19ccca27d9c4",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-06.png",
+      "bytes": 377411,
+      "sha256": "33fff814fbfee9816e05fcdb3c1d99fbf2aedb3f7b3a4a6fe107a5f6ebd46fea",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-07.png",
+      "bytes": 377199,
+      "sha256": "bbb7abf887424840a5bf0b941e6b7181edb6dbbe600a8bd32fae66319e72e8a3",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-08.png",
+      "bytes": 372748,
+      "sha256": "626a641f9033fbda8e323a0e29b05b9639898d9db371ec0d14afde5ab187e68c",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-09.png",
+      "bytes": 376447,
+      "sha256": "356011c120cb7fa43cc24a852aa54cc1b890fe4af013d4963f3e687778eda39f",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-10.png",
+      "bytes": 377489,
+      "sha256": "e415a37033d57a4e77daf61670dd4e7612fa046ed0d4ec00f90570f28d3a10a6",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-11.png",
+      "bytes": 379485,
+      "sha256": "76013f6345bdd87abe3cc659bbd9048a6839353d8d39095e9b6b1901f613f789",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/mail-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/mail-settled-0.png",
+      "bytes": 369761,
+      "sha256": "1f75f7eb64d7cf022f9b93532ebed834697385d5a9f026e5cf3a46336fa0f010",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/mail-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/mail-settled-1.png",
+      "bytes": 347468,
+      "sha256": "e7d0d328ee537010515399eb6551d78061145f323834174826d395fff300e0a5",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/mail-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui-captures/mail-settled-2.png",
+      "bytes": 369752,
+      "sha256": "ce3bf2d3fdbbe84a897e5b3dbf2138a0d50760c1e494212bae9a7be5e97d1592",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-baseline-01.gui-captures/mail-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-00.png",
+      "bytes": 121976,
+      "sha256": "1c9ed46c9f873add0831334ea8fe006f261219094952243daf9aed2bf2933718",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-01.png",
+      "bytes": 122093,
+      "sha256": "2deee8f98aafcf0703542de14e0f044e9c20aaf9451908b8c5d59947bb5e40d9",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-02.png",
+      "bytes": 117940,
+      "sha256": "dbe4a2339face48d111757e28d6b640fb7188cf0e159c0b3156bf1e42c78460a",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-03.png",
+      "bytes": 123397,
+      "sha256": "d36a066746d8238ead2869ff50366dfb6cc32fc0fde2e2fe09e4128bf2e29ce2",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-04.png",
+      "bytes": 121751,
+      "sha256": "c098bec59f9fd22e4cf4b75e8bd053806980922d4908280961afd2f50ccc6850",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-05.png",
+      "bytes": 121866,
+      "sha256": "97a5aa030605fb0765b35003b4ad1bbf8919dcf654e36094ec7c23e438596f5b",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-06.png",
+      "bytes": 111860,
+      "sha256": "78f6b815ca9f767b3668261636a470bb4093deb83751a5ecca3eb3aff2fd9362",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-07.png",
+      "bytes": 123632,
+      "sha256": "0e1c2c73f68c08d23966c35c9805012e3b5d9270f4a34219f1236104ff8ca218",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-08.png",
+      "bytes": 122822,
+      "sha256": "70ba463cc7965e44770217160d4284ac9161c8364166f208c81204b85462f893",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-09.png",
+      "bytes": 121853,
+      "sha256": "3cff03e47cd16f68e671ca52d51f70be3b36c4c337ea766f755753b9162a3a4c",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-10.png",
+      "bytes": 117671,
+      "sha256": "f8e73961154d01c81153e8c821d55d1e56516fb0be8d3a5b068f4dcef58c19c3",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-11.png",
+      "bytes": 123630,
+      "sha256": "2190bacda9c97f88764942b7d2db6e704c2b65de0fd2cacb97d34dd625dc0617",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/calendar-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/calendar-settled-0.png",
+      "bytes": 111196,
+      "sha256": "9ab8eaa03a56be340365c636aa94467575eb235c937866aed4c8f974c0055914",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/calendar-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/calendar-settled-1.png",
+      "bytes": 115222,
+      "sha256": "226b31dee1dc27696bb91f898058eadf03a1ced48c867d033907582df52f029e",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/calendar-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/calendar-settled-2.png",
+      "bytes": 111196,
+      "sha256": "9ab8eaa03a56be340365c636aa94467575eb235c937866aed4c8f974c0055914",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/calendar-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-00.png",
+      "bytes": 381203,
+      "sha256": "12b7bb0f303f02f33b8caf0cbb565b7b3043a46a278d43b187b30a4a82a01a7a",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-01.png",
+      "bytes": 382024,
+      "sha256": "dbfb465a389491ba7152a6c5678c1743945578ac26dc308e6ba8b0ff128fbe11",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-02.png",
+      "bytes": 385120,
+      "sha256": "990b82ed61803b6e225d43f497cda661bfc9d1fd8a6927526135226fa19d4920",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-03.png",
+      "bytes": 384623,
+      "sha256": "0e8af4b36a2f72177b4fe79f96fe9584d27a83315b9c20d681e2af0edd2fefb5",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-04.png",
+      "bytes": 376905,
+      "sha256": "06b8065435bdc7ab9276ed89feb33a5b22c7e5f6d15eac0d0ca79380efb9a7c7",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-05.png",
+      "bytes": 376250,
+      "sha256": "050697fe43b2b57bffd97eccd2976c684a1351bea00ec9806b654e295d1790f2",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-06.png",
+      "bytes": 377356,
+      "sha256": "51d7288311d8b471eae38d83d05c3cb0389ab4c402723c0a227912a39983a552",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-07.png",
+      "bytes": 377089,
+      "sha256": "e6ed91fa16243a5e5cef408ff4f64e6b11fddb6c364d1f1a1bbc1b2cdc4318d8",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-08.png",
+      "bytes": 372893,
+      "sha256": "f34c635835131358d80c9d1e83d4842d6fd4666ac8d1e2950f1408c91c11f243",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-09.png",
+      "bytes": 376346,
+      "sha256": "f228f58ab8c275c72518b9908333a9d960aadfc96e5e6e50c1ad58024e3eced7",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-10.png",
+      "bytes": 377603,
+      "sha256": "468ec948f03f7596ab3605d10ca1d94213036391c66a00d088cd02ffce10b09b",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-11.png",
+      "bytes": 379365,
+      "sha256": "e5a4362b549d2a6a1979a26efb37907767df80292b81a855856588baf46ac874",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/mail-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/mail-settled-0.png",
+      "bytes": 369572,
+      "sha256": "389cbd0f6c81eaaacb2ba6c1d879a88837b98dd816081e0906cec061218486fb",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/mail-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/mail-settled-1.png",
+      "bytes": 347534,
+      "sha256": "fa17cee70c03b938e02328492855c53a1d6933dadecfbcfbe52e89b2a4f658ca",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/mail-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui-captures/mail-settled-2.png",
+      "bytes": 369563,
+      "sha256": "c5d334f496531adc2768e87f78ca7d1f662a6797655d090a15e94b546cd9d10c",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-01.gui-captures/mail-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-00.png",
+      "bytes": 121952,
+      "sha256": "e22a5efc810f6d445fbe20796b5f6028bd422a47a77043287af95e598ee57c8b",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-01.png",
+      "bytes": 122107,
+      "sha256": "cea3a8068836824e6e035dc30561fb9e6da9647e199f8f27bbb79d85529ad146",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-02.png",
+      "bytes": 117986,
+      "sha256": "5290968f6ad05d0c24e6d8f717397df70cebbbaa996c6d186f8d8234172dfc6a",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-03.png",
+      "bytes": 123407,
+      "sha256": "1640378dc061699dd297b88714edeab32692253bf16edc2b88ee77dc3f945637",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-04.png",
+      "bytes": 121751,
+      "sha256": "156df10c30ad0fb489466f1142e0b6ea386e207c63157a782fe69c78fdfb66a5",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-05.png",
+      "bytes": 121863,
+      "sha256": "5d450e94c3df50ed1c810794870183d1197755077855228393130329ee352a07",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-06.png",
+      "bytes": 111863,
+      "sha256": "fecef887d11ba06693f2b94bf5261f77a1e72b3bac064c6127c2c5982ed221bb",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-07.png",
+      "bytes": 123640,
+      "sha256": "6b27bf0a69b2255d9832994f3cc35a354eb7b0f9a5bf62266eaf42553bcd1290",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-08.png",
+      "bytes": 122810,
+      "sha256": "ff20d259c09e20070696e84283027fc306cfbc093fd99a6340e85a6a7c775a89",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-09.png",
+      "bytes": 121826,
+      "sha256": "e85118ea20f2f4160a31896b55818c2b9996a59ce79583a67df658d1f7345723",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-10.png",
+      "bytes": 117654,
+      "sha256": "3bcd9e8b913522756cd0e1468eb9b324a0c32d981596103be924b23ea5206bcc",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-11.png",
+      "bytes": 123638,
+      "sha256": "818c6f9c17f426e4ff6c711ec827ce1a94992ad77913d4b8434329410d03542d",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/calendar-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/calendar-settled-0.png",
+      "bytes": 111142,
+      "sha256": "c1694983cd32d746ce586a39ba2206098ac714d6c697d6dfadcbc7a1b7ead1eb",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/calendar-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/calendar-settled-1.png",
+      "bytes": 115219,
+      "sha256": "d76e9bfe7fd39013ff56d0b3f4a42f0007f4f9542e74f0f78e0bc282eacba688",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/calendar-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/calendar-settled-2.png",
+      "bytes": 111142,
+      "sha256": "c1694983cd32d746ce586a39ba2206098ac714d6c697d6dfadcbc7a1b7ead1eb",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/calendar-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-00.png",
+      "bytes": 363083,
+      "sha256": "3f205ebcee59016377a59350758eb7242eac993d2b473419faff18d0916a5910",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-01.png",
+      "bytes": 363445,
+      "sha256": "e2b680c385ce6279e1676145e6d3df2a95d434896092decbfa0268817604c847",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-02.png",
+      "bytes": 366370,
+      "sha256": "3238e0f9e2f7c6dc114556ad9903116899cd78b866e80eaf871bbf1974263824",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-03.png",
+      "bytes": 368617,
+      "sha256": "39b152cf46c2d261d51ea05b79f5d132557514b817b5c7e2e5a38e768694fbc8",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-04.png",
+      "bytes": 364039,
+      "sha256": "d2ffa71ee662398e96d79e3591fac452b4fd87b597434c1aef9bb131991e8412",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-05.png",
+      "bytes": 364126,
+      "sha256": "8940ca0eae20339aa0273bc77843392f02f1b6c67828ccfe086625664e99ec96",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-06.png",
+      "bytes": 366779,
+      "sha256": "445c1f6492c92402b3c85899ce89e760d170dc684b28bfd6a50f1d3c1ba1f25e",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-07.png",
+      "bytes": 368258,
+      "sha256": "40ec58ff70d18382a0d2445adec757745b2d2f9f1a83e3eb28efb2c29080377f",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-08.png",
+      "bytes": 363997,
+      "sha256": "e03ffdee9c646a1899eaeda558bf4c664380a189adad48fd8cb5a2ecf03cd3fe",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-09.png",
+      "bytes": 363960,
+      "sha256": "c9d57023360dc4b672768a230a09c0b2a6e81a813d5e88cc775484d42ba4936a",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-10.png",
+      "bytes": 366025,
+      "sha256": "8fa0d20009f732594bc0f21c16a7743bfe7be56a45de25106f0a134a3794484b",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-11.png",
+      "bytes": 368769,
+      "sha256": "a023d87db0012515aa5f9b743e0b16978294c20a309b23dfc791a2125cf69e49",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/mail-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/mail-settled-0.png",
+      "bytes": 359616,
+      "sha256": "cbc0c77723c5376dbf820e0ae8c1361ad084f7e54269776ec2a00f22ae63adc4",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/mail-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/mail-settled-1.png",
+      "bytes": 338450,
+      "sha256": "6bded85749901b989b6cf74291297c2915a87db685d5ab62a51013bbfae23b1a",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/mail-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui-captures/mail-settled-2.png",
+      "bytes": 359616,
+      "sha256": "cbc0c77723c5376dbf820e0ae8c1361ad084f7e54269776ec2a00f22ae63adc4",
+      "archive": "resize-captures-graphite-01.zip",
+      "entry": "p1-10-resize-graphite-fixed-03.gui-captures/mail-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-00.png",
+      "bytes": 122517,
+      "sha256": "24c0886efaea0c406e534f7f829387984e5c07e8c956441f7787209de261872e",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-01.png",
+      "bytes": 122663,
+      "sha256": "10b927bafb7036e7fae0d77ecb14ce7ce11e54421bcb73aa2d4e0f86532d081d",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-02.png",
+      "bytes": 118301,
+      "sha256": "afa7d3dbdfdde7a11cc4f84aad04cc76543f437979d282b844857eef6f2906a6",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-03.png",
+      "bytes": 124338,
+      "sha256": "116549697a5c047c53038588c10beb604576580f000669a1d8bfa38f3f3b4892",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-04.png",
+      "bytes": 122495,
+      "sha256": "c02359038e4a7b03597264bb653661aaf39d85971be22855dba9ddb824f21efd",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-05.png",
+      "bytes": 122340,
+      "sha256": "a445f0ff4d0a44470f6bf1b7c25e42ee8bc0f3c6794dc3f6ebc8b29d9037ae56",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-06.png",
+      "bytes": 111978,
+      "sha256": "1e5f9f39bde2b6ccf32aca76fba7b997d165cd3310a135f8ee4f27d1767e54c4",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-07.png",
+      "bytes": 124587,
+      "sha256": "a49fc86865b9c8a595f2a1b031a2717018f97400ee558ba0e442531e4968c932",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-08.png",
+      "bytes": 123521,
+      "sha256": "a208b3dbfc5caa15041e072f7c55c33815c0941979e908419c453af8df702a91",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-09.png",
+      "bytes": 122244,
+      "sha256": "d0016d851dc264dca9b97d940ae1c487e6b3fd67770ae427f0bf49a60dbf3b5e",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-10.png",
+      "bytes": 117725,
+      "sha256": "061fe5e3097dd962a8867c2fc97c15c02bb23ec537e99822c431b0c81b1bf8f6",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-11.png",
+      "bytes": 124421,
+      "sha256": "b8bc679bcd6d54fcb282e026050729038728782a09623fb7021a061e94203a31",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/calendar-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/calendar-settled-0.png",
+      "bytes": 111896,
+      "sha256": "40a1a08b7c9d96214a12179f3e2c079faf41e5a535782a712c0593bbe18fac12",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/calendar-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/calendar-settled-1.png",
+      "bytes": 115807,
+      "sha256": "f9f73c5938385aa864e8a71f6eab24536b4624b1082f552ab98a76de9568579f",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/calendar-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/calendar-settled-2.png",
+      "bytes": 111896,
+      "sha256": "40a1a08b7c9d96214a12179f3e2c079faf41e5a535782a712c0593bbe18fac12",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/calendar-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/mail-resize-00.png",
+      "bytes": 379047,
+      "sha256": "99ee573900bc937a6c3609170d44526e5900b46069b82b56aadc299ca95dd6f5",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/mail-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/mail-resize-01.png",
+      "bytes": 378898,
+      "sha256": "5be330d6f73ce9ddd02f12bb401e59d0d56ab04faf7f1e3d27640ee63a47a2fb",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/mail-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/mail-resize-02.png",
+      "bytes": 383206,
+      "sha256": "6c541f2d490671ae89463f3cf38b2e8492e9db82b8522161d0043951c7ffb17c",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/mail-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/mail-resize-03.png",
+      "bytes": 383529,
+      "sha256": "c7bbfc82679fc33777c128da570b6d58fcb34f776a39728d17f9c2c2dff9b171",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/mail-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/mail-resize-04.png",
+      "bytes": 375141,
+      "sha256": "2e34c113d4c4eb4808498575b7a338a0022e328bc729456891cdef45d6ff2323",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/mail-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/mail-resize-05.png",
+      "bytes": 374367,
+      "sha256": "40f2871de5afd23cca5b47271e2b4bac5325a94e8346b7f989d773979d8c1d90",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/mail-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/mail-resize-06.png",
+      "bytes": 377177,
+      "sha256": "2ea1acc3123de85213904cee00502cce7e8d8a5470387bfc5cb69f6fa3305089",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/mail-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/mail-resize-07.png",
+      "bytes": 377214,
+      "sha256": "ee004db433910bed3925ce8665e0c6e761e89ea4b845980c6b719df121901119",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/mail-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/mail-resize-08.png",
+      "bytes": 371318,
+      "sha256": "31953859b5b3a25d1c851406460b38500c702b700b9f30c03625e35bce935bb5",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/mail-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/mail-resize-09.png",
+      "bytes": 374941,
+      "sha256": "8e1eb2e0f8dcddd92e6cdcbfa1250905a6c1d6592e6a90ae008eb07a7447e9e8",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/mail-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/mail-resize-10.png",
+      "bytes": 376582,
+      "sha256": "fefa3d423d6882c704932ee0e3beec9b58158fc03f78264b7f17049ef77bd010",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/mail-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/mail-resize-11.png",
+      "bytes": 379058,
+      "sha256": "61b62df80be6b403a50faf4a8845fc0f8c8f4dfd696eb647f93044e2360bd7e1",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/mail-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/mail-settled-0.png",
+      "bytes": 369694,
+      "sha256": "f50f39b64b2670eee58efb52d496e70446e8a218ba76d7814093793dea8e0337",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/mail-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/mail-settled-1.png",
+      "bytes": 347606,
+      "sha256": "f97154dbe0f263100ea80da2856b494e13c1da76b59f92725aaf425ed0a99c24",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/mail-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui-captures/mail-settled-2.png",
+      "bytes": 369688,
+      "sha256": "77c2c5e1d368b755575525c47929f558d230a4ce024dba977e1fadd8cbacbef7",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-baseline-01.gui-captures/mail-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-00.png",
+      "bytes": 122505,
+      "sha256": "37fa3776775e20e35995c18b5961e43bfaac5afbe97b6a2e6866f671e8f7b3e4",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-01.png",
+      "bytes": 122473,
+      "sha256": "d7af049d9a4df1eda647b27deb5bd37753763092c420c61523cc3d1da05e4b45",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-02.png",
+      "bytes": 117922,
+      "sha256": "d4ba6b43d3253f82bce1919defc21f346264f2bb27877a3c1d343ff430ee0888",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-03.png",
+      "bytes": 123988,
+      "sha256": "4703ffe72ef14123eb66c1ce6f9c800e812992b0c6c9b3da7c8c74006fe28286",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-04.png",
+      "bytes": 122280,
+      "sha256": "7e09489a6b2005e3549b8240bef466a9b2936c44ed1c5b1fb85ff0e804734f3d",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-05.png",
+      "bytes": 122191,
+      "sha256": "0f107e5728628043928bb9f0f30e6090ea5230ac1d1298cc1182692b6381ad6e",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-06.png",
+      "bytes": 111833,
+      "sha256": "dcb9f87f0adb7ec0afeb99727ddc89c7c6148d77b872003df9f697312e298ac4",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-07.png",
+      "bytes": 124203,
+      "sha256": "803837646497c08675f3a54ff6025d45c4cbe873aa93b120c98aad85c3ab8e69",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-08.png",
+      "bytes": 123351,
+      "sha256": "92a2b0f0d03084a48561eef1f90101b6305ce6130f384351bb4a3498ab45c1cf",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-09.png",
+      "bytes": 122065,
+      "sha256": "4c832ee38602e936edebc05d23bffe535e9882294e1106a8f956ac5c7785f41f",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-10.png",
+      "bytes": 117358,
+      "sha256": "3c61fdd57cabb685841a3a2c2a331fa666d5862ff0fc6383beab2594601cac45",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-11.png",
+      "bytes": 124191,
+      "sha256": "2cc284101b6304f20c0a0031e2231bb1f7c1e2586acc5b72739b7b945bf9e048",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/calendar-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/calendar-settled-0.png",
+      "bytes": 111903,
+      "sha256": "fdb950f0abb7bb819835c307dff089e03254494a10267e17a85783837ba907a6",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/calendar-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/calendar-settled-1.png",
+      "bytes": 115583,
+      "sha256": "d635b45c872139bdbdd64e677889cd45b78b3c232ff6226d507f10342da5aba2",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/calendar-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/calendar-settled-2.png",
+      "bytes": 111903,
+      "sha256": "fdb950f0abb7bb819835c307dff089e03254494a10267e17a85783837ba907a6",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/calendar-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/mail-resize-00.png",
+      "bytes": 378824,
+      "sha256": "3e537ee778728c71a98d8cdc014f38821b5aab3bdd12705dee9b27818908be48",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/mail-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/mail-resize-01.png",
+      "bytes": 379016,
+      "sha256": "f2a72ac88ed018f7b7992fa724a176aaf5b0a242dc9f56a231126e7e2fa82ae5",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/mail-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/mail-resize-02.png",
+      "bytes": 383033,
+      "sha256": "a5d1d3834c95d25b1d7c167229de52e96348be4ec5ac7139486a87fbda270c16",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/mail-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/mail-resize-03.png",
+      "bytes": 383554,
+      "sha256": "2a9af0e84f20284abd03547fcf26981d468cc7596d7756278e089a38c8b58e35",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/mail-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/mail-resize-04.png",
+      "bytes": 375149,
+      "sha256": "10568287615ada6528f31eea93cbbf64aeebf1ff6a7cc22c1d8bce2ecfcb6c66",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/mail-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/mail-resize-05.png",
+      "bytes": 374649,
+      "sha256": "95ed8a1f75f3425bd3622a457b5f6d3b7e0ae130cdd31681343d69e41bdab1f8",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/mail-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/mail-resize-06.png",
+      "bytes": 377197,
+      "sha256": "2e5e3d8b739b26de78067676d8e7628d1a282381af5185a81e857f4192caaafe",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/mail-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/mail-resize-07.png",
+      "bytes": 377137,
+      "sha256": "ac49403ddee59dad59b0eed251ee449ac28fb2bb516d04bfca95ad02d0a39720",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/mail-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/mail-resize-08.png",
+      "bytes": 371393,
+      "sha256": "3660032f6b71eac002fe7ee7112048dd6d7f13f68a47b41b2c57192fd338dda0",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/mail-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/mail-resize-09.png",
+      "bytes": 374901,
+      "sha256": "ea39a0110ca2f2cab0d9e58e27011fa94d00d6fdd66b479419e05c84ef987058",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/mail-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/mail-resize-10.png",
+      "bytes": 376622,
+      "sha256": "4921dac6ae676892db77df3ef6ca6b99eb2994739fe2c83ad0e377ef5884ec40",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/mail-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/mail-resize-11.png",
+      "bytes": 378955,
+      "sha256": "f8ab17dd6f6da796c2dd3f0b9ff153e6265e8438e87b5ed17b78a575622e1da1",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/mail-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/mail-settled-0.png",
+      "bytes": 369693,
+      "sha256": "6fb80bf96bad45d80fa699ca0306ccfcaa70cc49aefd492f1485bd77971a6596",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/mail-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/mail-settled-1.png",
+      "bytes": 347694,
+      "sha256": "83030c52b6d5c4c59d92fe7481bd292acabfac6e4bc3813cfb6ff5dc1ab74f85",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/mail-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui-captures/mail-settled-2.png",
+      "bytes": 369687,
+      "sha256": "6956493196d48a6f97d06e850c371b7a687446614b065ed9b52f42dad884ea36",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-01.gui-captures/mail-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-00.png",
+      "bytes": 122507,
+      "sha256": "14434ff1d447d6464eab90912b8174eb752941b6a4aa5e02bdc8811397b7dc31",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-01.png",
+      "bytes": 122446,
+      "sha256": "20494a9f16c870eafae977b49895fe236c657c9024c684f31f238cffe872bf8b",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-02.png",
+      "bytes": 117989,
+      "sha256": "69a957f8f86888d9d2bf97c4350f3fe523b3b7e1ac2ef8cbcec37ccd09a374f6",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-03.png",
+      "bytes": 123984,
+      "sha256": "94d83651a839b47322ff92e9cd1d721bc0aa7163f0b0306bcfe6cf6c2de21f24",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-04.png",
+      "bytes": 122302,
+      "sha256": "14a37153771a5a5bf1419aaee0422088cbfdff7ef91454486ec2ff9043c8a76a",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-05.png",
+      "bytes": 122160,
+      "sha256": "3636a7451ce39f934be3dad760054b30f089a0d5a19963cbdd0529912c50f683",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-06.png",
+      "bytes": 111863,
+      "sha256": "165d2991d38bb790d5e60090ab001ef9c60d5e64bbc4211c249f45425ab3f204",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-07.png",
+      "bytes": 124191,
+      "sha256": "6c61d87b1b2e6a8c7da6851ac535d092963267592edfa471e9001bfba509eb91",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-08.png",
+      "bytes": 123352,
+      "sha256": "684469180c67c4eeb7caec580e5b17aee3a6d0c3123074ee1ce52f444f0248e8",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-09.png",
+      "bytes": 122077,
+      "sha256": "6541d546fde4d1279534e9e0e92e5c5e0db704f820c343299c0d4d2cb7e150dc",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-10.png",
+      "bytes": 117463,
+      "sha256": "9ecee2fb55c6b9adf5f98c23a9d36788dfe880eeb145917a01dbdc1a05ede0bd",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-11.png",
+      "bytes": 124178,
+      "sha256": "39b779440349e665cd87addfc8c017755632ada48b3ba9c0647f9a6817ad1d97",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/calendar-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/calendar-settled-0.png",
+      "bytes": 111942,
+      "sha256": "1a2c2dfb8560e0bf85dd7ac9a09342029746df30770a81566fec4f7649cfa285",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/calendar-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/calendar-settled-1.png",
+      "bytes": 115599,
+      "sha256": "9a7b82780ce10d11333af020991cf74306f67a982be58864dee35432a68a093e",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/calendar-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/calendar-settled-2.png",
+      "bytes": 111942,
+      "sha256": "1a2c2dfb8560e0bf85dd7ac9a09342029746df30770a81566fec4f7649cfa285",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/calendar-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/mail-resize-00.png",
+      "bytes": 363250,
+      "sha256": "373db19aafb8708ed69df23528eb04530d122f9c2feff619c8503d6753bdabbd",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/mail-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/mail-resize-01.png",
+      "bytes": 364331,
+      "sha256": "849ecc6b1e1e93f237c72c3e131bf157b974b3ea48af1a816f9e82e56bf182ca",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/mail-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/mail-resize-02.png",
+      "bytes": 366844,
+      "sha256": "ceb6d8e553ac501682e51dd1a4d756e962aac127bdaa4ce54a2c01c254d14b84",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/mail-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/mail-resize-03.png",
+      "bytes": 369102,
+      "sha256": "c4cc80dfa772c28627283c1242520ed396051bd55f95b591c02075279218ba9e",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/mail-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/mail-resize-04.png",
+      "bytes": 363601,
+      "sha256": "644a306ed2efd3df11bf8d7d6307563d266631615b472712d43e67c9bdbf666f",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/mail-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/mail-resize-05.png",
+      "bytes": 364557,
+      "sha256": "7d5de765072d43789038f9404d84173180f5199b1bfceeac29386c75e53ee9c9",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/mail-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/mail-resize-06.png",
+      "bytes": 368038,
+      "sha256": "91fe4017b11f86ae8fe08c2491d3719b1191db0b701b32c629beb7aa1e24291b",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/mail-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/mail-resize-07.png",
+      "bytes": 368525,
+      "sha256": "1b22524ca43bbf07c1d1afe1d8a7d4cfd4903adeb8c38256bc5cf635ab541123",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/mail-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/mail-resize-08.png",
+      "bytes": 363679,
+      "sha256": "7ad868f2f38f8580e35a16000783fd84da66ccc43b27bf3d414f2bd92234b5a9",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/mail-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/mail-resize-09.png",
+      "bytes": 364984,
+      "sha256": "bbd934c40442ed2ba0a902ce45f8db74f979a9fc6761d103a2f8023678b0118a",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/mail-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/mail-resize-10.png",
+      "bytes": 366588,
+      "sha256": "000a054417debd07a4a8bf40f850db3f92279eaf2bcebc6c3aab62a7a1283d50",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/mail-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/mail-resize-11.png",
+      "bytes": 369789,
+      "sha256": "8ef4bf96c44d41d123d2da17dcc4b584af2401b43b7a180e50a32e7ba9f51b5f",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/mail-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/mail-settled-0.png",
+      "bytes": 360500,
+      "sha256": "218890bd887aa9b259627c18a6a73d4b220e994a23225d2eda3ff48c045a1eb5",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/mail-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/mail-settled-1.png",
+      "bytes": 339156,
+      "sha256": "37127ebbc47288983709c7dc27c38a7fd66a93f1e484a494bf571d439c99fadd",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/mail-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui-captures/mail-settled-2.png",
+      "bytes": 360500,
+      "sha256": "218890bd887aa9b259627c18a6a73d4b220e994a23225d2eda3ff48c045a1eb5",
+      "archive": "resize-captures-paper-01.zip",
+      "entry": "p1-10-resize-paper-fixed-03.gui-captures/mail-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-00.png",
+      "bytes": 122514,
+      "sha256": "1203f9351a5f39915ac48e208e3ec9daa59b8d25e4b0f6438b9844d701792c3b",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-01.png",
+      "bytes": 122725,
+      "sha256": "a1938efafcaa7320ffcee0dd08bfd67afe488086876b0961e152cdfa8c348cec",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-02.png",
+      "bytes": 118843,
+      "sha256": "7f42caca5439d651695f83adc3d9fe814ed4504d41cb86e84e6101bd33dd6ff3",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-03.png",
+      "bytes": 124645,
+      "sha256": "0e95d5073a2b9aac62596d1d4e4aaa36be59c0d5f8d8fd8f7072182cb38245fb",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-04.png",
+      "bytes": 122605,
+      "sha256": "6622d45dac4ea133288db97793910a808a5bc00ca854502a4be339e11f8e02d7",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-05.png",
+      "bytes": 122317,
+      "sha256": "2cb259b8162cbc2b86d7dd7b394a426e7b706a0a4731b481c15165943a8ee7d4",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-06.png",
+      "bytes": 112389,
+      "sha256": "c39212d5086a2486306717f7fb20f5ca33064547f1a0d68cd3c985435a58bbd4",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-07.png",
+      "bytes": 124732,
+      "sha256": "3e2d7ff0196e87dadc3bf5f0b2d4af99c10c5434a960d98ed47e048b22a39be5",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-08.png",
+      "bytes": 123715,
+      "sha256": "94792e9d2f4fea2525c1ea07336e30b4f967874bbd260a208b3ed19a3ffee9c6",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-09.png",
+      "bytes": 122267,
+      "sha256": "895c5b4eefa29c939275bdee449b40c599aadb125ccfae6586870d9abb64834a",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-10.png",
+      "bytes": 118450,
+      "sha256": "500bb9eda6e410c86445cf801878c4f1b4f62e5e01c60f5ed2e73bd6f7674c5c",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-11.png",
+      "bytes": 124241,
+      "sha256": "301a8860efcee488665ae1f7d60568241dc75967ff8d547c4407e3113c851724",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/calendar-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/calendar-settled-0.png",
+      "bytes": 111858,
+      "sha256": "2d562c7162dc0aaba5d245fed056585ab1e116e2982c32393c7e65206f11c60c",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/calendar-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/calendar-settled-1.png",
+      "bytes": 115929,
+      "sha256": "f064d5c492d903c90201325439dbe44d083aac2c2b9fc61f8820904d7a7f7fb6",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/calendar-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/calendar-settled-2.png",
+      "bytes": 111858,
+      "sha256": "2d562c7162dc0aaba5d245fed056585ab1e116e2982c32393c7e65206f11c60c",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/calendar-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-00.png",
+      "bytes": 385436,
+      "sha256": "40236c2b10b5e175246ade3752c5186fb1039b55aea7341af4bc0787f714293e",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-01.png",
+      "bytes": 386754,
+      "sha256": "c15aae47e08042a3a33a47d51914c33433032062e160d6224aeb5837dc04b203",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-02.png",
+      "bytes": 389665,
+      "sha256": "c1c95b0921e1402098c05fb83b0885f866d317dff8c1af79c0eb7eef4f652fea",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-03.png",
+      "bytes": 388514,
+      "sha256": "0862782503e83721d51e299555415052baaab2065d73b6d522251e5da87b8bc1",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-04.png",
+      "bytes": 380368,
+      "sha256": "76aded73fa5dc1ced1f70eff1882c9300283ad698c7e48a8e0b4b18a674b1bda",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-05.png",
+      "bytes": 379380,
+      "sha256": "2baf06d06945b397558e51c955946d5c1c2372abacd181cbdd5fbf204c7be59f",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-06.png",
+      "bytes": 380696,
+      "sha256": "8256776e0392e3ebb88e178d314b87ec72e3c721718e6bc9002efad7d9256937",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-07.png",
+      "bytes": 380383,
+      "sha256": "482f41863e00e30fa7a25048319bcab651fcf8c442c9292a86862fddf6c10ec9",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-08.png",
+      "bytes": 375484,
+      "sha256": "7b7f98d17ca36f504fec1ca2d785f96995315fdcbd2b3448933714c70c3ac579",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-09.png",
+      "bytes": 379894,
+      "sha256": "1a6afeba6c7d813b924cf29a882cbb93e35bd4ab02f0f8f080df60ab3c198405",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-10.png",
+      "bytes": 380711,
+      "sha256": "311897362e3afe7ed9a127e3b8ffd6624e55b3e58a9526b4f47962b489b055a4",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-11.png",
+      "bytes": 382641,
+      "sha256": "5d3173341f27badada28402e5ee706a0ac6420733017aa51535f43908b167c74",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/mail-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/mail-settled-0.png",
+      "bytes": 372102,
+      "sha256": "1da1d83989f37dfb4b41378c69e22daf5dd2488f5cfae1df962fcd7a0e8691fd",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/mail-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/mail-settled-1.png",
+      "bytes": 350067,
+      "sha256": "7ae9836922a85ee6af0b9a7c03f42d478206608982cc8ac5ddf27ed4fb0590a0",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/mail-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui-captures/mail-settled-2.png",
+      "bytes": 372102,
+      "sha256": "1da1d83989f37dfb4b41378c69e22daf5dd2488f5cfae1df962fcd7a0e8691fd",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-baseline-01.gui-captures/mail-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-00.png",
+      "bytes": 122494,
+      "sha256": "1032e129dca3c5618ccc70e09a0441434fb47e465c2cfc4d8f743822b9f73c4c",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-01.png",
+      "bytes": 122494,
+      "sha256": "de9afa6df4be2c6581334925307b03e6d10cf55f8542f262f92bc62e84a3bcd3",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-02.png",
+      "bytes": 118496,
+      "sha256": "3128aeeb774eb096090b1f4f8591f552acdc82bd70c5110b095cf021c4dc2692",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-03.png",
+      "bytes": 124210,
+      "sha256": "aaae77172d394f46cbbaa3faeffd1aa34630942d759ed3a3ac67418234538df2",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-04.png",
+      "bytes": 122368,
+      "sha256": "e4d5c6f1fa7fc420f339ee14be7361b03664a1ea64a3a64b7ec8492f492d4e02",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-05.png",
+      "bytes": 122208,
+      "sha256": "ef71567b7438f1ceb708efed04d2dffe87574fe1afbe558c1375ad97b4c4c666",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-06.png",
+      "bytes": 112379,
+      "sha256": "c4469e59a7e08a3dbd7b0f89f9e590e844d571aa2ad11c1aca78e945f88ab48b",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-07.png",
+      "bytes": 124324,
+      "sha256": "43b85d96872fcb1845390c15a6563544b68c1da120cffb919b8d34717106d18f",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-08.png",
+      "bytes": 123469,
+      "sha256": "3ab7a91c9c47940f55238f3d1545774adbdf141f4aa309c95c0a97dbcffc2467",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-09.png",
+      "bytes": 122132,
+      "sha256": "030cf661b2bd567d6e56821aef68d794df92e8873d1b642b76c318cbe17e4721",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-10.png",
+      "bytes": 118107,
+      "sha256": "a71a87093527bb3b409713ebff945952c51cf2abd15f5a1c879df8fc003dcb1e",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-11.png",
+      "bytes": 124009,
+      "sha256": "c577cb0e58f3ecc00685f4a2f190be204a53e24845d50e72085655ff8bd30673",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/calendar-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/calendar-settled-0.png",
+      "bytes": 111944,
+      "sha256": "8d4da06425d6378e39b342a953a291e246f81028c9ee044dc47d79e12b996e41",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/calendar-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/calendar-settled-1.png",
+      "bytes": 115763,
+      "sha256": "423f720179155b116bd87dcf28471e01b30ff4629466356dedc7e3fc748a0f05",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/calendar-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/calendar-settled-2.png",
+      "bytes": 111944,
+      "sha256": "8d4da06425d6378e39b342a953a291e246f81028c9ee044dc47d79e12b996e41",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/calendar-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-00.png",
+      "bytes": 385704,
+      "sha256": "4de270d99e70d907c94ff8770483e8c9d0daf230dd4615b44acb6fb97641b78d",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-01.png",
+      "bytes": 387002,
+      "sha256": "95c89af8ca40a2b99386c2bec046f392d17e03c85517f8bc5751870ecf60c1ef",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-02.png",
+      "bytes": 389650,
+      "sha256": "182ac5243688e741deafe05934c640ce64c90b30f62da7a586c775928955bd0c",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-03.png",
+      "bytes": 388423,
+      "sha256": "f408d8fd52a3fd8c3030d7a85224419b43e1371e717d72809a330bb3d90e902c",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-04.png",
+      "bytes": 380436,
+      "sha256": "469abc04d3bcd4130c4a9c2225d06fe4ff1959978148120d90310fad8a138707",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-05.png",
+      "bytes": 379724,
+      "sha256": "768c64ecc3a8d36571835beacb497e6b26b41c5a1911b30f9a553cbf209e29fa",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-06.png",
+      "bytes": 380672,
+      "sha256": "fd77d6647800c1d40844a0ec45d1846343ab550138952fc982425aad5f8e39fa",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-07.png",
+      "bytes": 380351,
+      "sha256": "915f53db9d970b937c7b53bf242a106af362db41c657d50636d08c9a7308d9cb",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-08.png",
+      "bytes": 375804,
+      "sha256": "26ecbfa11ad2382470c9e33fcc90d4e4266bf4d883fd835bce7b3e85c5ce8a95",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-09.png",
+      "bytes": 379985,
+      "sha256": "c3318dd983f9a346133a46c0598e3b428498b2e31aaf6f35f1e3596d02f5a8fa",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-10.png",
+      "bytes": 380899,
+      "sha256": "bc57c4fddda45cba2f7dd374df1ea5082a5db20cc6cdbdfc26b8925fde504bfe",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-11.png",
+      "bytes": 382491,
+      "sha256": "96e84accbe27a2d09c59b5b277959a6aa6187f1675779fb235b139c42b2e81c1",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/mail-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/mail-settled-0.png",
+      "bytes": 371988,
+      "sha256": "3d1d244d55462fd3cefd5389dbd4d3def4b4599bb5e8f46a62b9934ccdf5959c",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/mail-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/mail-settled-1.png",
+      "bytes": 350157,
+      "sha256": "366b9e2293ced50338add5965e0fa5a21073336c710efa326471e59a5250bab5",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/mail-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui-captures/mail-settled-2.png",
+      "bytes": 371988,
+      "sha256": "3d1d244d55462fd3cefd5389dbd4d3def4b4599bb5e8f46a62b9934ccdf5959c",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-01.gui-captures/mail-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-00.png",
+      "bytes": 122500,
+      "sha256": "ec14c554e3ec370964f1e26ceb1d1a1bbf5df980f5c01b319a84350b95ffd515",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-01.png",
+      "bytes": 122464,
+      "sha256": "b770d3fec0104180d9bb13e7da11c353fa080690871d9180dd7e412b65a1faf5",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-02.png",
+      "bytes": 118469,
+      "sha256": "cbfd99a38a88f76c7e90f04e0e042c3112ab44f640fd759839186822cb41facb",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-03.png",
+      "bytes": 124219,
+      "sha256": "4ebaefe40c44789df79791fc2b5418c9ed37b8f8480204c9c80d439a945182ac",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-04.png",
+      "bytes": 122412,
+      "sha256": "ff72d6d230906d08ee8c4e9cde7bbbfcc8b8b6d2542fdd40508061c68a99eef4",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-05.png",
+      "bytes": 122188,
+      "sha256": "0c96df17d194ae10794425035fdf1d81e7c82ffb79cf3fc1a149ac23a5ee4b55",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-06.png",
+      "bytes": 112369,
+      "sha256": "6efb703f62cf0dd8257d38ad6ca3e2ce82d5d7d99ba64e8ff971c6c07aaff5c6",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-07.png",
+      "bytes": 124326,
+      "sha256": "850f987255d0fa8ec3c72e336c78a1a5041d0314baf6b534988f315d67944c82",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-08.png",
+      "bytes": 123470,
+      "sha256": "4faa40662c919fcb7d3aeb0b49e691cbb50f2f7f7ead9de47777e1a9d98a9466",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-09.png",
+      "bytes": 122127,
+      "sha256": "d16d1e9ef4fc925ea1f2a189bc97ed9720c82d15c03f5d8b156aae7caafeee00",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-10.png",
+      "bytes": 118041,
+      "sha256": "3bb0de44d31aa2814cd4f6f87d30e7abffb5df2217b4d6fa0e0d674322ef7493",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-11.png",
+      "bytes": 124006,
+      "sha256": "f8ab3cdd3d134af4e4c94a99dbe26b768e497e5cbc4f2b71ed9bf34663ce7092",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/calendar-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/calendar-settled-0.png",
+      "bytes": 111907,
+      "sha256": "0c4d7ece13a853f2ffea3451bad538a3e96265f108dc7142a2f03fd364dd7ed3",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/calendar-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/calendar-settled-1.png",
+      "bytes": 115755,
+      "sha256": "f0805d069c1e55a84071e7ff0102ba6c198c09ab731e53631bc824011a867507",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/calendar-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/calendar-settled-2.png",
+      "bytes": 111907,
+      "sha256": "0c4d7ece13a853f2ffea3451bad538a3e96265f108dc7142a2f03fd364dd7ed3",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/calendar-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-00.png",
+      "bytes": 364931,
+      "sha256": "765ae2f7f0192aa5800b67a6a8aab2ed74db21ebfba7854a3356d2fc94facd01",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-01.png",
+      "bytes": 365545,
+      "sha256": "f2029f2b0ba487daa6ede9dd517ae890dd1c1322452bed50b0e9b9b3f156b5ec",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-02.png",
+      "bytes": 367454,
+      "sha256": "bd665754e144cb893fa1f7963f5d1665c3b3a668241a0955b5f6caeebc5cbcb1",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-03.png",
+      "bytes": 370294,
+      "sha256": "2aaefcd40f8e3a01df5a3ab6c44fe6d62b15fc863f08ea45c8542cf5b4b681d2",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-04.png",
+      "bytes": 365732,
+      "sha256": "32f871a8d2cbc72fcd4f7b36f5e7bca3c9007c5ec5004d5869b2a9a401c15a2c",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-05.png",
+      "bytes": 366267,
+      "sha256": "ecb67a5468f9b4a6279f718c6fac323d71e107852c0dfa54cd3ce16ad47688d1",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-06.png",
+      "bytes": 368025,
+      "sha256": "29c4d92eaa3a7c78a02749ef361e2511d32273c4f8234ee4a36263ae20540fdf",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-07.png",
+      "bytes": 370107,
+      "sha256": "6fa271e87f8eb7f3c4658c43eb6a96337b33b5d45093f237de37ad807e815907",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-08.png",
+      "bytes": 365811,
+      "sha256": "8b803ffd0f491280713506e01f1208485e86226ffdf529bf31db00f69c86545c",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-09.png",
+      "bytes": 366364,
+      "sha256": "ce51bc985c8b5cbf97e3b00e1700919710fadb7ca178b44a4ec4f7c96f44fde8",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-10.png",
+      "bytes": 367055,
+      "sha256": "330c3f76466ba5f7aa815f4e9a75afeeb9278ad690aaa87267e08ebf02a6e458",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-11.png",
+      "bytes": 370769,
+      "sha256": "b6ddb5b3c514b0f104955242487e1881c36f02eee413c619f42ccb355b092ba2",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/mail-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/mail-settled-0.png",
+      "bytes": 360357,
+      "sha256": "c9aa2e32c13d559df4351ef841b9708a9d7b04bd8e6e1c653b0d2348d3cce2ee",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/mail-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/mail-settled-1.png",
+      "bytes": 339327,
+      "sha256": "b0e53254608e134cd384736960dfe0ff2b05503c926305a24b82b3829fefbe8a",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/mail-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui-captures/mail-settled-2.png",
+      "bytes": 360357,
+      "sha256": "c9aa2e32c13d559df4351ef841b9708a9d7b04bd8e6e1c653b0d2348d3cce2ee",
+      "archive": "resize-captures-harbour-01.zip",
+      "entry": "p1-10-resize-harbour-fixed-03.gui-captures/mail-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-build-01.log",
+      "bytes": 5343,
+      "sha256": "179ce22efe1537d8651bc2b98f69b3b63861d2547750e97fd14af4128fbe120e",
+      "retained_path": "reports/p1-10-build-01.log"
+    },
+    {
+      "source": "build/verification/p1-10-build-02.log",
+      "bytes": 3636,
+      "sha256": "156a942078c3cbaf0492e16786a25e9a4d86e38871122116e62076de8c474f1e",
+      "retained_path": "reports/p1-10-build-02.log"
+    },
+    {
+      "source": "build/verification/p1-10-build-03.log",
+      "bytes": 9824,
+      "sha256": "869ba56a41035ea6d884db8ac30d74a6368fafaaf1f5c4a3a74e1c38b85c10c8",
+      "retained_path": "reports/p1-10-build-03.log"
+    },
+    {
+      "source": "build/verification/p1-10-build-04.log",
+      "bytes": 9502,
+      "sha256": "57d1c90849e4630a5f4aeffffb932d2ef91a7689c5b060dcb540726716f5251c",
+      "retained_path": "reports/p1-10-build-04.log"
+    },
+    {
+      "source": "build/verification/p1-10-native-regression-before-01-lasttest.log",
+      "bytes": 5947,
+      "sha256": "5cd928f3649d7763a5db1cb8dc7404271190ecdb46ebe632b5a86e9d6485cc23",
+      "retained_path": "reports/p1-10-native-regression-before-01-lasttest.log"
+    },
+    {
+      "source": "build/verification/p1-10-native-regression-before-01.log",
+      "bytes": 5759,
+      "sha256": "b819a8b691ac698663ed59e65ddada63a569be69a53b6b43ebfda2a940e66433",
+      "retained_path": "reports/p1-10-native-regression-before-01.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-baseline-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-navigation-100k-baseline-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-baseline-01.gui.log",
+      "bytes": 1686,
+      "sha256": "e59168548cc78d452616b0a099f6a9fc09f7ed3df84dc8ae6d8010f98ea73545",
+      "retained_path": "reports/p1-10-navigation-100k-baseline-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-baseline-01.json",
+      "bytes": 5744,
+      "sha256": "23ca8a4df48ff558f70dcc229b225e969556ab38f8e96f5af4f96d4b9344aaaf",
+      "retained_path": "reports/p1-10-navigation-100k-baseline-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-navigation-100k-fixed-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-01.gui.log",
+      "bytes": 1686,
+      "sha256": "38a6d88c1d143a5bf2c93c8524937f263cf9df61d80c86678de970a2ecf5dfb1",
+      "retained_path": "reports/p1-10-navigation-100k-fixed-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-01.json",
+      "bytes": 5734,
+      "sha256": "8343a76f4361d2c2e33f6709f0fe71403acedb375f2969aaf9b13ef869347e7f",
+      "retained_path": "reports/p1-10-navigation-100k-fixed-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-02.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-navigation-100k-fixed-02.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-02.gui.log",
+      "bytes": 1983,
+      "sha256": "7cadbedf7602da267b90164218bf8771ef76a3336a309eea71357e80f54fda83",
+      "retained_path": "reports/p1-10-navigation-100k-fixed-02.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-02.json",
+      "bytes": 5284,
+      "sha256": "e60a86969dcfa0bf1ca8505fce913581d61f68d57594f46976b0f5e50fa82b6a",
+      "retained_path": "reports/p1-10-navigation-100k-fixed-02.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-03.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-navigation-100k-fixed-03.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-03.gui.log",
+      "bytes": 1880,
+      "sha256": "a1e029fc848be74e289a3d2a5df186ab42531bff434d743cc2775a9deaa9c20b",
+      "retained_path": "reports/p1-10-navigation-100k-fixed-03.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-03.json",
+      "bytes": 5875,
+      "sha256": "39442159b0e5d690ee77e169c5a4dc929244e043651c15bacf5e4f6af48effe0",
+      "retained_path": "reports/p1-10-navigation-100k-fixed-03.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-04.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-navigation-100k-fixed-04.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-04.gui-failure.png",
+      "bytes": 314315,
+      "sha256": "2c17878015f7de753ac3f32aff21478a28b25260103e23850a01986457cd765f",
+      "retained_path": "visuals/p1-10-navigation-100k-fixed-04.gui-failure.png"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-04.gui.log",
+      "bytes": 1897,
+      "sha256": "cdd61b3ba3f6afb592ccda4f2c01a7914db6a8feee37d425d09494a6304a35fe",
+      "retained_path": "reports/p1-10-navigation-100k-fixed-04.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-04.json",
+      "bytes": 5286,
+      "sha256": "325e58bb8867c25caecef7a50665f6556d3a023dbffee0abd9ffc6e8e62f5620",
+      "retained_path": "reports/p1-10-navigation-100k-fixed-04.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-fresh-baseline-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-navigation-fresh-baseline-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-fresh-baseline-01.gui.log",
+      "bytes": 1686,
+      "sha256": "31276f660c4d7d3041c57e8e773cfc157d1762e016e9f717b33030524f3cf1bf",
+      "retained_path": "reports/p1-10-navigation-fresh-baseline-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-fresh-baseline-01.json",
+      "bytes": 5508,
+      "sha256": "68a7673b56407afe72cd17e22e279b4f96c88001697eba2c9bbf919741bc14e9",
+      "retained_path": "reports/p1-10-navigation-fresh-baseline-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-fresh-fixed-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-navigation-fresh-fixed-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-fresh-fixed-01.gui.log",
+      "bytes": 1686,
+      "sha256": "c0b8d3d19fb48eadbfb98a4771d0df2c202d0d48f22764a04236b4769062c0b2",
+      "retained_path": "reports/p1-10-navigation-fresh-fixed-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-fresh-fixed-01.json",
+      "bytes": 5490,
+      "sha256": "e5fa57cd00bf53d0fa7d6c5aa7689c53e4c1aebc169a67693416f97196e3de37",
+      "retained_path": "reports/p1-10-navigation-fresh-fixed-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-projection-tests-01.log",
+      "bytes": 2138,
+      "sha256": "f102131ff968b440a608c2affe376002c52008773436ba6ac443889f91ab9700",
+      "retained_path": "reports/p1-10-projection-tests-01.log"
+    },
+    {
+      "source": "build/verification/p1-10-projection-tests-02.log",
+      "bytes": 2300,
+      "sha256": "6299ba137b2262d1e2845e9fd82d0d56d2d4300a7d10755118bb82cf1040626c",
+      "retained_path": "reports/p1-10-projection-tests-02.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-resize-graphite-baseline-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.gui.log",
+      "bytes": 1684,
+      "sha256": "eb7b48b333e17612ea67ab61e28d34877d563eb71ddeee50f6774784b56de9bf",
+      "retained_path": "reports/p1-10-resize-graphite-baseline-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-baseline-01.json",
+      "bytes": 4918,
+      "sha256": "efd419b4dcd314da05363cbc0d6166381d04ead3552b7848147fb691fad5ccb6",
+      "retained_path": "reports/p1-10-resize-graphite-baseline-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-resize-graphite-fixed-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.gui.log",
+      "bytes": 1467,
+      "sha256": "666d9a078537e6b504d410aa417dddfe73b1160e802fc54132ca44f50064554c",
+      "retained_path": "reports/p1-10-resize-graphite-fixed-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-01.json",
+      "bytes": 4909,
+      "sha256": "bd5f26380fc2cc808929c9a2e0d9d6f12c4fdfa04416e027bb433c8b0ac394bc",
+      "retained_path": "reports/p1-10-resize-graphite-fixed-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-resize-graphite-fixed-03.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.gui.log",
+      "bytes": 1595,
+      "sha256": "319c21efbd1ed6a0a5abdeba0bfde0b30f12d9d6066d25db811a3049978b1f88",
+      "retained_path": "reports/p1-10-resize-graphite-fixed-03.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-fixed-03.json",
+      "bytes": 4909,
+      "sha256": "225cb01c12847fb7ebc9364bbbe9b06e4fc6acc2969ce62287e802abc75171d3",
+      "retained_path": "reports/p1-10-resize-graphite-fixed-03.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-resize-harbour-baseline-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.gui.log",
+      "bytes": 1555,
+      "sha256": "1979f5c32449a3186642196e989008534ed6dc7fba81afd66ca4e690132ce03d",
+      "retained_path": "reports/p1-10-resize-harbour-baseline-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-baseline-01.json",
+      "bytes": 4914,
+      "sha256": "33ba70cc0246aca13e7c42de0713a917afefdebd77e15dc4d7118763314b44db",
+      "retained_path": "reports/p1-10-resize-harbour-baseline-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-resize-harbour-fixed-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.gui.log",
+      "bytes": 1466,
+      "sha256": "a0b455823c913b241e16b01331dadd103c46262acd6e6f40c8a46dba1f728411",
+      "retained_path": "reports/p1-10-resize-harbour-fixed-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-01.json",
+      "bytes": 4905,
+      "sha256": "cd3f540c076b3ede6ba3c3819d084c8801d6f81038c157cfd04ba25c5eff0fee",
+      "retained_path": "reports/p1-10-resize-harbour-fixed-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-resize-harbour-fixed-03.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.gui.log",
+      "bytes": 1466,
+      "sha256": "a39aa45d3bcda970b7d04c053d1adb4264e74e4715f31aedb2c9d4fc206ed7df",
+      "retained_path": "reports/p1-10-resize-harbour-fixed-03.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-fixed-03.json",
+      "bytes": 4904,
+      "sha256": "a85210555d19e865070d23f6ed0cda31d7017110d66f8a1febc3a8ded070610b",
+      "retained_path": "reports/p1-10-resize-harbour-fixed-03.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-resize-paper-baseline-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.gui.log",
+      "bytes": 1681,
+      "sha256": "f8152558c4f2b8b3913afe9b18da4a0d08249fdce34f48256ed0c5d574f2899c",
+      "retained_path": "reports/p1-10-resize-paper-baseline-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-baseline-01.json",
+      "bytes": 4906,
+      "sha256": "3e9d9750650cbb0f5073682424eac20f255bfddd33848d0a41cc3ae84dfd805a",
+      "retained_path": "reports/p1-10-resize-paper-baseline-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-resize-paper-fixed-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.gui.log",
+      "bytes": 1592,
+      "sha256": "7811f50739915660af78bb0e7bcfec7b8ff3984686e69361a2be8b6a91e36844",
+      "retained_path": "reports/p1-10-resize-paper-fixed-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-01.json",
+      "bytes": 4895,
+      "sha256": "567ed57cc45428064ff3eabed5a1e78290509d002f114ad97a31cb7c83de0520",
+      "retained_path": "reports/p1-10-resize-paper-fixed-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-resize-paper-fixed-03.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.gui.log",
+      "bytes": 1464,
+      "sha256": "755787da34abe3d62e8e0ab938dd869995eec827b71b4bb171b6a28a3e902cb8",
+      "retained_path": "reports/p1-10-resize-paper-fixed-03.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-fixed-03.json",
+      "bytes": 4895,
+      "sha256": "79674efe674b3461f58b7aa0c5692bdc61feaf484a008232d6129bd9a98b6316",
+      "retained_path": "reports/p1-10-resize-paper-fixed-03.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-filled-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-graphite-compact-filled-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-filled-01.gui.log",
+      "bytes": 1348,
+      "sha256": "bf149f042f21e74c8650f38782b2229016a5a14ca7ee93930f4c0be304860dcb",
+      "retained_path": "reports/p1-10-visual-graphite-compact-filled-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-filled-01.gui.png",
+      "bytes": 283677,
+      "sha256": "2ec2168ecf404ce56e219f19fdac03dfeb8202e82932c289ac2935c44e30408d",
+      "retained_path": "visuals/p1-10-visual-graphite-compact-filled-01.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-filled-01.json",
+      "bytes": 5505,
+      "sha256": "61cff5e54e811d9fa9f5351e3cf24494bbe6e96ca65288dddd7816b289f45421",
+      "retained_path": "reports/p1-10-visual-graphite-compact-filled-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-footer-02.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-graphite-compact-footer-02.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-footer-02.gui.log",
+      "bytes": 1348,
+      "sha256": "a8438388a5f905d981ea143d38cce0331735cde9307ca793886c20e1947de99a",
+      "retained_path": "reports/p1-10-visual-graphite-compact-footer-02.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-footer-02.gui.png",
+      "bytes": 262288,
+      "sha256": "7b738f20823cc2a9719cc3f938e402c32686ccfc2cd0516b430e8daa3389b7c4",
+      "retained_path": "visuals/p1-10-visual-graphite-compact-footer-02.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-footer-02.json",
+      "bytes": 5532,
+      "sha256": "9c44e50b2bc6a3e94762e0c60f08184d61349aa64988e737c07daf970aa5ce96",
+      "retained_path": "reports/p1-10-visual-graphite-compact-footer-02.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-footer-03.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-graphite-compact-footer-03.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-footer-03.gui.log",
+      "bytes": 1348,
+      "sha256": "28c6c695824ba32f5a1d202bbf66a00fd2de6e82057a18bf4ee3c1ab0e98e8fe",
+      "retained_path": "reports/p1-10-visual-graphite-compact-footer-03.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-footer-03.gui.png",
+      "bytes": 253748,
+      "sha256": "5ae3978f2382d6e7f867462a1e3e5d1795419e401a2b8088692c3c32e346a42a",
+      "retained_path": "visuals/p1-10-visual-graphite-compact-footer-03.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-footer-03.json",
+      "bytes": 5533,
+      "sha256": "5875f71e2ac5937b58c9942755947ca8e2949a5ad53ead85643020dc73e68df1",
+      "retained_path": "reports/p1-10-visual-graphite-compact-footer-03.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-empty-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-graphite-empty-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-empty-01.gui.log",
+      "bytes": 1284,
+      "sha256": "3d48ece1f343405115f7f6351095b02859548c0e4e627b4030ebd9c7d11cd473",
+      "retained_path": "reports/p1-10-visual-graphite-empty-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-empty-01.gui.png",
+      "bytes": 454217,
+      "sha256": "8b0f94295ac23fdc3756a49ff4ebed24023a72c6c84c3ad88c0a2c1342eb5cce",
+      "retained_path": "visuals/p1-10-visual-graphite-empty-01.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-empty-01.json",
+      "bytes": 5219,
+      "sha256": "e537356d2d1d9e95b3831c4741c29cafe05ff440fd0700f2bb2f7e4be2583335",
+      "retained_path": "reports/p1-10-visual-graphite-empty-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-filled-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-harbour-compact-filled-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-filled-01.gui.log",
+      "bytes": 1348,
+      "sha256": "0dca310b80b0fdf76e180f5676966386d12127ba31c4b36c5af5b153615d049e",
+      "retained_path": "reports/p1-10-visual-harbour-compact-filled-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-filled-01.gui.png",
+      "bytes": 286284,
+      "sha256": "985d8d17ba5e50c024488e49f48f31f40b5b6f76bc43b2a0f583aad9ebad722f",
+      "retained_path": "visuals/p1-10-visual-harbour-compact-filled-01.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-filled-01.json",
+      "bytes": 5502,
+      "sha256": "4a7b4b04c839c50e75ca3d795d7694f8f9a3aed28bb144e6539ec877c9f681a6",
+      "retained_path": "reports/p1-10-visual-harbour-compact-filled-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-footer-02.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-harbour-compact-footer-02.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-footer-02.gui.log",
+      "bytes": 1348,
+      "sha256": "ac3f68c9f30a46f8c7bc5d2b0d3c22cae821083ca75462cf479f87d31a5debf2",
+      "retained_path": "reports/p1-10-visual-harbour-compact-footer-02.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-footer-02.gui.png",
+      "bytes": 264704,
+      "sha256": "157707ac1c3b757000951bfc6c6dab987197d8e811e6e44f799fecd70370826b",
+      "retained_path": "visuals/p1-10-visual-harbour-compact-footer-02.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-footer-02.json",
+      "bytes": 5529,
+      "sha256": "dad9ca602bea3c94c2ce3601e28d8522fbacef7eaaa58f96ac11eacca0226b3d",
+      "retained_path": "reports/p1-10-visual-harbour-compact-footer-02.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-footer-03.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-harbour-compact-footer-03.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-footer-03.gui.log",
+      "bytes": 1348,
+      "sha256": "538300e06fee10207916c8513cf1a56b7001eeae218d34b2b166e6c310b6e8f8",
+      "retained_path": "reports/p1-10-visual-harbour-compact-footer-03.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-footer-03.gui.png",
+      "bytes": 254978,
+      "sha256": "fe2d01718dff3820f82202f03977661f1ad7c631577807905436a906e3b0232e",
+      "retained_path": "visuals/p1-10-visual-harbour-compact-footer-03.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-footer-03.json",
+      "bytes": 5529,
+      "sha256": "2d70ac30c7833fef8fc325fc0e5147fd1ec04df9d0d8f41475969f5885edcfad",
+      "retained_path": "reports/p1-10-visual-harbour-compact-footer-03.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-empty-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-harbour-empty-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-empty-01.gui.log",
+      "bytes": 1284,
+      "sha256": "5bec46babea7ea811166384904bdd61b3fbfffd97d77924a2d040e240cfdf728",
+      "retained_path": "reports/p1-10-visual-harbour-empty-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-empty-01.gui.png",
+      "bytes": 455845,
+      "sha256": "27a25aab07fe2360155a6c8fa1773b1e248eaadfcf2cee0e790626b166413e00",
+      "retained_path": "visuals/p1-10-visual-harbour-empty-01.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-empty-01.json",
+      "bytes": 5217,
+      "sha256": "2ff14835c523d1af6aadb5720c5370c0133eb3f40f3b8244d02123cefec1b304",
+      "retained_path": "reports/p1-10-visual-harbour-empty-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-filled-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-paper-compact-filled-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-filled-01.gui.log",
+      "bytes": 1348,
+      "sha256": "7c516ab380c5adfc9c046a151930b7f38bed765f30d09da413b4f9edb586f45d",
+      "retained_path": "reports/p1-10-visual-paper-compact-filled-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-filled-01.gui.png",
+      "bytes": 282642,
+      "sha256": "20825e5c5d81a6d154ef1514f02336bb3d8b9ede72f24ee7e4196f816e39bbcd",
+      "retained_path": "visuals/p1-10-visual-paper-compact-filled-01.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-filled-01.json",
+      "bytes": 5494,
+      "sha256": "c053c2838bab111294e22880a4f5f3c1cf3b16025f4e10e418367543aad779eb",
+      "retained_path": "reports/p1-10-visual-paper-compact-filled-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-footer-02.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-paper-compact-footer-02.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-footer-02.gui.log",
+      "bytes": 1348,
+      "sha256": "c73fe000bdd7db7c6dcc205d7ce11c0f8e0b0850b1634b72b042d802ab2d8399",
+      "retained_path": "reports/p1-10-visual-paper-compact-footer-02.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-footer-02.gui.png",
+      "bytes": 261315,
+      "sha256": "49ca03421355dff76812cc88feb3f017a5d29194b6ff72690c4ebea2a74d86c0",
+      "retained_path": "visuals/p1-10-visual-paper-compact-footer-02.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-footer-02.json",
+      "bytes": 5521,
+      "sha256": "9ecff0c8c1c7bb676052cbe081a5d564f33b3af68e5186ae455435c72cb4a4c5",
+      "retained_path": "reports/p1-10-visual-paper-compact-footer-02.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-footer-03.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-paper-compact-footer-03.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-footer-03.gui.log",
+      "bytes": 1348,
+      "sha256": "6448e5329b38326eee6bd41247b0904f5a1b816d4fbc46a243342e8836174141",
+      "retained_path": "reports/p1-10-visual-paper-compact-footer-03.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-footer-03.gui.png",
+      "bytes": 254297,
+      "sha256": "4d23a7d6df495eb16cf9d9498e9098e6e8792c43fdc49c3adeb7957dfd5eec76",
+      "retained_path": "visuals/p1-10-visual-paper-compact-footer-03.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-footer-03.json",
+      "bytes": 5520,
+      "sha256": "fa2a1d394f8ed49023b42ff5a2be00b5637ed7ce98a10b41f74e19fcf744e214",
+      "retained_path": "reports/p1-10-visual-paper-compact-footer-03.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-empty-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-paper-empty-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-empty-01.gui.log",
+      "bytes": 1284,
+      "sha256": "32245301b73cde3dce21c247c29b04345823486ea4b98a3582a5745dd456e656",
+      "retained_path": "reports/p1-10-visual-paper-empty-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-empty-01.gui.png",
+      "bytes": 456341,
+      "sha256": "db89f510dc1812c4182792aaf83c1374aee54a5761dea2991abd38dab88ee568",
+      "retained_path": "visuals/p1-10-visual-paper-empty-01.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-empty-01.json",
+      "bytes": 5209,
+      "sha256": "fd976d3ddf582179d4653f8b4df1db5b5f1139ca6ca8ffed36c331c991f0364f",
+      "retained_path": "reports/p1-10-visual-paper-empty-01.json"
+    }
+  ],
+  "summary_sha256": "b4037a2b6fd82218d62a204be46b7723a6de9a973fed9b5c9957906b86a80eb7"
+}

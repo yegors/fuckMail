@@ -195,7 +195,14 @@ async fn paired_clients_share_durable_state_and_explicit_lifetimes() {
     let mut cli = client(&profile).await;
     assert_eq!(fm_ipc::read_discovery(&profile).unwrap().pid, discovery.pid);
     let accounts = ok(cli.call("accounts", None, json!({})).await.unwrap());
-    assert_eq!(accounts["accounts"].as_array().unwrap().len(), 2);
+    let mut account_ids: Vec<_> = accounts["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|account| account["id"].as_str().unwrap())
+        .collect();
+    account_ids.sort_unstable();
+    assert_eq!(account_ids, ["personal", "sideproject", "windscribe"]);
     let original = first(&mut gui, "windscribe").await;
     let id = original["id"].as_str().unwrap();
     let params = json!({"id":id,"message_ids":original["message_ids"],"expected_revision":original["revision"],"request_id":"test-flag-once","starred":true});

@@ -1,0 +1,12 @@
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ctest.exe --preset release -R ^(rust-test-build|rust-workspace|gui-startup-recovery)$
+Test project C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release
+    Start 1: rust-test-build
+1/3 Test #1: rust-test-build ..................   Passed   19.04 sec
+    Start 2: rust-workspace
+2/3 Test #2: rust-workspace ...................   Passed   77.30 sec
+    Start 5: gui-startup-recovery
+3/3 Test #5: gui-startup-recovery .............   Passed    5.58 sec
+
+100% tests passed, 0 tests failed out of 3
+
+Total Test time (real) = 101.93 sec

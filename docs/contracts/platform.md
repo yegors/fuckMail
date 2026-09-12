@@ -1,6 +1,12 @@
 # Platform, lifecycle and release
 
-State: Draft · Revision: 7 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
+State: Draft · Revision: 10 · Updated: 2026-09-12 · Implementation: Phase 0 synthetic experiment verified; Phase 1 appearance/startup extension active; whole area remains Draft.
+
+Revision 10 applies D018's September 12 Update 2 reference. Shared native palettes, rounded text scaling and typed startup preferences apply across Mail, Calendar, Settings and secondary controls without changing selected accounts, authored drafts or source state. General becomes the initial Settings page; timeline placement remains Mail-only. Provider sync and desktop notification settings remain visibly unavailable in this local phase. Consumers: Core 13, CLI 7, Mail UI 12, Calendar 11, Quality 9 and native acceptance tooling; schema 7/fresh fixture 3/additive protocol 1. Implementation and integrated validation are active; earlier acceptance retains its original source scope.
+
+Revision 9 adds safe destruction of a still-connected GUI adapter: socket and timer callbacks detach before request/view storage is destroyed. Normal close continues to flush through the explicit shutdown path. For pinned Qt 6.11.2 on Windows, the GUI defaults `QT_D3D_NO_VBLANK_THREAD=1` before creating the application, preserving an explicit environment override. This selects Qt's timer update fallback while retaining D3D rendering and presentation vsync. The host's original path delivered one frame and no subsequent update requests; the fallback delivered 2,881 synchronization/render/swap callbacks and passed all four 100-observation paint classes. This private Qt switch must be rechecked when changing the pinned toolkit. Consumers: Qt GUI, Windows packages, developer launches and Quality. See [Phase 1 evidence](../research/phase-1-execution.md); physical input/scaling and trusted distribution remain separate.
+
+Revision 8 records the home Windows handoff correction: developer subprocesses resolve bare executable names through the selected project PATH before spawning, so packaging works with project-local Rust and no global Rust installation. The existing compiler/SDK are reused; no global PATH change or runtime/schema/protocol change is introduced. Dev/release CTests, relocated packaging and native Windows/D3D11 rendering now pass on the founder's PC. Consumers: developer tooling, Core/CLI/GUI build and Quality. See [Windows evidence](../research/phase-0-execution.md#home-windows-handoff-before-phase-1); manual input, accessibility, wider scaling and OS vault checks remain separate.
 
 Revision 7 records the final Phase 0 platform corrections and packaged upgrade verifier. Windows discovery creation explicitly sets the process-user owner and private DACL, with a native named-pipe trust test; startup allowance is 30 seconds and offscreen tests use system fonts. Rust/Qt now retry startup while a previous store writer finishes closing; retries are bounded and preserve explicit GUI/CLI ownership. Linux category focus preserves reply selection. Developer launchers use CMake's generated executable path. Available-host native/package results and actual Mac schema 2→4 handoff/refusal evidence are recorded in [execution evidence](../research/phase-0-execution.md). Consumers: Core, CLI, Qt UI and Quality. Physical desktop/keyring qualification and trusted delivery remain separate gates.
 
@@ -30,6 +36,25 @@ Windows, macOS and Linux are required. Linux includes Ubuntu, Arch and Omarchy; 
 Use the same opinionated design on all OSes. Verify native Wayland (including the Omarchy desktop), supported X11/XWayland paths, IME/clipboard, file dialogs/portals, scaling, graphics, credentials and notifications. Do not require GNOME/KDE-specific infrastructure without a working path on the targeted Omarchy setup.
 
 The recommended baseline is a Rust engine/CLI and C++20/Qt Quick/QML GUI, connected through private local IPC; it is not yet a locked or measured stack. Build Rust components with Cargo and the GUI with CMake/Ninja, packaging compatible binaries together. In-process Rust/Qt bindings are not a required dependency. Core owns domain behavior and the engine protocol; Platform owns the presentation/OS adapter and release integration. QML expressions are accepted. The product build must not require Node.js or a separate JavaScript compilation/bundling pipeline. An upstream WebEngine source build requiring Node is not an acceptable default prerequisite; received HTML is later work and any chosen dependency route must respect this boundary. See [desktop research](../research/desktop-stack.md).
+
+## Local appearance and startup
+
+Use the exact Graphite, Paper and Harbour palettes from the [active reference inventory](../research/flight-progress-v2.md). Derive muted text, overlays, shadows, selection, semantic accents and timeline states from the selected palette, including Paper's light surfaces and warm shadow. Apply the palette to native control roles and secondary popups as well as the main canvas. Geist remains the shared typeface, with the licensed bundle and native fallback; this adds no font download or browser runtime. Text size scales label, input, reader and popup base sizes by 13/14, 1 or 15.5/14 and rounds the result to integer native pixels. Retain usable clipping, elision, focus indicators and scroll access at compact sizes. Scaling must not rewrite authored formatting or clear undo history.
+
+These app-wide preferences use the existing revisioned Core preferences boundary and CLI, rather than a GUI-only settings file:
+
+| Key | Values | Default |
+| --- | --- | --- |
+| `theme` | `graphite`, `paper`, `harbour` | `graphite` |
+| `text_size` | `small`, `default`, `large` | `default` |
+| `startup_view` | `mail`, `calendar`, `last` | `mail` |
+| `last_workspace` | `mail`, `calendar` | `mail` |
+| `timeline_position` | `footer`, `header` | `footer` |
+| `default_event_duration_minutes` | integer `30`, `45`, `60` | `60` |
+
+`startup_view` selects the initial workspace after hydration; `last` resolves to the last Mail/Calendar workspace, never Settings. Saving workspace navigation does not alter per-account mail selection or draft identity. Opening and closing Settings retains the active workspace, independent scroll positions and focus. Theme/text changes take effect immediately through the saved preference projection and survive a new GUI process; failures retain pending changes and expose the existing explicit retry path. Migration adds defaults without reseeding existing profiles or changing their recorded fixture revision.
+
+General shows Sync every and Notifications as unavailable, disabled choices with a reason. It must not report a default as an applied provider/OS setting, equate local IPC polling with provider sync or add a hidden always-on process. Account/model setup, notification delivery, OS vault qualification and trusted distribution remain separate gates. Native control/CLI readback, draft preservation, fresh-process startup, all three palette captures and compact text-size checks are required evidence; implementing controls alone does not satisfy them.
 
 ## Installation and upgrades
 

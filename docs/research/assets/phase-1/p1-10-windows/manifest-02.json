@@ -1,0 +1,1253 @@
+{
+  "version": 1,
+  "retained_utc": "2026-09-12T18:14:41.144603+00:00",
+  "checkpoint": "P1-10 corrected source, native release and package measurements",
+  "originals_preserved": true,
+  "previous_manifest_sha256": "aafc4382d4c4948e0f0852f4c17543e55cb48c966bc5bd5dec0d3020e29af4e1",
+  "archives": [
+    {
+      "path": "raw-gui-reports-02.zip",
+      "bytes": 1459293,
+      "sha256": "91886c9d870b79970f01e3301517334e7945b3fbba900748340667ac0a2a125c",
+      "entries": 8,
+      "verified_uncompressed_sha256": true
+    },
+    {
+      "path": "resize-captures-graphite-02.zip",
+      "bytes": 7028775,
+      "sha256": "da554dca6386f9017a6cdfccea0811bf3a738c5dc963b2c94eea840071bd85e3",
+      "entries": 30,
+      "verified_uncompressed_sha256": true
+    },
+    {
+      "path": "resize-captures-paper-02.zip",
+      "bytes": 7040883,
+      "sha256": "c7f73371297020953a098fa52cc765864b7d5f57f8b2a3b6fd82f18bd1c9efe6",
+      "entries": 30,
+      "verified_uncompressed_sha256": true
+    },
+    {
+      "path": "resize-captures-harbour-02.zip",
+      "bytes": 7059628,
+      "sha256": "bfd2f94acc120b69abf28bbd3f283526fdd66e3d0e6e228476ac1fc08e15e4af",
+      "entries": 30,
+      "verified_uncompressed_sha256": true
+    }
+  ],
+  "files": [
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-05.gui.json",
+      "bytes": 2900196,
+      "sha256": "7105f7807292b9a37c63a00302d864129ca896a89a83d7b341757192357fcd2e",
+      "archive": "raw-gui-reports-02.zip",
+      "entry": "p1-10-navigation-100k-fixed-05.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-package-01.gui.json",
+      "bytes": 2992377,
+      "sha256": "54e7f38eb4562a3a9c615484c4af2d17e34c0e3250159e278f6ca449cae8c41a",
+      "archive": "raw-gui-reports-02.zip",
+      "entry": "p1-10-navigation-100k-package-01.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-fresh-fixed-05.gui.json",
+      "bytes": 2233056,
+      "sha256": "07751008a16ec8e7094b090761888c18fd9f71cc5daf23f4337c39c842a8c71d",
+      "archive": "raw-gui-reports-02.zip",
+      "entry": "p1-10-navigation-fresh-fixed-05.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-fresh-package-01.gui.json",
+      "bytes": 2235835,
+      "sha256": "420734c8c7e38f0f09cb48fb4ea3e455ced42f559ae3f5c1bf55bbb88df75c19",
+      "archive": "raw-gui-reports-02.zip",
+      "entry": "p1-10-navigation-fresh-package-01.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui.json",
+      "bytes": 13938042,
+      "sha256": "20aabebcc6aab773b03f55047ba2846c27cadc2cad81a11ea851bbfee97c78ef",
+      "archive": "raw-gui-reports-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui.json",
+      "bytes": 13939936,
+      "sha256": "7b5bf9ce515ed97a2633eaae587654274288f3acba8ee717f5bbacc2f7cde6a0",
+      "archive": "raw-gui-reports-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui.json",
+      "bytes": 13943954,
+      "sha256": "238fb4545910e0e08b2e5f94dce9065364526129750ea921055c59976e1d6b8d",
+      "archive": "raw-gui-reports-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-search-ingestion-package-01.gui.json",
+      "bytes": 88169,
+      "sha256": "d1f546c22eb80977166175d34950924a1d05f11e71d83984fd0017c6cec5ed82",
+      "archive": "raw-gui-reports-02.zip",
+      "entry": "p1-10-search-ingestion-package-01.gui.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/calendar-resize-00.png",
+      "bytes": 121987,
+      "sha256": "0b06c1e5f02825cc3002fd15e750b8495bbe40e2d0dd32826f0e1560d494bf44",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/calendar-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/calendar-resize-01.png",
+      "bytes": 122039,
+      "sha256": "e10f8c5c0a14b477dc5b64d70820f9845ef4b073d588708f6e2168387d91237a",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/calendar-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/calendar-resize-02.png",
+      "bytes": 117916,
+      "sha256": "272d5eafbeb540b53a0303832818b8fed580ea907606f17fd33d07fb6ffb236d",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/calendar-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/calendar-resize-03.png",
+      "bytes": 123380,
+      "sha256": "fc8e38651d7b4fd2a3f0ec0a8eca115912d57446735c9def7f4e535e2626d5e2",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/calendar-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/calendar-resize-04.png",
+      "bytes": 121762,
+      "sha256": "5111d9ec262cb0034555e170597fd8c2f4d8a8bad993aef72bde6805fdb33893",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/calendar-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/calendar-resize-05.png",
+      "bytes": 121846,
+      "sha256": "28b349f60ba5dbd50765837a866145f3a412b21353739ffb2474c074d7bfdbb9",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/calendar-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/calendar-resize-06.png",
+      "bytes": 111906,
+      "sha256": "4735c5d0ba7d0c8f60c90f7f1629744af9f4d73731aeb5c2c19296b9cc9954d7",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/calendar-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/calendar-resize-07.png",
+      "bytes": 123666,
+      "sha256": "ab5fc63e3310b0d31c3744150cec251159cda8f1ad2da49772da9b4a58e1c97b",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/calendar-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/calendar-resize-08.png",
+      "bytes": 122825,
+      "sha256": "62d12c509ef602cc7796b49a7d76abbbca8c67b4b97b6f28f64d9926a9a43ab5",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/calendar-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/calendar-resize-09.png",
+      "bytes": 121790,
+      "sha256": "591a6818b8e963daa84d5215a6e480cffb1fd5fa43d7cabe4fc3309eb6dd7b2f",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/calendar-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/calendar-resize-10.png",
+      "bytes": 117554,
+      "sha256": "143ed3754749791a8f783a7101ffd398528cba7314ee07269c188ce98b852f9d",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/calendar-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/calendar-resize-11.png",
+      "bytes": 123668,
+      "sha256": "9e82813b86dc9ea7f82b24ee62682ec4c157339537e6562129e07d54799d9a40",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/calendar-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/calendar-settled-0.png",
+      "bytes": 111121,
+      "sha256": "ecc51aa642aaa2dce562a32d25cd8d8e6449a3185c6fc63353c5e351cb37a3e5",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/calendar-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/calendar-settled-1.png",
+      "bytes": 115247,
+      "sha256": "aa965ebbd6f19b3dee168aa099682ebcc34fc52cb2ebf0be735861e397d1736e",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/calendar-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/calendar-settled-2.png",
+      "bytes": 111121,
+      "sha256": "ecc51aa642aaa2dce562a32d25cd8d8e6449a3185c6fc63353c5e351cb37a3e5",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/calendar-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/mail-resize-00.png",
+      "bytes": 363070,
+      "sha256": "9d181b05b2989ee8c9c6a0dac184ea43f4527087aad7210eddd2d4cbb17bdb5c",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/mail-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/mail-resize-01.png",
+      "bytes": 363431,
+      "sha256": "53c2263b51a341327be557ae2229ca7d21c898eddf8861dfd649a753e5702ccf",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/mail-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/mail-resize-02.png",
+      "bytes": 366343,
+      "sha256": "b03a9427efb302cbe6ec3a8c82437ffea5e43cb60dc139f07e0ae80f7612c19e",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/mail-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/mail-resize-03.png",
+      "bytes": 368577,
+      "sha256": "d0ff31fee42299390f42c935e7850192e912d4095c91b2706ebbb2fb941aa15a",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/mail-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/mail-resize-04.png",
+      "bytes": 363998,
+      "sha256": "fd0b4aefe17a2906eb2710f2679842ef898d394b22f841fecf6ca6221c4cd777",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/mail-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/mail-resize-05.png",
+      "bytes": 364089,
+      "sha256": "895b0f34b93b88e83fa9ea6bfbc1e09ae02a112d887a931bed07eb46163b8e0f",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/mail-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/mail-resize-06.png",
+      "bytes": 366747,
+      "sha256": "45ba9ab4c6657ca51f4a1c532b7b1b61f1d1e91f07a3b5fa1a3459794dbb4915",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/mail-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/mail-resize-07.png",
+      "bytes": 368269,
+      "sha256": "f523568008be92db44aa1992e785085544996456fae38200b25827c6113ddde4",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/mail-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/mail-resize-08.png",
+      "bytes": 363947,
+      "sha256": "c0800a750bd4f43cb3b18d138baaf079434cfa0b060330036ba1d502f67ea943",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/mail-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/mail-resize-09.png",
+      "bytes": 363968,
+      "sha256": "b251273d258830d3f55d95f9cc92ec0c255d0f0883371d29afd4078402c0952e",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/mail-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/mail-resize-10.png",
+      "bytes": 365995,
+      "sha256": "0a7e071d90728ff13116a5822733e6ff9c5e27ff45dfa9fd99b56f42b71bb6cc",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/mail-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/mail-resize-11.png",
+      "bytes": 368750,
+      "sha256": "2dc0428448b380ad39bc4f9be835022572db8128aa8d00d78e9f498520bed89e",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/mail-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/mail-settled-0.png",
+      "bytes": 359612,
+      "sha256": "7413bfa7cb0759ff57760676789d3a06527a04770c8d94d8652c1e965458d94e",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/mail-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/mail-settled-1.png",
+      "bytes": 338471,
+      "sha256": "afa3a0569d96aa949d114f87dd388ae35f612c946e09917e273746c8821e23d5",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/mail-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui-captures/mail-settled-2.png",
+      "bytes": 359612,
+      "sha256": "7413bfa7cb0759ff57760676789d3a06527a04770c8d94d8652c1e965458d94e",
+      "archive": "resize-captures-graphite-02.zip",
+      "entry": "p1-10-resize-graphite-package-01.gui-captures/mail-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/calendar-resize-00.png",
+      "bytes": 122376,
+      "sha256": "c3d9671512ef54084db3b0b3ae8906c6da1ae6687da331efd4a0c152e0672e78",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/calendar-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/calendar-resize-01.png",
+      "bytes": 122386,
+      "sha256": "91d2f83eb801ebada04e1bc12b4a38a2a7e8c17728b4800e65b45c219a39ac57",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/calendar-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/calendar-resize-02.png",
+      "bytes": 117897,
+      "sha256": "14d128ec87172f17f5f7bb76d9a38b4e351d4216c8fd18169e7ff4d7e59d072f",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/calendar-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/calendar-resize-03.png",
+      "bytes": 123967,
+      "sha256": "fc28a5a790f6091d33e5681dc9605ada6ed9587b57bada54d4df21d8f9cfc1a3",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/calendar-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/calendar-resize-04.png",
+      "bytes": 122147,
+      "sha256": "11fa7045543e0f15714d709e465e9f17edc70d5bf9487a89345d3e9f0f1cf224",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/calendar-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/calendar-resize-05.png",
+      "bytes": 122155,
+      "sha256": "600fa69ced22f04543be857fd94e9f57c3b82a936c24419ed558d9b4e5814a94",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/calendar-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/calendar-resize-06.png",
+      "bytes": 111752,
+      "sha256": "e1a11eff8ed522b04e1fac1a1274ff163fda86dcad3cf0941445c17f043dc740",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/calendar-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/calendar-resize-07.png",
+      "bytes": 124189,
+      "sha256": "db9404d5ba9c2e6200589df5393024a5a838418b589f72fd0d9e6139d022314a",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/calendar-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/calendar-resize-08.png",
+      "bytes": 123177,
+      "sha256": "8a148208e8f3056e9f33839eec9b6146f3f7534495ddabb4f8e4de88bfce74c7",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/calendar-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/calendar-resize-09.png",
+      "bytes": 122044,
+      "sha256": "ec4e0143574122de1eb213648b02ba2ef78b0ae1f3e1ca7b56d727796e9ca9bb",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/calendar-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/calendar-resize-10.png",
+      "bytes": 117447,
+      "sha256": "f79a4e43c6567890e60fb3d3e0fe6a3b41a3af0c3cab66b4634bb9f5adc6847e",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/calendar-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/calendar-resize-11.png",
+      "bytes": 124197,
+      "sha256": "a88f97b5731ef95cad9bc2e396eb1e889e17f1894ddd1e1ddf24467f273a8572",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/calendar-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/calendar-settled-0.png",
+      "bytes": 111774,
+      "sha256": "7bebdb72a20d384d79a1efbf996b38bf7c2b045cef6b68c55b239af1b77c8deb",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/calendar-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/calendar-settled-1.png",
+      "bytes": 115630,
+      "sha256": "d847776c6214afa9c1adb2133f5eb08bf5ce7a22326bdb39aedfe615267ff50d",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/calendar-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/calendar-settled-2.png",
+      "bytes": 111774,
+      "sha256": "7bebdb72a20d384d79a1efbf996b38bf7c2b045cef6b68c55b239af1b77c8deb",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/calendar-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/mail-resize-00.png",
+      "bytes": 363235,
+      "sha256": "cf20c30e1bfe8f958ecf0729e22e856e51f2e2604886e071c0d7de1433a76fae",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/mail-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/mail-resize-01.png",
+      "bytes": 364254,
+      "sha256": "44462f1e79be4e7ad46d7919b9e96e2095c1e0f5808e14f15e51ac5fbfe98442",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/mail-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/mail-resize-02.png",
+      "bytes": 366816,
+      "sha256": "edbd02ce2eae3dce17661f69b0faf793d5db8394d157053d4fea745965976a76",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/mail-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/mail-resize-03.png",
+      "bytes": 369112,
+      "sha256": "98ee4ab27e7f27387b6194fddeda03055fd3223155c24eb8881811dc43a85917",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/mail-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/mail-resize-04.png",
+      "bytes": 363691,
+      "sha256": "bd3d540a61902a011d4f7cb23eda0472c373b3ae7b414adaa14dae782376a9d4",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/mail-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/mail-resize-05.png",
+      "bytes": 364471,
+      "sha256": "e8761bf5e2d6dfbab35bb7ed71e6cde5e92bc54dfe68395a73ac3b155872e981",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/mail-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/mail-resize-06.png",
+      "bytes": 368051,
+      "sha256": "1a98d3cc3dd1fd599523dbf5487e4ecd9414d6040c267c1d4b68695deba2b916",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/mail-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/mail-resize-07.png",
+      "bytes": 368601,
+      "sha256": "28b9f70e8daf900ab877cc2aba0949330413d34adbc0d6823eca6f2844842c79",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/mail-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/mail-resize-08.png",
+      "bytes": 363663,
+      "sha256": "4d22b4bd6c9bfc3e148465d739744baba2282f73c64546195ce489a7375a4ca7",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/mail-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/mail-resize-09.png",
+      "bytes": 364878,
+      "sha256": "3c1f2acde35ad8c798e502a403d1c717fb2fd0508943214579328afc0ee7e140",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/mail-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/mail-resize-10.png",
+      "bytes": 366559,
+      "sha256": "fc8dca1f7290435555ca0efdebae48476c494353e2333a6f44a068e0620f469b",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/mail-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/mail-resize-11.png",
+      "bytes": 369835,
+      "sha256": "af232d89addb81fa0b3c7e592eb404cde7f37c0bed1dc1153110103a08ae6c30",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/mail-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/mail-settled-0.png",
+      "bytes": 360360,
+      "sha256": "a3b9239d875330fc90a79a31350607698bc9487e5134e848a4855575ef17e7bb",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/mail-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/mail-settled-1.png",
+      "bytes": 339137,
+      "sha256": "93985a50870be857c240fa7bdd0aebb2220c488d253a01022b7d9be24ef8cf78",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/mail-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui-captures/mail-settled-2.png",
+      "bytes": 360360,
+      "sha256": "a3b9239d875330fc90a79a31350607698bc9487e5134e848a4855575ef17e7bb",
+      "archive": "resize-captures-paper-02.zip",
+      "entry": "p1-10-resize-paper-package-01.gui-captures/mail-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/calendar-resize-00.png",
+      "bytes": 122543,
+      "sha256": "257222c07e6ce535089c76918a606b047a928cf4db726dff3d6285d5c06160be",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/calendar-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/calendar-resize-01.png",
+      "bytes": 122468,
+      "sha256": "9bc5c28a04796916c81002bc19d20d0576a3801b7ca9eca9b0a01bca461ed8b1",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/calendar-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/calendar-resize-02.png",
+      "bytes": 118474,
+      "sha256": "5ca939ffac4c536402dc5482c79ed4d86baef34e6e81e0c1711a2fff5c978912",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/calendar-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/calendar-resize-03.png",
+      "bytes": 124208,
+      "sha256": "0ce551c30070a3ce6d1f7a596968c85aa74d5c502fe8937d9faadd318fc0c2e1",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/calendar-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/calendar-resize-04.png",
+      "bytes": 122414,
+      "sha256": "0aa27028be2a044ca3944cd1667ef077a21ea27d132352ef530bca2bf470b3c8",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/calendar-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/calendar-resize-05.png",
+      "bytes": 122166,
+      "sha256": "63528105a3cc4bcb55d98cee03e1ce05c57a1352317b345c8767c83f70ceb6e0",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/calendar-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/calendar-resize-06.png",
+      "bytes": 112266,
+      "sha256": "d5a666cb08dab2053a2866b008a60cf10c1a46bd16ff6c4b6f3e4a179c5b3c8a",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/calendar-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/calendar-resize-07.png",
+      "bytes": 124337,
+      "sha256": "10c621d784563833c8b6614c411bc7b3a2fbc05a9041e6faed2871e88a2ff8f2",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/calendar-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/calendar-resize-08.png",
+      "bytes": 123501,
+      "sha256": "ecabaf42b96101d9875ad37c9c64bc0a374a5a179e9771d5e01bf7f612499421",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/calendar-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/calendar-resize-09.png",
+      "bytes": 122080,
+      "sha256": "62d2ed3759196016e1fd85a275a5c8fd2602bbf9db6c32aef344076be58d2a20",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/calendar-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/calendar-resize-10.png",
+      "bytes": 118163,
+      "sha256": "ec1e37d1c4222a036489b5642b1e76d3bb3f679ffac5a56602139bce872ef428",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/calendar-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/calendar-resize-11.png",
+      "bytes": 124030,
+      "sha256": "d0aab777ae7123e489dee6249dc5616f9f893c6f9266fe50d927e1fed4f43646",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/calendar-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/calendar-settled-0.png",
+      "bytes": 111816,
+      "sha256": "9845cea8727d680fd13731b4a38bd9e7a512a29fa01a52cdcd3795115eef95b4",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/calendar-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/calendar-settled-1.png",
+      "bytes": 115803,
+      "sha256": "0dfb850cb885156cbf340e498cc0f39b4dfe839b87a56a3bce3eb6a198d78183",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/calendar-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/calendar-settled-2.png",
+      "bytes": 111816,
+      "sha256": "9845cea8727d680fd13731b4a38bd9e7a512a29fa01a52cdcd3795115eef95b4",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/calendar-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/mail-resize-00.png",
+      "bytes": 364947,
+      "sha256": "c7635a44ab0bff41bce39edd90c64e5c8e2b5ab8814403ac8699e6443864bc95",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/mail-resize-00.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/mail-resize-01.png",
+      "bytes": 365353,
+      "sha256": "a017911504e87ba7fe13400da296426439a57a9af87021407aab549cca913485",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/mail-resize-01.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/mail-resize-02.png",
+      "bytes": 367383,
+      "sha256": "a655ef9980546d32d75562c969027eace156672d12a02d07177bd3d8e680259d",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/mail-resize-02.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/mail-resize-03.png",
+      "bytes": 370238,
+      "sha256": "30f8b3b3f90fd186957f0029fa2f1eaf79b805a352e9331f6331a6039d298ade",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/mail-resize-03.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/mail-resize-04.png",
+      "bytes": 365684,
+      "sha256": "0a04bd1875153845e2aef4d043caef966ff02003cf392b0cfd30299b783fb48b",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/mail-resize-04.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/mail-resize-05.png",
+      "bytes": 366137,
+      "sha256": "56c9c97f73d6b954e8a24ab5e30066ee9ceed326cce1164b8df671bf14f49f44",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/mail-resize-05.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/mail-resize-06.png",
+      "bytes": 368036,
+      "sha256": "f6e88ccd5d7965c6f08eb2067839c9f692ac034a2ecccb7526246d168aa86a0a",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/mail-resize-06.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/mail-resize-07.png",
+      "bytes": 370038,
+      "sha256": "3c9711c5ffd9ea0c1c2a20e1c237fd784fff93f21a0bc2459a91cb9f9aaaf2a9",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/mail-resize-07.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/mail-resize-08.png",
+      "bytes": 365771,
+      "sha256": "e354e899512b67cd41535f5a0960bb9b9d1de0bacd9360e69d7be7614f49bf00",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/mail-resize-08.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/mail-resize-09.png",
+      "bytes": 366187,
+      "sha256": "1711fa81fc445947ca4599c3791385cfc4b151e4e9ed47ce749aad9d585e18c5",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/mail-resize-09.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/mail-resize-10.png",
+      "bytes": 366983,
+      "sha256": "417b81fd99190a05920dea19f8a10cbadaf3afe94fd17a1b4eea3b14da4d458b",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/mail-resize-10.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/mail-resize-11.png",
+      "bytes": 370708,
+      "sha256": "cefb57f1a0756e35620b1113a204bafee390414982a9d16bbc2f245b560de01e",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/mail-resize-11.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/mail-settled-0.png",
+      "bytes": 360361,
+      "sha256": "a6e9dcc9b4045790cdefa0ae064d45df8271b0833e6fcec129dfbbaec84e0009",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/mail-settled-0.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/mail-settled-1.png",
+      "bytes": 339320,
+      "sha256": "20aac211eaf88729b11f09ec4ec4fe0ec6514a9c875e7fb34a3cfca0c8713802",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/mail-settled-1.png"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui-captures/mail-settled-2.png",
+      "bytes": 360361,
+      "sha256": "a6e9dcc9b4045790cdefa0ae064d45df8271b0833e6fcec129dfbbaec84e0009",
+      "archive": "resize-captures-harbour-02.zip",
+      "entry": "p1-10-resize-harbour-package-01.gui-captures/mail-settled-2.png"
+    },
+    {
+      "source": "build/verification/p1-10-build-05.log",
+      "bytes": 4217,
+      "sha256": "c5e8b22624007a02784beff4601a3a997f0de677388166f67c47bf24aa5105f3",
+      "retained_path": "reports/p1-10-build-05.log"
+    },
+    {
+      "source": "build/verification/p1-10-build-08.log",
+      "bytes": 3379,
+      "sha256": "63882787f6589dead8924536179edd4da3d519eee82d5f12e9dc0fce7858224b",
+      "retained_path": "reports/p1-10-build-08.log"
+    },
+    {
+      "source": "build/verification/p1-10-full-release-01-lasttest.log",
+      "bytes": 34806,
+      "sha256": "58b3b2adf9fe684e93d11eebbb31a69cc2eb813516e9ba2dcc64654476a96726",
+      "retained_path": "reports/p1-10-full-release-01-lasttest.log"
+    },
+    {
+      "source": "build/verification/p1-10-full-release-01.log",
+      "bytes": 11890,
+      "sha256": "c89dfe8771cf1194d0da93528f433db457069401b54a1d64a78aafe4da09fe78",
+      "retained_path": "reports/p1-10-full-release-01.log"
+    },
+    {
+      "source": "build/verification/p1-10-full-release-02-lasttest.log",
+      "bytes": 34715,
+      "sha256": "f3e58c5511207b9a0743a0cf9f66b59ac74b608098abdcb789865a9de0696a14",
+      "retained_path": "reports/p1-10-full-release-02-lasttest.log"
+    },
+    {
+      "source": "build/verification/p1-10-full-release-02.log",
+      "bytes": 11542,
+      "sha256": "0ff886a572e39c58446bec64ce8c92eabdc9c8f8da7e2f9bbe18ff5a3c22deb2",
+      "retained_path": "reports/p1-10-full-release-02.log"
+    },
+    {
+      "source": "build/verification/p1-10-full-release-03-lasttest.log",
+      "bytes": 42622,
+      "sha256": "78f092a1745073821d2c80b375055133dc4ba3fc0a257327f6fa0f573d24508c",
+      "retained_path": "reports/p1-10-full-release-03-lasttest.log"
+    },
+    {
+      "source": "build/verification/p1-10-full-release-03.log",
+      "bytes": 4178,
+      "sha256": "fd4b7951bdb9e810225bca6f4550453c33f8ba0699bd12c27fb1852f33fd489d",
+      "retained_path": "reports/p1-10-full-release-03.log"
+    },
+    {
+      "source": "build/verification/p1-10-native-final-01-lasttest.log",
+      "bytes": 15454,
+      "sha256": "85b2466a9d6c0cdba5504d3677e7bff8ce4a5e9eeaa7f79f1f0432a1a3aba28b",
+      "retained_path": "reports/p1-10-native-final-01-lasttest.log"
+    },
+    {
+      "source": "build/verification/p1-10-native-final-01.log",
+      "bytes": 375,
+      "sha256": "8f6677872bce294160e974d3c51559f7821b5d174e5e05c357544ad8897a4344",
+      "retained_path": "reports/p1-10-native-final-01.log"
+    },
+    {
+      "source": "build/verification/p1-10-native-regression-after-01-lasttest.log",
+      "bytes": 3004,
+      "sha256": "a3bbb9e24a938e863adf2ef1786e47917cae8fd91769a8b8a3a93e49438d2b71",
+      "retained_path": "reports/p1-10-native-regression-after-01-lasttest.log"
+    },
+    {
+      "source": "build/verification/p1-10-native-regression-after-01.log",
+      "bytes": 2816,
+      "sha256": "99224975adca1941f2678349e9b3b0806404e7e4da4fbcf8502e27a4f45e501e",
+      "retained_path": "reports/p1-10-native-regression-after-01.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-05.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-navigation-100k-fixed-05.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-05.gui.log",
+      "bytes": 1794,
+      "sha256": "23e9dbbea78839c63337ffc4169d87a797efbc0649f3debcb4d4583baaeb4ee5",
+      "retained_path": "reports/p1-10-navigation-100k-fixed-05.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-fixed-05.json",
+      "bytes": 5871,
+      "sha256": "b0e1b1e574d8e31f852b515d65d80043954a8748d575b5e4b15ba7ea0919e68c",
+      "retained_path": "reports/p1-10-navigation-100k-fixed-05.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-package-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-navigation-100k-package-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-package-01.gui.log",
+      "bytes": 1794,
+      "sha256": "657e414f77d3fd843eb7ddb35329ead7b7ab9f04ca78f7e2b4fc4e8f0f9475c6",
+      "retained_path": "reports/p1-10-navigation-100k-package-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-100k-package-01.json",
+      "bytes": 7010,
+      "sha256": "cecaa9022a64286106a6e8d3b9331cceb4e7253122731df58b362f57dd319b33",
+      "retained_path": "reports/p1-10-navigation-100k-package-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-fresh-fixed-05.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-navigation-fresh-fixed-05.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-fresh-fixed-05.gui.log",
+      "bytes": 1686,
+      "sha256": "036906703fa5717a112b1b7ef3ace6511b557105dde6cb9fbbef1f7020b27b37",
+      "retained_path": "reports/p1-10-navigation-fresh-fixed-05.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-fresh-fixed-05.json",
+      "bytes": 5488,
+      "sha256": "00b56b3919ea2586c2b3f542440af4ff274e9a4880d5710b231c1c875bf4aa2f",
+      "retained_path": "reports/p1-10-navigation-fresh-fixed-05.json"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-fresh-package-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-navigation-fresh-package-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-fresh-package-01.gui.log",
+      "bytes": 1686,
+      "sha256": "8385085f6de283726dabba7a6e208beb3230006732ad0a0fc6024223d74b8681",
+      "retained_path": "reports/p1-10-navigation-fresh-package-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-navigation-fresh-package-01.json",
+      "bytes": 6627,
+      "sha256": "673d5affa2a219e7eefc6bd1f70e38b0521544f123d677b9294b1f5a3abcd48e",
+      "retained_path": "reports/p1-10-navigation-fresh-package-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-package-01.json",
+      "bytes": 2495,
+      "sha256": "0177d62c80a5b693fa2c0767628668506e8903bda43abc47fbced92454271dc8",
+      "retained_path": "reports/p1-10-package-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-package-01.log",
+      "bytes": 20604,
+      "sha256": "e905ce6c82f04daf5c2a472e5f3a2ec5b01829d25ba38473a06837ea22a2809d",
+      "retained_path": "reports/p1-10-package-01.log"
+    },
+    {
+      "source": "build/verification/p1-10-render-review-package-01.json",
+      "bytes": 18792,
+      "sha256": "c1b3df8e6c2f2b18e43d2fe851bdaa7db2c27b0ee63dfe499ba78e80a1ff2a13",
+      "retained_path": "reports/p1-10-render-review-package-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-resize-graphite-package-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.gui.log",
+      "bytes": 1597,
+      "sha256": "27fd257be24c536301103b4d8cfc78cf28bbffa1a70af328416001c844f2bb82",
+      "retained_path": "reports/p1-10-resize-graphite-package-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-graphite-package-01.json",
+      "bytes": 6045,
+      "sha256": "119eeb52987d7f4e505d3997e8945839e06baad329fed453f143c6e48327a6ce",
+      "retained_path": "reports/p1-10-resize-graphite-package-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-resize-harbour-package-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.gui.log",
+      "bytes": 1596,
+      "sha256": "8ec2fcbfab3ae139f957b76e4d8818485a9aeaaba6a468ca2e95e30b1819a2c3",
+      "retained_path": "reports/p1-10-resize-harbour-package-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-harbour-package-01.json",
+      "bytes": 6040,
+      "sha256": "bff54a91e5be324fc4f45bdb34c6bcdf8fda6766b25aa1d0eb901f18642015f8",
+      "retained_path": "reports/p1-10-resize-harbour-package-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-resize-paper-package-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.gui.log",
+      "bytes": 1466,
+      "sha256": "b1a1c982e7a3427b5106aa41447b6ba0905056b51387f1e8a8314b8279c81744",
+      "retained_path": "reports/p1-10-resize-paper-package-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-resize-paper-package-01.json",
+      "bytes": 6032,
+      "sha256": "23c2b9dcb79d525211b6e6e4d6f91360319178fe0b8752f6cf137689ea6c6e3d",
+      "retained_path": "reports/p1-10-resize-paper-package-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-search-ingestion-package-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-search-ingestion-package-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-search-ingestion-package-01.gui.log",
+      "bytes": 1548,
+      "sha256": "2942a4debd896184af1a43353bbf992109b98326bcc812b5012c7c6edfe72bdb",
+      "retained_path": "reports/p1-10-search-ingestion-package-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-search-ingestion-package-01.ingestion.json",
+      "bytes": 105507,
+      "sha256": "f5487af7f3432bf90449dc51f8d7a2a8562e4c43c7475a2413af0ec845c82e57",
+      "retained_path": "reports/p1-10-search-ingestion-package-01.ingestion.json"
+    },
+    {
+      "source": "build/verification/p1-10-search-ingestion-package-01.json",
+      "bytes": 4779,
+      "sha256": "2415d97087e8d0688e9b5c41be43d51a0f44a71950c31e06e41b17fef20428ec",
+      "retained_path": "reports/p1-10-search-ingestion-package-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-actions-05.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-graphite-compact-actions-05.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-actions-05.gui.log",
+      "bytes": 1348,
+      "sha256": "10efc6c6434e404ec6aa595debac728eb74adc7aac8a8dcea2f7ba9d342d7ec7",
+      "retained_path": "reports/p1-10-visual-graphite-compact-actions-05.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-actions-05.gui.png",
+      "bytes": 265602,
+      "sha256": "61a373e193897c8bad214933e74eebe7ab38784387dd1543a0b2b6a91dc6ae6b",
+      "retained_path": "visuals/p1-10-visual-graphite-compact-actions-05.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-actions-05.json",
+      "bytes": 5320,
+      "sha256": "abf63cab9f3c718eba549cf8987a3b9276d7483a28ea97398c8db0d30f6a9c16",
+      "retained_path": "reports/p1-10-visual-graphite-compact-actions-05.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-actions-package-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-graphite-compact-actions-package-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-actions-package-01.gui.log",
+      "bytes": 1348,
+      "sha256": "837d884f92f6dc6b441001feda960ee38877eeb940e1f4396e18deeaa470a0e6",
+      "retained_path": "reports/p1-10-visual-graphite-compact-actions-package-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-actions-package-01.gui.png",
+      "bytes": 265950,
+      "sha256": "be88f4283082d3ec3e6d5c82ef2b1e5886a8acc5eeafa7c1789b0f359e224c48",
+      "retained_path": "visuals/p1-10-visual-graphite-compact-actions-package-01.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-actions-package-01.json",
+      "bytes": 6474,
+      "sha256": "7829b2df9924fea0e99e6a69e71b1abd402222629db5cfc1367c3e59508e5f75",
+      "retained_path": "reports/p1-10-visual-graphite-compact-actions-package-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-footer-package-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-graphite-compact-footer-package-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-footer-package-01.gui.log",
+      "bytes": 1348,
+      "sha256": "90a33037546fcf2346e3079f9d8cdb6fe219c814f75d81ee9e84691a0446c566",
+      "retained_path": "reports/p1-10-visual-graphite-compact-footer-package-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-footer-package-01.gui.png",
+      "bytes": 253789,
+      "sha256": "972c6ee70522698803202083f590a0171899e969f4875bc9a685d2a87e51ab35",
+      "retained_path": "visuals/p1-10-visual-graphite-compact-footer-package-01.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-compact-footer-package-01.json",
+      "bytes": 6736,
+      "sha256": "1f9b51b632a220eb47b2ed0a788781d99c975c8ffdab3b2e2d47f7590f363b0a",
+      "retained_path": "reports/p1-10-visual-graphite-compact-footer-package-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-regular-empty-package-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-graphite-regular-empty-package-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-regular-empty-package-01.gui.log",
+      "bytes": 1284,
+      "sha256": "d904ed7b22ea34d82e2d03ae777541132d7c8019bcb9c9dfd8842cb8c6e5b355",
+      "retained_path": "reports/p1-10-visual-graphite-regular-empty-package-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-regular-empty-package-01.gui.png",
+      "bytes": 453550,
+      "sha256": "1db1c330b17073087c2d9c63d46886a08b883b5f81eed0cee30004623ff5e18d",
+      "retained_path": "visuals/p1-10-visual-graphite-regular-empty-package-01.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-graphite-regular-empty-package-01.json",
+      "bytes": 6476,
+      "sha256": "c27649879999988989c5362b1637bbbe03e0a8693a5e359823073424d8527eaa",
+      "retained_path": "reports/p1-10-visual-graphite-regular-empty-package-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-actions-05.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-harbour-compact-actions-05.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-actions-05.gui.log",
+      "bytes": 1412,
+      "sha256": "a47c12f2b5c33593d5ec6d29870ce13d036fa8b9a89857270b96fc94bbd50b2f",
+      "retained_path": "reports/p1-10-visual-harbour-compact-actions-05.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-actions-05.gui.png",
+      "bytes": 267068,
+      "sha256": "84f97f6aea33bd1e0b6761b1d5f05cc23704a24c6f90baeacbd7e8389af62718",
+      "retained_path": "visuals/p1-10-visual-harbour-compact-actions-05.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-actions-05.json",
+      "bytes": 5318,
+      "sha256": "fe8d8d5462b344ebd7caa24a09b012ba0eb64b9b806d667f6d4a34f6baffaee6",
+      "retained_path": "reports/p1-10-visual-harbour-compact-actions-05.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-actions-package-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-harbour-compact-actions-package-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-actions-package-01.gui.log",
+      "bytes": 1348,
+      "sha256": "79de25f3687b7c0563257304dd4e00627d92ec6bc590c6a8ccacf493681e702a",
+      "retained_path": "reports/p1-10-visual-harbour-compact-actions-package-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-actions-package-01.gui.png",
+      "bytes": 267119,
+      "sha256": "496f0eca4e049b791d34b0b7950f9ea0385a2a43eedf5ae36b4094ac0410c76b",
+      "retained_path": "visuals/p1-10-visual-harbour-compact-actions-package-01.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-actions-package-01.json",
+      "bytes": 6470,
+      "sha256": "ca0cce4a4957298a9f5b89d84160e7fec153ace35b129c6d0ad5198668fa314b",
+      "retained_path": "reports/p1-10-visual-harbour-compact-actions-package-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-footer-package-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-harbour-compact-footer-package-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-footer-package-01.gui.log",
+      "bytes": 1348,
+      "sha256": "d0ee15e310da9904a09807c0584dd1c9554151f0d02098a4cc8853b4960a1bdd",
+      "retained_path": "reports/p1-10-visual-harbour-compact-footer-package-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-footer-package-01.gui.png",
+      "bytes": 255017,
+      "sha256": "825545759e728b06896ab153ee9a64e653941d2bd98087c55136fb808af53711",
+      "retained_path": "visuals/p1-10-visual-harbour-compact-footer-package-01.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-compact-footer-package-01.json",
+      "bytes": 6732,
+      "sha256": "947263977a47ef2b2c2ad2f6b27f42f9b839fadb21282000fa4c9f195b808da1",
+      "retained_path": "reports/p1-10-visual-harbour-compact-footer-package-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-regular-empty-package-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-harbour-regular-empty-package-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-regular-empty-package-01.gui.log",
+      "bytes": 1284,
+      "sha256": "1524a669f87b30ff7e63b90c3f25e7ac490ace032d7b1610a42a53f416c01508",
+      "retained_path": "reports/p1-10-visual-harbour-regular-empty-package-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-regular-empty-package-01.gui.png",
+      "bytes": 454651,
+      "sha256": "1438f2f9edb18751fa2fca431df79189466707d33b1011b7a6da5858260d74d7",
+      "retained_path": "visuals/p1-10-visual-harbour-regular-empty-package-01.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-harbour-regular-empty-package-01.json",
+      "bytes": 6471,
+      "sha256": "d2f349f1b4fbf056da5c7281502f6d8a94cd1de8aef53134a031867fe489e798",
+      "retained_path": "reports/p1-10-visual-harbour-regular-empty-package-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-actions-05.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-paper-compact-actions-05.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-actions-05.gui.log",
+      "bytes": 1348,
+      "sha256": "b509c19c15a9654f9436cb66b761da0887064f22cd174a84c6c91e92557a5678",
+      "retained_path": "reports/p1-10-visual-paper-compact-actions-05.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-actions-05.gui.png",
+      "bytes": 266650,
+      "sha256": "916abcaf81b2d0043c21a555a66d757cf8a0e5eb877c8b3d3fce5221b8d61f8c",
+      "retained_path": "visuals/p1-10-visual-paper-compact-actions-05.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-actions-05.json",
+      "bytes": 5310,
+      "sha256": "f0a52968a95e0520d65ddeb8e7729f7c416a51991d27b3fcb2941c07842a2878",
+      "retained_path": "reports/p1-10-visual-paper-compact-actions-05.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-actions-package-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-paper-compact-actions-package-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-actions-package-01.gui.log",
+      "bytes": 1412,
+      "sha256": "fb968af5e7ee0d4364b7ddfd65266bf7d2189fa12cbd91c6e6de6054268b3d75",
+      "retained_path": "reports/p1-10-visual-paper-compact-actions-package-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-actions-package-01.gui.png",
+      "bytes": 266657,
+      "sha256": "e16b54cd5a787e63d4dce0e64c6d1b92d18cc5f95f681ddd34d722236145753e",
+      "retained_path": "visuals/p1-10-visual-paper-compact-actions-package-01.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-actions-package-01.json",
+      "bytes": 6464,
+      "sha256": "bc5d92b37a53b1d6eac110872df28d2f7d79984acee7026d4a0f8ab4f664e4a4",
+      "retained_path": "reports/p1-10-visual-paper-compact-actions-package-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-footer-package-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-paper-compact-footer-package-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-footer-package-01.gui.log",
+      "bytes": 1348,
+      "sha256": "e203cb48e43a7e74cc67df69fb7946bab07efa654ffbda5a907914d6fb489090",
+      "retained_path": "reports/p1-10-visual-paper-compact-footer-package-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-footer-package-01.gui.png",
+      "bytes": 254327,
+      "sha256": "eec93a258c74f113a51387aa4927bf4af9c3878ff94707d120c0223cb7340596",
+      "retained_path": "visuals/p1-10-visual-paper-compact-footer-package-01.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-compact-footer-package-01.json",
+      "bytes": 6725,
+      "sha256": "91a554bc5019da01ac5b5dd6f61bc0744a0c9a15c0485a57602c7062657cd1fc",
+      "retained_path": "reports/p1-10-visual-paper-compact-footer-package-01.json"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-regular-empty-package-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "retained_path": "reports/p1-10-visual-paper-regular-empty-package-01.engine.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-regular-empty-package-01.gui.log",
+      "bytes": 1284,
+      "sha256": "b965d78d965288ed7a64ac7aed4259c13b74b079d23da3bbfb9e34d131ae785e",
+      "retained_path": "reports/p1-10-visual-paper-regular-empty-package-01.gui.log"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-regular-empty-package-01.gui.png",
+      "bytes": 455149,
+      "sha256": "0d4421a35b12b3611ee1180abeda95b4fa05574e1695c1d323919445a49b5449",
+      "retained_path": "visuals/p1-10-visual-paper-regular-empty-package-01.gui.png"
+    },
+    {
+      "source": "build/verification/p1-10-visual-paper-regular-empty-package-01.json",
+      "bytes": 6464,
+      "sha256": "ab31972144060232fd6fd2411b2bf1038fbbbbd5533d42caad188d4bd9769f04",
+      "retained_path": "reports/p1-10-visual-paper-regular-empty-package-01.json"
+    }
+  ]
+}

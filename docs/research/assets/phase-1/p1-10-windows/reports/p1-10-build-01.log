@@ -1,0 +1,60 @@
+Host: Windows-10-10.0.26200-SP0 AMD64
+Qt kit: C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64
+Source: C:\Users\Yegor\Projects\Fuckaround\fuckMail
++ "C:\Program Files\Git\cmd\git.EXE" --version
+git version 2.53.0.windows.1 at C:\Program Files\Git\cmd\git.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\rustc.EXE --version
+rustc 1.88.0 (6b00bc388 2025-06-23) at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\rustc.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.EXE --version
+cargo 1.88.0 (873a06493 2025-05-10) at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.EXE --version
+cmake version 3.31.6 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ninja.EXE --version
+1.11.1.git.kitware.jobserver-1 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ninja.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE --qt-version
+6.11.2 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE
+Native C++ compiler: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\cl.exe
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --preset release
+Preset CMake variables:
+
+  BUILD_TESTING:BOOL="TRUE"
+  CMAKE_BUILD_TYPE="Release"
+  CMAKE_EXPORT_COMPILE_COMMANDS:BOOL="TRUE"
+  CMAKE_PREFIX_PATH="C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64"
+
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Configuring done (1.3s)
+-- Generating done (0.4s)
+-- Build files have been written to: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --build --preset release --parallel
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `release` profile [optimized] target(s) in 26.17s
+[0/70] Build the shared Rust engine and CLI
+[6/62] Running qmlimportscanner for fuckmail-gui
+[8/62] Automatic MOC and UIC for target fuckmail-gui
+[9/61] Running AUTOMOC file extraction for target fuckmail-gui
+[10/32] Running rcc for resource fuckmail-gui_raw_qml_0
+[11/32] Generating .rcc/qmlcache/fuckmail-gui_Theme_qml.cpp, .rcc/qmlcache/fuckmail-gui_Theme_qml.cpp.aotstats
+[12/32] Generating .rcc/qmlcache/fuckmail-gui_FmButton_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmButton_qml.cpp.aotstats
+[13/32] Generating .rcc/qmlcache/fuckmail-gui_RecipientField_qml.cpp, .rcc/qmlcache/fuckmail-gui_RecipientField_qml.cpp.aotstats
+[14/32] Generating .rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp, .rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp.aotstats
+[15/32] Generating .rcc/qmlcache/fuckmail-gui_TodayStrip_qml.cpp, .rcc/qmlcache/fuckmail-gui_TodayStrip_qml.cpp.aotstats
+[16/32] Generating .rcc/qmlcache/fuckmail-gui_CalendarView_qml.cpp, .rcc/qmlcache/fuckmail-gui_CalendarView_qml.cpp.aotstats
+[17/32] Generating .rcc/qmlcache/fuckmail-gui_Main_qml.cpp, .rcc/qmlcache/fuckmail-gui_Main_qml.cpp.aotstats
+[18/32] Generating .rcc/qmlcache/fuckmail-gui_MailView_qml.cpp, .rcc/qmlcache/fuckmail-gui_MailView_qml.cpp.aotstats
+[19/32] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.qt\rcc\qrc_fuckmail-gui_raw_qml_0.cpp.obj
+[20/32] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_FmButton_qml.cpp.obj
+[21/32] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_RecipientField_qml.cpp.obj
+[22/32] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_Theme_qml.cpp.obj
+[23/32] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_Main_qml.cpp.obj
+[24/32] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_ReplyComposer_qml.cpp.obj
+[25/32] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_TodayStrip_qml.cpp.obj
+[26/32] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_CalendarView_qml.cpp.obj
+[27/32] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\MailBackend.cpp.obj
+[28/32] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiResizeBenchmark.cpp.obj
+[29/32] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_MailView_qml.cpp.obj
+[30/32] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\main.cpp.obj
+[31/32] Linking CXX executable fuckmail-gui.exe
+[32/32] C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\release && C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Lib\site-packages\cmake\data\bin\cmake.exe -E copy_if_different C:/Users/Yegor/Projects/Fuckaround/fuckMail/target/release/fm-engine.exe C:/Users/Yegor/Projects/Fuckaround/fuckMail/target/release/fm.exe C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release"

@@ -1,0 +1,8 @@
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ctest.exe --preset release -R gui-integration
+Test project C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release
+    Start 4: gui-integration
+1/1 Test #4: gui-integration ..................   Passed   53.66 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =  53.67 sec

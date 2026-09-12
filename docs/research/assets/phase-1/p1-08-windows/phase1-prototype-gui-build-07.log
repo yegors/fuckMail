@@ -1,0 +1,8 @@
+[1/52] Automatic MOC and UIC for target fuckmail-gui
+[2/51] Running AUTOMOC file extraction for target fuckmail-gui
+[3/8] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\Phase1Backend.cpp.obj
+[4/8] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\MailBackend.cpp.obj
+[5/8] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\main.cpp.obj
+[6/8] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiCompositionSelfTest.cpp.obj
+[7/8] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiSelfTest.cpp.obj
+[8/8] Linking CXX executable fuckmail-gui.exe

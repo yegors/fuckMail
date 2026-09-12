@@ -4,6 +4,8 @@ Evidence, alternatives and experiments organized by subject. This index is navig
 
 | Scope | Existing material | Build contract |
 | --- | --- | --- |
+| [Flight Progress v2 design](flight-progress-v2.md) | Exact HTML/export support files, source and browser review, confirmed changes and native Phase 1 adaptation | [Mail UI](../contracts/mail-ui.md), [Calendar](../contracts/calendar.md) |
+| [Phase 1 execution](phase-1-execution.md) | Active local slice, schema/fixture boundary, measured integration and acceptance gates | [Core](../contracts/core-storage.md), [Mail UI](../contracts/mail-ui.md), [Calendar](../contracts/calendar.md), [Quality](../contracts/quality.md) |
 | [Phase 0 execution](phase-0-execution.md) | Native experiment evidence and outstanding gates | [Quality](../contracts/quality.md) |
 | [Google feasibility execution](google-feasibility-execution.md) | Fake transport/auth/journal tests and live prerequisites | [Gmail](../contracts/gmail.md) |
 | [MIME feasibility execution](mime-feasibility-execution.md) | Shared parser/builder/capture and retained-content tests | [Mail UI](../contracts/mail-ui.md) |
@@ -21,7 +23,7 @@ Evidence, alternatives and experiments organized by subject. This index is navig
 | [exec-buddy product lessons](exec-buddy.md) | Source evidence for selected mail/calendar interactions and rejected carryovers | [Triage](../contracts/triage.md), [Calendar](../contracts/calendar.md) |
 | [CLI and local engine](cli-and-local-engine.md) | Headless access, shared process/state and lifecycle tradeoffs | [CLI](../contracts/cli.md), [Core](../contracts/core-storage.md) |
 | [Linux and distribution](linux-and-distribution.md) | Required distro matrix, runtime packaging and smooth GUI/CLI installation | [Platform](../contracts/platform.md) |
-| [Supplied mockups](design-references.md) | Current initial-phase mail/calendar/settings trio; settings plumbing only; earlier pair and three mood references retained | [Mail UI](../contracts/mail-ui.md) |
+| [Supplied mockups](design-references.md) | Historical Phase 0 PNG trio, earlier pair and mood references; superseded visually by Flight Progress v2 | [Mail UI](../contracts/mail-ui.md) |
 
 Near-term research was expanded on 2026-09-11 for OAuth longevity/Workspace policy, Rust mail/calendar library candidates, Qt reader/composer limits, private IPC, SQLite/blob durability and clean installation. Named libraries and test recipes remain proposals; no implementation or live integration result is implied.
 

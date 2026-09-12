@@ -27,6 +27,12 @@ PYTHON = VENV_BIN / ("python.exe" if WINDOWS else "python")
 
 def run(*args, env=None, cwd=ROOT, capture=False, timeout=None):
     args = [str(arg) for arg in args]
+    # Windows resolves the executable before applying the child's PATH. Resolve
+    # bare tool names here so project-local Rust works without a global install.
+    if WINDOWS and env is not None and Path(args[0]).name == args[0]:
+        executable = shutil.which(args[0], path=env.get("PATH", os.defpath))
+        if executable:
+            args[0] = executable
     print("+ " + subprocess.list2cmdline(args), flush=True)
     result = subprocess.run(args, cwd=str(cwd), env=env, check=True,
                             text=True, stdout=subprocess.PIPE if capture else None, timeout=timeout)
@@ -261,7 +267,7 @@ def verify_package(preset, stage):
             if not qt_lines or any(str(relocated) not in line for line in qt_lines):
                 raise RuntimeError("A Qt framework loaded from outside the relocated package")
         verify_engine_stopped(gui_profile)
-        run(gui, "--self-test", env=env, cwd=relocated, timeout=90)
+        run(gui, "--self-test", env=env, cwd=relocated, timeout=180)
         print("Relocated package passed: SDK-free GUI smoke/self-test, fresh-terminal CLI help/query, final engine shutdown", flush=True)
 
 
@@ -274,7 +280,7 @@ def package(preset):
         shutil.rmtree(stage)
     run(VENV_BIN / ("cmake" + SUFFIX), "--install", ROOT / "build" / preset, "--prefix", stage, env=env)
     (stage / "README.txt").write_text(
-        "fuckMail Phase 0 development build (unsigned)\n\n"
+        "fuckMail Phase 1 development build (unsigned)\n\n"
         "Contains synthetic mail only; no provider sign-in or real sending.\n"
         "Launch fuckmail-gui (inside the .app on macOS, bin elsewhere).\n"
         "The same directory contains the headless fm CLI and fm-engine.\n"

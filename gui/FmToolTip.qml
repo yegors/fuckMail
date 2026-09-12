@@ -3,13 +3,15 @@ import QtQuick.Controls
 ToolTip {
     id: tooltip
     delay: 600
-    padding: 8
+    padding: 10
+    implicitWidth: Math.min(400, contentItem.implicitWidth + leftPadding + rightPadding)
     contentItem: Text {
         text: tooltip.text
         textFormat: Text.PlainText
         color: Theme.text
-        font.pixelSize: 11
+        font.family: Theme.fontFamily
+        font.pixelSize: Theme.fontSize(11)
         wrapMode: Text.Wrap
     }
-    background: Rectangle { color: Theme.hover; radius: 4; border.color: Theme.line }
+    background: Rectangle { color: Theme.surface; radius: 5; border.color: Theme.controlBorder }
 }

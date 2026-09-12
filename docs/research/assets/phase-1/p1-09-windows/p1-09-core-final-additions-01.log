@@ -1,0 +1,14 @@
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+    Finished `release` profile [optimized] target(s) in 44.50s
+     Running unittests src\lib.rs (target\release\deps\fm_core-dabc8292e4ba1c10.exe)
+
+running 6 tests
+test sender_kind_tests::collapsed_groups_page_expanded_rows_without_changing_full_filter_counts ... ok
+test sender_kind_tests::explicit_fixture_roles_and_filtered_counts_are_independent_of_the_page ... ok
+test sender_kind_tests::calendar_generation_tracks_actual_calendar_writes_but_not_appearance_or_mail ... ok
+test sender_kind_tests::schema6_migration_keeps_old_profiles_receipts_and_sources_unclassified ... ok
+test sender_kind_tests::latest_incoming_kind_is_source_bound_and_invalidates_cached_filters_and_cursors ... ok
+test sender_kind_tests::sender_history_uses_exact_identity_full_counts_and_actual_recent_instants_without_reviewing ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 6.02s
+

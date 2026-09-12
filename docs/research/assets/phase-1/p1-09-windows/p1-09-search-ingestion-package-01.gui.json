@@ -1,0 +1,2248 @@
+{
+    "architecture": "x86_64",
+    "boundary": "Final QML target input event to directly timestamped frameSwapped; frame generation captured afterSynchronizing and afterRendering must match the armed replacement model. Includes debounce, engine queue, IPC and rendering.",
+    "budget_passed": true,
+    "error": "",
+    "host": "Windows 11 Version 25H2",
+    "limits": "Retained synthetic 100k index-density fixture, including retained ingest-* contention rows when present; warm OS cache; no model inference. Source-ingestion overlap is not inferred from latency: sample wall-clock windows must be compared with the separately recorded engine ingestion workload.",
+    "p95_budget_ms": 200,
+    "qt_version": "6.11.2",
+    "queries": [
+        {
+            "class": "rare subject",
+            "expected_first_page_ids": [
+                "benchmark-windscribe-thread-090000",
+                "benchmark-windscribe-thread-080000",
+                "benchmark-windscribe-thread-070000",
+                "benchmark-windscribe-thread-060000",
+                "benchmark-windscribe-thread-050000",
+                "benchmark-windscribe-thread-040000",
+                "benchmark-windscribe-thread-030000",
+                "benchmark-windscribe-thread-020000",
+                "benchmark-windscribe-thread-010000",
+                "benchmark-windscribe-thread-000000"
+            ],
+            "identity_oracle": "Deterministic generated rare-query IDs sorted by fixture date and ID",
+            "input_to_model_p95_ms": 67.4249,
+            "max_ms": 73.9305,
+            "model_to_paint_p95_ms": 3.3381,
+            "observations": 100,
+            "p50_ms": 52.7036,
+            "p95_ms": 70.181,
+            "p99_ms": 73.9305,
+            "sample_windows": [
+                {
+                    "input_to_paint_ms": 51.6125,
+                    "input_unix_ms": 1789205422496,
+                    "paint_unix_ms": 1789205422547.6125
+                },
+                {
+                    "input_to_paint_ms": 46.126,
+                    "input_unix_ms": 1789205422612,
+                    "paint_unix_ms": 1789205422658.126
+                },
+                {
+                    "input_to_paint_ms": 58.2838,
+                    "input_unix_ms": 1789205422716,
+                    "paint_unix_ms": 1789205422774.2837
+                },
+                {
+                    "input_to_paint_ms": 45.328,
+                    "input_unix_ms": 1789205422848,
+                    "paint_unix_ms": 1789205422893.328
+                },
+                {
+                    "input_to_paint_ms": 59.9153,
+                    "input_unix_ms": 1789205422953,
+                    "paint_unix_ms": 1789205423012.9153
+                },
+                {
+                    "input_to_paint_ms": 44.0902,
+                    "input_unix_ms": 1789205423077,
+                    "paint_unix_ms": 1789205423121.09
+                },
+                {
+                    "input_to_paint_ms": 52.997,
+                    "input_unix_ms": 1789205423178,
+                    "paint_unix_ms": 1789205423230.997
+                },
+                {
+                    "input_to_paint_ms": 50.3819,
+                    "input_unix_ms": 1789205423307,
+                    "paint_unix_ms": 1789205423357.3818
+                },
+                {
+                    "input_to_paint_ms": 60.6912,
+                    "input_unix_ms": 1789205423417,
+                    "paint_unix_ms": 1789205423477.6912
+                },
+                {
+                    "input_to_paint_ms": 47.1687,
+                    "input_unix_ms": 1789205423537,
+                    "paint_unix_ms": 1789205423584.1687
+                },
+                {
+                    "input_to_paint_ms": 55.5171,
+                    "input_unix_ms": 1789205423646,
+                    "paint_unix_ms": 1789205423701.517
+                },
+                {
+                    "input_to_paint_ms": 65.008,
+                    "input_unix_ms": 1789205423762,
+                    "paint_unix_ms": 1789205423827.008
+                },
+                {
+                    "input_to_paint_ms": 61.8497,
+                    "input_unix_ms": 1789205423888,
+                    "paint_unix_ms": 1789205423949.8496
+                },
+                {
+                    "input_to_paint_ms": 50.7551,
+                    "input_unix_ms": 1789205424012,
+                    "paint_unix_ms": 1789205424062.7551
+                },
+                {
+                    "input_to_paint_ms": 58.1205,
+                    "input_unix_ms": 1789205424124,
+                    "paint_unix_ms": 1789205424182.1206
+                },
+                {
+                    "input_to_paint_ms": 52.739,
+                    "input_unix_ms": 1789205424243,
+                    "paint_unix_ms": 1789205424295.739
+                },
+                {
+                    "input_to_paint_ms": 60.9982,
+                    "input_unix_ms": 1789205424358,
+                    "paint_unix_ms": 1789205424418.9983
+                },
+                {
+                    "input_to_paint_ms": 52.4404,
+                    "input_unix_ms": 1789205424481,
+                    "paint_unix_ms": 1789205424533.4404
+                },
+                {
+                    "input_to_paint_ms": 49.7818,
+                    "input_unix_ms": 1789205424609,
+                    "paint_unix_ms": 1789205424658.7817
+                },
+                {
+                    "input_to_paint_ms": 48.5012,
+                    "input_unix_ms": 1789205424719,
+                    "paint_unix_ms": 1789205424767.5012
+                },
+                {
+                    "input_to_paint_ms": 55.4604,
+                    "input_unix_ms": 1789205424855,
+                    "paint_unix_ms": 1789205424910.4604
+                },
+                {
+                    "input_to_paint_ms": 54.267,
+                    "input_unix_ms": 1789205424974,
+                    "paint_unix_ms": 1789205425028.267
+                },
+                {
+                    "input_to_paint_ms": 55.9469,
+                    "input_unix_ms": 1789205425095,
+                    "paint_unix_ms": 1789205425150.947
+                },
+                {
+                    "input_to_paint_ms": 48.7787,
+                    "input_unix_ms": 1789205425206,
+                    "paint_unix_ms": 1789205425254.7788
+                },
+                {
+                    "input_to_paint_ms": 49.8746,
+                    "input_unix_ms": 1789205425325,
+                    "paint_unix_ms": 1789205425374.8745
+                },
+                {
+                    "input_to_paint_ms": 51.6759,
+                    "input_unix_ms": 1789205425441,
+                    "paint_unix_ms": 1789205425492.6758
+                },
+                {
+                    "input_to_paint_ms": 48.8272,
+                    "input_unix_ms": 1789205425557,
+                    "paint_unix_ms": 1789205425605.8271
+                },
+                {
+                    "input_to_paint_ms": 47.7173,
+                    "input_unix_ms": 1789205425666,
+                    "paint_unix_ms": 1789205425713.7173
+                },
+                {
+                    "input_to_paint_ms": 73.9305,
+                    "input_unix_ms": 1789205425782,
+                    "paint_unix_ms": 1789205425855.9304
+                },
+                {
+                    "input_to_paint_ms": 47.8522,
+                    "input_unix_ms": 1789205425917,
+                    "paint_unix_ms": 1789205425964.8523
+                },
+                {
+                    "input_to_paint_ms": 53.2043,
+                    "input_unix_ms": 1789205426041,
+                    "paint_unix_ms": 1789205426094.2043
+                },
+                {
+                    "input_to_paint_ms": 51.0682,
+                    "input_unix_ms": 1789205426155,
+                    "paint_unix_ms": 1789205426206.068
+                },
+                {
+                    "input_to_paint_ms": 53.4308,
+                    "input_unix_ms": 1789205426273,
+                    "paint_unix_ms": 1789205426326.431
+                },
+                {
+                    "input_to_paint_ms": 50.9067,
+                    "input_unix_ms": 1789205426390,
+                    "paint_unix_ms": 1789205426440.9067
+                },
+                {
+                    "input_to_paint_ms": 45.0418,
+                    "input_unix_ms": 1789205426515,
+                    "paint_unix_ms": 1789205426560.0417
+                },
+                {
+                    "input_to_paint_ms": 46.5944,
+                    "input_unix_ms": 1789205426618,
+                    "paint_unix_ms": 1789205426664.5945
+                },
+                {
+                    "input_to_paint_ms": 50.2252,
+                    "input_unix_ms": 1789205426732,
+                    "paint_unix_ms": 1789205426782.225
+                },
+                {
+                    "input_to_paint_ms": 55.0613,
+                    "input_unix_ms": 1789205426858,
+                    "paint_unix_ms": 1789205426913.0613
+                },
+                {
+                    "input_to_paint_ms": 48.3929,
+                    "input_unix_ms": 1789205426985,
+                    "paint_unix_ms": 1789205427033.3928
+                },
+                {
+                    "input_to_paint_ms": 52.1271,
+                    "input_unix_ms": 1789205427099,
+                    "paint_unix_ms": 1789205427151.1272
+                },
+                {
+                    "input_to_paint_ms": 49.436,
+                    "input_unix_ms": 1789205427221,
+                    "paint_unix_ms": 1789205427270.436
+                },
+                {
+                    "input_to_paint_ms": 46.6159,
+                    "input_unix_ms": 1789205427337,
+                    "paint_unix_ms": 1789205427383.616
+                },
+                {
+                    "input_to_paint_ms": 51.786,
+                    "input_unix_ms": 1789205427450,
+                    "paint_unix_ms": 1789205427501.786
+                },
+                {
+                    "input_to_paint_ms": 45.7026,
+                    "input_unix_ms": 1789205427559,
+                    "paint_unix_ms": 1789205427604.7026
+                },
+                {
+                    "input_to_paint_ms": 56.6582,
+                    "input_unix_ms": 1789205427662,
+                    "paint_unix_ms": 1789205427718.6582
+                },
+                {
+                    "input_to_paint_ms": 58.2718,
+                    "input_unix_ms": 1789205427810,
+                    "paint_unix_ms": 1789205427868.2717
+                },
+                {
+                    "input_to_paint_ms": 62.8812,
+                    "input_unix_ms": 1789205427927,
+                    "paint_unix_ms": 1789205427989.881
+                },
+                {
+                    "input_to_paint_ms": 51.1721,
+                    "input_unix_ms": 1789205428057,
+                    "paint_unix_ms": 1789205428108.172
+                },
+                {
+                    "input_to_paint_ms": 51.1303,
+                    "input_unix_ms": 1789205428185,
+                    "paint_unix_ms": 1789205428236.1304
+                },
+                {
+                    "input_to_paint_ms": 53.0989,
+                    "input_unix_ms": 1789205428298,
+                    "paint_unix_ms": 1789205428351.0989
+                },
+                {
+                    "input_to_paint_ms": 59.8111,
+                    "input_unix_ms": 1789205428411,
+                    "paint_unix_ms": 1789205428470.811
+                },
+                {
+                    "input_to_paint_ms": 57.9269,
+                    "input_unix_ms": 1789205428535,
+                    "paint_unix_ms": 1789205428592.927
+                },
+                {
+                    "input_to_paint_ms": 50.9813,
+                    "input_unix_ms": 1789205428662,
+                    "paint_unix_ms": 1789205428712.9812
+                },
+                {
+                    "input_to_paint_ms": 69.754,
+                    "input_unix_ms": 1789205428770,
+                    "paint_unix_ms": 1789205428839.754
+                },
+                {
+                    "input_to_paint_ms": 56.8755,
+                    "input_unix_ms": 1789205428901,
+                    "paint_unix_ms": 1789205428957.8755
+                },
+                {
+                    "input_to_paint_ms": 48.8577,
+                    "input_unix_ms": 1789205429021,
+                    "paint_unix_ms": 1789205429069.8577
+                },
+                {
+                    "input_to_paint_ms": 64.1666,
+                    "input_unix_ms": 1789205429136,
+                    "paint_unix_ms": 1789205429200.1665
+                },
+                {
+                    "input_to_paint_ms": 53.8896,
+                    "input_unix_ms": 1789205429267,
+                    "paint_unix_ms": 1789205429320.8896
+                },
+                {
+                    "input_to_paint_ms": 54.8634,
+                    "input_unix_ms": 1789205429383,
+                    "paint_unix_ms": 1789205429437.8633
+                },
+                {
+                    "input_to_paint_ms": 52.7036,
+                    "input_unix_ms": 1789205429511,
+                    "paint_unix_ms": 1789205429563.7036
+                },
+                {
+                    "input_to_paint_ms": 53.6855,
+                    "input_unix_ms": 1789205429629,
+                    "paint_unix_ms": 1789205429682.6855
+                },
+                {
+                    "input_to_paint_ms": 71.5967,
+                    "input_unix_ms": 1789205429749,
+                    "paint_unix_ms": 1789205429820.5967
+                },
+                {
+                    "input_to_paint_ms": 48.2692,
+                    "input_unix_ms": 1789205429896,
+                    "paint_unix_ms": 1789205429944.2693
+                },
+                {
+                    "input_to_paint_ms": 53.6678,
+                    "input_unix_ms": 1789205430014,
+                    "paint_unix_ms": 1789205430067.6677
+                },
+                {
+                    "input_to_paint_ms": 53.5348,
+                    "input_unix_ms": 1789205430131,
+                    "paint_unix_ms": 1789205430184.535
+                },
+                {
+                    "input_to_paint_ms": 47.5022,
+                    "input_unix_ms": 1789205430256,
+                    "paint_unix_ms": 1789205430303.5022
+                },
+                {
+                    "input_to_paint_ms": 48.2179,
+                    "input_unix_ms": 1789205430360,
+                    "paint_unix_ms": 1789205430408.218
+                },
+                {
+                    "input_to_paint_ms": 50.4975,
+                    "input_unix_ms": 1789205430477,
+                    "paint_unix_ms": 1789205430527.4976
+                },
+                {
+                    "input_to_paint_ms": 48.7934,
+                    "input_unix_ms": 1789205430586,
+                    "paint_unix_ms": 1789205430634.7935
+                },
+                {
+                    "input_to_paint_ms": 49.2717,
+                    "input_unix_ms": 1789205430707,
+                    "paint_unix_ms": 1789205430756.2717
+                },
+                {
+                    "input_to_paint_ms": 48.4249,
+                    "input_unix_ms": 1789205430836,
+                    "paint_unix_ms": 1789205430884.4248
+                },
+                {
+                    "input_to_paint_ms": 50.5977,
+                    "input_unix_ms": 1789205430958,
+                    "paint_unix_ms": 1789205431008.5977
+                },
+                {
+                    "input_to_paint_ms": 48.9525,
+                    "input_unix_ms": 1789205431068,
+                    "paint_unix_ms": 1789205431116.9524
+                },
+                {
+                    "input_to_paint_ms": 54.8802,
+                    "input_unix_ms": 1789205431197,
+                    "paint_unix_ms": 1789205431251.8801
+                },
+                {
+                    "input_to_paint_ms": 47.1716,
+                    "input_unix_ms": 1789205431321,
+                    "paint_unix_ms": 1789205431368.1716
+                },
+                {
+                    "input_to_paint_ms": 62.6199,
+                    "input_unix_ms": 1789205431429,
+                    "paint_unix_ms": 1789205431491.6199
+                },
+                {
+                    "input_to_paint_ms": 48.7825,
+                    "input_unix_ms": 1789205431556,
+                    "paint_unix_ms": 1789205431604.7825
+                },
+                {
+                    "input_to_paint_ms": 53.3399,
+                    "input_unix_ms": 1789205431662,
+                    "paint_unix_ms": 1789205431715.3398
+                },
+                {
+                    "input_to_paint_ms": 61.954,
+                    "input_unix_ms": 1789205431789,
+                    "paint_unix_ms": 1789205431850.954
+                },
+                {
+                    "input_to_paint_ms": 64.1232,
+                    "input_unix_ms": 1789205431913,
+                    "paint_unix_ms": 1789205431977.1233
+                },
+                {
+                    "input_to_paint_ms": 46.7589,
+                    "input_unix_ms": 1789205432041,
+                    "paint_unix_ms": 1789205432087.7588
+                },
+                {
+                    "input_to_paint_ms": 62.4427,
+                    "input_unix_ms": 1789205432146,
+                    "paint_unix_ms": 1789205432208.4426
+                },
+                {
+                    "input_to_paint_ms": 55.8821,
+                    "input_unix_ms": 1789205432271,
+                    "paint_unix_ms": 1789205432326.882
+                },
+                {
+                    "input_to_paint_ms": 72.738,
+                    "input_unix_ms": 1789205432390,
+                    "paint_unix_ms": 1789205432462.738
+                },
+                {
+                    "input_to_paint_ms": 48.163,
+                    "input_unix_ms": 1789205432534,
+                    "paint_unix_ms": 1789205432582.163
+                },
+                {
+                    "input_to_paint_ms": 64.7407,
+                    "input_unix_ms": 1789205432650,
+                    "paint_unix_ms": 1789205432714.7407
+                },
+                {
+                    "input_to_paint_ms": 70.181,
+                    "input_unix_ms": 1789205432783,
+                    "paint_unix_ms": 1789205432853.181
+                },
+                {
+                    "input_to_paint_ms": 55.5332,
+                    "input_unix_ms": 1789205432917,
+                    "paint_unix_ms": 1789205432972.5332
+                },
+                {
+                    "input_to_paint_ms": 49.0519,
+                    "input_unix_ms": 1789205433039,
+                    "paint_unix_ms": 1789205433088.052
+                },
+                {
+                    "input_to_paint_ms": 73.3059,
+                    "input_unix_ms": 1789205433150,
+                    "paint_unix_ms": 1789205433223.306
+                },
+                {
+                    "input_to_paint_ms": 49.2723,
+                    "input_unix_ms": 1789205433287,
+                    "paint_unix_ms": 1789205433336.2722
+                },
+                {
+                    "input_to_paint_ms": 51.8093,
+                    "input_unix_ms": 1789205433400,
+                    "paint_unix_ms": 1789205433451.8093
+                },
+                {
+                    "input_to_paint_ms": 53.845,
+                    "input_unix_ms": 1789205433522,
+                    "paint_unix_ms": 1789205433575.845
+                },
+                {
+                    "input_to_paint_ms": 52.4418,
+                    "input_unix_ms": 1789205433635,
+                    "paint_unix_ms": 1789205433687.442
+                },
+                {
+                    "input_to_paint_ms": 62.8288,
+                    "input_unix_ms": 1789205433761,
+                    "paint_unix_ms": 1789205433823.8289
+                },
+                {
+                    "input_to_paint_ms": 53.8767,
+                    "input_unix_ms": 1789205433885,
+                    "paint_unix_ms": 1789205433938.8767
+                },
+                {
+                    "input_to_paint_ms": 54.6715,
+                    "input_unix_ms": 1789205434011,
+                    "paint_unix_ms": 1789205434065.6714
+                },
+                {
+                    "input_to_paint_ms": 50.6153,
+                    "input_unix_ms": 1789205434125,
+                    "paint_unix_ms": 1789205434175.6152
+                },
+                {
+                    "input_to_paint_ms": 56.073,
+                    "input_unix_ms": 1789205434248,
+                    "paint_unix_ms": 1789205434304.073
+                },
+                {
+                    "input_to_paint_ms": 47.8228,
+                    "input_unix_ms": 1789205434369,
+                    "paint_unix_ms": 1789205434416.8228
+                }
+            ],
+            "target_model_replacements": 100,
+            "unmeasured_empty_reset_paints": 100
+        },
+        {
+            "class": "rare body",
+            "expected_first_page_ids": [
+                "benchmark-windscribe-thread-013958",
+                "benchmark-windscribe-thread-035892",
+                "benchmark-windscribe-thread-057826",
+                "benchmark-windscribe-thread-079760",
+                "benchmark-windscribe-thread-093718",
+                "benchmark-windscribe-thread-005982",
+                "benchmark-windscribe-thread-027916",
+                "benchmark-windscribe-thread-049850",
+                "benchmark-windscribe-thread-071784",
+                "benchmark-windscribe-thread-019940",
+                "benchmark-windscribe-thread-041874",
+                "benchmark-windscribe-thread-063808",
+                "benchmark-windscribe-thread-085742",
+                "benchmark-windscribe-thread-011964",
+                "benchmark-windscribe-thread-033898",
+                "benchmark-windscribe-thread-055832",
+                "benchmark-windscribe-thread-077766",
+                "benchmark-windscribe-thread-099700",
+                "benchmark-windscribe-thread-069790",
+                "benchmark-windscribe-thread-091724",
+                "benchmark-windscribe-thread-003988",
+                "benchmark-windscribe-thread-025922",
+                "benchmark-windscribe-thread-047856",
+                "benchmark-windscribe-thread-017946",
+                "benchmark-windscribe-thread-039880",
+                "benchmark-windscribe-thread-061814",
+                "benchmark-windscribe-thread-083748",
+                "benchmark-windscribe-thread-009970",
+                "benchmark-windscribe-thread-031904",
+                "benchmark-windscribe-thread-053838",
+                "benchmark-windscribe-thread-075772",
+                "benchmark-windscribe-thread-097706",
+                "benchmark-windscribe-thread-045862",
+                "benchmark-windscribe-thread-067796",
+                "benchmark-windscribe-thread-089730",
+                "benchmark-windscribe-thread-001994",
+                "benchmark-windscribe-thread-023928",
+                "benchmark-windscribe-thread-015952",
+                "benchmark-windscribe-thread-037886",
+                "benchmark-windscribe-thread-059820",
+                "benchmark-windscribe-thread-081754",
+                "benchmark-windscribe-thread-007976",
+                "benchmark-windscribe-thread-029910",
+                "benchmark-windscribe-thread-051844",
+                "benchmark-windscribe-thread-073778",
+                "benchmark-windscribe-thread-095712",
+                "benchmark-windscribe-thread-021934",
+                "benchmark-windscribe-thread-043868",
+                "benchmark-windscribe-thread-065802",
+                "benchmark-windscribe-thread-087736"
+            ],
+            "identity_oracle": "Deterministic generated rare-query IDs sorted by fixture date and ID",
+            "input_to_model_p95_ms": 73.0922,
+            "max_ms": 101.8766,
+            "model_to_paint_p95_ms": 3.7552,
+            "observations": 100,
+            "p50_ms": 59.4841,
+            "p95_ms": 76.9568,
+            "p99_ms": 101.8766,
+            "sample_windows": [
+                {
+                    "input_to_paint_ms": 55.1932,
+                    "input_unix_ms": 1789205434614,
+                    "paint_unix_ms": 1789205434669.193
+                },
+                {
+                    "input_to_paint_ms": 92.1652,
+                    "input_unix_ms": 1789205434748,
+                    "paint_unix_ms": 1789205434840.1653
+                },
+                {
+                    "input_to_paint_ms": 56.9034,
+                    "input_unix_ms": 1789205434908,
+                    "paint_unix_ms": 1789205434964.9033
+                },
+                {
+                    "input_to_paint_ms": 60.0602,
+                    "input_unix_ms": 1789205435039,
+                    "paint_unix_ms": 1789205435099.0603
+                },
+                {
+                    "input_to_paint_ms": 61.7456,
+                    "input_unix_ms": 1789205435159,
+                    "paint_unix_ms": 1789205435220.7456
+                },
+                {
+                    "input_to_paint_ms": 64.1143,
+                    "input_unix_ms": 1789205435298,
+                    "paint_unix_ms": 1789205435362.1143
+                },
+                {
+                    "input_to_paint_ms": 58.1128,
+                    "input_unix_ms": 1789205435427,
+                    "paint_unix_ms": 1789205435485.1128
+                },
+                {
+                    "input_to_paint_ms": 58.3571,
+                    "input_unix_ms": 1789205435556,
+                    "paint_unix_ms": 1789205435614.3572
+                },
+                {
+                    "input_to_paint_ms": 57.21,
+                    "input_unix_ms": 1789205435677,
+                    "paint_unix_ms": 1789205435734.21
+                },
+                {
+                    "input_to_paint_ms": 67.2619,
+                    "input_unix_ms": 1789205435812,
+                    "paint_unix_ms": 1789205435879.262
+                },
+                {
+                    "input_to_paint_ms": 54.0617,
+                    "input_unix_ms": 1789205435950,
+                    "paint_unix_ms": 1789205436004.0618
+                },
+                {
+                    "input_to_paint_ms": 60.3031,
+                    "input_unix_ms": 1789205436077,
+                    "paint_unix_ms": 1789205436137.303
+                },
+                {
+                    "input_to_paint_ms": 55.526,
+                    "input_unix_ms": 1789205436204,
+                    "paint_unix_ms": 1789205436259.526
+                },
+                {
+                    "input_to_paint_ms": 56.9124,
+                    "input_unix_ms": 1789205436336,
+                    "paint_unix_ms": 1789205436392.9124
+                },
+                {
+                    "input_to_paint_ms": 54.931,
+                    "input_unix_ms": 1789205436458,
+                    "paint_unix_ms": 1789205436512.931
+                },
+                {
+                    "input_to_paint_ms": 59.6993,
+                    "input_unix_ms": 1789205436586,
+                    "paint_unix_ms": 1789205436645.6992
+                },
+                {
+                    "input_to_paint_ms": 61.7686,
+                    "input_unix_ms": 1789205436715,
+                    "paint_unix_ms": 1789205436776.7686
+                },
+                {
+                    "input_to_paint_ms": 63.8294,
+                    "input_unix_ms": 1789205436860,
+                    "paint_unix_ms": 1789205436923.8293
+                },
+                {
+                    "input_to_paint_ms": 58.8705,
+                    "input_unix_ms": 1789205436989,
+                    "paint_unix_ms": 1789205437047.8706
+                },
+                {
+                    "input_to_paint_ms": 61.7959,
+                    "input_unix_ms": 1789205437126,
+                    "paint_unix_ms": 1789205437187.796
+                },
+                {
+                    "input_to_paint_ms": 57.1988,
+                    "input_unix_ms": 1789205437255,
+                    "paint_unix_ms": 1789205437312.1987
+                },
+                {
+                    "input_to_paint_ms": 54.5913,
+                    "input_unix_ms": 1789205437397,
+                    "paint_unix_ms": 1789205437451.5913
+                },
+                {
+                    "input_to_paint_ms": 60.7305,
+                    "input_unix_ms": 1789205437521,
+                    "paint_unix_ms": 1789205437581.7305
+                },
+                {
+                    "input_to_paint_ms": 71.6403,
+                    "input_unix_ms": 1789205437653,
+                    "paint_unix_ms": 1789205437724.6404
+                },
+                {
+                    "input_to_paint_ms": 61.403,
+                    "input_unix_ms": 1789205437820,
+                    "paint_unix_ms": 1789205437881.403
+                },
+                {
+                    "input_to_paint_ms": 55.5369,
+                    "input_unix_ms": 1789205437950,
+                    "paint_unix_ms": 1789205438005.5369
+                },
+                {
+                    "input_to_paint_ms": 54.0915,
+                    "input_unix_ms": 1789205438073,
+                    "paint_unix_ms": 1789205438127.0916
+                },
+                {
+                    "input_to_paint_ms": 58.2919,
+                    "input_unix_ms": 1789205438203,
+                    "paint_unix_ms": 1789205438261.292
+                },
+                {
+                    "input_to_paint_ms": 53.9532,
+                    "input_unix_ms": 1789205438326,
+                    "paint_unix_ms": 1789205438379.9531
+                },
+                {
+                    "input_to_paint_ms": 70.9332,
+                    "input_unix_ms": 1789205438439,
+                    "paint_unix_ms": 1789205438509.933
+                },
+                {
+                    "input_to_paint_ms": 61.8951,
+                    "input_unix_ms": 1789205438583,
+                    "paint_unix_ms": 1789205438644.895
+                },
+                {
+                    "input_to_paint_ms": 57.9397,
+                    "input_unix_ms": 1789205438721,
+                    "paint_unix_ms": 1789205438778.9397
+                },
+                {
+                    "input_to_paint_ms": 57.5957,
+                    "input_unix_ms": 1789205438861,
+                    "paint_unix_ms": 1789205438918.5957
+                },
+                {
+                    "input_to_paint_ms": 59.8397,
+                    "input_unix_ms": 1789205439001,
+                    "paint_unix_ms": 1789205439060.8396
+                },
+                {
+                    "input_to_paint_ms": 59.0318,
+                    "input_unix_ms": 1789205439130,
+                    "paint_unix_ms": 1789205439189.0317
+                },
+                {
+                    "input_to_paint_ms": 60.535,
+                    "input_unix_ms": 1789205439264,
+                    "paint_unix_ms": 1789205439324.535
+                },
+                {
+                    "input_to_paint_ms": 64.6666,
+                    "input_unix_ms": 1789205439389,
+                    "paint_unix_ms": 1789205439453.6665
+                },
+                {
+                    "input_to_paint_ms": 54.5971,
+                    "input_unix_ms": 1789205439529,
+                    "paint_unix_ms": 1789205439583.5972
+                },
+                {
+                    "input_to_paint_ms": 60.9694,
+                    "input_unix_ms": 1789205439653,
+                    "paint_unix_ms": 1789205439713.9695
+                },
+                {
+                    "input_to_paint_ms": 62.8264,
+                    "input_unix_ms": 1789205439783,
+                    "paint_unix_ms": 1789205439845.8264
+                },
+                {
+                    "input_to_paint_ms": 56.3571,
+                    "input_unix_ms": 1789205439913,
+                    "paint_unix_ms": 1789205439969.3572
+                },
+                {
+                    "input_to_paint_ms": 55.9627,
+                    "input_unix_ms": 1789205440044,
+                    "paint_unix_ms": 1789205440099.9626
+                },
+                {
+                    "input_to_paint_ms": 58.0262,
+                    "input_unix_ms": 1789205440166,
+                    "paint_unix_ms": 1789205440224.0261
+                },
+                {
+                    "input_to_paint_ms": 61.247,
+                    "input_unix_ms": 1789205440312,
+                    "paint_unix_ms": 1789205440373.247
+                },
+                {
+                    "input_to_paint_ms": 59.2468,
+                    "input_unix_ms": 1789205440440,
+                    "paint_unix_ms": 1789205440499.2468
+                },
+                {
+                    "input_to_paint_ms": 59.4841,
+                    "input_unix_ms": 1789205440579,
+                    "paint_unix_ms": 1789205440638.4841
+                },
+                {
+                    "input_to_paint_ms": 57.0024,
+                    "input_unix_ms": 1789205440699,
+                    "paint_unix_ms": 1789205440756.0024
+                },
+                {
+                    "input_to_paint_ms": 62.3929,
+                    "input_unix_ms": 1789205440835,
+                    "paint_unix_ms": 1789205440897.3928
+                },
+                {
+                    "input_to_paint_ms": 62.6017,
+                    "input_unix_ms": 1789205440964,
+                    "paint_unix_ms": 1789205441026.6018
+                },
+                {
+                    "input_to_paint_ms": 72.1946,
+                    "input_unix_ms": 1789205441092,
+                    "paint_unix_ms": 1789205441164.1946
+                },
+                {
+                    "input_to_paint_ms": 61.1949,
+                    "input_unix_ms": 1789205441229,
+                    "paint_unix_ms": 1789205441290.1948
+                },
+                {
+                    "input_to_paint_ms": 101.8766,
+                    "input_unix_ms": 1789205441368,
+                    "paint_unix_ms": 1789205441469.8767
+                },
+                {
+                    "input_to_paint_ms": 76.9568,
+                    "input_unix_ms": 1789205441559,
+                    "paint_unix_ms": 1789205441635.9568
+                },
+                {
+                    "input_to_paint_ms": 88.6979,
+                    "input_unix_ms": 1789205441712,
+                    "paint_unix_ms": 1789205441800.698
+                },
+                {
+                    "input_to_paint_ms": 71.7007,
+                    "input_unix_ms": 1789205441903,
+                    "paint_unix_ms": 1789205441974.7007
+                },
+                {
+                    "input_to_paint_ms": 64.6027,
+                    "input_unix_ms": 1789205442037,
+                    "paint_unix_ms": 1789205442101.6028
+                },
+                {
+                    "input_to_paint_ms": 58.9508,
+                    "input_unix_ms": 1789205442187,
+                    "paint_unix_ms": 1789205442245.9507
+                },
+                {
+                    "input_to_paint_ms": 65.4833,
+                    "input_unix_ms": 1789205442310,
+                    "paint_unix_ms": 1789205442375.4834
+                },
+                {
+                    "input_to_paint_ms": 62.3621,
+                    "input_unix_ms": 1789205442453,
+                    "paint_unix_ms": 1789205442515.362
+                },
+                {
+                    "input_to_paint_ms": 59.8166,
+                    "input_unix_ms": 1789205442581,
+                    "paint_unix_ms": 1789205442640.8167
+                },
+                {
+                    "input_to_paint_ms": 62.9427,
+                    "input_unix_ms": 1789205442717,
+                    "paint_unix_ms": 1789205442779.9426
+                },
+                {
+                    "input_to_paint_ms": 62.6372,
+                    "input_unix_ms": 1789205442862,
+                    "paint_unix_ms": 1789205442924.6372
+                },
+                {
+                    "input_to_paint_ms": 59.3608,
+                    "input_unix_ms": 1789205442999,
+                    "paint_unix_ms": 1789205443058.3608
+                },
+                {
+                    "input_to_paint_ms": 60.9225,
+                    "input_unix_ms": 1789205443129,
+                    "paint_unix_ms": 1789205443189.9226
+                },
+                {
+                    "input_to_paint_ms": 57.5328,
+                    "input_unix_ms": 1789205443266,
+                    "paint_unix_ms": 1789205443323.5327
+                },
+                {
+                    "input_to_paint_ms": 54.9339,
+                    "input_unix_ms": 1789205443386,
+                    "paint_unix_ms": 1789205443440.9338
+                },
+                {
+                    "input_to_paint_ms": 58.2105,
+                    "input_unix_ms": 1789205443513,
+                    "paint_unix_ms": 1789205443571.2104
+                },
+                {
+                    "input_to_paint_ms": 57.4228,
+                    "input_unix_ms": 1789205443636,
+                    "paint_unix_ms": 1789205443693.4229
+                },
+                {
+                    "input_to_paint_ms": 66.2834,
+                    "input_unix_ms": 1789205443765,
+                    "paint_unix_ms": 1789205443831.2834
+                },
+                {
+                    "input_to_paint_ms": 58.7286,
+                    "input_unix_ms": 1789205443902,
+                    "paint_unix_ms": 1789205443960.7285
+                },
+                {
+                    "input_to_paint_ms": 63.5795,
+                    "input_unix_ms": 1789205444041,
+                    "paint_unix_ms": 1789205444104.5796
+                },
+                {
+                    "input_to_paint_ms": 62.8537,
+                    "input_unix_ms": 1789205444167,
+                    "paint_unix_ms": 1789205444229.8538
+                },
+                {
+                    "input_to_paint_ms": 65.319,
+                    "input_unix_ms": 1789205444300,
+                    "paint_unix_ms": 1789205444365.319
+                },
+                {
+                    "input_to_paint_ms": 57.2174,
+                    "input_unix_ms": 1789205444432,
+                    "paint_unix_ms": 1789205444489.2173
+                },
+                {
+                    "input_to_paint_ms": 70.1169,
+                    "input_unix_ms": 1789205444565,
+                    "paint_unix_ms": 1789205444635.117
+                },
+                {
+                    "input_to_paint_ms": 56.4706,
+                    "input_unix_ms": 1789205444702,
+                    "paint_unix_ms": 1789205444758.4707
+                },
+                {
+                    "input_to_paint_ms": 77.6125,
+                    "input_unix_ms": 1789205444833,
+                    "paint_unix_ms": 1789205444910.6125
+                },
+                {
+                    "input_to_paint_ms": 55.1339,
+                    "input_unix_ms": 1789205444980,
+                    "paint_unix_ms": 1789205445035.1338
+                },
+                {
+                    "input_to_paint_ms": 60.0973,
+                    "input_unix_ms": 1789205445099,
+                    "paint_unix_ms": 1789205445159.0974
+                },
+                {
+                    "input_to_paint_ms": 59.3791,
+                    "input_unix_ms": 1789205445236,
+                    "paint_unix_ms": 1789205445295.3792
+                },
+                {
+                    "input_to_paint_ms": 59.3135,
+                    "input_unix_ms": 1789205445358,
+                    "paint_unix_ms": 1789205445417.3135
+                },
+                {
+                    "input_to_paint_ms": 57.0831,
+                    "input_unix_ms": 1789205445496,
+                    "paint_unix_ms": 1789205445553.083
+                },
+                {
+                    "input_to_paint_ms": 67.0733,
+                    "input_unix_ms": 1789205445619,
+                    "paint_unix_ms": 1789205445686.0732
+                },
+                {
+                    "input_to_paint_ms": 62.8761,
+                    "input_unix_ms": 1789205445765,
+                    "paint_unix_ms": 1789205445827.8762
+                },
+                {
+                    "input_to_paint_ms": 56.664,
+                    "input_unix_ms": 1789205445891,
+                    "paint_unix_ms": 1789205445947.664
+                },
+                {
+                    "input_to_paint_ms": 57.7774,
+                    "input_unix_ms": 1789205446023,
+                    "paint_unix_ms": 1789205446080.7773
+                },
+                {
+                    "input_to_paint_ms": 58.5446,
+                    "input_unix_ms": 1789205446154,
+                    "paint_unix_ms": 1789205446212.5447
+                },
+                {
+                    "input_to_paint_ms": 60.7895,
+                    "input_unix_ms": 1789205446287,
+                    "paint_unix_ms": 1789205446347.7896
+                },
+                {
+                    "input_to_paint_ms": 57.3798,
+                    "input_unix_ms": 1789205446416,
+                    "paint_unix_ms": 1789205446473.38
+                },
+                {
+                    "input_to_paint_ms": 53.998,
+                    "input_unix_ms": 1789205446548,
+                    "paint_unix_ms": 1789205446601.998
+                },
+                {
+                    "input_to_paint_ms": 63.2619,
+                    "input_unix_ms": 1789205446665,
+                    "paint_unix_ms": 1789205446728.262
+                },
+                {
+                    "input_to_paint_ms": 70.0736,
+                    "input_unix_ms": 1789205446821,
+                    "paint_unix_ms": 1789205446891.0735
+                },
+                {
+                    "input_to_paint_ms": 55.6851,
+                    "input_unix_ms": 1789205446958,
+                    "paint_unix_ms": 1789205447013.685
+                },
+                {
+                    "input_to_paint_ms": 58.9426,
+                    "input_unix_ms": 1789205447094,
+                    "paint_unix_ms": 1789205447152.9426
+                },
+                {
+                    "input_to_paint_ms": 55.0672,
+                    "input_unix_ms": 1789205447225,
+                    "paint_unix_ms": 1789205447280.0671
+                },
+                {
+                    "input_to_paint_ms": 62.8399,
+                    "input_unix_ms": 1789205447352,
+                    "paint_unix_ms": 1789205447414.8398
+                },
+                {
+                    "input_to_paint_ms": 56.4424,
+                    "input_unix_ms": 1789205447479,
+                    "paint_unix_ms": 1789205447535.4424
+                },
+                {
+                    "input_to_paint_ms": 58.6632,
+                    "input_unix_ms": 1789205447614,
+                    "paint_unix_ms": 1789205447672.663
+                },
+                {
+                    "input_to_paint_ms": 54.5006,
+                    "input_unix_ms": 1789205447743,
+                    "paint_unix_ms": 1789205447797.5005
+                },
+                {
+                    "input_to_paint_ms": 58.2522,
+                    "input_unix_ms": 1789205447891,
+                    "paint_unix_ms": 1789205447949.2522
+                }
+            ],
+            "target_model_replacements": 100,
+            "unmeasured_empty_reset_paints": 100
+        },
+        {
+            "class": "grouped first50",
+            "expected_first_page_ids": [
+                "ingest-000-00",
+                "ingest-000-01",
+                "ingest-000-02",
+                "ingest-000-03",
+                "ingest-000-04",
+                "ingest-000-05",
+                "ingest-000-06",
+                "ingest-000-07",
+                "ingest-000-08",
+                "ingest-000-09",
+                "ingest-000-10",
+                "ingest-000-11",
+                "ingest-000-12",
+                "ingest-000-13",
+                "ingest-000-14",
+                "ingest-000-15",
+                "ingest-000-16",
+                "ingest-000-17",
+                "ingest-000-18",
+                "ingest-000-19",
+                "ingest-000-20",
+                "ingest-000-21",
+                "ingest-000-22",
+                "ingest-000-23",
+                "ingest-000-24",
+                "ingest-001-00",
+                "ingest-001-01",
+                "ingest-001-02",
+                "ingest-001-03",
+                "ingest-001-04",
+                "ingest-001-05",
+                "ingest-001-06",
+                "ingest-001-07",
+                "ingest-001-08",
+                "ingest-001-09",
+                "ingest-001-10",
+                "ingest-001-11",
+                "ingest-001-12",
+                "ingest-001-13",
+                "ingest-001-14",
+                "ingest-001-15",
+                "ingest-001-16",
+                "ingest-001-17",
+                "ingest-001-18",
+                "ingest-001-19",
+                "ingest-001-20",
+                "ingest-001-21",
+                "ingest-001-22",
+                "ingest-001-23",
+                "ingest-001-24"
+            ],
+            "identity_oracle": "Fixture-domain-validated warmup first page; exact ordered IDs required on every measured replacement",
+            "input_to_model_p95_ms": 106.142,
+            "max_ms": 201.4869,
+            "model_to_paint_p95_ms": 3.2483,
+            "observations": 100,
+            "p50_ms": 91.2352,
+            "p95_ms": 110.3438,
+            "p99_ms": 201.4869,
+            "sample_windows": [
+                {
+                    "input_to_paint_ms": 90.6501,
+                    "input_unix_ms": 1789205448181,
+                    "paint_unix_ms": 1789205448271.6501
+                },
+                {
+                    "input_to_paint_ms": 91.9395,
+                    "input_unix_ms": 1789205448340,
+                    "paint_unix_ms": 1789205448431.9395
+                },
+                {
+                    "input_to_paint_ms": 85.122,
+                    "input_unix_ms": 1789205448509,
+                    "paint_unix_ms": 1789205448594.122
+                },
+                {
+                    "input_to_paint_ms": 84.7076,
+                    "input_unix_ms": 1789205448658,
+                    "paint_unix_ms": 1789205448742.7075
+                },
+                {
+                    "input_to_paint_ms": 97.4155,
+                    "input_unix_ms": 1789205448816,
+                    "paint_unix_ms": 1789205448913.4155
+                },
+                {
+                    "input_to_paint_ms": 85.5963,
+                    "input_unix_ms": 1789205448980,
+                    "paint_unix_ms": 1789205449065.5962
+                },
+                {
+                    "input_to_paint_ms": 91.0274,
+                    "input_unix_ms": 1789205449132,
+                    "paint_unix_ms": 1789205449223.0273
+                },
+                {
+                    "input_to_paint_ms": 86.5678,
+                    "input_unix_ms": 1789205449289,
+                    "paint_unix_ms": 1789205449375.5679
+                },
+                {
+                    "input_to_paint_ms": 94.1785,
+                    "input_unix_ms": 1789205449440,
+                    "paint_unix_ms": 1789205449534.1785
+                },
+                {
+                    "input_to_paint_ms": 89.4081,
+                    "input_unix_ms": 1789205449599,
+                    "paint_unix_ms": 1789205449688.4082
+                },
+                {
+                    "input_to_paint_ms": 97.2266,
+                    "input_unix_ms": 1789205449748,
+                    "paint_unix_ms": 1789205449845.2266
+                },
+                {
+                    "input_to_paint_ms": 91.6428,
+                    "input_unix_ms": 1789205449915,
+                    "paint_unix_ms": 1789205450006.6428
+                },
+                {
+                    "input_to_paint_ms": 93.9969,
+                    "input_unix_ms": 1789205450068,
+                    "paint_unix_ms": 1789205450161.9968
+                },
+                {
+                    "input_to_paint_ms": 88.6111,
+                    "input_unix_ms": 1789205450231,
+                    "paint_unix_ms": 1789205450319.611
+                },
+                {
+                    "input_to_paint_ms": 95.6942,
+                    "input_unix_ms": 1789205450391,
+                    "paint_unix_ms": 1789205450486.694
+                },
+                {
+                    "input_to_paint_ms": 81.8188,
+                    "input_unix_ms": 1789205450548,
+                    "paint_unix_ms": 1789205450629.8188
+                },
+                {
+                    "input_to_paint_ms": 88.5666,
+                    "input_unix_ms": 1789205450693,
+                    "paint_unix_ms": 1789205450781.5667
+                },
+                {
+                    "input_to_paint_ms": 84.0014,
+                    "input_unix_ms": 1789205450868,
+                    "paint_unix_ms": 1789205450952.0015
+                },
+                {
+                    "input_to_paint_ms": 90.5747,
+                    "input_unix_ms": 1789205451021,
+                    "paint_unix_ms": 1789205451111.5747
+                },
+                {
+                    "input_to_paint_ms": 86.5881,
+                    "input_unix_ms": 1789205451182,
+                    "paint_unix_ms": 1789205451268.5881
+                },
+                {
+                    "input_to_paint_ms": 90.9269,
+                    "input_unix_ms": 1789205451330,
+                    "paint_unix_ms": 1789205451420.927
+                },
+                {
+                    "input_to_paint_ms": 82.1311,
+                    "input_unix_ms": 1789205451482,
+                    "paint_unix_ms": 1789205451564.131
+                },
+                {
+                    "input_to_paint_ms": 92.0096,
+                    "input_unix_ms": 1789205451628,
+                    "paint_unix_ms": 1789205451720.0095
+                },
+                {
+                    "input_to_paint_ms": 103.5347,
+                    "input_unix_ms": 1789205451786,
+                    "paint_unix_ms": 1789205451889.5347
+                },
+                {
+                    "input_to_paint_ms": 201.4869,
+                    "input_unix_ms": 1789205451956,
+                    "paint_unix_ms": 1789205452157.4868
+                },
+                {
+                    "input_to_paint_ms": 81.9994,
+                    "input_unix_ms": 1789205452227,
+                    "paint_unix_ms": 1789205452308.9995
+                },
+                {
+                    "input_to_paint_ms": 92.7507,
+                    "input_unix_ms": 1789205452373,
+                    "paint_unix_ms": 1789205452465.7507
+                },
+                {
+                    "input_to_paint_ms": 84.4653,
+                    "input_unix_ms": 1789205452524,
+                    "paint_unix_ms": 1789205452608.4653
+                },
+                {
+                    "input_to_paint_ms": 101.7753,
+                    "input_unix_ms": 1789205452676,
+                    "paint_unix_ms": 1789205452777.7754
+                },
+                {
+                    "input_to_paint_ms": 110.3438,
+                    "input_unix_ms": 1789205452861,
+                    "paint_unix_ms": 1789205452971.3438
+                },
+                {
+                    "input_to_paint_ms": 89.7099,
+                    "input_unix_ms": 1789205453049,
+                    "paint_unix_ms": 1789205453138.71
+                },
+                {
+                    "input_to_paint_ms": 84.8486,
+                    "input_unix_ms": 1789205453210,
+                    "paint_unix_ms": 1789205453294.8486
+                },
+                {
+                    "input_to_paint_ms": 89.6955,
+                    "input_unix_ms": 1789205453364,
+                    "paint_unix_ms": 1789205453453.6956
+                },
+                {
+                    "input_to_paint_ms": 92.6287,
+                    "input_unix_ms": 1789205453525,
+                    "paint_unix_ms": 1789205453617.6287
+                },
+                {
+                    "input_to_paint_ms": 88.5908,
+                    "input_unix_ms": 1789205453689,
+                    "paint_unix_ms": 1789205453777.5908
+                },
+                {
+                    "input_to_paint_ms": 98.023,
+                    "input_unix_ms": 1789205453853,
+                    "paint_unix_ms": 1789205453951.023
+                },
+                {
+                    "input_to_paint_ms": 84.4541,
+                    "input_unix_ms": 1789205454021,
+                    "paint_unix_ms": 1789205454105.454
+                },
+                {
+                    "input_to_paint_ms": 88.8552,
+                    "input_unix_ms": 1789205454174,
+                    "paint_unix_ms": 1789205454262.8552
+                },
+                {
+                    "input_to_paint_ms": 92.086,
+                    "input_unix_ms": 1789205454336,
+                    "paint_unix_ms": 1789205454428.086
+                },
+                {
+                    "input_to_paint_ms": 84.6406,
+                    "input_unix_ms": 1789205454504,
+                    "paint_unix_ms": 1789205454588.6406
+                },
+                {
+                    "input_to_paint_ms": 96.2175,
+                    "input_unix_ms": 1789205454657,
+                    "paint_unix_ms": 1789205454753.2175
+                },
+                {
+                    "input_to_paint_ms": 94.1845,
+                    "input_unix_ms": 1789205454829,
+                    "paint_unix_ms": 1789205454923.1846
+                },
+                {
+                    "input_to_paint_ms": 89.4533,
+                    "input_unix_ms": 1789205454989,
+                    "paint_unix_ms": 1789205455078.4534
+                },
+                {
+                    "input_to_paint_ms": 87.3101,
+                    "input_unix_ms": 1789205455148,
+                    "paint_unix_ms": 1789205455235.31
+                },
+                {
+                    "input_to_paint_ms": 90.5107,
+                    "input_unix_ms": 1789205455296,
+                    "paint_unix_ms": 1789205455386.5107
+                },
+                {
+                    "input_to_paint_ms": 93.4174,
+                    "input_unix_ms": 1789205455474,
+                    "paint_unix_ms": 1789205455567.4175
+                },
+                {
+                    "input_to_paint_ms": 88.0668,
+                    "input_unix_ms": 1789205455630,
+                    "paint_unix_ms": 1789205455718.067
+                },
+                {
+                    "input_to_paint_ms": 111.6769,
+                    "input_unix_ms": 1789205455791,
+                    "paint_unix_ms": 1789205455902.677
+                },
+                {
+                    "input_to_paint_ms": 91.0706,
+                    "input_unix_ms": 1789205455973,
+                    "paint_unix_ms": 1789205456064.0706
+                },
+                {
+                    "input_to_paint_ms": 94.1961,
+                    "input_unix_ms": 1789205456131,
+                    "paint_unix_ms": 1789205456225.196
+                },
+                {
+                    "input_to_paint_ms": 90.7876,
+                    "input_unix_ms": 1789205456295,
+                    "paint_unix_ms": 1789205456385.7876
+                },
+                {
+                    "input_to_paint_ms": 90.6794,
+                    "input_unix_ms": 1789205456463,
+                    "paint_unix_ms": 1789205456553.6794
+                },
+                {
+                    "input_to_paint_ms": 92.4035,
+                    "input_unix_ms": 1789205456619,
+                    "paint_unix_ms": 1789205456711.4036
+                },
+                {
+                    "input_to_paint_ms": 104.1131,
+                    "input_unix_ms": 1789205456800,
+                    "paint_unix_ms": 1789205456904.113
+                },
+                {
+                    "input_to_paint_ms": 91.8094,
+                    "input_unix_ms": 1789205456973,
+                    "paint_unix_ms": 1789205457064.8093
+                },
+                {
+                    "input_to_paint_ms": 91.9104,
+                    "input_unix_ms": 1789205457139,
+                    "paint_unix_ms": 1789205457230.9104
+                },
+                {
+                    "input_to_paint_ms": 96.2206,
+                    "input_unix_ms": 1789205457304,
+                    "paint_unix_ms": 1789205457400.2207
+                },
+                {
+                    "input_to_paint_ms": 90.0344,
+                    "input_unix_ms": 1789205457477,
+                    "paint_unix_ms": 1789205457567.0344
+                },
+                {
+                    "input_to_paint_ms": 92.3551,
+                    "input_unix_ms": 1789205457640,
+                    "paint_unix_ms": 1789205457732.355
+                },
+                {
+                    "input_to_paint_ms": 98.7371,
+                    "input_unix_ms": 1789205457829,
+                    "paint_unix_ms": 1789205457927.737
+                },
+                {
+                    "input_to_paint_ms": 96.1098,
+                    "input_unix_ms": 1789205457989,
+                    "paint_unix_ms": 1789205458085.1099
+                },
+                {
+                    "input_to_paint_ms": 88.303,
+                    "input_unix_ms": 1789205458160,
+                    "paint_unix_ms": 1789205458248.303
+                },
+                {
+                    "input_to_paint_ms": 87.968,
+                    "input_unix_ms": 1789205458313,
+                    "paint_unix_ms": 1789205458400.968
+                },
+                {
+                    "input_to_paint_ms": 85.3359,
+                    "input_unix_ms": 1789205458469,
+                    "paint_unix_ms": 1789205458554.336
+                },
+                {
+                    "input_to_paint_ms": 86.3912,
+                    "input_unix_ms": 1789205458625,
+                    "paint_unix_ms": 1789205458711.391
+                },
+                {
+                    "input_to_paint_ms": 102.4992,
+                    "input_unix_ms": 1789205458788,
+                    "paint_unix_ms": 1789205458890.4993
+                },
+                {
+                    "input_to_paint_ms": 88.186,
+                    "input_unix_ms": 1789205458957,
+                    "paint_unix_ms": 1789205459045.186
+                },
+                {
+                    "input_to_paint_ms": 89.0195,
+                    "input_unix_ms": 1789205459119,
+                    "paint_unix_ms": 1789205459208.0195
+                },
+                {
+                    "input_to_paint_ms": 90.7185,
+                    "input_unix_ms": 1789205459275,
+                    "paint_unix_ms": 1789205459365.7185
+                },
+                {
+                    "input_to_paint_ms": 88.7468,
+                    "input_unix_ms": 1789205459445,
+                    "paint_unix_ms": 1789205459533.7468
+                },
+                {
+                    "input_to_paint_ms": 99.9945,
+                    "input_unix_ms": 1789205459601,
+                    "paint_unix_ms": 1789205459700.9944
+                },
+                {
+                    "input_to_paint_ms": 107.1187,
+                    "input_unix_ms": 1789205459764,
+                    "paint_unix_ms": 1789205459871.1187
+                },
+                {
+                    "input_to_paint_ms": 94.4603,
+                    "input_unix_ms": 1789205459951,
+                    "paint_unix_ms": 1789205460045.4602
+                },
+                {
+                    "input_to_paint_ms": 93.9418,
+                    "input_unix_ms": 1789205460108,
+                    "paint_unix_ms": 1789205460201.942
+                },
+                {
+                    "input_to_paint_ms": 98.8889,
+                    "input_unix_ms": 1789205460266,
+                    "paint_unix_ms": 1789205460364.889
+                },
+                {
+                    "input_to_paint_ms": 83.5724,
+                    "input_unix_ms": 1789205460434,
+                    "paint_unix_ms": 1789205460517.5725
+                },
+                {
+                    "input_to_paint_ms": 91.2352,
+                    "input_unix_ms": 1789205460583,
+                    "paint_unix_ms": 1789205460674.235
+                },
+                {
+                    "input_to_paint_ms": 83.7235,
+                    "input_unix_ms": 1789205460738,
+                    "paint_unix_ms": 1789205460821.7234
+                },
+                {
+                    "input_to_paint_ms": 114.8793,
+                    "input_unix_ms": 1789205460887,
+                    "paint_unix_ms": 1789205461001.8794
+                },
+                {
+                    "input_to_paint_ms": 92.4438,
+                    "input_unix_ms": 1789205461066,
+                    "paint_unix_ms": 1789205461158.4438
+                },
+                {
+                    "input_to_paint_ms": 99.5273,
+                    "input_unix_ms": 1789205461227,
+                    "paint_unix_ms": 1789205461326.5273
+                },
+                {
+                    "input_to_paint_ms": 89.7147,
+                    "input_unix_ms": 1789205461391,
+                    "paint_unix_ms": 1789205461480.7146
+                },
+                {
+                    "input_to_paint_ms": 95.4752,
+                    "input_unix_ms": 1789205461545,
+                    "paint_unix_ms": 1789205461640.475
+                },
+                {
+                    "input_to_paint_ms": 85.1634,
+                    "input_unix_ms": 1789205461709,
+                    "paint_unix_ms": 1789205461794.1633
+                },
+                {
+                    "input_to_paint_ms": 106.6235,
+                    "input_unix_ms": 1789205461870,
+                    "paint_unix_ms": 1789205461976.6235
+                },
+                {
+                    "input_to_paint_ms": 84.9144,
+                    "input_unix_ms": 1789205462037,
+                    "paint_unix_ms": 1789205462121.9143
+                },
+                {
+                    "input_to_paint_ms": 91.1985,
+                    "input_unix_ms": 1789205462189,
+                    "paint_unix_ms": 1789205462280.1985
+                },
+                {
+                    "input_to_paint_ms": 94.1752,
+                    "input_unix_ms": 1789205462340,
+                    "paint_unix_ms": 1789205462434.1753
+                },
+                {
+                    "input_to_paint_ms": 101.3188,
+                    "input_unix_ms": 1789205462513,
+                    "paint_unix_ms": 1789205462614.3188
+                },
+                {
+                    "input_to_paint_ms": 92.4269,
+                    "input_unix_ms": 1789205462683,
+                    "paint_unix_ms": 1789205462775.427
+                },
+                {
+                    "input_to_paint_ms": 86.7818,
+                    "input_unix_ms": 1789205462857,
+                    "paint_unix_ms": 1789205462943.7817
+                },
+                {
+                    "input_to_paint_ms": 119.3677,
+                    "input_unix_ms": 1789205463004,
+                    "paint_unix_ms": 1789205463123.3677
+                },
+                {
+                    "input_to_paint_ms": 86.8002,
+                    "input_unix_ms": 1789205463188,
+                    "paint_unix_ms": 1789205463274.8003
+                },
+                {
+                    "input_to_paint_ms": 95.7107,
+                    "input_unix_ms": 1789205463340,
+                    "paint_unix_ms": 1789205463435.7107
+                },
+                {
+                    "input_to_paint_ms": 84.7472,
+                    "input_unix_ms": 1789205463500,
+                    "paint_unix_ms": 1789205463584.7473
+                },
+                {
+                    "input_to_paint_ms": 92.9889,
+                    "input_unix_ms": 1789205463655,
+                    "paint_unix_ms": 1789205463747.989
+                },
+                {
+                    "input_to_paint_ms": 99.7637,
+                    "input_unix_ms": 1789205463826,
+                    "paint_unix_ms": 1789205463925.7637
+                },
+                {
+                    "input_to_paint_ms": 90.5767,
+                    "input_unix_ms": 1789205463996,
+                    "paint_unix_ms": 1789205464086.5767
+                },
+                {
+                    "input_to_paint_ms": 93.8156,
+                    "input_unix_ms": 1789205464155,
+                    "paint_unix_ms": 1789205464248.8157
+                },
+                {
+                    "input_to_paint_ms": 92.8281,
+                    "input_unix_ms": 1789205464310,
+                    "paint_unix_ms": 1789205464402.8281
+                }
+            ],
+            "target_model_replacements": 100,
+            "unmeasured_empty_reset_paints": 100
+        },
+        {
+            "class": "combined filters first50",
+            "expected_first_page_ids": [
+                "ingest-000-00",
+                "ingest-000-01",
+                "ingest-000-02",
+                "ingest-000-03",
+                "ingest-000-04",
+                "ingest-000-05",
+                "ingest-000-06",
+                "ingest-000-07",
+                "ingest-000-08",
+                "ingest-000-09",
+                "ingest-000-10",
+                "ingest-000-11",
+                "ingest-000-12",
+                "ingest-000-13",
+                "ingest-000-14",
+                "ingest-000-15",
+                "ingest-000-16",
+                "ingest-000-17",
+                "ingest-000-18",
+                "ingest-000-19",
+                "ingest-000-20",
+                "ingest-000-21",
+                "ingest-000-22",
+                "ingest-000-23",
+                "ingest-000-24",
+                "ingest-001-00",
+                "ingest-001-01",
+                "ingest-001-02",
+                "ingest-001-03",
+                "ingest-001-04",
+                "ingest-001-05",
+                "ingest-001-06",
+                "ingest-001-07",
+                "ingest-001-08",
+                "ingest-001-09",
+                "ingest-001-10",
+                "ingest-001-11",
+                "ingest-001-12",
+                "ingest-001-13",
+                "ingest-001-14",
+                "ingest-001-15",
+                "ingest-001-16",
+                "ingest-001-17",
+                "ingest-001-18",
+                "ingest-001-19",
+                "ingest-001-20",
+                "ingest-001-21",
+                "ingest-001-22",
+                "ingest-001-23",
+                "ingest-001-24"
+            ],
+            "identity_oracle": "Fixture-domain-validated warmup first page; exact ordered IDs required on every measured replacement",
+            "input_to_model_p95_ms": 185.4379,
+            "max_ms": 229.378,
+            "model_to_paint_p95_ms": 3.9127,
+            "observations": 100,
+            "p50_ms": 149.1076,
+            "p95_ms": 189.571,
+            "p99_ms": 229.378,
+            "sample_windows": [
+                {
+                    "input_to_paint_ms": 137.7492,
+                    "input_unix_ms": 1789205465107,
+                    "paint_unix_ms": 1789205465244.7493
+                },
+                {
+                    "input_to_paint_ms": 177.2149,
+                    "input_unix_ms": 1789205465308,
+                    "paint_unix_ms": 1789205465485.2148
+                },
+                {
+                    "input_to_paint_ms": 143.7475,
+                    "input_unix_ms": 1789205465551,
+                    "paint_unix_ms": 1789205465694.7476
+                },
+                {
+                    "input_to_paint_ms": 157.1442,
+                    "input_unix_ms": 1789205465756,
+                    "paint_unix_ms": 1789205465913.1443
+                },
+                {
+                    "input_to_paint_ms": 147.0693,
+                    "input_unix_ms": 1789205466004,
+                    "paint_unix_ms": 1789205466151.0693
+                },
+                {
+                    "input_to_paint_ms": 156.5218,
+                    "input_unix_ms": 1789205466221,
+                    "paint_unix_ms": 1789205466377.5217
+                },
+                {
+                    "input_to_paint_ms": 149.407,
+                    "input_unix_ms": 1789205466445,
+                    "paint_unix_ms": 1789205466594.407
+                },
+                {
+                    "input_to_paint_ms": 170.1715,
+                    "input_unix_ms": 1789205466664,
+                    "paint_unix_ms": 1789205466834.1714
+                },
+                {
+                    "input_to_paint_ms": 141.4334,
+                    "input_unix_ms": 1789205466920,
+                    "paint_unix_ms": 1789205467061.4333
+                },
+                {
+                    "input_to_paint_ms": 151.7569,
+                    "input_unix_ms": 1789205467135,
+                    "paint_unix_ms": 1789205467286.7568
+                },
+                {
+                    "input_to_paint_ms": 139.306,
+                    "input_unix_ms": 1789205467352,
+                    "paint_unix_ms": 1789205467491.306
+                },
+                {
+                    "input_to_paint_ms": 145.2276,
+                    "input_unix_ms": 1789205467561,
+                    "paint_unix_ms": 1789205467706.2275
+                },
+                {
+                    "input_to_paint_ms": 171.4341,
+                    "input_unix_ms": 1789205467772,
+                    "paint_unix_ms": 1789205467943.434
+                },
+                {
+                    "input_to_paint_ms": 145.6567,
+                    "input_unix_ms": 1789205468041,
+                    "paint_unix_ms": 1789205468186.6567
+                },
+                {
+                    "input_to_paint_ms": 139.1088,
+                    "input_unix_ms": 1789205468251,
+                    "paint_unix_ms": 1789205468390.109
+                },
+                {
+                    "input_to_paint_ms": 146.5848,
+                    "input_unix_ms": 1789205468454,
+                    "paint_unix_ms": 1789205468600.5847
+                },
+                {
+                    "input_to_paint_ms": 141.6394,
+                    "input_unix_ms": 1789205468666,
+                    "paint_unix_ms": 1789205468807.6394
+                },
+                {
+                    "input_to_paint_ms": 150.6183,
+                    "input_unix_ms": 1789205468880,
+                    "paint_unix_ms": 1789205469030.6184
+                },
+                {
+                    "input_to_paint_ms": 140.3122,
+                    "input_unix_ms": 1789205469095,
+                    "paint_unix_ms": 1789205469235.3123
+                },
+                {
+                    "input_to_paint_ms": 155.7717,
+                    "input_unix_ms": 1789205469306,
+                    "paint_unix_ms": 1789205469461.7717
+                },
+                {
+                    "input_to_paint_ms": 142.9754,
+                    "input_unix_ms": 1789205469528,
+                    "paint_unix_ms": 1789205469670.9753
+                },
+                {
+                    "input_to_paint_ms": 144.7949,
+                    "input_unix_ms": 1789205469731,
+                    "paint_unix_ms": 1789205469875.795
+                },
+                {
+                    "input_to_paint_ms": 142.4233,
+                    "input_unix_ms": 1789205469965,
+                    "paint_unix_ms": 1789205470107.4233
+                },
+                {
+                    "input_to_paint_ms": 147.6575,
+                    "input_unix_ms": 1789205470180,
+                    "paint_unix_ms": 1789205470327.6575
+                },
+                {
+                    "input_to_paint_ms": 137.4648,
+                    "input_unix_ms": 1789205470389,
+                    "paint_unix_ms": 1789205470526.4648
+                },
+                {
+                    "input_to_paint_ms": 159.4401,
+                    "input_unix_ms": 1789205470590,
+                    "paint_unix_ms": 1789205470749.4402
+                },
+                {
+                    "input_to_paint_ms": 149.9961,
+                    "input_unix_ms": 1789205470847,
+                    "paint_unix_ms": 1789205470996.996
+                },
+                {
+                    "input_to_paint_ms": 144.0592,
+                    "input_unix_ms": 1789205471060,
+                    "paint_unix_ms": 1789205471204.059
+                },
+                {
+                    "input_to_paint_ms": 139.6122,
+                    "input_unix_ms": 1789205471266,
+                    "paint_unix_ms": 1789205471405.6123
+                },
+                {
+                    "input_to_paint_ms": 146.0167,
+                    "input_unix_ms": 1789205471465,
+                    "paint_unix_ms": 1789205471611.0166
+                },
+                {
+                    "input_to_paint_ms": 140.8373,
+                    "input_unix_ms": 1789205471681,
+                    "paint_unix_ms": 1789205471821.8374
+                },
+                {
+                    "input_to_paint_ms": 145.4365,
+                    "input_unix_ms": 1789205471895,
+                    "paint_unix_ms": 1789205472040.4365
+                },
+                {
+                    "input_to_paint_ms": 139.507,
+                    "input_unix_ms": 1789205472106,
+                    "paint_unix_ms": 1789205472245.507
+                },
+                {
+                    "input_to_paint_ms": 138.0359,
+                    "input_unix_ms": 1789205472313,
+                    "paint_unix_ms": 1789205472451.036
+                },
+                {
+                    "input_to_paint_ms": 145.9606,
+                    "input_unix_ms": 1789205472519,
+                    "paint_unix_ms": 1789205472664.9607
+                },
+                {
+                    "input_to_paint_ms": 138.1916,
+                    "input_unix_ms": 1789205472728,
+                    "paint_unix_ms": 1789205472866.1917
+                },
+                {
+                    "input_to_paint_ms": 137.0547,
+                    "input_unix_ms": 1789205472936,
+                    "paint_unix_ms": 1789205473073.0547
+                },
+                {
+                    "input_to_paint_ms": 138.024,
+                    "input_unix_ms": 1789205473132,
+                    "paint_unix_ms": 1789205473270.024
+                },
+                {
+                    "input_to_paint_ms": 136.7515,
+                    "input_unix_ms": 1789205473341,
+                    "paint_unix_ms": 1789205473477.7515
+                },
+                {
+                    "input_to_paint_ms": 147.6236,
+                    "input_unix_ms": 1789205473537,
+                    "paint_unix_ms": 1789205473684.6235
+                },
+                {
+                    "input_to_paint_ms": 166.7678,
+                    "input_unix_ms": 1789205473767,
+                    "paint_unix_ms": 1789205473933.7678
+                },
+                {
+                    "input_to_paint_ms": 141.4169,
+                    "input_unix_ms": 1789205473998,
+                    "paint_unix_ms": 1789205474139.417
+                },
+                {
+                    "input_to_paint_ms": 140.8789,
+                    "input_unix_ms": 1789205474215,
+                    "paint_unix_ms": 1789205474355.879
+                },
+                {
+                    "input_to_paint_ms": 142.7735,
+                    "input_unix_ms": 1789205474420,
+                    "paint_unix_ms": 1789205474562.7734
+                },
+                {
+                    "input_to_paint_ms": 137.3466,
+                    "input_unix_ms": 1789205474634,
+                    "paint_unix_ms": 1789205474771.3467
+                },
+                {
+                    "input_to_paint_ms": 139.1545,
+                    "input_unix_ms": 1789205474845,
+                    "paint_unix_ms": 1789205474984.1545
+                },
+                {
+                    "input_to_paint_ms": 149.7464,
+                    "input_unix_ms": 1789205475058,
+                    "paint_unix_ms": 1789205475207.7463
+                },
+                {
+                    "input_to_paint_ms": 143.0406,
+                    "input_unix_ms": 1789205475271,
+                    "paint_unix_ms": 1789205475414.0405
+                },
+                {
+                    "input_to_paint_ms": 147.8205,
+                    "input_unix_ms": 1789205475479,
+                    "paint_unix_ms": 1789205475626.8206
+                },
+                {
+                    "input_to_paint_ms": 138.9171,
+                    "input_unix_ms": 1789205475686,
+                    "paint_unix_ms": 1789205475824.917
+                },
+                {
+                    "input_to_paint_ms": 156.8429,
+                    "input_unix_ms": 1789205475907,
+                    "paint_unix_ms": 1789205476063.843
+                },
+                {
+                    "input_to_paint_ms": 146.8523,
+                    "input_unix_ms": 1789205476127,
+                    "paint_unix_ms": 1789205476273.8523
+                },
+                {
+                    "input_to_paint_ms": 167.5915,
+                    "input_unix_ms": 1789205476346,
+                    "paint_unix_ms": 1789205476513.5916
+                },
+                {
+                    "input_to_paint_ms": 161.9282,
+                    "input_unix_ms": 1789205476602,
+                    "paint_unix_ms": 1789205476763.9282
+                },
+                {
+                    "input_to_paint_ms": 152.3883,
+                    "input_unix_ms": 1789205476847,
+                    "paint_unix_ms": 1789205476999.3882
+                },
+                {
+                    "input_to_paint_ms": 143.1383,
+                    "input_unix_ms": 1789205477074,
+                    "paint_unix_ms": 1789205477217.1382
+                },
+                {
+                    "input_to_paint_ms": 169.5951,
+                    "input_unix_ms": 1789205477284,
+                    "paint_unix_ms": 1789205477453.5952
+                },
+                {
+                    "input_to_paint_ms": 146.4196,
+                    "input_unix_ms": 1789205477515,
+                    "paint_unix_ms": 1789205477661.4197
+                },
+                {
+                    "input_to_paint_ms": 152.0814,
+                    "input_unix_ms": 1789205477731,
+                    "paint_unix_ms": 1789205477883.0813
+                },
+                {
+                    "input_to_paint_ms": 148.5164,
+                    "input_unix_ms": 1789205477962,
+                    "paint_unix_ms": 1789205478110.5164
+                },
+                {
+                    "input_to_paint_ms": 145.361,
+                    "input_unix_ms": 1789205478182,
+                    "paint_unix_ms": 1789205478327.361
+                },
+                {
+                    "input_to_paint_ms": 144.6965,
+                    "input_unix_ms": 1789205478401,
+                    "paint_unix_ms": 1789205478545.6965
+                },
+                {
+                    "input_to_paint_ms": 142.1139,
+                    "input_unix_ms": 1789205478614,
+                    "paint_unix_ms": 1789205478756.114
+                },
+                {
+                    "input_to_paint_ms": 146.1937,
+                    "input_unix_ms": 1789205478839,
+                    "paint_unix_ms": 1789205478985.1936
+                },
+                {
+                    "input_to_paint_ms": 148.6183,
+                    "input_unix_ms": 1789205479046,
+                    "paint_unix_ms": 1789205479194.6184
+                },
+                {
+                    "input_to_paint_ms": 139.7725,
+                    "input_unix_ms": 1789205479274,
+                    "paint_unix_ms": 1789205479413.7725
+                },
+                {
+                    "input_to_paint_ms": 146.6953,
+                    "input_unix_ms": 1789205479478,
+                    "paint_unix_ms": 1789205479624.6953
+                },
+                {
+                    "input_to_paint_ms": 138.2243,
+                    "input_unix_ms": 1789205479708,
+                    "paint_unix_ms": 1789205479846.2244
+                },
+                {
+                    "input_to_paint_ms": 146.6322,
+                    "input_unix_ms": 1789205479928,
+                    "paint_unix_ms": 1789205480074.632
+                },
+                {
+                    "input_to_paint_ms": 179.9683,
+                    "input_unix_ms": 1789205480147,
+                    "paint_unix_ms": 1789205480326.9683
+                },
+                {
+                    "input_to_paint_ms": 167.9567,
+                    "input_unix_ms": 1789205480393,
+                    "paint_unix_ms": 1789205480560.9568
+                },
+                {
+                    "input_to_paint_ms": 153.3121,
+                    "input_unix_ms": 1789205480630,
+                    "paint_unix_ms": 1789205480783.312
+                },
+                {
+                    "input_to_paint_ms": 166.4123,
+                    "input_unix_ms": 1789205480866,
+                    "paint_unix_ms": 1789205481032.4124
+                },
+                {
+                    "input_to_paint_ms": 149.5753,
+                    "input_unix_ms": 1789205481099,
+                    "paint_unix_ms": 1789205481248.5752
+                },
+                {
+                    "input_to_paint_ms": 149.1398,
+                    "input_unix_ms": 1789205481316,
+                    "paint_unix_ms": 1789205481465.14
+                },
+                {
+                    "input_to_paint_ms": 159.505,
+                    "input_unix_ms": 1789205481549,
+                    "paint_unix_ms": 1789205481708.505
+                },
+                {
+                    "input_to_paint_ms": 189.571,
+                    "input_unix_ms": 1789205481781,
+                    "paint_unix_ms": 1789205481970.571
+                },
+                {
+                    "input_to_paint_ms": 193.338,
+                    "input_unix_ms": 1789205482045,
+                    "paint_unix_ms": 1789205482238.338
+                },
+                {
+                    "input_to_paint_ms": 221.3673,
+                    "input_unix_ms": 1789205482322,
+                    "paint_unix_ms": 1789205482543.3672
+                },
+                {
+                    "input_to_paint_ms": 153.4615,
+                    "input_unix_ms": 1789205482608,
+                    "paint_unix_ms": 1789205482761.4614
+                },
+                {
+                    "input_to_paint_ms": 160.9254,
+                    "input_unix_ms": 1789205482841,
+                    "paint_unix_ms": 1789205483001.9253
+                },
+                {
+                    "input_to_paint_ms": 149.1076,
+                    "input_unix_ms": 1789205483064,
+                    "paint_unix_ms": 1789205483213.1077
+                },
+                {
+                    "input_to_paint_ms": 162.9463,
+                    "input_unix_ms": 1789205483291,
+                    "paint_unix_ms": 1789205483453.9463
+                },
+                {
+                    "input_to_paint_ms": 171.0981,
+                    "input_unix_ms": 1789205483517,
+                    "paint_unix_ms": 1789205483688.0981
+                },
+                {
+                    "input_to_paint_ms": 229.378,
+                    "input_unix_ms": 1789205483785,
+                    "paint_unix_ms": 1789205484014.378
+                },
+                {
+                    "input_to_paint_ms": 152.7611,
+                    "input_unix_ms": 1789205484077,
+                    "paint_unix_ms": 1789205484229.761
+                },
+                {
+                    "input_to_paint_ms": 162.8016,
+                    "input_unix_ms": 1789205484299,
+                    "paint_unix_ms": 1789205484461.8015
+                },
+                {
+                    "input_to_paint_ms": 153.7107,
+                    "input_unix_ms": 1789205484523,
+                    "paint_unix_ms": 1789205484676.7107
+                },
+                {
+                    "input_to_paint_ms": 199.5117,
+                    "input_unix_ms": 1789205484743,
+                    "paint_unix_ms": 1789205484942.5117
+                },
+                {
+                    "input_to_paint_ms": 158.7585,
+                    "input_unix_ms": 1789205485027,
+                    "paint_unix_ms": 1789205485185.7585
+                },
+                {
+                    "input_to_paint_ms": 152.9269,
+                    "input_unix_ms": 1789205485251,
+                    "paint_unix_ms": 1789205485403.927
+                },
+                {
+                    "input_to_paint_ms": 153.6211,
+                    "input_unix_ms": 1789205485483,
+                    "paint_unix_ms": 1789205485636.621
+                },
+                {
+                    "input_to_paint_ms": 149.3115,
+                    "input_unix_ms": 1789205485699,
+                    "paint_unix_ms": 1789205485848.3115
+                },
+                {
+                    "input_to_paint_ms": 150.7113,
+                    "input_unix_ms": 1789205485930,
+                    "paint_unix_ms": 1789205486080.7112
+                },
+                {
+                    "input_to_paint_ms": 154.5278,
+                    "input_unix_ms": 1789205486147,
+                    "paint_unix_ms": 1789205486301.5278
+                },
+                {
+                    "input_to_paint_ms": 186.3029,
+                    "input_unix_ms": 1789205486370,
+                    "paint_unix_ms": 1789205486556.303
+                },
+                {
+                    "input_to_paint_ms": 153.3064,
+                    "input_unix_ms": 1789205486631,
+                    "paint_unix_ms": 1789205486784.3064
+                },
+                {
+                    "input_to_paint_ms": 156.0073,
+                    "input_unix_ms": 1789205486860,
+                    "paint_unix_ms": 1789205487016.0073
+                },
+                {
+                    "input_to_paint_ms": 154.2106,
+                    "input_unix_ms": 1789205487095,
+                    "paint_unix_ms": 1789205487249.2107
+                },
+                {
+                    "input_to_paint_ms": 157.6602,
+                    "input_unix_ms": 1789205487319,
+                    "paint_unix_ms": 1789205487476.6602
+                }
+            ],
+            "target_model_replacements": 100,
+            "unmeasured_empty_reset_paints": 100
+        }
+    ],
+    "renderer_api": 4,
+    "renders": 4437,
+    "reset_policy": "Before every target: actual unique no-match QML input, confirmed zero-row model replacement, and generation-matched empty frame; all reset work is outside the sample. One unmeasured target warmup per class.",
+    "result": "measured",
+    "swaps": 4436,
+    "synchronizations": 4437,
+    "update_requests": 4436,
+    "windows_vblank_thread_disabled": true
+}

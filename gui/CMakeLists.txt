@@ -2,10 +2,32 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     main.cpp
     MailBackend.cpp
     MailBackend.h
+    Phase1Backend.cpp
+    CompositionBackend.cpp
+    CalendarOperations.cpp
+    ReplyDocument.cpp
+    ReplyDocument.h
     CalendarLayout.cpp
     CalendarLayout.h
+    HatchItem.cpp
+    HatchItem.h
     GuiSelfTest.cpp
     GuiSelfTest.h
+    GuiCalendarSelfTest.cpp
+    GuiCalendarSelfTest.h
+    GuiCompositionSelfTest.cpp
+    GuiCompositionSelfTest.h
+    GuiSettingsSelfTest.cpp
+    GuiSettingsSelfTest.h
+    GuiMailNavigationSelfTest.cpp
+    GuiMailNavigationSelfTest.h
+    GuiSearchBenchmark.cpp
+    GuiSearchBenchmark.h
+    GuiPaintObserver.h
+    GuiInteractionBenchmark.cpp
+    GuiInteractionBenchmark.h
+    GuiResizeBenchmark.cpp
+    GuiResizeBenchmark.h
     IpcTrust.cpp
     IpcTrust.h
 )
@@ -13,7 +35,8 @@ set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(fuckmail-gui
     URI FuckMail
     VERSION 1.0
-    QML_FILES Main.qml Theme.qml FmButton.qml FmToolTip.qml MailView.qml CalendarView.qml SettingsView.qml TodayStrip.qml
+    QML_FILES Main.qml Theme.qml FmButton.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmComboBox.qml MailView.qml MailFilters.qml SearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml TodayStrip.qml
+    RESOURCES fonts/Geist-Regular.ttf fonts/Geist-Medium.ttf fonts/Geist-SemiBold.ttf fonts/LICENSE-Geist.txt
 )
 target_link_libraries(fuckmail-gui PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
 target_compile_features(fuckmail-gui PRIVATE cxx_std_20)
@@ -48,6 +71,12 @@ if(BUILD_TESTING)
     set_tests_properties(gui-composer-probe PROPERTIES TIMEOUT 10 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 endif()
 
+if(BUILD_TESTING)
+    add_executable(gui-reply-document-test ReplyDocumentTest.cpp ReplyDocument.cpp ReplyDocument.h)
+    target_link_libraries(gui-reply-document-test PRIVATE Qt6::Quick)
+    add_test(NAME gui-reply-document COMMAND gui-reply-document-test)
+    set_tests_properties(gui-reply-document PROPERTIES TIMEOUT 10 ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
 if(BUILD_TESTING)
     add_executable(gui-calendar-layout-test CalendarLayoutTest.cpp CalendarLayout.cpp)
     target_link_libraries(gui-calendar-layout-test PRIVATE Qt6::Core)

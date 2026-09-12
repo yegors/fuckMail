@@ -1,0 +1,23 @@
+{
+  "result": "passed",
+  "source": "8743162234e79739cc76f7fd58c8ec17e4d446de",
+  "source_dirty": false,
+  "command": "./scripts/dev.ps1 package --preset release",
+  "exit_code": 0,
+  "archive_path": "dist/fuckmail-windows-amd64.zip",
+  "preserved_archive_path": "dist/baselines/fuckmail-windows-amd64-schema7-8743162.zip",
+  "archive_bytes": 65636701,
+  "archive_sha256": "7272051bd6cb6da27653e0fcdf3ed3bf5d721c8267bc5079ecae39d553002814",
+  "executable_sha256": {
+    "fm.exe": "b316568190a915a5a8dcec73cbb46452b110c18a147885389e4fc560ed34e5aa",
+    "fm-engine.exe": "24ef315dc8fc7bc09c8a35b3727015634585a954ebfec2b203734c3c6c213501",
+    "fuckmail-gui.exe": "dd3310642e9513af41767c45bb0c07c019e01007a615acfc06cc885c52945158"
+  },
+  "checks": [
+    "SDK-free relocated GUI smoke",
+    "SDK-free relocated full native GUI self-test",
+    "Fresh-terminal CLI help and real-store sender query",
+    "Final CLI and GUI owner engine shutdown"
+  ],
+  "renderer": "offscreen software for relocated smoke/self-test; native D3D11 measured separately"
+}

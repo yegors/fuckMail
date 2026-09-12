@@ -36,5 +36,18 @@ int main(int argc, char **argv) {
     require(rows.size() == 3, "All-day dates remain visible");
     require(rows[0].toMap()["day_index"].toInt() == 0 && rows[0].toMap()["span_days"].toInt() == 3, "All-day interval clips its start and preserves exclusive end");
     require(rows[1].toMap()["lane"].toInt() == 1 && rows[2].toMap()["lane"].toInt() == 0, "All-day overlaps use lanes and reuse available space");
-    qInfo() << "Calendar layout passed: overlaps, boundaries, midnight clipping, footer, exclusive all-day spans.";
+    rows = calendarPresentation({
+        timed("fall-back", "2026-11-01T01:30:00-04:00", "2026-11-01T01:45:00-05:00"),
+        timed("spring-forward", "2026-03-08T01:30:00-05:00", "2026-03-08T03:30:00-04:00")
+    }, QDate(2026,11,1), 1, zone);
+    require(rows.size() == 1 && rows[0].toMap()["duration_hours"].toDouble() > 0, "Repeated-hour events remain visible and preserve identity");
+    auto source = timed("cross-zone", "2026-09-12T02:00:00+09:00", "2026-09-12T03:00:00+09:00");
+    source["account"] = "sideproject";
+    source["calendar_id"] = "primary";
+    source["busy_only"] = true;
+    rows = calendarPresentation({source}, QDate(2026,9,11), 1, zone);
+    require(rows.size() == 1 && rows[0].toMap()["start_hour"].toDouble() == 13, "Display dates use the common zone rather than source timestamp date");
+    require(rows[0].toMap()["account"].toString() == "sideproject" && rows[0].toMap()["busy_only"].toBool(), "Layout retains scoped identity and restricted projection");
+    require(calendarPresentation({source}, QDate(2026,10,1), 42, zone).empty(), "A displayed month excluding today cannot inherit today's occurrences");
+    qInfo() << "Calendar layout passed: overlaps, midnight clipping, all-day overflow lanes, DST, cross-zone identities, independent ranges.";
 }

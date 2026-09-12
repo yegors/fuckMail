@@ -1,0 +1,164 @@
+{
+  "host": "Windows-11-10.0.26200-SP0",
+  "architecture": "AMD64",
+  "synthetic_only": true,
+  "sdk_environment": "cleared",
+  "result": "passed",
+  "verifier_sha256": "e1fb4de6ae60cb62eb5b70fb7dbc8e7a9ba317e3c6c4f191a56bf52bb1544899",
+  "limits": [
+    "GUI --smoke is launched with the upgraded profile; source honors that option. The independent CLI owner PID stays unchanged, but the script does not instrument the GUI handshake.",
+    "This is unsigned development-package replacement evidence, not an automatic updater, physical input or OS keychain test."
+  ],
+  "old_package": {
+    "bin": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\phase1-schema4-baseline\\windows-amd64\\bin",
+    "manifest": {
+      "source": "5bed25717ee36deaabf3439b13878ec758ea675c",
+      "source_dirty": true,
+      "host": "Windows-10-10.0.26200-SP0",
+      "arch": "AMD64",
+      "preset": "release",
+      "toolchain": {
+        "qt": "6.11.2",
+        "cmake": "3.31.6",
+        "ninja": "1.11.1.4",
+        "aqtinstall": "3.3.0",
+        "qt_archives": [
+          "qtbase",
+          "qtdeclarative",
+          "qttools",
+          "qtsvg",
+          "qttranslations"
+        ],
+        "targets": {
+          "Darwin": {
+            "aqt_host": "mac",
+            "aqt_arch": "clang_64",
+            "qt_dir": "macos"
+          },
+          "Windows": {
+            "aqt_host": "windows",
+            "aqt_arch": "win64_msvc2022_64",
+            "qt_dir": "msvc2022_64"
+          },
+          "Linux": {
+            "aqt_host": "linux",
+            "aqt_arch": "linux_gcc_64",
+            "qt_dir": "gcc_64",
+            "extra_archives": [
+              "icu"
+            ],
+            "required_sdk_files": [
+              "lib/libicudata.so.73",
+              "lib/libicui18n.so.73",
+              "lib/libicuuc.so.73"
+            ]
+          }
+        }
+      },
+      "rust": "rustc 1.88.0 (6b00bc388 2025-06-23)",
+      "cargo": "cargo 1.88.0 (873a06493 2025-05-10)"
+    },
+    "executable_sha256": {
+      "fm": "9cf8f258d8f425c4fc34e30044a5f2f0d5faa775bb5d13ba0c44d34c3e094578",
+      "fm-engine": "769a34cfd1cb0302da84c5294a28c2d349f620078f8b9fc22fa0940e0b61ad07",
+      "fuckmail-gui": "97527e8bc9347ff12f7ba7a3e65a2148dd778dc67efbcc4a1edbdc58253e9f6d"
+    }
+  },
+  "new_package": {
+    "bin": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\dist\\windows-amd64\\bin",
+    "manifest": {
+      "source": "1132c44da018bd8c8d547716cef2e02a081916e7",
+      "source_dirty": false,
+      "host": "Windows-10-10.0.26200-SP0",
+      "arch": "AMD64",
+      "preset": "release",
+      "toolchain": {
+        "qt": "6.11.2",
+        "cmake": "3.31.6",
+        "ninja": "1.11.1.4",
+        "aqtinstall": "3.3.0",
+        "qt_archives": [
+          "qtbase",
+          "qtdeclarative",
+          "qttools",
+          "qtsvg",
+          "qttranslations"
+        ],
+        "targets": {
+          "Darwin": {
+            "aqt_host": "mac",
+            "aqt_arch": "clang_64",
+            "qt_dir": "macos"
+          },
+          "Windows": {
+            "aqt_host": "windows",
+            "aqt_arch": "win64_msvc2022_64",
+            "qt_dir": "msvc2022_64"
+          },
+          "Linux": {
+            "aqt_host": "linux",
+            "aqt_arch": "linux_gcc_64",
+            "qt_dir": "gcc_64",
+            "extra_archives": [
+              "icu"
+            ],
+            "required_sdk_files": [
+              "lib/libicudata.so.73",
+              "lib/libicui18n.so.73",
+              "lib/libicuuc.so.73"
+            ]
+          }
+        }
+      },
+      "rust": "rustc 1.88.0 (6b00bc388 2025-06-23)",
+      "cargo": "cargo 1.88.0 (873a06493 2025-05-10)"
+    },
+    "executable_sha256": {
+      "fm": "6aed5d079b3bc9080a7b4f6aa3d6edd66b5d22549a2853939b84cc435fa439bf",
+      "fm-engine": "67e534d03d8cc4489e70b805dd32317a79aecac329fa93157774781848bd0e43",
+      "fuckmail-gui": "7b0cf9d34810418adae9b50be7abe802566665f8826361a7e73254ee6cb2fe13"
+    }
+  },
+  "old_schema": 4,
+  "compatible_coexistence": "passed",
+  "old_final_owner_shutdown": "passed",
+  "before_upgrade_counts": {
+    "accounts": 2,
+    "conversations": 220,
+    "messages": 286,
+    "attachments": 6,
+    "drafts": 1,
+    "operations": 3,
+    "capture_operations": 1,
+    "views": 1
+  },
+  "new_schema": 5,
+  "fixture_revision_preserved": 1,
+  "accounts_preserved_without_reseed": [
+    "windscribe",
+    "personal"
+  ],
+  "preexisting_logical_table_hashes_preserved": 31,
+  "exact_captured_mime_sha256": "36569ef6f8a1c4b660c222e3ac6ff1b36bf04b2c7b7d42f9832d6753e2a9e9d5",
+  "after_upgrade_counts": {
+    "accounts": 2,
+    "conversations": 220,
+    "messages": 286,
+    "attachments": 6,
+    "drafts": 1,
+    "operations": 4,
+    "capture_operations": 1,
+    "views": 1
+  },
+  "preexisting_blob_count": 287,
+  "migration_retains_old_blob_hashes": "passed",
+  "migration_and_exact_receipt_replay": "passed",
+  "new_gui_with_independent_cli_owner": "passed",
+  "new_final_owner_shutdown": "passed",
+  "rollback_refused_without_data_reset": "passed",
+  "new_package_reopens_after_refusal": "passed",
+  "old_query_fields_compatible_with_additive_protocol": "passed",
+  "draft_utf8_sha256": "e2f2a292eb38b91ecc983c647511fb5166865ea15fada51c761ec3b3ee84bdce",
+  "retained_blob_count": 287,
+  "elapsed_seconds": 92.422
+}

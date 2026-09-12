@@ -82,7 +82,12 @@ fn process_sid(process: *mut c_void) -> io::Result<String> {
     }
 }
 
-pub fn verify_server(pipe: *mut c_void, expected_pid: u32) -> io::Result<()> {
+/// Verify the process identity and user of a connected named-pipe server.
+///
+/// # Safety
+/// `pipe` must be a valid connected named-pipe handle that remains open for
+/// the entire call. The caller retains ownership; this function does not close it.
+pub unsafe fn verify_server(pipe: *mut c_void, expected_pid: u32) -> io::Result<()> {
     unsafe {
         let mut pid = 0;
         if GetNamedPipeServerProcessId(pipe, &mut pid) == 0 {

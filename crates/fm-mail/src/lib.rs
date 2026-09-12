@@ -21,6 +21,11 @@ pub struct Address {
     pub email: String,
 }
 
+/// Validate an editable draft address with the same parser used for MIME output.
+pub fn validate_address(address: &Address) -> Result<(), ComposeError> {
+    mailbox(address).map(|_| ())
+}
+
 pub struct AccountIdentity {
     pub account_id: String,
     pub from: Address,

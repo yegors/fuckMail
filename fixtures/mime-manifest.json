@@ -1,6 +1,17 @@
 {
   "fixture_revision": 1,
   "synthetic": true,
+  "database_fixture_revision": 3,
+  "sender_kind_annotations": {
+    "provenance": "fixture",
+    "source_bound": true,
+    "known_human_generated_messages": "people",
+    "automated_message_ids": ["windscribe-message-005-000", "personal-message-005-000", "sideproject-message-005-000"],
+    "automated_source": "messages/html-only.eml",
+    "automated_sender": "Status Robot <status@service.example>",
+    "missing_or_stale": "unknown",
+    "migrated_fixture_1_or_2": "unchanged and unclassified; no reseed"
+  },
   "description": "Independent MIME expectations. Source hashes establish byte preservation; contains/not-contains checks deliberately allow harmless whitespace variation. attachment_count excludes inline_count. No external resource fetching is permitted.",
   "messages": [
     {

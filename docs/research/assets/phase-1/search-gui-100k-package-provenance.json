@@ -1,0 +1,63 @@
+{
+  "package_manifest": {
+    "source": "1132c44da018bd8c8d547716cef2e02a081916e7",
+    "source_dirty": false,
+    "host": "Windows-10-10.0.26200-SP0",
+    "arch": "AMD64",
+    "preset": "release",
+    "toolchain": {
+      "qt": "6.11.2",
+      "cmake": "3.31.6",
+      "ninja": "1.11.1.4",
+      "aqtinstall": "3.3.0",
+      "qt_archives": [
+        "qtbase",
+        "qtdeclarative",
+        "qttools",
+        "qtsvg",
+        "qttranslations"
+      ],
+      "targets": {
+        "Darwin": {
+          "aqt_host": "mac",
+          "aqt_arch": "clang_64",
+          "qt_dir": "macos"
+        },
+        "Windows": {
+          "aqt_host": "windows",
+          "aqt_arch": "win64_msvc2022_64",
+          "qt_dir": "msvc2022_64"
+        },
+        "Linux": {
+          "aqt_host": "linux",
+          "aqt_arch": "linux_gcc_64",
+          "qt_dir": "gcc_64",
+          "extra_archives": [
+            "icu"
+          ],
+          "required_sdk_files": [
+            "lib/libicudata.so.73",
+            "lib/libicui18n.so.73",
+            "lib/libicuuc.so.73"
+          ]
+        }
+      }
+    },
+    "rust": "rustc 1.88.0 (6b00bc388 2025-06-23)",
+    "cargo": "cargo 1.88.0 (873a06493 2025-05-10)"
+  },
+  "elapsed_seconds": 95.203,
+  "exit_code": 0,
+  "executables_sha256": {
+    "fuckmail-gui.exe": "7b0cf9d34810418adae9b50be7abe802566665f8826361a7e73254ee6cb2fe13",
+    "fm-engine.exe": "67e534d03d8cc4489e70b805dd32317a79aecac329fa93157774781848bd0e43",
+    "fm.exe": "6aed5d079b3bc9080a7b4f6aa3d6edd66b5d22549a2853939b84cc435fa439bf"
+  },
+  "environment": {
+    "QT_QPA_PLATFORM": "windows",
+    "QT_D3D_NO_VBLANK_THREAD": "unset in parent; application default applies",
+    "QT_QUICK_BACKEND": "unset",
+    "QT_SCALE_FACTOR": "unset; host display scale"
+  },
+  "report_sha256": "7052d6356873923707369fd82a0a0f4af0ad03a63e3ee0fe444b020e24fe5aec"
+}

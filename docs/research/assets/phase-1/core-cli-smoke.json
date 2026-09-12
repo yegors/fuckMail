@@ -1,0 +1,207 @@
+{
+  "result": "passed",
+  "checks": 19,
+  "timestamp_utc": "2026-09-12T03:28:22Z",
+  "records": [
+    {
+      "command": [
+        "accounts"
+      ],
+      "account": null,
+      "ok": true
+    },
+    {
+      "command": [
+        "mail",
+        "list",
+        "--grouped",
+        "--sender",
+        "maya@windscribe.example",
+        "--has-attachment",
+        "true",
+        "--after",
+        "2026-09-11",
+        "--before",
+        "2026-09-12"
+      ],
+      "account": "windscribe",
+      "ok": true
+    },
+    {
+      "command": [
+        "mail",
+        "read",
+        "windscribe-thread-000"
+      ],
+      "account": "windscribe",
+      "ok": true
+    },
+    {
+      "command": [
+        "mail",
+        "done",
+        "windscribe-thread-000"
+      ],
+      "account": "windscribe",
+      "ok": true
+    },
+    {
+      "command": [
+        "mail",
+        "delay",
+        "windscribe-thread-000"
+      ],
+      "account": "windscribe",
+      "ok": true
+    },
+    {
+      "command": [
+        "mail",
+        "undelay",
+        "windscribe-thread-000"
+      ],
+      "account": "windscribe",
+      "ok": true
+    },
+    {
+      "command": [
+        "preferences",
+        "save",
+        "--preferences-file",
+        "C:\\Users\\Yegor\\AppData\\Local\\Temp\\fm-phase1-cli-d8a0c85r\\preferences.json",
+        "--expected-revision",
+        "0",
+        "--request-id",
+        "cli-prefs"
+      ],
+      "account": null,
+      "ok": true
+    },
+    {
+      "command": [
+        "preferences",
+        "show"
+      ],
+      "account": null,
+      "ok": true
+    },
+    {
+      "command": [
+        "calendar",
+        "--combined",
+        "--from",
+        "2026-09-07",
+        "--to",
+        "2026-09-14"
+      ],
+      "account": null,
+      "ok": true
+    },
+    {
+      "command": [
+        "draft",
+        "save",
+        "windscribe-thread-000",
+        "--body-file",
+        "C:\\Users\\Yegor\\AppData\\Local\\Temp\\fm-phase1-cli-d8a0c85r\\body.txt",
+        "--html-file",
+        "C:\\Users\\Yegor\\AppData\\Local\\Temp\\fm-phase1-cli-d8a0c85r\\body.html",
+        "--attachment",
+        "windscribe-attachment-0"
+      ],
+      "account": "windscribe",
+      "ok": true
+    },
+    {
+      "command": [
+        "draft",
+        "capture",
+        "windscribe-thread-000",
+        "--expected-revision",
+        "1",
+        "--request-id",
+        "cli-capture"
+      ],
+      "account": "windscribe",
+      "ok": true
+    },
+    {
+      "command": [
+        "draft",
+        "history",
+        "--conversation-id",
+        "windscribe-thread-000"
+      ],
+      "account": "windscribe",
+      "ok": true
+    },
+    {
+      "command": [
+        "draft",
+        "capture",
+        "windscribe-thread-000",
+        "--expected-revision",
+        "1",
+        "--request-id",
+        "cli-capture"
+      ],
+      "account": "windscribe",
+      "ok": true
+    },
+    {
+      "command": [
+        "draft",
+        "show",
+        "windscribe-thread-000"
+      ],
+      "account": "windscribe",
+      "ok": true
+    },
+    {
+      "command": [
+        "draft",
+        "discard",
+        "windscribe-thread-000",
+        "--expected-revision",
+        "1",
+        "--request-id",
+        "cli-discard"
+      ],
+      "account": "windscribe",
+      "ok": true
+    },
+    {
+      "command": [
+        "calendar-write",
+        "--params-file",
+        "C:\\Users\\Yegor\\AppData\\Local\\Temp\\fm-phase1-cli-d8a0c85r\\event.json"
+      ],
+      "account": "windscribe",
+      "ok": true
+    },
+    {
+      "command": [
+        "calendar-write",
+        "--params-file",
+        "C:\\Users\\Yegor\\AppData\\Local\\Temp\\fm-phase1-cli-d8a0c85r\\event.json"
+      ],
+      "account": "windscribe",
+      "ok": true
+    },
+    {
+      "command": [
+        "calendar-operations"
+      ],
+      "account": "windscribe",
+      "ok": true
+    },
+    {
+      "command": [
+        "draft",
+        "history"
+      ],
+      "account": "windscribe",
+      "ok": true
+    }
+  ]
+}

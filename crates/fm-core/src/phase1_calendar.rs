@@ -1,0 +1,644 @@
+//! P1-04/P1-06: one permission-filtered combined calendar and durable local writes.
+use crate::calendar_store::{calendar_error, fingerprint, parse_access, CALENDAR_VIEW_ZONE};
+use crate::{err, fields, id, string, Result, Store};
+use fm_calendar::{Access, EventKey};
+use rusqlite::{params, OptionalExtension};
+use serde_json::{json, Value};
+use std::collections::BTreeSet;
+
+impl Store {
+    pub(crate) fn calendar_sources(&self) -> Result<Value> {
+        let mut statement = self.db.prepare("SELECT c.account,c.calendar_id,a.name,a.email,c.time_zone,c.access,c.revision,c.sync_token FROM calendar_sync_state c JOIN accounts a ON a.id=c.account ORDER BY a.name,c.calendar_id")?;
+        let calendars = statement.query_map([], |row| {
+            let permission: String = row.get(5)?;
+            let calendar: String = row.get(1)?;
+            let complete = row.get::<_,Option<String>>(7)?.is_some();
+            let name=match calendar.as_str(){"primary"=>"Primary", "availability"=>"Availability",_=>calendar.as_str()};
+            Ok(json!({"account":row.get::<_,String>(0)?,"calendar_id":calendar,"name":name,"account_name":row.get::<_,String>(2)?,"account_email":row.get::<_,String>(3)?,"time_zone":row.get::<_,String>(4)?,"permission":permission,"writable":matches!(permission.as_str(),"owner"|"writer"),"revision":row.get::<_,i64>(6)?,"coverage":if permission=="none"{"denied"}else if complete{"cached"}else{"incomplete"}}))
+        })?.collect::<std::result::Result<Vec<_>,_>>()?;
+        Ok(json!({"calendars":calendars,"revision":self.revision()?}))
+    }
+
+    pub(crate) fn calendar_combined(&self, p: &Value) -> Result<Value> {
+        fields(p, &["from", "to", "calendars"])?;
+        let from = parse_date(string(p, "from")?)?;
+        let to = parse_date(string(p, "to")?)?;
+        if to <= from || (to - from).num_days() > 42 {
+            return Err(err("invalid_request", "Calendar range must be 1–42 days"));
+        }
+        let preferences;
+        let selection = if let Some(selection) = p.get("calendars") {
+            selection
+        } else {
+            preferences = self.preferences()?;
+            &preferences["preferences"]["selected_calendars"]
+        };
+        let selected = if selection.is_null() {
+            None
+        } else {
+            let entries = selection
+                .as_array()
+                .filter(|a| a.len() <= 100)
+                .ok_or_else(|| {
+                    err(
+                        "invalid_request",
+                        "Calendar selection must be null or at most 100 identities",
+                    )
+                })?;
+            let mut selected = BTreeSet::new();
+            for entry in entries {
+                fields(entry, &["account", "calendar_id"])?;
+                selected.insert((
+                    id(string(entry, "account")?)?.to_owned(),
+                    id(string(entry, "calendar_id")?)?.to_owned(),
+                ));
+            }
+            Some(selected)
+        };
+        let catalog = self.calendar_sources()?;
+        let sources = catalog["calendars"].as_array().unwrap();
+        if let Some(selected) = &selected {
+            for (account, calendar) in selected {
+                if !sources
+                    .iter()
+                    .any(|s| s["account"] == *account && s["calendar_id"] == *calendar)
+                {
+                    return Err(err("not_found", "A selected calendar no longer exists"));
+                }
+            }
+        }
+        let mut events = Vec::new();
+        let mut source_count = 0usize;
+        let mut selected_count = 0;
+        let mut denied = 0;
+        let mut incomplete = 0;
+        let window = fm_calendar::Window::from_dates(from, to, CALENDAR_VIEW_ZONE)
+            .map_err(calendar_error)?;
+        for source in sources {
+            let account = source["account"].as_str().unwrap();
+            let calendar = source["calendar_id"].as_str().unwrap();
+            if selected
+                .as_ref()
+                .is_some_and(|s| !s.contains(&(account.to_owned(), calendar.to_owned())))
+            {
+                continue;
+            }
+            selected_count += 1;
+            let permission = parse_access(source["permission"].as_str().unwrap())?;
+            if permission == Access::None {
+                denied += 1;
+                continue;
+            }
+            if source["coverage"] == "incomplete" {
+                incomplete += 1;
+            }
+            let mut statement=self.db.prepare("SELECT s.json FROM calendar_sources s LEFT JOIN calendar_event_state e ON e.account=s.account AND e.calendar_id=s.calendar_id AND e.event_id=s.event_id WHERE s.account=?1 AND s.calendar_id=?2 AND COALESCE(e.visible,1)=1 ORDER BY s.event_id LIMIT 5001")?;
+            let raw = statement
+                .query_map(params![account, calendar], |r| r.get::<_, String>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            source_count += raw.len();
+            if source_count > 5000 {
+                return Err(err(
+                    "limit_exceeded",
+                    "Combined calendar exceeds 5,000 retained sources; select fewer calendars",
+                ));
+            }
+            let raw = raw
+                .iter()
+                .map(|v| serde_json::from_str(v))
+                .collect::<std::result::Result<Vec<Value>, _>>()?;
+            let mut projected = fm_calendar::project_google_events_in_window(
+                account,
+                calendar,
+                source["time_zone"].as_str().unwrap(),
+                &raw,
+                window,
+                permission,
+            )
+            .map_err(calendar_error)?;
+            for row in &mut projected {
+                row["account"] = account.into();
+                row["account_name"] = source["account_name"].clone();
+                row["calendar_name"] = source["name"].clone();
+                let recurring = !row["occurrence_key"]["original_start"].is_null();
+                row["recurring"] = recurring.into();
+                row["can_edit"] = false.into();
+                row["can_rsvp"] = false.into();
+                if row["busy_only"] != true && !recurring {
+                    let event_id = row["occurrence_key"]["series"].as_str().unwrap();
+                    if let Some(raw) = raw.iter().find(|r| r["id"] == event_id) {
+                        row["event_id"] = raw["id"].clone();
+                        row["etag"] = raw["etag"].clone();
+                        let versioned = raw["etag"].as_str().is_some_and(|etag| !etag.is_empty());
+                        row["can_edit"] = (source["writable"] == true && versioned).into();
+                        if let Some(actor) = raw["attendees"].as_array().and_then(|a| {
+                            a.iter().find(|a| {
+                                a["email"] == source["account_email"] && a["self"] == true
+                            })
+                        }) {
+                            row["can_rsvp"] = versioned.into();
+                            row["self_response"] = actor["responseStatus"].clone();
+                        }
+                    }
+                }
+            }
+            events.extend(projected);
+            if events.len() > 1000 {
+                return Err(err("limit_exceeded","Combined calendar exceeds 1,000 occurrences; narrow the date range or calendars"));
+            }
+        }
+        fm_calendar::sort_projected_events(&mut events, window).map_err(calendar_error)?;
+        Ok(
+            json!({"total":events.len(),"events":events,"from":from.to_string(),"to":to.to_string(),"time_zone":CALENDAR_VIEW_ZONE,"revision":self.revision()?,"coverage":{"state":if denied>0{"restricted"}else if incomplete>0{"incomplete"}else{"cached"},"complete":denied==0&&incomplete==0,"live":false,"selected_calendars":selected_count,"denied_calendars":denied,"incomplete_calendars":incomplete},"continuation":null}),
+        )
+    }
+
+    pub(crate) fn calendar_write(&mut self, account: &str, p: &Value) -> Result<Value> {
+        fields(
+            p,
+            &[
+                "request_id",
+                "kind",
+                "calendar_id",
+                "event_id",
+                "expected_etag",
+                "fields",
+                "response",
+                "prepare_only",
+            ],
+        )?;
+        let request_id = id(string(p, "request_id")?)?;
+        let kind = string(p, "kind")?;
+        let calendar = id(string(p, "calendar_id")?)?;
+        let prepare_only = p
+            .get("prepare_only")
+            .map(|v| {
+                v.as_bool()
+                    .ok_or_else(|| err("invalid_request", "prepare_only must be boolean"))
+            })
+            .transpose()?
+            .unwrap_or(false);
+        let target = EventKey {
+            account: account.into(),
+            calendar: calendar.into(),
+            event: if kind == "create" {
+                format!(
+                    "local-{}",
+                    &fingerprint(&json!([account, calendar, request_id]))?[..40]
+                )
+            } else {
+                id(string(p, "event_id")?)?.into()
+            },
+        };
+        let mut request = p.clone();
+        request.as_object_mut().unwrap().remove("prepare_only");
+        let hash = fingerprint(&request)?;
+        let prior:Option<(String,Option<String>)>=self.db.query_row("SELECT intent_json,result_json FROM calendar_write_operations WHERE account=?1 AND request_id=?2",params![account,request_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+        if let Some((prior, receipt)) = prior {
+            let prior: Value = serde_json::from_str(&prior)?;
+            if prior["public_fingerprint"] != hash {
+                return Err(err(
+                    "request_id_conflict",
+                    "Request ID belongs to another calendar operation",
+                ));
+            }
+            if receipt.is_some() {
+                return self.calendar_write_ack(account, &json!({"request_id":request_id}));
+            }
+        } else {
+            let checkpoint = self.calendar_checkpoint(account, calendar)?;
+            let access = parse_access(checkpoint["access"].as_str().unwrap())?;
+            if kind == "create" {
+                if p.get("event_id").is_some()
+                    || p.get("expected_etag").is_some()
+                    || p.get("response").is_some()
+                {
+                    return Err(err(
+                        "invalid_request",
+                        "Create does not accept event identity, ETag or RSVP",
+                    ));
+                }
+                if !matches!(access, Access::Owner | Access::Writer) {
+                    return Err(err("permission_denied", "Choose a writable calendar"));
+                }
+                let mut body = calendar_fields(
+                    p.get("fields")
+                        .ok_or_else(|| err("invalid_request", "Create needs event fields"))?,
+                )?;
+                let actor: String = self.db.query_row(
+                    "SELECT email FROM accounts WHERE id=?1",
+                    [account],
+                    |r| r.get(0),
+                )?;
+                mark_actor(&mut body, &actor);
+                let mut source = body.clone();
+                source["id"] = target.event.clone().into();
+                source["etag"] = "pending-create".into();
+                source["status"] = "confirmed".into();
+                fm_calendar::normalize(
+                    account,
+                    calendar,
+                    checkpoint["time_zone"].as_str().unwrap(),
+                    &source,
+                )
+                .map_err(calendar_error)?;
+                let intent = json!({"request":{"kind":"create","body":body},"write":{"target":target,"body":body},"public_fingerprint":hash});
+                self.db.execute("INSERT INTO calendar_write_operations(account,request_id,fingerprint,intent_json,result_json) VALUES(?1,?2,?3,?4,NULL)",params![account,request_id,hash,serde_json::to_string(&intent)?])?;
+            } else if kind == "edit" || kind == "rsvp" {
+                let (event, _) = self.stored_calendar_event(account, calendar, &target.event)?;
+                if !event.recurrence.is_empty() || event.series_id.is_some() {
+                    return Err(err(
+                        "unsupported_operation",
+                        "Recurring event changes are not available in the local phase",
+                    ));
+                }
+                if event.private && !matches!(access, Access::Owner | Access::Writer) {
+                    return Err(err(
+                        "permission_denied",
+                        "This calendar does not permit private event details",
+                    ));
+                }
+                let etag = string(p, "expected_etag")?;
+                if kind == "edit" {
+                    if p.get("response").is_some() {
+                        return Err(err("invalid_request", "Edit does not accept RSVP"));
+                    }
+                    let mut body = calendar_fields(
+                        p.get("fields")
+                            .ok_or_else(|| err("invalid_request", "Edit needs event fields"))?,
+                    )?;
+                    if let Some(attendees) = body.get_mut("attendees").and_then(Value::as_array_mut)
+                    {
+                        for attendee in attendees {
+                            if let Some(existing) = event.attendees.iter().find(|a| {
+                                a["email"]
+                                    .as_str()
+                                    .zip(attendee["email"].as_str())
+                                    .is_some_and(|(a, b)| a.eq_ignore_ascii_case(b))
+                            }) {
+                                *attendee = existing.clone();
+                            }
+                        }
+                    }
+                    let mut source = event.source.clone();
+                    for (field, value) in body.as_object().unwrap() {
+                        source[field] = value.clone();
+                    }
+                    fm_calendar::normalize(
+                        account,
+                        calendar,
+                        checkpoint["time_zone"].as_str().unwrap(),
+                        &source,
+                    )
+                    .map_err(calendar_error)?;
+                    let request = json!({"kind":"edit","target":target,"expected_etag":etag,"body":body,"public_fingerprint":hash});
+                    self.calendar_prepare(&target, request_id, request, |event, access, _| {
+                        fm_calendar::edit(event, access, etag, body).map_err(calendar_error)
+                    })?;
+                } else {
+                    if p.get("fields").is_some() {
+                        return Err(err("invalid_request", "RSVP does not accept event fields"));
+                    }
+                    let response = match string(p, "response")? {
+                        "accepted" => fm_calendar::ResponseStatus::Accepted,
+                        "tentative" => fm_calendar::ResponseStatus::Tentative,
+                        "declined" => fm_calendar::ResponseStatus::Declined,
+                        _ => {
+                            return Err(err(
+                                "invalid_request",
+                                "Choose accepted, tentative or declined",
+                            ))
+                        }
+                    };
+                    let request = json!({"kind":"rsvp","target":target,"expected_etag":etag,"response":response,"public_fingerprint":hash});
+                    self.calendar_prepare(&target, request_id, request, |event, access, actor| {
+                        fm_calendar::rsvp(event, access, actor, etag, response)
+                            .map_err(calendar_error)
+                    })?;
+                }
+            } else {
+                return Err(err("unsupported_operation", "Choose create, edit or rsvp"));
+            }
+        }
+        if prepare_only {
+            return Ok(
+                json!({"request_id":request_id,"target":target,"state":"pending","local_only":true}),
+            );
+        }
+        self.calendar_write_ack(account, &json!({"request_id":request_id}))
+    }
+
+    pub(crate) fn calendar_write_ack(&mut self, account: &str, p: &Value) -> Result<Value> {
+        fields(p, &["request_id"])?;
+        let request_id = id(string(p, "request_id")?)?;
+        let (raw,prior):(String,Option<String>)=self.db.query_row("SELECT intent_json,result_json FROM calendar_write_operations WHERE account=?1 AND request_id=?2",params![account,request_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?.ok_or_else(||err("not_found","Calendar operation does not exist"))?;
+        let intent: Value = serde_json::from_str(&raw)?;
+        if intent.get("public_fingerprint").is_none() {
+            return Err(err(
+                "unsupported_operation",
+                "This is not a local calendar operation",
+            ));
+        }
+        if let Some(prior) = prior {
+            let mut result: Value = serde_json::from_str(&prior)?;
+            result["state"] = "fake_acknowledged".into();
+            result["local_only"] = true.into();
+            return Ok(result);
+        }
+        let target: EventKey = serde_json::from_value(intent["write"]["target"].clone())?;
+        let result = self.commit_local_calendar_write(&target, request_id, &intent);
+        if let Err(error) = &result {
+            let mut failed = intent.clone();
+            failed["last_error"] = json!({"code":error.code,"message":error.message});
+            self.db.execute("UPDATE calendar_write_operations SET intent_json=?1 WHERE account=?2 AND request_id=?3",params![serde_json::to_string(&failed)?,account,request_id])?;
+        }
+        result
+    }
+
+    fn commit_local_calendar_write(
+        &mut self,
+        target: &EventKey,
+        request_id: &str,
+        intent: &Value,
+    ) -> Result<Value> {
+        let checkpoint = self.calendar_checkpoint(&target.account, &target.calendar)?;
+        let access = parse_access(checkpoint["access"].as_str().unwrap())?;
+        let creating = intent["request"]["kind"] == "create";
+        let mut source = if creating {
+            if !matches!(access, Access::Owner | Access::Writer) {
+                return Err(err(
+                    "permission_denied",
+                    "Calendar permission changed before creation",
+                ));
+            }
+            if self.db.query_row("SELECT EXISTS(SELECT 1 FROM calendar_sources WHERE account=?1 AND calendar_id=?2 AND event_id=?3)",params![target.account,target.calendar,target.event],|r|r.get::<_,bool>(0))?{return Err(err("request_id_conflict","Client-created event identity already exists"));}
+            let mut value = intent["write"]["body"].clone();
+            value["id"] = target.event.clone().into();
+            value["status"] = "confirmed".into();
+            value
+        } else {
+            let (event, _) =
+                self.stored_calendar_event(&target.account, &target.calendar, &target.event)?;
+            if event.private && !matches!(access, Access::Owner | Access::Writer) {
+                return Err(err(
+                    "permission_denied",
+                    "Private event details are no longer permitted",
+                ));
+            }
+            let mut source = event.source;
+            for (field, value) in intent["write"]["body"].as_object().unwrap() {
+                source[field] = value.clone();
+            }
+            source
+        };
+        source["etag"] = format!(
+            "\"local-{}\"",
+            &fingerprint(&json!([target, request_id, intent["public_fingerprint"]]))?[..40]
+        )
+        .into();
+        if !creating {
+            let mut result = self.calendar_acknowledge(target, request_id, source)?;
+            result["state"] = "fake_acknowledged".into();
+            result["local_only"] = true.into();
+            return Ok(result);
+        }
+        fm_calendar::normalize(
+            &target.account,
+            &target.calendar,
+            checkpoint["time_zone"].as_str().unwrap(),
+            &source,
+        )
+        .map_err(calendar_error)?;
+        let revision = checkpoint["revision"].as_i64().unwrap();
+        let result = json!({"request_id":request_id,"target":target,"etag":source["etag"],"revision":revision+1,"state":"fake_acknowledged","local_only":true,"source_sha256":fingerprint(&source)?});
+        let tx = self.db.unchecked_transaction()?;
+        if tx.execute("UPDATE calendar_sync_state SET revision=revision+1 WHERE account=?1 AND calendar_id=?2 AND revision=?3",params![target.account,target.calendar,revision])?!=1{return Err(err("stale_revision","Calendar changed before create acknowledgement"));}
+        let raw = serde_json::to_string(&source)?;
+        tx.execute(
+            "INSERT INTO calendar_sources(account,calendar_id,event_id,json) VALUES(?1,?2,?3,?4)",
+            params![target.account, target.calendar, target.event, raw],
+        )?;
+        tx.execute("INSERT INTO calendar_event_state(account,calendar_id,event_id,visible,observed_json) VALUES(?1,?2,?3,1,?4)",params![target.account,target.calendar,target.event,raw])?;
+        tx.execute("UPDATE calendar_write_operations SET result_json=?1 WHERE account=?2 AND request_id=?3",params![serde_json::to_string(&result)?,target.account,request_id])?;
+        tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
+        tx.commit()?;
+        Ok(result)
+    }
+
+    pub(crate) fn calendar_operations(&self, account: &str, p: &Value) -> Result<Value> {
+        fields(p, &["limit", "cursor"])?;
+        let limit = p
+            .get("limit")
+            .map(|v| {
+                v.as_u64()
+                    .filter(|v| *v > 0 && *v <= 100)
+                    .ok_or_else(|| err("invalid_request", "Operation limit is 1–100"))
+            })
+            .transpose()?
+            .unwrap_or(50);
+        let (after_acknowledged, before_id) = match p.get("cursor") {
+            None | Some(Value::Null) => (-1_i64, i64::MAX),
+            Some(cursor) => {
+                fields(cursor, &["acknowledged", "before_id"])?;
+                let acknowledged = cursor["acknowledged"]
+                    .as_bool()
+                    .ok_or_else(|| err("invalid_request", "Invalid operation cursor"))?;
+                let before = cursor["before_id"]
+                    .as_i64()
+                    .filter(|id| *id > 0)
+                    .ok_or_else(|| err("invalid_request", "Invalid operation cursor"))?;
+                (i64::from(acknowledged), before)
+            }
+        };
+        let mut statement=self.db.prepare("SELECT request_id,intent_json,result_json,rowid FROM calendar_write_operations WHERE account=?1 AND json_extract(intent_json,'$.public_fingerprint') IS NOT NULL AND ((result_json IS NOT NULL)>?3 OR ((result_json IS NOT NULL)=?3 AND rowid<?4)) ORDER BY (result_json IS NOT NULL),rowid DESC LIMIT ?2")?;
+        let records = statement
+            .query_map(
+                params![account, limit + 1, after_acknowledged, before_id],
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, Option<String>>(2)?,
+                        r.get::<_, i64>(3)?,
+                    ))
+                },
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let has_more = records.len() > limit as usize;
+        let mut continuation = Value::Null;
+        let mut operations = Vec::new();
+        for (request_id, raw, result, row_id) in records.into_iter().take(limit as usize) {
+            let intent: Value = serde_json::from_str(&raw)?;
+            if has_more {
+                continuation = json!({"acknowledged":result.is_some(),"before_id":row_id});
+            }
+            operations.push(json!({"request_id":request_id,"target":intent["write"]["target"],"kind":intent["request"]["kind"],"state":if result.is_some(){"fake_acknowledged"}else if intent.get("last_error").is_some(){"failed"}else{"pending"},"error":intent["last_error"],"local_only":true}));
+        }
+        Ok(json!({"operations":operations,"continuation":continuation}))
+    }
+}
+
+fn parse_date(value: &str) -> Result<chrono::NaiveDate> {
+    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .map_err(|_| err("invalid_request", "Calendar needs YYYY-MM-DD dates"))
+}
+fn mark_actor(body: &mut Value, actor: &str) {
+    if let Some(attendees) = body.get_mut("attendees").and_then(Value::as_array_mut) {
+        for attendee in attendees {
+            if attendee["email"]
+                .as_str()
+                .is_some_and(|email| email.eq_ignore_ascii_case(actor))
+            {
+                attendee["email"] = actor.into();
+                attendee["self"] = true.into();
+            }
+        }
+    }
+}
+fn calendar_fields(value: &Value) -> Result<Value> {
+    fields(
+        value,
+        &[
+            "title",
+            "start",
+            "end",
+            "all_day",
+            "time_zone",
+            "location",
+            "description",
+            "conference_url",
+            "attendees",
+        ],
+    )?;
+    let title = value["title"]
+        .as_str()
+        .ok_or_else(|| err("invalid_request", "Event title must be text"))?;
+    if title.trim().is_empty() || title.len() > 512 || title.chars().any(char::is_control) {
+        return Err(err(
+            "invalid_request",
+            "Event title must contain 1–512 bytes",
+        ));
+    }
+    let all_day = value["all_day"]
+        .as_bool()
+        .ok_or_else(|| err("invalid_request", "Choose timed or all-day"))?;
+    let zone = string(value, "time_zone")?;
+    let start = string(value, "start")?;
+    let end = string(value, "end")?;
+    let times = |v: &str| {
+        if all_day {
+            json!({"date":v})
+        } else {
+            json!({"dateTime":v,"timeZone":zone})
+        }
+    };
+    let mut body = json!({"summary":title,"start":times(start),"end":times(end)});
+    for (field, bound) in [("location", 2048), ("description", 32768)] {
+        let text = value
+            .get(field)
+            .map(|v| {
+                v.as_str()
+                    .ok_or_else(|| err("invalid_request", "Event text must be a string"))
+            })
+            .transpose()?
+            .unwrap_or("");
+        if text.len() > bound {
+            return Err(err("invalid_request", "Event text exceeds its field limit"));
+        }
+        body[field] = text.into();
+    }
+    let conference = value
+        .get("conference_url")
+        .map(|v| {
+            v.as_str()
+                .ok_or_else(|| err("invalid_request", "Conference URL must be text"))
+        })
+        .transpose()?
+        .unwrap_or("");
+    if !conference.is_empty()
+        && (!conference.starts_with("https://")
+            || conference.len() > 2048
+            || conference.chars().any(char::is_whitespace))
+    {
+        return Err(err(
+            "invalid_request",
+            "Conference URL must be an HTTPS URL up to 2,048 bytes",
+        ));
+    }
+    body["conferenceData"] = if conference.is_empty() {
+        json!({"entryPoints":[]})
+    } else {
+        json!({"entryPoints":[{"entryPointType":"video","uri":conference}]})
+    };
+    if let Some(attendees) = value.get("attendees") {
+        let attendees = attendees
+            .as_array()
+            .filter(|a| a.len() <= 50)
+            .ok_or_else(|| {
+                err(
+                    "invalid_request",
+                    "At most 50 attendee email addresses are supported",
+                )
+            })?;
+        let mut seen = BTreeSet::new();
+        let mut output = Vec::new();
+        for address in attendees {
+            let address = address
+                .as_str()
+                .ok_or_else(|| err("invalid_request", "Attendees must be email addresses"))?;
+            if address.len() > 254
+                || address.chars().any(char::is_whitespace)
+                || !address.contains('@')
+                || address.starts_with('@')
+                || address.ends_with('@')
+            {
+                return Err(err("invalid_request", "Invalid attendee email address"));
+            }
+            if seen.insert(address.to_lowercase()) {
+                output.push(json!({"email":address,"responseStatus":"needsAction"}));
+            }
+        }
+        body["attendees"] = output.into();
+    }
+    // Validating even all-day zones prevents silent timezone typo acceptance.
+    fm_calendar::normalize(
+        "validate",
+        "validate",
+        zone,
+        &json!({"id":"validate","summary":title,"start":times(start),"end":times(end)}),
+    )
+    .map_err(calendar_error)?;
+    Ok(body)
+}
+
+pub(crate) fn seed_phase1_calendars(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    for account in ["windscribe", "personal", "sideproject"] {
+        tx.execute("UPDATE calendar_sync_state SET access='owner',sync_token='fixture-complete' WHERE account=?1 AND calendar_id='primary'",[account])?;
+        tx.execute("INSERT OR IGNORE INTO calendar_sync_state(account,calendar_id,query_fingerprint,time_zone,access,sync_token,revision) VALUES(?1,'primary','fixture-calendar-v2','America/Toronto','owner','fixture-complete',1)",[account])?;
+        let mut events = vec![
+            json!({"id":"cross-account","etag":"v1","summary":format!("{} planning",account),"description":"Synthetic planning across separate accounts.","location":"Toronto office","hangoutLink":"https://example.com/meeting","start":{"dateTime":"2026-09-11T10:00:00-04:00","timeZone":"America/Toronto"},"end":{"dateTime":"2026-09-11T11:00:00-04:00","timeZone":"America/Toronto"},"attendees":[{"email":format!("you@{account}.example"),"self":true,"responseStatus":"needsAction"},{"email":"colleague@example.com","responseStatus":"accepted"}]}),
+            json!({"id":"early","etag":"v1","summary":format!("{} early call",account),"start":{"dateTime":"2026-09-11T05:30:00-04:00"},"end":{"dateTime":"2026-09-11T06:15:00-04:00"}}),
+        ];
+        if account == "personal" {
+            for n in 0..4 {
+                events.push(json!({"id":format!("all-day-{n}"),"etag":"v1","summary":format!("Personal all-day {}",n+1),"start":{"date":"2026-09-11"},"end":{"date":"2026-09-12"}}));
+            }
+        }
+        for mut source in events {
+            if let Some(link) = source["hangoutLink"].as_str() {
+                source["conferenceData"] =
+                    json!({"entryPoints":[{"entryPointType":"video","uri":link}]});
+            }
+            let raw = serde_json::to_string(&source)?;
+            tx.execute("INSERT OR IGNORE INTO calendar_sources(account,calendar_id,event_id,json) VALUES(?1,'primary',?2,?3)",params![account,source["id"].as_str().unwrap(),raw])?;
+        }
+    }
+    tx.execute("INSERT OR IGNORE INTO calendar_sync_state(account,calendar_id,query_fingerprint,time_zone,access,sync_token,revision) VALUES('sideproject','availability','fixture-calendar-v2','America/Toronto','free_busy','fixture-complete',1)",[])?;
+    let source = json!({"id":"restricted","etag":"v1","summary":"RESTRICTED PRIVATE TITLE","description":"PRIVATE DESCRIPTION","location":"PRIVATE LOCATION","start":{"dateTime":"2026-09-11T10:30:00-04:00"},"end":{"dateTime":"2026-09-11T11:30:00-04:00"}});
+    tx.execute("INSERT OR IGNORE INTO calendar_sources(account,calendar_id,event_id,json) VALUES('sideproject','availability','restricted',?1)",[serde_json::to_string(&source)?])?;
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "phase1_calendar_tests.rs"]
+mod tests;

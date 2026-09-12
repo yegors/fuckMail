@@ -1,0 +1,175 @@
+{
+  "result": "passed",
+  "mode": "resize",
+  "theme": "harbour",
+  "started_unix_ms": 1789233755030.763,
+  "host": "Windows-10-10.0.26200-SP0",
+  "outputs": {
+    "gui_report": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p1-10-resize-harbour-fixed-03.gui.json",
+    "gui_log": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p1-10-resize-harbour-fixed-03.gui.log",
+    "engine_log": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p1-10-resize-harbour-fixed-03.engine.log"
+  },
+  "executables_sha256": {
+    "fm": "b316568190a915a5a8dcec73cbb46452b110c18a147885389e4fc560ed34e5aa",
+    "fm-engine": "01888f86b2cffe7b893a10f1c1ea1f5a362461a2fcacf275469b5fa35a1f2ec2",
+    "fuckmail-gui": "a32a99700291db406f5a1bf4c73a5a59f487dbc877948f747b2ef3dc654b01ed"
+  },
+  "package_manifest": null,
+  "environment": {
+    "QT_QPA_PLATFORM": "windows",
+    "QT_QUICK_BACKEND": null,
+    "PATH": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\Qt\\6.11.2\\msvc2022_64\\bin;C:\\Windows\\System32;C:\\Windows"
+  },
+  "before": {
+    "drafts": {
+      "rows": 3,
+      "columns": [
+        "account",
+        "draft_id",
+        "conversation_id",
+        "legacy_reply",
+        "mode",
+        "source_message_id",
+        "source_hash",
+        "routing_json",
+        "body",
+        "revision",
+        "body_html",
+        "attachments_json",
+        "discarded",
+        "signature_text",
+        "from_name",
+        "identity_revision",
+        "created_at",
+        "updated_at"
+      ],
+      "sha256": "c9d11939776c024f36fb6feb4652039d4bc61f850598e1a16618dc8668144a0c"
+    },
+    "capture_operations": {
+      "rows": 0,
+      "columns": [
+        "account",
+        "id",
+        "json",
+        "blob_hash"
+      ],
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "attachments": {
+      "rows": 9,
+      "columns": [
+        "account",
+        "id",
+        "message_id",
+        "name",
+        "mime_type",
+        "size",
+        "state",
+        "blob_hash"
+      ],
+      "sha256": "9eb623f61fc2ca84e0e118da665f7ee4f105b96beabd52b249cd3ce8083ae4d9"
+    },
+    "messages": {
+      "rows": 429,
+      "columns": [
+        "rowid",
+        "account",
+        "id",
+        "conversation_id",
+        "remote_id",
+        "sender_name",
+        "sender_email",
+        "recipient",
+        "subject",
+        "body",
+        "sent_at",
+        "starred",
+        "inbox",
+        "sent",
+        "source_hash"
+      ],
+      "sha256": "4abd329074e01fdc137788afde615abdc3b7d1334198e9aa151ad34b05999d7b"
+    }
+  },
+  "gui_exit_code": 0,
+  "engine_exit_code": 0,
+  "after": {
+    "drafts": {
+      "rows": 3,
+      "columns": [
+        "account",
+        "draft_id",
+        "conversation_id",
+        "legacy_reply",
+        "mode",
+        "source_message_id",
+        "source_hash",
+        "routing_json",
+        "body",
+        "revision",
+        "body_html",
+        "attachments_json",
+        "discarded",
+        "signature_text",
+        "from_name",
+        "identity_revision",
+        "created_at",
+        "updated_at"
+      ],
+      "sha256": "c9d11939776c024f36fb6feb4652039d4bc61f850598e1a16618dc8668144a0c"
+    },
+    "capture_operations": {
+      "rows": 0,
+      "columns": [
+        "account",
+        "id",
+        "json",
+        "blob_hash"
+      ],
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "attachments": {
+      "rows": 9,
+      "columns": [
+        "account",
+        "id",
+        "message_id",
+        "name",
+        "mime_type",
+        "size",
+        "state",
+        "blob_hash"
+      ],
+      "sha256": "9eb623f61fc2ca84e0e118da665f7ee4f105b96beabd52b249cd3ce8083ae4d9"
+    },
+    "messages": {
+      "rows": 429,
+      "columns": [
+        "rowid",
+        "account",
+        "id",
+        "conversation_id",
+        "remote_id",
+        "sender_name",
+        "sender_email",
+        "recipient",
+        "subject",
+        "body",
+        "sent_at",
+        "starred",
+        "inbox",
+        "sent",
+        "source_hash"
+      ],
+      "sha256": "4abd329074e01fdc137788afde615abdc3b7d1334198e9aa151ad34b05999d7b"
+    }
+  },
+  "visual_stability": "requires review of separate image and geometry evidence",
+  "elapsed_seconds": 43.562,
+  "verifier_sha256": "c4b49189482ce2da45357b21cfed0e466e5a56a545996e95ee0c2b3f037a9d93",
+  "output_sha256": {
+    "gui_report": "9e939481a4efa1209bc067ee74b53ddb0726efb986c74188b50509118f9cea1f",
+    "gui_log": "a39aa45d3bcda970b7d04c053d1adb4264e74e4715f31aedb2c9d4fc206ed7df",
+    "engine_log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

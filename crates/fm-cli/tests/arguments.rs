@@ -49,3 +49,90 @@ fn scope_and_bound_errors_are_machine_readable_without_a_live_engine() {
     assert_eq!(output.status.code(), Some(2));
     assert!(!profile.exists());
 }
+
+#[test]
+fn composition_selectors_reject_ambiguity_before_starting_an_engine() {
+    let root = tempfile::tempdir().unwrap();
+    let absent = root.path().join("not-created");
+    for tail in [
+        vec!["draft", "show"],
+        vec![
+            "draft",
+            "show",
+            "windscribe-thread-000",
+            "--draft-id",
+            "draft-1",
+        ],
+        vec![
+            "draft",
+            "capture",
+            "windscribe-thread-000",
+            "--draft-id",
+            "draft-1",
+        ],
+        vec![
+            "draft",
+            "history",
+            "--conversation-id",
+            "windscribe-thread-000",
+            "--draft-id",
+            "draft-1",
+        ],
+        vec!["draft", "list", "--limit", "101"],
+        vec!["draft", "create", "--mode", "send"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args([
+                "--profile",
+                absent.to_str().unwrap(),
+                "--account",
+                "windscribe",
+            ])
+            .args(&tail)
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{tail:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            !absent.exists(),
+            "invalid composition arguments must not start storage"
+        );
+    }
+}
+
+#[test]
+fn sender_commands_and_kinds_are_headless_and_reject_invalid_kinds() {
+    let root = tempfile::tempdir().unwrap();
+    let absent = root.path().join("not-created");
+    for command in [
+        vec!["mail", "sender", "--help"],
+        vec!["mail", "list", "--help"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args(["--profile", absent.to_str().unwrap()])
+            .args(command)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert!(!absent.exists());
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+        .args([
+            "--profile",
+            absent.to_str().unwrap(),
+            "--account",
+            "windscribe",
+            "mail",
+            "list",
+            "--kind",
+            "guessed",
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(!absent.exists());
+}

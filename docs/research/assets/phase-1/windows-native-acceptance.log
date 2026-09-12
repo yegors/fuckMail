@@ -1,0 +1,176 @@
+Start testing: Sep 12 01:05 Eastern Daylight Time
+----------------------------------------------------------
+4/9 Testing: gui-integration
+4/9 Test: gui-integration
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release/fuckmail-gui.exe" "--self-test"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release
+"gui-integration" start time: Sep 12 01:05 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+GUI engine launch attempt 1
+GUI self-test stage 0
+GUI engine launch attempt 2
+GUI self-test stage 20
+GUI self-test stage 21
+GUI self-test stage 1
+GUI self-test stage 2
+GUI self-test stage 27
+GUI self-test stage 22
+GUI self-test stage 23
+GUI self-test stage 24
+GUI self-test stage 25
+GUI self-test stage 26
+GUI self-test stage 3
+GUI self-test stage 4
+GUI self-test stage 5
+GUI self-test stage 6
+GUI self-test stage 7
+GUI self-test stage 8
+GUI self-test stage 9
+GUI self-test stage 30
+GUI self-test stage 31
+GUI self-test stage 32
+GUI self-test stage 33
+GUI self-test stage 34
+GUI self-test stage 35
+GUI self-test stage 36
+GUI self-test stage 37
+GUI self-test stage 38
+GUI self-test stage 39
+GUI self-test stage 40
+GUI self-test stage 41
+GUI self-test stage 42
+GUI self-test stage 48
+GUI self-test stage 49
+GUI self-test stage 50
+GUI self-test stage 51
+GUI self-test stage 52
+GUI self-test stage 53
+GUI self-test stage 54
+GUI self-test stage 55
+GUI self-test stage 56
+GUI self-test stage 57
+GUI self-test stage 58
+GUI self-test stage 59
+GUI self-test stage 70
+GUI self-test stage 71
+GUI self-test stage 72
+GUI self-test stage 73
+GUI self-test stage 74
+GUI engine launch attempt 1
+GUI self-test stage 75
+GUI self-test stage 76
+GUI self-test stage 77
+GUI self-test stage 78
+GUI self-test stage 79
+GUI self-test stage 80
+Native Settings stage 0
+Native Settings stage 1
+Native Settings stage 2
+Settings programmatic viewport setup: list= QVariant(double, 240) reader= QVariant(double, 160) editorFocus= true active= "replyComposer" stored list/reader= QVariant(double, 240) QVariant(double, 160)
+Native Settings stage 3
+Native Settings stage 4
+Native Settings stage 5
+Native Settings stage 6
+Native Settings stage 7
+Native Settings stage 8
+Native Settings stage 9
+Native Settings stage 10
+Native Settings stage 11
+Native Settings stage 12
+Native Settings stage 13
+Native Settings stage 14
+Native Settings stage 15
+Native Settings stage 16
+Native Settings stage 17
+Native Settings stage 18
+Native Settings stage 19
+Native Settings stage 20
+Native Settings stage 21
+Native Settings stage 22
+Native Settings stage 23
+Native Settings stage 24
+Native Settings passed: validation retention, account metadata, unchanged authored draft, independent calendar preferences and Mail viewport/focus restoration (programmatic viewport setup; physical wheel input unverified).
+GUI self-test stage 81
+Native mail search stage 0 case 0
+Native mail search stage 1 case 0
+Native mail search stage 2 case 0
+Native mail search stage 3 case 0
+Native mail search stage 1 case 1
+Native mail search stage 2 case 1
+Native mail search stage 3 case 1
+Native mail search stage 1 case 2
+Native mail search stage 2 case 2
+Native mail search stage 3 case 2
+Native mail search stage 1 case 3
+Native mail search stage 2 case 3
+Native mail search stage 3 case 3
+Native mail search stage 4 case 4
+Native mail search stage 5 case 4
+Native mail search stage 6 case 4
+GUI self-test stage 43
+Native calendar form stage 0
+Native calendar form stage 1
+Native calendar form stage 2
+Native calendar form stage 3
+Native calendar form stage 4
+Native calendar form stage 5
+Native calendar form stage 50
+Native calendar form stage 51
+Native calendar form stage 52
+Native calendar form stage 6
+Native calendar form stage 7
+Native calendar form stage 8
+Native calendar form stage 9
+Native calendar form stage 9
+Native calendar form stage 9
+Native calendar form stage 9
+Native calendar form stage 9
+GUI self-test stage 46
+GUI self-test stage 47
+GUI self-test stage 60
+GUI self-test stage 61
+GUI self-test stage 62
+GUI self-test stage 63
+GUI self-test passed: native mail/reply/calendar controls, independent CLI readback, retained validation errors, and stale-close recovery with continued polling and merged view persistence.
+GUI process restart preserved native Settings preferences and account metadata without changing the saved draft snapshot.
+GUI process restart passed: exact authored fields and capture journal identities/attempt count preserved.
+<end of output>
+Test time =  21.87 sec
+----------------------------------------------------------
+Test Passed.
+"gui-integration" end time: Sep 12 01:05 Eastern Daylight Time
+"gui-integration" time elapsed: 00:00:21
+----------------------------------------------------------
+
+8/9 Testing: gui-reply-document
+8/9 Test: gui-reply-document
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release/gui-reply-document-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release/gui
+"gui-reply-document" start time: Sep 12 01:05 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.12 sec
+----------------------------------------------------------
+Test Passed.
+"gui-reply-document" end time: Sep 12 01:05 Eastern Daylight Time
+"gui-reply-document" time elapsed: 00:00:00
+----------------------------------------------------------
+
+9/9 Testing: gui-calendar-layout
+9/9 Test: gui-calendar-layout
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release/gui-calendar-layout-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release/gui
+"gui-calendar-layout" start time: Sep 12 01:05 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.03 sec
+----------------------------------------------------------
+Test Passed.
+"gui-calendar-layout" end time: Sep 12 01:05 Eastern Daylight Time
+"gui-calendar-layout" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Sep 12 01:05 Eastern Daylight Time
