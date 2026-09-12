@@ -1,0 +1,148 @@
+{
+  "cache_context": "One reopened SQLite connection after bulk seed/checkpoint; OS filesystem cache was not cleared. Per-query warm observation counts recorded in each row. Static samples have no ingestion/inference. Concurrent-ingestion block uses independent producers and one serialized Store writer with bounded queue.",
+  "concurrent_ingestion": {
+    "batches": 100,
+    "core_query_p50_ms": 106.35210000000001,
+    "core_query_p95_ms": 234.44690000000003,
+    "core_query_p99_ms": 300.86859999999996,
+    "ingestion_batch_p50_ms": 2.3611999999999997,
+    "ingestion_batch_p95_ms": 10.815800000000001,
+    "ingestion_batch_p99_ms": 62.7496,
+    "inserted_messages": 2500,
+    "messages_per_batch": 25,
+    "model": "independent search and normalized-insertion producers; one serialized Store writer; bounded queue capacity 2; no parallel SQLite writer or provider transport",
+    "query_observations": 100,
+    "queue_to_response_p50_ms": 106.376,
+    "queue_to_response_p95_ms": 259.69399999999996,
+    "queue_to_response_p99_ms": 308.4003
+  },
+  "coverage_limits": "Index density fixture with shared retained synthetic source; not 25 GB mailbox, attachment-throughput, 1m/3m, OS-cold, real provider ingestion or power-loss evidence.",
+  "database_bytes": 145973248,
+  "experiment": "100k generated SQLite/FTS5 message rows through Store.handle",
+  "fixture_revision": 2,
+  "generated_messages": 100000,
+  "observations_per_class": 100,
+  "queries": [
+    {
+      "account": "windscribe",
+      "field": "sender",
+      "first_query_ms": 173.7475,
+      "query": "sender punctuation",
+      "returned": 20,
+      "terms": "o'hara+build@windscribe.example",
+      "warm_iterations": 100,
+      "warm_p50_ms": 90.88,
+      "warm_p95_ms": 99.8831,
+      "warm_p99_ms": 108.1463
+    },
+    {
+      "account": "personal",
+      "field": "sender",
+      "first_query_ms": 139.54559999999998,
+      "query": "sender account isolation",
+      "returned": 0,
+      "terms": "o'hara+build@windscribe.example",
+      "warm_iterations": 100,
+      "warm_p50_ms": 51.7629,
+      "warm_p95_ms": 58.4729,
+      "warm_p99_ms": 90.1715
+    },
+    {
+      "account": "windscribe",
+      "field": "subject",
+      "first_query_ms": 1.9577000000000002,
+      "query": "rare subject",
+      "returned": 10,
+      "terms": "needlequarter",
+      "warm_iterations": 100,
+      "warm_p50_ms": 0.9468,
+      "warm_p95_ms": 1.2119,
+      "warm_p99_ms": 1.4738
+    },
+    {
+      "account": "windscribe",
+      "field": "body",
+      "first_query_ms": 3.2194,
+      "query": "rare body",
+      "returned": 20,
+      "terms": "ultraquartz",
+      "warm_iterations": 100,
+      "warm_p50_ms": 1.8256999999999999,
+      "warm_p95_ms": 2.4639,
+      "warm_p99_ms": 2.9439
+    },
+    {
+      "account": "personal",
+      "field": "body",
+      "first_query_ms": 74.53450000000001,
+      "query": "common body",
+      "returned": 20,
+      "terms": "deployment",
+      "warm_iterations": 100,
+      "warm_p50_ms": 76.6853,
+      "warm_p95_ms": 87.2971,
+      "warm_p99_ms": 154.1281
+    },
+    {
+      "account": "personal",
+      "field": "body",
+      "first_query_ms": 125.3322,
+      "query": "unicode body",
+      "returned": 20,
+      "terms": "cafe 日本語",
+      "warm_iterations": 100,
+      "warm_p50_ms": 77.7986,
+      "warm_p95_ms": 86.1901,
+      "warm_p99_ms": 96.44160000000001
+    },
+    {
+      "account": "windscribe",
+      "first_query_ms": 45.920500000000004,
+      "query": "phase1 grouped first50",
+      "request": {
+        "folder": "all",
+        "grouped": true,
+        "limit": 50
+      },
+      "returned": 50,
+      "warm_iterations": 100,
+      "warm_p50_ms": 46.1105,
+      "warm_p95_ms": 54.686,
+      "warm_p99_ms": 72.01490000000001
+    },
+    {
+      "account": "windscribe",
+      "first_query_ms": 94.3847,
+      "query": "phase1 combined filters first50",
+      "request": {
+        "after": "2026-09-01",
+        "before": "2026-09-12",
+        "field": "body",
+        "folder": "all",
+        "grouped": true,
+        "has_attachment": false,
+        "limit": 50,
+        "query": "deployment",
+        "sender": "alex.o'hara+build@windscribe.example",
+        "status": "review"
+      },
+      "returned": 50,
+      "warm_iterations": 100,
+      "warm_p50_ms": 105.6817,
+      "warm_p95_ms": 133.9246,
+      "warm_p99_ms": 139.8254
+    }
+  ],
+  "query_plan": [
+    "SCAN message_fts VIRTUAL TABLE INDEX 0:M3",
+    "SEARCH m USING INTEGER PRIMARY KEY (rowid=?)",
+    "LIST SUBQUERY 2",
+    "SEARCH attachments USING COVERING INDEX attachments_message (account=?)"
+  ],
+  "retained_profile": "C:\\Users\\Yegor\\AppData\\Local\\Temp\\.tmpcmVS5H\\disposable-search-benchmark",
+  "seed_seconds": 3.6162429,
+  "sqlite_version": "3.46.0",
+  "target_arch": "x86_64",
+  "target_os": "windows",
+  "total_messages_including_small_fixture": 100429
+}

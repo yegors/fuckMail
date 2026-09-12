@@ -16,6 +16,7 @@ fuckMail is a personal, opinionated mail/calendar client for large separate acco
 | [Development commands](build-development.md) | Repeatable Mac/Windows bootstrap, build, test, run and packaging |
 | [Local protocol](local-protocol.md) | Implemented synthetic CLI/GUI command boundary and limits |
 | [Phase 0 execution evidence](research/phase-0-execution.md) | Observed checks, artifacts and remaining gates |
+| [Phase 1 execution evidence](research/phase-1-execution.md) | Active schema/fixture boundary, native integration and acceptance results |
 | [Current status](status.md) | What exists, what is active/next, what is deferred or excluded, and evidence for readiness |
 | [Decision log](decisions.md) | Append-only timestamped decisions, pivots and Q&A |
 | [Research index](research/README.md) | Evidence, alternatives and experiments organized by subject |
@@ -29,7 +30,7 @@ fuckMail is a personal, opinionated mail/calendar client for large separate acco
 
 Keep this directory at the product level, including the shared visual/interaction brief in **ui-ux.md**. Put source-dependent findings, comparisons, discovered ideas and experiment reports in a named topic under **research/**; there is no general research.md. Put current behavior, implementation boundaries, dependencies and acceptance gates in the relevant **contracts/** file. Contracts move as we learn; they are not promises that everything has been built.
 
-Use **development-plan.md** for the high-level build sequence and **plans/** for detailed execution packets only as their phase approaches. These refer to contracts and scoped research instead of owning a second copy of behavior or evidence. Phases 0 and 1 have detailed packet files; Phase 0 is completed and Phase 1 is prepared. Later phases remain deliberately lighter.
+Use **development-plan.md** for the high-level build sequence and **plans/** for detailed execution packets only as their phase approaches. These refer to contracts and scoped research instead of owning a second copy of behavior or evidence. Phases 0 and 1 have detailed packet files; Phase 0 is completed and Phase 1 implementation is active. Later phases remain deliberately lighter.
 
 Use **status.md** as the current progress record and **decisions.md** as history. Root README summarizes status and links here. Avoid duplicating technical specifications in product pages; link to the owning contract.
 

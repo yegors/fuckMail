@@ -5,21 +5,49 @@ import QtQuick.Layouts
 ApplicationWindow {
     id: window
     objectName: "mainWindow"
-    width: 1440; height: 950
-    minimumWidth: 980; minimumHeight: 650
+    width: 1440; height: 900
+    minimumWidth: 1000; minimumHeight: 650
     visible: true
-    title: "fuckMail — offline fixture"
+    title: "fuckMail — local fixture"
     color: Theme.canvas
     property string workspace: "mail"
     property bool settingsOpen: false
     property bool allowClose: false
-    property date now: new Date()
+    property date now: backend.clockNow
+    property var mailFocus: null
+    property var calendarFocus: null
+    readonly property bool workspaceShortcutsAllowed: !blocksWorkspaceShortcuts(activeFocusItem)
     palette.text: Theme.text
     palette.base: Theme.surface
+    palette.window: Theme.canvas
+    palette.button: Theme.surface
+    palette.buttonText: Theme.text
     palette.highlight: "#525860"
     palette.highlightedText: Theme.text
+    font.family: Theme.fontFamily
     font.pixelSize: 13
 
+    function belongsTo(item, view) {
+        while (item) { if (item === view) return true; item = item.parent }
+        return false
+    }
+    function blocksWorkspaceShortcuts(item) {
+        while (item) { if (item.blocksWorkspaceShortcuts === true) return true; item = item.parent }
+        return false
+    }
+    onActiveFocusItemChanged: {
+        if (belongsTo(activeFocusItem, mailView)) mailFocus = activeFocusItem
+        else if (belongsTo(activeFocusItem, calendarView)) calendarFocus = activeFocusItem
+    }
+    function navigate(target) {
+        settingsOpen = target === "settings"
+        if (!settingsOpen) workspace = target
+        Qt.callLater(function() {
+            const saved = workspace === "mail" ? mailFocus : calendarFocus
+            if (!settingsOpen && saved && saved.visible) saved.forceActiveFocus()
+        })
+    }
+    function findMail() { navigate("mail"); Qt.callLater(function() { search.forceActiveFocus(); search.selectAll() }) }
     onClosing: function(event) {
         if (!allowClose) { event.accepted = false; backend.shutdown() }
     }
@@ -27,43 +55,97 @@ ApplicationWindow {
         target: backend
         function onShutdownReady() { window.allowClose = true; window.close() }
     }
-    Timer { interval: 30000; running: true; repeat: true; onTriggered: window.now = new Date() }
-    Shortcut { sequences: [StandardKey.Find]; onActivated: search.forceActiveFocus() }
-    Shortcut { sequence: "Escape"; enabled: window.settingsOpen; onActivated: window.settingsOpen = false }
+    Shortcut { sequences: [StandardKey.Find, "Ctrl+K"]; enabled: window.workspaceShortcutsAllowed; onActivated: window.findMail() }
+    Shortcut { sequence: "Ctrl+1"; enabled: window.workspaceShortcutsAllowed; onActivated: window.navigate("mail") }
+    Shortcut { sequence: "Ctrl+2"; enabled: window.workspaceShortcutsAllowed; onActivated: window.navigate("calendar") }
+    Shortcut { sequence: "Ctrl+,"; enabled: window.workspaceShortcutsAllowed; onActivated: window.navigate("settings") }
+    Shortcut { sequence: "Escape"; enabled: window.settingsOpen; onActivated: window.navigate(window.workspace) }
     header: Rectangle {
-        height: 48; color: Theme.canvas
+        height: Theme.headerHeight
+        color: Theme.canvas
         Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.line }
         RowLayout {
-            anchors.fill: parent; anchors.leftMargin: 16; anchors.rightMargin: 14; spacing: 5
-            FmButton { text: "✉  Mail"; prominent: !window.settingsOpen && window.workspace === "mail"; onClicked: { window.workspace = "mail"; window.settingsOpen = false } }
-            FmButton { text: "▦  Calendar"; prominent: !window.settingsOpen && window.workspace === "calendar"; onClicked: { window.workspace = "calendar"; window.settingsOpen = false } }
-            Rectangle { Layout.leftMargin: 10; Layout.rightMargin: 10; width: 1; height: 20; color: Theme.line }
-            Repeater {
-                model: backend.accounts
-                delegate: FmButton {
-                    required property var modelData
-                    text: modelData.name + "  " + modelData.unread_count
-                    selected: backend.account === modelData.id
-                    tip: modelData.email + " · " + modelData.unread_count + " unread messages · " + modelData.starred_count + " starred messages"
-                    onClicked: backend.selectAccount(modelData.id)
+            anchors.fill: parent; anchors.leftMargin: 24; anchors.rightMargin: 24; spacing: 14
+            Rectangle {
+                implicitWidth: viewTabs.implicitWidth + 4; implicitHeight: 32
+                radius: 6; color: Theme.surface
+                Row {
+                    id: viewTabs; anchors.centerIn: parent; spacing: 2
+                    FmButton { objectName: "mailWorkspaceButton"; height: 28; text: "Mail"; iconName: "mail"; prominent: !window.settingsOpen && window.workspace === "mail"; tip: "Mail · Ctrl+1"; onClicked: window.navigate("mail") }
+                    FmButton { objectName: "calendarWorkspaceButton"; height: 28; text: "Calendar"; iconName: "calendar"; prominent: !window.settingsOpen && window.workspace === "calendar"; tip: "Combined calendar · Ctrl+2"; onClicked: window.navigate("calendar") }
                 }
             }
-            Item { Layout.fillWidth: true }
-            TextField {
-                id: search; objectName: "searchField"
-                Layout.preferredWidth: Math.min(230, window.width * 0.18)
-                implicitHeight: 30
-                visible: window.workspace === "mail" && !window.settingsOpen
-                placeholderText: "Search " + (backend.currentAccount.name || "mail")
-                color: Theme.text; placeholderTextColor: Theme.subtle
-                font.pixelSize: 12; selectByMouse: true
-                text: backend.query
-                onTextEdited: backend.query = text
-                background: Rectangle { color: Theme.surface; radius: 4; border.color: search.activeFocus ? Theme.accent : Theme.line }
+            Rectangle { implicitWidth: 1; implicitHeight: 20; color: Theme.line }
+            Flickable {
+                id: accountTabs
+                Layout.fillWidth: true; Layout.minimumWidth: 160; Layout.preferredHeight: 34
+                contentWidth: accountsRow.width; contentHeight: height; clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                flickableDirection: Flickable.HorizontalFlick
+                ScrollBar.horizontal: ScrollBar { policy: accountTabs.contentWidth > accountTabs.width ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff; height: 3 }
+                Row {
+                    id: accountsRow; anchors.verticalCenter: parent.verticalCenter; spacing: 2
+                    Repeater {
+                        model: backend.accounts
+                        delegate: FmButton {
+                            required property var modelData
+                            required property int index
+                            objectName: "accountTab_" + modelData.id
+                            property int reviewCount: modelData.unread_conversation_count || 0
+                            text: modelData.name + (reviewCount ? "  " + reviewCount : "")
+                            iconName: index === 0 ? "person" : "accounts"
+                            implicitWidth: Math.min(158, contentItem.implicitWidth + 22)
+                            height: 28
+                            selected: backend.account === modelData.id
+                            tip: modelData.email + "\n" + reviewCount + " conversations to review\n" + modelData.unread_count + " unread messages · " + modelData.starred_count + " held messages\nMail stays in this account. Calendar uses its own source selection."
+                            onClicked: { backend.selectAccount(modelData.id); window.navigate("mail") }
+                        }
+                    }
+                }
             }
-            Text { Layout.leftMargin: 10; text: "11 Sep 2026"; color: Theme.muted; font.pixelSize: 11 }
-            Text { text: "Offline fixture"; color: Theme.accent; font.pixelSize: 11; Layout.leftMargin: 6 }
-            FmButton { text: "⚙"; selected: window.settingsOpen; tip: "Settings"; onClicked: window.settingsOpen = !window.settingsOpen; Layout.leftMargin: 8 }
+            Rectangle {
+                Layout.preferredWidth: Math.min(280, window.width * 0.2)
+                implicitHeight: 32
+                visible: window.workspace === "mail" && !window.settingsOpen
+                color: Theme.surface; radius: 6
+                border.color: search.activeFocus ? Theme.accent : Theme.controlBorder
+                RowLayout {
+                    anchors.fill: parent; anchors.leftMargin: 11; anchors.rightMargin: 8; spacing: 9
+                    FmIcon { name: "search"; size: 14 }
+                    TextField {
+                        id: search; objectName: "searchField"
+                        Layout.fillWidth: true; padding: 0
+                        placeholderText: "Search " + (backend.currentAccount.name || "mail")
+                        color: Theme.text; placeholderTextColor: Theme.subtle
+                        font.family: Theme.fontFamily; font.pixelSize: 13; selectByMouse: true
+                        text: backend.query
+                        onTextEdited: backend.query = text
+                        background: Item { }
+                        Accessible.name: "Search current mailbox"
+                    }
+                    FmButton { visible: search.text.length > 0; iconName: "close"; iconSize: 12; implicitWidth: 20; implicitHeight: 24; tip: "Clear search"; onClicked: backend.query = "" }
+                    Rectangle {
+                        visible: search.text.length === 0 && window.width >= 1280
+                        implicitWidth: shortcutLabel.implicitWidth + 8; implicitHeight: 19; radius: 3; color: "transparent"; border.color: Theme.line
+                        Text { id: shortcutLabel; anchors.centerIn: parent; text: "Ctrl K"; font.family: Theme.fontFamily; font.pixelSize: 10; color: Theme.subtle }
+                    }
+                }
+            }
+            Rectangle { implicitWidth: 1; implicitHeight: 20; color: Theme.line }
+            Row {
+                spacing: 8
+                Text { visible: window.width >= 1280; text: Qt.formatDateTime(window.now, "ddd d MMM"); color: Theme.muted; font.pixelSize: 13; font.family: Theme.fontFamily }
+                Text { text: Qt.formatDateTime(window.now, "HH:mm"); color: Theme.accent; font.pixelSize: 13; font.weight: Font.Medium; font.family: Theme.fontFamily }
+            }
+            FmButton {
+                iconName: "info"; iconSize: 13
+                text: window.width >= 1380 ? "Local fixture" : ""
+                font.pixelSize: 12; implicitHeight: 28
+                tip: backend.connected ? "Connected to the local engine. Synthetic data; no live account or network sync." : "Connecting to the local engine."
+                onClicked: { window.navigate("settings"); settingsView.page = "Diagnostics" }
+            }
+            Rectangle { implicitWidth: 1; implicitHeight: 20; color: Theme.line }
+            FmButton { objectName: "settingsButton"; iconName: "settings"; iconSize: 16; implicitWidth: 32; selected: window.settingsOpen; tip: "Settings · Ctrl+,"; onClicked: window.navigate(window.settingsOpen ? window.workspace : "settings") }
         }
     }
     ColumnLayout {
@@ -80,10 +162,14 @@ ApplicationWindow {
         StackLayout {
             Layout.fillWidth: true; Layout.fillHeight: true
             currentIndex: window.settingsOpen ? 2 : window.workspace === "mail" ? 0 : 1
-            MailView { }
-            CalendarView { }
-            SettingsView { onDone: window.settingsOpen = false }
+            MailView { id: mailView }
+            CalendarView { id: calendarView }
+            SettingsView { id: settingsView; onDone: window.navigate(window.workspace) }
         }
-        TodayStrip { Layout.fillWidth: true; onOpenCalendar: { window.settingsOpen = false; window.workspace = "calendar" } }
+        TodayStrip {
+            visible: window.workspace === "mail" && !window.settingsOpen
+            Layout.fillWidth: true
+            onOpenCalendar: window.navigate("calendar")
+        }
     }
 }

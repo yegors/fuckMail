@@ -1,14 +1,19 @@
 pragma Singleton
 import QtQuick
 QtObject {
-    readonly property color canvas: "#101112"
-    readonly property color surface: "#141517"
-    readonly property color selected: "#1d1f22"
-    readonly property color hover: "#22252a"
-    readonly property color line: "#292c30"
-    readonly property color text: "#e3e4e7"
-    readonly property color muted: "#a0a3a9"
-    readonly property color subtle: "#787d86"
-    readonly property color accent: "#c7a263"
+    readonly property color canvas: "#0E0F11"
+    readonly property color surface: "#131417"
+    readonly property color selected: "#191A1E"
+    readonly property color hover: "#1F2126"
+    readonly property color line: "#232529"
+    readonly property color controlBorder: "#2A2C31"
+    readonly property color text: "#E9EAEC"
+    readonly property color muted: "#A2A3A7"
+    readonly property color subtle: "#85878E"
+    readonly property color accent: "#C9A36B"
     readonly property color error: "#e6a09a"
+    readonly property string fontFamily: "Geist"
+    readonly property int headerHeight: 56
+    readonly property int comfortableRowHeight: 52
+    readonly property int compactRowHeight: 44
 }

@@ -56,6 +56,8 @@ install(PROGRAMS
     "${FM_RUST_BIN_DIR}/fm-engine${CMAKE_EXECUTABLE_SUFFIX}"
     "${FM_RUST_BIN_DIR}/fm${CMAKE_EXECUTABLE_SUFFIX}"
     DESTINATION "${FM_INSTALL_BIN}")
+install(FILES "${CMAKE_SOURCE_DIR}/gui/fonts/LICENSE-Geist.txt"
+    DESTINATION "${FM_INSTALL_BIN}/licenses")
 # The normal OS plugin remains selected by Qt. Ship offscreen too so the exact
 # relocated development artifact can run its headless integration checks in CI.
 if(APPLE)
@@ -90,7 +92,7 @@ if(BUILD_TESTING)
     set_tests_properties(gui-smoke PROPERTIES TIMEOUT 45
         ENVIRONMENT "${FM_GUI_TEST_ENV}")
     add_test(NAME gui-integration COMMAND "$<TARGET_FILE:fuckmail-gui>" --self-test)
-    set_tests_properties(gui-integration PROPERTIES TIMEOUT 90
+    set_tests_properties(gui-integration PROPERTIES TIMEOUT 150
         ENVIRONMENT "${FM_GUI_TEST_ENV};FM_GUI_TEST_TRACE=1")
     add_test(NAME gui-startup-recovery COMMAND "${FM_CARGO}" test -p fm-engine --test sessions
         --locked ${FM_CARGO_PROFILE_ARGS} --target-dir "${CMAKE_SOURCE_DIR}/target"

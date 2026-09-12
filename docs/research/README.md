@@ -5,6 +5,7 @@ Evidence, alternatives and experiments organized by subject. This index is navig
 | Scope | Existing material | Build contract |
 | --- | --- | --- |
 | [Flight Progress v2 design](flight-progress-v2.md) | Exact HTML/export support files, source and browser review, confirmed changes and native Phase 1 adaptation | [Mail UI](../contracts/mail-ui.md), [Calendar](../contracts/calendar.md) |
+| [Phase 1 execution](phase-1-execution.md) | Active local slice, schema/fixture boundary, measured integration and acceptance gates | [Core](../contracts/core-storage.md), [Mail UI](../contracts/mail-ui.md), [Calendar](../contracts/calendar.md), [Quality](../contracts/quality.md) |
 | [Phase 0 execution](phase-0-execution.md) | Native experiment evidence and outstanding gates | [Quality](../contracts/quality.md) |
 | [Google feasibility execution](google-feasibility-execution.md) | Fake transport/auth/journal tests and live prerequisites | [Gmail](../contracts/gmail.md) |
 | [MIME feasibility execution](mime-feasibility-execution.md) | Shared parser/builder/capture and retained-content tests | [Mail UI](../contracts/mail-ui.md) |

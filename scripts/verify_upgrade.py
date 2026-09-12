@@ -18,6 +18,17 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
+def contains_fields(actual, expected):
+    """Protocol 1 may add query fields; existing field values remain stable."""
+    if isinstance(expected, dict):
+        return isinstance(actual, dict) and all(key in actual and contains_fields(actual[key], value)
+                                                 for key, value in expected.items())
+    if isinstance(expected, list):
+        return isinstance(actual, list) and len(actual) == len(expected) and all(
+            contains_fields(a, e) for a, e in zip(actual, expected))
+    return actual == expected
+
+
 def sha256(path):
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -70,7 +81,7 @@ class Check:
             time.sleep(0.05)
         return child
 
-    def start_owner(self, files, label, seconds=45):
+    def start_owner(self, files, label, seconds=20):
         child, log = self.spawn(files["fm"], "--profile", self.profile, "--json", "watch",
                                 "--seconds", str(seconds), label=label)
         deadline = time.monotonic() + 15
@@ -88,7 +99,7 @@ class Check:
         result = subprocess.run([str(program), *map(str, args)], cwd=self.root, env=self.env,
                                 stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                                 stderr=subprocess.PIPE, timeout=timeout, encoding="utf-8")
-        require(result.returncode == 0, program.name + " command failed (exit " + str(result.returncode) + ")")
+        require(result.returncode == 0, program.name + " command failed (exit " + str(result.returncode) + "): " + (result.stderr + result.stdout)[-1500:])
         return result.stdout
 
     def call(self, files, method, params=None, account="windscribe"):
@@ -122,7 +133,7 @@ class Check:
             output.close()
 
 
-def durable_snapshot(profile):
+def durable_snapshot(profile, columns=None):
     # Read-only inspection after the owned engine exits. Compare logical content;
     # harmless SQLite journal/header housekeeping is not a data-reset assertion.
     wal = profile / "store.sqlite3-wal"
@@ -136,13 +147,26 @@ def durable_snapshot(profile):
         schema = db.execute("PRAGMA user_version").fetchone()[0]
         digest = hashlib.sha256("\n".join(db.iterdump()).encode("utf-8")).hexdigest()
         counts = {name: db.execute("SELECT COUNT(*) FROM " + name).fetchone()[0]
-                  for name in ("messages", "attachments", "drafts", "operations")}
+                  for name in ("accounts", "conversations", "messages", "attachments", "drafts", "operations", "capture_operations", "views")}
+        fixture_revision = db.execute("SELECT value FROM meta WHERE key='fixture_revision'").fetchone()[0]
+        if columns is None:
+            names = [row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")]
+            columns = {name: [row[1] for row in db.execute('PRAGMA table_info("' + name.replace('"', '""') + '")')]
+                       for name in names}
+        table_digests = {}
+        for table, names in columns.items():
+            quoted = ['"' + name.replace('"', '""') + '"' for name in names]
+            projection = ','.join('quote(' + name + ')' for name in quoted)
+            sql = 'SELECT ' + projection + ' FROM "' + table.replace('"', '""') + '" ORDER BY ' + ','.join(quoted)
+            rows = db.execute(sql).fetchall()
+            table_digests[table] = hashlib.sha256(json.dumps(rows, ensure_ascii=False).encode("utf-8")).hexdigest()
     finally:
         db.close()
     blobs = {path.name: sha256(path) for path in sorted((profile / "blobs").iterdir())
              if path.is_file()}
     return {"schema": schema, "logical_database_sha256": digest,
-            "record_counts": counts, "retained_blobs": blobs}
+            "record_counts": counts, "retained_blobs": blobs, "fixture_revision": fixture_revision,
+            "columns": columns, "table_digests": table_digests}
 
 
 def check_upgrade(old, new, report):
@@ -154,6 +178,10 @@ def check_upgrade(old, new, report):
             old_status = check.call(old, "status", account=None)
             require(old_status.get("synthetic") is True, "Upgrade check requires synthetic fixture mode")
             report["old_schema"] = old_status["schema_version"]
+            require(old_status["schema_version"] == 4, "Phase 1 upgrade requires the preserved schema-4 baseline")
+            old_accounts = check.call(old, "accounts", account=None)
+            require(len(old_accounts["accounts"]) == 2 and old_status["fixture_revision"] == 1,
+                    "Old baseline must be the original two-account fixture 1")
             old_pid = old_engine.pid
             compatible = check.call(new, "status", account=None)
             require(compatible == old_status and check.pid() == old_pid,
@@ -164,7 +192,19 @@ def check_upgrade(old, new, report):
             body = "Human upgrade draft\nΚαλημέρα — 日本語 — café ☕\nExact authored text survives."
             draft_params = {"conversation_id": thread, "body": body,
                             "expected_revision": draft["revision"], "request_id": "upgrade-draft-once"}
+            draft_params.update({"body_html": "<p>Human upgrade draft — 日本語</p>",
+                                 "attachment_ids": ["windscribe-attachment-0"]})
             saved = check.call(old, "draft_save", draft_params)
+            view_params = {"view": {"query": "maya", "folder": "inbox", "selected": thread,
+                                      "readerY": 25, "listY": 15},
+                           "expected_revision": 0, "request_id": "upgrade-view-once"}
+            saved_view = check.call(old, "view_save", view_params)
+            capture_params = {"conversation_id": thread, "expected_revision": saved["revision"],
+                              "request_id": "upgrade-capture-once"}
+            captured = check.call(old, "draft_capture", capture_params)
+            captured_hash = sha256(Path(captured["path"]))
+            require(captured["state"] == "accepted" and captured["attempts_started"] == 1,
+                    "Old capture must be locally accepted exactly once")
             flag_params = {"id": thread, "message_ids": detail["message_ids"],
                            "expected_revision": detail["revision"], "request_id": "upgrade-flag-once",
                            "read": True, "starred": True}
@@ -187,17 +227,39 @@ def check_upgrade(old, new, report):
             upgraded = check.call(new, "status", account=None)
             require(upgraded["schema_version"] > old_status["schema_version"],
                     "Selected packages did not exercise an actual schema upgrade")
+            require(upgraded["schema_version"] == 5 and upgraded["fixture_revision"] == 1,
+                    "Schema 5 must preserve the original fixture revision")
+            current_accounts = check.call(new, "accounts", account=None)
+            require([row["id"] for row in current_accounts["accounts"]] == [row["id"] for row in old_accounts["accounts"]],
+                    "Migration added, removed or reset accounts")
             report["new_schema"] = upgraded["schema_version"]
+            report["fixture_revision_preserved"] = 1
+            report["accounts_preserved_without_reseed"] = [row["id"] for row in current_accounts["accounts"]]
             recovered = check.call(new, "draft_get", {"conversation_id": thread})
-            require(recovered["body"] == body and recovered["revision"] == saved["revision"],
+            require(contains_fields(recovered, saved),
                     "Migration lost or changed the exact Unicode draft")
             require(check.call(new, "draft_save", draft_params) == saved,
                     "Migration changed the immutable old draft receipt")
             require(check.call(new, "flag", flag_params) == flagged,
                     "Migration changed the immutable old flag receipt")
-            require(check.call(new, "conversation", {"id": thread}) == flagged,
+            require(contains_fields(check.call(new, "conversation", {"id": thread}), flagged),
                     "Migration changed retained conversation or flag state")
-            check.command(new["fuckmail-gui"], "--smoke", "--profile", check.profile, timeout=45)
+            require(check.call(new, "view_get") == saved_view, "Migration changed saved navigation")
+            require(check.call(new, "view_save", view_params) == saved_view, "Migration changed the old view receipt")
+            replay_capture = check.call(new, "draft_capture", capture_params)
+            require(replay_capture == captured and sha256(Path(replay_capture["path"])) == captured_hash,
+                    "Migration changed capture bytes, operation or attempt count")
+            require(check.call(new, "capture_history", {"conversation_id": thread})["total"] == 1,
+                    "Migrated capture journal does not expose its original entry")
+            check.finish_owners(new_owner, new_engine)
+            migrated_snapshot = durable_snapshot(check.profile, old_snapshot["columns"])
+            require(migrated_snapshot["table_digests"] == old_snapshot["table_digests"],
+                    "Migration changed existing table columns or logical content")
+            report["preexisting_logical_table_hashes_preserved"] = len(old_snapshot["table_digests"])
+            report["exact_captured_mime_sha256"] = captured_hash
+            new_engine = check.start_engine(new, "new-engine-for-gui")
+            new_owner = check.start_owner(new, "new-gui-owner", seconds=35)
+            check.command(new["fuckmail-gui"], "--smoke", "--profile", check.profile, timeout=30)
             require(check.pid() == new_engine.pid and new_owner.poll() is None,
                     "Closing the upgraded GUI ended the independent CLI owner")
             check.finish_owners(new_owner, new_engine)
@@ -206,8 +268,8 @@ def check_upgrade(old, new, report):
                         for name, digest in old_snapshot["retained_blobs"].items()),
                     "Migration lost or changed a previously retained blob")
             require(all(before["record_counts"][name] == old_snapshot["record_counts"][name]
-                        for name in ("messages", "attachments", "drafts")),
-                    "Migration changed message, attachment or draft record counts")
+                        for name in ("accounts", "conversations", "messages", "attachments", "drafts", "capture_operations")),
+                    "Migration or GUI startup changed authored/source record counts")
             require(before["record_counts"]["operations"] >= old_snapshot["record_counts"]["operations"],
                     "Migration lost recorded operation receipts")
             report["after_upgrade_counts"] = before["record_counts"]
@@ -239,6 +301,7 @@ def check_upgrade(old, new, report):
                     "New package cannot replay the flag receipt after rollback refusal")
             check.finish_owners(final_owner, final_engine)
             report["new_package_reopens_after_refusal"] = "passed"
+            report["old_query_fields_compatible_with_additive_protocol"] = "passed"
             report["draft_utf8_sha256"] = hashlib.sha256(body.encode("utf-8")).hexdigest()
             report["retained_blob_count"] = len(before["retained_blobs"])
         finally:

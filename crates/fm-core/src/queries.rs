@@ -1,5 +1,91 @@
 use crate::*;
 use rusqlite::params;
+use sha2::{Digest, Sha256};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet, VecDeque},
+    sync::{Arc, Mutex},
+};
+#[derive(Clone)]
+pub(crate) struct ConversationState {
+    position: usize,
+    unread: bool,
+    starred: bool,
+    latest: f64,
+}
+pub(crate) struct ConversationProjection {
+    generation: u64,
+    message_count: i64,
+    max_rowid: i64,
+    states: Arc<HashMap<String, ConversationState>>,
+}
+pub(crate) type ConversationCache = RefCell<HashMap<String, ConversationProjection>>;
+pub(crate) type ProjectionCache = RefCell<HashMap<(String, &'static str), (u64, Value)>>;
+type ChangeSnapshot = (u64, u64, u64, Vec<(u64, i64)>);
+#[derive(Default)]
+struct Changes {
+    hooks: u64,
+    messages: u64,
+    coverage: u64,
+    reset_after: u64,
+    inserts: VecDeque<(u64, i64)>,
+    observed: (u64, u64, u64),
+}
+#[derive(Clone)]
+pub(crate) struct MailChanges(Arc<Mutex<Changes>>);
+impl MailChanges {
+    pub(crate) fn install(db: &Connection) -> Self {
+        let changes = Arc::new(Mutex::new(Changes {
+            observed: (db.total_changes(), 0, 0),
+            ..Default::default()
+        }));
+        let hook = changes.clone();
+        db.update_hook(Some(move |action, _: &str, table: &str, rowid| {
+            let mut c = hook.lock().unwrap();
+            c.hooks += 1;
+            if table == "messages" {
+                c.messages += 1;
+                c.coverage += 1;
+                let generation = c.messages;
+                if action == rusqlite::hooks::Action::SQLITE_INSERT {
+                    c.inserts.push_back((generation, rowid));
+                    if c.inserts.len() > 512 {
+                        c.reset_after = c.inserts.pop_front().unwrap().0;
+                    }
+                } else {
+                    c.reset_after = generation;
+                    c.inserts.clear();
+                }
+            } else if table == "attachments" || table.starts_with("message_fts") {
+                c.coverage += 1;
+            }
+        }));
+        Self(changes)
+    }
+    fn snapshot(&self, db: &Connection) -> ChangeSnapshot {
+        let mut c = self.0.lock().unwrap();
+        let total = db.total_changes();
+        let (old_total, old_hooks, old_messages) = c.observed;
+        if total - old_total != c.hooks - old_hooks {
+            // Virtual tables and SQLite's truncate optimization can change rows
+            // without a corresponding hook. An observed message-insert delta is
+            // safe only after inventory validation below; otherwise rebuild.
+            c.coverage += 1;
+            if c.messages == old_messages {
+                c.messages += 1;
+                c.reset_after = c.messages;
+                c.inserts.clear();
+            }
+        }
+        c.observed = (total, c.hooks, c.messages);
+        (
+            c.messages,
+            c.coverage,
+            c.reset_after,
+            c.inserts.iter().copied().collect(),
+        )
+    }
+}
 impl Store {
     pub(crate) fn accounts(&self) -> Result<Value> {
         let mut stmt = self
@@ -23,18 +109,159 @@ impl Store {
                 [&account],
                 |r| r.get(0),
             )?;
-            out.push(json!({"id":account,"name":name,"email":email,"provider":provider,"signature_text":format!("—\n{name}"),"unread_count":unread,"starred_count":starred,"conversation_count":count,"message_count":messages,"coverage":self.coverage(&account)?}));
+            let counts = self.account_counts(&account)?;
+            let (metadata_revision, signature_text): (i64, String) = self.db.query_row(
+                "SELECT revision,signature_text FROM account_metadata WHERE account=?1",
+                [&account],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )?;
+            out.push(json!({"metadata_revision":metadata_revision,"unread_conversation_count":counts["unread_conversation_count"],"held_conversation_count":counts["held_conversation_count"],"done_conversation_count":counts["done_conversation_count"],"count_scope":"all_account_mail_including_archive","id":account,"name":name,"email":email,"provider":provider,"signature_text":signature_text,"unread_count":unread,"starred_count":starred,"conversation_count":count,"message_count":messages,"coverage":self.coverage(&account)?}));
         }
-        Ok(json!({"accounts":out,"fixture_revision":FIXTURE_REVISION}))
+        Ok(json!({"accounts":out,"fixture_revision":self.fixture_revision()?}))
+    }
+    fn cached_projection(
+        &self,
+        account: &str,
+        key: &'static str,
+        build: impl FnOnce() -> Result<Value>,
+    ) -> Result<Value> {
+        let (messages, coverage, _, _) = self.mail_changes.snapshot(&self.db);
+        let stamp = if key == "counts" { messages } else { coverage };
+        let cache_key = (account.to_owned(), key);
+        if let Some((old, value)) = self.projection_cache.borrow().get(&cache_key) {
+            if *old == stamp {
+                return Ok(value.clone());
+            }
+        }
+        let value = build()?;
+        self.projection_cache
+            .borrow_mut()
+            .insert(cache_key, (stamp, value.clone()));
+        Ok(value)
+    }
+    pub(crate) fn account_counts(&self, account: &str) -> Result<Value> {
+        self.cached_projection(account, "counts", || self.compute_account_counts(account))
+    }
+    fn conversation_states(
+        &self,
+        account: &str,
+    ) -> Result<Arc<HashMap<String, ConversationState>>> {
+        let (stamp, _, reset_after, inserts) = self.mail_changes.snapshot(&self.db);
+        if let Some(old) = self.conversation_cache.borrow_mut().get_mut(account) {
+            if old.generation == stamp {
+                return Ok(old.states.clone());
+            }
+            if old.generation >= reset_after {
+                let mut additions = HashSet::new();
+                let mut conversations = HashSet::new();
+                let mut row_query = self.db.prepare_cached(
+                    "SELECT account,conversation_id FROM messages WHERE rowid=?1",
+                )?;
+                let mut append_only = true;
+                for (_, rowid) in inserts
+                    .iter()
+                    .filter(|(generation, _)| *generation > old.generation)
+                {
+                    if let Some((owner, cid)) = row_query
+                        .query_row([rowid], |r| {
+                            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+                        })
+                        .optional()?
+                    {
+                        if owner == account {
+                            append_only &= *rowid > old.max_rowid;
+                            additions.insert(*rowid);
+                            conversations.insert(cid);
+                        }
+                    }
+                }
+                let actual: i64 = self.db.query_row(
+                    "SELECT COUNT(*) FROM messages WHERE account=?1",
+                    [account],
+                    |r| r.get(0),
+                )?;
+                // This also catches rollback/reused rowids, REPLACE's unhooked
+                // delete, and a truncate mixed with otherwise ordinary inserts.
+                if append_only && actual == old.message_count + additions.len() as i64 {
+                    let states = Arc::make_mut(&mut old.states);
+                    let mut aggregate=self.db.prepare_cached("SELECT MAX(unread),MAX(starred),MAX(julianday(sent_at)) FROM messages WHERE account=?1 AND conversation_id=?2")?;
+                    for cid in conversations {
+                        let position = states
+                            .get(&cid)
+                            .map_or(states.len(), |state| state.position);
+                        let state = aggregate.query_row(params![account, cid], |r| {
+                            Ok(ConversationState {
+                                position,
+                                unread: r.get(0)?,
+                                starred: r.get(1)?,
+                                latest: r.get::<_, Option<f64>>(2)?.unwrap_or(0.0),
+                            })
+                        })?;
+                        states.insert(cid, state);
+                    }
+                    old.message_count = actual;
+                    old.max_rowid = additions.into_iter().fold(old.max_rowid, i64::max);
+                    old.generation = stamp;
+                    return Ok(old.states.clone());
+                }
+            }
+        }
+        let mut stmt=self.db.prepare_cached("SELECT conversation_id,MAX(unread),MAX(starred),MAX(julianday(sent_at)),COUNT(*),MAX(rowid) FROM messages WHERE account=?1 GROUP BY conversation_id")?;
+        let mut message_count = 0;
+        let mut max_rowid = 0;
+        let mut position = 0;
+        let states = stmt
+            .query_map([account], |r| {
+                message_count += r.get::<_, i64>(4)?;
+                max_rowid = max_rowid.max(r.get::<_, i64>(5)?);
+                let current_position = position;
+                position += 1;
+                Ok((
+                    r.get::<_, String>(0)?,
+                    ConversationState {
+                        position: current_position,
+                        unread: r.get(1)?,
+                        starred: r.get(2)?,
+                        latest: r.get::<_, Option<f64>>(3)?.unwrap_or(0.0),
+                    },
+                ))
+            })?
+            .collect::<std::result::Result<HashMap<_, _>, _>>()?;
+        let states = Arc::new(states);
+        self.conversation_cache.borrow_mut().insert(
+            account.into(),
+            ConversationProjection {
+                generation: stamp,
+                message_count,
+                max_rowid,
+                states: states.clone(),
+            },
+        );
+        Ok(states)
+    }
+    fn compute_account_counts(&self, account: &str) -> Result<Value> {
+        let states = self.conversation_states(account)?;
+        let unread = states.values().filter(|s| s.unread).count();
+        let held = states.values().filter(|s| s.starred).count();
+        let done = states.values().filter(|s| !s.unread && !s.starred).count();
+        Ok(
+            json!({"conversation_count":states.len(),"unread_conversation_count":unread,"held_conversation_count":held,"done_conversation_count":done,"scope":"all_account_mail_including_archive","held_includes_unread":true}),
+        )
     }
     fn coverage(&self, account: &str) -> Result<Value> {
+        self.cached_projection(account, "coverage", || self.compute_coverage(account))
+    }
+    fn compute_coverage(&self, account: &str) -> Result<Value> {
         let (messages, source_records): (i64, i64) = self.db.query_row(
             "SELECT COUNT(*),COALESCE(SUM(source_hash<>''),0) FROM messages WHERE account=?1",
             [account],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
         let indexed_messages: i64 = self.db.query_row(
-            "SELECT COUNT(*) FROM messages m JOIN message_fts f ON f.rowid=m.rowid WHERE m.account=?1",
+            // With this schema's default columnsize=1, FTS5 maintains one
+            // compact token-count row per indexed document. Count those actual
+            // FTS-owned identities rather than seeking each large content row.
+            "SELECT COUNT(*) FROM messages m JOIN message_fts_docsize f ON f.id=m.rowid WHERE m.account=?1",
             [account], |r| r.get(0),
         )?;
         let (attachments, recorded_available): (i64, i64) = self.db.query_row(
@@ -59,11 +286,87 @@ impl Store {
     pub(crate) fn conversations(&self, account: &str, p: &Value) -> Result<Value> {
         fields(
             p,
-            &["query", "field", "category", "folder", "limit", "offset"],
+            &[
+                "query",
+                "field",
+                "category",
+                "folder",
+                "limit",
+                "offset",
+                "sender",
+                "status",
+                "has_attachment",
+                "after",
+                "before",
+                "grouped",
+                "cursor",
+            ],
         )?;
         let limit = number(p, "limit", 50, 1, 100)?;
-        let offset = number(p, "offset", 0, 0, 10_000_000)?;
+        let mut offset = number(p, "offset", 0, 0, 10_000_000)?;
+        validate_filters(p)?;
+        let sender = optional_string(p, "sender", "")?;
+        let sender_pattern = format!(
+            "%{}%",
+            sender
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_")
+        );
+        let status = optional_string(p, "status", "all")?;
+        let attachment = p.get("has_attachment").and_then(Value::as_bool);
+        let after = optional_string(p, "after", "")?;
+        let before = optional_string(p, "before", "")?;
+        let grouped = match p.get("grouped") {
+            None => false,
+            Some(Value::Bool(b)) => *b,
+            _ => return Err(err("invalid_request", "grouped must be a boolean")),
+        };
+        let revision = self.revision()?;
+        let mut cursor_scope = p.clone();
+        cursor_scope.as_object_mut().unwrap().remove("cursor");
+        cursor_scope.as_object_mut().unwrap().remove("offset");
+        let fingerprint = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&json!([account, cursor_scope]))?)
+        );
+        if let Some(cursor) = p.get("cursor") {
+            if p.get("offset").is_some() {
+                return Err(err("invalid_request", "Use cursor or offset, not both"));
+            }
+            let text = cursor
+                .as_str()
+                .filter(|v| v.len() <= 1024)
+                .ok_or_else(|| err("invalid_request", "Invalid conversation cursor"))?;
+            let cursor: Value = serde_json::from_str(text)?;
+            fields(&cursor, &["revision", "offset", "fingerprint"])?;
+            if cursor["revision"] != revision || cursor["fingerprint"] != fingerprint {
+                return Err(err(
+                    "stale_cursor",
+                    "Mail or query changed; restart pagination",
+                ));
+            }
+            offset = number(&cursor, "offset", 0, 0, 10_000_000)?;
+        }
         let query = optional_string(p, "query", "")?;
+        if query.split_whitespace().any(|word| {
+            word.split_once(':').is_some_and(|(prefix, value)| {
+                !["http", "https"].contains(&prefix)
+                    && !prefix.is_empty()
+                    && prefix.chars().all(|c| c.is_ascii_alphabetic())
+                    && (!value.is_empty()
+                        || [
+                            "from", "to", "is", "has", "before", "after", "subject", "body",
+                            "category", "status",
+                        ]
+                        .contains(&prefix))
+            })
+        }) {
+            return Err(err(
+                "invalid_request",
+                "Text operators are unavailable; use typed search filters",
+            ));
+        }
         if query.len() > 512 {
             return Err(err("invalid_request", "Search is limited to 512 bytes"));
         }
@@ -76,6 +379,17 @@ impl Store {
             return Err(err("invalid_request", "Unknown folder"));
         }
         let category = optional_string(p, "category", "")?;
+        if !category.is_empty() {
+            id(category)?;
+            let exists: bool = self.db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM categories WHERE account=?1 AND id=?2)",
+                params![account, category],
+                |r| r.get(0),
+            )?;
+            if !exists {
+                return Err(err("not_found", "Category does not exist in this account"));
+            }
+        }
         let tokens: Vec<_> = query
             .split(|c: char| !c.is_alphanumeric())
             .filter(|s| !s.is_empty())
@@ -93,28 +407,124 @@ impl Store {
         } else {
             format!("{field}:({expression})")
         };
-        // Evaluate FTS once, retaining exact matching IDs with each grouped page.
-        // List hydration reads only small metadata and one selected body per row;
-        // it never loads every thread member's body, attachment or source blob.
-        let sql = search_page_sql(!expression.is_empty());
+        // Evaluate source predicates once. Group exact identities in Core rather
+        // than materializing two SQL grouping trees and a temporary join index.
+        // The metadata projection is derived from this same writer connection.
+        struct Matched {
+            first_row: i64,
+            other_rows: Vec<i64>,
+            latest: String,
+        }
+        let states = self.conversation_states(account)?;
+        let sql = search_matches_sql(!expression.is_empty(), p);
         let mut stmt = self.db.prepare_cached(&sql)?;
-        let mut page = stmt
-            .query_map(
-                params![account, folder, category, expression, limit + 1, offset],
-                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
-            )?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        let more = page.len() > limit as usize;
-        page.truncate(limit as usize);
+        let mut matches: Vec<Option<Matched>> =
+            std::iter::repeat_with(|| None).take(states.len()).collect();
+        let mut page = Vec::new();
+        let mut rows = stmt.query(params![
+            account,
+            folder,
+            category,
+            expression,
+            limit,
+            offset,
+            sender_pattern,
+            status,
+            attachment,
+            after,
+            before
+        ])?;
+        while let Some(row) = rows.next()? {
+            let cid = row
+                .get_ref(0)?
+                .as_str()
+                .map_err(|_| err("storage_error", "Invalid conversation identity"))?;
+            let (cid, state) = states
+                .get_key_value(cid)
+                .ok_or_else(|| err("storage_error", "Matching conversation has no source state"))?;
+            if !match status {
+                "review" => state.unread,
+                "held" => state.starred,
+                "done" => !state.unread && !state.starred,
+                _ => true,
+            } {
+                continue;
+            }
+            let rowid: i64 = row.get(1)?;
+            let at = if grouped {
+                ""
+            } else {
+                row.get_ref(2)?
+                    .as_str()
+                    .map_err(|_| err("storage_error", "Invalid source timestamp"))?
+            };
+            match &mut matches[state.position] {
+                None => {
+                    matches[state.position] = Some(Matched {
+                        first_row: rowid,
+                        other_rows: Vec::new(),
+                        latest: at.into(),
+                    });
+                    page.push((cid.as_str(), state));
+                }
+                Some(entry) => {
+                    if at > entry.latest.as_str() {
+                        entry.latest = at.into();
+                    }
+                    entry.other_rows.push(rowid);
+                }
+            }
+        }
+        let filtered_count = page.len();
+        let group_rank = |s: &ConversationState| {
+            if s.unread {
+                0
+            } else if s.starred {
+                1
+            } else {
+                2
+            }
+        };
+        let compare = |(aid, a): &(&str, &ConversationState),
+                       (bid, b): &(&str, &ConversationState)| {
+            let order = if grouped {
+                group_rank(a)
+                    .cmp(&group_rank(b))
+                    .then_with(|| b.latest.total_cmp(&a.latest))
+            } else {
+                matches[b.position]
+                    .as_ref()
+                    .unwrap()
+                    .latest
+                    .cmp(&matches[a.position].as_ref().unwrap().latest)
+            };
+            order.then_with(|| aid.cmp(bid))
+        };
+        // Rank only the requested prefix; exact totals still use every match.
+        let end = ((offset + limit) as usize).min(page.len());
+        if end < page.len() {
+            page.select_nth_unstable_by(end, &compare);
+            page.truncate(end);
+        }
+        page.sort_unstable_by(compare);
+        let more = (offset + limit) < filtered_count as i64;
+        let page = page
+            .into_iter()
+            .skip(offset as usize)
+            .take(limit as usize)
+            .collect::<Vec<_>>();
         let mut out = Vec::with_capacity(page.len());
-        for (cid, matching_json) in page {
-            let matched: std::collections::HashSet<String> = serde_json::from_str(&matching_json)?;
+        for (cid, state) in page {
+            let matching = matches[state.position].take().unwrap();
+            let matched: std::collections::HashSet<i64> = std::iter::once(matching.first_row)
+                .chain(matching.other_rows)
+                .collect();
             let (subject, revision): (String, i64) = self.db.query_row(
                 "SELECT subject,revision FROM conversations WHERE account=?1 AND id=?2",
                 params![account, cid],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
-            let mut members = self.db.prepare_cached("SELECT id,sent_at,unread,starred FROM messages WHERE account=?1 AND conversation_id=?2 ORDER BY sent_at,id LIMIT 201")?;
+            let mut members = self.db.prepare_cached("SELECT id,sent_at,unread,starred,rowid FROM messages WHERE account=?1 AND conversation_id=?2 ORDER BY julianday(sent_at),id LIMIT 201")?;
             let members = members
                 .query_map(params![account, cid], |r| {
                     Ok((
@@ -122,6 +532,7 @@ impl Store {
                         r.get::<_, String>(1)?,
                         r.get::<_, bool>(2)?,
                         r.get::<_, bool>(3)?,
+                        r.get::<_, i64>(4)?,
                     ))
                 })?
                 .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -134,7 +545,7 @@ impl Store {
             let matching: Vec<_> = members
                 .iter()
                 .rev()
-                .filter(|m| matched.contains(&m.0))
+                .filter(|m| matched.contains(&m.4))
                 .map(|m| m.0.clone())
                 .collect();
             let selected = matching
@@ -151,10 +562,17 @@ impl Store {
                     Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?}))
                 })?
                 .collect::<std::result::Result<Vec<_>, _>>()?;
-            out.push(json!({"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if expression.is_empty(){Vec::<String>::new()}else{matching}}));
+            let group = if members.iter().any(|m| m.2) {
+                "review"
+            } else if members.iter().any(|m| m.3) {
+                "held"
+            } else {
+                "done"
+            };
+            out.push(json!({"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if expression.is_empty() && category.is_empty() && sender.is_empty() && after.is_empty() && before.is_empty() && attachment.is_none(){Vec::<String>::new()}else{matching}}));
         }
         Ok(
-            json!({"conversations":out,"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?}),
+            json!({"conversations":out,"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(serde_json::to_string(&json!({"revision":revision,"offset":offset+limit,"fingerprint":fingerprint}))?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?}),
         )
     }
     pub(crate) fn conversation(&self, account: &str, cid: &str) -> Result<Value> {
@@ -168,7 +586,7 @@ impl Store {
             )
             .optional()?
             .ok_or_else(|| err("not_found", "Conversation not found in this account"))?;
-        let mut stmt=self.db.prepare("SELECT id,sender_name,sender_email,recipient,subject,sent_at,body,unread,starred,revision,source_hash FROM messages WHERE account=?1 AND conversation_id=?2 ORDER BY sent_at,id LIMIT 201")?;
+        let mut stmt=self.db.prepare("SELECT id,sender_name,sender_email,recipient,subject,sent_at,body,unread,starred,revision,source_hash FROM messages WHERE account=?1 AND conversation_id=?2 ORDER BY julianday(sent_at),id LIMIT 201")?;
         let mut messages=stmt.query_map(params![account,cid],|r|Ok(json!({"id":r.get::<_,String>(0)?,"sender_name":r.get::<_,String>(1)?,"sender_email":r.get::<_,String>(2)?,"to":r.get::<_,String>(3)?,"subject":r.get::<_,String>(4)?,"sent_at":r.get::<_,String>(5)?,"text":r.get::<_,String>(6)?,"unread":r.get::<_,bool>(7)?,"starred":r.get::<_,bool>(8)?,"revision":r.get::<_,i64>(9)?,"source_hash":r.get::<_,String>(10)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;
         if messages.is_empty() || messages.len() > 200 {
             return Err(err(
@@ -235,15 +653,22 @@ impl Store {
             self.db.query_row("SELECT name,mime_type,size,state FROM attachments WHERE account=?1 AND id=?2",params![account,id],|row|Ok(json!({"id":id,"name":row.get::<_,String>(0)?,"mime_type":row.get::<_,String>(1)?,"size":row.get::<_,i64>(2)?,"state":row.get::<_,String>(3)?})))
                 .optional().map(|row|row.unwrap_or_else(||json!({"id":id,"state":"missing"})))
         }).collect::<std::result::Result<Vec<_>,_>>()?;
+        let saved_snapshot: Option<(String,String,i64)> = self.db.query_row("SELECT signature_text,from_name,identity_revision FROM drafts WHERE account=?1 AND conversation_id=?2",params![account,cid],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+        let (signature_text,from_name,identity_revision)=match saved_snapshot { Some(v)=>v,None=>self.db.query_row("SELECT m.signature_text,a.name,m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id WHERE a.id=?1",[account],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))? };
         let from: String =
             self.db
                 .query_row("SELECT email FROM accounts WHERE id=?1", [account], |r| {
                     r.get(0)
                 })?;
-        let to =
-            conversation["messages"].as_array().unwrap().last().unwrap()["sender_email"].clone();
+        let messages = conversation["messages"].as_array().unwrap();
+        let to = messages
+            .iter()
+            .rev()
+            .find(|message| message["sender_email"].as_str() != Some(&from))
+            .map(|message| message["sender_email"].clone())
+            .unwrap_or_else(|| messages.last().unwrap()["to"].clone());
         Ok(
-            json!({"conversation_id":cid,"body":body,"body_html":body_html,"attachment_ids":attachment_ids,"to":to,"from":from,"subject":format!("Re: {}",conversation["subject"].as_str().unwrap()),"revision":revision,"attachments":attachments}),
+            json!({"signature_text":signature_text,"from_name":from_name,"identity_revision":identity_revision,"conversation_id":cid,"body":body,"body_html":body_html,"attachment_ids":attachment_ids,"to":to,"from":from,"subject":format!("Re: {}",conversation["subject"].as_str().unwrap()),"revision":revision,"attachments":attachments}),
         )
     }
     pub(crate) fn view(&self, account: &str) -> Result<Value> {
@@ -300,17 +725,6 @@ fn number(p: &Value, key: &str, default: i64, min: i64, max: i64) -> Result<i64>
     Ok(n)
 }
 
-// Shared with the opt-in benchmark so EXPLAIN covers the exact production query.
-pub(crate) fn search_page_sql(search: bool) -> String {
-    let predicate = "m.account=?1 AND (?2='all' OR (?2='inbox' AND m.inbox=1) OR (?2='sent' AND m.sent=1)) AND (?3='' OR EXISTS(SELECT 1 FROM message_categories mc WHERE mc.account=m.account AND mc.message_id=m.id AND mc.category_id=?3))";
-    let search = if search {
-        " AND m.rowid IN (SELECT rowid FROM message_fts WHERE message_fts MATCH ?4)"
-    } else {
-        " AND ?4=''"
-    };
-    format!("SELECT m.conversation_id,json_group_array(m.id) FROM messages m WHERE {predicate}{search} GROUP BY m.conversation_id ORDER BY MAX(m.sent_at) DESC,m.conversation_id LIMIT ?5 OFFSET ?6")
-}
-
 fn search_snippet(body: &str, tokens: &[&str]) -> String {
     let lower = body.to_lowercase();
     let position = tokens
@@ -328,4 +742,164 @@ fn search_snippet(body: &str, tokens: &[&str]) -> String {
         text,
         if chars.next().is_some() { " …" } else { "" }
     )
+}
+
+// Structured filters combine on the same source message; status considers the whole conversation.
+pub(crate) fn validate_filters(p: &Value) -> Result<()> {
+    let sender = optional_string(p, "sender", "")?;
+    if sender.len() > 256 || sender.chars().any(char::is_control) {
+        return Err(err(
+            "invalid_request",
+            "Sender filter exceeds 256 bytes or contains control characters",
+        ));
+    }
+    if !["all", "review", "held", "done"].contains(&optional_string(p, "status", "all")?) {
+        return Err(err("invalid_request", "Unknown review status"));
+    }
+    if p.get("has_attachment").is_some_and(|v| !v.is_boolean()) {
+        return Err(err("invalid_request", "has_attachment must be boolean"));
+    }
+    let after = optional_string(p, "after", "")?;
+    let before = optional_string(p, "before", "")?;
+    for date in [after, before] {
+        if !date.is_empty()
+            && (date.len() != 10 || chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_err())
+        {
+            return Err(err(
+                "invalid_request",
+                "Date filters require YYYY-MM-DD in UTC",
+            ));
+        }
+    }
+    if !after.is_empty() && !before.is_empty() && after >= before {
+        return Err(err("invalid_request", "after must be earlier than before"));
+    }
+    Ok(())
+}
+pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
+    // Only add predicates actually requested. Bound optional OR expressions kept
+    // sender/body columns in the old query's scan even for unfiltered listings.
+    let mut predicate = "m.account=?1".to_owned();
+    match p["folder"].as_str().unwrap_or("inbox") {
+        "inbox" => predicate.push_str(" AND m.inbox=1"),
+        "sent" => predicate.push_str(" AND m.sent=1"),
+        _ => {}
+    }
+    if p["category"].as_str().is_some_and(|s| !s.is_empty()) {
+        predicate.push_str(" AND m.id IN (SELECT message_id FROM message_categories WHERE account=?1 AND category_id=?3)");
+    }
+    if search {
+        predicate.push_str(" AND message_fts MATCH ?4");
+    }
+    if p["sender"].as_str().is_some_and(|s| !s.is_empty()) {
+        predicate.push_str(
+            " AND (m.sender_name LIKE ?7 ESCAPE '\\' OR m.sender_email LIKE ?7 ESCAPE '\\')",
+        );
+    }
+    if let Some(has) = p["has_attachment"].as_bool() {
+        predicate.push_str(if has {
+            " AND m.id IN (SELECT message_id FROM attachments WHERE account=?1)"
+        } else {
+            " AND m.id NOT IN (SELECT message_id FROM attachments WHERE account=?1)"
+        });
+    }
+    if p["after"].as_str().is_some_and(|s| !s.is_empty()) {
+        predicate.push_str(" AND julianday(m.sent_at)>=julianday(?10)");
+    }
+    if p["before"].as_str().is_some_and(|s| !s.is_empty()) {
+        predicate.push_str(" AND julianday(m.sent_at)<julianday(?11)");
+    }
+    // Reserve stable numeric slots without forcing unrequested columns into scans.
+    let source = if search {
+        "message_fts JOIN messages m ON m.rowid=message_fts.rowid"
+    } else {
+        "messages m"
+    };
+    format!("WITH bindings AS (SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11) SELECT m.conversation_id,m.rowid,m.sent_at FROM {source} WHERE {predicate}")
+}
+
+#[cfg(test)]
+mod projection_tests {
+    use super::*;
+    fn append(store: &Store, id: &str, cid: &str) {
+        store.db.execute("INSERT OR IGNORE INTO conversations(account,id,subject,revision) VALUES('windscribe',?1,'Cache fixture',1)",[cid]).unwrap();
+        store.db.execute("INSERT INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision) VALUES('windscribe',?1,?2,?1,'Person','person@example.test','you@example.test','Cache fixture','Source text','2026-09-12T00:00:00Z',1,1,1,0,'',1)",params![id,cid]).unwrap();
+        store.db.execute("INSERT INTO message_fts(rowid,sender,subject,body) VALUES(?1,'Person person@example.test','Cache fixture','Source text')",[store.db.last_insert_rowid()]).unwrap();
+    }
+    fn correct(store: &Store) {
+        for account in ["windscribe", "personal"] {
+            let actual = store.account_counts(account).unwrap();
+            let expected:(i64,i64,i64,i64)=store.db.query_row("SELECT COUNT(*),COALESCE(SUM(u),0),COALESCE(SUM(s),0),COALESCE(SUM(NOT u AND NOT s),0) FROM (SELECT MAX(unread) u,MAX(starred) s FROM messages WHERE account=?1 GROUP BY conversation_id)",[account],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).unwrap();
+            assert_eq!(actual["conversation_count"], expected.0);
+            assert_eq!(actual["unread_conversation_count"], expected.1);
+            assert_eq!(actual["held_conversation_count"], expected.2);
+            assert_eq!(actual["done_conversation_count"], expected.3);
+            let indexed:i64=store.db.query_row("SELECT COUNT(*) FROM messages m JOIN message_fts f ON f.rowid=m.rowid WHERE m.account=?1",[account],|r|r.get(0)).unwrap();
+            assert_eq!(
+                store.coverage(account).unwrap()["indexed_messages"],
+                indexed
+            );
+        }
+    }
+    #[test]
+    fn projection_cache_skips_navigation_writes_and_handles_appends_replacements_and_rollback() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = Store::open(temp.path()).unwrap();
+        correct(&store);
+        let original = store.conversation_states("windscribe").unwrap();
+        store
+            .handle(
+                "view_save",
+                Some("windscribe"),
+                json!({"view":{"query":"cache"},"expected_revision":0,"request_id":"view-cache"}),
+            )
+            .unwrap();
+        store.handle("preferences_save",None,json!({"preferences":{"density":"compact"},"expected_revision":0,"request_id":"pref-cache"})).unwrap();
+        store.handle("draft_save",Some("windscribe"),json!({"conversation_id":"windscribe-thread-001","body":"Human text","expected_revision":0,"request_id":"draft-cache"})).unwrap();
+        assert!(Arc::ptr_eq(
+            &original,
+            &store.conversation_states("windscribe").unwrap()
+        ));
+        drop(original);
+        append(&store, "cache-one", "cache-conversation");
+        correct(&store);
+        append(&store, "cache-two", "cache-conversation");
+        correct(&store);
+        store
+            .db
+            .execute_batch(
+                "BEGIN; UPDATE messages SET unread=0,starred=0 WHERE id='cache-one'; ROLLBACK;",
+            )
+            .unwrap();
+        correct(&store);
+        // REPLACE has an unhooked deletion; the inventory check must rebuild the
+        // former conversation as well as the replacement's new identity.
+        store.db.execute("INSERT OR REPLACE INTO messages SELECT NULL,account,id,'windscribe-thread-001',remote_id,sender_name,sender_email,recipient,subject,body,sent_at,0,0,inbox,sent,source_hash,revision FROM messages WHERE id='cache-one'",[]).unwrap();
+        correct(&store);
+        store
+            .db
+            .execute("DELETE FROM messages WHERE id='cache-two'", [])
+            .unwrap();
+        correct(&store);
+        store.db.execute("DELETE FROM message_fts WHERE rowid=(SELECT rowid FROM messages WHERE id='cache-one')",[]).unwrap();
+        correct(&store);
+    }
+    #[test]
+    fn projection_cache_rebuilds_after_delta_overflow_and_unhooked_truncate() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(temp.path()).unwrap();
+        correct(&store);
+        let tx = store.db.unchecked_transaction().unwrap();
+        for i in 0..514 {
+            append(&store, &format!("cache-{i}"), "cache-overflow");
+        }
+        tx.commit().unwrap();
+        correct(&store);
+        store.db.execute_batch("DELETE FROM message_categories; DELETE FROM attachments; DELETE FROM messages; DELETE FROM message_fts;").unwrap();
+        correct(&store);
+        assert_eq!(
+            store.account_counts("windscribe").unwrap()["conversation_count"],
+            0
+        );
+    }
 }

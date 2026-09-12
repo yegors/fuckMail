@@ -262,3 +262,15 @@ Affected: status, root/agent guidance, Phase 0/development plan and execution ev
 Live Google/OAuth/OS vault integration, destructive account removal, actual local models/downloads, received HTML display, timed snooze/follow-up and legacy protocols remain later work. New compose/reply-all/forward/alias editing and new-file attachment import are outside this bounded reply slice. The expanded settings design supports planned real local preferences; it does not authorize simulated or destructive account management. Small missing native forms can be designed in their packet without blocking the first work.
 
 Affected: Core 9, Mail UI 8, Triage 5, Calendar 8, CLI 4 and Search 2, consumed by Platform, Gmail, Local assistance and Quality; UI brief/product scope/north star, reference research/indexes, current status, agent/root guidance and development/Phase 1 plans. Current runtime protocol 1/schema 4/fixture 1 and the completed Phase 0 evidence remain unchanged. All whole Google-first areas remain Draft, readiness 0/9. No further product choice blocks starting the first Phase 1 packets when implementation is requested.
+
+## D015 — Phase 1 implementation authorized
+
+Recorded 2026-09-12T03:39:00Z.
+
+**Outcome: accepted execution scope.** After the Windows build-chain handoff, the founder set the goal to implement Phase 1 end to end and match the design. Execute the complete prepared P1-00–P1-07 local slice on `codex/phase-1`; retain the archived Flight Progress v2 files unchanged and reimplement the interface in native QML. The verified Windows handoff is `c82bac8`; the original schema-4 package remains available for preservation and refusal checks.
+
+P1-00 uses the existing store with schema 5, fresh fixture 2 and additive protocol 1. Existing profiles keep their fixture revision and data; a migration does not reseed them. Shared preferences, account metadata/signature snapshots, bounded grouped queries, local capture history and combined permitted calendar operations are consumed by the GUI and CLI. This is an implementation choice within D014's accepted scope, not a new provider or product requirement.
+
+Completion requires the packet's actual cross-client, visual, performance, recovery and native package evidence. The initial large-mailbox performance failure remains a failed measurement until a tested correction meets the budget. Unavailable physical-host input checks and live Google/model/distribution gates remain explicit and do not become passing claims. Whole Google-first readiness remains 0/9.
+
+Affected: active Phase 1 plan/status, agent/root guidance, Core 10, Calendar 9 and the consuming Mail UI, Search, CLI, Platform and Quality contracts. Previous decisions and Phase 0 evidence are preserved.

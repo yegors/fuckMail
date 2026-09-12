@@ -23,8 +23,14 @@ impl Store {
     pub(crate) fn seed(&mut self) -> Result<()> {
         // Finalize immutable bytes before any rows reference them. An interrupted
         // seed may leave harmless orphan blobs; the database transaction is all-or-none.
+        let schema: u32 = self.db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        let fixture_accounts: &[&str] = if schema >= 5 {
+            &["windscribe", "personal", "sideproject"]
+        } else {
+            &["windscribe", "personal"]
+        };
         let mut messages = Vec::new();
-        for account in ["windscribe", "personal"] {
+        for &account in fixture_accounts {
             for n in 0..110 {
                 let members = if n == 0 {
                     3
@@ -36,7 +42,7 @@ impl Store {
                 for member in 0..members {
                     let cid = format!("{account}-thread-{n:03}");
                     let mid = format!("{account}-message-{n:03}-{member:03}");
-                    let (subject,sender,email,body,category)=match n {
+                    let (subject,mut sender,mut email,body,category)=match n {
                         0=>("Q3 infra review: v4 attached".to_owned(),"Maya Lindqvist".to_owned(),format!("maya@{account}.example"),"v4 attached. Two open calls: renew the Frankfurt bare-metal contract at the new rate, or move 40% of that pool to the second provider?\n\nNeed your call before the 14:00 review.\n\nhttps://example.com/review\n\n> Earlier question: please review both options.\nΚαλημέρα — こんにちは".to_owned(),"infra"),
                         1=>("App Store review — 3.1.2 rejected".to_owned(),"Tomasz Nowak".to_owned(),format!("tomasz@{account}.example"),"Revised paywall copy is ready; resubmitting today keeps Monday.".to_owned(),"apps"),
                         2=>("Head of Support — final loop".to_owned(),"Aisha Rahman".to_owned(),format!("aisha@{account}.example"),"3 of 4 recommend hire. Please send your read before Monday.".to_owned(),"hiring"),
@@ -44,7 +50,16 @@ impl Store {
                         4=>("Long project discussion".to_owned(),"Maya Lindqvist".to_owned(),format!("maya@{account}.example"),format!("Member {} of 32. The exact human exchange is retained, including this member's distinctive longthread{member} keyword.",member+1),"planning"),
                         _=>(format!("Project correspondence {n:03}"),format!("Colleague {}",n%20),format!("colleague+{}@{account}.example",n%20),format!("This is synthetic human message {n:03}. We discussed the invoice, project delivery, and quarterly planning. Searchable keyword archive{n:03}."),if n%2==0{"finance"}else{"planning"}),
                     };
-                    let recipient = format!("you@{account}.example");
+                    let outgoing = schema >= 5 && (n == 0 && member == 1 || n > 0 && n % 17 == 0);
+                    if outgoing {
+                        sender = "You".into();
+                        email = format!("you@{account}.example");
+                    }
+                    let recipient = if outgoing {
+                        format!("maya@{account}.example")
+                    } else {
+                        format!("you@{account}.example")
+                    };
                     let at = if n < 4 {
                         format!("2026-09-11T{:02}:{:02}:00-04:00", 9 - n, 10 + member)
                     } else {
@@ -72,7 +87,7 @@ impl Store {
                         unread: n < 4 || n % 5 == 0,
                         starred: n == 4 && member % 2 == 0 || n % 11 == 0,
                         inbox: n < 90,
-                        sent: n % 17 == 0,
+                        sent: if schema >= 5 { outgoing } else { n % 17 == 0 },
                         hash,
                         category: category.into(),
                     });
@@ -82,15 +97,17 @@ impl Store {
         let attachment_bytes=b"Q3 infrastructure review, revision 4\n\nOption A: renew Frankfurt capacity.\nOption B: shift 40% to the second provider.\nSynthetic offline attachment.\n";
         let attachment_hash = self.stage_blob(attachment_bytes)?;
         let tx = self.db.transaction()?;
-        for account in ["windscribe", "personal"] {
+        for &account in fixture_accounts {
             tx.execute(
                 "INSERT INTO accounts(id,name,email,provider) VALUES(?1,?2,?3,?4)",
                 params![
                     account,
                     if account == "windscribe" {
                         "Windscribe"
-                    } else {
+                    } else if account == "personal" {
                         "Personal"
+                    } else {
+                        "Side Project"
                     },
                     format!("you@{account}.example"),
                     if account == "windscribe" {
@@ -134,7 +151,7 @@ impl Store {
                 params![m.account, m.id, m.category],
             )?;
         }
-        for account in ["windscribe", "personal"] {
+        for &account in fixture_accounts {
             for (n, state) in [(0, "available"), (1, "missing"), (2, "partial")] {
                 tx.execute(
                     "INSERT INTO attachments VALUES(?1,?2,?3,?4,'text/plain',?5,?6,?7)",
@@ -174,9 +191,14 @@ impl Store {
             tx.execute("INSERT OR IGNORE INTO calendar_sync_state(account,calendar_id,query_fingerprint,time_zone,access,sync_token,revision) SELECT DISTINCT account,calendar_id,'fixture-calendar-v1','America/Toronto','reader',NULL,0 FROM calendar_sources",[])?;
             tx.execute("INSERT OR IGNORE INTO calendar_event_state(account,calendar_id,event_id,visible,observed_json) SELECT account,calendar_id,event_id,1,json FROM calendar_sources",[])?;
         }
+        if schema >= 5 {
+            tx.execute("INSERT INTO account_metadata(account,signature_text) SELECT id,'—'||char(10)||name FROM accounts",[])?;
+            tx.execute("INSERT INTO drafts(account,conversation_id,body,revision,signature_text,from_name,identity_revision) SELECT a.id,a.id||'-thread-003','I will review the rollout window and confirm the timing.',1,m.signature_text,a.name,m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id",[])?;
+            crate::phase1_calendar::seed_phase1_calendars(&tx)?;
+        }
         tx.execute(
             "INSERT INTO meta VALUES('fixture_revision',?1)",
-            [FIXTURE_REVISION],
+            [if schema >= 5 { FIXTURE_REVISION } else { 1 }],
         )?;
         tx.commit()?;
         Ok(())

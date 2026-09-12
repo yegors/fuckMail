@@ -1,6 +1,6 @@
 # Phase 1 — the redesigned local mail and calendar client
 
-Prepared 2026-09-11 under [D014](../decisions.md). **Plan ready; implementation has not started.** This phase applies the [Flight Progress v2 prototype](../research/flight-progress-v2.md) to the verified native foundation. [Status](../status.md) owns progress, [contracts](../contracts/README.md) own behavior and [development plan](../development-plan.md) owns the later Google milestones.
+Prepared 2026-09-11 under [D014](../decisions.md); implementation authorized by D015. **Implementation and integration active; acceptance is not complete.** This phase applies the [Flight Progress v2 prototype](../research/flight-progress-v2.md) to the verified native foundation. [Execution evidence](../research/phase-1-execution.md) records the schema 5/fixture 2 boundary and measured checks. [Status](../status.md) owns progress, [contracts](../contracts/README.md) own behavior and [development plan](../development-plan.md) owns the later Google milestones.
 
 ## Deliverable
 

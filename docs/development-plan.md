@@ -1,6 +1,6 @@
 # Development plan
 
-Updated 2026-09-11 under [D009–D014](decisions.md). **Phase 0 synthetic foundation is complete on available hosts; Phase 1 plan is ready and implementation has not started. Google-first readiness: 0/9 whole areas verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
+Updated 2026-09-11 under [D009–D015](decisions.md). **Phase 0 synthetic foundation is complete on available hosts; Phase 1 implementation is active. Google-first readiness: 0/9 whole areas verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
 
 ## Delivery direction
 
@@ -43,7 +43,7 @@ Do not implement legacy transports/feeds, an exhaustive CLI grammar, a model ins
 
 ## Phase 1: the redesigned local milestone
 
-The [detailed Phase 1 plan](plans/phase-1.md) is prepared from the updated HTML and the existing code, with owned packets and acceptance checks. Runtime work has not started. Extend the same engine/GUI/CLI; preserve Phase 0 evidence and store semantics.
+The [detailed Phase 1 plan](plans/phase-1.md) is being implemented from the updated HTML and the existing code, with owned packets and acceptance checks. Extend the same engine/GUI/CLI; preserve Phase 0 evidence and store semantics. [Phase 1 evidence](research/phase-1-execution.md) tracks measured progress and remaining gates.
 
 P1-00 freezes the next shared types/fixtures. P1-01 adds typed state, grouped queries/counts/actions and combined calendar scope while P1-02 establishes native visual primitives/settings. P1-03 mail/search and P1-04 calendar/timeline then proceed in parallel. P1-05 finishes durable human replies/local capture while P1-06 exposes bounded nonrecurring create/edit/self-RSVP. P1-07 integrates native visual/input, cross-client, recovery/upgrade and package checks.
 

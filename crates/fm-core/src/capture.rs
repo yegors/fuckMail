@@ -167,11 +167,6 @@ impl Store {
                 "Draft changed before capture; reload its current revision",
             ));
         }
-        let accounts = self.accounts()?;
-        let identity = accounts["accounts"]
-            .as_array()
-            .and_then(|accounts| accounts.iter().find(|row| row["id"] == account))
-            .ok_or_else(|| err("not_found", "Capture account does not exist"))?;
         let source_hash: String = self.db.query_row("SELECT source_hash FROM messages WHERE account=?1 AND conversation_id=?2 ORDER BY sent_at DESC,id DESC LIMIT 1", [account, request.conversation_id], |row| row.get(0))?;
         if !self.blob_present(&source_hash) {
             return Err(err(
@@ -203,13 +198,13 @@ impl Store {
         let identity = AccountIdentity {
             account_id: account.to_owned(),
             from: Address {
-                name: Some(identity["name"].as_str().unwrap_or("").to_owned()),
+                name: Some(draft["from_name"].as_str().unwrap_or("").to_owned()),
                 email: draft["from"]
                     .as_str()
                     .ok_or_else(|| err("invalid_request", "Draft From identity is missing"))?
                     .to_owned(),
             },
-            signature_text: identity["signature_text"].as_str().unwrap_or("").to_owned(),
+            signature_text: draft["signature_text"].as_str().unwrap_or("").to_owned(),
             signature_html: None,
         };
         let operation_digest = format!(
@@ -484,6 +479,60 @@ impl SubmissionTransport for LocalCapture {
     }
 }
 
+impl Store {
+    pub(crate) fn capture_history(&self, account: &str, p: &Value) -> Result<Value> {
+        fields(
+            p,
+            &["conversation_id", "limit", "offset", "unresolved_only"],
+        )?;
+        let unresolved = match p.get("unresolved_only") {
+            None => false,
+            Some(Value::Bool(value)) => *value,
+            _ => return Err(err("invalid_request", "unresolved_only must be boolean")),
+        };
+        let conversation = match p.get("conversation_id") {
+            None => "",
+            Some(_) => string(p, "conversation_id")?,
+        };
+        if !conversation.is_empty() {
+            self.conversation(account, conversation)?;
+        }
+        let bounded = |key: &str, default: i64, min: i64, max: i64| -> Result<i64> {
+            let v = p
+                .get(key)
+                .map(|v| v.as_i64().unwrap_or(-1))
+                .unwrap_or(default);
+            if v < min || v > max {
+                Err(err(
+                    "invalid_request",
+                    "Capture pagination is outside bounds",
+                ))
+            } else {
+                Ok(v)
+            }
+        };
+        let limit = bounded("limit", 30, 1, 100)?;
+        let offset = bounded("offset", 0, 0, 10_000_000)?;
+        let predicate="account=?1 AND (?2='' OR json_extract(json,'$.conversation_id')=?2) AND (NOT ?5 OR json_extract(json,'$.operation.state') IN ('Prepared','InFlight','AcceptanceUnknown'))";
+        let total: i64 = self.db.query_row(
+            &format!("SELECT COUNT(*) FROM capture_operations WHERE {predicate}"),
+            params![account, conversation, limit, offset, unresolved],
+            |r| r.get(0),
+        )?;
+        let mut stmt=self.db.prepare(&format!("SELECT id,json FROM capture_operations WHERE {predicate} ORDER BY json_extract(json,'$.created_at') DESC,id LIMIT ?3 OFFSET ?4"))?;
+        let rows = stmt
+            .query_map(
+                params![account, conversation, limit, offset, unresolved],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let captures=rows.into_iter().map(|(operation_id,text)|->Result<Value>{let r:CaptureRecord=serde_json::from_str(&text)?;let subject:String=self.db.query_row("SELECT subject FROM conversations WHERE account=?1 AND id=?2",params![account,r.conversation_id],|row|row.get(0)).optional()?.unwrap_or_else(||"Conversation unavailable".into());let state=match r.operation.state{SendState::Prepared=>"prepared",SendState::InFlight=>"in_flight",SendState::Accepted{..}=>"accepted",SendState::Rejected{..}=>"failed",SendState::AcceptanceUnknown=>"acceptance_unknown"};Ok(json!({"account":account,"operation_id":operation_id,"subject":subject,"conversation_id":r.conversation_id,"draft_revision":r.draft_revision,"synthetic_outcome":r.outcome,"state":state,"mime_sha256":r.operation.mime_sha256,"bytes":r.size,"created_at":r.created_at,"attempts_started":r.attempts_started,"local_only":true,"provider_delivered":false}))}).collect::<Result<Vec<_>>>()?;
+        Ok(
+            json!({"captures":captures,"total":total,"next_offset":if offset+limit<total{Some(offset+limit)}else{None},"local_only":true}),
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -498,6 +547,113 @@ mod tests {
 
     fn capture_params(draft: &Value, request_id: &str) -> Value {
         json!({"conversation_id":THREAD,"expected_revision":draft["revision"],"request_id":request_id})
+    }
+
+    #[test]
+    fn unresolved_history_precedes_limit_and_replays_older_revision_without_changing_new_draft() {
+        let temporary = tempfile::tempdir().unwrap();
+        let mut store = Store::open(temporary.path()).unwrap();
+        let draft = save(&mut store, "Original human reply", "old-draft");
+        let mut request = capture_params(&draft, "old-unknown");
+        request["outcome"] = json!("unknown");
+        let receipt = store
+            .handle("draft_capture", Some(ACCOUNT), request.clone())
+            .unwrap();
+        let original = load_record(&store.db, ACCOUNT, "old-unknown")
+            .unwrap()
+            .unwrap();
+        // A synthetic journal fixture buries the real unresolved operation under
+        // more accepted receipts than a maximum-size ordinary history page.
+        for i in 0..105 {
+            let mut record = original.clone();
+            record.created_at += 1;
+            record.operation.operation_id = format!("accepted-{i:03}");
+            record.operation.state = SendState::Accepted {
+                message_id: "fixture-message".into(),
+                thread_id: "fixture-thread".into(),
+            };
+            store
+                .db
+                .execute(
+                    "INSERT INTO capture_operations(account,id,json,blob_hash) VALUES(?1,?2,?3,?4)",
+                    params![
+                        ACCOUNT,
+                        record.operation.operation_id,
+                        serde_json::to_string(&record).unwrap(),
+                        record.operation.mime_sha256
+                    ],
+                )
+                .unwrap();
+        }
+        for (id, state) in [
+            ("older-prepared", SendState::Prepared),
+            ("older-flight", SendState::InFlight),
+            (
+                "known-rejection",
+                SendState::Rejected {
+                    reason: "Definite synthetic rejection".into(),
+                },
+            ),
+        ] {
+            let mut record = original.clone();
+            record.created_at -= 1;
+            record.operation.operation_id = id.into();
+            record.operation.state = state;
+            store
+                .db
+                .execute(
+                    "INSERT INTO capture_operations(account,id,json,blob_hash) VALUES(?1,?2,?3,?4)",
+                    params![
+                        ACCOUNT,
+                        id,
+                        serde_json::to_string(&record).unwrap(),
+                        record.operation.mime_sha256
+                    ],
+                )
+                .unwrap();
+        }
+        let visible = store
+            .capture_history(ACCOUNT, &json!({"conversation_id":THREAD,"limit":100}))
+            .unwrap();
+        assert!(visible["captures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|r| r["state"] == "accepted"));
+        let newer = save(&mut store, "Newer authored text stays intact", "new-draft");
+        drop(store);
+        let mut store = Store::open(temporary.path()).unwrap();
+        let pending = store
+            .capture_history(
+                ACCOUNT,
+                &json!({"conversation_id":THREAD,"unresolved_only":true,"limit":1}),
+            )
+            .unwrap();
+        assert_eq!(pending["total"], 3);
+        assert_eq!(pending["next_offset"], 1);
+        let row = &pending["captures"][0];
+        assert_eq!(row["operation_id"], "old-unknown");
+        let replay = json!({"conversation_id":row["conversation_id"],"expected_revision":row["draft_revision"],"request_id":row["operation_id"],"outcome":row["synthetic_outcome"]});
+        assert_eq!(
+            store
+                .handle("draft_capture", Some(ACCOUNT), replay)
+                .unwrap(),
+            receipt
+        );
+        assert_eq!(store.draft(ACCOUNT, THREAD).unwrap(), newer);
+        assert_eq!(
+            store
+                .capture_history("personal", &json!({"unresolved_only":true}))
+                .unwrap()["total"],
+            0
+        );
+        assert_eq!(
+            store
+                .capture_history(ACCOUNT, &json!({"unresolved_only":"true"}))
+                .unwrap_err()
+                .code,
+            "invalid_request"
+        );
     }
 
     #[test]
@@ -688,6 +844,24 @@ mod tests {
             .handle("draft_capture", Some(ACCOUNT), params.clone())
             .unwrap();
         assert_eq!(result["state"], "acceptance_unknown");
+        let history = store
+            .handle(
+                "capture_history",
+                Some(ACCOUNT),
+                json!({"conversation_id":THREAD}),
+            )
+            .unwrap();
+        let row = &history["captures"][0];
+        assert_eq!(row["synthetic_outcome"], "unknown");
+        let recovery = json!({"conversation_id":row["conversation_id"],"expected_revision":row["draft_revision"],"request_id":row["operation_id"],"outcome":row["synthetic_outcome"]});
+        drop(store);
+        let mut store = Store::open(&profile).unwrap();
+        assert_eq!(
+            store
+                .handle("draft_capture", Some(ACCOUNT), recovery)
+                .unwrap(),
+            result
+        );
         assert_eq!(
             store
                 .handle("draft_capture", Some(ACCOUNT), params)
@@ -805,9 +979,12 @@ mod tests {
         db.execute_batch(include_str!("../../../fixtures/schema-v1.sql"))
             .unwrap();
         let mut old = Store {
+            mail_changes: crate::queries::MailChanges::install(&db),
             db,
             profile: profile.clone(),
             _lock: std::fs::File::create(profile.join("store.lock")).unwrap(),
+            projection_cache: Default::default(),
+            conversation_cache: Default::default(),
         };
         old.seed().unwrap();
         // Populate the retained v1 SQL shape directly: newer mutation/query
@@ -899,9 +1076,12 @@ mod tests {
             .unwrap();
         db.execute_batch(include_str!("migration-002.sql")).unwrap();
         let mut old = Store {
+            mail_changes: crate::queries::MailChanges::install(&db),
             db,
             profile: profile.clone(),
             _lock: std::fs::File::create(profile.join("store.lock")).unwrap(),
+            projection_cache: Default::default(),
+            conversation_cache: Default::default(),
         };
         old.seed().unwrap();
         old.db.execute("INSERT INTO drafts(account,conversation_id,body,revision) VALUES(?1,?2,'Human v2 draft remains intact',4)",[ACCOUNT,THREAD]).unwrap();

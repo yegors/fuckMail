@@ -2,7 +2,9 @@
 
 Updated 2026-09-11. Proposed budgets, not measured results. Google-first required behavior includes fast sender/subject/body search, responsive user-owned daily triage, conversation-only mail, full offline messages/attachments, reliable Google calendar views and optional local classification/summaries on Windows/macOS/Linux. The founder specified high-end machines. Exact devices, mailbox message counts and local models remain unmeasured.
 
-State: Draft · Revision: 4 · Implementation/evidence: Phase 0 synthetic results recorded; whole area remains Draft. Owner: G — Platform/release coordinates; each workstream supplies its own fixtures and evidence. This is a shared acceptance contract, not a separate application feature.
+State: Draft · Revision: 5 · Implementation/evidence: Phase 0 synthetic results recorded; Phase 1 measurements and native acceptance active; whole area remains Draft. Owner: G — Platform/release coordinates; each workstream supplies its own fixtures and evidence. This is a shared acceptance contract, not a separate application feature.
+
+Revision 5 keeps the existing budgets and adds the app-consumed grouped first-page/filter queries, source-ingestion contention, native formatted document and combined calendar checks to the active [Phase 1 execution record](../research/phase-1-execution.md). The initial 100k/100-observation grouped and filtered p95 values (253 ms and 648 ms) exceed the proposed 100 ms Core budget; concurrent query/queue-response p95 was 601/602 ms. These are failed measurements under correction, not readiness. Native compilation and a passing startup/layout test do not prove the complete phase or the input-to-painted-result budget. Affected consumers: Core, Search, Mail UI, Calendar, CLI and Platform.
 
 Revision 3 applies D009: separate first usable, Google dogfood and later-protocol evidence. Best-effort HTML comes later; full browser fidelity and legacy protocols do not gate first use. Affected consumers: all workstreams. Current Google-first readiness denominator is nine.
 

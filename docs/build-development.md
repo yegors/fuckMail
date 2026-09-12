@@ -1,6 +1,6 @@
 # Build, run and move between machines
 
-This is the Phase 0 developer workflow. The app is Rust engine/CLI plus a C++20 Qt Quick/QML client and SQLite. Python is used only to orchestrate developer tools; the packaged app has no Python, Node.js or JavaScript build dependency.
+This is the shared Phase 0/Phase 1 developer workflow. The app is Rust engine/CLI plus a C++20 Qt Quick/QML client and SQLite. Python is used only to orchestrate developer tools; the packaged app has no Python, Node.js or JavaScript build dependency. Phase 1 integration is active; [its execution record](research/phase-1-execution.md) owns current results. The historical host checks below retain their original source and limits.
 
 ## First setup
 
@@ -46,6 +46,34 @@ GUI/CLI arguments follow `--`, for example `scripts/dev.sh run -- --profile /abs
 `--preset dev` is the default; `release` uses optimized Rust and C++ builds. Both use the tracked [CMake presets](../CMakePresets.json), [tool inputs](../scripts/toolchain.json), [Python dependency lock](../scripts/bootstrap-requirements.txt) and Rust toolchain/lockfile. Builds copy `fm` and `fm-engine` beside the GUI executable so engine discovery is the same as in the package. The developer launcher reads CMake’s generated executable path, including the different Windows build-directory layout. The CLI itself does not load Qt or need a display.
 
 An advanced Qt-only compilation is available with CMake `-DFM_GUI_ONLY=ON` in a separate build directory while editing UI. It deliberately excludes engine integration, tests and installation; it is not a working app or an acceptance result. Standard dev/release presets always build the complete slice.
+
+## Phase 1 local walkthrough
+
+Use a new disposable profile path for the three-account fixture. Existing profiles are upgraded in place and retain their original accounts, drafts and fixture revision; they are not reseeded. For example, on Windows:
+
+```powershell
+./scripts/dev.ps1 run -- --profile C:/Users/Yegor/Projects/Fuckaround/fuckMail/.tools/phase1-walkthrough --fixture-clock
+```
+
+On Mac/Linux use `scripts/dev.sh run -- --profile /absolute/local/phase1-walkthrough --fixture-clock`. The optional fixture clock fixes the view at 11 September 2026; ordinary launches use the current clock. Use a genuinely new path to repeat the initial state. All content and submission outcomes in this walkthrough are synthetic/local.
+
+1. In Mail, select Windscribe and open an unread conversation. The deliberate open marks its loaded members read; Delay holds it without a due date, and Done clears both unread and stars. Inbox, Sent and All mail stay within the selected account. Category badges and account totals cover the account; paging changes only the loaded list.
+2. Search for `Maya` or `Frankfurt`, open Filters, and combine sender/status/attachment/date conditions. Search matches source text, and a matching earlier message can be revealed in the reader. Clearing filters restores the normal account view.
+3. Open **Q3 infra review: v4 attached**, choose Reply, write your own text, select words and use B/I/U. Add a retained attachment from the attachment menu and edit the reply's signature if desired. Switch accounts/workspaces and return. The save status must confirm persistence. **Capture locally** records a MIME copy; Sent's local capture history shows its operation and outcome. It does not deliver an email.
+4. Browse the bottom Mail timeline, then open Calendar. Day/week/month/agenda combine permitted source details; the timeline date remains independent. Use New event to choose a writable target and create a nonrecurring fixture event. Open its details to edit it or respond for yourself. Local activity exposes recorded/retryable operations; it does not send invitations.
+5. Open Settings to change account display names/signatures, row density, selected calendars, week start and visible hours. Existing saved replies retain their signature snapshot. Close and reopen the same profile to check saved state.
+
+The CLI takes the same profile. With the executable directory containing `fm` and `fm-engine`, these are read-only checks:
+
+```text
+fm --profile /absolute/local/phase1-walkthrough --json accounts
+fm --profile /absolute/local/phase1-walkthrough --account windscribe --json mail list --grouped --limit 50
+fm --profile /absolute/local/phase1-walkthrough --account windscribe --json draft history
+fm --profile /absolute/local/phase1-walkthrough --json calendar --combined --from 2026-09-11 --to 2026-09-12
+fm --profile /absolute/local/phase1-walkthrough --json preferences show
+```
+
+Use a native Windows path in place of the illustrative absolute path. `mail read ID` is a query and does not mark the conversation reviewed; `mail review`, `mail done` and `mail delay` are explicit actions. Run `fm --help` and the command's `--help` for mutation parameters. The [fixture API](../fixtures/README.md) defines exact fields and limits. [Phase 1 execution evidence](research/phase-1-execution.md) distinguishes executed checks from remaining acceptance work.
 
 ## Selected tooling and provenance
 

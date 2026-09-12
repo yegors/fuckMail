@@ -22,12 +22,12 @@ Do not invent product behavior, stack locks or “done” features from memory. 
 
 ## Current stage rules
 
-- The founder has authorized Phase 0 implementation, native dependency setup and verification. Keep its full scope; provider/model credentials and later protocol work retain their separate boundaries.
+- The founder has authorized Phase 0 and end-to-end Phase 1 implementation, native dependency setup and verification. Keep their full scope; provider/model credentials and later protocol work retain their separate boundaries.
 - Recommended stack is **not locked**: Rust engine and CLI, C++20 / Qt Quick UI, SQLite/FTS5, private local IPC. Validate before treating it as decided.
 - The Flight Progress v2 HTML export is the current Phase 1 design reference; preserve it and support.js as reference assets only. Reimplement in native Qt/QML. D014 confirms read-on-open, Done=read+unstar, untimed Delay, combined full permitted calendar details and a browsable timeline only in Mail. Local settings preferences are planned; live OAuth/account removal/model downloads and prototype provider examples do not expand scope.
 - Contracts are drafts. Do not invent placeholder APIs, fake benchmarks or pretend prose is a test suite.
 - Readiness stays 0% until a required area is implemented and verified. Docs, screenshots and unrun tests do not count.
-- Preserve the completed Phase 0 evidence; do not restart its packets. Phase 1 planning/reference preparation is complete; implementation has not started. Begin its P1-00 shared-boundary packet when implementation is requested. Tool versions are now recorded in `rust-toolchain.toml` and `scripts/toolchain.json`; real mailbox connection remains separate from the synthetic phase.
+- Preserve the completed Phase 0 evidence; do not restart its packets. Phase 1 implementation is active on `codex/phase-1`, using schema 5/fixture 2/additive protocol 1. Continue its current packets and acceptance from `docs/research/phase-1-execution.md`; do not assume an isolated build proves completion. Tool versions are recorded in `rust-toolchain.toml` and `scripts/toolchain.json`; real mailbox connection remains separate from the synthetic phase.
 
 - Google APIs are the first product. Do not start IMAP/SMTP or external iCalendar subscription work until the founder has dogfooded working Google GUI and CLI workflows. Preserve their specs as deferred.
 - Start with readable text and human composition. Best-effort received HTML display is later work, not a WebEngine/stack gate. Preserve MIME, HTML sources and attachments; text extraction and Google recurrence/invitations stay early.

@@ -1,4 +1,14 @@
-# Native GUI feasibility slice
+# Native GUI
+
+Phase 1 integration is active against Mail UI 9, Calendar 9, Core 10, schema 5/protocol 1/fixture 2. The native shell follows the archived Flight Progress v2 design with Geist typography and shared tokens. Mail has grouped conversation browsing, snapshot review/Done/Delay, actual filters and a limited-format human reply with editable saved signature, retained attachments, discard and local capture history. Combined calendar day/week/month/agenda and the independent Mail timeline consume permitted projections. Local calendar create/edit/RSVP and durable operation recovery use the Core journal. Settings saves typed preferences and account metadata; no live provider/model service is implied.
+
+`ReplyDocument` bridges the actual QML editor's `QTextDocument` to authoritative plain text and a restricted HTML alternative. It preserves selection/undo through unchanged autosave responses, inserts clipboard text as plain text and keeps signatures separate for one-time MIME assembly. The GUI has no direct store access: `MailBackend` serializes bounded IPC and uses generation checks to prevent old queries from replacing a newer scope.
+
+See [Phase 1 evidence](../docs/research/phase-1-execution.md) for current passing checks and remaining acceptance. Source or an isolated compile does not complete the phase. `--fixture-clock` fixes the developer clock; normal runs use the actual current time. `--smoke --screenshot <absolute.png>` generates disposable data and captures a rendered window. Optional `--screenshot-view`, `--screenshot-calendar-view`, `--screenshot-date`, `--screenshot-settings-page`, `--screenshot-width`, `--screenshot-height` and `--screenshot-reply` select deterministic review states. `--benchmark-search-output <absolute.json> --profile <retained-generated-100k-profile>` measures real QML input through the first rendered result frame; use only the opt-in benchmark's generated profile.
+
+## Preserved Phase 0 feasibility notes
+
+The following describes the earlier verified slice; it is historical evidence, not the current implementation inventory.
 
 P0-00/P0-01/P0-04/P0-06, Mail UI and Calendar draft revision 5, synthetic fixture revision 1. C++20, Qt Quick/QML 6.11.2. The current design follows the September 11 initial mail/calendar/settings trio. It has no Node.js toolchain, live provider connection, model, received HTML renderer or database access.
 

@@ -259,7 +259,9 @@ pub async fn connect(discovery: &Discovery) -> io::Result<AnyStream> {
         use std::os::windows::io::AsRawHandle;
         let stream =
             tokio::net::windows::named_pipe::ClientOptions::new().open(&discovery.endpoint)?;
-        windows::verify_server(stream.as_raw_handle(), discovery.pid)?;
+        // SAFETY: `stream` owns this connected pipe and remains alive throughout
+        // verification; no other owner can close its handle during this call.
+        unsafe { windows::verify_server(stream.as_raw_handle(), discovery.pid)? };
         Ok(Box::new(stream))
     }
 }

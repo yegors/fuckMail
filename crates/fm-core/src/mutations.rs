@@ -29,9 +29,11 @@ impl Store {
                 "body",
                 "body_html",
                 "attachment_ids",
+                "signature_text",
                 "expected_revision",
                 "request_id",
             ],
+            "draft_discard" => &["conversation_id", "expected_revision", "request_id"],
             "view_save" => &["view", "expected_revision", "request_id"],
             _ => return Err(err("unsupported_method", "Unknown mutation")),
         };
@@ -143,11 +145,16 @@ impl Store {
                 )?;
                 self.conversation(account, conversation)?
             }
-            "draft_save" => {
+            "draft_save" | "draft_discard" => {
                 let conversation = string(p, "conversation_id")?;
-                let body = p["body"]
-                    .as_str()
-                    .ok_or_else(|| err("invalid_request", "Draft body must be a string"))?;
+                let discard = method == "draft_discard";
+                let body = if discard {
+                    ""
+                } else {
+                    p["body"]
+                        .as_str()
+                        .ok_or_else(|| err("invalid_request", "Draft body must be a string"))?
+                };
                 if body.len() > 256 * 1024 {
                     return Err(err("invalid_request", "Draft body exceeds 256 KiB"));
                 }
@@ -171,73 +178,95 @@ impl Store {
                     .optional()?
                     .unwrap_or((0,String::new(),None,"[]".into()));
                 check_revision(expected, current)?;
-                let body_html = match p.get("body_html") {
-                    Some(Value::Null) => None,
-                    Some(Value::String(html)) if html.len() <= 256 * 1024 => Some(html.clone()),
-                    Some(_) => {
-                        return Err(err(
-                            "invalid_request",
-                            "Draft HTML must be null or a string of at most 256 KiB",
-                        ))
+                let body_html = if discard {
+                    None
+                } else {
+                    match p.get("body_html") {
+                        Some(Value::Null) => None,
+                        Some(Value::String(html)) if html.len() <= 256 * 1024 => Some(html.clone()),
+                        Some(_) => {
+                            return Err(err(
+                                "invalid_request",
+                                "Draft HTML must be null or a string of at most 256 KiB",
+                            ))
+                        }
+                        None if old_body == body => old_html,
+                        None => None, // A plain-only client must not leave stale rich text behind.
                     }
-                    None if old_body == body => old_html,
-                    None => None, // A plain-only client must not leave stale rich text behind.
                 };
-                let attachments_json = match p.get("attachment_ids") {
-                    None => old_attachments,
-                    Some(value) => {
-                        let ids =
-                            value
-                                .as_array()
-                                .filter(|ids| ids.len() <= 50)
-                                .ok_or_else(|| {
+                let attachments_json = if discard {
+                    "[]".to_owned()
+                } else {
+                    match p.get("attachment_ids") {
+                        None => old_attachments,
+                        Some(value) => {
+                            let ids = value.as_array().filter(|ids| ids.len() <= 50).ok_or_else(
+                                || {
                                     err(
                                         "invalid_request",
                                         "Draft attachment_ids must contain at most 50 identifiers",
                                     )
+                                },
+                            )?;
+                            let mut seen = HashSet::new();
+                            let mut total = 0u64;
+                            for value in ids {
+                                let attachment = value.as_str().ok_or_else(|| {
+                                    err(
+                                        "invalid_request",
+                                        "Draft attachment identifier must be a string",
+                                    )
                                 })?;
-                        let mut seen = HashSet::new();
-                        let mut total = 0u64;
-                        for value in ids {
-                            let attachment = value.as_str().ok_or_else(|| {
-                                err(
-                                    "invalid_request",
-                                    "Draft attachment identifier must be a string",
-                                )
-                            })?;
-                            id(attachment)?;
-                            if !seen.insert(attachment) {
-                                return Err(err(
-                                    "invalid_request",
-                                    "Draft repeats an attachment identifier",
-                                ));
-                            }
-                            let row: Option<(String,i64,String)> = tx.query_row("SELECT state,size,blob_hash FROM attachments WHERE account=?1 AND id=?2",params![account,attachment],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
-                            let (state, size, hash) = row.ok_or_else(|| {
-                                err("not_found", "Draft attachment is not in this account")
-                            })?;
-                            let size = u64::try_from(size).map_err(|_| {
-                                err("content_unavailable", "Draft attachment size is invalid")
-                            })?;
-                            total = total
-                                .checked_add(size)
-                                .filter(|total| *total <= fm_mail::MAX_ATTACHMENT_BYTES as u64)
-                                .ok_or_else(|| {
-                                    err("invalid_request", "Draft attachments exceed 25 MiB")
+                                id(attachment)?;
+                                if !seen.insert(attachment) {
+                                    return Err(err(
+                                        "invalid_request",
+                                        "Draft repeats an attachment identifier",
+                                    ));
+                                }
+                                let row: Option<(String,i64,String)> = tx.query_row("SELECT state,size,blob_hash FROM attachments WHERE account=?1 AND id=?2",params![account,attachment],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+                                let (state, size, hash) = row.ok_or_else(|| {
+                                    err("not_found", "Draft attachment is not in this account")
                                 })?;
-                            if state != "available" {
-                                return Err(err(
-                                    "content_unavailable",
-                                    "Draft attachment is not fully retained",
-                                ));
+                                let size = u64::try_from(size).map_err(|_| {
+                                    err("content_unavailable", "Draft attachment size is invalid")
+                                })?;
+                                total = total
+                                    .checked_add(size)
+                                    .filter(|total| *total <= fm_mail::MAX_ATTACHMENT_BYTES as u64)
+                                    .ok_or_else(|| {
+                                        err("invalid_request", "Draft attachments exceed 25 MiB")
+                                    })?;
+                                if state != "available" {
+                                    return Err(err(
+                                        "content_unavailable",
+                                        "Draft attachment is not fully retained",
+                                    ));
+                                }
+                                self.verified_blob(&hash, size)?;
                             }
-                            self.verified_blob(&hash, size)?;
+                            serde_json::to_string(ids)?
                         }
-                        serde_json::to_string(ids)?
                     }
                 };
-                tx.execute("INSERT INTO drafts(account,conversation_id,body,revision,body_html,attachments_json) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(account,conversation_id) DO UPDATE SET body=excluded.body,revision=excluded.revision,body_html=excluded.body_html,attachments_json=excluded.attachments_json",
-                    params![account, conversation, body, next_revision(current)?,body_html,attachments_json])?;
+                let snapshot: (String,String,i64) = tx.query_row("SELECT m.signature_text,a.name,m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id WHERE a.id=?1",[account],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
+                tx.execute("INSERT INTO drafts(account,conversation_id,body,revision,body_html,attachments_json,signature_text,from_name,identity_revision) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(account,conversation_id) DO UPDATE SET body=excluded.body,revision=excluded.revision,body_html=excluded.body_html,attachments_json=excluded.attachments_json,signature_text=CASE WHEN drafts.discarded=1 THEN excluded.signature_text ELSE drafts.signature_text END,from_name=CASE WHEN drafts.discarded=1 THEN excluded.from_name ELSE drafts.from_name END,identity_revision=CASE WHEN drafts.discarded=1 THEN excluded.identity_revision ELSE drafts.identity_revision END,discarded=0",
+                    params![account, conversation, body, next_revision(current)?,body_html,attachments_json,if discard { "" } else { &snapshot.0 },snapshot.1,snapshot.2])?;
+                if let Some(signature) = p.get("signature_text") {
+                    let signature = signature
+                        .as_str()
+                        .filter(|v| v.len() <= 16 * 1024 && !v.contains('\0'))
+                        .ok_or_else(|| {
+                            err(
+                                "invalid_request",
+                                "Draft signature must be text of at most 16 KiB",
+                            )
+                        })?;
+                    tx.execute("UPDATE drafts SET signature_text=?1 WHERE account=?2 AND conversation_id=?3",params![signature,account,conversation])?;
+                }
+                if discard {
+                    tx.execute("UPDATE drafts SET signature_text='',discarded=1 WHERE account=?1 AND conversation_id=?2",params![account,conversation])?;
+                }
                 self.draft(account, conversation)?
             }
             "view_save" => {
@@ -296,7 +325,7 @@ fn record_manual_intent(
     )?;
     Ok(())
 }
-fn check_revision(expected: i64, actual: i64) -> Result<()> {
+pub(crate) fn check_revision(expected: i64, actual: i64) -> Result<()> {
     if expected != actual {
         Err(CoreError {
             code: "stale_revision".into(),
@@ -358,6 +387,9 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
             "splitWidth",
             "expanded",
             "screen",
+            "filters",
+            "replyOpen",
+            "selectedMember",
         ],
     )?;
     for key in [
@@ -384,6 +416,32 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
                     "Selected conversation is outside this account",
                 ));
             }
+        }
+    }
+    if let Some(filters) = view.get("filters") {
+        fields(
+            filters,
+            &["sender", "status", "has_attachment", "after", "before"],
+        )?;
+        crate::queries::validate_filters(filters)?;
+    }
+    if view.get("replyOpen").is_some_and(|v| !v.is_boolean()) {
+        return Err(err("invalid_request", "replyOpen must be boolean"));
+    }
+    if let Some(value) = view
+        .get("selectedMember")
+        .filter(|v| !v.is_null() && v.as_str() != Some(""))
+    {
+        let mid = id(value
+            .as_str()
+            .ok_or_else(|| err("invalid_request", "selectedMember must be an identifier"))?)?;
+        let found: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM messages WHERE account=?1 AND id=?2)",
+            params![account, mid],
+            |r| r.get(0),
+        )?;
+        if !found {
+            return Err(err("not_found", "Selected member is outside this account"));
         }
     }
     if let Some(value) = view.get("account") {

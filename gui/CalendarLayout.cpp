@@ -34,8 +34,9 @@ QVariantList calendarPresentation(const QJsonArray &events, QDate first, int day
         const auto start = QDateTime::fromString(event["start"].toString(), Qt::ISODate).toTimeZone(zone);
         const auto end = QDateTime::fromString(event["end"].toString(), Qt::ISODate).toTimeZone(zone);
         if (!start.isValid() || !end.isValid() || end <= start) continue;
-        event["start_display"] = start.toString("ddd d MMM, HH:mm");
-        event["end_display"] = end.toString(start.date() == end.date() ? "HH:mm" : "ddd d MMM, HH:mm");
+        const bool offsetChanges = start.offsetFromUtc() != end.offsetFromUtc();
+        event["start_display"] = start.toString(offsetChanges ? "ddd d MMM, HH:mm t" : "ddd d MMM, HH:mm");
+        event["end_display"] = end.toString(start.date() == end.date() ? (offsetChanges ? "HH:mm t" : "HH:mm") : (offsetChanges ? "ddd d MMM, HH:mm t" : "ddd d MMM, HH:mm"));
         for (int day = 0; day < days; ++day) {
             const auto date = first.addDays(day);
             const auto dayStart = date.startOfDay(zone), dayEnd = date.addDays(1).startOfDay(zone);

@@ -334,9 +334,12 @@ mod tests {
         let db = Connection::open_in_memory().unwrap();
         db.execute_batch(include_str!("schema.sql")).unwrap();
         Store {
+            mail_changes: crate::queries::MailChanges::install(&db),
             db,
             profile: profile.to_owned(),
             _lock: File::create(profile.join("content-test.lock")).unwrap(),
+            projection_cache: Default::default(),
+            conversation_cache: Default::default(),
         }
     }
 

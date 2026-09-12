@@ -6,7 +6,7 @@ Human correspondence comes first. Unread means unreviewed; stars mean action lef
 
 ## Current state
 
-**Phase 0 completed on available hosts; Phase 1 plan ready, implementation not started. Google-first MVP readiness: 0/9 whole areas verified.** The Qt desktop app and Rust CLI run against one store. Native Mac/Windows/Ubuntu CI, packaged runtime checks, and the Mac upgrade/recovery walkthrough pass at runtime checkpoint `204fa62`. Real Google accounts remain a later milestone. See [development commands](docs/build-development.md), [status](docs/status.md) and the [Phase 1 plan](docs/plans/phase-1.md).
+**Phase 0 completed on available hosts; Phase 1 implementation is active on `codex/phase-1`. Google-first MVP readiness: 0/9 whole areas verified.** The Windows toolchain is verified at `c82bac8`. The new native local slice compiles with schema 5/fixture 2; integration, design review, performance and package acceptance are in progress. Native Mac/Windows/Ubuntu checks at `204fa62` remain the completed Phase 0 baseline. Real Google accounts remain a later milestone. See [development commands](docs/build-development.md), [status](docs/status.md), [Phase 1 evidence](docs/research/phase-1-execution.md) and the [Phase 1 plan](docs/plans/phase-1.md).
 
 | Google-first feature area | Build status |
 | --- | --- |
@@ -36,7 +36,7 @@ The app operates locally and connects directly to Google; optional models run on
 
 ## Next execution
 
-Phase 0 joined the engine, small CLI and functional GUI and verified shared state, IPC access, account boundaries, draft recovery, search and native packages. The [Phase 1 plan](docs/plans/phase-1.md) is prepared: adopt the updated native design, add real search/triage/preferences, combined calendar views/timeline, durable formatted replies/local capture and bounded calendar edits through both clients. Begin P1-00 shared boundaries, then work on mail and calendar in parallel. No live account or model is needed. See the [Phase 0 evidence](docs/research/phase-0-execution.md) for the completed baseline.
+Phase 0 joined the engine, small CLI and functional GUI and verified shared state, IPC access, account boundaries, draft recovery, search and native packages. The [Phase 1 plan](docs/plans/phase-1.md) is now being implemented: the updated native design, shared search/triage/preferences, combined calendar views/timeline, durable formatted replies/local capture and bounded calendar edits through both clients. Full acceptance remains open. No live account or model is needed. See the [Phase 0 evidence](docs/research/phase-0-execution.md) for the completed baseline.
 
 The [first deliverable](docs/plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) is a runnable synthetic-mail desktop app and small CLI, with repeatable setup/build/test commands and native CI builds for development on the work Mac and home Windows PC. Tools live in the ignored `.tools` directory. The home Windows PC now passes bootstrap/doctor, dev and release tests (8/8 each), relocated package verification and native graphics checks; its schema-4 baseline package is preserved. See [Windows handoff evidence](docs/research/phase-0-execution.md#home-windows-handoff-before-phase-1). Run `scripts/dev.ps1 run` from PowerShell on this PC, or `scripts/dev.sh run` on Mac. Manual input/accessibility and OS keyring qualification remain separate.
 

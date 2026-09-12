@@ -1,6 +1,6 @@
 # Current status
 
-As of 2026-09-11. **Phase 0 completed on available hosts; Phase 1 plan ready, implementation not started. Google-first MVP readiness remains 0/9 whole areas verified.** Runtime checkpoint `204fa62` is pushed on `codex/phase-0`. Native macOS 15, Windows Server 2022 and Ubuntu 24.04 CI each passed all 8 CTests, relocated packaged GUI/CLI/runtime checks and artifact retention. The Mac native desktop walkthrough and actual schema 2→4 packaged upgrade/downgrade-refusal checks also pass. See [Phase 0 execution evidence](research/phase-0-execution.md) for exact sources, commands, artifacts and limits. No live Google account or model is connected.
+As of 2026-09-11. **Phase 0 completed on available hosts; Phase 1 implementation is active on `codex/phase-1`. Google-first MVP readiness remains 0/9 whole areas verified.** The Windows toolchain handoff is committed at `c82bac8`. The new local slice uses schema 5, fixture 2 and additive protocol 1; Core/CLI tests and the first integrated Windows compilation pass, but the Phase 1 acceptance/package/visual gates are still open. See [Phase 1 execution evidence](research/phase-1-execution.md). Runtime checkpoint `204fa62` remains the verified Phase 0 baseline: Mac/Windows/Ubuntu native CI, relocated packages and the Mac schema 2→4 upgrade/refusal walkthrough passed. [Phase 0 execution evidence](research/phase-0-execution.md) remains unchanged. No live Google account or model is connected.
 
 ## Established direction
 
@@ -8,11 +8,11 @@ As of 2026-09-11. **Phase 0 completed on available hosts; Phase 1 plan ready, im
 
 Done/Delayed are explicit user decisions. Local classification only distinguishes human correspondence, automated senders/lists and user-defined noise, applying configured category/scope tags. It cannot mark mail reviewed or decide action state. Summaries and classification remain optional to enable; manual first use does not wait for models.
 
-The proposed stack remains Rust engine/CLI, C++20/Qt Quick/QML UI, private local IPC and SQLite/FTS5. QML expressions are accepted, with no Node.js or separate JS compilation/bundling pipeline. WebEngine is not a first-build prerequisite. Under D014 the [Flight Progress v2 HTML prototype](research/flight-progress-v2.md) guides Phase 1. The founder confirmed read-on-open, Done clearing unread and stars, untimed Delay, combined full permitted calendar details, and a browsable timeline only in Mail. The expanded settings design now supports planned local preferences; live account/model management remains later. This update prepares documentation/assets only; no Phase 1 runtime work has started.
+The proposed stack remains Rust engine/CLI, C++20/Qt Quick/QML UI, private local IPC and SQLite/FTS5. QML expressions are accepted, with no Node.js or separate JS compilation/bundling pipeline. WebEngine is not a first-build prerequisite. Under D014 the [Flight Progress v2 HTML prototype](research/flight-progress-v2.md) guides Phase 1. The founder confirmed read-on-open, Done clearing unread and stars, untimed Delay, combined full permitted calendar details, and a browsable timeline only in Mail. D015 authorizes end-to-end implementation of the prepared local slice. Live account/model management remains later.
 
 ## Next work
 
-Start from the prepared [Phase 1 packets](plans/phase-1.md). P1-00 defines the next typed boundaries/fixtures; shared Core/CLI state and native shell can then proceed in parallel, followed by independent mail and calendar work. Deliver the updated native design, real search/triage/local preferences, combined calendar views and mail timeline, durable formatted replies/local capture and bounded calendar create/edit/RSVP. The [existing fixture app and CLI](build-development.md) remain runnable; Phase 1 implementation has not started. No further product decision blocks the first packets.
+Complete and verify the active [Phase 1 packets](plans/phase-1.md): shared Core/CLI state, native mail/calendar/settings, durable formatted replies and bounded local calendar mutations. Integration is in progress. The first 100k grouped/filter benchmark exceeded the proposed response budget; query optimization is active and the failed measurements are preserved. Full GUI acceptance, design comparisons, schema 4→5 preservation/refusal and native packages remain required before Phase 1 is complete.
 
 Before actual Google accounts, implement/test the OS credential-store adapter and settle OAuth access plus real-data retention/encryption/recovery policy. Full history, live sending/calendar operations and founder Google dogfooding remain later milestones. Legacy transports remain deferred.
 
@@ -41,7 +41,7 @@ The Google-first release still requires its applicable quality and OS gates. It 
 | Phase | Outcome | State |
 | --- | --- | --- |
 | 0 — Paired foundation | Native builds, small fixtures, storage, private engine/CLI/GUI, text/composer and Google prerequisites | Completed on available hosts; external/physical gates explicit |
-| 1 — Redesigned local client | Updated native design and paired CLI, shared triage/search/preferences, replies/capture and combined calendar workflows | Plan and reference handoff ready; runtime not started |
+| 1 — Redesigned local client | Updated native design and paired CLI, shared triage/search/preferences, replies/capture and combined calendar workflows | Implementation and integration active; acceptance gates open |
 | 2 — Google daily workflows | Gmail/Workspace and Google Calendar, growing CLI with GUI; controlled founder use | Planned |
 | 3 — Google completion and dogfooding | Usable Google GUI and CLI, expanded designs, later best-effort HTML/local assistance, recovery/performance and delivery evidence | Planned |
 | 4 — Later protocols | IMAP, SMTP and external iCalendar subscriptions, only after actual Google dogfooding | Deferred; not started |

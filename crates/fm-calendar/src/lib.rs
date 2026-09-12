@@ -156,7 +156,14 @@ impl Window {
         )
     }
     pub fn new(from: DateTime<Utc>, to: DateTime<Utc>, calendar_zone: Tz) -> Result<Self> {
-        if to <= from || to - from > Duration::days(MAX_WINDOW_DAYS) {
+        // Bounds describe displayed civil dates. A six-week month crossing the
+        // autumn offset change legitimately lasts 42 days plus one hour.
+        let civil_span = to.with_timezone(&calendar_zone).naive_local()
+            - from.with_timezone(&calendar_zone).naive_local();
+        if to <= from
+            || civil_span > Duration::days(MAX_WINDOW_DAYS)
+            || to - from > Duration::days(MAX_WINDOW_DAYS + 1)
+        {
             return Err(error(
                 "invalid_window",
                 "Occurrence windows must be positive and no longer than 42 days",

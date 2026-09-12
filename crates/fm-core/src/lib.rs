@@ -16,9 +16,13 @@ mod content;
 mod fixture;
 pub mod google_store;
 mod mutations;
+mod phase1_calendar;
+#[cfg(test)]
+mod phase1_tests;
+mod preferences;
 mod queries;
-pub const SCHEMA_VERSION: u32 = 4;
-pub const FIXTURE_REVISION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 5;
+pub const FIXTURE_REVISION: u32 = 2;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
 pub struct CoreError {
@@ -59,6 +63,9 @@ pub struct Store {
     pub(crate) db: Connection,
     pub(crate) profile: PathBuf,
     _lock: File,
+    pub(crate) conversation_cache: queries::ConversationCache,
+    pub(crate) projection_cache: queries::ProjectionCache,
+    pub(crate) mail_changes: queries::MailChanges,
 }
 impl Store {
     pub fn open(profile: &Path) -> Result<Self> {
@@ -104,10 +111,20 @@ impl Store {
                 include_str!("migration-004-assist.sql")
             ))?;
         }
+        let version: u32 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 4 {
+            db.execute_batch(&format!(
+                "BEGIN IMMEDIATE;\n{}\nPRAGMA user_version=5;\nCOMMIT;",
+                include_str!("migration-005.sql")
+            ))?;
+        }
         let mut store = Self {
+            mail_changes: queries::MailChanges::install(&db),
             db,
             profile: profile.to_owned(),
             _lock: lock,
+            projection_cache: Default::default(),
+            conversation_cache: Default::default(),
         };
         let seeded: Option<i64> = store
             .db
@@ -134,8 +151,21 @@ impl Store {
         if method == "status" {
             fields(&params, &[])?;
             return Ok(
-                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":FIXTURE_REVISION,"revision":self.revision()?,"synthetic":true,"fixture_today":FIXTURE_TODAY,"capabilities":{"mail":true,"drafts":true,"calendar_read":true,"send":false,"models":false}}),
+                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"synthetic":true,"fixture_today":FIXTURE_TODAY,"capabilities":{"mail":true,"drafts":true,"calendar_read":true,"phase1":true,"typed_filters":true,"preferences":true,"capture_history":true,"calendar_write_local":true,"send":false,"models":false}}),
             );
+        }
+        match method {
+            "preferences_get" => {
+                fields(&params, &[])?;
+                return self.preferences();
+            }
+            "preferences_save" => return self.preferences_save(&params),
+            "calendar_sources" => {
+                fields(&params, &[])?;
+                return self.calendar_sources();
+            }
+            "calendar_combined" => return self.calendar_combined(&params),
+            _ => {}
         }
         if ![
             "conversations",
@@ -150,6 +180,12 @@ impl Store {
             "set_category",
             "view_get",
             "view_save",
+            "account_update",
+            "draft_discard",
+            "capture_history",
+            "calendar_write",
+            "calendar_write_ack",
+            "calendar_operations",
         ]
         .contains(&method)
         {
@@ -187,15 +223,27 @@ impl Store {
                 self.draft(account, string(&params, "conversation_id")?)
             }
             "draft_capture" => self.draft_capture(account, &params),
+            "capture_history" => self.capture_history(account, &params),
+            "account_update" => self.account_update(account, &params),
+            "calendar_write" => self.calendar_write(account, &params),
+            "calendar_write_ack" => self.calendar_write_ack(account, &params),
+            "calendar_operations" => self.calendar_operations(account, &params),
             "view_get" => {
                 fields(&params, &[])?;
                 self.view(account)
             }
-            "flag" | "set_category" | "draft_save" | "view_save" => {
+            "flag" | "set_category" | "draft_save" | "draft_discard" | "view_save" => {
                 self.mutate(method, account, &params)
             }
             _ => unreachable!(),
         }
+    }
+    pub(crate) fn fixture_revision(&self) -> Result<i64> {
+        Ok(self.db.query_row(
+            "SELECT value FROM meta WHERE key='fixture_revision'",
+            [],
+            |r| r.get(0),
+        )?)
     }
     pub(crate) fn revision(&self) -> Result<i64> {
         Ok(self
