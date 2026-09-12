@@ -1,0 +1,229 @@
+Host: Windows-10-10.0.26200-SP0 AMD64
+Qt kit: C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64
+Source: C:\Users\Yegor\Projects\Fuckaround\fuckMail
++ "C:\Program Files\Git\cmd\git.EXE" --version
+git version 2.53.0.windows.1 at C:\Program Files\Git\cmd\git.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\rustc.EXE --version
+rustc 1.88.0 (6b00bc388 2025-06-23) at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\rustc.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.EXE --version
+cargo 1.88.0 (873a06493 2025-05-10) at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.EXE --version
+cmake version 3.31.6 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ninja.EXE --version
+1.11.1.git.kitware.jobserver-1 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ninja.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE --qt-version
+6.11.2 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE
+Native C++ compiler: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\cl.exe
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --preset release
+Preset CMake variables:
+
+  BUILD_TESTING:BOOL="TRUE"
+  CMAKE_BUILD_TYPE="Release"
+  CMAKE_EXPORT_COMPILE_COMMANDS:BOOL="TRUE"
+  CMAKE_PREFIX_PATH="C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64"
+
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Configuring done (1.4s)
+-- Generating done (0.4s)
+-- Build files have been written to: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --build --preset release --parallel
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `release` profile [optimized] target(s) in 14.86s
+[0/63] Build the shared Rust engine and CLI
+[4/57] Automatic MOC and UIC for target gui-reply-document-test
+[6/55] Automatic MOC and UIC for target fuckmail-gui
+[7/54] Running AUTOMOC file extraction for target fuckmail-gui
+[8/8] C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\release && C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Lib\site-packages\cmake\data\bin\cmake.exe -E copy_if_different C:/Users/Yegor/Projects/Fuckaround/fuckMail/target/release/fm-engine.exe C:/Users/Yegor/Projects/Fuckaround/fuckMail/target/release/fm.exe C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release"
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --install C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\release --prefix C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64
+-- Install configuration: "Release"
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/bin/fuckmail-gui.exe
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/bin/fm-engine.exe
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/bin/fm.exe
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/bin/licenses/LICENSE-Geist.txt
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/qtquick2plugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQml/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQml/qmlplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQml/Models/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQml/Models/modelsplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQml/WorkerScript/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQml/WorkerScript/workerscriptplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/qtquickcontrols2plugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Fusion/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Fusion/qtquickcontrols2fusionstyleplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Imagine/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Imagine/qtquickcontrols2imaginestyleplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Material/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Material/qtquickcontrols2materialstyleplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Universal/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Universal/qtquickcontrols2universalstyleplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/FluentWinUI3/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/FluentWinUI3/qtquickcontrols2fluentwinui3styleplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Windows/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Windows/qtquickcontrols2windowsstyleplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Basic/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Basic/qtquickcontrols2basicstyleplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Templates/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Templates/qtquicktemplates2plugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/impl/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/impl/qtquickcontrols2implplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Fusion/impl/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Fusion/impl/qtquickcontrols2fusionstyleimplplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Window/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Window/quickwindowplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Imagine/impl/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Imagine/impl/qtquickcontrols2imaginestyleimplplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Material/impl/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Material/impl/qtquickcontrols2materialstyleimplplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Universal/impl/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Universal/impl/qtquickcontrols2universalstyleimplplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/FluentWinUI3/impl/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/FluentWinUI3/impl/qtquickcontrols2fluentwinui3styleimplplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Effects/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Effects/effectsplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Layouts/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Layouts/qquicklayoutsplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Shapes/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Shapes/qmlshapesplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/NativeStyle/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/NativeStyle/qtquickcontrols2nativestyleplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Windows/impl/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Windows/impl/qtquickcontrols2windowsstyleimplplugin.dll
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Basic/impl/qmldir
+-- Installing: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Basic/impl/qtquickcontrols2basicstyleimplplugin.dll
+-- Writing C:/Users/Yegor/Projects/Fuckaround/fuckMail/dist/windows-amd64/bin/qt.conf
+-- Running Qt deploy tool for C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release/fuckmail-gui.exe in working directory 'C:/Users/Yegor/Projects/Fuckaround/fuckMail/dist/windows-amd64'
+'C:/Users/Yegor/Projects/Fuckaround/fuckMail/.tools/Qt/6.11.2/msvc2022_64/bin/windeployqt.exe' 'C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release/fuckmail-gui.exe' '--dir' '.' '--libdir' 'bin' '--plugindir' 'plugins' '--qml-deploy-dir' 'qml' '--translationdir' 'translations' '--force' '--include-plugins' 'qoffscreen' '--qtpaths' 'C:/Users/Yegor/Projects/Fuckaround/fuckMail/.tools/Qt/6.11.2/msvc2022_64/bin/qtpaths6.exe' 'qml/QtQuick/qtquick2plugin.dll' 'qml/QtQml/qmlplugin.dll' 'qml/QtQml/Models/modelsplugin.dll' 'qml/QtQml/WorkerScript/workerscriptplugin.dll' 'qml/QtQuick/Controls/qtquickcontrols2plugin.dll' 'qml/QtQuick/Controls/Fusion/qtquickcontrols2fusionstyleplugin.dll' 'qml/QtQuick/Controls/Imagine/qtquickcontrols2imaginestyleplugin.dll' 'qml/QtQuick/Controls/Material/qtquickcontrols2materialstyleplugin.dll' 'qml/QtQuick/Controls/Universal/qtquickcontrols2universalstyleplugin.dll' 'qml/QtQuick/Controls/FluentWinUI3/qtquickcontrols2fluentwinui3styleplugin.dll' 'qml/QtQuick/Controls/Windows/qtquickcontrols2windowsstyleplugin.dll' 'qml/QtQuick/Controls/Basic/qtquickcontrols2basicstyleplugin.dll' 'qml/QtQuick/Templates/qtquicktemplates2plugin.dll' 'qml/QtQuick/Controls/impl/qtquickcontrols2implplugin.dll' 'qml/QtQuick/Controls/Fusion/impl/qtquickcontrols2fusionstyleimplplugin.dll' 'qml/QtQuick/Window/quickwindowplugin.dll' 'qml/QtQuick/Controls/Imagine/impl/qtquickcontrols2imaginestyleimplplugin.dll' 'qml/QtQuick/Controls/Material/impl/qtquickcontrols2materialstyleimplplugin.dll' 'qml/QtQuick/Controls/Universal/impl/qtquickcontrols2universalstyleimplplugin.dll' 'qml/QtQuick/Controls/FluentWinUI3/impl/qtquickcontrols2fluentwinui3styleimplplugin.dll' 'qml/QtQuick/Effects/effectsplugin.dll' 'qml/QtQuick/Layouts/qquicklayoutsplugin.dll' 'qml/QtQuick/Shapes/qmlshapesplugin.dll' 'qml/QtQuick/NativeStyle/qtquickcontrols2nativestyleplugin.dll' 'qml/QtQuick/Controls/Windows/impl/qtquickcontrols2windowsstyleimplplugin.dll' 'qml/QtQuick/Controls/Basic/impl/qtquickcontrols2basicstyleimplplugin.dll'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\release\fuckmail-gui.exe 64 bit, release executable [QML]
+Adding in plugin type generic for module: Qt6Gui
+Adding in plugin type iconengines for module: Qt6Gui
+Adding Qt6Svg for qsvgicon.dll from plugin type: iconengines
+Adding in plugin type imageformats for module: Qt6Gui
+Adding in plugin type networkinformation for module: Qt6Network
+Adding in plugin type platforms for module: Qt6Gui
+Adding in plugin type qmltooling for module: Qt6Qml
+Adding in plugin type tls for module: Qt6Network
+Skipping plugin qopensslbackend.dll. Use -force-openssl or specify -openssl-root if you want to use it.
+Performing additional pass of finding Qt plugins due to updated Qt module list: Qt6Core Qt6Gui Qt6Network Qt6OpenGL Qt6Qml Qt6QmlMeta Qt6QmlModels Qt6QmlWorkerScript Qt6Quick Qt6QuickControls2 Qt6QuickControls2Basic Qt6QuickControls2BasicStyleImpl Qt6QuickControls2FluentWinUI3StyleImpl Qt6QuickControls2Fusion Qt6QuickControls2FusionStyleImpl Qt6QuickControls2Imagine Qt6QuickControls2ImagineStyleImpl Qt6QuickControls2Impl Qt6QuickControls2Material Qt6QuickControls2MaterialStyleImpl Qt6QuickControls2Universal Qt6QuickControls2UniversalStyleImpl Qt6QuickControls2WindowsStyleImpl Qt6QuickEffects Qt6QuickLayouts Qt6QuickShapes Qt6QuickTemplates2 Qt6Svg
+Adding in plugin type generic for module: Qt6Gui
+Adding in plugin type iconengines for module: Qt6Gui
+Adding in plugin type imageformats for module: Qt6Gui
+Adding in plugin type networkinformation for module: Qt6Network
+Adding in plugin type platforms for module: Qt6Gui
+Adding in plugin type qmltooling for module: Qt6Qml
+Adding in plugin type tls for module: Qt6Network
+Skipping plugin qopensslbackend.dll. Use -force-openssl or specify -openssl-root if you want to use it.
+Direct dependencies: Qt6Core Qt6Gui Qt6Network Qt6OpenGL Qt6Qml Qt6QmlMeta Qt6QmlModels Qt6QmlWorkerScript Qt6Quick Qt6QuickControls2 Qt6QuickControls2Basic Qt6QuickControls2BasicStyleImpl Qt6QuickControls2FluentWinUI3StyleImpl Qt6QuickControls2Fusion Qt6QuickControls2FusionStyleImpl Qt6QuickControls2Imagine Qt6QuickControls2ImagineStyleImpl Qt6QuickControls2Impl Qt6QuickControls2Material Qt6QuickControls2MaterialStyleImpl Qt6QuickControls2Universal Qt6QuickControls2UniversalStyleImpl Qt6QuickControls2WindowsStyleImpl Qt6QuickEffects Qt6QuickLayouts Qt6QuickShapes Qt6QuickTemplates2
+All dependencies   : Qt6Core Qt6Gui Qt6Network Qt6OpenGL Qt6Qml Qt6QmlMeta Qt6QmlModels Qt6QmlWorkerScript Qt6Quick Qt6QuickControls2 Qt6QuickControls2Basic Qt6QuickControls2BasicStyleImpl Qt6QuickControls2FluentWinUI3StyleImpl Qt6QuickControls2Fusion Qt6QuickControls2FusionStyleImpl Qt6QuickControls2Imagine Qt6QuickControls2ImagineStyleImpl Qt6QuickControls2Impl Qt6QuickControls2Material Qt6QuickControls2MaterialStyleImpl Qt6QuickControls2Universal Qt6QuickControls2UniversalStyleImpl Qt6QuickControls2WindowsStyleImpl Qt6QuickEffects Qt6QuickLayouts Qt6QuickShapes Qt6QuickTemplates2
+To be deployed     : Qt6Core Qt6Gui Qt6Network Qt6OpenGL Qt6Qml Qt6QmlMeta Qt6QmlModels Qt6QmlWorkerScript Qt6Quick Qt6QuickControls2 Qt6QuickControls2Basic Qt6QuickControls2BasicStyleImpl Qt6QuickControls2FluentWinUI3StyleImpl Qt6QuickControls2Fusion Qt6QuickControls2FusionStyleImpl Qt6QuickControls2Imagine Qt6QuickControls2ImagineStyleImpl Qt6QuickControls2Impl Qt6QuickControls2Material Qt6QuickControls2MaterialStyleImpl Qt6QuickControls2Universal Qt6QuickControls2UniversalStyleImpl Qt6QuickControls2WindowsStyleImpl Qt6QuickEffects Qt6QuickLayouts Qt6QuickShapes Qt6QuickTemplates2 Qt6Svg
+Skipping system library C:/Windows/system32/icuuc.dll
+Updating Qt6Core.dll.
+Updating Qt6Gui.dll.
+Updating Qt6Network.dll.
+Updating Qt6OpenGL.dll.
+Updating Qt6Qml.dll.
+Updating Qt6QmlMeta.dll.
+Updating Qt6QmlModels.dll.
+Updating Qt6QmlWorkerScript.dll.
+Updating Qt6Quick.dll.
+Updating Qt6QuickControls2.dll.
+Updating Qt6QuickControls2Basic.dll.
+Updating Qt6QuickControls2BasicStyleImpl.dll.
+Updating Qt6QuickControls2FluentWinUI3StyleImpl.dll.
+Updating Qt6QuickControls2Fusion.dll.
+Updating Qt6QuickControls2FusionStyleImpl.dll.
+Updating Qt6QuickControls2Imagine.dll.
+Updating Qt6QuickControls2ImagineStyleImpl.dll.
+Updating Qt6QuickControls2Impl.dll.
+Updating Qt6QuickControls2Material.dll.
+Updating Qt6QuickControls2MaterialStyleImpl.dll.
+Updating Qt6QuickControls2Universal.dll.
+Updating Qt6QuickControls2UniversalStyleImpl.dll.
+Updating Qt6QuickControls2WindowsStyleImpl.dll.
+Updating Qt6QuickEffects.dll.
+Updating Qt6QuickLayouts.dll.
+Updating Qt6QuickShapes.dll.
+Updating Qt6QuickTemplates2.dll.
+Updating Qt6Svg.dll.
+Updating d3dcompiler_47.dll.
+Updating dxcompiler.dll.
+Updating dxil.dll.
+Updating vc_redist.x64.exe.
+Creating directory C:/Users/Yegor/Projects/Fuckaround/fuckMail/dist/windows-amd64/plugins/generic.
+Updating qtuiotouchplugin.dll.
+Creating directory C:/Users/Yegor/Projects/Fuckaround/fuckMail/dist/windows-amd64/plugins/iconengines.
+Updating qsvgicon.dll.
+Creating directory C:/Users/Yegor/Projects/Fuckaround/fuckMail/dist/windows-amd64/plugins/imageformats.
+Updating qgif.dll.
+Updating qico.dll.
+Updating qjpeg.dll.
+Updating qsvg.dll.
+Creating directory C:/Users/Yegor/Projects/Fuckaround/fuckMail/dist/windows-amd64/plugins/networkinformation.
+Updating qnetworklistmanager.dll.
+Creating directory C:/Users/Yegor/Projects/Fuckaround/fuckMail/dist/windows-amd64/plugins/platforms.
+Updating qoffscreen.dll.
+Updating qwindows.dll.
+Creating directory C:/Users/Yegor/Projects/Fuckaround/fuckMail/dist/windows-amd64/plugins/qmltooling.
+Updating qmldbg_debugger.dll.
+Updating qmldbg_inspector.dll.
+Updating qmldbg_local.dll.
+Updating qmldbg_messages.dll.
+Updating qmldbg_native.dll.
+Updating qmldbg_nativedebugger.dll.
+Updating qmldbg_preview.dll.
+Updating qmldbg_profiler.dll.
+Updating qmldbg_quickeventreplay.dll.
+Updating qmldbg_quickprofiler.dll.
+Updating qmldbg_server.dll.
+Updating qmldbg_tcp.dll.
+Creating directory C:/Users/Yegor/Projects/Fuckaround/fuckMail/dist/windows-amd64/plugins/tls.
+Updating qcertonlybackend.dll.
+Updating qschannelbackend.dll.
+Creating translations...
+Creating qt_ar.qm...
+Creating qt_bg.qm...
+Creating qt_ca.qm...
+Creating qt_cs.qm...
+Creating qt_da.qm...
+Creating qt_de.qm...
+Creating qt_en.qm...
+Creating qt_es.qm...
+Creating qt_fa.qm...
+Creating qt_fi.qm...
+Creating qt_fr.qm...
+Creating qt_gd.qm...
+Creating qt_he.qm...
+Creating qt_hr.qm...
+Creating qt_hu.qm...
+Creating qt_it.qm...
+Creating qt_ja.qm...
+Creating qt_ka.qm...
+Creating qt_ko.qm...
+Creating qt_lg.qm...
+Creating qt_lv.qm...
+Creating qt_nl.qm...
+Creating qt_nn.qm...
+Creating qt_pl.qm...
+Creating qt_pt_BR.qm...
+Creating qt_ru.qm...
+Creating qt_sk.qm...
+Creating qt_sv.qm...
+Creating qt_tr.qm...
+Creating qt_uk.qm...
+Creating qt_zh_CN.qm...
+Creating qt_zh_TW.qm...
++ "C:\Program Files\Git\cmd\git.EXE" rev-parse HEAD
++ "C:\Program Files\Git\cmd\git.EXE" status --porcelain
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\rustc.EXE --version
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.EXE --version
++ "C:\Users\Yegor\AppData\Local\Temp\fuckmail-package-check-hsmbvj7q\relocated package\bin\fm.exe" --help
++ "C:\Users\Yegor\AppData\Local\Temp\fuckmail-package-check-hsmbvj7q\relocated package\bin\fm.exe" --profile C:\Users\Yegor\AppData\Local\Temp\fuckmail-package-check-hsmbvj7q\cli-profile --account windscribe --json mail list --query Maya --field sender --limit 5
+Verified final-client engine shutdown: cli-profile
++ "C:\Users\Yegor\AppData\Local\Temp\fuckmail-package-check-hsmbvj7q\relocated package\bin\fuckmail-gui.exe" --smoke --profile C:\Users\Yegor\AppData\Local\Temp\fuckmail-package-check-hsmbvj7q\gui-profile
+Verified final-client engine shutdown: gui-profile
++ "C:\Users\Yegor\AppData\Local\Temp\fuckmail-package-check-hsmbvj7q\relocated package\bin\fuckmail-gui.exe" --self-test
+Relocated package passed: SDK-free GUI smoke/self-test, fresh-terminal CLI help/query, final engine shutdown
+Development package: C:\Users\Yegor\Projects\Fuckaround\fuckMail\dist\fuckmail-windows-amd64.zip
+Exit: 0
