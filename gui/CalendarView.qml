@@ -18,6 +18,10 @@ Item {
         })
     }
     property real hourHeight: Math.max(24, Math.floor((gridScroll.height - 10) / 24))
+    property real retainedTopHour: 0
+    property real laidOutHourHeight: 24
+    property real laidOutGridHeight: -1
+    property bool restoringGridPosition: false
     property int monthCount: {
         let selected = new Date(backend.calendarDate + "T12:00:00")
         let end = new Date(selected.getFullYear(), selected.getMonth() + 1, 0, 12)
@@ -46,8 +50,21 @@ Item {
         editor.setSlot(isoAt(index), hour)
     }
     function sourceRule(event) { return event.busy_only || event.account !== backend.account ? Theme.inkAlpha(.5) : Theme.text }
-    function resetGrid() { gridScroll.contentY = 0 }
-    onHourHeightChanged: if (!gridScroll.moving) Qt.callLater(resetGrid)
+    function preserveGridPosition() {
+        if (gridScroll.moving || gridScroll.height <= 0) return
+        restoringGridPosition = true
+        gridScroll.contentY = Math.max(0, Math.min(retainedTopHour * hourHeight, gridScroll.contentHeight - gridScroll.height))
+        laidOutHourHeight = hourHeight
+        laidOutGridHeight = gridScroll.height
+        restoringGridPosition = false
+    }
+    function rememberGridPosition() {
+        // Ignore Flickable's automatic clamp while geometry is changing. Keep
+        // the intended time so a taller-then-shorter resize can restore it.
+        if (!restoringGridPosition && laidOutHourHeight === hourHeight && laidOutGridHeight === gridScroll.height)
+            retainedTopHour = Math.max(0, gridScroll.contentY) / hourHeight
+    }
+    onHourHeightChanged: Qt.callLater(preserveGridPosition)
     onVisibleChanged: if (!visible) { details.close(); datePicker.close(); moreMenu.close(); allDayOverflow.close() }
     Shortcut { sequence: "D"; enabled: calendar.shortcutsEnabled; onActivated: backend.setCalendarView("day") }
     Shortcut { sequence: "W"; enabled: calendar.shortcutsEnabled; onActivated: backend.setCalendarView("week") }
@@ -78,14 +95,14 @@ Item {
                 Row {
                     anchors.fill: parent
                     FmButton { iconName: "previous"; width: 30; height: 30; tip: "Previous — Left"; onClicked: backend.moveCalendar(-1) }
-                    Rectangle { width: 1; height: 30; color: Theme.controlBorder }
+                    Item { width: 1; height: 30; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, 0); width: Theme.ruleWidth; height: parent.height; color: Theme.controlBorder } }
                     FmButton {
                         id: dateButton; objectName: "calendarDatePickerButton"; width: 143; height: 30; font.pixelSize: Theme.fontSize(12); iconName: "down"; iconSize: 10
                         text: backend.calendarView === "week" ? Qt.formatDate(calendar.dateAt(0), "d") + " – " + Qt.formatDate(calendar.dateAt(6), "d MMM") : backend.calendarView === "month" ? Qt.formatDate(new Date(backend.calendarDate + "T12:00:00"), "MMM yyyy") : backend.calendarDate === backend.todayDate ? "Today" : Qt.formatDate(new Date(backend.calendarDate + "T12:00:00"), "ddd d MMM")
                         selected: datePicker.opened; tip: "Pick a date — T for today"
                         onClicked: { datePicker.month = new Date(backend.calendarDate + "T12:00:00"); datePicker.opened ? datePicker.close() : datePicker.open() }
                     }
-                    Rectangle { width: 1; height: 30; color: Theme.controlBorder }
+                    Item { width: 1; height: 30; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, 0); width: Theme.ruleWidth; height: parent.height; color: Theme.controlBorder } }
                     FmButton { iconName: "next"; width: 30; height: 30; tip: "Next — Right"; onClicked: backend.moveCalendar(1) }
                 }
             }
@@ -125,9 +142,10 @@ Item {
             visible: backend.calendarView === "day" || backend.calendarView === "week"; Layout.fillWidth: true; Layout.fillHeight: true; Layout.bottomMargin: 16; spacing: 32
             Flickable {
                 id: gridScroll; objectName: "calendarGrid"; Layout.fillWidth: true; Layout.fillHeight: true; clip: true; contentWidth: width; contentHeight: 24 * calendar.hourHeight + 10; boundsBehavior: Flickable.StopAtBounds
-                Component.onCompleted: Qt.callLater(calendar.resetGrid)
-                onHeightChanged: if (!moving) Qt.callLater(calendar.resetGrid)
-                onMovementEnded: backend.remember("calendarY", contentY)
+                Component.onCompleted: Qt.callLater(calendar.preserveGridPosition)
+                onHeightChanged: Qt.callLater(calendar.preserveGridPosition)
+                onContentYChanged: calendar.rememberGridPosition()
+                onMovementEnded: { calendar.retainedTopHour = Math.max(0, contentY) / calendar.hourHeight; backend.remember("calendarY", contentY); Qt.callLater(calendar.preserveGridPosition) }
                 ScrollBar.vertical: ScrollBar {}
                 Repeater { model: 25
                     Text { required property int index; objectName: "calendarHour-" + index; x: 0; y: Math.max(0, index * calendar.hourHeight - (index === 24 ? height : index === 0 ? 0 : height / 2)); text: (index < 10 ? "0" : "") + index + ":00"; color: Theme.subtle; font.pixelSize: Theme.fontSize(10) }
@@ -137,13 +155,13 @@ Item {
                     Repeater { model: calendar.dayCount
                         Rectangle {
                             required property int index; x: index * grid.dayWidth; width: grid.dayWidth; height: grid.height; color: calendar.isoAt(index) === backend.todayDate ? Theme.bg1 : "transparent"
-                            Rectangle { width: 1; height: parent.height; color: Theme.line }
+                            Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, 0); width: Theme.ruleWidth; height: parent.height; color: Theme.line }
                             MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: function(mouse) { calendar.createAt(parent.index, Math.max(0, Math.min(23.5, Math.floor(mouse.y / calendar.hourHeight * 2) / 2))) } }
-                            Rectangle { visible: calendar.isoAt(index) === backend.todayDate; y: backend.nowHour * calendar.hourHeight; z: 2; width: parent.width; height: 1; color: Theme.accent; Rectangle { x: -3; y: -3; width: 7; height: 7; rotation: 45; color: Theme.accent } }
+                            Rectangle { visible: calendar.isoAt(index) === backend.todayDate; x: Theme.snapX(parent, 0); y: Theme.snapY(parent, backend.nowHour * calendar.hourHeight); z: 2; width: parent.width; height: Theme.ruleWidth; color: Theme.accent; Rectangle { x: -3; y: -3; width: 7; height: 7; rotation: 45; color: Theme.accent } }
                         }
                     }
                     Repeater { model: 24
-                        Rectangle { required property int index; y: index * calendar.hourHeight; width: grid.width; height: 1; color: Theme.bg5 }
+                        Rectangle { required property int index; x: Theme.snapX(parent, 0); y: Theme.snapY(parent, index * calendar.hourHeight); width: grid.width; height: Theme.ruleWidth; color: Theme.bg5 }
                     }
                     Repeater { model: calendar.visibleEvents
                         Rectangle {
@@ -173,8 +191,8 @@ Item {
                         visible: editor.opened && !editor.preview.allDay && day >= 0 && day < calendar.dayCount && isFinite(editor.preview.startHour) && isFinite(editor.preview.endHour)
                         x: day * grid.dayWidth + 3; y: editor.preview.startHour * calendar.hourHeight; width: grid.dayWidth - 7
                         height: Math.max(20, (editor.preview.endHour - editor.preview.startHour) * calendar.hourHeight); color: Theme.accentAlpha(.125); radius: 3
-                        Repeater { model: Math.max(0, Math.ceil(parent.width / 10)); Rectangle { required property int index; x: index * 10; width: Math.max(0, Math.min(5, parent.width - x)); height: 1; color: Theme.accent } }
-                        Repeater { model: Math.max(0, Math.ceil(parent.width / 10)); Rectangle { required property int index; x: index * 10; y: parent.height - 1; width: Math.max(0, Math.min(5, parent.width - x)); height: 1; color: Theme.accent } }
+                        Repeater { model: Math.max(0, Math.ceil(parent.width / 10)); Rectangle { required property int index; x: Theme.snapX(parent, index * 10); y: Theme.snapY(parent, 0); width: Math.max(0, Math.min(5, parent.width - x)); height: Theme.ruleWidth; color: Theme.accent } }
+                        Repeater { model: Math.max(0, Math.ceil(parent.width / 10)); Rectangle { required property int index; x: Theme.snapX(parent, index * 10); y: Theme.snapY(parent, parent.height - 1); width: Math.max(0, Math.min(5, parent.width - x)); height: Theme.ruleWidth; color: Theme.accent } }
                         Rectangle { width: 2; height: parent.height; color: Theme.accent }
                         Text { anchors.fill: parent; anchors.margins: 7; text: editor.preview.title; color: Theme.accent; font.pixelSize: Theme.fontSize(12); elide: Text.ElideRight; textFormat: Text.PlainText }
                     }
@@ -184,7 +202,7 @@ Item {
                 visible: backend.calendarView === "day" && calendar.width > 850; Layout.preferredWidth: 320; Layout.fillHeight: true; clip: true; model: calendar.agendaEvents
                 delegate: ItemDelegate {
                     required property var modelData; width: ListView.view.width; height: 72; onClicked: calendar.showEvent(modelData, this)
-                    background: Rectangle { color: parent.hovered ? Theme.surface : "transparent"; Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.line } }
+                    background: Rectangle { color: parent.hovered ? Theme.surface : "transparent"; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, parent.height - 1); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
                     contentItem: RowLayout {
                         spacing: 14
                         Text { text: modelData.all_day ? "All day" : modelData.time_display + " – " + modelData.end_display; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); Layout.preferredWidth: 92; Layout.alignment: Qt.AlignTop }
@@ -226,7 +244,7 @@ Item {
             id: agenda; visible: backend.calendarView === "agenda"; Layout.fillWidth: true; Layout.fillHeight: true; Layout.bottomMargin: 16; model: calendar.agendaEvents; clip: true
             delegate: ItemDelegate {
                 required property var modelData; width: agenda.width; height: 70; onClicked: calendar.showEvent(modelData, this)
-                background: Rectangle { color: parent.hovered ? Theme.surface : "transparent"; Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.line } }
+                background: Rectangle { color: parent.hovered ? Theme.surface : "transparent"; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, parent.height - 1); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
                 contentItem: RowLayout { spacing: 18
                     Text { text: modelData.start_display; color: Theme.subtle; font.pixelSize: Theme.fontSize(12); Layout.preferredWidth: 200 }
                     Column { Layout.fillWidth: true; spacing: 4

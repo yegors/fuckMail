@@ -25,11 +25,11 @@ Item {
             if (entry.text !== text) entry.text = text
         }
     }
-    Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.line }
+    Rectangle { y: Theme.snapY(parent, parent.height-1); width: parent.width; height: Theme.ruleWidth; color: Theme.line }
     Text { x: 0; y: 10; width: 44; text: field.label; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); color: Theme.subtle }
     Flow {
         id: chips
-        x: 54; y: 7; width: parent.width-54-(field.showLinks ? 67 : 0); spacing: 4
+        x: 54; y: 7; width: Math.max(0, parent.width-54-(field.showLinks ? links.width+12 : 0)); spacing: 4
         Repeater {
             model: field.recipients
             Rectangle {
@@ -55,6 +55,7 @@ Item {
         }
     }
     Row {
+        id: links
         visible: field.showLinks; anchors.right: parent.right; y: 7; spacing: 10
         FmButton { objectName: "draftShowCc"; text: "Cc"; implicitHeight: 24; leftPadding: 0; rightPadding: 0; font.pixelSize: Theme.fontSize(12); onClicked: field.ccRequested() }
         FmButton { objectName: "draftShowBcc"; text: "Bcc"; implicitHeight: 24; leftPadding: 0; rightPadding: 0; font.pixelSize: Theme.fontSize(12); onClicked: field.bccRequested() }

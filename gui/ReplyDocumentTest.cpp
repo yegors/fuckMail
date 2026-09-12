@@ -59,10 +59,13 @@ int main(int argc, char **argv) {
     Editor authored(engine);
     const auto text = QString::fromUtf8("Hello Zoë,\nMontréal — 東京 👋\nLiteral  <angle> & plain entities.\n");
     int changes = 0;
+    int textNotifications = 0;
     QObject::connect(&authored.reply, &ReplyDocument::contentChanged, [&changes] { ++changes; });
+    QObject::connect(&authored.reply, &ReplyDocument::textChanged, [&textNotifications] { ++textNotifications; });
     authored.reply.load(text, {});
     require(authored.reply.plainText() == text, "Loading preserves exact Unicode, literal angle brackets, ampersands and trailing newline");
     require(changes == 0, "Loading saved work is not reported as a new user edit");
+    require(textNotifications > 0, "Loading saved work updates text-property consumers such as primary-action availability");
 
     authored.select(6, 9);
     authored.reply.format("bold");

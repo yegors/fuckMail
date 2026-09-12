@@ -9,6 +9,8 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     ReplyDocument.h
     CalendarLayout.cpp
     CalendarLayout.h
+    HatchItem.cpp
+    HatchItem.h
     GuiSelfTest.cpp
     GuiSelfTest.h
     GuiCalendarSelfTest.cpp
@@ -21,6 +23,11 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     GuiMailNavigationSelfTest.h
     GuiSearchBenchmark.cpp
     GuiSearchBenchmark.h
+    GuiPaintObserver.h
+    GuiInteractionBenchmark.cpp
+    GuiInteractionBenchmark.h
+    GuiResizeBenchmark.cpp
+    GuiResizeBenchmark.h
     IpcTrust.cpp
     IpcTrust.h
 )

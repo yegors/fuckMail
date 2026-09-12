@@ -29,6 +29,7 @@ private:
     bool filterResultMatches() const;
     void holdInFlightResponse();
     void observeArrivalReceipt();
+    void holdDeferredFlagReceipt();
     void arrivalCli(const QStringList &arguments, std::function<void(const QJsonObject &)> callback);
     QJsonObject arrivalReport() const;
     bool arrivalMembersMatch(const QJsonObject &conversation, bool starred, bool includeArrival) const;
@@ -69,4 +70,14 @@ private:
     QJsonObject m_surfaceCounts, m_senderBefore;
     QStringList m_queueExpected, m_queueObserved;
     bool m_queueCheckActive = false;
+    QString m_deferredFirst, m_deferredSecond;
+    QVariantMap m_deferredClickedRow;
+    int m_deferredClickedIndex = -1;
+    QJsonObject m_deferredSource, m_deferredReceipt;
+    MailBackend::Callback m_deferredDelegate;
+    bool m_deferredHoldArmed = false, m_deferredHeld = false, m_deferredOk = false;
+    QSize m_compactOriginalSize;
+    QStringList m_compactAccounts;
+    QString m_compactOriginalAccount, m_compactExpectedAccount;
+    int m_compactKey = 0, m_compactWait = 0;
 };

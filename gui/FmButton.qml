@@ -9,10 +9,10 @@ ToolButton {
     property string iconName: ""
     property int iconSize: 14
     property int iconSpacing: 7
-    property color foreground: !enabled ? Theme.subtle : prominent ? Theme.canvas : selected || outlined ? Theme.text : Theme.muted
+    property color foreground: !enabled ? (prominent ? Theme.muted : Theme.subtle) : prominent ? Theme.canvas : selected || outlined ? Theme.text : Theme.muted
     property int textAlignment: Text.AlignHCenter
     implicitHeight: Math.max(32, contentItem.implicitHeight + 10)
-    implicitWidth: contentItem.implicitWidth + 22
+    implicitWidth: contentItem.implicitWidth + leftPadding + rightPadding
     leftPadding: 11
     rightPadding: 11
     font.family: Theme.fontFamily
@@ -42,7 +42,7 @@ ToolButton {
     }
     background: Rectangle {
         radius: 5
-        color: control.prominent ? Theme.text : control.down || control.selected ? Theme.selected : control.hovered ? Theme.surface : "transparent"
+        color: control.prominent ? (control.enabled ? Theme.text : Theme.controlBorder) : control.down || control.selected ? Theme.selected : control.hovered ? Theme.surface : "transparent"
         border.width: control.activeFocus || control.outlined ? 1 : 0
         border.color: control.activeFocus ? Theme.focusBorder : Theme.controlBorder
     }

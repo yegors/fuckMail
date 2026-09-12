@@ -1,0 +1,220 @@
+Host: Windows-10-10.0.26200-SP0 AMD64
+Qt kit: C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64
+Source: C:\Users\Yegor\Projects\Fuckaround\fuckMail
++ "C:\Program Files\Git\cmd\git.EXE" --version
+git version 2.53.0.windows.1 at C:\Program Files\Git\cmd\git.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\rustc.EXE --version
+rustc 1.88.0 (6b00bc388 2025-06-23) at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\rustc.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.EXE --version
+cargo 1.88.0 (873a06493 2025-05-10) at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.EXE --version
+cmake version 3.31.6 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ninja.EXE --version
+1.11.1.git.kitware.jobserver-1 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ninja.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE --qt-version
+6.11.2 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE
+Native C++ compiler: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\cl.exe
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --preset release
+Preset CMake variables:
+
+  BUILD_TESTING:BOOL="TRUE"
+  CMAKE_BUILD_TYPE="Release"
+  CMAKE_EXPORT_COMPILE_COMMANDS:BOOL="TRUE"
+  CMAKE_PREFIX_PATH="C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64"
+
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Configuring done (1.2s)
+-- Generating done (0.4s)
+-- Build files have been written to: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --build --preset release --parallel
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `release` profile [optimized] target(s) in 25.05s
+[0/70] Build the shared Rust engine and CLI
+[6/62] Running qmlimportscanner for fuckmail-gui
+[8/62] Automatic MOC and UIC for target fuckmail-gui
+[9/61] Running AUTOMOC file extraction for target fuckmail-gui
+[10/18] Running rcc for resource fuckmail-gui_raw_qml_0
+[11/18] Generating .rcc/qmlcache/fuckmail-gui_Main_qml.cpp, .rcc/qmlcache/fuckmail-gui_Main_qml.cpp.aotstats
+[12/18] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.qt\rcc\qrc_fuckmail-gui_raw_qml_0.cpp.obj
+[13/18] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_Main_qml.cpp.obj
+[14/18] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\MailBackend.cpp.obj
+[15/18] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiSelfTest.cpp.obj
+[16/18] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiMailNavigationSelfTest.cpp.obj
+[17/18] Linking CXX executable fuckmail-gui.exe
+[18/18] C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\release && C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Lib\site-packages\cmake\data\bin\cmake.exe -E copy_if_different C:/Users/Yegor/Projects/Fuckaround/fuckMail/target/release/fm-engine.exe C:/Users/Yegor/Projects/Fuckaround/fuckMail/target/release/fm.exe C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release"
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ctest.exe --preset release
+Test project C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/release
+    Start 1: rust-test-build
+1/9 Test #1: rust-test-build ..................   Passed   54.43 sec
+    Start 2: rust-workspace
+2/9 Test #2: rust-workspace ...................   Passed   83.40 sec
+    Start 3: gui-smoke
+3/9 Test #3: gui-smoke ........................   Passed    3.67 sec
+    Start 4: gui-integration
+4/9 Test #4: gui-integration ..................***Failed   27.13 sec
+GUI engine launch attempt 1
+GUI self-test stage 0
+GUI engine launch attempt 2
+GUI self-test stage 20
+GUI self-test stage 21
+GUI self-test stage 1
+GUI self-test stage 2
+GUI self-test stage 27
+GUI self-test stage 22
+GUI self-test stage 23
+GUI self-test stage 24
+GUI self-test stage 25
+GUI self-test stage 26
+GUI self-test stage 3
+GUI self-test stage 4
+GUI self-test stage 5
+GUI self-test stage 6
+GUI self-test stage 7
+GUI self-test stage 8
+GUI self-test stage 9
+GUI self-test stage 30
+GUI self-test stage 31
+GUI self-test stage 32
+GUI self-test stage 33
+GUI self-test stage 34
+GUI self-test stage 35
+GUI self-test stage 36
+GUI self-test stage 37
+GUI self-test stage 38
+GUI self-test stage 39
+GUI self-test stage 40
+GUI self-test stage 41
+GUI self-test stage 42
+GUI self-test stage 48
+GUI self-test stage 90
+GUI self-test stage 91
+GUI self-test stage 92
+GUI self-test stage 93
+GUI self-test stage 49
+GUI self-test stage 94
+Native Sent/local-capture/Inspect passed: original conversation, operation identity, MIME bytes and non-delivery status verified by CLI.
+GUI self-test stage 95
+GUI self-test stage 96
+GUI self-test stage 97
+GUI self-test stage 98
+GUI self-test stage 99
+GUI self-test stage 100
+GUI self-test stage 101
+GUI self-test stage 102
+GUI self-test stage 103
+GUI self-test stage 104
+GUI self-test stage 105
+GUI self-test stage 106
+GUI self-test stage 107
+GUI self-test stage 108
+GUI self-test stage 109
+GUI self-test stage 110
+GUI self-test stage 111
+GUI self-test stage 112
+Native Discard confirmation passed: opening/Cancel preserved the exact draft; confirmation cleared only its authored fields, preserving source messages, another draft and capture history.
+GUI self-test stage 50
+GUI self-test stage 51
+GUI self-test stage 52
+GUI self-test stage 53
+GUI self-test stage 54
+GUI self-test stage 55
+GUI self-test stage 56
+GUI self-test stage 57
+GUI self-test stage 58
+GUI self-test stage 59
+GUI self-test stage 70
+GUI self-test stage 71
+GUI self-test stage 72
+GUI self-test stage 73
+GUI self-test stage 74
+GUI engine launch attempt 1
+GUI self-test stage 75
+GUI self-test stage 76
+GUI self-test stage 77
+GUI self-test stage 78
+GUI self-test stage 79
+GUI self-test stage 80
+Native Settings stage 0
+Native Settings stage 1
+Native Settings stage 2
+Settings programmatic viewport setup: list= QVariant(double, 240) reader= QVariant(double, 160) editorFocus= true active= "replyComposer" stored list/reader= QVariant(double, 240) QVariant(double, 160)
+Native Settings stage 3
+Native Settings stage 4
+Native Settings stage 5
+Native Settings stage 6
+Native Settings stage 7
+Native Settings stage 8
+Native Settings stage 9
+Native Settings stage 10
+Native Settings stage 11
+Native Settings stage 12
+Native Settings stage 13
+Native Settings stage 14
+Native Settings stage 15
+Native Settings stage 16
+Native Settings stage 17
+Native Settings stage 18
+Native Settings stage 19
+Native Settings stage 20
+Native Settings stage 21
+Native Settings stage 22
+Native Settings stage 30
+Native Settings stage 31
+Native Settings stage 32
+Native Settings stage 33
+Native Settings stage 34
+Native Settings stage 35
+Native Settings stage 36
+Native Settings stage 37
+Native Settings stage 38
+Native Settings stage 39
+Native Settings stage 23
+Native Settings stage 24
+Native Settings passed: all three palettes and text sizes, saved startup/placement/duration, validation retention, account metadata, unchanged authored draft, independent calendar preferences and Mail viewport/focus restoration (programmatic viewport setup; physical wheel input unverified).
+GUI self-test stage 81
+Native mail search stage 0 case 0
+Native mail search stage 80 case 0
+Native mail search stage 81 case 0
+Native mail search stage 82 case 0
+Native request ordering passed: real explicit queries preceded unsent automatic reads, retained manual-read/write barriers and delivered polling after four bypasses; stored preferences unchanged.
+Native mail search stage 90 case 0
+Native mail search stage 91 case 0
+Native mail search stage 92 case 0
+Native mail search stage 93 case 0
+Native mail search stage 94 case 0
+Native mail search stage 95 case 0
+Native mail search stage 96 case 0
+Native mail search stage 97 case 0
+Native deferred reader click passed: a real pending flag receipt preserved the clicked row through a real filtered-page exclusion; exact reader body, account, review state and serial write barrier retained.
+Native mail search stage 98 case 0
+Native mail search stage 99 case 0
+Native mail search stage 100 case 0
+Native mail search stage 99 case 0
+Native mail search stage 100 case 0
+Native mail search stage 99 case 0
+Native mail search stage 100 case 0
+Native mail search stage 99 case 0
+Native mail search stage 100 case 0
+GUI self-test failed at stage 81 : Compact Tab/Shift+Tab did not reveal the complete selected mailbox tab and matching reader: {"ancestors":[{"clip":false,"control_height":28,"control_width":139,"enabled":true,"height":28,"implicit_height":32,"implicit_width":139,"name":"accountTab_sideproject","type":"FmButton_QMLTYPE_30_QML_164","visible":true,"width":139,"x":269,"y":14},{"clip":false,"control_height":28,"control_width":440,"enabled":true,"height":28,"implicit_height":28,"implicit_width":440,"name":"","type":"QQuickRow","visible":true,"width":440,"x":-32,"y":14},{"clip":false,"control_height":32,"control_width":440,"enabled":true,"height":32,"implicit_height":0,"implicit_width":0,"name":"","type":"QQuickItem","visible":true,"width":440,"x":-32,"y":12},{"clip":true,"control_height":32,"control_width":180,"enabled":true,"height":32,"implicit_height":0,"implicit_width":0,"name":"","type":"QQuickFlickable_QML_162","visible":true,"width":180,"x":225,"y":12},{"clip":false,"control_height":32,"control_width":381,"enabled":true,"height":32,"implicit_height":32,"implicit_width":381,"name":"","type":"QQuickRowLayout","visible":true,"width":381,"x":24,"y":12},{"clip":false,"control_height":56,"control_width":952,"enabled":true,"height":56,"implicit_height":32,"implicit_width":1024,"name":"","type":"QQuickRowLayout","visible":true,"width":952,"x":24,"y":0},{"clip":false,"control_height":56,"control_width":1000,"enabled":true,"height":56,"implicit_height":0,"implicit_width":0,"name":"","type":"QQuickRectangle","visible":true,"width":1000,"x":0,"y":0},{"clip":false,"control_height":650,"control_width":1000,"enabled":true,"height":650,"implicit_height":0,"implicit_width":0,"name":"Main","type":"QQuickRootItem","visible":true,"width":1000,"x":0,"y":0}],"found":true,"fully_visible":false,"input_viewport_visible":false,"text_length":12,"window_height":650,"window_width":1000}
+
+    Start 5: gui-startup-recovery
+5/9 Test #5: gui-startup-recovery .............   Passed    4.87 sec
+    Start 6: gui-ipc-trust
+6/9 Test #6: gui-ipc-trust ....................   Passed    0.05 sec
+    Start 7: gui-composer-probe
+7/9 Test #7: gui-composer-probe ...............   Passed    0.07 sec
+    Start 8: gui-reply-document
+8/9 Test #8: gui-reply-document ...............   Passed    0.11 sec
+    Start 9: gui-calendar-layout
+9/9 Test #9: gui-calendar-layout ..............   Passed    0.04 sec
+
+89% tests passed, 1 tests failed out of 9
+
+Total Test time (real) = 173.78 sec
+
+The following tests FAILED:
+	  4 - gui-integration (Failed)
+Errors while running CTest
+ERROR: Command '['C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\bootstrap\\Scripts\\ctest.exe', '--preset', 'release']' returned non-zero exit status 8.

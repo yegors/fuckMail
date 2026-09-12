@@ -11,8 +11,8 @@ class ReplyDocument : public QObject {
     QML_ELEMENT
     Q_PROPERTY(QQuickTextDocument *textDocument READ textDocument WRITE setTextDocument NOTIFY documentChanged)
     Q_PROPERTY(QQuickItem *editor READ editor WRITE setEditor NOTIFY documentChanged)
-    Q_PROPERTY(QString plainText READ plainText NOTIFY contentChanged)
-    Q_PROPERTY(QString html READ html NOTIFY contentChanged)
+    Q_PROPERTY(QString plainText READ plainText NOTIFY textChanged)
+    Q_PROPERTY(QString html READ html NOTIFY textChanged)
 public:
     explicit ReplyDocument(QObject *parent = nullptr) : QObject(parent) {}
     QQuickTextDocument *textDocument() const { return m_document; }
@@ -30,6 +30,7 @@ public:
     static QString limitedHtml(const QString &html);
 signals:
     void documentChanged();
+    void textChanged();
     void contentChanged();
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

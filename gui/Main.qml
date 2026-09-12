@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
 
@@ -38,6 +39,7 @@ ApplicationWindow {
     font.pixelSize: Theme.fontSize(14)
     Binding { target: Theme; property: "themeId"; value: backend.preferences.theme || "graphite" }
     Binding { target: Theme; property: "textSize"; value: backend.preferences.text_size || "default" }
+    Binding { target: Theme; property: "devicePixelRatio"; value: window.Screen.devicePixelRatio }
     function applyStartupPreference() {
         if (startupPreferenceApplied || !Object.keys(backend.preferences).length) return
         if (!suppressStartupPreference) {
@@ -118,7 +120,7 @@ ApplicationWindow {
     header: Rectangle {
         height: Theme.headerHeight
         color: Theme.canvas
-        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.line }
+        Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, parent.height - 1); width: parent.width; height: Theme.ruleWidth; color: Theme.line }
         RowLayout {
             anchors.fill: parent; anchors.leftMargin: 24; anchors.rightMargin: 24; spacing: 24
             RowLayout {
@@ -132,9 +134,27 @@ ApplicationWindow {
                         FmButton { objectName: "calendarWorkspaceButton"; height: 28; text: "Calendar"; iconName: "calendar"; iconSize: 13; prominent: !window.settingsOpen && window.workspace === "calendar"; tip: "Calendar · c"; onClicked: window.navigate("calendar") }
                     }
                 }
-                Rectangle { implicitWidth: 1; implicitHeight: 20; color: Theme.line }
+                Item { implicitWidth: 1; implicitHeight: 20; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, 0); width: Theme.ruleWidth; height: parent.height; color: Theme.line } }
                 Flickable {
                     id: accountTabs
+                    function revealSelected() {
+                        for (let i = 0; i < accountRepeater.count; ++i) {
+                            const tab = accountRepeater.itemAt(i)
+                            if (!tab || !tab.selected) continue
+                            const left = tab.x, right = left + tab.width
+                            if (left < contentX) contentX = left
+                            else if (right > contentX + width) contentX = Math.max(0, right - width)
+                            contentX = Math.min(contentX, Math.max(0, contentWidth - width))
+                            return
+                        }
+                    }
+                    onWidthChanged: Qt.callLater(revealSelected)
+                    onContentWidthChanged: Qt.callLater(revealSelected)
+                    Connections {
+                        target: backend
+                        function onAccountChanged() { Qt.callLater(accountTabs.revealSelected) }
+                        function onAccountsChanged() { Qt.callLater(accountTabs.revealSelected) }
+                    }
                     Layout.preferredWidth: Math.min(accountsRow.width, Math.max(140, window.width - 820))
                     Layout.minimumWidth: 140; Layout.preferredHeight: 32
                     contentWidth: accountsRow.width; contentHeight: height; clip: true
@@ -143,23 +163,31 @@ ApplicationWindow {
                     Row {
                         id: accountsRow; anchors.verticalCenter: parent.verticalCenter; spacing: 2
                         Repeater {
+                            id: accountRepeater
                             model: backend.accounts
                             delegate: FmButton {
                                 required property var modelData
                                 id: accountTab
                                 objectName: "accountTab_" + modelData.id
                                 property int reviewCount: modelData.unread_conversation_count || 0
+                                readonly property real naturalWidth: 20 + 14 + 8 + accountName.implicitWidth
+                                    + (reviewCount > 0 ? accountCount.implicitWidth + 8 : 0)
                                 text: modelData.name
-                                height: 28; implicitWidth: accountContent.implicitWidth + 20
+                                height: 28; implicitWidth: Math.min(naturalWidth, Math.max(140, window.width - 820))
+                                leftPadding: 10; rightPadding: 10
                                 selected: backend.account === modelData.id
+                                Component.onCompleted: if (selected) Qt.callLater(accountTabs.revealSelected)
+                                onWidthChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
+                                onXChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
+                                onSelectedChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
                                 tip: modelData.name + " · " + modelData.email + " · " + reviewCount + " to review, " + (modelData.held_conversation_count || 0) + " delayed"
                                 onClicked: { backend.selectAccount(modelData.id); if (window.settingsOpen) window.navigate("mail") }
                                 contentItem: Row {
                                     id: accountContent
                                     spacing: 8
                                     FmIcon { anchors.verticalCenter: parent.verticalCenter; name: Theme.accountIcon(accountTab.modelData.id); size: 14; color: accountTab.selected ? Theme.secondary : Theme.subtle }
-                                    Text { anchors.verticalCenter: parent.verticalCenter; text: accountTab.text; color: accountTab.selected ? Theme.text : Theme.muted; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(13); weight: accountTab.selected ? Font.Medium : Font.Normal } }
-                                    Text { anchors.verticalCenter: parent.verticalCenter; visible: accountTab.reviewCount > 0; text: accountTab.reviewCount; color: accountTab.selected ? Theme.text : Theme.muted; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12); weight: Font.Medium } }
+                                    Text { id: accountName; anchors.verticalCenter: parent.verticalCenter; text: accountTab.text; width: Math.max(0, accountTab.availableWidth - 14 - 8 - (accountTab.reviewCount > 0 ? accountCount.implicitWidth + 8 : 0)); elide: Text.ElideRight; color: accountTab.selected ? Theme.text : Theme.muted; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(13); weight: accountTab.selected ? Font.Medium : Font.Normal } }
+                                    Text { id: accountCount; anchors.verticalCenter: parent.verticalCenter; visible: accountTab.reviewCount > 0; text: accountTab.reviewCount; color: accountTab.selected ? Theme.text : Theme.muted; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12); weight: Font.Medium } }
                                 }
                             }
                         }
@@ -222,7 +250,7 @@ ApplicationWindow {
                     tip: text + " · n"
                     onClicked: { searchPopup.close(); if (window.workspace === "calendar") calendarView.createEvent(); else mailView.newMessage() }
                 }
-                Rectangle { implicitWidth: 1; implicitHeight: 20; color: Theme.line }
+                Item { implicitWidth: 1; implicitHeight: 20; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, 0); width: Theme.ruleWidth; height: parent.height; color: Theme.line } }
                 FmButton { objectName: "settingsButton"; iconName: "settings"; iconSize: 15; implicitWidth: 32; prominent: window.settingsOpen; tip: "Settings · ,"; onClicked: window.navigate(window.settingsOpen ? window.workspace : "settings") }
             }
         }

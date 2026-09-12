@@ -55,6 +55,7 @@ impl Store {
             "{:x}",
             Sha256::digest(serde_json::to_vec(&json!([method, p]))?)
         );
+        let flag_projection_stamp = (method == "flag").then(|| self.flag_projection_stamp());
         // The serialized engine owns this connection. Query the same transaction
         // while constructing the response; record that response before commit.
         let tx = self.db.unchecked_transaction()?;
@@ -221,6 +222,9 @@ impl Store {
         tx.execute("INSERT INTO operations(account,request_id,fingerprint,result_json) VALUES(?1,?2,?3,?4)",
             params![account, request_id, fingerprint, serde_json::to_string(&result)?])?;
         tx.commit()?;
+        if let Some(before) = flag_projection_stamp {
+            self.refresh_committed_flag_projections(account, string(p, "id")?, before);
+        }
         Ok(result)
     }
 }

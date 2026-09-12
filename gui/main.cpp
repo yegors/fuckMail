@@ -3,6 +3,8 @@
 #include "GuiCalendarSelfTest.h"
 #include "GuiCompositionSelfTest.h"
 #include "GuiSearchBenchmark.h"
+#include "GuiInteractionBenchmark.h"
+#include "GuiResizeBenchmark.h"
 
 #include <QCommandLineParser>
 #include <QDir>
@@ -55,7 +57,10 @@ int main(int argc, char **argv) {
     parser.addOption({"screenshot-width", "Window width in logical pixels for visual checks.", "pixels", "1440"});
     parser.addOption({"screenshot-height", "Window height in logical pixels for visual checks.", "pixels", "900"});
     parser.addOption({"screenshot-reply", "Expand the current conversation's inline reply for a screenshot."});
+    parser.addOption({"screenshot-reply-bottom", "Scroll the expanded reply to its action footer before capture."});
     parser.addOption({"benchmark-search-output", "Measure actual QML input to rendered first-page results on a retained generated 100k profile; writes a JSON report.", "file"});
+    parser.addOption({"benchmark-navigation-output", "Measure native mailbox and conversation input to correct content paint on a disposable fixture profile.", "file"});
+    parser.addOption({"benchmark-resize-output", "Measure native resize frames and retain separate rendering captures on a disposable fixture profile.", "file"});
     parser.process(app);
     if (parser.isSet("self-test-startup-workspace") && (!parser.isSet("smoke") || !parser.isSet("profile") || parser.isSet("self-test")
         || parser.isSet("self-test-calendar-restart") || parser.isSet("self-test-composition-restart") || parser.isSet("screenshot")
@@ -63,6 +68,8 @@ int main(int argc, char **argv) {
     if (parser.isSet("self-test-calendar-restart") && (!parser.isSet("smoke") || !parser.isSet("profile") || parser.isSet("self-test"))) parser.showHelp(1);
     if (parser.isSet("self-test-composition-restart") && (!parser.isSet("smoke") || !parser.isSet("profile") || parser.isSet("self-test") || parser.isSet("self-test-calendar-restart"))) parser.showHelp(1);
     if (parser.isSet("benchmark-search-output") && (!parser.isSet("profile") || parser.isSet("smoke") || parser.isSet("self-test"))) parser.showHelp(1);
+    const int benchmarkCount = int(parser.isSet("benchmark-search-output")) + int(parser.isSet("benchmark-navigation-output")) + int(parser.isSet("benchmark-resize-output"));
+    if (benchmarkCount && (benchmarkCount != 1 || !parser.isSet("profile") || parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("screenshot"))) parser.showHelp(1);
     const auto captureView = parser.value("screenshot-view");
     if (captureView != "mail" && captureView != "calendar" && captureView != "settings") parser.showHelp(1);
     if (!QStringList{"day", "week", "month", "agenda"}.contains(parser.value("screenshot-calendar-view"))) parser.showHelp(1);
@@ -110,6 +117,8 @@ int main(int argc, char **argv) {
     // Render-thread measurement callbacks outlive the event loop on an error
     // exit. Keep their receiver alive until the QML window stops rendering.
     std::unique_ptr<GuiSearchBenchmark> searchBenchmark;
+    std::unique_ptr<GuiInteractionBenchmark> interactionBenchmark;
+    std::unique_ptr<GuiResizeBenchmark> resizeBenchmark;
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("backend", &backend);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
@@ -119,6 +128,7 @@ int main(int argc, char **argv) {
     captureTimer.setInterval(100);
     int settledTicks = 0;
     bool screenshotReplyOpened = false;
+    bool screenshotFooterPositioned = false;
     QObject::connect(&captureTimer, &QTimer::timeout, &app, [&] {
         if (!backend.connected() || backend.loading() || backend.draft().isEmpty()
             || !backend.property("calendarReady").toBool() || !backend.property("timelineReady").toBool()) { settledTicks = 0; return; }
@@ -129,6 +139,13 @@ int main(int argc, char **argv) {
             screenshotReplyOpened = true; settledTicks = 0; return;
         }
         if (++settledTicks < 3) return;
+        if (parser.isSet("screenshot-reply-bottom") && !screenshotFooterPositioned) {
+            const auto root = engine.rootObjects().value(0);
+            const auto reader = root ? root->findChild<QQuickItem *>("reader") : nullptr;
+            if (!reader) { QCoreApplication::exit(2); return; }
+            reader->setProperty("contentY", qMax(0.0, reader->property("contentHeight").toDouble() - reader->height()));
+            screenshotFooterPositioned = true; settledTicks = 0; return;
+        }
         captureTimer.stop();
         if (parser.isSet("self-test-startup-workspace")) {
             const auto root = engine.rootObjects().value(0);
@@ -181,7 +198,7 @@ int main(int argc, char **argv) {
         QCoreApplication::exit(3);
     });
     engine.loadFromModule("FuckMail", "Main");
-    if (!parser.isSet("self-test-startup-workspace") && (parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("screenshot") || parser.isSet("benchmark-search-output")) && !engine.rootObjects().isEmpty())
+    if (!parser.isSet("self-test-startup-workspace") && (parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("screenshot") || benchmarkCount) && !engine.rootObjects().isEmpty())
         engine.rootObjects().first()->setProperty("suppressStartupPreference", true);
     if (parser.isSet("self-test-calendar-restart") && !engine.rootObjects().isEmpty()) {
         auto root = engine.rootObjects().first();
@@ -202,6 +219,16 @@ int main(int argc, char **argv) {
         if (!window) return 7;
         searchBenchmark = std::make_unique<GuiSearchBenchmark>(backend, window, parser.value("benchmark-search-output"), &app);
     }
+    if (parser.isSet("benchmark-navigation-output") && !engine.rootObjects().isEmpty()) {
+        auto window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+        if (!window) return 7;
+        interactionBenchmark = std::make_unique<GuiInteractionBenchmark>(backend, window, parser.value("benchmark-navigation-output"), &app);
+    }
+    if (parser.isSet("benchmark-resize-output") && !engine.rootObjects().isEmpty()) {
+        auto window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+        if (!window) return 7;
+        resizeBenchmark = std::make_unique<GuiResizeBenchmark>(backend, window, parser.value("benchmark-resize-output"), &app);
+    }
     if (parser.isSet("self-test") && !engine.rootObjects().isEmpty()) {
         selfTest = std::make_unique<GuiSelfTest>(backend, engine.rootObjects().first(), profile, program, &app);
         QTimer::singleShot(120000, &app, [] { QCoreApplication::exit(6); });
@@ -209,6 +236,8 @@ int main(int argc, char **argv) {
     QTimer::singleShot(0, &backend, &MailBackend::start);
     const auto result = app.exec();
     if (searchBenchmark) searchBenchmark->stopForShutdown();
+    if (interactionBenchmark) interactionBenchmark->stopForShutdown();
+    if (resizeBenchmark) resizeBenchmark->stopForShutdown();
     const bool selfTestCompleted = backend.property("selfTestCompleted").toBool();
     const bool restartVerified = result != 0 || !selfTest || !selfTestCompleted || selfTest->verifyRestart();
     if (smokeProfile) {
@@ -223,5 +252,7 @@ int main(int argc, char **argv) {
     }
     if (!restartVerified) return 5;
     if (result == 0 && searchBenchmark && !searchBenchmark->passed()) return 9;
+    if (result == 0 && interactionBenchmark && !interactionBenchmark->passed()) return 9;
+    if (result == 0 && resizeBenchmark && !resizeBenchmark->passed()) return 9;
     return result;
 }

@@ -4,6 +4,23 @@ QtObject {
     id: theme
     property string themeId: "graphite"
     property string textSize: "default"
+    property real devicePixelRatio: 1
+    readonly property real pixelScale: devicePixelRatio > 0 ? devicePixelRatio : 1
+    readonly property real ruleWidth: Math.max(1, Math.round(pixelScale)) / pixelScale
+    function snap(value) { return Math.round(value * pixelScale) / pixelScale }
+    // Thin, axis-aligned rules only. Preserve the logical layout slot and snap
+    // its painted child. These helpers deliberately exclude rotated/scaled
+    // ancestors; reading every offset keeps scrolling/layout bindings live.
+    function snapX(item, value) {
+        let offset = 0
+        for (let ancestor = item; ancestor; ancestor = ancestor.parent) offset += ancestor.x
+        return snap(offset + value) - offset
+    }
+    function snapY(item, value) {
+        let offset = 0
+        for (let ancestor = item; ancestor; ancestor = ancestor.parent) offset += ancestor.y
+        return snap(offset + value) - offset
+    }
     readonly property var themes: [
         { id: "graphite", name: "Graphite", description: "Near-black with warm amber. The default.", scheme: "dark", bg0: "#0B0C0E", bg: "#0E0F11", bg1: "#121316", bg2: "#131417", bg3: "#17181C", bg4: "#191A1E", bg5: "#1B1C20", bg6: "#1F2126", line: "#232529", line2: "#2A2C31", line3: "#3A3D44", ink: "#E9EAEC", accent: "#C9A36B", warn: "#D9A441", red: "#E0645A", shadow: "#000000" },
         { id: "paper", name: "Paper", description: "Warm off-white, ink type, oxblood accent.", scheme: "light", bg0: "#EDE9E1", bg: "#F4F1EA", bg1: "#EFEBE3", bg2: "#EAE5DC", bg3: "#E5E0D6", bg4: "#E1DBD0", bg5: "#DDD6CA", bg6: "#D6CEC1", line: "#DCD5C8", line2: "#CFC6B7", line3: "#B9AE9C", ink: "#1C1B18", accent: "#8A2E2A", warn: "#B9791A", red: "#B3382F", shadow: "#3C321E" },

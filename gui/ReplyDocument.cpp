@@ -61,8 +61,14 @@ void ReplyDocument::setTextDocument(QQuickTextDocument *document) {
     if (document == m_document) return;
     if (m_document) m_document->textDocument()->disconnect(this);
     m_document = document;
-    if (m_document) connect(m_document->textDocument(), &QTextDocument::contentsChanged, this, [this] { if (!m_loading) emit contentChanged(); });
+    if (m_document) connect(m_document->textDocument(), &QTextDocument::contentsChanged, this, [this] {
+        // Loaded text updates property bindings (including action availability),
+        // while only authored edits notify the autosave consumer.
+        emit textChanged();
+        if (!m_loading) emit contentChanged();
+    });
     emit documentChanged();
+    emit textChanged();
 }
 void ReplyDocument::setEditor(QQuickItem *editor) {
     if (editor == m_editor) return;

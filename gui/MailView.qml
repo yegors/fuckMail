@@ -68,6 +68,10 @@ Item {
         return collapsedBetween(index > 0 ? groups.indexOf(groupOf(rows[index - 1])) : -1, groups.indexOf(groupOf(rows[index])))
     }
     readonly property var trailingCollapsed: collapsedBetween(backend.conversations.length ? ["review", "held", "done"].indexOf(groupOf(backend.conversations[backend.conversations.length - 1])) : -1, 3)
+    component ReaderAction: FmButton {
+        leftPadding: 14; rightPadding: 14
+        font.weight: Font.Medium
+    }
     component GroupHeader: ItemDelegate {
         id: heading
         required property string group
@@ -298,8 +302,11 @@ Item {
     SplitView {
         id: split
         anchors.fill: parent; orientation: Qt.Horizontal
-        handle: Rectangle {
-            implicitWidth: 1; color: SplitHandle.pressed ? Theme.accent : SplitHandle.hovered ? Theme.subtle : Theme.controlBorder
+        handle: Item {
+            id: splitHandle
+            implicitWidth: 1
+            Rectangle { x: -4; width: 9; height: parent.height; color: Theme.inkAlpha(.05); visible: splitHandle.SplitHandle.hovered }
+            Rectangle { x: Theme.snapX(parent, 0); width: Theme.ruleWidth; height: parent.height; color: splitHandle.SplitHandle.pressed ? Theme.accent : Theme.controlBorder }
             containmentMask: Item { x: -4; width: 9; height: split.height }
         }
         Item {
@@ -378,7 +385,6 @@ Item {
                     clip: true; model: backend.conversations; boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: ScrollBar {}
                     onContentHeightChanged: Qt.callLater(mail.restoreListPosition)
-                    onHeightChanged: Qt.callLater(mail.restoreListPosition)
                     onMovementEnded: if (!mail.restoring) backend.remember("listY",contentY)
                     delegate: Item {
                         id: groupedRow
@@ -462,7 +468,7 @@ Item {
         }
         Item {
             id: readerPane
-            SplitView.fillWidth: true; SplitView.minimumWidth: 470
+            SplitView.fillWidth: true; SplitView.minimumWidth: Math.max(470, readerButtons.implicitWidth + 48)
             readonly property int margin: width<620 ? 24 : 40
             Rectangle { anchors.fill: parent; color: Theme.bg0 }
             Rectangle {
@@ -475,23 +481,28 @@ Item {
                 ColumnLayout {
                     visible: mail.members.length>0
                     Layout.fillWidth: true; Layout.leftMargin: readerPane.margin; Layout.rightMargin: readerPane.margin; Layout.topMargin: 24; spacing: 14
-                    Flow {
+                    Item {
                         id: readerActions
                         objectName: "conversationActionsRow"
-                        Layout.fillWidth: true; spacing: 12
+                        Layout.fillWidth: true
+                        readonly property bool wrapped: width < readerCategoryRow.width + readerButtons.width + 16
+                        implicitHeight: wrapped ? readerCategoryRow.height + 12 + readerButtons.height : Math.max(readerCategoryRow.height, readerButtons.height)
                         Row {
                             id: readerCategoryRow; spacing: 6; height: 32
                             FmButton { id: categoriesButton; objectName: "categoryAssignmentButton"; text: mail.thread.categories && mail.thread.categories.length ? mail.thread.categories[0].name : "Label"; font.pixelSize: Theme.fontSize(12); implicitHeight: 24; anchors.verticalCenter: parent.verticalCenter; outlined: true; tip: "Edit labels on the loaded members"; onClicked: categoryPopup.open() }
                             Repeater { model: (mail.thread.categories||[]).slice(1); FmButton { required property var modelData; text: modelData.name; font.pixelSize: Theme.fontSize(12); implicitHeight: 24; anchors.verticalCenter: parent.verticalCenter; outlined: true; onClicked: categoryPopup.open() } }
                         }
                         Row {
+                            id: readerButtons
+                            x: Math.max(0, readerActions.width - width)
+                            y: readerActions.wrapped ? readerCategoryRow.height + 12 : 0
                             height: 32; spacing: 4
-                            FmButton { objectName: "replyButton"; text: "Reply"; iconName: "reply"; font.pixelSize: Theme.fontSize(13); prominent: true; enabled: !backend.draftBusy; onClicked: mail.openReply() }
-                            FmButton { objectName: "replyAllButton"; visible: backend.draft.reply_all_available === true; text: "Reply all"; iconName: "replyAll"; font.pixelSize: Theme.fontSize(13); outlined: true; enabled: !backend.draftBusy; onClicked: backend.beginDraft("reply_all") }
-                            FmButton { objectName: "forwardButton"; text: "Forward"; iconName: "forward"; font.pixelSize: Theme.fontSize(13); outlined: true; enabled: !backend.draftBusy; onClicked: backend.beginDraft("forward") }
-                            Item { width: 13; height: 32; Rectangle { anchors.centerIn: parent; width: 1; height: 20; color: Theme.controlBorder } }
-                            FmButton { objectName: "delayConversationButton"; visible: !mail.anyStarred; text: "Delay"; iconName: "clock"; outlined: true; font.pixelSize: Theme.fontSize(13); enabled: !backend.mutationInFlight; tip: "Hold this conversation for later, without a timer · D"; onClicked: backend.setStarred(true) }
-                            FmButton { objectName: "doneConversationButton"; visible: mail.anyStarred; text: "Done"; iconName: "check"; outlined: true; font.pixelSize: Theme.fontSize(13); enabled: !backend.mutationInFlight; tip: "Clear unread and stars on the loaded members · E"; onClicked: backend.doneConversation() }
+                            ReaderAction { objectName: "replyButton"; text: "Reply"; iconName: "reply"; font.pixelSize: Theme.fontSize(13); prominent: true; enabled: !backend.draftBusy; onClicked: mail.openReply() }
+                            ReaderAction { objectName: "replyAllButton"; visible: backend.draft.reply_all_available === true; text: "Reply all"; iconName: "replyAll"; font.pixelSize: Theme.fontSize(13); outlined: true; enabled: !backend.draftBusy; onClicked: backend.beginDraft("reply_all") }
+                            ReaderAction { objectName: "forwardButton"; text: "Forward"; iconName: "forward"; font.pixelSize: Theme.fontSize(13); outlined: true; enabled: !backend.draftBusy; onClicked: backend.beginDraft("forward") }
+                            Item { width: 13; height: 32; Rectangle { x: Theme.snapX(parent, (parent.width-1)/2); y: Theme.snapY(parent, (parent.height-20)/2); width: Theme.ruleWidth; height: 20; color: Theme.controlBorder } }
+                            ReaderAction { objectName: "delayConversationButton"; visible: !mail.anyStarred; text: "Delay"; iconName: "clock"; outlined: true; font.pixelSize: Theme.fontSize(13); enabled: !backend.mutationInFlight; tip: "Hold this conversation for later, without a timer · D"; onClicked: backend.setStarred(true) }
+                            ReaderAction { objectName: "doneConversationButton"; visible: mail.anyStarred; text: "Done"; iconName: "check"; outlined: true; font.pixelSize: Theme.fontSize(13); enabled: !backend.mutationInFlight; tip: "Clear unread and stars on the loaded members · E"; onClicked: backend.doneConversation() }
                             FmButton { id: moreButton; objectName: "conversationActionsButton"; visible: backend.folder==="sent"; iconName: "more"; implicitWidth: 30; outlined: true; tip: "More conversation actions"; onClicked: morePopup.open() }
                         }
                     }

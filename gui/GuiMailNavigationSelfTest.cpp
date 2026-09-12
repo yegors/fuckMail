@@ -66,11 +66,16 @@ QString geometryDiagnostic(QQuickItem *item,QQuickWindow *window) {
     QJsonArray ancestors;
     for (auto current=item; current && ancestors.size()<8; current=current->parentItem()) {
         const auto rect=current->mapRectToScene(current->boundingRect());
-        ancestors.append(QJsonObject{{"name",current->objectName()},{"type",current->metaObject()->className()},
+        QJsonObject geometry{{"name",current->objectName()},{"type",current->metaObject()->className()},
             {"x",rect.x()},{"y",rect.y()},{"width",rect.width()},{"height",rect.height()},
             {"control_width",current->width()},{"control_height",current->height()},
             {"implicit_width",current->implicitWidth()},{"implicit_height",current->implicitHeight()},
-            {"visible",current->isVisible()},{"enabled",current->isEnabled()},{"clip",current->clip()}});
+            {"visible",current->isVisible()},{"enabled",current->isEnabled()},{"clip",current->clip()}};
+        for (const auto key:{"contentX","contentWidth","originX","contentY","contentHeight","originY"}) {
+            const auto value=current->property(key);
+            if (value.isValid()) geometry[key]=QJsonValue::fromVariant(value);
+        }
+        ancestors.append(geometry);
     }
     return QString::fromUtf8(QJsonDocument(QJsonObject{{"found",item!=nullptr},
         {"fully_visible",fullyVisible(item,window)},{"input_viewport_visible",inputViewportVisible(item,window)},
@@ -101,7 +106,7 @@ GuiMailNavigationSelfTest::GuiMailNavigationSelfTest(MailBackend &backend, QQuic
     });
     // A real socket write precedes its response. Inspect only the actual active
     // query, not loadingChanged (which fires before request construction).
-    connect(&m_backend.m_socket, &QLocalSocket::bytesWritten, this, [this] { holdInFlightResponse(); observeArrivalReceipt(); });
+    connect(&m_backend.m_socket, &QLocalSocket::bytesWritten, this, [this] { holdInFlightResponse(); observeArrivalReceipt(); holdDeferredFlagReceipt(); });
     m_arrivalCliTimeout.setSingleShot(true); m_arrivalCliTimeout.setInterval(10000);
     connect(&m_arrivalCliTimeout,&QTimer::timeout,this,[this] { finish("Independent snapshot-arrival CLI readback timed out."); });
     m_timer.start();
@@ -114,6 +119,11 @@ void GuiMailNavigationSelfTest::finish(const QString &error) {
     if (m_arrivalCli.state()!=QProcess::NotRunning) m_arrivalCli.kill();
     m_holdArmed = false;
     if (m_responseHeld && m_heldDelegate) { auto delegate=std::move(m_heldDelegate); m_heldDelegate={}; delegate(m_heldResult,m_heldOk); }
+    m_deferredHoldArmed = false;
+    if (m_deferredHeld && m_deferredDelegate) {
+        auto delegate=std::move(m_deferredDelegate); m_deferredDelegate={}; delegate(m_deferredReceipt,m_deferredOk);
+    }
+    if (m_compactOriginalSize.isValid()) { m_window->resize(m_compactOriginalSize); m_compactOriginalSize={}; }
     auto callback = std::move(m_finished); m_finished = {};
     deleteLater(); callback(error);
 }
@@ -252,6 +262,18 @@ void GuiMailNavigationSelfTest::observeArrivalReceipt() {
     pending->callback=[guard,original](const QJsonObject &result,bool ok) {
         if (guard) { guard->m_arrivalReceipt=result; guard->m_arrivalReceiptOk=ok; guard->m_arrivalReceiptSeen=true; }
         original(result,ok);
+    };
+}
+void GuiMailNavigationSelfTest::holdDeferredFlagReceipt() {
+    if (!m_deferredHoldArmed || m_backend.selectedId()!=m_deferredSecond) return;
+    auto pending=m_backend.m_pending.find(m_backend.m_inFlight);
+    if (pending==m_backend.m_pending.end() || pending->method!="flag" || pending->account!=m_originalAccount || pending->started<=0) return;
+    m_deferredHoldArmed=false; m_deferredDelegate=pending->callback;
+    const auto original=m_deferredDelegate;
+    QPointer<GuiMailNavigationSelfTest> guard(this);
+    pending->callback=[guard,original](const QJsonObject &result,bool ok) {
+        if (!guard) { original(result,ok); return; }
+        guard->m_deferredReceipt=result; guard->m_deferredOk=ok; guard->m_deferredHeld=true;
     };
 }
 void GuiMailNavigationSelfTest::arrivalCli(const QStringList &arguments,std::function<void(const QJsonObject &)> callback) {
@@ -427,6 +449,147 @@ void GuiMailNavigationSelfTest::step() {
         if (m_queueObserved!=m_queueExpected) return;
         m_queueCheckActive=false; m_backend.m_pollTimer.start();
         qInfo() << "Native request ordering passed: real explicit queries preceded unsent automatic reads, retained manual-read/write barriers and delivered polling after four bypasses; stored preferences unchanged.";
+        m_stage=90; break;
+    case 90:
+        if (!m_backend.m_pending.isEmpty() || m_backend.loading() || m_backend.draftBusy() || m_backend.mutationInFlight()) return;
+        // Control callback order, not source data: a real reviewed row will
+        // leave this real Review-filtered query while the next flag receipt is
+        // held. This exercises the same deferred-click race without a 100k seed.
+        m_queueCheckActive=true; m_backend.m_pollTimer.stop();
+        m_backend.applyFilters({{"status","review"}});
+        if (!typeQuery("")) { finish("Cannot prepare the native deferred-click review view."); return; }
+        m_stage=91; break;
+    case 91: {
+        if (m_backend.loading() || m_backend.m_searchTimer.isActive()) return;
+        QStringList candidates;
+        for (const auto &value:m_backend.conversations()) {
+            const auto row=value.toMap();
+            // Leave the later fixed source/read-on-open fixtures untouched.
+            const auto id=row["id"].toString();
+            if (id.startsWith(m_originalAccount+"-thread-") && id.right(3).toInt()<6) continue;
+            if (row["unread"].toBool() && !row["starred"].toBool() && row["message_count"].toInt()==1
+                && fullyVisible(find(m_window->contentItem(),"conversationRow_"+id),m_window)) candidates.append(id);
+        }
+        if (candidates.size()<2) return;
+        m_deferredFirst=candidates[0]; m_deferredSecond=candidates[1]; m_arrivalAccount=m_originalAccount;
+        m_stage=92;
+        arrivalCli({"mail","read",m_deferredFirst},[this](const auto &result) {
+            m_deferredSource=result;
+            if (result["id"].toString()!=m_deferredFirst || result["messages"].toArray().size()!=1
+                || !result["messages"].toArray().first().toObject()["unread"].toBool())
+                finish("Independent deferred-click source was not one unread exact-account member.");
+        });
+        break;
+    }
+    case 92:
+        if (!click("conversationRow_"+m_deferredFirst)) return;
+        m_stage=93; break;
+    case 93:
+        if (m_backend.loading() || m_backend.draftBusy() || m_backend.mutationInFlight()
+            || m_backend.conversation()["id"].toString()!=m_deferredFirst || !m_backend.m_pending.isEmpty()) return;
+        if (m_backend.conversation()["messages"].toList().first().toMap()["unread"].toBool()) return;
+        m_deferredHoldArmed=true;
+        if (!click("conversationRow_"+m_deferredSecond)) { m_deferredHoldArmed=false; return; }
+        m_stage=94; break;
+    case 94:
+        if (!m_deferredHeld || m_backend.draftBusy() || !m_backend.m_pending.isEmpty()) return;
+        if (!m_deferredOk || !m_backend.mutationInFlight() || m_backend.selectedId()!=m_deferredSecond) {
+            finish("The deferred-click test did not hold the genuine second reader flag receipt."); return;
+        }
+        for (qsizetype index=0; index<m_backend.conversations().size(); ++index) {
+            const auto row=m_backend.conversations()[index].toMap();
+            if (row["id"].toString()==m_deferredFirst) { m_deferredClickedRow=row; m_deferredClickedIndex=int(index); }
+        }
+        if (!click("conversationRow_"+m_deferredFirst)) { finish("The previously reviewed row disappeared before the controlled deferred click."); return; }
+        if (!m_backend.m_afterConversationMutation || m_backend.selectedId()!=m_deferredSecond) {
+            finish("A clicked reader did not preserve the pending durable mutation barrier."); return;
+        }
+        m_backend.loadConversations(false,true); m_stage=95; break;
+    case 95: {
+        if (m_backend.loading() || !m_backend.m_pending.isEmpty()) return;
+        for (const auto &value:m_backend.conversations()) if (value.toMap()["id"].toString()==m_deferredFirst) {
+            finish("The real Review query did not exclude the already reviewed deferred target."); return;
+        }
+        if (!m_backend.mutationInFlight() || !m_deferredDelegate) { finish("The real flag receipt was released before the exclusion check."); return; }
+        auto delegate=std::move(m_deferredDelegate); m_deferredDelegate={}; m_deferredHeld=false;
+        delegate(m_deferredReceipt,m_deferredOk); m_stage=96; break;
+    }
+    case 96: {
+        if (m_backend.loading() || m_backend.draftBusy() || m_backend.mutationInFlight()
+            || !m_backend.m_pending.isEmpty() || m_backend.conversation().isEmpty()) return;
+        const auto expected=m_deferredSource["messages"].toArray().first().toObject();
+        const auto actual=m_backend.conversation(); const auto members=actual["messages"].toList();
+        QVariantMap found;
+        for (const auto &value:m_backend.conversations()) if (value.toMap()["id"].toString()==m_deferredFirst) found=value.toMap();
+        if (m_backend.account()!=m_originalAccount || m_backend.selectedId()!=m_deferredFirst || found.isEmpty()
+            || m_backend.m_pinnedIndex!=m_deferredClickedIndex
+            || found.value("display_group",found["group"])!=m_deferredClickedRow.value("display_group",m_deferredClickedRow["group"])
+            || actual["id"].toString()!=m_deferredFirst || members.size()!=1
+            || members.first().toMap()["id"].toString()!=expected["id"].toString()
+            || members.first().toMap()["text"].toString()!=expected["text"].toString()) {
+            finish("A click deferred behind a real flag receipt lost its original visible row/pin or exact reader source after the intervening page refresh."); return;
+        }
+        auto member=find(m_window->contentItem(),"messageMember_"+expected["id"].toString());
+        auto body=member ? bodyItem(member,expected["text"].toString()) : nullptr;
+        if (!fullyVisible(body,m_window) || body->property("text").toString()!=expected["text"].toString()) return;
+        m_stage=97;
+        arrivalCli({"mail","read",m_deferredFirst},[this,expected](const auto &result) {
+            const auto members=result["messages"].toArray();
+            if (result["id"].toString()!=m_deferredFirst || members.size()!=1
+                || members.first().toObject()["id"]!=expected["id"] || members.first().toObject()["text"]!=expected["text"]
+                || members.first().toObject()["unread"].toBool() || members.first().toObject()["starred"]!=expected["starred"])
+                finish("Independent deferred-click readback changed source, hold flags or deliberate review state.");
+        });
+        break;
+    }
+    case 97:
+        qInfo() << "Native deferred reader click passed: a real pending flag receipt preserved the clicked row through a real filtered-page exclusion; exact reader body, account, review state and serial write barrier retained.";
+        m_backend.applyFilters({}); m_searchPending=false;
+        m_queueCheckActive=false; m_backend.m_pollTimer.start(); m_stage=98; break;
+    case 98:
+        if (m_backend.loading() || m_backend.draftBusy() || m_backend.mutationInFlight() || !m_backend.m_pending.isEmpty()) return;
+        m_compactOriginalSize=m_window->size(); m_compactOriginalAccount=m_backend.account();
+        for (const auto &row:m_backend.accounts()) m_compactAccounts.append(row.toMap()["id"].toString());
+        if (m_compactAccounts.size()<2) { finish("Compact keyboard navigation needs separate fixture accounts."); return; }
+        m_window->resize(QSize(1000,650)); m_compactKey=0; m_compactWait=0; m_stage=99; break;
+    case 99: {
+        if (m_window->size()!=QSize(1000,650) || m_backend.loading() || m_backend.draftBusy() || m_backend.mutationInFlight()) return;
+        auto mail=find(m_window->contentItem(),"mailWorkspace");
+        if (!mail) { finish("Compact account navigation lost the Mail workspace."); return; }
+        // Use the normal shortcut route from neutral workspace focus. No
+        // direct cycleAccount call, tab scrolling, or focus in an editor.
+        if (m_window->property("searchPopupOpen").toBool()) key(m_window,Qt::Key_Escape);
+        mail->forceActiveFocus(Qt::OtherFocusReason);
+        if (!m_window->property("accountKeysAllowed").toBool()) { finish("Compact account shortcuts are unavailable from neutral Mail focus."); return; }
+        const auto index=m_compactAccounts.indexOf(m_backend.account());
+        if (index<0) { finish("Compact account navigation left the fixture inventory."); return; }
+        const int direction=m_compactKey<3 ? 1 : -1;
+        m_compactExpectedAccount=m_compactAccounts[(index+direction+m_compactAccounts.size())%m_compactAccounts.size()];
+        const auto modifiers=direction>0 ? Qt::NoModifier : Qt::ShiftModifier;
+        QKeyEvent overrideEvent(QEvent::ShortcutOverride,Qt::Key_Tab,modifiers);
+        QKeyEvent press(QEvent::KeyPress,Qt::Key_Tab,modifiers), release(QEvent::KeyRelease,Qt::Key_Tab,modifiers);
+        m_compactWait=0; m_stage=100;
+        QCoreApplication::sendEvent(m_window,&overrideEvent); QCoreApplication::sendEvent(m_window,&press); QCoreApplication::sendEvent(m_window,&release);
+        break;
+    }
+    case 100: {
+        auto tab=find(m_window->contentItem(),"accountTab_"+m_compactExpectedAccount);
+        const bool ready=m_backend.account()==m_compactExpectedAccount && !m_backend.loading() && !m_backend.draftBusy()
+            && m_backend.currentAccount()["id"].toString()==m_compactExpectedAccount && !m_backend.selectedId().isEmpty()
+            && m_backend.conversation()["id"].toString()==m_backend.selectedId();
+        if (!ready || !tab || !tab->property("selected").toBool() || !fullyVisible(tab,m_window)) {
+            if (++m_compactWait>30) finish("Compact Tab/Shift+Tab did not reveal the complete selected mailbox tab and matching reader: "+geometryDiagnostic(tab,m_window));
+            return;
+        }
+        if (++m_compactKey<6) { m_stage=99; break; }
+        if (m_backend.account()!=m_compactOriginalAccount) { finish("Compact forward/backward key cycles did not restore the original account."); return; }
+        m_window->resize(m_compactOriginalSize); m_stage=101; break;
+    }
+    case 101:
+        if (m_window->size()!=m_compactOriginalSize || m_backend.loading() || m_backend.draftBusy()) return;
+        if (!fullyVisible(find(m_window->contentItem(),"accountTab_"+m_compactOriginalAccount),m_window)) return;
+        m_compactOriginalSize={};
+        qInfo() << "Native compact account keys passed: three Tab and three Shift+Tab events at 1000x650 retained the complete selected tab and matching account reader; original window size and account restored.";
         m_stage=1; break;
     case 1:
         if (m_backend.loading() || m_backend.draftBusy() || m_backend.mutationInFlight()) return;

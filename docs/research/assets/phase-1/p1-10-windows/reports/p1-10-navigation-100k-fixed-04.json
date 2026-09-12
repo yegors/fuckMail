@@ -1,0 +1,178 @@
+{
+  "result": "failed",
+  "mode": "navigation",
+  "theme": "graphite",
+  "started_unix_ms": 1789234174961.4834,
+  "host": "Windows-10-10.0.26200-SP0",
+  "outputs": {
+    "gui_report": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p1-10-navigation-100k-fixed-04.gui.json",
+    "gui_log": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p1-10-navigation-100k-fixed-04.gui.log",
+    "engine_log": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p1-10-navigation-100k-fixed-04.engine.log"
+  },
+  "executables_sha256": {
+    "fm": "b316568190a915a5a8dcec73cbb46452b110c18a147885389e4fc560ed34e5aa",
+    "fm-engine": "e38a5e98e543c15f6acef74bce6de1dd2647a013ba583a9dc20728dd2faa8696",
+    "fuckmail-gui": "ab39f9d93829554e81f508d328fa617946d2e57b21d35ec831ca717b63bc414a"
+  },
+  "package_manifest": null,
+  "environment": {
+    "QT_QPA_PLATFORM": "windows",
+    "QT_QUICK_BACKEND": null,
+    "PATH": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\Qt\\6.11.2\\msvc2022_64\\bin;C:\\Windows\\System32;C:\\Windows"
+  },
+  "source_seed": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\phase1-gui-search-checkpoint",
+  "source_seed_sha256": "2c13f9c17780613e6a24bc6ea9df52bd3aeed262c5955b7be6699c46976c2d40",
+  "seed_message_count": 102929,
+  "before": {
+    "drafts": {
+      "rows": 3,
+      "columns": [
+        "account",
+        "draft_id",
+        "conversation_id",
+        "legacy_reply",
+        "mode",
+        "source_message_id",
+        "source_hash",
+        "routing_json",
+        "body",
+        "revision",
+        "body_html",
+        "attachments_json",
+        "discarded",
+        "signature_text",
+        "from_name",
+        "identity_revision",
+        "created_at",
+        "updated_at"
+      ],
+      "sha256": "c9d11939776c024f36fb6feb4652039d4bc61f850598e1a16618dc8668144a0c"
+    },
+    "capture_operations": {
+      "rows": 0,
+      "columns": [
+        "account",
+        "id",
+        "json",
+        "blob_hash"
+      ],
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "attachments": {
+      "rows": 9,
+      "columns": [
+        "account",
+        "id",
+        "message_id",
+        "name",
+        "mime_type",
+        "size",
+        "state",
+        "blob_hash"
+      ],
+      "sha256": "9eb623f61fc2ca84e0e118da665f7ee4f105b96beabd52b249cd3ce8083ae4d9"
+    },
+    "messages": {
+      "rows": 102929,
+      "columns": [
+        "rowid",
+        "account",
+        "id",
+        "conversation_id",
+        "remote_id",
+        "sender_name",
+        "sender_email",
+        "recipient",
+        "subject",
+        "body",
+        "sent_at",
+        "starred",
+        "inbox",
+        "sent",
+        "source_hash"
+      ],
+      "sha256": "a76fd363eb2815dcf183ac97dfb1057482e6fbc405c06e1cfb424cffa8b7bb40"
+    }
+  },
+  "gui_exit_code": 9,
+  "engine_exit_code": 0,
+  "after": {
+    "drafts": {
+      "rows": 3,
+      "columns": [
+        "account",
+        "draft_id",
+        "conversation_id",
+        "legacy_reply",
+        "mode",
+        "source_message_id",
+        "source_hash",
+        "routing_json",
+        "body",
+        "revision",
+        "body_html",
+        "attachments_json",
+        "discarded",
+        "signature_text",
+        "from_name",
+        "identity_revision",
+        "created_at",
+        "updated_at"
+      ],
+      "sha256": "c9d11939776c024f36fb6feb4652039d4bc61f850598e1a16618dc8668144a0c"
+    },
+    "capture_operations": {
+      "rows": 0,
+      "columns": [
+        "account",
+        "id",
+        "json",
+        "blob_hash"
+      ],
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "attachments": {
+      "rows": 9,
+      "columns": [
+        "account",
+        "id",
+        "message_id",
+        "name",
+        "mime_type",
+        "size",
+        "state",
+        "blob_hash"
+      ],
+      "sha256": "9eb623f61fc2ca84e0e118da665f7ee4f105b96beabd52b249cd3ce8083ae4d9"
+    },
+    "messages": {
+      "rows": 102929,
+      "columns": [
+        "rowid",
+        "account",
+        "id",
+        "conversation_id",
+        "remote_id",
+        "sender_name",
+        "sender_email",
+        "recipient",
+        "subject",
+        "body",
+        "sent_at",
+        "starred",
+        "inbox",
+        "sent",
+        "source_hash"
+      ],
+      "sha256": "a76fd363eb2815dcf183ac97dfb1057482e6fbc405c06e1cfb424cffa8b7bb40"
+    }
+  },
+  "error": "Native measurement reported: Navigation stalled: phase=2 class=4 sample=24 account=windscribe selected=ingest-000-09 targetAccount=windscribe targetSelected=ingest-000-09 loading=0 active=1 exposed=1",
+  "elapsed_seconds": 49.094,
+  "verifier_sha256": "c4b49189482ce2da45357b21cfed0e466e5a56a545996e95ee0c2b3f037a9d93",
+  "output_sha256": {
+    "gui_report": "6bafb76a240a922eac1dc618ab2200720482f7b0ef2a5b4085f61cf69c603296",
+    "gui_log": "cdd61b3ba3f6afb592ccda4f2c01a7914db6a8feee37d425d09494a6304a35fe",
+    "engine_log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

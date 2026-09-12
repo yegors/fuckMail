@@ -317,7 +317,9 @@ void GuiSelfTest::step() {
         qInfo() << "GUI self-test stage" << m_stage;
         m_lastTracedStage = m_stage;
     }
-    if (++m_ticks > 700) { failed(QString("Timed out waiting for the real GUI/engine state (unread=%1, starred=%2, today=%3).").arg(membersHave("unread", true)).arg(membersHave("starred", true)).arg(m_backend.todayEvents().size())); return; }
+    if (++m_ticks > 700) { failed(QString("Timed out waiting for the real GUI/engine state (unread=%1, starred=%2, today=%3, draftBusy=%4, draftStatus=%5, discarded=%6, draftBodyEmpty=%7).")
+        .arg(membersHave("unread", true)).arg(membersHave("starred", true)).arg(m_backend.todayEvents().size())
+        .arg(m_backend.draftBusy()).arg(m_backend.draftStatus()).arg(m_backend.draft()["discarded"].toBool()).arg(m_backend.draft()["body"].toString().isEmpty())); return; }
     if (!m_backend.error().isEmpty() && !m_backend.property("selfTestExpectedError").toBool()) { failed(m_backend.error()); return; }
     if (m_recreatedBackend && !m_recreatedBackend->error().isEmpty()) { failed("Reconstructed adapter: " + m_recreatedBackend->error()); return; }
     switch (m_stage) {

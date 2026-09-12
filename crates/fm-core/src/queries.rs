@@ -278,9 +278,9 @@ impl Store {
         &self,
         account: &str,
         key: &'static str,
+        stamp: u64,
         build: impl FnOnce() -> Result<Value>,
     ) -> Result<Value> {
-        let stamp = self.mail_changes.snapshot(&self.db).messages;
         let cache_key = (account.to_owned(), key);
         if let Some((old, value)) = self.projection_cache.borrow().get(&cache_key) {
             if *old == stamp {
@@ -294,7 +294,10 @@ impl Store {
         Ok(value)
     }
     pub(crate) fn account_counts(&self, account: &str) -> Result<Value> {
-        self.cached_projection(account, "counts", || self.compute_account_counts(account))
+        let stamp = self.mail_changes.snapshot(&self.db).messages;
+        self.cached_projection(account, "counts", stamp, || {
+            self.compute_account_counts(account)
+        })
     }
     fn account_message_counts(&self, account: &str) -> Result<(i64, i64, i64)> {
         let states = self.conversation_states(account)?;
@@ -303,6 +306,62 @@ impl Store {
         });
         let messages = self.conversation_cache.borrow()[account].message_count;
         Ok((unread, starred, messages))
+    }
+    pub(crate) fn flag_projection_stamp(&self) -> (u64, u64) {
+        let changes = self.mail_changes.snapshot(&self.db);
+        (changes.messages, changes.coverage)
+    }
+    pub(crate) fn refresh_committed_flag_projections(
+        &self,
+        account: &str,
+        cid: &str,
+        before: (u64, u64),
+    ) {
+        // Only the serialized, successfully committed flag path calls this.
+        // Its SQL changes flags/revisions/manual intents, never source inventory,
+        // routing, kinds or another conversation. Unknown writes and rollbacks
+        // keep the update-hook invalidation path; a stale cache is never promoted.
+        let changes = self.mail_changes.snapshot(&self.db);
+        let Ok(mut state) = self.conversation_state(account, cid) else {
+            return;
+        };
+        for (owner, cached) in self.conversation_cache.borrow_mut().iter_mut() {
+            if cached.generation != before.0 {
+                continue;
+            }
+            if owner == account {
+                let Some(previous) = cached.states.get(cid) else {
+                    continue;
+                };
+                state.position = previous.position;
+                Arc::make_mut(&mut cached.states).insert(cid.to_owned(), state.clone());
+            }
+            cached.generation = changes.messages;
+        }
+        for ((owner, key), (generation, _)) in self.projection_cache.borrow_mut().iter_mut() {
+            // Counts in the changed account must be recomputed from its refreshed
+            // conversation states. Other accounts' known-valid totals are exact.
+            if *key == "counts" && owner != account && *generation == before.0 {
+                *generation = changes.messages;
+            }
+        }
+        for cached in self.coverage_cache.borrow_mut().values_mut() {
+            if cached.generation == before.1 && cached.message_generation == before.0 {
+                cached.generation = changes.coverage;
+                cached.message_generation = changes.messages;
+            }
+        }
+    }
+    fn conversation_state(&self, account: &str, cid: &str) -> Result<ConversationState> {
+        let mut state = ConversationState::empty(0);
+        let mut statement = self
+            .db
+            .prepare_cached(&format!("{STATE_SELECT} AND m.conversation_id=?2"))?;
+        let mut rows = statement.query(params![account, cid])?;
+        while let Some(row) = rows.next()? {
+            state.absorb(row)?;
+        }
+        Ok(state)
     }
     fn conversation_states(
         &self,
@@ -727,6 +786,34 @@ impl Store {
         } else {
             format!("{field}:({expression})")
         };
+        // One first page per account bounds this cache independently of the
+        // corpus and query history. Mail/source hooks and transaction snapshots
+        // invalidate it through the existing search generation; presentation,
+        // draft and preference writes do not force another full mailbox scan.
+        // Validation above still runs on every call, including cursor scope.
+        let first_page_key = (account.to_owned(), "first_conversation_page");
+        let cache_first_page = !recent && offset == 0;
+        let next_cursor = |next: i64| -> Result<String> {
+            Ok(serde_json::to_string(
+                &json!({"revision":revision,"epoch":epoch,
+                "search_generation":search_generation,"offset":next,"fingerprint":fingerprint}),
+            )?)
+        };
+        if cache_first_page {
+            if let Some((stamp, cached)) = self.projection_cache.borrow().get(&first_page_key) {
+                if *stamp == search_generation && cached["fingerprint"] == fingerprint {
+                    let mut result = cached["result"].clone();
+                    // Revision is shared with non-mail durable writes. A cache
+                    // hit must publish today's envelope, never an old receipt.
+                    result["revision"] = revision.into();
+                    result["next_cursor"] = match result["next_offset"].as_i64() {
+                        Some(next) => next_cursor(next)?.into(),
+                        None => Value::Null,
+                    };
+                    return Ok(result);
+                }
+            }
+        }
         // Evaluate source predicates once. Group exact identities in Core rather
         // than materializing two SQL grouping trees and a temporary join index.
         // The metadata projection is derived from this same writer connection.
@@ -923,9 +1010,17 @@ impl Store {
             };
             out.push(json!({"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if expression.is_empty() && category.is_empty() && sender.is_empty() && exact_sender.is_empty() && after.is_empty() && before.is_empty() && attachment.is_none(){Vec::<String>::new()}else{matching}}));
         }
-        Ok(
-            json!({"conversations":out,"expanded_conversation_count":expanded_count,"filtered_group_counts":{"review":group_counts[0],"held":group_counts[1],"done":group_counts[2]},"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(serde_json::to_string(&json!({"revision":revision,"epoch":epoch,"search_generation":search_generation,"offset":offset+limit,"fingerprint":fingerprint}))?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?}),
-        )
+        let result = json!({"conversations":out,"expanded_conversation_count":expanded_count,"filtered_group_counts":{"review":group_counts[0],"held":group_counts[1],"done":group_counts[2]},"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(next_cursor(offset+limit)?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?});
+        if cache_first_page {
+            self.projection_cache.borrow_mut().insert(
+                first_page_key,
+                (
+                    search_generation,
+                    json!({"fingerprint":fingerprint,"result":result.clone()}),
+                ),
+            );
+        }
+        Ok(result)
     }
     pub(crate) fn sender_summary(&self, account: &str, p: &Value) -> Result<Value> {
         fields(p, &["email"])?;
@@ -989,19 +1084,21 @@ impl Store {
             })
             .collect::<Result<Vec<_>>>()?;
         let ids: Vec<_> = messages.iter().map(|m| m["id"].clone()).collect();
-        let states = self.conversation_states(account)?;
-        let kind = states
-            .get(cid)
-            .map_or("unknown", |state| kind_name(state.kind));
+        // The reader and mutation receipt need only this conversation's kind.
+        // Reuse the list projection's exact incoming/date/ID/source rules without
+        // rebuilding an entire account, particularly inside a flag transaction.
+        let state = self.conversation_state(account, cid)?;
+        let kind = kind_name(state.kind);
         Ok(
             json!({"kind":kind,"id":cid,"subject":subject,"revision":revision,"message_ids":ids,"categories":categories,"messages":messages}),
         )
     }
     pub(crate) fn categories(&self, account: &str) -> Result<Value> {
-        let mut stmt=self.db.prepare("SELECT c.id,c.name,COUNT(DISTINCT m.conversation_id) FROM categories c LEFT JOIN message_categories mc ON mc.account=c.account AND mc.category_id=c.id LEFT JOIN messages m ON m.account=mc.account AND m.id=mc.message_id WHERE c.account=?1 GROUP BY c.id,c.name ORDER BY c.name")?;
-        Ok(
-            json!({"categories":stmt.query_map([account],|r|Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"conversation_count":r.get::<_,i64>(2)?})))?.collect::<std::result::Result<Vec<_>,_>>()?}),
-        )
+        let stamp = self.mail_changes.snapshot(&self.db).search;
+        self.cached_projection(account, "categories", stamp, || {
+            let mut stmt=self.db.prepare("SELECT c.id,c.name,COUNT(DISTINCT m.conversation_id) FROM categories c LEFT JOIN message_categories mc ON mc.account=c.account AND mc.category_id=c.id LEFT JOIN messages m ON m.account=mc.account AND m.id=mc.message_id WHERE c.account=?1 GROUP BY c.id,c.name ORDER BY c.name")?;
+            Ok(json!({"categories":stmt.query_map([account],|r|Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"conversation_count":r.get::<_,i64>(2)?})))?.collect::<std::result::Result<Vec<_>,_>>()?}))
+        })
     }
     pub(crate) fn view(&self, account: &str) -> Result<Value> {
         let found = self
@@ -1194,6 +1291,157 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
 #[cfg(test)]
 mod projection_tests {
     use super::*;
+    #[test]
+    fn first_page_navigation_reuses_mail_without_source_reads_and_refreshes_cursor_revision() {
+        use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = Store::open(temp.path()).unwrap();
+        let params = json!({"folder":"inbox","grouped":true,"limit":2});
+        let first = store.conversations("windscribe", &params).unwrap();
+        store
+            .handle(
+                "view_save",
+                Some("windscribe"),
+                json!({"view":{"readerY":12},
+            "expected_revision":0,"request_id":"cached-page-navigation"}),
+            )
+            .unwrap();
+        // The warm request must remain usable when SQLite explicitly refuses
+        // another source-table read. This proves actual scan avoidance rather
+        // than merely comparing two possibly recomputed projections.
+        store
+            .db
+            .authorizer(Some(|context: AuthContext<'_>| match context.action {
+                AuthAction::Read {
+                    table_name: "messages" | "conversations",
+                    ..
+                } => Authorization::Deny,
+                _ => Authorization::Allow,
+            }));
+        let warm = store.conversations("windscribe", &params).unwrap();
+        assert_eq!(warm["conversations"], first["conversations"]);
+        // Row revisions belong to individual conversations, not to the outer
+        // global store revision advanced by the view write.
+        for (row, original) in warm["conversations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .zip(first["conversations"].as_array().unwrap())
+        {
+            assert_eq!(row["revision"], original["revision"]);
+        }
+        assert_eq!(warm["coverage"], first["coverage"]);
+        assert_eq!(warm["revision"], store.revision().unwrap());
+        assert_ne!(warm["revision"], first["revision"]);
+        let cursor: Value = serde_json::from_str(warm["next_cursor"].as_str().unwrap()).unwrap();
+        assert_eq!(cursor["revision"], warm["revision"]);
+        assert_eq!(cursor["offset"], 2);
+        assert!(store.conversations("personal", &params).is_err());
+        assert!(store
+            .conversations(
+                "windscribe",
+                &json!({"folder":"sent","grouped":true,"limit":2})
+            )
+            .is_err());
+        store
+            .db
+            .authorizer(None::<fn(AuthContext<'_>) -> Authorization>);
+        let mut next = params.clone();
+        next["cursor"] = warm["next_cursor"].clone();
+        let next = store.conversations("windscribe", &next).unwrap();
+        assert_eq!(next["conversations"].as_array().unwrap().len(), 2);
+        for row in next["conversations"].as_array().unwrap() {
+            assert!(first["conversations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|old| old["id"] != row["id"]));
+        }
+        // The old cursor remains valid through presentation-only writes too.
+        let mut old_next = params.clone();
+        old_next["cursor"] = first["next_cursor"].clone();
+        assert_eq!(store.conversations("windscribe", &old_next).unwrap(), next);
+    }
+    #[test]
+    fn first_page_cache_follows_flags_source_edits_rollback_filters_and_account_scope() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = Store::open(temp.path()).unwrap();
+        let params = json!({"folder":"inbox","grouped":true,"limit":100});
+        let check = |store: &Store, account: &str| {
+            let actual = store.conversations(account, &params).unwrap();
+            let mut statement = store.db.prepare("SELECT c.id,c.subject,MAX(m.unread),MAX(m.starred) FROM conversations c JOIN messages m ON m.account=c.account AND m.conversation_id=c.id WHERE c.account=?1 AND EXISTS(SELECT 1 FROM messages source WHERE source.account=c.account AND source.conversation_id=c.id AND source.inbox=1) GROUP BY c.id ORDER BY CASE WHEN MAX(m.unread) THEN 0 WHEN MAX(m.starred) THEN 1 ELSE 2 END,MAX(julianday(m.sent_at)) DESC,c.id LIMIT 100").unwrap();
+            let expected = statement
+                .query_map([account], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, bool>(2)?,
+                        row.get::<_, bool>(3)?,
+                    ))
+                })
+                .unwrap()
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .unwrap();
+            let rows = actual["conversations"].as_array().unwrap();
+            assert_eq!(rows.len(), expected.len());
+            for (row, (id, subject, unread, starred)) in rows.iter().zip(expected) {
+                assert_eq!(row["id"], id);
+                assert_eq!(row["subject"], subject);
+                assert_eq!(row["unread"], unread);
+                assert_eq!(row["starred"], starred);
+            }
+            actual
+        };
+        let original = check(&store, "windscribe");
+        let other = check(&store, "personal");
+        let before = store
+            .conversation("windscribe", "windscribe-thread-000")
+            .unwrap();
+        store.handle("flag", Some("windscribe"), json!({"id":before["id"], "message_ids":before["message_ids"],
+            "expected_revision":before["revision"],"request_id":"cache-page-flag","read":true,"starred":false})).unwrap();
+        let flagged = check(&store, "windscribe");
+        assert_ne!(flagged["conversations"], original["conversations"]);
+        assert_eq!(
+            check(&store, "personal")["conversations"],
+            other["conversations"]
+        );
+        store.db.execute_batch("BEGIN; UPDATE messages SET unread=1,starred=1 WHERE account='windscribe' AND conversation_id='windscribe-thread-000'; UPDATE conversations SET subject='Uncommitted source edit' WHERE account='windscribe' AND id='windscribe-thread-000';").unwrap();
+        assert_ne!(
+            check(&store, "windscribe")["conversations"],
+            flagged["conversations"]
+        );
+        store.db.execute_batch("ROLLBACK;").unwrap();
+        assert_eq!(
+            check(&store, "windscribe")["conversations"],
+            flagged["conversations"]
+        );
+        store.db.execute("UPDATE conversations SET subject='Committed source edit' WHERE account='windscribe' AND id='windscribe-thread-000'", []).unwrap();
+        assert_ne!(
+            check(&store, "windscribe")["conversations"],
+            flagged["conversations"]
+        );
+        let filtered = store
+            .conversations(
+                "windscribe",
+                &json!({"folder":"inbox","grouped":true,"limit":100,"status":"review"}),
+            )
+            .unwrap();
+        assert!(filtered["conversations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["unread"] == true));
+        check(&store, "windscribe");
+        assert_eq!(
+            store
+                .projection_cache
+                .borrow()
+                .keys()
+                .filter(|(_, key)| *key == "first_conversation_page")
+                .count(),
+            2
+        );
+    }
     fn append(store: &Store, id: &str, cid: &str) {
         store.db.execute("INSERT OR IGNORE INTO conversations(account,id,subject,revision) VALUES('windscribe',?1,'Cache fixture',1)",[cid]).unwrap();
         store.db.execute("INSERT INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision) VALUES('windscribe',?1,?2,?1,'Person','person@example.test','you@example.test','Cache fixture','Source text','2026-09-12T00:00:00Z',1,1,1,0,'',1)",params![id,cid]).unwrap();
@@ -1222,6 +1470,163 @@ mod projection_tests {
             assert_eq!(coverage["attachments"], attachments);
             assert_eq!(coverage["recorded_available_attachments"], available);
         }
+    }
+    #[test]
+    fn category_counts_survive_navigation_and_follow_direct_membership_changes_and_rollback() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = Store::open(temp.path()).unwrap();
+        let original = store.categories("windscribe").unwrap();
+        let other = store.categories("personal").unwrap();
+        let key = ("windscribe".to_owned(), "categories");
+        let stamp = store.projection_cache.borrow()[&key].0;
+        store
+            .handle(
+                "view_save",
+                Some("windscribe"),
+                json!({"view":{"query":""},"expected_revision":0,"request_id":"category-nav"}),
+            )
+            .unwrap();
+        assert_eq!(store.categories("windscribe").unwrap(), original);
+        assert_eq!(store.projection_cache.borrow()[&key].0, stamp);
+        store
+            .db
+            .execute_batch("BEGIN; DELETE FROM message_categories WHERE account='windscribe';")
+            .unwrap();
+        assert!(store.categories("windscribe").unwrap()["categories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["conversation_count"] == 0));
+        store.db.execute_batch("ROLLBACK;").unwrap();
+        assert_eq!(store.categories("windscribe").unwrap(), original);
+        store
+            .db
+            .execute(
+                "DELETE FROM message_categories WHERE account='windscribe'",
+                [],
+            )
+            .unwrap();
+        assert!(store.categories("windscribe").unwrap()["categories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["conversation_count"] == 0));
+        assert_eq!(store.categories("personal").unwrap(), other);
+    }
+    #[test]
+    fn committed_flags_preserve_other_accounts_and_source_coverage_without_promoting_stale_caches()
+    {
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = Store::open(temp.path()).unwrap();
+        correct(&store);
+        let other = store.conversation_states("personal").unwrap();
+        let original = store.conversation_states("windscribe").unwrap();
+        let coverage = store.coverage("windscribe").unwrap();
+        let before = store
+            .conversation("windscribe", "windscribe-thread-000")
+            .unwrap();
+        let command = json!({"id":before["id"],"message_ids":before["message_ids"],
+            "expected_revision":before["revision"],"request_id":"scoped-flag","read":true,"starred":false});
+        let receipt = store
+            .handle("flag", Some("windscribe"), command.clone())
+            .unwrap();
+        let changed = store.conversation_states("windscribe").unwrap();
+        assert!(original["windscribe-thread-000"].unread);
+        assert!(!changed["windscribe-thread-000"].unread);
+        assert!(!changed["windscribe-thread-000"].starred);
+        assert!(Arc::ptr_eq(
+            &other,
+            &store.conversation_states("personal").unwrap()
+        ));
+        assert_eq!(store.coverage("windscribe").unwrap(), coverage);
+        assert_eq!(
+            store.handle("flag", Some("windscribe"), command).unwrap(),
+            receipt
+        );
+        assert!(Arc::ptr_eq(
+            &changed,
+            &store.conversation_states("windscribe").unwrap()
+        ));
+        correct(&store);
+
+        // A write outside the narrow flag operation invalidates the old stamp.
+        // Neither its changed source coverage nor its former flags may be reused.
+        store.db.execute("UPDATE messages SET unread=0,source_hash='' WHERE account='personal' AND id='personal-message-000-000'", []).unwrap();
+        let next = store
+            .conversation("windscribe", "windscribe-thread-001")
+            .unwrap();
+        store
+            .handle(
+                "flag",
+                Some("windscribe"),
+                json!({"id":next["id"],"message_ids":next["message_ids"],
+            "expected_revision":next["revision"],"request_id":"flag-after-external","read":true}),
+            )
+            .unwrap();
+        assert!(!Arc::ptr_eq(
+            &other,
+            &store.conversation_states("personal").unwrap()
+        ));
+        correct(&store);
+
+        // A post-update receipt failure rolls the mutation back. Cached states
+        // must come from restored rows, never from an uncommitted flag response.
+        let before_failure = store
+            .conversation("windscribe", "windscribe-thread-002")
+            .unwrap();
+        store.db.execute_batch("CREATE TEMP TRIGGER fail_flag_receipt BEFORE INSERT ON operations WHEN NEW.request_id='failed-scoped-flag' BEGIN SELECT RAISE(ABORT,'controlled receipt failure'); END;").unwrap();
+        assert!(store.handle("flag", Some("windscribe"), json!({"id":before_failure["id"],"message_ids":before_failure["message_ids"],
+            "expected_revision":before_failure["revision"],"request_id":"failed-scoped-flag","read":true,"starred":false})).is_err());
+        assert_eq!(
+            store
+                .conversation("windscribe", "windscribe-thread-002")
+                .unwrap(),
+            before_failure
+        );
+        correct(&store);
+    }
+    #[test]
+    fn reader_and_flag_receipts_keep_kind_without_loading_an_account_projection() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = Store::open(temp.path()).unwrap();
+        for (cid, expected_kind) in [
+            ("windscribe-thread-000", "people"),
+            ("windscribe-thread-005", "automated"),
+        ] {
+            let before = store
+                .handle("conversation", Some("windscribe"), json!({"id":cid}))
+                .unwrap();
+            assert_eq!(before["kind"], expected_kind);
+            assert!(store.conversation_cache.borrow().is_empty());
+            let receipt = store
+                .handle(
+                    "flag",
+                    Some("windscribe"),
+                    json!({"id":cid,"message_ids":[before["message_ids"][0]],
+                        "expected_revision":before["revision"],"request_id":format!("kind-receipt-{cid}"),"read":true}),
+                )
+                .unwrap();
+            assert_eq!(receipt["kind"], expected_kind);
+            assert_eq!(receipt["message_ids"], before["message_ids"]);
+            assert_eq!(receipt["messages"][0]["unread"], false);
+            for (old, new) in before["messages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .zip(receipt["messages"].as_array().unwrap())
+                .skip(1)
+            {
+                assert_eq!(old, new);
+            }
+            assert!(store.conversation_cache.borrow().is_empty());
+            assert_eq!(
+                store
+                    .handle("conversation", Some("windscribe"), json!({"id":cid}))
+                    .unwrap(),
+                receipt
+            );
+        }
+        correct(&store);
     }
     #[test]
     fn projection_cache_skips_navigation_writes_and_handles_appends_replacements_and_rollback() {

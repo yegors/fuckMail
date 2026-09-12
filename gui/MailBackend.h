@@ -18,7 +18,7 @@ class MailBackend final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList accounts READ accounts NOTIFY accountsChanged)
     Q_PROPERTY(QVariantList conversations READ conversations NOTIFY conversationsChanged)
-    Q_PROPERTY(QVariantList categories READ categories NOTIFY accountsChanged)
+    Q_PROPERTY(QVariantList categories READ categories NOTIFY categoriesChanged)
     Q_PROPERTY(QVariantMap conversation READ conversation NOTIFY conversationChanged)
     Q_PROPERTY(QVariantMap senderCard READ senderCard NOTIFY senderCardChanged)
     Q_PROPERTY(QVariantMap draft READ draft NOTIFY draftChanged)
@@ -27,7 +27,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QVariantList events READ events NOTIFY eventsChanged)
     Q_PROPERTY(QVariantList todayEvents READ todayEvents NOTIFY eventsChanged)
     Q_PROPERTY(QString account READ account NOTIFY accountChanged)
-    Q_PROPERTY(QVariantMap currentAccount READ currentAccount NOTIFY accountsChanged)
+    Q_PROPERTY(QVariantMap currentAccount READ currentAccount NOTIFY currentAccountChanged)
     Q_PROPERTY(QString query READ query WRITE setQuery NOTIFY queryChanged)
     Q_PROPERTY(QString folder READ folder WRITE setFolder NOTIFY queryChanged)
     Q_PROPERTY(QString category READ category WRITE setCategory NOTIFY queryChanged)
@@ -189,6 +189,8 @@ public:
     Q_INVOKABLE void shutdown();
 signals:
     void accountsChanged();
+    void currentAccountChanged();
+    void categoriesChanged();
     void conversationsChanged();
     void loadingChanged();
     void mutationChanged();
@@ -209,6 +211,7 @@ signals:
     void shutdownReady();
 private:
     friend class GuiMailNavigationSelfTest;
+    friend class GuiInteractionBenchmark;
     friend class GuiSettingsSelfTest;
     using Callback = std::function<void(const QJsonObject &, bool)>;
     struct Pending {
@@ -226,7 +229,7 @@ private:
     void fail(const QString &message);
     void loadAccounts();
     void refreshState(bool refreshList, bool refreshCalendar, bool automatic = false);
-    void selectConversationInternal(const QString &id, bool review);
+    void selectConversationInternal(const QString &id, bool review, QVariantMap clickedRow = {}, int clickedIndex = -1);
     void loadCategories();
     void loadConversations(bool append = false, bool preserveLoaded = false);
     void loadConversationPage(const QString &account, int generation, QJsonObject params, QVariantList collected, int desiredCount, int cursorRetries = 0);

@@ -21,6 +21,9 @@ Rectangle {
         return items
     }
     function focusEditor() { bodyEditor.forceActiveFocus() }
+    function attachmentSize(bytes) {
+        return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + " MB" : bytes >= 1024 ? Math.ceil(bytes / 1024) + " KB" : bytes + " B"
+    }
     function confirmDiscard() { if (!backend.draftLocked) discardDialog.open() }
     function syncDraft() {
         loading = true
@@ -59,13 +62,13 @@ Rectangle {
             FmButton { objectName: "collapseReply"; text: "Minimise"; font.pixelSize: Theme.fontSize(12); leftPadding: 0; rightPadding: 0; tip: "Keep this draft and hide the editor"; onClicked: { backend.saveDraft(); root.dismissed() } }
             FmButton { objectName: "discardReply"; text: "Discard"; font.pixelSize: Theme.fontSize(12); leftPadding: 4; rightPadding: 0; enabled: !backend.draftLocked; onClicked: discardDialog.open() }
         }
-        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+        Item { Layout.fillWidth: true; implicitHeight: 1; Rectangle { y: Theme.snapY(parent, 0); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
         RowLayout {
             Layout.fillWidth: true; Layout.preferredHeight: 38; spacing: 10
             Text { text: "From"; Layout.preferredWidth: 44; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
             Text { text: (backend.draft.from_name || backend.currentAccount.name || "")+" · "+(backend.draft.from || ""); color: Theme.text; textFormat: Text.PlainText; elide: Text.ElideRight; Layout.fillWidth: true; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
         }
-        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+        Item { Layout.fillWidth: true; implicitHeight: 1; Rectangle { y: Theme.snapY(parent, 0); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
         RecipientField { Layout.fillWidth: true; label: "To"; fieldName: "to_recipients"; showLinks: true; onCcRequested: root.ccOpen=true; onBccRequested: root.bccOpen=true }
         RecipientField { Layout.fillWidth: true; label: "Cc"; fieldName: "cc_recipients"; visible: root.ccOpen || (backend.draft.cc_recipients||[]).length>0 }
         RecipientField { Layout.fillWidth: true; label: "Bcc"; fieldName: "bcc_recipients"; visible: root.bccOpen || (backend.draft.bcc_recipients||[]).length>0 }
@@ -74,7 +77,7 @@ Rectangle {
             Text { text: "Subject"; Layout.preferredWidth: 44; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
             TextField { objectName: "draftSubject"; property bool blocksWorkspaceShortcuts: true; Layout.fillWidth: true; padding: 0; text: backend.draft.subject || ""; placeholderText: "Subject"; color: Theme.text; placeholderTextColor: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(14); font.weight: Font.Medium; background: Item {} enabled: !backend.draftLocked; selectByMouse: true; onTextEdited: backend.setDraftSubject(text) }
         }
-        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+        Item { Layout.fillWidth: true; implicitHeight: 1; Rectangle { y: Theme.snapY(parent, 0); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
         ScrollView {
             id: composerScroll
             objectName: "replyBodyScroll"
@@ -154,24 +157,36 @@ Rectangle {
             Accessible.name: "Signature for this reply"
         }
         Flow {
+            id: attachmentChips
             visible: (backend.draft.attachments||[]).length>0
             Layout.fillWidth: true
             Layout.bottomMargin: 12
-            spacing: 5
+            spacing: 6
             Repeater {
                 model: backend.draft.attachments || []
-                FmButton {
+                Rectangle {
+                    id: attachmentChip
                     required property var modelData
-                    text: modelData.name
-                    iconName: "attachment"
-                    outlined: true
-                    tip: "Remove retained attachment " + modelData.name
-                    enabled: !backend.draftLocked
-                    onClicked: backend.setDraftAttachment(modelData.id, false)
+                    width: Math.min(320, attachmentChips.width, chipName.implicitWidth + chipSize.implicitWidth + 72)
+                    height: 30; radius: 5; color: "transparent"; border.color: Theme.controlBorder
+                    RowLayout {
+                        anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 6; spacing: 8
+                        FmIcon { name: "attachment"; size: 14; color: Theme.secondary }
+                        Text { id: chipName; Layout.fillWidth: true; text: attachmentChip.modelData.name; elide: Text.ElideRight; textFormat: Text.PlainText; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
+                        Text { id: chipSize; text: root.attachmentSize(attachmentChip.modelData.size); color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+                        FmButton {
+                            objectName: "removeDraftAttachment_" + attachmentChip.modelData.id
+                            implicitWidth: 18; implicitHeight: 18; leftPadding: 0; rightPadding: 0
+                            iconName: "close"; iconSize: 9
+                            tip: "Remove retained attachment " + attachmentChip.modelData.name
+                            enabled: !backend.draftLocked
+                            onClicked: backend.setDraftAttachment(attachmentChip.modelData.id, false)
+                        }
+                    }
                 }
             }
         }
-        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+        Item { Layout.fillWidth: true; implicitHeight: 1; Rectangle { y: Theme.snapY(parent, 0); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
         RowLayout {
             visible: root.hasSelection
             Layout.fillWidth: true
@@ -189,13 +204,14 @@ Rectangle {
                 objectName: "captureReply"
                 text: "Capture locally"
                 prominent: true
+                leftPadding: 16; rightPadding: 16
                 font.pixelSize: Theme.fontSize(13)
                 enabled: !backend.draftLocked && (document.plainText.trim().length > 0 || root.attachmentIds.length > 0)
                 tip: "Record an outgoing MIME copy on this machine; no email is delivered"
                 onClicked: backend.captureDraft()
             }
-            FmButton { text: "Attach"; iconName: "attachment"; outlined: true; font.pixelSize: Theme.fontSize(13); tip: root.availableAttachments.length ? "Attach a retained file from this conversation" : "No retained files in this conversation"; enabled: root.availableAttachments.length > 0 && !backend.draftBusy; onClicked: attachmentMenu.popup() }
-            FmButton { text: "Discard"; font.pixelSize: Theme.fontSize(13); enabled: !backend.draftLocked; onClicked: discardDialog.open() }
+            FmButton { text: "Attach"; iconName: "attachment"; outlined: true; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pixelSize: Theme.fontSize(13); tip: root.availableAttachments.length ? "Attach a retained file from this conversation" : "No retained files in this conversation"; enabled: root.availableAttachments.length > 0 && !backend.draftBusy; onClicked: attachmentMenu.popup() }
+            FmButton { text: "Discard"; leftPadding: 12; rightPadding: 12; font.pixelSize: Theme.fontSize(13); enabled: !backend.draftLocked; onClicked: discardDialog.open() }
             Item { Layout.fillWidth: true }
             Text {
                 text: backend.draftStatus
