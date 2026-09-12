@@ -1,0 +1,51 @@
+{
+    "architecture": "x86_64",
+    "boundary": "Final QML target input event to directly timestamped frameSwapped; frame generation captured afterSynchronizing and afterRendering must match the armed replacement model. Includes debounce, engine queue, IPC and rendering.",
+    "budget_passed": false,
+    "error": "Search phase stalled: phase=3 class=0 iteration=0 loadingSeen=1 modelChanged=1 armed=1 observedGeneration=0 observedSerial=1 visible=1 exposed=1",
+    "host": "Windows 11 Version 25H2",
+    "limits": "Retained synthetic 100k index-density fixture, including retained ingest-* contention rows when present; warm OS cache; no concurrent source ingestion or model inference during this GUI run; Core contention measured separately.",
+    "p95_budget_ms": 200,
+    "qt_version": "6.11.2",
+    "queries": [
+        {
+            "class": "rare subject",
+            "expected_first_page_ids": [
+            ],
+            "identity_oracle": "Deterministic generated rare-query IDs sorted by fixture date and ID",
+            "observations": 0,
+            "target_model_replacements": 0,
+            "unmeasured_empty_reset_paints": 0
+        },
+        {
+            "class": "rare body",
+            "expected_first_page_ids": [
+            ],
+            "identity_oracle": "Deterministic generated rare-query IDs sorted by fixture date and ID",
+            "observations": 0,
+            "target_model_replacements": 0,
+            "unmeasured_empty_reset_paints": 0
+        },
+        {
+            "class": "grouped first50",
+            "expected_first_page_ids": [
+            ],
+            "identity_oracle": "Fixture-domain-validated warmup first page; exact ordered IDs required on every measured replacement",
+            "observations": 0,
+            "target_model_replacements": 0,
+            "unmeasured_empty_reset_paints": 0
+        },
+        {
+            "class": "combined filters first50",
+            "expected_first_page_ids": [
+            ],
+            "identity_oracle": "Fixture-domain-validated warmup first page; exact ordered IDs required on every measured replacement",
+            "observations": 0,
+            "target_model_replacements": 0,
+            "unmeasured_empty_reset_paints": 0
+        }
+    ],
+    "renderer_api": 4,
+    "reset_policy": "Before every target: actual unique no-match QML input, confirmed zero-row model replacement, and generation-matched empty frame; all reset work is outside the sample. One unmeasured target warmup per class.",
+    "result": "failed"
+}

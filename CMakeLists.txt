@@ -86,7 +86,9 @@ if(BUILD_TESTING)
     add_test(NAME rust-workspace COMMAND "${FM_CARGO}" test --workspace --locked
         ${FM_CARGO_PROFILE_ARGS} --target-dir "${CMAKE_SOURCE_DIR}/target")
     set_tests_properties(rust-workspace PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-        TIMEOUT 180 FIXTURES_REQUIRED rust_test_binaries RESOURCE_LOCK fm_cargo)
+        # The expanded independent durable-profile suite exceeds three minutes
+        # on the Windows hosted runner. Individual operation watchdogs remain.
+        TIMEOUT 600 FIXTURES_REQUIRED rust_test_binaries RESOURCE_LOCK fm_cargo)
     # --smoke exercises a disposable profile and must exit nonzero on load/IPC errors.
     add_test(NAME gui-smoke COMMAND "$<TARGET_FILE:fuckmail-gui>" --smoke)
     set_tests_properties(gui-smoke PROPERTIES TIMEOUT 45

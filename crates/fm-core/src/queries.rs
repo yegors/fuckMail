@@ -4,7 +4,10 @@ use sha2::{Digest, Sha256};
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
 };
 #[derive(Clone)]
 pub(crate) struct ConversationState {
@@ -21,18 +24,39 @@ pub(crate) struct ConversationProjection {
 }
 pub(crate) type ConversationCache = RefCell<HashMap<String, ConversationProjection>>;
 pub(crate) type ProjectionCache = RefCell<HashMap<(String, &'static str), (u64, Value)>>;
-type ChangeSnapshot = (u64, u64, u64, Vec<(u64, i64)>);
+pub(crate) struct CoverageProjection {
+    generation: u64,
+    message_generation: u64,
+    max_message_rowid: i64,
+    document_count: i64,
+    max_document_rowid: i64,
+    value: Value,
+}
+pub(crate) type CoverageCache = RefCell<HashMap<String, CoverageProjection>>;
+struct ChangeSnapshot {
+    messages: u64,
+    coverage: u64,
+    search: u64,
+    reset_after: u64,
+    inserts: Vec<(u64, i64)>,
+    coverage_reset_after: u64,
+    documents: Vec<(u64, i64)>,
+}
 #[derive(Default)]
 struct Changes {
     hooks: u64,
     messages: u64,
     coverage: u64,
+    search: u64,
     reset_after: u64,
     inserts: VecDeque<(u64, i64)>,
+    coverage_reset_after: u64,
+    documents: VecDeque<(u64, i64)>,
     observed: (u64, u64, u64),
+    observed_in_transaction: bool,
 }
 #[derive(Clone)]
-pub(crate) struct MailChanges(Arc<Mutex<Changes>>);
+pub(crate) struct MailChanges(Arc<Mutex<Changes>>, String);
 impl MailChanges {
     pub(crate) fn install(db: &Connection) -> Self {
         let changes = Arc::new(Mutex::new(Changes {
@@ -55,12 +79,45 @@ impl MailChanges {
                 } else {
                     c.reset_after = generation;
                     c.inserts.clear();
+                    c.coverage_reset_after = c.coverage;
                 }
             } else if table == "attachments" || table.starts_with("message_fts") {
                 c.coverage += 1;
+                if table == "message_fts_docsize"
+                    && action == rusqlite::hooks::Action::SQLITE_INSERT
+                {
+                    let generation = c.coverage;
+                    c.documents.push_back((generation, rowid));
+                    if c.documents.len() > 512 {
+                        c.coverage_reset_after = c.documents.pop_front().unwrap().0;
+                    }
+                } else if table == "attachments" || table == "message_fts_docsize" {
+                    c.coverage_reset_after = c.coverage;
+                    c.documents.clear();
+                }
+            }
+            if matches!(
+                table,
+                "messages" | "conversations" | "attachments" | "categories" | "message_categories"
+            ) || table.starts_with("message_fts")
+            {
+                c.search += 1;
             }
         }));
-        Self(changes)
+        // An opaque pagination identity, not an authorization token. The serial
+        // distinguishes stores opened in the same process/timer tick; time and
+        // process identity prevent reuse across normal writer restarts.
+        static SERIAL: AtomicU64 = AtomicU64::new(0);
+        let epoch = format!(
+            "{}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos(),
+            SERIAL.fetch_add(1, Ordering::Relaxed)
+        );
+        Self(changes, epoch)
     }
     fn snapshot(&self, db: &Connection) -> ChangeSnapshot {
         let mut c = self.0.lock().unwrap();
@@ -71,19 +128,37 @@ impl MailChanges {
             // without a corresponding hook. An observed message-insert delta is
             // safe only after inventory validation below; otherwise rebuild.
             c.coverage += 1;
+            c.search += 1;
             if c.messages == old_messages {
                 c.messages += 1;
                 c.reset_after = c.messages;
                 c.inserts.clear();
             }
         }
+        let in_transaction = !db.is_autocommit();
+        if in_transaction || c.observed_in_transaction {
+            // SQLite hooks/total_changes are not reversed on rollback. Never
+            // reuse a projection read inside a transaction or after its exit,
+            // including SAVEPOINT/ROLLBACK TO without an outer rollback hook.
+            c.messages += 1;
+            c.coverage += 1;
+            c.search += 1;
+            c.reset_after = c.messages;
+            c.coverage_reset_after = c.coverage;
+            c.inserts.clear();
+            c.documents.clear();
+        }
+        c.observed_in_transaction = in_transaction;
         c.observed = (total, c.hooks, c.messages);
-        (
-            c.messages,
-            c.coverage,
-            c.reset_after,
-            c.inserts.iter().copied().collect(),
-        )
+        ChangeSnapshot {
+            messages: c.messages,
+            coverage: c.coverage,
+            search: c.search,
+            reset_after: c.reset_after,
+            inserts: c.inserts.iter().copied().collect(),
+            coverage_reset_after: c.coverage_reset_after,
+            documents: c.documents.iter().copied().collect(),
+        }
     }
 }
 impl Store {
@@ -125,8 +200,7 @@ impl Store {
         key: &'static str,
         build: impl FnOnce() -> Result<Value>,
     ) -> Result<Value> {
-        let (messages, coverage, _, _) = self.mail_changes.snapshot(&self.db);
-        let stamp = if key == "counts" { messages } else { coverage };
+        let stamp = self.mail_changes.snapshot(&self.db).messages;
         let cache_key = (account.to_owned(), key);
         if let Some((old, value)) = self.projection_cache.borrow().get(&cache_key) {
             if *old == stamp {
@@ -146,7 +220,10 @@ impl Store {
         &self,
         account: &str,
     ) -> Result<Arc<HashMap<String, ConversationState>>> {
-        let (stamp, _, reset_after, inserts) = self.mail_changes.snapshot(&self.db);
+        let changes = self.mail_changes.snapshot(&self.db);
+        let stamp = changes.messages;
+        let reset_after = changes.reset_after;
+        let inserts = changes.inserts;
         if let Some(old) = self.conversation_cache.borrow_mut().get_mut(account) {
             if old.generation == stamp {
                 return Ok(old.states.clone());
@@ -249,7 +326,114 @@ impl Store {
         )
     }
     fn coverage(&self, account: &str) -> Result<Value> {
-        self.cached_projection(account, "coverage", || self.compute_coverage(account))
+        let changes = self.mail_changes.snapshot(&self.db);
+        if let Some(old) = self.coverage_cache.borrow().get(account) {
+            if old.generation == changes.coverage {
+                return Ok(old.value.clone());
+            }
+        }
+        self.conversation_states(account)?;
+        let (message_count, max_message_rowid) = {
+            let cache = self.conversation_cache.borrow();
+            let state = &cache[account];
+            (state.message_count, state.max_rowid)
+        };
+        // Independent inventories validate bounded append deltas. COUNT(*) on
+        // the compact FTS-owned table and MAX(id) use its B-tree directly; do
+        // not combine them into a row-by-row aggregate or infer index coverage
+        // from message inventory alone.
+        let document_count: i64 =
+            self.db
+                .query_row("SELECT COUNT(*) FROM message_fts_docsize", [], |r| r.get(0))?;
+        let max_document_rowid: i64 = self.db.query_row(
+            "SELECT COALESCE(MAX(id),0) FROM message_fts_docsize",
+            [],
+            |r| r.get(0),
+        )?;
+        let mut delta = None;
+        if let Some(old) = self.coverage_cache.borrow().get(account) {
+            if old.generation >= changes.coverage_reset_after
+                && old.message_generation >= changes.reset_after
+            {
+                let mut additions = HashSet::new();
+                let mut new_documents = HashSet::new();
+                let mut source_delta = 0;
+                let mut indexed_delta = 0;
+                let mut append_only = true;
+                let mut message_query = self.db.prepare_cached(
+                    "SELECT account,source_hash<>'' FROM messages WHERE rowid=?1",
+                )?;
+                let mut document_query = self.db.prepare_cached(
+                    "SELECT EXISTS(SELECT 1 FROM message_fts_docsize WHERE id=?1)",
+                )?;
+                for (_, rowid) in changes
+                    .inserts
+                    .iter()
+                    .filter(|(generation, _)| *generation > old.message_generation)
+                {
+                    if let Some((owner, source)) = message_query
+                        .query_row([rowid], |r| {
+                            Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?))
+                        })
+                        .optional()?
+                    {
+                        if owner == account && additions.insert(*rowid) {
+                            append_only &= *rowid > old.max_message_rowid;
+                            source_delta += i64::from(source);
+                            // Also handles a previously orphaned indexed row
+                            // whose normalized message was appended later.
+                            indexed_delta += i64::from(
+                                document_query.query_row([rowid], |r| r.get::<_, bool>(0))?,
+                            );
+                        }
+                    }
+                }
+                for (_, rowid) in changes
+                    .documents
+                    .iter()
+                    .filter(|(generation, _)| *generation > old.generation)
+                {
+                    if document_query.query_row([rowid], |r| r.get::<_, bool>(0))?
+                        && new_documents.insert(*rowid)
+                    {
+                        append_only &= *rowid > old.max_document_rowid;
+                        if !additions.contains(rowid) {
+                            let owner: Option<String> =
+                                message_query.query_row([rowid], |r| r.get(0)).optional()?;
+                            indexed_delta += i64::from(owner.as_deref() == Some(account));
+                        }
+                    }
+                }
+                if append_only
+                    && message_count
+                        == old.value["messages"].as_i64().unwrap() + additions.len() as i64
+                    && document_count == old.document_count + new_documents.len() as i64
+                {
+                    delta = Some(self.coverage_from_counts(
+                        account,
+                        message_count,
+                        old.value["retained_source_records"].as_i64().unwrap() + source_delta,
+                        old.value["indexed_messages"].as_i64().unwrap() + indexed_delta,
+                    )?);
+                }
+            }
+        }
+        let value = match delta {
+            Some(value) => value,
+            None => self.compute_coverage(account)?,
+        };
+        self.coverage_cache.borrow_mut().insert(
+            account.into(),
+            CoverageProjection {
+                generation: changes.coverage,
+                message_generation: changes.messages,
+                max_message_rowid,
+                document_count,
+                max_document_rowid,
+                value: value.clone(),
+            },
+        );
+        Ok(value)
     }
     fn compute_coverage(&self, account: &str) -> Result<Value> {
         let (messages, source_records): (i64, i64) = self.db.query_row(
@@ -264,6 +448,17 @@ impl Store {
             "SELECT COUNT(*) FROM messages m JOIN message_fts_docsize f ON f.id=m.rowid WHERE m.account=?1",
             [account], |r| r.get(0),
         )?;
+        self.coverage_from_counts(account, messages, source_records, indexed_messages)
+    }
+    fn coverage_from_counts(
+        &self,
+        account: &str,
+        messages: i64,
+        source_records: i64,
+        indexed_messages: i64,
+    ) -> Result<Value> {
+        // Recount attachments even on append deltas: REPLACE/truncate can omit
+        // update hooks when mixed with otherwise ordinary message insertion.
         let (attachments, recorded_available): (i64, i64) = self.db.query_row(
             "SELECT COUNT(*),COALESCE(SUM(state='available'),0) FROM attachments WHERE account=?1",
             [account],
@@ -323,6 +518,8 @@ impl Store {
             _ => return Err(err("invalid_request", "grouped must be a boolean")),
         };
         let revision = self.revision()?;
+        let search_generation = self.mail_changes.snapshot(&self.db).search;
+        let epoch = &self.mail_changes.1;
         let mut cursor_scope = p.clone();
         cursor_scope.as_object_mut().unwrap().remove("cursor");
         cursor_scope.as_object_mut().unwrap().remove("offset");
@@ -339,8 +536,20 @@ impl Store {
                 .filter(|v| v.len() <= 1024)
                 .ok_or_else(|| err("invalid_request", "Invalid conversation cursor"))?;
             let cursor: Value = serde_json::from_str(text)?;
-            fields(&cursor, &["revision", "offset", "fingerprint"])?;
-            if cursor["revision"] != revision || cursor["fingerprint"] != fingerprint {
+            fields(
+                &cursor,
+                &[
+                    "revision",
+                    "offset",
+                    "fingerprint",
+                    "epoch",
+                    "search_generation",
+                ],
+            )?;
+            if cursor["epoch"] != *epoch
+                || cursor["search_generation"] != search_generation
+                || cursor["fingerprint"] != fingerprint
+            {
                 return Err(err(
                     "stale_cursor",
                     "Mail or query changed; restart pagination",
@@ -572,7 +781,7 @@ impl Store {
             out.push(json!({"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if expression.is_empty() && category.is_empty() && sender.is_empty() && after.is_empty() && before.is_empty() && attachment.is_none(){Vec::<String>::new()}else{matching}}));
         }
         Ok(
-            json!({"conversations":out,"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(serde_json::to_string(&json!({"revision":revision,"offset":offset+limit,"fingerprint":fingerprint}))?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?}),
+            json!({"conversations":out,"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(serde_json::to_string(&json!({"revision":revision,"epoch":epoch,"search_generation":search_generation,"offset":offset+limit,"fingerprint":fingerprint}))?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?}),
         )
     }
     pub(crate) fn conversation(&self, account: &str, cid: &str) -> Result<Value> {
@@ -835,10 +1044,14 @@ mod projection_tests {
             assert_eq!(actual["held_conversation_count"], expected.2);
             assert_eq!(actual["done_conversation_count"], expected.3);
             let indexed:i64=store.db.query_row("SELECT COUNT(*) FROM messages m JOIN message_fts f ON f.rowid=m.rowid WHERE m.account=?1",[account],|r|r.get(0)).unwrap();
-            assert_eq!(
-                store.coverage(account).unwrap()["indexed_messages"],
-                indexed
-            );
+            let coverage = store.coverage(account).unwrap();
+            assert_eq!(coverage["indexed_messages"], indexed);
+            let (messages,sources):(i64,i64)=store.db.query_row("SELECT COUNT(*),COALESCE(SUM(source_hash<>''),0) FROM messages WHERE account=?1",[account],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();
+            let (attachments,available):(i64,i64)=store.db.query_row("SELECT COUNT(*),COALESCE(SUM(state='available'),0) FROM attachments WHERE account=?1",[account],|r|Ok((r.get(0)?,r.get(1)?))).unwrap();
+            assert_eq!(coverage["messages"], messages);
+            assert_eq!(coverage["retained_source_records"], sources);
+            assert_eq!(coverage["attachments"], attachments);
+            assert_eq!(coverage["recorded_available_attachments"], available);
         }
     }
     #[test]
@@ -883,6 +1096,129 @@ mod projection_tests {
         correct(&store);
         store.db.execute("DELETE FROM message_fts WHERE rowid=(SELECT rowid FROM messages WHERE id='cache-one')",[]).unwrap();
         correct(&store);
+    }
+    #[test]
+    fn projection_reads_inside_transactions_never_survive_rollback_or_savepoint_restore() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(temp.path()).unwrap();
+        correct(&store);
+        store.db.execute_batch("BEGIN").unwrap();
+        append(&store, "rolled-back", "rollback-thread");
+        correct(&store);
+        store.db.execute_batch("ROLLBACK").unwrap();
+        correct(&store);
+        store
+            .db
+            .execute_batch(
+                "BEGIN; SAVEPOINT snapshot; UPDATE messages SET unread=0,starred=0,source_hash='';",
+            )
+            .unwrap();
+        correct(&store);
+        store.db.execute_batch("ROLLBACK TO snapshot").unwrap();
+        correct(&store);
+        store.db.execute_batch("COMMIT").unwrap();
+        correct(&store);
+    }
+    #[test]
+    fn coverage_append_deltas_preserve_independent_index_source_and_attachment_counts() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(temp.path()).unwrap();
+        correct(&store);
+        append(&store, "coverage-one", "coverage-thread");
+        correct(&store);
+        let rowid: i64 = store
+            .db
+            .query_row(
+                "SELECT rowid FROM messages WHERE id='coverage-one'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        store
+            .db
+            .execute("DELETE FROM message_fts WHERE rowid=?1", [rowid])
+            .unwrap();
+        correct(&store);
+        // Backfill an older index identity; its rowid is below the high-water
+        // mark, so correctness requires the full-inventory fallback.
+        append(&store, "coverage-two", "coverage-thread");
+        correct(&store);
+        store.db.execute("INSERT INTO message_fts(rowid,sender,subject,body) VALUES(?1,'Person','Backfill','Source')",[rowid]).unwrap();
+        correct(&store);
+        store
+            .db
+            .execute(
+                "UPDATE messages SET source_hash='retained' WHERE id='coverage-one'",
+                [],
+            )
+            .unwrap();
+        store
+            .db
+            .execute(
+                "UPDATE attachments SET state='missing' WHERE account='windscribe'",
+                [],
+            )
+            .unwrap();
+        correct(&store);
+        // Hidden FTS replacement/deletion and attachment truncate mixed with
+        // normal append must not be mistaken for a pure addition batch.
+        store.db.execute_batch("DELETE FROM attachments").unwrap();
+        store
+            .db
+            .execute("DELETE FROM message_fts WHERE rowid=?1", [rowid])
+            .unwrap();
+        append(&store, "coverage-three", "coverage-thread");
+        correct(&store);
+    }
+    #[test]
+    fn cursor_survives_non_search_writes_and_rejects_search_changes_and_writer_restart() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = Store::open(temp.path()).unwrap();
+        let first = store
+            .conversations("windscribe", &json!({"limit":2,"grouped":true}))
+            .unwrap();
+        let continuation = json!({"limit":2,"grouped":true,"cursor":first["next_cursor"]});
+        let expected =
+            store.conversations("windscribe", &continuation).unwrap()["conversations"].clone();
+        store
+            .handle(
+                "view_save",
+                Some("windscribe"),
+                json!({"view":{"query":"Person"},"expected_revision":0,"request_id":"cursor-view"}),
+            )
+            .unwrap();
+        store.handle("preferences_save",None,json!({"preferences":{"density":"compact"},"expected_revision":0,"request_id":"cursor-prefs"})).unwrap();
+        store.handle("draft_save",Some("windscribe"),json!({"conversation_id":"windscribe-thread-001","body":"Human text","expected_revision":0,"request_id":"cursor-draft"})).unwrap();
+        assert_eq!(
+            store.conversations("windscribe", &continuation).unwrap()["conversations"],
+            expected
+        );
+        for statement in [
+            "UPDATE messages SET unread=1-unread WHERE account='windscribe' AND id='windscribe-message-001-000'",
+            "UPDATE categories SET name=name WHERE account='windscribe'",
+            "UPDATE attachments SET state=state WHERE account='windscribe'",
+            "DELETE FROM message_fts WHERE rowid=(SELECT MIN(rowid) FROM messages)",
+        ] {
+            let first=store.conversations("windscribe",&json!({"limit":2,"grouped":true})).unwrap();
+            store.db.execute(statement,[]).unwrap();
+            let error=store.conversations("windscribe",&json!({"limit":2,"grouped":true,"cursor":first["next_cursor"]})).unwrap_err();
+            assert_eq!(error.code,"stale_cursor","{statement}");
+        }
+        let first = store
+            .conversations("windscribe", &json!({"limit":2,"grouped":true}))
+            .unwrap();
+        drop(store);
+        let store = Store::open(temp.path()).unwrap();
+        assert_eq!(
+            store
+                .conversations(
+                    "windscribe",
+                    &json!({"limit":2,"grouped":true,"cursor":first["next_cursor"]})
+                )
+                .unwrap_err()
+                .code,
+            "stale_cursor"
+        );
     }
     #[test]
     fn projection_cache_rebuilds_after_delta_overflow_and_unhooked_truncate() {

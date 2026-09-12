@@ -1,5 +1,7 @@
 #include "GuiSelfTest.h"
 #include "GuiCalendarSelfTest.h"
+#include "GuiSettingsSelfTest.h"
+#include "GuiMailNavigationSelfTest.h"
 #include "ReplyDocument.h"
 #include <QCoreApplication>
 #include <QDir>
@@ -88,6 +90,26 @@ bool GuiSelfTest::verifyRestart() {
         if (row["operation_id"].toString() == m_captureId && row["state"].toString() == "accepted") ++accepted;
     }
     if (history.size() != 2 || unknown != 1 || accepted != 1) { qCritical() << "GUI process restart changed capture identities or retried transport."; return false; }
+    if (!m_settingsExpected.isEmpty()) {
+        const auto preferences = read({"preferences", "show"})["preferences"].toObject();
+        const auto expected = QJsonObject::fromVariantMap(m_settingsExpected["preferences"].toMap());
+        for (auto it = expected.begin(); it != expected.end(); ++it) if (preferences[it.key()] != it.value()) {
+            qCritical() << "GUI restart changed the Settings preference:" << it.key(); return false;
+        }
+        bool found = false;
+        for (const auto &value : read({"accounts"})["accounts"].toArray()) {
+            const auto account = value.toObject();
+            if (account["id"].toString() != m_settingsExpected["account"].toString()) continue;
+            found = account["name"].toString() == m_settingsExpected["name"].toString()
+                && account["signature_text"].toString() == m_settingsExpected["signature_text"].toString();
+        }
+        if (!found) { qCritical() << "GUI restart did not preserve the Settings account metadata."; return false; }
+        const auto snapshot = QJsonObject::fromVariantMap(m_settingsExpected["draft_snapshot"].toMap());
+        for (auto it = snapshot.begin(); it != snapshot.end(); ++it) if (draft[it.key()] != it.value()) {
+            qCritical() << "Account settings changed the authored snapshot after GUI restart:" << it.key(); return false;
+        }
+        qInfo() << "GUI process restart preserved native Settings preferences and account metadata without changing the saved draft snapshot.";
+    }
     qInfo() << "GUI process restart passed: exact authored fields and capture journal identities/attempt count preserved.";
     return true;
 }
@@ -516,13 +538,36 @@ void GuiSelfTest::step() {
         cli({"draft", "show", m_id}, [this](auto result) {
             if (result["body"].toString() != m_recoveredBody || result["body_html"].toString() != m_recoveredHtml
                 || result["signature_text"].toString() != m_recoveredSignature + "\nNewer unsent signature." || !result["attachment_ids"].toArray().contains(m_attachmentId)) { failed("Capture recovery changed persisted current authored fields."); return; }
-            m_recreatedBackend->shutdown();
+            // Exercise teardown with a live socket; its destructor must not
+            // invoke callbacks into already-destroyed request/view storage.
+            delete m_recreatedBackend; m_recreatedBackend = nullptr; m_recreatedClosed = true;
         });
         break;
     case 79:
         if (!m_recreatedClosed) return;
-        m_recreatedBackend->deleteLater(); m_recreatedBackend = nullptr;
-        m_stage = 43; break;
+        if (m_recreatedBackend) m_recreatedBackend->deleteLater();
+        m_recreatedBackend = nullptr;
+        m_stage = 80; break;
+    case 80: {
+        auto window = qobject_cast<QQuickWindow *>(m_window);
+        if (!window) { failed("Settings controls need the native window."); return; }
+        m_timer.stop();
+        new GuiSettingsSelfTest(m_backend, window, m_profile, m_engine, [this](const auto &result, const auto &error) {
+            if (!error.isEmpty()) { failed(error); return; }
+            setExpectedSettings(result); m_stage = 81; m_timer.start();
+        }, this);
+        break;
+    }
+    case 81: {
+        auto window = qobject_cast<QQuickWindow *>(m_window);
+        if (!window) { failed("Search navigation needs the native window."); return; }
+        m_timer.stop();
+        new GuiMailNavigationSelfTest(m_backend, window, [this](const auto &error) {
+            if (!error.isEmpty()) { failed(error); return; }
+            m_stage = 43; m_timer.start();
+        }, this);
+        break;
+    }
     case 43: {
         auto window = qobject_cast<QQuickWindow *>(m_window);
         if (!window) { failed("Calendar controls need the native window."); return; }

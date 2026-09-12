@@ -339,6 +339,7 @@ mod tests {
             profile: profile.to_owned(),
             _lock: File::create(profile.join("content-test.lock")).unwrap(),
             projection_cache: Default::default(),
+            coverage_cache: Default::default(),
             conversation_cache: Default::default(),
         }
     }

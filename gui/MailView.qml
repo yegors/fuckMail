@@ -43,6 +43,15 @@ Item {
     function groupOf(row) { return row.display_group || row.group || "done" }
     function groupTitle(group) { return {review:"To review",held:"Delayed",done:"Done"}[group] || "Conversations" }
     function groupCount(group) { return backend.conversations.filter(function(row) { return groupOf(row) === group }).length }
+    function restoreListPosition() {
+        if (list.moving) return
+        list.forceLayout()
+        const minimum = list.originY
+        const maximum = minimum + Math.max(0,list.contentHeight-list.height)
+        // A shorter result set must remain visible. Keep the saved position so
+        // clearing the query can restore the longer mailbox's previous offset.
+        list.contentY = Math.max(minimum,Math.min(maximum,backend.presentation.listY||0))
+    }
     function rowTime(value) {
         const date = new Date(value)
         return isNaN(date.getTime()) ? "" : Qt.formatDate(date, "yyyy-MM-dd") === backend.todayDate ? Qt.formatTime(date,"HH:mm") : Qt.formatDate(date,"d MMM")
@@ -58,13 +67,40 @@ Item {
         expanded = true; backend.remember("expanded",true)
         const next = Object.assign({},expandedMembers); next[expansionKey+id] = true; expandedMembers = next
         backend.remember("selectedMember",id)
-        Qt.callLater(function() { Qt.callLater(function() {
-            for (let i = 0; i < members.length; ++i) {
-                if (members[i].id !== id) continue
-                const item = memberRepeater.itemAt(i)
-                if (item) { reader.contentY = Math.max(0,Math.min(reader.contentHeight-reader.height,item.mapToItem(reader.contentItem,0,0).y-12)); backend.remember("readerY",reader.contentY) }
-            }
-        }) })
+        reader.cancelFlick()
+        matchReveal.identity = backend.account + "/" + backend.selectedId
+        matchReveal.query = backend.query; matchReveal.memberId = id
+        matchReveal.pass = 0; matchReveal.stable = 0; matchReveal.lastTop = -1; matchReveal.lastHeight = -1
+        matchReveal.restart()
+    }
+    Timer {
+        id: matchReveal
+        interval: 16; repeat: true
+        property string identity: ""
+        property string query: ""
+        property string memberId: ""
+        property int pass: 0
+        property int stable: 0
+        property real lastTop: -1
+        property real lastHeight: -1
+        onTriggered: {
+            if (!mail.visible || reader.dragging || identity !== backend.account+"/"+backend.selectedId || query !== backend.query) { stop(); return }
+            const index = mail.members.findIndex(function(member) { return member.id === memberId })
+            const item = index < 0 ? null : memberRepeater.itemAt(index)
+            if (!item || !item.visible) { stop(); return }
+            ++pass
+            const top = item.mapToItem(reader.contentItem,0,0).y
+            const height = reader.contentHeight
+            stable = top === lastTop && height === lastHeight ? stable+1 : 0
+            lastTop = top; lastHeight = height
+            // Expansion changes several nested layouts. Wait for their mapped
+            // geometry, then confirm it again after positioning the reader.
+            if (item.height>0 && height>=top+item.height-1 && (stable>=1 || pass>=20)) {
+                reader.contentY = Math.max(0,Math.min(Math.max(0,height-reader.height),top-12))
+                backend.remember("readerY",reader.contentY)
+                if (stable>=2 || pass>=20) stop()
+            } else if (pass>=20) stop()
+        }
     }
     function revealMatch() { if (matchingIds.length) scrollToMember(matchingIds[0]) }
     function openRow(id) {
@@ -119,12 +155,12 @@ Item {
         if (chosen && members.some(function(m) { return m.id === chosen })) {
             const next = Object.assign({},expandedMembers); next[expansionKey+chosen] = true; expandedMembers = next; expanded = true
         }
-        Qt.callLater(function() { list.contentY = Math.max(0,view.listY||0); if (!replyReveal.running) reader.contentY = Math.max(0,view.readerY||0); restoring = false })
+        Qt.callLater(function() { mail.restoreListPosition(); if (!replyReveal.running) reader.contentY = Math.max(0,view.readerY||0); restoring = false })
     }
     Connections {
         target: backend
         function onPresentationChanged() { Qt.callLater(mail.restorePosition) }
-        function onConversationsChanged() { Qt.callLater(function() { if (!list.moving) list.contentY = Math.max(0,backend.presentation.listY||0) }) }
+        function onConversationsChanged() { Qt.callLater(mail.restoreListPosition) }
         function onConversationChanged() {
             const identity = backend.account + "/" + backend.selectedId
             if (identity !== mail.loadedConversation) {
@@ -217,6 +253,8 @@ Item {
                     Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 6
                     clip: true; model: backend.conversations; boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: ScrollBar {}
+                    onContentHeightChanged: Qt.callLater(mail.restoreListPosition)
+                    onHeightChanged: Qt.callLater(mail.restoreListPosition)
                     onMovementEnded: if (!mail.restoring) backend.remember("listY",contentY)
                     delegate: Item {
                         id: groupedRow

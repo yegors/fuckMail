@@ -11,6 +11,7 @@ class GuiSelfTest final : public QObject {
 public:
     GuiSelfTest(MailBackend &backend, QObject *window, QString profile, QString engine, QObject *parent);
     bool verifyRestart();
+    void setExpectedSettings(const QVariantMap &expected) { m_settingsExpected = expected; }
 private:
     void step();
     void cli(const QStringList &arguments, std::function<void(const QJsonObject &)> callback);
@@ -26,6 +27,7 @@ private:
     QString m_profile, m_engine, m_id, m_sender;
     QString m_attachmentId, m_captureId;
     QVariantMap m_calendarResult;
+    QVariantMap m_settingsExpected;
     QJsonObject m_shutdownViewParams;
     bool m_shutdownExpectedStar = false;
     const QString m_authored = "Hello Maya,\n\nConfirmed — Montréal at 14:00.\nI wrote this reply myself.\n";

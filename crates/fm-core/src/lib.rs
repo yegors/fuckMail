@@ -65,6 +65,7 @@ pub struct Store {
     _lock: File,
     pub(crate) conversation_cache: queries::ConversationCache,
     pub(crate) projection_cache: queries::ProjectionCache,
+    pub(crate) coverage_cache: queries::CoverageCache,
     pub(crate) mail_changes: queries::MailChanges,
 }
 impl Store {
@@ -124,6 +125,7 @@ impl Store {
             profile: profile.to_owned(),
             _lock: lock,
             projection_cache: Default::default(),
+            coverage_cache: Default::default(),
             conversation_cache: Default::default(),
         };
         let seeded: Option<i64> = store

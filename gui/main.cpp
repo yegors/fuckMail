@@ -19,6 +19,13 @@
 #include <QTimer>
 
 int main(int argc, char **argv) {
+#ifdef Q_OS_WIN
+    // Qt 6.11.2's DXGI VBlank notifier can leave an exposed window without
+    // update requests on this host. Use Qt's timer fallback; D3D rendering
+    // and presentation vsync remain enabled. Preserve an explicit override.
+    if (!qEnvironmentVariableIsSet("QT_D3D_NO_VBLANK_THREAD"))
+        qputenv("QT_D3D_NO_VBLANK_THREAD", "1");
+#endif
     QGuiApplication app(argc, argv);
     app.setApplicationName("fuckMail");
     app.setOrganizationName("fuckMail");

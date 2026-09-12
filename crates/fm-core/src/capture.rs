@@ -984,6 +984,7 @@ mod tests {
             profile: profile.clone(),
             _lock: std::fs::File::create(profile.join("store.lock")).unwrap(),
             projection_cache: Default::default(),
+            coverage_cache: Default::default(),
             conversation_cache: Default::default(),
         };
         old.seed().unwrap();
@@ -1081,6 +1082,7 @@ mod tests {
             profile: profile.clone(),
             _lock: std::fs::File::create(profile.join("store.lock")).unwrap(),
             projection_cache: Default::default(),
+            coverage_cache: Default::default(),
             conversation_cache: Default::default(),
         };
         old.seed().unwrap();

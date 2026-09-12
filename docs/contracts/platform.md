@@ -1,6 +1,8 @@
 # Platform, lifecycle and release
 
-State: Draft · Revision: 8 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; whole area remains Draft.
+State: Draft · Revision: 9 · Updated: 2026-09-12 · Implementation: Phase 0 synthetic experiment verified; Phase 1 native acceptance active; whole area remains Draft.
+
+Revision 9 adds safe destruction of a still-connected GUI adapter: socket and timer callbacks detach before request/view storage is destroyed. Normal close continues to flush through the explicit shutdown path. For pinned Qt 6.11.2 on Windows, the GUI defaults `QT_D3D_NO_VBLANK_THREAD=1` before creating the application, preserving an explicit environment override. This selects Qt's timer update fallback while retaining D3D rendering and presentation vsync. The host's original path delivered one frame and no subsequent update requests; the fallback delivered 2,881 synchronization/render/swap callbacks and passed all four 100-observation paint classes. This private Qt switch must be rechecked when changing the pinned toolkit. Consumers: Qt GUI, Windows packages, developer launches and Quality. See [Phase 1 evidence](../research/phase-1-execution.md); physical input/scaling and trusted distribution remain separate.
 
 Revision 8 records the home Windows handoff correction: developer subprocesses resolve bare executable names through the selected project PATH before spawning, so packaging works with project-local Rust and no global Rust installation. The existing compiler/SDK are reused; no global PATH change or runtime/schema/protocol change is introduced. Dev/release CTests, relocated packaging and native Windows/D3D11 rendering now pass on the founder's PC. Consumers: developer tooling, Core/CLI/GUI build and Quality. See [Windows evidence](../research/phase-0-execution.md#home-windows-handoff-before-phase-1); manual input, accessibility, wider scaling and OS vault checks remain separate.
 

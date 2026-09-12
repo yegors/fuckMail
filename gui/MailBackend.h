@@ -69,6 +69,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QDateTime clockNow READ clockNow NOTIFY eventsChanged)
 public:
     explicit MailBackend(QString profile, QString engine, QObject *parent = nullptr, bool fixtureClock = false);
+    ~MailBackend() override;
     QVariantList accounts() const { return m_accounts; }
     QVariantList conversations() const { return m_conversations; }
     QVariantList categories() const { return m_categories; }

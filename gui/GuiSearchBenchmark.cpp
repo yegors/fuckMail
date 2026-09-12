@@ -1,5 +1,7 @@
 #include "GuiSearchBenchmark.h"
 #include <QCoreApplication>
+#include <QDebug>
+#include <QEvent>
 #include <QInputMethodEvent>
 #include <QKeyEvent>
 #include <QJsonDocument>
@@ -7,6 +9,7 @@
 #include <QSysInfo>
 #include <QSGRendererInterface>
 #include <QRegularExpression>
+#include <QUuid>
 #include <QtMath>
 #include <algorithm>
 #include <chrono>
@@ -33,14 +36,28 @@ QStringList generatedRareIds(int queryClass) {
 
 GuiSearchBenchmark::GuiSearchBenchmark(MailBackend &backend, QQuickWindow *window, QString output, QObject *parent)
     : QObject(parent), m_backend(backend), m_window(window), m_output(std::move(output)) {
+    m_resetNonce = QUuid::createUuid().toString(QUuid::Id128);
+    m_window->installEventFilter(this);
+    m_window->raise(); m_window->requestActivate();
+    m_phaseWatchdog.setSingleShot(true);
+    connect(&m_phaseWatchdog, &QTimer::timeout, this, [this] {
+        finish(QString("Search phase stalled: phase=%1 class=%2 iteration=%3 loadingSeen=%4 modelChanged=%5 armed=%6 observedGeneration=%7 observedSerial=%8 visible=%9 exposed=%10")
+            .arg(int(m_phase)).arg(m_class).arg(m_iteration).arg(m_loadingSeen).arg(m_modelChanged)
+            .arg(m_armedGeneration).arg(m_lastObservedGeneration).arg(m_lastObservedSerial)
+            .arg(m_window->isVisible()).arg(m_window->isExposed())
+            + QString(" active=%1 minimized=%2 sync=%3 render=%4 swaps=%5 updateRequests=%6")
+                .arg(m_window->isActive()).arg(m_window->windowState() == Qt::WindowMinimized)
+                .arg(m_syncCount.load()).arg(m_renderCount.load()).arg(m_swapCount.load()).arg(m_updateRequests));
+    });
     m_startTimer.setInterval(100);
     connect(&m_startTimer, &QTimer::timeout, this, [this] {
+        if (!m_window->isActive() || !m_window->isExposed()) return;
         if (!m_backend.connected() || m_backend.loading() || m_backend.conversation().isEmpty() || m_backend.draft().isEmpty()) return;
         if (m_backend.account() != "windscribe") { m_backend.selectAccount("windscribe"); return; }
         if (m_backend.currentAccount()["message_count"].toInt() < 50000) { finish("Use the retained generated 100k benchmark profile."); return; }
         m_search = m_window->findChild<QQuickItem *>("searchField");
         if (!m_search) { finish("The actual QML search field was not found."); return; }
-        m_startTimer.stop(); m_backend.setFolder("all"); m_backend.setCategory({});
+        m_startTimer.stop(); m_backend.setFolder("all"); m_backend.setCategory({}); m_backend.setQuery({});
         QTimer::singleShot(500, this, [this] { beginSample(); });
     });
     connect(&m_backend, &MailBackend::loadingChanged, this, [this] {
@@ -56,12 +73,15 @@ GuiSearchBenchmark::GuiSearchBenchmark(MailBackend &backend, QQuickWindow *windo
     // synchronization, carry it through rendering, then capture it directly at
     // swap time. The GUI callback accepts only that exact generation.
     connect(m_window, &QQuickWindow::afterSynchronizing, this, [this] {
+        m_syncCount.fetch_add(1, std::memory_order_relaxed);
         ++m_syncSerial; m_syncGeneration = m_requestedGeneration.load(std::memory_order_acquire);
     }, Qt::DirectConnection);
     connect(m_window, &QQuickWindow::afterRendering, this, [this] {
+        m_renderCount.fetch_add(1, std::memory_order_relaxed);
         m_renderedSerial = m_syncSerial; m_renderedGeneration = m_syncGeneration;
     }, Qt::DirectConnection);
     connect(m_window, &QQuickWindow::frameSwapped, this, [this] {
+        m_swapCount.fetch_add(1, std::memory_order_relaxed);
         const auto generation = m_renderedGeneration, serial = m_renderedSerial;
         const auto swappedAt = monotonicNanos();
         QMetaObject::invokeMethod(this, [this, generation, serial, swappedAt] { painted(generation, serial, swappedAt); }, Qt::QueuedConnection);
@@ -69,6 +89,11 @@ GuiSearchBenchmark::GuiSearchBenchmark(MailBackend &backend, QQuickWindow *windo
     connect(&m_backend, &MailBackend::errorChanged, this, [this] { if (!m_backend.error().isEmpty()) finish(m_backend.error()); });
     QTimer::singleShot(600000, this, [this] { if (!m_finished) finish("The search benchmark timed out."); });
     m_startTimer.start();
+    m_phaseWatchdog.start(45000);
+}
+bool GuiSearchBenchmark::eventFilter(QObject *watched, QEvent *event) {
+    if (watched == m_window && event->type() == QEvent::UpdateRequest) ++m_updateRequests;
+    return QObject::eventFilter(watched, event);
 }
 void GuiSearchBenchmark::beginSample() {
     if (m_finished) return;
@@ -84,14 +109,16 @@ void GuiSearchBenchmark::beginSample() {
     // Every measured target replaces a painted zero-result model. Whitespace
     // changes are insufficient: they can produce identical rows and no QML
     // model replacement after warmup.
-    inputQuery(QString("fmbenchmarknomatch%1x%2").arg(m_class).arg(m_iteration), Phase::ResetQuery);
+    inputQuery(QString("fmbenchmarknomatch%1x%2x%3").arg(m_resetNonce).arg(m_class).arg(m_iteration), Phase::ResetQuery);
 }
 void GuiSearchBenchmark::stopForShutdown() {
-    m_finished = true; m_startTimer.stop();
+    m_finished = true; m_startTimer.stop(); m_phaseWatchdog.stop();
     m_requestedGeneration.store(0, std::memory_order_release);
 }
 void GuiSearchBenchmark::inputQuery(const QString &query, Phase phase) {
+    if (m_backend.query() == query) { finish("The benchmark input must change the previous query."); return; }
     m_expected = query; m_phase = phase;
+    m_phaseWatchdog.start(10000);
     m_loadingSeen = false; m_modelChanged = false; m_armedGeneration = 0;
     m_requestedGeneration.store(0, std::memory_order_release);
     m_search->forceActiveFocus();
@@ -118,8 +145,14 @@ void GuiSearchBenchmark::resultsReady() {
         m_phase = Phase::TargetPaint;
     }
     m_armedGeneration = ++m_generation;
+    m_armedRows = rows;
+    m_phaseWatchdog.start(10000);
     m_requestedGeneration.store(m_armedGeneration, std::memory_order_release);
     m_window->update();
+    const auto generation = m_armedGeneration;
+    QTimer::singleShot(0, this, [this, generation] {
+        if (!m_finished && m_armedGeneration == generation) m_window->update();
+    });
 }
 QString GuiSearchBenchmark::validateTarget(const QVariantList &rows) {
     const int expectedCount = m_class == 0 ? 10 : 50;
@@ -139,8 +172,17 @@ QString GuiSearchBenchmark::validateTarget(const QVariantList &rows) {
     return {};
 }
 void GuiSearchBenchmark::painted(quint64 generation, quint64 serial, qint64 swappedAt) {
+    m_lastObservedGeneration = generation; m_lastObservedSerial = serial;
     if (m_finished || !m_armedGeneration || generation != m_armedGeneration || serial <= m_lastPaintSerial) return;
-    if (m_backend.loading() || m_backend.query() != m_expected) { finish("The query changed before its validated replacement frame was painted."); return; }
+    m_phaseWatchdog.stop();
+    // A status poll may start a new read after this frame was presented. It
+    // does not replace the visible model until its response arrives. Require
+    // the exact armed rows and query, rather than treating a spinner as a new
+    // result model; the render generation still proves the captured frame.
+    if (m_backend.query() != m_expected || m_backend.conversations() != m_armedRows) {
+        finish(QString("The validated model changed before its frame was accepted (expected=%1 actual=%2 loading=%3).")
+            .arg(m_expected, m_backend.query()).arg(m_backend.loading())); return;
+    }
     m_lastPaintSerial = serial; m_armedGeneration = 0;
     m_requestedGeneration.store(0, std::memory_order_release);
     if (m_phase == Phase::ResetPaint) {
@@ -155,13 +197,13 @@ void GuiSearchBenchmark::painted(quint64 generation, quint64 serial, qint64 swap
     if (milliseconds < 0) { finish("A pre-input frame was supplied to the measurement."); return; }
     if (m_iteration > 0) m_samples[m_class].append(milliseconds); // one warm-up per class
     if (m_iteration > 0) ++m_modelReplacements[m_class];
-    if (++m_iteration > 100) { m_iteration = 0; ++m_class; }
+    if (++m_iteration > 100) { qInfo() << "Native search class completed:" << m_class << "100 measured replacement frames"; m_iteration = 0; ++m_class; }
     if (m_class == 4) { finish(); return; }
     QTimer::singleShot(25, this, [this] { beginSample(); });
 }
 void GuiSearchBenchmark::finish(const QString &error) {
     if (m_finished) return;
-    m_finished = true; m_startTimer.stop();
+    m_finished = true; m_startTimer.stop(); m_phaseWatchdog.stop();
     static const QStringList labels{"rare subject", "rare body", "grouped first50", "combined filters first50"};
     QJsonArray classes; bool budgetPassed = error.isEmpty();
     for (int index = 0; index < 4; ++index) {
@@ -181,6 +223,9 @@ void GuiSearchBenchmark::finish(const QString &error) {
         {"boundary", "Final QML target input event to directly timestamped frameSwapped; frame generation captured afterSynchronizing and afterRendering must match the armed replacement model. Includes debounce, engine queue, IPC and rendering."},
         {"host", QSysInfo::prettyProductName()}, {"architecture", QSysInfo::currentCpuArchitecture()},
         {"qt_version", QT_VERSION_STR}, {"renderer_api", int(m_window->rendererInterface()->graphicsApi())},
+        {"windows_vblank_thread_disabled", qEnvironmentVariableIntValue("QT_D3D_NO_VBLANK_THREAD") != 0},
+        {"synchronizations", qint64(m_syncCount.load())}, {"renders", qint64(m_renderCount.load())},
+        {"swaps", qint64(m_swapCount.load())}, {"update_requests", qint64(m_updateRequests)},
         {"p95_budget_ms", 200}, {"budget_passed", budgetPassed}, {"queries", classes},
         {"reset_policy", "Before every target: actual unique no-match QML input, confirmed zero-row model replacement, and generation-matched empty frame; all reset work is outside the sample. One unmeasured target warmup per class."},
         {"limits", "Retained synthetic 100k index-density fixture, including retained ingest-* contention rows when present; warm OS cache; no concurrent source ingestion or model inference during this GUI run; Core contention measured separately."}};

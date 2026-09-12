@@ -12,6 +12,10 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     GuiSelfTest.h
     GuiCalendarSelfTest.cpp
     GuiCalendarSelfTest.h
+    GuiSettingsSelfTest.cpp
+    GuiSettingsSelfTest.h
+    GuiMailNavigationSelfTest.cpp
+    GuiMailNavigationSelfTest.h
     GuiSearchBenchmark.cpp
     GuiSearchBenchmark.h
     IpcTrust.cpp

@@ -96,6 +96,17 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
     });
 }
 
+MailBackend::~MailBackend() {
+    // A fatal GUI exit may destroy a still-connected backend. Detach callbacks
+    // before member destruction: QLocalSocket::~QLocalSocket can emit signals
+    // after the pending-request maps and buffers have already been destroyed.
+    for (auto timer : {&m_clockTimer, &m_connectTimer, &m_pollTimer, &m_searchTimer, &m_draftTimer, &m_viewTimer}) {
+        timer->stop(); QObject::disconnect(timer, nullptr, this, nullptr);
+    }
+    QObject::disconnect(&m_socket, nullptr, this, nullptr);
+    m_socket.abort();
+}
+
 void MailBackend::start() {
     if (m_connected || m_socket.state() == QLocalSocket::ConnectingState) return;
     clearError(); cancelShutdown(); m_shutdownEmitted = false; m_buffer.clear(); m_startupClock.start();

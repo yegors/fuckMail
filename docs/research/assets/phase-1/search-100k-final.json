@@ -2,19 +2,19 @@
   "cache_context": "One reopened SQLite connection after bulk seed/checkpoint; OS filesystem cache was not cleared. Per-query warm observation counts recorded in each row. Static samples have no ingestion/inference. Concurrent-ingestion block uses independent producers and one serialized Store writer with bounded queue.",
   "concurrent_ingestion": {
     "batches": 100,
-    "core_query_p50_ms": 106.35210000000001,
-    "core_query_p95_ms": 234.44690000000003,
-    "core_query_p99_ms": 300.86859999999996,
-    "ingestion_batch_p50_ms": 2.3611999999999997,
-    "ingestion_batch_p95_ms": 10.815800000000001,
-    "ingestion_batch_p99_ms": 62.7496,
+    "core_query_p50_ms": 78.3762,
+    "core_query_p95_ms": 87.5322,
+    "core_query_p99_ms": 89.2262,
+    "ingestion_batch_p50_ms": 2.0692000000000004,
+    "ingestion_batch_p95_ms": 10.1165,
+    "ingestion_batch_p99_ms": 39.9013,
     "inserted_messages": 2500,
     "messages_per_batch": 25,
     "model": "independent search and normalized-insertion producers; one serialized Store writer; bounded queue capacity 2; no parallel SQLite writer or provider transport",
     "query_observations": 100,
-    "queue_to_response_p50_ms": 106.376,
-    "queue_to_response_p95_ms": 259.69399999999996,
-    "queue_to_response_p99_ms": 308.4003
+    "queue_to_response_p50_ms": 78.40379999999999,
+    "queue_to_response_p95_ms": 98.6968,
+    "queue_to_response_p99_ms": 133.9535
   },
   "coverage_limits": "Index density fixture with shared retained synthetic source; not 25 GB mailbox, attachment-throughput, 1m/3m, OS-cold, real provider ingestion or power-loss evidence.",
   "database_bytes": 145973248,
@@ -26,78 +26,78 @@
     {
       "account": "windscribe",
       "field": "sender",
-      "first_query_ms": 173.7475,
+      "first_query_ms": 130.65789999999998,
       "query": "sender punctuation",
       "returned": 20,
       "terms": "o'hara+build@windscribe.example",
       "warm_iterations": 100,
-      "warm_p50_ms": 90.88,
-      "warm_p95_ms": 99.8831,
-      "warm_p99_ms": 108.1463
+      "warm_p50_ms": 70.8271,
+      "warm_p95_ms": 79.0986,
+      "warm_p99_ms": 83.5654
     },
     {
       "account": "personal",
       "field": "sender",
-      "first_query_ms": 139.54559999999998,
+      "first_query_ms": 105.4658,
       "query": "sender account isolation",
       "returned": 0,
       "terms": "o'hara+build@windscribe.example",
       "warm_iterations": 100,
-      "warm_p50_ms": 51.7629,
-      "warm_p95_ms": 58.4729,
-      "warm_p99_ms": 90.1715
+      "warm_p50_ms": 47.4876,
+      "warm_p95_ms": 50.3091,
+      "warm_p99_ms": 52.5071
     },
     {
       "account": "windscribe",
       "field": "subject",
-      "first_query_ms": 1.9577000000000002,
+      "first_query_ms": 2.3995,
       "query": "rare subject",
       "returned": 10,
       "terms": "needlequarter",
       "warm_iterations": 100,
-      "warm_p50_ms": 0.9468,
-      "warm_p95_ms": 1.2119,
-      "warm_p99_ms": 1.4738
+      "warm_p50_ms": 1.3084,
+      "warm_p95_ms": 1.6449,
+      "warm_p99_ms": 1.6976
     },
     {
       "account": "windscribe",
       "field": "body",
-      "first_query_ms": 3.2194,
+      "first_query_ms": 3.1584999999999996,
       "query": "rare body",
       "returned": 20,
       "terms": "ultraquartz",
       "warm_iterations": 100,
-      "warm_p50_ms": 1.8256999999999999,
-      "warm_p95_ms": 2.4639,
-      "warm_p99_ms": 2.9439
+      "warm_p50_ms": 2.1487,
+      "warm_p95_ms": 2.6676,
+      "warm_p99_ms": 3.2851999999999997
     },
     {
       "account": "personal",
       "field": "body",
-      "first_query_ms": 74.53450000000001,
+      "first_query_ms": 57.1134,
       "query": "common body",
       "returned": 20,
       "terms": "deployment",
       "warm_iterations": 100,
-      "warm_p50_ms": 76.6853,
-      "warm_p95_ms": 87.2971,
-      "warm_p99_ms": 154.1281
+      "warm_p50_ms": 54.217,
+      "warm_p95_ms": 62.647499999999994,
+      "warm_p99_ms": 68.8425
     },
     {
       "account": "personal",
       "field": "body",
-      "first_query_ms": 125.3322,
+      "first_query_ms": 57.264,
       "query": "unicode body",
       "returned": 20,
       "terms": "cafe 日本語",
       "warm_iterations": 100,
-      "warm_p50_ms": 77.7986,
-      "warm_p95_ms": 86.1901,
-      "warm_p99_ms": 96.44160000000001
+      "warm_p50_ms": 57.635,
+      "warm_p95_ms": 70.2788,
+      "warm_p99_ms": 103.0128
     },
     {
       "account": "windscribe",
-      "first_query_ms": 45.920500000000004,
+      "first_query_ms": 30.3382,
       "query": "phase1 grouped first50",
       "request": {
         "folder": "all",
@@ -106,13 +106,13 @@
       },
       "returned": 50,
       "warm_iterations": 100,
-      "warm_p50_ms": 46.1105,
-      "warm_p95_ms": 54.686,
-      "warm_p99_ms": 72.01490000000001
+      "warm_p50_ms": 25.6099,
+      "warm_p95_ms": 28.035500000000003,
+      "warm_p99_ms": 28.939
     },
     {
       "account": "windscribe",
-      "first_query_ms": 94.3847,
+      "first_query_ms": 78.1648,
       "query": "phase1 combined filters first50",
       "request": {
         "after": "2026-09-01",
@@ -128,9 +128,9 @@
       },
       "returned": 50,
       "warm_iterations": 100,
-      "warm_p50_ms": 105.6817,
-      "warm_p95_ms": 133.9246,
-      "warm_p99_ms": 139.8254
+      "warm_p50_ms": 77.3691,
+      "warm_p95_ms": 82.94,
+      "warm_p99_ms": 91.1404
     }
   ],
   "query_plan": [
@@ -139,10 +139,21 @@
     "LIST SUBQUERY 2",
     "SEARCH attachments USING COVERING INDEX attachments_message (account=?)"
   ],
-  "retained_profile": "C:\\Users\\Yegor\\AppData\\Local\\Temp\\.tmpcmVS5H\\disposable-search-benchmark",
-  "seed_seconds": 3.6162429,
+  "retained_profile": "C:\\Users\\Yegor\\AppData\\Local\\Temp\\.tmpGty3Vk\\disposable-search-benchmark",
+  "seed_seconds": 3.4191217,
   "sqlite_version": "3.46.0",
   "target_arch": "x86_64",
   "target_os": "windows",
-  "total_messages_including_small_fixture": 100429
+  "total_messages_including_small_fixture": 100429,
+  "source_attribution": {
+    "base_commit": "738601e",
+    "working_tree_changes": true,
+    "measured_report_mtime_utc": "2026-09-12T04:54:44.156833+00:00",
+    "sha256": {
+      "crates/fm-core/src/queries.rs": "bff3d6e11a413520be91083d7e00301f890d6fd2c42b7e04d16ebd8537005bc1",
+      "crates/fm-core/src/benchmark.rs": "489b1743f4fa409a329a0de5c77ee4906345e5a627933b8fe0018ac9b4cc6004",
+      "crates/fm-core/src/lib.rs": "ec2975830e2ef4c673c928a5d2248260907d8ba0c00bab837d92d3cb42cdfa9e",
+      "crates/fm-core/src/migration-005.sql": "585eebd0eaaef5fda575f2fab1068854bc91cc5f37033486cb7417e119f68fb0"
+    }
+  }
 }

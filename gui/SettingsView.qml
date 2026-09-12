@@ -125,6 +125,7 @@ Item {
             }
             Flickable {
                 id: contentFlick
+                objectName: "settingsScroll"
                 anchors.fill: parent
                 contentWidth: width; contentHeight: contents.implicitHeight + 64
                 clip: true; boundsBehavior: Flickable.StopAtBounds
@@ -134,6 +135,7 @@ Item {
                     x: 40; y: 24; width: Math.min(640, contentFlick.width - 80); spacing: 10
                     Heading { text: settings.page; Layout.rightMargin: 110 }
                     Text {
+                        objectName: "settingsStatus"
                         visible: settings.localError.length > 0 || backend.preferencesStatus.length > 0
                         text: settings.localError.length ? settings.localError : backend.preferencesStatus
                         color: settings.localError.length ? Theme.error : Theme.muted
@@ -177,7 +179,7 @@ Item {
                                             }
                                             Text { text: modelData.email; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: 12; textFormat: Text.PlainText; elide: Text.ElideRight; Layout.fillWidth: true }
                                         }
-                                        FmButton { text: "Save"; outlined: true; enabled: settings.accountDirty(modelData); onClicked: settings.saveAccount(modelData) }
+                                        FmButton { objectName: "saveAccount_" + modelData.id; text: "Save"; outlined: true; enabled: settings.accountDirty(modelData); onClicked: settings.saveAccount(modelData) }
                                     }
                                     Divider { }
                                     RowLayout {
@@ -218,7 +220,7 @@ Item {
                                 Layout.fillWidth: true; spacing: 8
                                 RowLayout {
                                     SectionLabel { text: modelData.name }
-                                    FmButton { text: "Save signature"; outlined: true; enabled: settings.accountDirty(modelData); onClicked: settings.saveAccount(modelData) }
+                                    FmButton { objectName: "saveSignature_" + modelData.id; text: "Save signature"; outlined: true; enabled: settings.accountDirty(modelData); onClicked: settings.saveAccount(modelData) }
                                 }
                                 Text { text: modelData.email; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: 12; textFormat: Text.PlainText }
                                 ScrollView {
@@ -287,8 +289,8 @@ Item {
                         Divider { }
                         RowLayout {
                             SectionLabel { text: "Visible calendars" }
-                            FmButton { text: "Show all"; onClicked: backend.setPreferences({selected_calendars: null}) }
-                            FmButton { text: "Hide all"; onClicked: backend.setPreferences({selected_calendars: []}) }
+                            FmButton { objectName: "showAllCalendars"; text: "Show all"; onClicked: backend.setPreferences({selected_calendars: null}) }
+                            FmButton { objectName: "hideAllCalendars"; text: "Hide all"; onClicked: backend.setPreferences({selected_calendars: []}) }
                         }
                         Repeater {
                             model: backend.calendarSources
