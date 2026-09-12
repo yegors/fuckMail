@@ -149,6 +149,12 @@ void MailBackend::setCalendarSelected(const QString &account, const QString &cal
     setPreferences({{"selected_calendars", next}});
 }
 
+bool MailBackend::validFilterSender(const QString &sender) const {
+    if (sender.toUtf8().size() > 256) return false;
+    for (const auto character : sender)
+        if (character.category() == QChar::Other_Control) return false;
+    return true;
+}
 void MailBackend::applyFilters(const QVariantMap &filters) {
     if (filters == m_filters) return;
     m_filters = filters; m_pinnedRow.clear(); m_pinnedIndex = -1; remember("filters", filters); ++m_listGeneration; emit queryChanged(); loadConversations();

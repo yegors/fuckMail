@@ -12,6 +12,7 @@
 #include <QJsonDocument>
 #include <QJsonArray>
 #include <QDebug>
+#include <QDate>
 
 namespace {
 QQuickItem *findVisible(QQuickItem *parent, const QString &name) {
@@ -113,11 +114,24 @@ bool GuiCalendarSelfTest::startConcurrentEdit() {
     ), {"--profile", m_profile, "--engine", m_engine, "--account", "windscribe", "--json", "calendar-write", "--params-file", path});
     return true;
 }
+bool GuiCalendarSelfTest::checkTimeline(const QString &date, const QString &label) {
+    const auto displayed = item("timelineDateLabel");
+    if (m_backend.timelineDate() != date || !displayed || !unclipped(displayed)
+        || displayed->property("text").toString() != label
+        || m_backend.calendarDate() != "2026-09-14" || m_backend.calendarView() != m_timelineCalendarView) {
+        finish(QString("Timeline navigation expected %1 (%2) with independent Calendar date 2026-09-14; got timeline=%3, label=%4, Calendar=%5/%6.")
+            .arg(date,label,m_backend.timelineDate(),displayed ? displayed->property("text").toString() : "missing",
+                m_backend.calendarDate(),m_backend.calendarView()));
+        return false;
+    }
+    return true;
+}
 void GuiCalendarSelfTest::finish(const QString &error) {
     m_timer.stop(); m_backend.setProperty("selfTestExpectedError", false); auto callback = std::move(m_finished); m_finished = {}; callback(m_result, error); deleteLater();
 }
 void GuiCalendarSelfTest::step() {
-    if (++m_ticks > 350) { finish(QString("Native calendar controls timed out at stage %1: %2").arg(m_stage).arg(m_backend.error())); return; }
+    if (++m_ticks > 350) { finish(QString("Native calendar controls timed out at stage %1 (Calendar=%2, timeline=%3): %4")
+        .arg(m_stage).arg(m_backend.calendarDate(),m_backend.timelineDate(),m_backend.error())); return; }
     if (qEnvironmentVariableIsSet("FM_GUI_TEST_TRACE")) qInfo() << "Native calendar form stage" << m_stage;
     switch (m_stage) {
     case 0:
@@ -234,8 +248,65 @@ void GuiCalendarSelfTest::step() {
             }
             if (fridayTimed < 0 || saturdayAllDay <= fridayTimed) { finish("Agenda placed Saturday's all-day event before Friday's timed event."); return; }
         }
-        if (++m_view == views.size()) { finish(); return; }
+        if (++m_view == views.size()) { m_stage = 10; break; }
         m_backend.setCalendarView(views[m_view]); break;
     }
+    case 10:
+        if (!m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.preferencesPending()) return;
+        if (m_backend.todayDate() != "2026-09-11" || !QDate::fromString(m_backend.timelineDate(),Qt::ISODate).isValid()) {
+            finish("Native timeline controls require the fixed 2026-09-11 fixture clock and a valid starting date."); return;
+        }
+        m_originalTimelineDate = m_backend.timelineDate(); m_timelineCalendarDate = m_backend.calendarDate();
+        for (const auto &name : {"calendar_date", "timeline_date"}) m_timelineDatePreferences[name] = m_backend.preferences().value(name);
+        m_timelineCalendarView = m_backend.calendarView(); m_timelineWorkspace = m_window->property("workspace").toString();
+        m_timelineSettingsOpen = m_window->property("settingsOpen").toBool(); m_timelineFocus = m_window->activeFocusItem();
+        // Establish distinct dates before exercising actual buttons. The native
+        // Today control below must restore the fixture clock, not Calendar's date.
+        m_backend.setCalendarDate("2026-09-14"); m_backend.showTimelineToday();
+        m_window->setProperty("settingsOpen",false); m_window->setProperty("workspace","mail");
+        m_stage = 11; break;
+    case 11:
+        if (!m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.preferencesPending()) return;
+        if (!checkTimeline("2026-09-11","Fri 11 Sep")) return;
+        if (!click("timelinePreviousDay")) { finish("The native timeline Previous day button is unavailable."); return; }
+        m_stage = 12; break;
+    case 12:
+        if (!m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.preferencesPending()) return;
+        if (!checkTimeline("2026-09-10","Thu 10 Sep")) return;
+        if (!click("timelineNextDay")) { finish("The native timeline Next day button is unavailable."); return; }
+        m_stage = 13; break;
+    case 13:
+        if (!m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.preferencesPending()) return;
+        if (!checkTimeline("2026-09-11","Fri 11 Sep")) return;
+        if (!click("timelineNextDay")) { finish("The native timeline Next day button is unavailable."); return; }
+        m_stage = 14; break;
+    case 14:
+        if (!m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.preferencesPending()) return;
+        if (!checkTimeline("2026-09-12","Sat 12 Sep")) return;
+        if (!click("timelineToday")) { finish("The native timeline Back to today button is unavailable away from today."); return; }
+        m_stage = 15; break;
+    case 15:
+        if (!m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.preferencesPending()) return;
+        if (!checkTimeline("2026-09-11","Fri 11 Sep")) return;
+        if (item("timelineToday")) { finish("Back to today remained visible after returning to the fixture date."); return; }
+        m_backend.setCalendarDate(m_timelineCalendarDate);
+        m_backend.moveTimeline(int(QDate::fromString(m_backend.timelineDate(),Qt::ISODate)
+            .daysTo(QDate::fromString(m_originalTimelineDate,Qt::ISODate))));
+        // Preserve null (follow today) as well as explicitly browsed dates.
+        m_backend.setPreferences(m_timelineDatePreferences);
+        m_window->setProperty("workspace",m_timelineWorkspace); m_window->setProperty("settingsOpen",m_timelineSettingsOpen);
+        m_stage = 16; break;
+    case 16:
+        if (!m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.preferencesPending()) return;
+        if (m_backend.calendarDate() != m_timelineCalendarDate || m_backend.calendarView() != m_timelineCalendarView
+            || m_backend.timelineDate() != m_originalTimelineDate || m_window->property("workspace").toString() != m_timelineWorkspace
+            || m_window->property("settingsOpen").toBool() != m_timelineSettingsOpen) {
+            finish("Timeline control cleanup lost the original Calendar, timeline or workspace state."); return;
+        }
+        for (auto it = m_timelineDatePreferences.cbegin(); it != m_timelineDatePreferences.cend(); ++it)
+            if (m_backend.preferences().value(it.key()) != it.value()) { finish("Timeline navigation changed the original saved date preference."); return; }
+        if (m_timelineFocus && m_timelineFocus->isVisible() && m_timelineFocus->isEnabled()) m_timelineFocus->forceActiveFocus();
+        qInfo() << "Native timeline passed: Previous/Next/Today changed visible dates, preserved the independent Calendar date and restored starting state.";
+        finish(); break;
     }
 }

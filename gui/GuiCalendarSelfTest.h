@@ -2,6 +2,7 @@
 #include "MailBackend.h"
 #include <QQuickWindow>
 #include <QProcess>
+#include <QPointer>
 #include <QTimer>
 
 // Disposable-profile walkthrough through actual native calendar controls.
@@ -19,6 +20,7 @@ private:
     QVariantMap occurrence() const;
     bool capture(const QString &name);
     bool startConcurrentEdit();
+    bool checkTimeline(const QString &date, const QString &label);
     MailBackend &m_backend;
     QQuickWindow *m_window;
     std::function<void(const QVariantMap &, const QString &)> m_finished;
@@ -26,8 +28,12 @@ private:
     QVariantMap m_result;
     QString m_eventId, m_writeError;
     QString m_profile, m_engine, m_externalError;
+    QString m_originalTimelineDate, m_timelineCalendarDate, m_timelineCalendarView, m_timelineWorkspace;
+    QVariantMap m_timelineDatePreferences;
+    QPointer<QQuickItem> m_timelineFocus;
     QProcess m_external;
     int m_stage = 0, m_ticks = 0, m_view = 0;
     bool m_written = false, m_writeOk = false;
     bool m_externalDone = false;
+    bool m_timelineSettingsOpen = false;
 };

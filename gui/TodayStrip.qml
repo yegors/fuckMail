@@ -21,11 +21,11 @@ Rectangle {
         anchors.fill: parent; anchors.leftMargin: 24; anchors.rightMargin: 24; anchors.topMargin: 9; anchors.bottomMargin: 10; spacing: 7
         RowLayout {
             Layout.fillWidth: true; spacing: 7
-            FmButton { iconName: "previous"; implicitWidth: 25; implicitHeight: 26; tip: "Previous day"; onClicked: backend.moveTimeline(-1) }
-            FmButton { iconName: "next"; implicitWidth: 25; implicitHeight: 26; tip: "Next day"; onClicked: backend.moveTimeline(1) }
-            Text { text: Qt.formatDate(new Date(backend.timelineDate + "T12:00:00"), "ddd d MMM"); color: backend.timelineDate === backend.todayDate ? Theme.text : Theme.muted; font.pixelSize: 12; font.weight: Font.Medium }
+            FmButton { objectName: "timelinePreviousDay"; iconName: "previous"; implicitWidth: 25; implicitHeight: 26; tip: "Previous day"; onClicked: backend.moveTimeline(-1) }
+            FmButton { objectName: "timelineNextDay"; iconName: "next"; implicitWidth: 25; implicitHeight: 26; tip: "Next day"; onClicked: backend.moveTimeline(1) }
+            Text { objectName: "timelineDateLabel"; text: Qt.formatDate(new Date(backend.timelineDate + "T12:00:00"), "ddd d MMM"); color: backend.timelineDate === backend.todayDate ? Theme.text : Theme.muted; font.pixelSize: 12; font.weight: Font.Medium }
             Text { text: "America/Toronto"; color: Theme.subtle; font.pixelSize: 10 }
-            FmButton { visible: backend.timelineDate !== backend.todayDate; text: "Back to today"; implicitHeight: 26; font.pixelSize: 11; onClicked: backend.showTimelineToday() }
+            FmButton { objectName: "timelineToday"; visible: backend.timelineDate !== backend.todayDate; text: "Back to today"; implicitHeight: 26; font.pixelSize: 11; onClicked: backend.showTimelineToday() }
             Item { Layout.fillWidth: true }
             FmButton { visible: timeline.allDayEvents.length > 0; text: timeline.allDayEvents.length + " all day"; selected: timeline.expandedAllDay; font.pixelSize: 11; implicitHeight: 26; onClicked: timeline.expandedAllDay = !timeline.expandedAllDay }
             FmButton { visible: timeline.lanes > 2; text: "All " + backend.todayEvents.length + " events"; font.pixelSize: 11; implicitHeight: 26; tip: "Show every overlapping event in this day"; enabled: backend.timelineReady; onClicked: dayEvents.open() }

@@ -134,6 +134,7 @@ void GuiSearchBenchmark::inputQuery(const QString &query, Phase phase) {
     if (m_backend.query() != m_expected) finish("QML input did not update the shared query.");
 }
 void GuiSearchBenchmark::resultsReady() {
+    m_modelReadyAt = monotonicNanos();
     if (!m_modelChanged) { finish("Fresh query completed without a conversation model replacement."); return; }
     const auto rows = m_backend.conversations();
     if (m_phase == Phase::ResetQuery) {
@@ -195,7 +196,11 @@ void GuiSearchBenchmark::painted(quint64 generation, quint64 serial, qint64 swap
     if (!error.isEmpty()) { finish(error); return; }
     const double milliseconds = (swappedAt - m_inputAt) / 1000000.0;
     if (milliseconds < 0) { finish("A pre-input frame was supplied to the measurement."); return; }
-    if (m_iteration > 0) m_samples[m_class].append(milliseconds); // one warm-up per class
+    if (m_iteration > 0) { // one warm-up per class
+        m_samples[m_class].append(milliseconds);
+        m_modelSamples[m_class].append((m_modelReadyAt - m_inputAt) / 1000000.0);
+        m_paintSamples[m_class].append((swappedAt - m_modelReadyAt) / 1000000.0);
+    }
     if (m_iteration > 0) ++m_modelReplacements[m_class];
     if (++m_iteration > 100) { qInfo() << "Native search class completed:" << m_class << "100 measured replacement frames"; m_iteration = 0; ++m_class; }
     if (m_class == 4) { finish(); return; }
@@ -216,9 +221,14 @@ void GuiSearchBenchmark::finish(const QString &error) {
             auto percentile = [&values](double q) { return values[qCeil((values.size() - 1) * q)]; };
             row["p50_ms"] = percentile(.5); row["p95_ms"] = percentile(.95); row["p99_ms"] = percentile(.99);
             row["max_ms"] = values.last(); budgetPassed &= values.size() == 100 && m_modelReplacements[index] == 100 && m_resetPaints[index] == 100 && percentile(.95) <= 200;
+            auto models = m_modelSamples[index], paints = m_paintSamples[index];
+            std::sort(models.begin(), models.end()); std::sort(paints.begin(), paints.end());
+            row["input_to_model_p95_ms"] = models[qCeil((models.size() - 1) * .95)];
+            row["model_to_paint_p95_ms"] = paints[qCeil((paints.size() - 1) * .95)];
         } else budgetPassed = false;
         classes.append(row);
     }
+    m_budgetPassed = budgetPassed;
     const QJsonObject report{{"result", error.isEmpty() ? "measured" : "failed"}, {"error", error},
         {"boundary", "Final QML target input event to directly timestamped frameSwapped; frame generation captured afterSynchronizing and afterRendering must match the armed replacement model. Includes debounce, engine queue, IPC and rendering."},
         {"host", QSysInfo::prettyProductName()}, {"architecture", QSysInfo::currentCpuArchitecture()},

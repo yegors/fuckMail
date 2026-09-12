@@ -86,7 +86,10 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
             m_revision = revision;
         });
     });
-    m_searchTimer.setSingleShot(true); m_searchTimer.setInterval(60);
+    // Coalesce an input burst without spending most of the paint budget waiting.
+    // Superseded queued queries are discarded by sendNext().
+    m_searchTimer.setSingleShot(true); m_searchTimer.setInterval(25);
+    m_searchTimer.setTimerType(Qt::PreciseTimer);
     connect(&m_searchTimer, &QTimer::timeout, this, [this] { loadConversations(); });
     m_draftTimer.setSingleShot(true); m_draftTimer.setInterval(450);
     connect(&m_draftTimer, &QTimer::timeout, this, &MailBackend::saveDraft);
@@ -155,6 +158,7 @@ void MailBackend::attemptConnection() {
 }
 
 void MailBackend::request(const QString &method, const QString &account, const QJsonObject &params, Callback callback) {
+    if (method == "conversations") pruneSupersededQueries();
     if (m_socket.state() != QLocalSocket::ConnectedState || m_pending.size() >= 32) {
         callback({}, false); return;
     }
@@ -167,12 +171,35 @@ void MailBackend::request(const QString &method, const QString &account, const Q
     m_outgoing.enqueue({id, wire});
     sendNext();
 }
+void MailBackend::pruneSupersededQueries() {
+    QQueue<QPair<QString, QByteArray>> retained;
+    QList<Callback> cancelled;
+    for (auto &next : m_outgoing) {
+        auto pending = m_pending.find(next.first);
+        if (pending == m_pending.end()) continue;
+        if (pending->method == "conversations"
+            && (pending->account != m_account || pending->listGeneration != m_listGeneration)) {
+            // These requests have not reached the engine. Their callbacks also
+            // check generation/account, so cancellation cannot replace current rows.
+            cancelled.append(std::move(pending->callback));
+            m_pending.erase(pending);
+        } else retained.enqueue(std::move(next));
+    }
+    m_outgoing.swap(retained);
+    for (auto &callback : cancelled) callback({}, false);
+}
 void MailBackend::sendNext() {
-    if (!m_inFlight.isEmpty() || m_outgoing.isEmpty() || m_socket.state() != QLocalSocket::ConnectedState) return;
-    auto next = m_outgoing.dequeue();
-    m_inFlight = next.first;
-    m_pending[m_inFlight].started = QDateTime::currentMSecsSinceEpoch();
-    m_socket.write(next.second);
+    if (!m_inFlight.isEmpty() || m_socket.state() != QLocalSocket::ConnectedState) return;
+    pruneSupersededQueries();
+    while (!m_outgoing.isEmpty()) {
+        auto next = m_outgoing.dequeue();
+        auto pending = m_pending.find(next.first);
+        if (pending == m_pending.end()) continue;
+        m_inFlight = next.first;
+        pending->started = QDateTime::currentMSecsSinceEpoch();
+        m_socket.write(next.second);
+        return;
+    }
 }
 
 void MailBackend::receive() {

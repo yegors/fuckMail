@@ -1,6 +1,6 @@
 # Current status
 
-As of 2026-09-11. **Phase 0 completed on available hosts; Phase 1 implementation is active on `codex/phase-1`. Google-first MVP readiness remains 0/9 whole areas verified.** The Windows toolchain handoff is committed at `c82bac8`. The new local slice uses schema 5, fixture 2 and additive protocol 1; Core/CLI tests and the first integrated Windows compilation pass, but the Phase 1 acceptance/package/visual gates are still open. See [Phase 1 execution evidence](research/phase-1-execution.md). Runtime checkpoint `204fa62` remains the verified Phase 0 baseline: Mac/Windows/Ubuntu native CI, relocated packages and the Mac schema 2→4 upgrade/refusal walkthrough passed. [Phase 0 execution evidence](research/phase-0-execution.md) remains unchanged. No live Google account or model is connected.
+As of 2026-09-12. **The Windows development chain is ready; Phase 1 final acceptance is in progress. Google-first MVP readiness remains 0/9 whole areas verified.** Branch `codex/phase-1` uses schema 5, fresh fixture 2 and additive protocol 1. Runtime `1132c44` passes all nine Windows release tests, relocated SDK-free package checks and actual schema 4→5 preservation/refusal. Warm 100k Core search passes; the packaged native rerun exceeded the combined-filter paint target and is under correction. Native Mail, Calendar, Settings and reply captures have been reviewed at the reference and compact sizes. See [Phase 1 execution evidence](research/phase-1-execution.md). Runtime `204fa62` remains the completed Phase 0 baseline; [its evidence](research/phase-0-execution.md) is unchanged. No live Google account or model is connected.
 
 ## Established direction
 
@@ -12,7 +12,9 @@ The proposed stack remains Rust engine/CLI, C++20/Qt Quick/QML UI, private local
 
 ## Next work
 
-Complete and verify the active [Phase 1 packets](plans/phase-1.md): shared Core/CLI state, native mail/calendar/settings, durable formatted replies and bounded local calendar mutations. Integration is in progress. The first 100k grouped/filter benchmark exceeded the proposed response budget; query optimization is active and the failed measurements are preserved. Full GUI acceptance, design comparisons, schema 4→5 preservation/refusal and native packages remain required before Phase 1 is complete.
+Finish [P1-07](plans/phase-1.md#p1-07--acceptance-and-packages): close the remaining native filter/discard/capture/timeline interaction checks, verify the packaged search correction, then run native CI and packages for the final source on Mac, Windows and Ubuntu. The earlier `738601e` checkpoint passed Mac/Ubuntu; Windows exhausted its old aggregate Rust-suite watchdog while individual tests continued passing. The corrected 600-second suite allowance and later runtime fixes pass locally but need fresh CI. Automatic approval review rejected the next GitHub push because publishing the source snapshot required explicit authorization; changes stay local until approved. Phase 1 is not complete yet.
+
+Physical mouse/keyboard, clipboard/IME, accessibility and wider display-scaling checks remain explicitly unverified; desktop input automation was paused after Escape. Native programmatic controls, exact CLI readback, actual GUI restart and screenshots establish their recorded scopes only. The initial failed search measurements are retained alongside the passing optimized results.
 
 Before actual Google accounts, implement/test the OS credential-store adapter and settle OAuth access plus real-data retention/encryption/recovery policy. Full history, live sending/calendar operations and founder Google dogfooding remain later milestones. Legacy transports remain deferred.
 
@@ -41,7 +43,7 @@ The Google-first release still requires its applicable quality and OS gates. It 
 | Phase | Outcome | State |
 | --- | --- | --- |
 | 0 — Paired foundation | Native builds, small fixtures, storage, private engine/CLI/GUI, text/composer and Google prerequisites | Completed on available hosts; external/physical gates explicit |
-| 1 — Redesigned local client | Updated native design and paired CLI, shared triage/search/preferences, replies/capture and combined calendar workflows | Implementation and integration active; acceptance gates open |
+| 1 — Redesigned local client | Updated native design and paired CLI, shared triage/search/preferences, replies/capture and combined calendar workflows | Windows package/upgrade pass; final interaction/performance checks and CI pending |
 | 2 — Google daily workflows | Gmail/Workspace and Google Calendar, growing CLI with GUI; controlled founder use | Planned |
 | 3 — Google completion and dogfooding | Usable Google GUI and CLI, expanded designs, later best-effort HTML/local assistance, recovery/performance and delivery evidence | Planned |
 | 4 — Later protocols | IMAP, SMTP and external iCalendar subscriptions, only after actual Google dogfooding | Deferred; not started |

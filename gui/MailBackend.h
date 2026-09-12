@@ -144,6 +144,7 @@ public:
     Q_INVOKABLE void loadMoreCaptures();
     Q_INVOKABLE void reloadDraft();
     Q_INVOKABLE void saveMyDraftVersion();
+    Q_INVOKABLE bool validFilterSender(const QString &sender) const;
     Q_INVOKABLE void applyFilters(const QVariantMap &filters);
     Q_INVOKABLE void setPreferences(const QVariantMap &patch);
     Q_INVOKABLE void updateAccountPreferences(const QString &account, const QString &name, const QString &signature);
@@ -188,6 +189,7 @@ signals:
     void ready();
     void shutdownReady();
 private:
+    friend class GuiMailNavigationSelfTest;
     using Callback = std::function<void(const QJsonObject &, bool)>;
     struct Pending {
         Callback callback; qint64 started;
@@ -197,6 +199,7 @@ private:
     void request(const QString &method, const QString &account, const QJsonObject &params, Callback callback);
     void attemptConnection();
     void sendNext();
+    void pruneSupersededQueries();
     void receive();
     void fail(const QString &message);
     void loadAccounts();

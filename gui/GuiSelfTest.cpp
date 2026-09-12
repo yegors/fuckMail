@@ -12,6 +12,8 @@
 #include <QJsonArray>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QCryptographicHash>
+#include <QJSValue>
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QDebug>
@@ -26,6 +28,40 @@ void key(QObject *target, int value) {
     QKeyEvent press(QEvent::KeyPress, value, Qt::NoModifier);
     QKeyEvent release(QEvent::KeyRelease, value, Qt::NoModifier);
     QCoreApplication::sendEvent(target, &press); QCoreApplication::sendEvent(target, &release);
+}
+QQuickItem *buttonWithText(QQuickItem *parent, const QString &text) {
+    if (!parent || !parent->isVisible()) return nullptr;
+    if (parent->metaObject()->indexOfSignal("clicked()") >= 0
+        && parent->property("text").toString().remove('&') == text) return parent;
+    for (auto child : parent->childItems()) if (auto found = buttonWithText(child, text)) return found;
+    return nullptr;
+}
+QQuickItem *captureItem(QQuickItem *parent, const QString &operationId) {
+    if (!parent) return nullptr;
+    auto value = parent->property("modelData");
+    if (value.metaType() == QMetaType::fromType<QJSValue>()) value = value.value<QJSValue>().toVariant();
+    if (parent->metaObject()->indexOfSignal("clicked()") >= 0
+        && value.toMap()["operation_id"].toString() == operationId) return parent;
+    for (auto child : parent->childItems()) if (auto found = captureItem(child, operationId)) return found;
+    return nullptr;
+}
+QObject *openedDiscardDialog(QObject *window) {
+    for (auto object : window->findChildren<QObject *>())
+        if (object->property("title").toString() == "Discard this reply?"
+            && object->property("modal").toBool() && object->property("opened").toBool()) return object;
+    return nullptr;
+}
+bool clickVisible(QQuickWindow *window, QQuickItem *item, qreal horizontalFraction = .5) {
+    if (!window || !item || !item->isVisible() || !item->isEnabled() || item->width() <= 0 || item->height() <= 0) return false;
+    const auto position = item->mapToScene({item->width() * horizontalFraction, item->height() / 2});
+    if (!QRectF(0, 0, window->width(), window->height()).contains(position)) return false;
+    for (auto parent = item->parentItem(); parent; parent = parent->parentItem())
+        if (parent->clip() && !parent->mapRectToScene(parent->boundingRect()).contains(position)) return false;
+    const QPointF global = window->mapToGlobal(position.toPoint());
+    QMouseEvent press(QEvent::MouseButtonPress, position, global, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+    QMouseEvent release(QEvent::MouseButtonRelease, position, global, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(window, &press); QCoreApplication::sendEvent(window, &release);
+    return true;
 }
 }
 
@@ -388,19 +424,204 @@ void GuiSelfTest::step() {
             const auto captures = result["captures"].toArray();
             if (captures.size() != 1 || captures[0].toObject()["state"].toString() != "accepted" || !captures[0].toObject()["local_only"].toBool() || captures[0].toObject()["provider_delivered"].toBool()) { failed("Local capture history is missing or claims provider delivery."); return; }
             m_captureId = captures[0].toObject()["operation_id"].toString();
+            m_captureSha = captures[0].toObject()["mime_sha256"].toString();
+            m_captureRevision = captures[0].toObject()["draft_revision"].toInteger();
+            m_captureSize = captures[0].toObject()["bytes"].toInteger();
             if (m_captureId.isEmpty()) failed("Local capture has no durable operation identity.");
         });
         break;
     case 48:
-        m_backend.inspectCapture(m_captureId); m_stage = 49; break;
+        if (m_captureReturnFolder.isEmpty()) {
+            m_captureReturnQuery = m_backend.query(); m_captureReturnFolder = m_backend.folder();
+            m_captureListY = m_backend.presentation()["listY"].toDouble();
+            m_backend.setQuery({});
+        }
+        if (!click("sentScopeButton")) return;
+        m_stage = 90; break;
+    case 90: {
+        if (m_backend.loading() || m_backend.folder() != "sent" || !m_backend.query().isEmpty()) return;
+        QString other;
+        for (const auto &value : m_backend.conversations()) {
+            const auto id = value.toMap()["id"].toString();
+            if (id != m_id) { other = id; break; }
+        }
+        if (other.isEmpty()) { failed("Sent capture routing needs a separate outgoing conversation."); return; }
+        m_backend.selectConversation(other); m_stage = 91; break;
+    }
+    case 91: {
+        if (m_backend.loading() || m_backend.draft().isEmpty() || m_backend.selectedId() == m_id) return;
+        auto list = m_window->findChild<QQuickItem *>("conversationList");
+        if (!list) { failed("Sent list is missing."); return; }
+        // Explicit viewport setup, then an actual mouse click on the existing
+        // operation's visible row; no backend inspect call drives this route.
+        if (!QMetaObject::invokeMethod(list, "positionViewAtEnd")) { failed("Sent list could not expose its local capture footer."); return; }
+        m_backend.remember("listY", list->property("contentY")); m_stage = 92; break;
+    }
+    case 92: {
+        auto window = qobject_cast<QQuickWindow *>(m_window);
+        auto row = window ? captureItem(window->contentItem(), m_captureId) : nullptr;
+        if (!clickVisible(window, row, .20)) return;
+        m_stage = 93; break;
+    }
+    case 93: {
+        if (m_backend.loading() || m_backend.selectedId() != m_id || m_backend.draft().isEmpty()) return;
+        if (m_backend.draft()["body"].toString() != m_authored) { failed("Local capture row did not open its original authored conversation."); return; }
+        auto window = qobject_cast<QQuickWindow *>(m_window);
+        auto row = window ? captureItem(window->contentItem(), m_captureId) : nullptr;
+        if (!clickVisible(window, buttonWithText(row, "Inspect"))) return;
+        m_stage = 49; break;
+    }
     case 49:
         if (m_backend.draftBusy() || !m_backend.captureStatus().contains(m_captureId)) return;
-        m_stage = 50;
+        if (!m_backend.captureStatus().contains("accepted") || !m_backend.captureStatus().contains("no email was delivered")) { failed("Native Inspect omitted the original local outcome or claimed delivery."); return; }
+        m_stage = 94;
         cli({"draft", "history", "--conversation-id", m_id}, [this](auto result) {
             const auto captures = result["captures"].toArray();
-            if (captures.size() != 1 || captures[0].toObject()["operation_id"].toString() != m_captureId || captures[0].toObject()["state"].toString() != "accepted") { failed("Inspecting an accepted capture changed its identity or created a duplicate."); return; }
+            if (captures.size() != 1 || captures[0].toObject()["operation_id"].toString() != m_captureId || captures[0].toObject()["state"].toString() != "accepted"
+                || captures[0].toObject()["mime_sha256"].toString() != m_captureSha || captures[0].toObject()["attempts_started"].toInt() != 1) { failed("Native Inspect changed capture bytes/identity or repeated transport."); return; }
         });
         break;
+    case 94:
+        m_stage = 95;
+        cliWithParams("draft_capture", {{"conversation_id", m_id}, {"request_id", m_captureId}, {"expected_revision", m_captureRevision}, {"outcome", "accepted"}}, [this](auto result) {
+            QFile mime(result["path"].toString());
+            const auto relative = QDir(QFileInfo(m_profile).canonicalFilePath()).relativeFilePath(QFileInfo(mime).canonicalFilePath());
+            if (!relative.startsWith("exports/") || !relative.endsWith(".eml") || !mime.open(QIODevice::ReadOnly) || mime.size() != m_captureSize) { failed("Inspect's original operation did not resolve to its retained MIME export."); return; }
+            const auto bytes = mime.readAll();
+            const auto plainHeader = bytes.indexOf("Content-Type: text/plain");
+            const auto plainStart = plainHeader < 0 ? -1 : bytes.indexOf("\r\n\r\n", plainHeader);
+            const auto plainEnd = plainStart < 0 ? -1 : bytes.indexOf("\r\n--", plainStart + 4);
+            if (plainHeader < 0 || plainStart < 0 || plainEnd < 0
+                || !bytes.mid(plainHeader, plainStart - plainHeader).contains("Content-Transfer-Encoding: base64")) {
+                failed("Captured MIME has no bounded base64 plain-text part."); return;
+            }
+            auto encoded = bytes.mid(plainStart + 4, plainEnd - plainStart - 4);
+            encoded.replace("\r", ""); encoded.replace("\n", "");
+            const auto authoredPart = QByteArray::fromBase64(encoded, QByteArray::AbortOnBase64DecodingErrors);
+            if (result["request_id"].toString() != m_captureId || result["sha256"].toString() != m_captureSha || result["attempts_started"].toInt() != 1
+                || !result["draft_unchanged"].toBool() || result["network_used"].toBool()
+                || QString::fromLatin1(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex()) != m_captureSha
+                || !bytes.contains("MIME-Version: 1.0") || !bytes.contains("Content-Type: multipart/mixed") || !authoredPart.startsWith(m_authored.toUtf8())) {
+                failed("Native capture inspection did not preserve the exact authored MIME and one transport attempt."); return;
+            }
+            qInfo() << "Native Sent/local-capture/Inspect passed: original conversation, operation identity, MIME bytes and non-delivery status verified by CLI.";
+            m_backend.remember("listY", m_captureListY);
+            m_backend.setFolder(m_captureReturnFolder); m_backend.setQuery(m_captureReturnQuery);
+        });
+        break;
+    case 95:
+        if (m_backend.loading() || m_backend.draftBusy()) return;
+        if (m_discardId == m_id) { failed("Discard must not target the recovery draft."); return; }
+        m_stage = 96;
+        cli({"draft", "show", m_id}, [this](auto result) { m_protectedDraft = result; });
+        break;
+    case 96:
+        m_stage = 97;
+        cli({"mail", "read", m_discardId}, [this](auto result) { m_discardReceived = result; });
+        break;
+    case 97:
+        m_stage = 98;
+        cli({"draft", "show", m_discardId}, [this](auto result) { m_discardBefore = result; });
+        break;
+    case 98:
+        m_stage = 99;
+        cliWithParams("draft_save", {{"conversation_id", m_discardId}, {"expected_revision", m_discardBefore["revision"]}, {"request_id", "native-discard-fixture"},
+            {"body", "Separate draft — discard only after my confirmation."}, {"body_html", "<p>Separate draft — <b>discard only after my confirmation.</b></p>"},
+            {"signature_text", "Separate human signature"}, {"attachment_ids", QJsonArray{m_attachmentId}}}, [this](auto result) {
+            m_discardBefore = result; m_backend.selectConversation(m_discardId);
+        });
+        break;
+    case 99:
+        if (m_backend.loading() || m_backend.selectedId() != m_discardId || m_backend.draft().isEmpty()) return;
+        if (m_backend.draft()["body"].toString() != m_discardBefore["body"].toString()) return;
+        if (!click("replyButton")) return;
+        m_stage = 100; break;
+    case 100: {
+        auto reader = m_window->findChild<QQuickItem *>("reader");
+        if (!reader) { failed("Discard test needs the visible reply reader."); return; }
+        reader->setProperty("contentY", qMax(0.0, reader->property("contentHeight").toDouble() - reader->height()));
+        m_stage = 101; break;
+    }
+    case 101: {
+        auto window = qobject_cast<QQuickWindow *>(m_window);
+        if (!clickVisible(window, window ? visualChild(window->contentItem(), "discardReply") : nullptr)) return;
+        m_stage = 102; break;
+    }
+    case 102:
+        if (!openedDiscardDialog(m_window)) return;
+        m_stage = 103;
+        cli({"draft", "show", m_discardId}, [this](auto result) {
+            if (result != m_discardBefore) failed("Opening Discard confirmation already changed the saved draft.");
+        });
+        break;
+    case 103: {
+        auto dialog = openedDiscardDialog(m_window);
+        auto footer = dialog ? dialog->property("footer").value<QQuickItem *>() : nullptr;
+        if (!clickVisible(qobject_cast<QQuickWindow *>(m_window), buttonWithText(footer, "Cancel"))) return;
+        m_stage = 104; break;
+    }
+    case 104:
+        if (openedDiscardDialog(m_window)) return;
+        m_stage = 105;
+        cli({"draft", "show", m_discardId}, [this](auto result) {
+            if (result != m_discardBefore || m_backend.draft()["body"].toString() != m_discardBefore["body"].toString()) failed("Cancel discarded or changed the authored draft.");
+        });
+        break;
+    case 105: {
+        auto window = qobject_cast<QQuickWindow *>(m_window);
+        if (!clickVisible(window, window ? visualChild(window->contentItem(), "discardReply") : nullptr)) return;
+        m_stage = 106; break;
+    }
+    case 106: {
+        auto dialog = openedDiscardDialog(m_window);
+        auto footer = dialog ? dialog->property("footer").value<QQuickItem *>() : nullptr;
+        if (!clickVisible(qobject_cast<QQuickWindow *>(m_window), buttonWithText(footer, "Discard"))) return;
+        m_stage = 107; break;
+    }
+    case 107:
+        if (m_backend.draftBusy() || m_backend.draftStatus() != "Draft discarded") return;
+        m_stage = 108;
+        cli({"draft", "show", m_discardId}, [this](auto result) {
+            if (!result["body"].toString().isEmpty() || !result["body_html"].isNull() || !result["signature_text"].toString().isEmpty()
+                || !result["attachment_ids"].toArray().isEmpty() || result["revision"].toInteger() != m_discardBefore["revision"].toInteger() + 1) {
+                failed("Confirmed Discard did not clear only the target's saved authored fields once."); return;
+            }
+        });
+        break;
+    case 108:
+        m_stage = 109;
+        cli({"mail", "read", m_discardId}, [this](auto result) {
+            if (result != m_discardReceived) failed("Discard changed received source messages or flags.");
+        });
+        break;
+    case 109:
+        m_stage = 110;
+        cli({"draft", "show", m_id}, [this](auto result) {
+            if (result != m_protectedDraft) failed("Discard changed another conversation's saved reply.");
+        });
+        break;
+    case 110:
+        m_stage = 111;
+        cli({"draft", "history", "--conversation-id", m_id}, [this](auto result) {
+            const auto captures = result["captures"].toArray();
+            if (captures.size() != 1 || captures[0].toObject()["operation_id"].toString() != m_captureId || captures[0].toObject()["mime_sha256"].toString() != m_captureSha) {
+                failed("Discard changed existing local capture history."); return;
+            }
+            m_backend.selectConversation(m_id);
+        });
+        break;
+    case 111:
+        if (m_backend.loading() || m_backend.selectedId() != m_id || m_backend.draft().isEmpty()) return;
+        if (m_backend.draft()["body"].toString() != m_authored || !m_backend.draft()["attachment_ids"].toList().contains(m_attachmentId)) { failed("Discard verification did not restore the untouched recovery draft."); return; }
+        if (!click("replyButton")) return;
+        m_stage = 112; break;
+    case 112: {
+        auto editor = m_window->findChild<QQuickItem *>("replyComposer");
+        auto document = m_window->findChild<ReplyDocument *>("replyDocument");
+        if (!editor || !editor->isVisible() || !document || document->plainText() != m_authored) return;
+        qInfo() << "Native Discard confirmation passed: opening/Cancel preserved the exact draft; confirmation cleared only its authored fields, preserving source messages, another draft and capture history.";
+        m_stage = 50; break;
+    }
     case 50: {
         if (m_backend.draftBusy()) return;
         const auto other = cliWhileGuiPaused("draft_save", {{"conversation_id", m_id}, {"expected_revision", m_backend.draft()["revision"].toLongLong()}, {"request_id", "native-other-draft"},

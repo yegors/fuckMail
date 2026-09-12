@@ -6,6 +6,7 @@
 #include <QInputMethodEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QJsonArray>
 #include <array>
 
 namespace {
@@ -29,6 +30,15 @@ QQuickItem *bodyItem(QQuickItem *parent, const QString &expected) {
     for (auto child : parent->childItems()) if (auto result = bodyItem(child, expected)) return result;
     return nullptr;
 }
+QQuickItem *textItem(QQuickItem *parent, const QString &text) {
+    if (parent->isVisible() && parent->property("text").toString()==text) return parent;
+    for (auto child : parent->childItems()) if (auto found=textItem(child,text)) return found;
+    return nullptr;
+}
+void key(QObject *target, int value) {
+    QKeyEvent press(QEvent::KeyPress,value,Qt::NoModifier), release(QEvent::KeyRelease,value,Qt::NoModifier);
+    QCoreApplication::sendEvent(target,&press); QCoreApplication::sendEvent(target,&release);
+}
 bool fullyVisible(QQuickItem *item, QQuickWindow *window) {
     if (!item || !item->isVisible() || item->width() <= 0 || item->height() <= 0) return false;
     const auto rect = item->mapRectToScene(item->boundingRect()).adjusted(1, 1, -1, -1);
@@ -47,12 +57,18 @@ GuiMailNavigationSelfTest::GuiMailNavigationSelfTest(MailBackend &backend, QQuic
     connect(&m_backend, &MailBackend::loadingChanged, this, [this] {
         if (m_searchPending && m_backend.query() == m_expectedQuery && m_backend.loading()) m_loadingSeen = true;
     });
+    // A real socket write precedes its response. Inspect only the actual active
+    // query, not loadingChanged (which fires before request construction).
+    connect(&m_backend.m_socket, &QLocalSocket::bytesWritten, this, [this] { holdInFlightResponse(); });
     m_timer.start();
 }
 void GuiMailNavigationSelfTest::finish(const QString &error) {
+    if (!m_finished) return;
     m_timer.stop();
+    m_holdArmed = false;
+    if (m_responseHeld && m_heldDelegate) { auto delegate=std::move(m_heldDelegate); m_heldDelegate={}; delegate(m_heldResult,m_heldOk); }
     auto callback = std::move(m_finished); m_finished = {};
-    callback(error); deleteLater();
+    deleteLater(); callback(error);
 }
 bool GuiMailNavigationSelfTest::typeQuery(const QString &query) {
     auto field = find(m_window->contentItem(), "searchField");
@@ -68,7 +84,9 @@ bool GuiMailNavigationSelfTest::typeQuery(const QString &query) {
     return field->property("text").toString() == query && m_backend.query() == query;
 }
 bool GuiMailNavigationSelfTest::click(const QString &name) {
-    auto control = find(m_window->contentItem(), name);
+    return clickItem(find(m_window->contentItem(), name));
+}
+bool GuiMailNavigationSelfTest::clickItem(QQuickItem *control) {
     // Do not scroll from the test to conceal a missing native reveal path.
     if (!control || !control->isEnabled() || !fullyVisible(control, m_window)) return false;
     const auto position = control->mapToScene({control->width()/2, control->height()/2});
@@ -77,6 +95,82 @@ bool GuiMailNavigationSelfTest::click(const QString &name) {
     QMouseEvent release(QEvent::MouseButtonRelease, position, global, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
     QCoreApplication::sendEvent(m_window, &press); QCoreApplication::sendEvent(m_window, &release);
     return true;
+}
+bool GuiMailNavigationSelfTest::typeField(const QString &name,const QString &text) {
+    auto field=find(m_window->contentItem(),name);
+    if (!field || !field->isEnabled() || !fullyVisible(field,m_window)) return false;
+    field->forceActiveFocus(); QMetaObject::invokeMethod(field,"selectAll");
+    if (text.isEmpty()) key(field,Qt::Key_Backspace);
+    else { QInputMethodEvent input; input.setCommitString(text); QCoreApplication::sendEvent(field,&input); }
+    return field->property("text").toString()==text;
+}
+bool GuiMailNavigationSelfTest::choose(const QString &name,int index) {
+    auto field=find(m_window->contentItem(),name);
+    if (!field || !field->isEnabled() || !fullyVisible(field,m_window)) return false;
+    field->forceActiveFocus();
+    const int delta=index-field->property("currentIndex").toInt();
+    for (int i=0;i<qAbs(delta);++i) key(field,delta>0?Qt::Key_Down:Qt::Key_Up);
+    return field->property("currentIndex").toInt()==index;
+}
+QObject *GuiMailNavigationSelfTest::filterPopup() const {
+    for (auto object:m_window->findChildren<QObject *>("mailFilterPopup")) if (object->property("opened").toBool()) return object;
+    return nullptr;
+}
+bool GuiMailNavigationSelfTest::filterFeedback(const QString &message) const {
+    const auto popup=filterPopup();
+    return popup && popup->property("validationError").toString()==message
+        && fullyVisible(textItem(m_window->contentItem(),message),m_window);
+}
+bool GuiMailNavigationSelfTest::filterResultMatches() const {
+    const auto rows=m_backend.conversations();
+    if (rows.size()!=1) return false;
+    const auto row=rows.first().toMap();
+    return row["id"].toString()==searches[0].thread && row["group"].toString()=="done"
+        && row["matching_message_ids"].toList()==QVariantList{QString(searches[0].message)};
+}
+void GuiMailNavigationSelfTest::holdInFlightResponse() {
+    if (!m_obsoleteRequestId.isEmpty() && m_backend.m_inFlight==m_obsoleteRequestId) m_obsoleteSent=true;
+    if (!m_holdArmed || m_backend.account()!=m_originalAccount || m_backend.query()!=searches[1].query) return;
+    auto it=m_backend.m_pending.find(m_backend.m_inFlight);
+    if (it==m_backend.m_pending.end() || it->method!="conversations" || it->account!=m_originalAccount
+        || it->started<=0 || it->listGeneration!=m_backend.m_listGeneration) return;
+    m_heldRequestId=m_backend.m_inFlight; m_heldGeneration=it->listGeneration;
+    m_heldDelegate=it->callback;
+    const auto original=m_heldDelegate;
+    QPointer<GuiMailNavigationSelfTest> guard(this);
+    it->callback=[guard,original](const QJsonObject &result,bool ok) {
+        if (!guard) { original(result,ok); return; }
+        guard->m_heldResult=result; guard->m_heldOk=ok; guard->m_responseHeld=true;
+    };
+    m_holdArmed=false; m_responseWrapped=true;
+    // Forty actual inputs/forced query loads exceed the transport's 32-slot cap
+    // while this genuine request remains active. Only the last unsent generation
+    // may survive; no fake busy marker or fabricated response participates.
+    for (int index=0;index<40;++index) {
+        if (!typeQuery(index%2 ? searches[1].query : searches[0].query)) { finish("Queue-pressure input did not reach the real search field."); return; }
+        m_backend.m_searchTimer.stop(); // This test explicitly dispatches each debounce result.
+        const auto previousSequence=m_backend.m_sequence;
+        m_backend.loadConversations();
+        const auto id=QString::number(m_backend.m_sequence);
+        const auto queued=m_backend.m_pending.find(id);
+        if (m_backend.m_sequence<=previousSequence || queued==m_backend.m_pending.end() || queued->method!="conversations" || queued->started!=0) {
+            finish("Superseding query was not admitted under real in-flight queue pressure."); return;
+        }
+        if (index==0) {
+            m_obsoleteRequestId=id; const auto obsoleteDelegate=queued->callback;
+            queued->callback=[guard,obsoleteDelegate](const QJsonObject &result,bool ok) {
+                if (guard) guard->m_obsoleteCanceled=!ok && result.isEmpty() && !guard->m_obsoleteSent;
+                obsoleteDelegate(result,ok);
+            };
+        }
+        if (index==39) m_finalRequestId=id;
+    }
+    auto final=m_backend.m_pending.find(m_finalRequestId);
+    const auto finalDelegate=final->callback;
+    final->callback=[guard,finalDelegate](const QJsonObject &result,bool ok) {
+        if (guard) { guard->m_finalResult=result; guard->m_finalOk=ok; guard->m_finalReceived=true; }
+        finalDelegate(result,ok);
+    };
 }
 bool GuiMailNavigationSelfTest::resultMatches() const {
     const auto &expected = searches[m_case];
@@ -115,7 +209,7 @@ void GuiMailNavigationSelfTest::restore() {
     m_backend.selectConversation(m_originalSelected);
 }
 void GuiMailNavigationSelfTest::step() {
-    if (++m_ticks > 250) {
+    if (++m_ticks > 400) {
         const auto reader = find(m_window->contentItem(), "reader");
         const auto list = find(m_window->contentItem(), "conversationList");
         finish(QString("Native search timed out at stage %1, case %2 (query=%3, selected=%4, readerY=%5, listY=%6, listContentHeight=%7, listHeight=%8, savedListY=%9).")
@@ -161,8 +255,98 @@ void GuiMailNavigationSelfTest::step() {
             || !m_window->grabWindow().save(QDir(directory).filePath("mail-earlier-match.png")))) {
             finish("Cannot save the explicitly requested native earlier-match screenshot."); return;
         }
-        restore(); m_stage = 5; break;
+        if (!typeQuery("")) { finish("Cannot clear native search before filter acceptance."); return; }
+        m_stage = 10; break;
     }
+    case 10:
+        if (!m_loadingSeen || m_backend.loading() || !m_backend.query().isEmpty()) return;
+        m_searchPending=false; m_unfilteredRows=m_backend.conversations();
+        if (m_unfilteredRows.size()<2 || !m_backend.filters().isEmpty()) { finish("Filter acceptance needs the unfiltered mailbox page."); return; }
+        if (!click("mailFiltersButton")) return;
+        m_stage=11; break;
+    case 11:
+        if (!filterPopup()) return;
+        if (!typeField("filterSender",searches[0].query) || !choose("filterStatus",3) || !choose("filterAttachments",2)
+            || !typeField("filterAfter","2026-02-30") || !typeField("filterBefore","2026-09-12") || !click("applyMailFilters")) return;
+        m_stage=12; break;
+    case 12:
+        if (!filterFeedback("Enter real dates as YYYY-MM-DD, or leave them empty.") || !m_backend.filters().isEmpty()
+            || m_backend.conversations()!=m_unfilteredRows || find(m_window->contentItem(),"filterAfter")->property("text").toString()!="2026-02-30"
+            || find(m_window->contentItem(),"filterSender")->property("text").toString()!=searches[0].query) { finish("Invalid date closed the filter popover, lost input or changed active results."); return; }
+        if (!typeField("filterAfter","2026-09-11") || !click("applyMailFilters")) return;
+        m_expectedFilters={{"sender",QString(searches[0].query)},{"status","done"},{"has_attachment",false},{"after","2026-09-11"},{"before","2026-09-12"}};
+        m_stage=13; break;
+    case 13:
+        if (filterPopup() || m_backend.loading()) return;
+        if (m_backend.filters()!=m_expectedFilters || !filterResultMatches()) { finish("Native combined filters did not return the exact source member with the requested state and date bounds."); return; }
+        if (!click("mailFiltersButton")) return;
+        m_stage=14; break;
+    case 14:
+        if (!filterPopup()) return;
+        if (find(m_window->contentItem(),"filterSender")->property("text").toString()!=searches[0].query
+            || find(m_window->contentItem(),"filterBefore")->property("text").toString()!="2026-09-12") { finish("Reopening filters lost the saved criteria."); return; }
+        if (!typeField("filterSender",QString(QChar(0x00e9)).repeated(129)) || !click("applyMailFilters")) return;
+        m_stage=15; break;
+    case 15:
+        if (!filterFeedback("Use a shorter sender name or email without control characters.") || m_backend.filters()!=m_expectedFilters || !filterResultMatches()
+            || find(m_window->contentItem(),"filterSender")->property("text").toString()!=QString(QChar(0x00e9)).repeated(129)) { finish("Overlong UTF-8 sender input was not retained with the old active filters."); return; }
+        if (!typeField("filterSender",searches[0].query) || !typeField("filterBefore","2026-09-11") || !click("applyMailFilters")) return;
+        m_stage=16; break;
+    case 16:
+        if (!filterFeedback("The before date must be later than the on or after date.") || m_backend.filters()!=m_expectedFilters || !filterResultMatches()
+            || find(m_window->contentItem(),"filterBefore")->property("text").toString()!="2026-09-11") { finish("Inverted date bounds changed active filters or lost correction input."); return; }
+        if (!typeField("filterBefore","2026-09-12") || !click("applyMailFilters")) return;
+        m_stage=17; break;
+    case 17:
+        if (filterPopup() || m_backend.loading()) return;
+        if (m_backend.filters()!=m_expectedFilters || !filterResultMatches()) { finish("Corrected filter input did not restore the valid criteria."); return; }
+        if (!click("mailFiltersButton")) return;
+        m_stage=18; break;
+    case 18:
+        if (!filterPopup() || !click("clearMailFilters")) return;
+        m_stage=19; break;
+    case 19:
+        if (filterPopup() || m_backend.loading()) return;
+        if (!m_backend.filters().isEmpty() || m_backend.conversations()!=m_unfilteredRows || !m_backend.query().isEmpty()
+            || m_backend.account()!=m_originalAccount || m_backend.selectedId()!=searches[3].thread) { finish("Clearing native filters did not restore the unfiltered mailbox context and retained selection."); return; }
+        m_holdArmed=true;
+        if (!typeQuery(searches[1].query)) { finish("Cannot initiate the actual query for delayed-response acceptance."); return; }
+        m_stage=20; break;
+    case 20: {
+        if (!m_responseHeld || !m_finalReceived || m_backend.loading()) return;
+        const auto heldRows=m_heldResult["conversations"].toArray(), finalRows=m_finalResult["conversations"].toArray();
+        if (!m_responseWrapped || !m_heldOk || !m_finalOk || heldRows.size()!=1 || finalRows.size()!=1
+            || heldRows[0].toObject()["id"].toString()!=searches[1].thread || finalRows[0].toObject()["id"].toString()!=searches[1].thread
+            || !m_obsoleteCanceled || m_obsoleteSent || m_backend.m_pending.contains(m_obsoleteRequestId)
+            || m_finalRequestId==m_heldRequestId || m_backend.conversations().size()!=1 || m_backend.conversations().first().toMap()["id"].toString()!=searches[1].thread) {
+            finish("Real queued queries were not coalesced to the final expected response before the account switch."); return;
+        }
+        m_searchPending=false;
+        if (!click("accountTab_personal")) return;
+        m_stage=21; break;
+    }
+    case 21: {
+        if (m_backend.account()!="personal" || m_backend.loading() || m_backend.draft().isEmpty() || m_backend.conversations().isEmpty()) return;
+        for (const auto &row:m_backend.conversations()) if (!row.toMap()["id"].toString().startsWith("personal-")) { finish("The new mailbox initially contains foreign rows."); return; }
+        const auto rows=m_backend.conversations(); const auto summary=m_backend.querySummary(), draft=m_backend.draft();
+        const auto selected=m_backend.selectedId(), query=m_backend.query(), error=m_backend.error();
+        auto delegate=std::move(m_heldDelegate); m_heldDelegate={};
+        if (!delegate) { finish("The delayed real query callback was lost."); return; }
+        delegate(m_heldResult,m_heldOk);
+        if (m_backend.account()!="personal" || m_backend.conversations()!=rows || m_backend.querySummary()!=summary || m_backend.draft()!=draft
+            || m_backend.selectedId()!=selected || m_backend.query()!=query || m_backend.error()!=error) { finish("Releasing an actual old-account response changed the current mailbox rows, selection or error state."); return; }
+        qInfo() << "Native mail filters passed valid/date/UTF-8 error/correction/clear controls. Real response" << m_heldRequestId
+            << "from generation" << m_heldGeneration << "was held across a native account switch; forty superseding real queries were admitted; obsolete queued query"
+            << m_obsoleteRequestId << "never reached transport and final query" << m_finalRequestId << "returned the expected member.";
+        m_stage=22; break;
+    }
+    case 22:
+        for (const auto &row:m_backend.conversations()) if (!row.toMap()["id"].toString().startsWith("personal-")) { finish("A released stale response later replaced personal mailbox rows."); return; }
+        if (!click("accountTab_"+m_originalAccount)) return;
+        m_stage=23; break;
+    case 23:
+        if (m_backend.account()!=m_originalAccount || m_backend.loading() || m_backend.draftBusy() || m_backend.draft().isEmpty()) return;
+        restore(); m_stage=5; break;
     case 5: {
         if (m_backend.loading() || m_backend.draftBusy() || m_backend.selectedId() != m_originalSelected || m_backend.draft().isEmpty()) return;
         if (m_backend.account() != m_originalAccount || m_backend.query() != m_originalQuery) { finish("Search cleanup lost the original mailbox context."); return; }

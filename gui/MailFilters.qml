@@ -23,7 +23,7 @@ Popup {
     }
     function apply() {
         const from = sender.text.trim(), afterDate = after.text.trim(), beforeDate = before.text.trim()
-        if (from.length > 256 || /[\x00-\x1F\x7F]/.test(from)) { validationError = "Use a sender name or email address, up to 256 characters."; return }
+        if (!backend.validFilterSender(from)) { validationError = "Use a shorter sender name or email without control characters."; return }
         if (!validDate(afterDate) || !validDate(beforeDate)) { validationError = "Enter real dates as YYYY-MM-DD, or leave them empty."; return }
         if (afterDate.length && beforeDate.length && afterDate >= beforeDate) { validationError = "The before date must be later than the on or after date."; return }
         if (openedAccount !== backend.account) { validationError = "The mailbox changed. Reopen filters for this account."; return }
@@ -93,11 +93,11 @@ Popup {
             }
         }
         Text { text: "Dates include the start day and exclude the before day. Filters match original messages in this mailbox."; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: 11; wrapMode: Text.Wrap; Layout.fillWidth: true; lineHeight: 1.4 }
-        Text { visible: popup.validationError.length > 0; text: popup.validationError; color: Theme.error; font.family: Theme.fontFamily; font.pixelSize: 12; wrapMode: Text.Wrap; Layout.fillWidth: true; Accessible.role: Accessible.AlertMessage }
+        Text { objectName: "filterValidation"; visible: popup.validationError.length > 0; text: popup.validationError; color: Theme.error; font.family: Theme.fontFamily; font.pixelSize: 12; wrapMode: Text.Wrap; Layout.fillWidth: true; Accessible.role: Accessible.AlertMessage }
         Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
         RowLayout {
             Layout.fillWidth: true
-            FmButton { text: "Clear filters"; onClicked: { backend.applyFilters({}); popup.close() } }
+            FmButton { objectName: "clearMailFilters"; text: "Clear filters"; onClicked: { backend.applyFilters({}); popup.close() } }
             Item { Layout.fillWidth: true }
             FmButton { objectName: "applyMailFilters"; text: "Apply filters"; prominent: true; onClicked: popup.apply() }
         }

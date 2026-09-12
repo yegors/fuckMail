@@ -170,5 +170,6 @@ int main(int argc, char **argv) {
         return 5;
     }
     if (!restartVerified) return 5;
+    if (result == 0 && searchBenchmark && !searchBenchmark->passed()) return 9;
     return result;
 }

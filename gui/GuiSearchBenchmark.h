@@ -10,6 +10,7 @@ class GuiSearchBenchmark final : public QObject {
 public:
     GuiSearchBenchmark(MailBackend &backend, QQuickWindow *window, QString output, QObject *parent);
     void stopForShutdown();
+    bool passed() const { return m_budgetPassed; }
 private:
     bool eventFilter(QObject *watched, QEvent *event) override;
     enum class Phase { Preparing, ResetQuery, TargetQuery, ResetPaint, TargetPaint };
@@ -26,15 +27,17 @@ private:
     QVariantList m_armedRows;
     QTimer m_startTimer, m_phaseWatchdog;
     QList<double> m_samples[4];
+    QList<double> m_modelSamples[4], m_paintSamples[4];
     QStringList m_expectedIds[4];
     int m_modelReplacements[4] = {}, m_resetPaints[4] = {};
     int m_class = 0, m_iteration = 0;
     quint64 m_generation = 0, m_armedGeneration = 0, m_lastPaintSerial = 0;
     quint64 m_lastObservedGeneration = 0, m_lastObservedSerial = 0;
     quint64 m_updateRequests = 0;
-    qint64 m_inputAt = 0;
+    qint64 m_inputAt = 0, m_modelReadyAt = 0;
     Phase m_phase = Phase::Preparing;
     bool m_loadingSeen = false, m_modelChanged = false, m_finished = false;
+    bool m_budgetPassed = false;
     // Only this handoff is shared by GUI and render threads. The fields below
     // it are touched exclusively in the render-thread direct signal handlers.
     std::atomic<quint64> m_requestedGeneration{0};

@@ -26,6 +26,11 @@ private:
     QObject *m_window;
     QString m_profile, m_engine, m_id, m_sender;
     QString m_attachmentId, m_captureId;
+    QString m_captureSha, m_captureReturnQuery, m_captureReturnFolder;
+    qint64 m_captureRevision = 0, m_captureSize = 0;
+    double m_captureListY = 0;
+    const QString m_discardId = "windscribe-thread-003";
+    QJsonObject m_discardBefore, m_discardReceived, m_protectedDraft;
     QVariantMap m_calendarResult;
     QVariantMap m_settingsExpected;
     QJsonObject m_shutdownViewParams;

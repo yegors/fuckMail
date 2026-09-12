@@ -58,6 +58,16 @@ Item {
         }
         return false
     }
+    function calendarPermissionLabel(permission) {
+        switch (permission) {
+        case "none": return "No access"
+        case "free_busy": return "Availability only"
+        case "reader": return "Can view events"
+        case "writer": return "Can edit events"
+        case "owner": return "Owner"
+        default: return "Unknown access"
+        }
+    }
     function saveHour(key, otherKey, value, isStart) {
         const other = Number(backend.preferences[otherKey])
         if ((isStart && value >= other) || (!isStart && value <= other)) {
@@ -311,7 +321,7 @@ Item {
                                 contentItem: Column {
                                     spacing: 4
                                     Text { text: modelData.name; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: 13; textFormat: Text.PlainText }
-                                    Text { text: modelData.account_name + " · " + modelData.permission; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: 12; textFormat: Text.PlainText }
+                                    Text { text: modelData.account_name + " · " + settings.calendarPermissionLabel(modelData.permission); color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: 12; textFormat: Text.PlainText }
                                 }
                                 Accessible.name: modelData.name + " from " + modelData.account_name
                             }

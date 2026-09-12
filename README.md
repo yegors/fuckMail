@@ -6,7 +6,7 @@ Human correspondence comes first. Unread means unreviewed; stars mean action lef
 
 ## Current state
 
-**Phase 0 completed on available hosts; Phase 1 implementation is active on `codex/phase-1`. Google-first MVP readiness: 0/9 whole areas verified.** The Windows toolchain is verified at `c82bac8`. The new native local slice compiles with schema 5/fixture 2; integration, design review, performance and package acceptance are in progress. Native Mac/Windows/Ubuntu checks at `204fa62` remain the completed Phase 0 baseline. Real Google accounts remain a later milestone. See [development commands](docs/build-development.md), [status](docs/status.md), [Phase 1 evidence](docs/research/phase-1-execution.md) and the [Phase 1 plan](docs/plans/phase-1.md).
+**Windows development is ready. Phase 1 final acceptance is in progress. Google-first MVP readiness: 0/9 whole areas verified.** The schema-5/fixture-2 client at `1132c44` passes all nine Windows release tests, relocated package checks and upgrade/refusal. Mail, Calendar, Settings and reply captures have been reviewed. Final interaction tests, a packaged search timing correction and final-source native CI remain open. Native Mac/Windows/Ubuntu checks at `204fa62` remain the completed Phase 0 baseline. Real Google accounts remain a later milestone. See [development commands](docs/build-development.md), [status](docs/status.md), [Phase 1 evidence](docs/research/phase-1-execution.md) and the [Phase 1 plan](docs/plans/phase-1.md).
 
 | Google-first feature area | Build status |
 | --- | --- |
