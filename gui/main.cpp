@@ -1,5 +1,7 @@
 #include "MailBackend.h"
 #include "GuiSelfTest.h"
+#include "GuiCalendarSelfTest.h"
+#include "GuiCompositionSelfTest.h"
 #include "GuiSearchBenchmark.h"
 
 #include <QCommandLineParser>
@@ -41,22 +43,30 @@ int main(int argc, char **argv) {
     parser.addOption({"engine", "Path to fm-engine.", "executable"});
     parser.addOption({"smoke", "Exit successfully after the real engine supplies a conversation."});
     parser.addOption({"self-test", "Exercise GUI/CLI state against a new disposable profile."});
+    parser.addOption({"self-test-calendar-restart", "Verify the native calendar after a self-test process restart.", "file"});
+    parser.addOption({"self-test-composition-restart", "Verify an independently saved draft after a self-test process restart.", "file"});
+    parser.addOption({"self-test-startup-workspace", "Verify the saved initial workspace in a fresh native process.", "mail|calendar"});
     parser.addOption({"fixture-clock", "Use the deterministic fixture clock for development verification."});
     parser.addOption({"screenshot", "Save the rendered window to a PNG after data loads.", "file"});
     parser.addOption({"screenshot-view", "Workspace for screenshot: mail, calendar or settings.", "view", "mail"});
     parser.addOption({"screenshot-calendar-view", "Calendar layout for screenshot: day, week, month or agenda.", "view", "week"});
     parser.addOption({"screenshot-date", "Calendar date for screenshot (YYYY-MM-DD).", "date"});
-    parser.addOption({"screenshot-settings-page", "Settings page for screenshot.", "page", "Accounts"});
+    parser.addOption({"screenshot-settings-page", "Settings page for screenshot.", "page", "General"});
     parser.addOption({"screenshot-width", "Window width in logical pixels for visual checks.", "pixels", "1440"});
     parser.addOption({"screenshot-height", "Window height in logical pixels for visual checks.", "pixels", "900"});
     parser.addOption({"screenshot-reply", "Expand the current conversation's inline reply for a screenshot."});
     parser.addOption({"benchmark-search-output", "Measure actual QML input to rendered first-page results on a retained generated 100k profile; writes a JSON report.", "file"});
     parser.process(app);
+    if (parser.isSet("self-test-startup-workspace") && (!parser.isSet("smoke") || !parser.isSet("profile") || parser.isSet("self-test")
+        || parser.isSet("self-test-calendar-restart") || parser.isSet("self-test-composition-restart") || parser.isSet("screenshot")
+        || !QStringList{"mail", "calendar"}.contains(parser.value("self-test-startup-workspace")))) parser.showHelp(1);
+    if (parser.isSet("self-test-calendar-restart") && (!parser.isSet("smoke") || !parser.isSet("profile") || parser.isSet("self-test"))) parser.showHelp(1);
+    if (parser.isSet("self-test-composition-restart") && (!parser.isSet("smoke") || !parser.isSet("profile") || parser.isSet("self-test") || parser.isSet("self-test-calendar-restart"))) parser.showHelp(1);
     if (parser.isSet("benchmark-search-output") && (!parser.isSet("profile") || parser.isSet("smoke") || parser.isSet("self-test"))) parser.showHelp(1);
     const auto captureView = parser.value("screenshot-view");
     if (captureView != "mail" && captureView != "calendar" && captureView != "settings") parser.showHelp(1);
     if (!QStringList{"day", "week", "month", "agenda"}.contains(parser.value("screenshot-calendar-view"))) parser.showHelp(1);
-    if (!QStringList{"Accounts", "Mail", "Calendar", "Shortcuts", "Diagnostics"}.contains(parser.value("screenshot-settings-page"))) parser.showHelp(1);
+    if (!QStringList{"General", "Accounts", "Local model", "Mail", "Calendar", "Shortcuts", "Diagnostics"}.contains(parser.value("screenshot-settings-page"))) parser.showHelp(1);
     if (parser.isSet("screenshot-date") && !QDate::fromString(parser.value("screenshot-date"), Qt::ISODate).isValid()) parser.showHelp(1);
     auto profile = parser.value("profile");
     std::unique_ptr<QTemporaryDir> smokeProfile;
@@ -85,6 +95,10 @@ int main(int argc, char **argv) {
 #endif
     );
     MailBackend backend(profile, program, nullptr, parser.isSet("fixture-clock") || parser.isSet("self-test"));
+    if (parser.isSet("self-test")) {
+        backend.setProperty("verificationFixture", "snapshot");
+        backend.setProperty("selfTestArrivalReport", QDir(profile).filePath("verification-ingestion.json"));
+    }
     if (parser.isSet("smoke") || parser.isSet("self-test")) {
         QObject::connect(&backend, &MailBackend::errorChanged, &app, [&] {
             if (backend.error().isEmpty()) return;
@@ -116,6 +130,33 @@ int main(int argc, char **argv) {
         }
         if (++settledTicks < 3) return;
         captureTimer.stop();
+        if (parser.isSet("self-test-startup-workspace")) {
+            const auto root = engine.rootObjects().value(0);
+            const auto expected = parser.value("self-test-startup-workspace");
+            if (!root || root->property("workspace").toString() != expected || root->property("settingsOpen").toBool()) {
+                qCritical() << "Saved initial workspace did not load in the fresh native process:" << expected;
+                QCoreApplication::exit(5); return;
+            }
+            qInfo() << "Fresh native process verified saved initial workspace:" << expected << "theme:" << backend.preferences()["theme"];
+        }
+        if (parser.isSet("self-test-calendar-restart")) {
+            QString error;
+            if (!GuiCalendarSelfTest::verifyRestartProjection(backend,
+                    qobject_cast<QQuickWindow *>(engine.rootObjects().value(0)),
+                    parser.value("self-test-calendar-restart"), error)) {
+                qCritical().noquote() << "Restarted native calendar verification failed:" << error;
+                QCoreApplication::exit(5); return;
+            }
+        }
+        if (parser.isSet("self-test-composition-restart")) {
+            QString error;
+            if (!GuiCompositionSelfTest::verifyRestartProjection(backend,
+                    qobject_cast<QQuickWindow *>(engine.rootObjects().value(0)),
+                    parser.value("self-test-composition-restart"), error)) {
+                qCritical().noquote() << "Restarted native draft verification failed:" << error;
+                QCoreApplication::exit(5); return;
+            }
+        }
         if (parser.isSet("screenshot")) {
             auto window = qobject_cast<QQuickWindow *>(engine.rootObjects().value(0));
             if (!window || !window->grabWindow().save(parser.value("screenshot"))) { QCoreApplication::exit(2); return; }
@@ -125,6 +166,10 @@ int main(int argc, char **argv) {
     QObject::connect(&backend, &MailBackend::ready, &app, [&] {
         if (captured) return;
         captured = true;
+        if (parser.isSet("self-test-calendar-restart")) {
+            backend.setCalendarView("day");
+            backend.setCalendarDate("2026-09-11");
+        }
         if (parser.isSet("screenshot")) {
             backend.setCalendarView(parser.value("screenshot-calendar-view"));
             if (parser.isSet("screenshot-date")) backend.setCalendarDate(parser.value("screenshot-date"));
@@ -136,6 +181,13 @@ int main(int argc, char **argv) {
         QCoreApplication::exit(3);
     });
     engine.loadFromModule("FuckMail", "Main");
+    if (!parser.isSet("self-test-startup-workspace") && (parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("screenshot") || parser.isSet("benchmark-search-output")) && !engine.rootObjects().isEmpty())
+        engine.rootObjects().first()->setProperty("suppressStartupPreference", true);
+    if (parser.isSet("self-test-calendar-restart") && !engine.rootObjects().isEmpty()) {
+        auto root = engine.rootObjects().first();
+        root->setProperty("workspace", "calendar");
+        root->setProperty("settingsOpen", false);
+    }
     if (parser.isSet("screenshot") && !engine.rootObjects().isEmpty()) {
         auto root = engine.rootObjects().first();
         root->setProperty("workspace", captureView == "calendar" ? "calendar" : "mail");

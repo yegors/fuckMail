@@ -5,6 +5,11 @@
 
 namespace {
 QTimeZone viewZone() { return QTimeZone("America/Toronto"); }
+bool changesCalendarQuery(const QVariantMap &before, const QVariantMap &after) {
+    for (const auto &key : {"week_start", "selected_calendars", "calendar_view", "calendar_date", "timeline_date"})
+        if (before.value(key) != after.value(key)) return true;
+    return before.isEmpty();
+}
 }
 
 QDateTime MailBackend::clockNow() const {
@@ -78,11 +83,12 @@ void MailBackend::loadPreferences() {
         auto preferences = result["preferences"].toObject().toVariantMap();
         for (auto it = m_preferencesPending.cbegin(); it != m_preferencesPending.cend(); ++it) preferences[it.key()] = it.value();
         if (preferences != m_preferences) {
+            const bool reloadCalendar = changesCalendarQuery(m_preferences, preferences);
             m_preferences = preferences;
             m_calendarView = preferences.value("calendar_view", "week").toString();
             m_calendarDate = preferences.value("calendar_date").isNull() ? todayDate() : preferences.value("calendar_date").toString();
             m_timelineDate = preferences.value("timeline_date").isNull() ? todayDate() : preferences.value("timeline_date").toString();
-            emit preferencesChanged(); loadCalendar();
+            emit preferencesChanged(); if (reloadCalendar) loadCalendar();
         }
     });
 }
@@ -95,7 +101,7 @@ void MailBackend::savePreferences() {
     if (m_preferencesSaving || m_preferencesPending.isEmpty()) return;
     if (!m_connected) { m_preferencesStatus = "Not saved — reconnect and retry."; cancelShutdown(); emit preferencesChanged(); return; }
     const auto submitted = m_preferencesPending;
-    auto params = mutation(); params["preferences"] = QJsonObject::fromVariantMap(m_preferences); params["expected_revision"] = m_preferencesRevision;
+    auto params = mutation(); params["preferences"] = QJsonObject::fromVariantMap(submitted); params["expected_revision"] = m_preferencesRevision;
     m_preferencesSaving = true;
     request("preferences_save", {}, params, [this, submitted](auto result, bool ok) {
         m_preferencesSaving = false;
@@ -111,7 +117,9 @@ void MailBackend::savePreferences() {
         for (auto it = submitted.cbegin(); it != submitted.cend(); ++it)
             if (m_preferencesPending.value(it.key()) == it.value()) m_preferencesPending.remove(it.key());
         m_preferencesStatus = m_preferencesPending.isEmpty() ? "Saved on this machine" : "Saving…";
-        emit preferencesChanged(); loadCalendar();
+        emit preferencesChanged();
+        for (const auto &key : {"week_start", "selected_calendars"})
+            if (submitted.contains(key)) { loadCalendar(); break; }
         if (!m_preferencesPending.isEmpty()) savePreferences();
         if (m_shutdown) finishShutdown();
     });
@@ -157,17 +165,38 @@ bool MailBackend::validFilterSender(const QString &sender) const {
 }
 void MailBackend::applyFilters(const QVariantMap &filters) {
     if (filters == m_filters) return;
+    m_queryActivity.start();
     m_filters = filters; m_pinnedRow.clear(); m_pinnedIndex = -1; remember("filters", filters); ++m_listGeneration; emit queryChanged(); loadConversations();
 }
 void MailBackend::openConversation(const QString &id) { selectConversationInternal(id, true); }
+void MailBackend::clearSenderCard() {
+    ++m_senderCardGeneration;
+    if (m_senderCard.isEmpty()) return;
+    m_senderCard.clear(); emit senderCardChanged();
+}
+void MailBackend::requestSenderCard(const QString &email) {
+    const auto address = email.trimmed().toLower();
+    if (!m_connected || m_account.isEmpty() || address.isEmpty() || !validFilterSender(address)) {
+        clearSenderCard(); return;
+    }
+    const auto account = m_account;
+    const int generation = ++m_senderCardGeneration;
+    m_senderCard = {{"account", account}, {"email", address}, {"loading", true}, {"conversations", QVariantList{}}};
+    emit senderCardChanged();
+    request("sender_summary", account, {{"email", address}}, [this, account, address, generation](auto result, bool ok) {
+        if (account != m_account || generation != m_senderCardGeneration) return;
+        m_senderCard = ok ? result.toVariantMap() : QVariantMap{{"account", account}, {"email", address}, {"error", result["message"].toString("Could not load this sender.")}};
+        m_senderCard["loading"] = false; emit senderCardChanged();
+    });
+}
 void MailBackend::doneConversation() { mutateConversation("flag", {{"read", true}, {"starred", false}}); }
 void MailBackend::editFormattedDraft(const QString &body, const QString &html) {
-    if (m_draft.isEmpty() || (m_draft["body"].toString() == body && m_draft["body_html"].toString() == html)) return;
+    if (draftLocked() || m_draft.isEmpty() || (m_draft["body"].toString() == body && m_draft["body_html"].toString() == html)) return;
     m_draft["body"] = body; m_draft["body_html"] = html;
     m_draftDirty = true; m_draftStatus = "Saving…"; emit draftChanged(); m_draftTimer.start();
 }
 void MailBackend::setDraftAttachment(const QString &id, bool selected) {
-    if (m_draft.isEmpty()) return;
+    if (draftLocked() || m_draft.isEmpty()) return;
     auto ids = m_draft["attachment_ids"].toList();
     if (selected && !ids.contains(id)) ids.append(id);
     if (!selected) ids.removeAll(id);
@@ -176,7 +205,7 @@ void MailBackend::setDraftAttachment(const QString &id, bool selected) {
     emit draftChanged(); m_draftTimer.start();
 }
 void MailBackend::setDraftSignature(const QString &signature) {
-    if (m_draft.isEmpty() || m_draft["signature_text"].toString() == signature) return;
+    if (draftLocked() || m_draft.isEmpty() || m_draft["signature_text"].toString() == signature) return;
     m_draft["signature_text"] = signature; m_draftDirty = true; m_draftStatus = "Saving…";
     emit draftChanged(); m_draftTimer.start();
 }
@@ -184,12 +213,12 @@ void MailBackend::reloadDraft() {
     if (draftBusy() || m_draft.isEmpty()) return;
     m_draftTimer.stop(); m_resolvingDraft = true;
     m_draftStatus = "Loading the saved draft…"; emit draftChanged();
-    const auto account = m_account, id = m_selected;
-    request("draft_get", account, {{"conversation_id", id}}, [this, account, id](auto result, bool ok) {
+    const auto account = m_account, id = draftContext();
+    request("draft_get", account, draftSelector(), [this, account, id](auto result, bool ok) {
         m_resolvingDraft = false;
-        if (account != m_account || id != m_selected) return;
+        if (account != m_account || id != draftContext()) return;
         if (ok) {
-            m_draft = result.toVariantMap(); m_draftDirty = false; m_draftConflict = false;
+            m_draft = result.toVariantMap(); m_recipientInputs.clear(); m_draftDirty = false; m_draftConflict = false;
             m_afterDraftSave = {}; m_draftStatus = "Saved on this machine";
         } else { m_draftStatus = "Not saved — could not reload. Your version remains here."; cancelShutdown(); }
         emit draftChanged();
@@ -203,11 +232,19 @@ void MailBackend::saveMyDraftVersion() {
     if (!m_draftConflict || draftBusy() || m_draft.isEmpty()) return;
     m_draftTimer.stop(); clearError(); m_resolvingDraft = true;
     m_draftStatus = "Checking the current saved revision…"; emit draftChanged();
-    const auto account = m_account, id = m_selected;
-    request("draft_get", account, {{"conversation_id", id}}, [this, account, id](auto result, bool ok) {
+    const auto account = m_account, id = draftContext();
+    request("draft_get", account, draftSelector(), [this, account, id](auto result, bool ok) {
         m_resolvingDraft = false;
-        if (account != m_account || id != m_selected) return;
+        if (account != m_account || id != draftContext()) return;
         if (!ok) { m_draftStatus = "Not saved — could not check the current revision. Your version remains here."; cancelShutdown(); emit draftChanged(); return; }
+        // Another client may have made the first legacy save against a newer
+        // member. Authored-field replacement cannot retarget frozen context.
+        for (const auto &key : {"draft_id", "conversation_id", "mode", "source_message_id", "source_hash"}) {
+            if (m_draft.value(key).toString() != result[key].toString()) {
+                m_draftStatus = "Not saved — the saved draft has a different original message or composition identity. Your version remains here. Reload the saved draft only to replace these edits.";
+                cancelShutdown(); emit draftChanged(); return;
+            }
+        }
         m_draft["revision"] = result["revision"].toVariant();
         m_draftConflict = false; m_draftDirty = true; m_draftStatus = "Saving your version…"; emit draftChanged();
         saveDraft();
@@ -216,10 +253,10 @@ void MailBackend::saveMyDraftVersion() {
 void MailBackend::discardDraft() {
     if (m_draft.isEmpty() || draftBusy()) return;
     m_draftTimer.stop(); m_discarding = true; emit draftChanged();
-    auto params = mutation(); params["conversation_id"] = m_selected; params["expected_revision"] = m_draft["revision"].toLongLong();
+    auto params = draftSelector(); params["request_id"] = mutation()["request_id"]; params["expected_revision"] = m_draft["revision"].toLongLong();
     request("draft_discard", m_account, params, [this](auto result, bool ok) {
         m_discarding = false;
-        if (ok) { m_draft = result.toVariantMap(); m_draftDirty = false; m_draftConflict = false; m_draftStatus = "Draft discarded"; remember("replyOpen", false); }
+        if (ok) { m_draft = result.toVariantMap(); m_recipientInputs.clear(); m_draftDirty = false; m_draftConflict = false; m_draftStatus = "Draft discarded"; remember("replyOpen", false); remember("selectedDraft", ""); loadAccounts(); if (m_folder == "drafts") loadDraftRows(false); }
         else { m_draftStatus = "Discard failed — your reply remains here"; cancelShutdown(); }
         emit draftChanged();
         if (ok) saveDraft();
@@ -258,8 +295,10 @@ void MailBackend::inspectCapture(const QString &operationId) {
     if (record.isEmpty()) return;
     m_capturing = true; emit draftChanged();
     const auto account = m_account;
-    const QJsonObject params{{"request_id", operationId}, {"conversation_id", record["conversation_id"].toString()},
+    QJsonObject params{{"request_id", operationId},
         {"expected_revision", record["draft_revision"].toLongLong()}, {"outcome", record.value("synthetic_outcome", "accepted").toString()}};
+    if (record["draft_id"].toString().isEmpty()) params["conversation_id"] = record["conversation_id"].toString();
+    else params["draft_id"] = record["draft_id"].toString();
     request("draft_capture", account, params, [this, account, operationId](auto result, bool ok) {
         m_capturing = false;
         if (ok) m_captureStatus = "Local capture " + operationId + ": " + result["state"].toString() + ". The original operation was reused; no email was delivered.";
@@ -276,25 +315,30 @@ void MailBackend::inspectCapture(const QString &operationId) {
 void MailBackend::captureDraft() {
     if (draftLocked() || m_draft.isEmpty()) return;
     if (m_draftDirty || m_savingDraft) { m_afterDraftSave = [this] { captureDraft(); }; saveDraft(); return; }
-    if (m_captureRequest.isEmpty() || m_captureAccount != m_account || m_captureConversation != m_selected) {
+    if (m_captureRequest.isEmpty() || m_captureAccount != m_account || m_captureConversation != draftContext()) {
         // The journal survives GUI restart. Resolve unfinished operations before
         // creating another identity, including records beyond normal history pages.
         m_capturing = true; m_captureStatus = "Checking existing local captures…"; emit draftChanged(); emit capturesChanged();
-        const auto account = m_account, id = m_selected;
-        request("capture_history", account, {{"conversation_id", id}, {"unresolved_only", true}, {"limit", 1}, {"offset", 0}}, [this, account, id](auto result, bool ok) {
+        const auto account = m_account, id = draftContext();
+        auto selector = draftSelector();
+        const auto draftId = m_draft.value("draft_id", m_selected).toString();
+        auto history = QJsonObject{{"draft_id", draftId}, {"unresolved_only", true}, {"limit", 1}, {"offset", 0}};
+        request("capture_history", account, history, [this, account, id, selector](auto result, bool ok) {
             m_capturing = false;
-            if (!ok || account != m_account || id != m_selected) {
+            if (!ok || account != m_account || id != draftContext()) {
                 m_captureStatus = "Could not check existing captures. No new capture was created. Reconnect and retry.";
                 cancelShutdown(); emit draftChanged(); emit capturesChanged(); return;
             }
             const auto unresolved = result["captures"].toArray();
             if (!unresolved.isEmpty()) {
                 const auto record = unresolved.first().toObject();
-                m_captureRequest = {{"request_id", record["operation_id"]}, {"conversation_id", id},
+                m_captureRequest = {{"request_id", record["operation_id"]},
                     {"expected_revision", record["draft_revision"]}, {"outcome", record["synthetic_outcome"]}};
+                m_captureRequest["draft_id"] = record["draft_id"];
             } else {
-                m_captureRequest = mutation(); m_captureRequest["conversation_id"] = id;
+                m_captureRequest = mutation();
                 m_captureRequest["expected_revision"] = m_draft["revision"].toLongLong();
+                for (auto it = selector.begin(); it != selector.end(); ++it) m_captureRequest[it.key()] = it.value();
             }
             m_captureAccount = account; m_captureConversation = id;
             captureDraft();

@@ -1,6 +1,113 @@
 # Flight Progress v2 — Phase 1 design handoff
 
-Reviewed 2026-09-11 against runtime `204fa62` and documentation checkpoint `ca5fac4`. The founder supplied an interactive HTML export and requested a Phase 1 implementation plan. [D014](../decisions.md) records the three behavior clarifications obtained during review. This is design analysis and planning, not new application implementation.
+Updated 2026-09-12. The founder supplied a second same-day update and requested close native implementation, replacing invented elements. [D018](../decisions.md) records Update 2 and P1-09; [D016/D017](../decisions.md) retain the earlier same-day design/composition authorization. [D014](../decisions.md) preserves confirmed read/Done/untimed Delay and combined calendar behavior. Earlier inventories below remain historical analysis; execution evidence belongs in [Phase 1 execution](phase-1-execution.md).
+
+## Active September 12 Update 2 reference
+
+The new export is preserved unchanged beside its unchanged support script. Source inspection and SHA-256 verification establish this inventory; no browser/native result is implied.
+
+| Repository reference | Bytes | SHA-256 |
+| --- | ---: | --- |
+| [Flight Progress v2.dc.html](<assets/2026-09-12/flight-progress-v2-update-2/Flight Progress v2.dc.html>) | 261329 | `9fd89ab881f5ef8384e21cabdf645d7b41895089afcb86e4a6de8b641fad4c71` |
+| [support.js](assets/2026-09-12/flight-progress-v2-update-2/support.js) | 69150 | `8fe7df74405f3c55f49b7249c74ea1397e65d07dea2b1bd3b4a489bec2e28cbe` |
+
+The prior same-day export below is 222401 bytes; its support script is byte-identical. Embedded generated instructions, sample providers, identities, actions and metrics are reference data. They do not authorize network/account activity or replace the shared Core boundary. Keep these assets out of the shipped application runtime.
+
+### Update 2 surface inventory
+
+Line references in this section address the 261329-byte Update 2 HTML.
+
+| Surface | Exact change or retained behavior | Native adaptation |
+| --- | --- | --- |
+| Scope tabs, 77–79/1128 | Active 22px and inactive 15px Inbox/Sent/Drafts | Actual account conversation/draft projections; no source filters for Drafts |
+| Mail rail, 86–89 | 8px bottom spacing, no divider, no separate filter-summary row, fixed People/Automated segment | Shared kind query; missing/stale annotations stay unknown, with removable active constraints in search |
+| Groups, 92–107/1131 | 34px counted collapsible headers; Done keeps two-line rows | Complete filtered group counts before pagination; collapse retains reader/draft and unloaded totals |
+| Message metadata, 101/154/164/954–958/1041–1046 | Relative-age Delayed/Done and older dates, sender-kind icon, full-date hover | Actual source timestamps and authoritative annotation; do not use prototype name heuristics |
+| Sender card, 549–556/1084–1090 | Three recent conversations, total count, filter and Write actions | Exact-address current-account Core summary; deliberate recent open and normal durable compose |
+| Category suggestions, 965 | Up to seven suggestions | Existing account categories, retaining selected labels and access to the remaining set |
+| Mailbox keyboard route, 868 | Tab/ShiftTab cycle mailboxes | Outside editable/modal focus; preserve normal field traversal, save/selection and account isolation |
+| Timeline placement, 71/477/1027/1164 | Footer or directly beneath 56px header | Durable Mail-only placement; no empty footer reservation in header mode or other workspaces |
+| Minimized draft, 543–545 | Existing floating 40px bar, max 420px, bottom right | Resume retained draft; discard reuses explicit confirmation |
+| Calendar, composition, event editor/details | After resolving theme variables, markup is unchanged from the earlier same-day export | Preserve P1-08 functions, fixed 24-hour Calendar grid, source permissions and recovery |
+| Settings | General added first; theme/text/startup controls; event duration and timeline placement | Typed shared preferences and visible effect; unavailable provider/OS/model controls stay truthful |
+
+The reference still has a placement inconsistency: its event sheet/minimized-bar bottom calculation reserves timeline height even in header mode. Native header mode must reserve the strip at the top only and position details/editor/minimized work within the actual available workspace.
+
+### Settings inventory and scope
+
+Settings now orders **General, Accounts, Local model, Mail, Calendar, Shortcuts**, initially General; section selection remains in memory when reopened. Sidebar width remains 220px, content padding 24px top/40px sides/40px bottom and maximum inner width 640px. Sidebar buttons remain 32px high with 14px icons and 10px icon gap. Page headings use 22px/500 weight, −.02em tracking and 1.1 line height, reserving 120px for Done. Introductions use 13.5px, 55% ink and 1.5 line height, maximum width 560px. Done remains top 22px/right 24px, 32px high; no sample version string becomes the real version.
+
+General rows begin after 16px and use 14px vertical padding, 24px gap and the shared separator. Labels inherit 14px; descriptions are 12.5px/50% ink with 3px gap and 1.45 line height. Segments use bg2, 2px padding/gap, 6px outer radius; each segment has 5px/12px padding, 4px radius and 12.5px type, with bg6/500 weight for selection. Native pixel sizes are rounded after scaling.
+
+| Section/control | Prototype values, initial state and presentation | P1-09 local scope |
+| --- | --- | --- |
+| General: Theme | Graphite/Paper/Harbour, Graphite default; 68×46px preview, 6px radius, 2px selected ink border, 10px gap; labels 11.5px, 6px below | Actual durable `theme`, applied to every surface and control |
+| Theme description | Graphite: “Near-black with warm amber. The default.” Paper: “Warm off-white, ink type, oxblood accent.” Harbour: “Deep blue-black with a cool sea-glass accent.” | Exact theme descriptions; no inferred OS theme |
+| General: Text size | Small/Default/Large; Default; root base sizes 13/14/15.5px | `text_size`; scale native explicit labels as well as inherited text, retaining drafts and selection |
+| General: Open on | Mail/Calendar/Where I left off; Mail | `startup_view`; `last_workspace` contains Mail/Calendar only, Settings never becomes startup |
+| General: Sync every | 1 min/5 min/15 min; prototype 5 min | Disabled/unavailable; prototype state has no real sync implementation |
+| General: Notifications | All/Events only/Off; prototype All | Disabled/unavailable; no false active default or background service |
+| Accounts | Provider/email/name, index bar, add wizard and removal unchanged | Actual local metadata/coverage, retained save failures; OAuth/add/remove simulations deferred |
+| Local model | Detection/connection/model/throughput/requeue examples unchanged | Explicit unavailable model state; no fake ready status, token rate or download |
+| Mail | Density Comfortable/Compact 52/44px, labels and timed Delay examples unchanged | Real density, account-scoped categories and retained signatures; untimed Delay overrides sample timing options |
+| Calendar: Other accounts' events | Show/Hide, default Show | Independent permitted calendar selection, rather than implicitly filtering by the mailbox |
+| Calendar: New events last | 30/45/60 min, default 60 | `default_event_duration_minutes` applied to newly created events; editing preserves existing duration |
+| Calendar: Timeline section | Caption after 28px, description after 6px, then 8px space | Mail-only strip |
+| Calendar: Placement | Footer/Header, default Footer | `timeline_position`, actual top/bottom workspace geometry |
+| Calendar: Timeline hours | Prototype 07:00–21:00; offered starts 00/05–10 and ends 17–24 | Preserve Core's existing 07:00–22:00 defaults and valid retained 0–24 range; start must precede end |
+| Calendar: Week starts on | Monday/Sunday, Monday | Existing durable week-start behavior; full Calendar remains 00:00–24:00 |
+| Shortcuts | Adds Tab/ShiftTab next/previous mailbox; other rows unchanged | Only implemented actions are advertised; local capture remains distinct from live Send |
+
+After replacing `var(--fp-*, fallback)` with the fallback, the Accounts, Local model and Mail Settings markup is unchanged from the earlier same-day export. Their provider/model/timed-Delay simulations are not new requirements. Signatures remain an unobtrusive native retained-data control even though absent from the prototype. The global destructive label editor is not a second taxonomy store: native labels stay account scoped under the current shared boundary.
+
+### Exact shared palette and typography tokens
+
+| Token | Graphite | Paper | Harbour |
+| --- | --- | --- | --- |
+| bg0 | `#0B0C0E` | `#EDE9E1` | `#070B12` |
+| bg | `#0E0F11` | `#F4F1EA` | `#0A0F18` |
+| bg1 | `#121316` | `#EFEBE3` | `#0D131D` |
+| bg2 | `#131417` | `#EAE5DC` | `#101722` |
+| bg3 | `#17181C` | `#E5E0D6` | `#131B27` |
+| bg4 | `#191A1E` | `#E1DBD0` | `#161F2C` |
+| bg5 | `#1B1C20` | `#DDD6CA` | `#182130` |
+| bg6 | `#1F2126` | `#D6CEC1` | `#1C2637` |
+| line | `#232529` | `#DCD5C8` | `#1E2939` |
+| line2 | `#2A2C31` | `#CFC6B7` | `#273345` |
+| line3 | `#3A3D44` | `#B9AE9C` | `#364559` |
+| ink | `#E9EAEC` | `#1C1B18` | `#E6ECF2` |
+| accent/amber | `#C9A36B` | `#8A2E2A` | `#7FC4B6` |
+| warn | `#D9A441` | `#B9791A` | `#E0B04A` |
+| red | `#E0645A` | `#B3382F` | `#E27070` |
+| shadow RGB | `0,0,0` | `60,50,30` | `0,0,0` |
+| color scheme | dark | light | dark |
+
+RGBA variants derive from each palette's ink/accent/warn/red/background/shadow channels, rather than retaining Graphite RGB under Paper. The reader and timeline use bg0; main canvas bg; panels/popovers bg2; selected surface bg4; hover/selected segments bg6; borders line/line2/line3. Reader inset shadow uses 18% shadow fading over 28px. Floating surfaces use 45–60% shadow according to the reference. Placeholder is 35% ink and the 6px scrollbar uses 14% ink. Geist 300/400/500/600, tabular numbers and 1.5px rounded SVG strokes are unchanged. Existing licensed native fonts and geometry icons remain; no runtime CDN is added.
+
+The prototype persists theme/split in localStorage, while launch, sync and notification choices are largely volatile or unused state. Native preferences follow [Platform 10](../contracts/platform.md#local-appearance-and-startup), Core 13 and CLI 7 with schema 7/fresh fixture 3/additive protocol 1; migrations preserve old fixture revisions and authored data. Source implementation and static checks are not evidence of native layout, input, restart, accessibility or performance acceptance.
+
+## Earlier September 12 reference — historical P1-08 inventory
+
+Copied unchanged from `C:/Users/Yegor/Downloads/`:
+
+| Repository reference | Bytes | SHA-256 |
+| --- | ---: | --- |
+| [Flight Progress v2.dc.html](<assets/2026-09-12/flight-progress-v2/Flight Progress v2.dc.html>) | 222401 | `ca75501e76cd137908fd5800ba6d11555241c63885ae68fea42ca0ab12a5fab2` |
+| [support.js](assets/2026-09-12/flight-progress-v2/support.js) | 69150 | `8fe7df74405f3c55f49b7249c74ea1397e65d07dea2b1bd3b4a489bec2e28cbe` |
+
+The HTML changed materially; the support script is identical. Both are reference assets only. Local browser inspection uses the same bounded directory server described below, with the date changed to September 12. It is not application runtime or native acceptance evidence.
+
+| Surface | Current design to implement | Prior native elements to replace |
+| --- | --- | --- |
+| Header | 56px bar, account tabs, status before 320px search, New message/event, gear | Clock/date, fixture action, altered order and smaller search |
+| Mail | 50/50 initial split; Inbox/Sent/Drafts and inline icon counts; category badges, 68px times; compact group rules | All mail/filter buttons in heading, second statistics row, amber row stars and persistent coverage footer |
+| Reader/composer | Reply/Reply all/Forward; inline divider-based From/To/Cc/Bcc/Subject, authored editor and compact actions | Standalone category launcher and boxed reply card; no fabricated summary card |
+| Calendar | Date/range picker, full 24h scrollable grid, 320px day list, month with 4–6 weeks | Fixed Today-only navigation, squeezed visible-hours grid and prominent activity/agenda controls |
+| Event details/editor | Anchored 300px popup; 440px right sheet with compact divider rows | Centered 470px details and 550px editor modals |
+| Mail timeline | 28px lanes, current/next/past accents, readable overflow labels and day drag | Extra toolbar, clipped 22px lanes and uniform blocks |
+| Settings | Accounts/Local model/Mail/Calendar/Shortcuts, segmented choices, reference spacing | Diagnostics navigation, signature stack and generic form/table layout |
+
+The native implementation retains accurate counts, independent unread/held state, source permissions, coverage access and draft/capture/calendar recovery. These belong in compact details, search or overflow surfaces where absent from the design. It must not claim real sync, model availability or delivered mail. P1-08 adds durable local new/reply-all/forward drafts and Drafts browsing through the same Core/CLI boundary; arbitrary file import, account/model setup, timed Delay and live sending remain outside scope. Earlier line references and reply-only limits below describe the superseded September 11 export, not the active packet.
 
 ## Reference and provenance
 

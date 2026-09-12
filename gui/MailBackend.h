@@ -20,7 +20,10 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QVariantList conversations READ conversations NOTIFY conversationsChanged)
     Q_PROPERTY(QVariantList categories READ categories NOTIFY accountsChanged)
     Q_PROPERTY(QVariantMap conversation READ conversation NOTIFY conversationChanged)
+    Q_PROPERTY(QVariantMap senderCard READ senderCard NOTIFY senderCardChanged)
     Q_PROPERTY(QVariantMap draft READ draft NOTIFY draftChanged)
+    Q_PROPERTY(QString activeDraftId READ activeDraftId NOTIFY draftChanged)
+    Q_PROPERTY(QVariantMap recipientInputs READ recipientInputs NOTIFY draftChanged)
     Q_PROPERTY(QVariantList events READ events NOTIFY eventsChanged)
     Q_PROPERTY(QVariantList todayEvents READ todayEvents NOTIFY eventsChanged)
     Q_PROPERTY(QString account READ account NOTIFY accountChanged)
@@ -43,6 +46,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(bool preferencesPending READ preferencesPending NOTIFY preferencesChanged)
     Q_PROPERTY(QVariantMap diagnostics READ diagnostics NOTIFY preferencesChanged)
     Q_PROPERTY(QVariantMap filters READ filters NOTIFY queryChanged)
+    Q_PROPERTY(QStringList collapsedGroups READ collapsedGroups NOTIFY queryChanged)
     Q_PROPERTY(QVariantMap querySummary READ querySummary NOTIFY conversationsChanged)
     Q_PROPERTY(QVariantList captures READ captures NOTIFY capturesChanged)
     Q_PROPERTY(QString captureStatus READ captureStatus NOTIFY capturesChanged)
@@ -74,7 +78,10 @@ public:
     QVariantList conversations() const { return m_conversations; }
     QVariantList categories() const { return m_categories; }
     QVariantMap conversation() const { return m_conversation; }
+    QVariantMap senderCard() const { return m_senderCard; }
     QVariantMap draft() const { return m_draft; }
+    QString activeDraftId() const { return m_activeDraft; }
+    QVariantMap recipientInputs() const { QVariantMap values; for (auto it = m_recipientInputs.cbegin(); it != m_recipientInputs.cend(); ++it) values[it.key()] = it.value(); return values; }
     QVariantList events() const { return m_events; }
     QVariantList todayEvents() const { return m_todayEvents; }
     QVariantMap currentAccount() const;
@@ -97,6 +104,7 @@ public:
     bool preferencesPending() const { return !m_preferencesPending.isEmpty(); }
     QVariantMap diagnostics() const { return m_diagnostics; }
     QVariantMap filters() const { return m_filters; }
+    QStringList collapsedGroups() const { return m_collapsedGroups; }
     QVariantMap querySummary() const { return m_querySummary; }
     QVariantList captures() const { return m_captures; }
     QString captureStatus() const { return m_captureStatus; }
@@ -128,6 +136,9 @@ public:
     Q_INVOKABLE void selectAccount(const QString &id);
     Q_INVOKABLE void selectConversation(const QString &id);
     Q_INVOKABLE void openConversation(const QString &id);
+    Q_INVOKABLE void requestSenderCard(const QString &email);
+    Q_INVOKABLE void clearSenderCard();
+    Q_INVOKABLE void writeToSender(const QString &email, const QString &name);
     Q_INVOKABLE void loadMore();
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void setRead(bool read);
@@ -135,6 +146,12 @@ public:
     Q_INVOKABLE void doneConversation();
     Q_INVOKABLE void setCategoryMembership(const QString &categoryId, bool present);
     Q_INVOKABLE void editDraft(const QString &body);
+    Q_INVOKABLE void beginDraft(const QString &mode);
+    Q_INVOKABLE void openDraft(const QString &draftId, bool restoreView = false);
+    Q_INVOKABLE bool addDraftRecipient(const QString &field, const QString &text);
+    Q_INVOKABLE void stageDraftRecipient(const QString &field, const QString &text);
+    Q_INVOKABLE void removeDraftRecipient(const QString &field, int index);
+    Q_INVOKABLE void setDraftSubject(const QString &subject);
     Q_INVOKABLE void editFormattedDraft(const QString &body, const QString &html);
     Q_INVOKABLE void setDraftAttachment(const QString &id, bool selected);
     Q_INVOKABLE void setDraftSignature(const QString &signature);
@@ -146,6 +163,7 @@ public:
     Q_INVOKABLE void saveMyDraftVersion();
     Q_INVOKABLE bool validFilterSender(const QString &sender) const;
     Q_INVOKABLE void applyFilters(const QVariantMap &filters);
+    Q_INVOKABLE void setCollapsedGroups(const QStringList &groups);
     Q_INVOKABLE void setPreferences(const QVariantMap &patch);
     Q_INVOKABLE void updateAccountPreferences(const QString &account, const QString &name, const QString &signature);
     Q_INVOKABLE void setCalendarSelected(const QString &account, const QString &calendar, bool selected);
@@ -175,6 +193,7 @@ signals:
     void loadingChanged();
     void mutationChanged();
     void conversationChanged();
+    void senderCardChanged();
     void draftChanged();
     void eventsChanged();
     void preferencesChanged();
@@ -190,11 +209,14 @@ signals:
     void shutdownReady();
 private:
     friend class GuiMailNavigationSelfTest;
+    friend class GuiSettingsSelfTest;
     using Callback = std::function<void(const QJsonObject &, bool)>;
     struct Pending {
         Callback callback; qint64 started;
         QString method, account;
-        int generation, listGeneration, calendarGeneration;
+        int generation, listGeneration, calendarGeneration, senderGeneration;
+        bool automaticRead = false;
+        int queryBypasses = 0;
     };
     void request(const QString &method, const QString &account, const QJsonObject &params, Callback callback);
     void attemptConnection();
@@ -203,6 +225,7 @@ private:
     void receive();
     void fail(const QString &message);
     void loadAccounts();
+    void refreshState(bool refreshList, bool refreshCalendar, bool automatic = false);
     void selectConversationInternal(const QString &id, bool review);
     void loadCategories();
     void loadConversations(bool append = false, bool preserveLoaded = false);
@@ -220,12 +243,28 @@ private:
     void cancelShutdown();
     void finishShutdown();
     QJsonObject mutation() const;
+    QJsonObject draftSelector() const;
+    QString draftContext() const;
+    void loadDraftRows(bool append, bool preserveLoaded = true);
+    void loadDraftPage(const QString &account, int generation, int offset, QVariantList collected, int desiredCount);
+    void loadActiveDraft();
+    void acceptDraft(const QJsonObject &result, bool restoreView = false);
+    void beginDraftWithRecipient(const QString &mode, const QString &email, const QString &name);
+    bool commitRecipientInputs();
     QString m_profile, m_engine, m_token, m_account, m_query, m_selected, m_error, m_category;
     QString m_folder = "inbox", m_weekStart = "2026-09-07", m_fixtureToday = "2026-09-11";
     QString m_draftStatus;
+    QString m_activeDraft;
+    QMap<QString, QString> m_recipientInputs;
+    QJsonObject m_draftCreation;
+    QString m_draftCreationAccount;
+    QString m_draftCreationEmail;
+    QVariantMap m_senderCard;
+    int m_senderCardGeneration = 0;
     QVariantList m_accounts, m_conversations, m_events, m_todayEvents, m_categories;
     QVariantMap m_conversation, m_draft, m_views;
     QVariantMap m_preferences, m_preferencesPending, m_diagnostics, m_filters, m_querySummary;
+    QStringList m_collapsedGroups;
     QVariantMap m_pinnedRow;
     int m_pinnedIndex = -1;
     QVariantList m_calendarSources, m_captures;
@@ -240,6 +279,7 @@ private:
     bool m_calendarOperationsLoading = false;
     int m_calendarOperationsGeneration = 0;
     qint64 m_preferencesRevision = 0;
+    qint64 m_calendarRevision = -1;
     int m_calendarGeneration = 0;
     int m_calendarWrites = 0, m_accountWrites = 0;
     bool m_preferencesSaving = false, m_capturing = false, m_discarding = false, m_fixtureClock = false;
@@ -255,11 +295,14 @@ private:
     QTimer m_connectTimer, m_pollTimer, m_searchTimer, m_draftTimer, m_viewTimer;
     QByteArray m_buffer;
     QElapsedTimer m_startupClock;
+    QElapsedTimer m_queryActivity;
     qint64 m_sequence = 0, m_revision = -1, m_enginePid = 0, m_nextLaunch = 0;
     int m_generation = 0, m_listGeneration = 0, m_nextOffset = -1;
     int m_desiredConversationCount = 50;
     int m_launchAttempts = 0, m_launchDelay = 1000;
     bool m_connected = false, m_loading = false;
+    bool m_listRefreshPending = false;
+    bool m_automaticReadScope = false;
     bool m_mutatingConversation = false;
     bool m_draftDirty = false, m_savingDraft = false, m_shutdown = false;
     bool m_draftConflict = false, m_resolvingDraft = false;

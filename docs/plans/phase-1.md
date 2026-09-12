@@ -1,12 +1,34 @@
 # Phase 1 — the redesigned local mail and calendar client
 
-Prepared 2026-09-11 under [D014](../decisions.md); implementation authorized by D015. **Windows local verification passes; final-source native CI/package acceptance remains pending.** This phase applies the [Flight Progress v2 prototype](../research/flight-progress-v2.md) to the verified native foundation. [Execution evidence](../research/phase-1-execution.md) records the schema 5/fixture 2 boundary and measured checks. [Status](../status.md) owns progress, [contracts](../contracts/README.md) own behavior and [development plan](../development-plan.md) owns the later Google milestones.
+Prepared 2026-09-11 under [D014](../decisions.md); implementation authorized by D015 and updated under D016–D018. **P1-09 is active on schema 7/fresh fixture 3. Windows release01 passes 9/9 tests, native visual review is recorded, and dev03 passes all four concurrent-search budgets; final package/upgrade, packaged measurement and other-host CI remain pending.** This phase applies the latest [Flight Progress v2 prototype](../research/flight-progress-v2.md) to the verified native foundation. [Execution evidence](../research/phase-1-execution.md) preserves earlier results and failures. Existing profiles retain their original fixtures and authored content. [Status](../status.md) owns progress, [contracts](../contracts/README.md) own behavior and [development plan](../development-plan.md) owns the later Google milestones.
+
+## P1-08 — September 12 prototype replacement
+
+Earlier packet, now carried into P1-09 acceptance: Core 12, Mail UI 11, CLI 6 and Calendar 10, consuming Platform/Quality; schema 6, unchanged fixture 2 and additive protocol 1. The founder requested close implementation of the revised reference. Replace the invented header/list/forms/toolbars with the reference controls and geometry. Preserve original assets and earlier execution evidence.
+
+Extend the existing store, MIME construction and capture journal for independent durable new/reply/reply-all/forward drafts, editable To/Cc/Bcc/subject and account-scoped Drafts. Freeze reply/forward source context when created, exclude self/duplicate reply-all recipients, retain explicit account identity, and never fabricate an incoming conversation to host a draft. Existing reply compatibility, optimistic revisions, discard, retained attachments, capture-unknown recovery and migration preservation are required. New-file import, aliases and live delivery remain deferred.
+
+**Done evidence:** actual GUI and CLI workflows agree after navigation and fresh process restart; new/reply-all/forward captured MIME has independently checked recipients, subject, references, body and attachments; new arrivals cannot retarget drafts; stale edits/discards and wrong-account access fail without losing authorship. Review native reference-size and compact screenshots against the new prototype, complete native tests, package relocation, old-profile preservation/refusal and the pending concurrent-ingestion paint measurement. Final-source cross-platform CI remains required. No part is passing merely because its implementation or tests exist.
+
+**Executed interim evidence:** build06's complete native self-test exits 0 through New message/Reply/Reply all/Forward, malformed recipient retention, Drafts/account restoration, exact CLI/MIME checks, capture/discard/conflict recovery and actual GUI process restart. P1-07's arriving-member snapshot/count/selection and edited-calendar/RSVP restart checks also pass. Focused Qt tests pass 4/4 in 1.55 seconds, including draft undo isolation. The native log retains one pending QML-item warning at shutdown. This does not replace the remaining complete release/package, schema 4→6/5→6 upgrade/refusal, final visual, concurrent-ingestion paint and final-source three-host CI gates; see the [executed record](../research/phase-1-execution.md#passing-native-workflow-and-document-rerun--gui-build06).
 
 ## Deliverable
 
 A native app you can use to review synthetic conversations, search your local fixture history, hold/finish work, compose and capture a reply, and view/edit the combined fixture calendar. The layout follows the HTML reference: compact top bar, resizable mail split, inline reply, day/week/month calendar, event popovers, mail-only browsable timeline and useful local settings. The CLI exercises the same operations and data.
 
 Deliver Mac and Windows development packages, Ubuntu CI evidence, repeatable setup/build/test commands, a short walkthrough, reviewed native screen captures and a list of remaining product gaps. No Google credentials are required for this phase. Source changes move through Git; profiles and SDK/build output stay on each machine.
+
+## P1-09 — second September 12 prototype update
+
+Start packet, 2026-09-12, D018. Core 13 / CLI 7 / Mail UI 12 / Calendar 11 / Search 5 / Triage 6 / Platform 10 / Quality 9; schema 7, fresh fixture 3, additive protocol 1. Existing profiles retain their fixture revision without reseeding. Earlier P1-08 evidence stays scoped to its source; final acceptance uses the integrated source.
+
+The shared owner supplies typed `theme`, `text_size`, `startup_view`, `last_workspace`, `timeline_position` and `default_event_duration_minutes` through the existing revisioned preference store. Defaults are graphite/default/mail/mail/footer/60. Supported themes are graphite/paper/harbour, text sizes small/default/large, startup mail/calendar/last, last workspace mail/calendar, placement footer/header, and durations 30/45/60 minutes. Existing values, identities and signatures survive.
+
+The Core query owner adds source-hash-bound explicit fixture sender kinds (people/automated; missing or stale means unknown), complete `filtered_group_counts` before pagination and account-scoped exact-address `sender_summary` with three recent conversations and a full count. Conversation kind follows the newest incoming member, or newest member when outgoing-only. Presentation-only `collapsed_groups` excludes hidden groups from paging while retaining full counts, so large Review groups cannot block Held/Done. The paired CLI uses `mail list --kind` and `mail sender`. This does not enable live classification or change read/star state. A process-local `calendar_generation` lets clients refresh actual calendar changes without reloading Calendar for appearance or mail writes.
+
+The Settings owner implements the three complete palettes, General page, consistently scaled native text and shared controls. The Mail/Calendar owner implements the revised headings, category rail, counted collapsible groups, sender cards, relative dates, reader shadows, Tab account navigation and timeline placement. Sync/notification choices remain visibly unavailable pending their backing services. The engine scheduler owner preserves bounded work, real per-source staging and atomic 25-source commits during foreground queries.
+
+Done requires actual native controls with independent CLI and fresh-process preference/draft readback, regular/compact visual review of the new palettes/layout, schema 4/5/6 preservation into 7, release/package checks and the unchanged concurrent-ingestion paint budget. Physical input and other-host/live Google gates remain explicit; whole readiness stays 0/9.
 
 ## Starting point and limits
 
@@ -32,11 +54,11 @@ Mail stays account-separated and conversation-only, including Sent. Calendar com
 
 The timeline appears only in Mail and can browse earlier/later days. It starts on today and offers an explicit return. Its date is independent of the full calendar date; “now” only appears where it belongs. Settings and Calendar have no bottom strip. Keep date/time-zone labels clear when browsing away from today.
 
-Phase 1 includes real local preferences: account display name, row density, selected calendars independent of the active mailbox, week start, calendar/timeline visible hours, per-account signature and shortcut reference. Preserve durable drafts and navigation on settings entry/exit. UI settings are typed and validated; account metadata/signatures have their own domain state.
+Phase 1 includes real local preferences: account display name, row density, selected calendars independent of the active mailbox, week start, Mail timeline visible hours, per-account signature and shortcut reference. The September 12 Calendar has a fixed full-day 00:00–24:00 grid starting at midnight; preserve legacy calendar-hour values in stored preferences and CLI responses without ineffective native controls. Preserve durable drafts and navigation on settings entry/exit. UI settings are typed and validated; account metadata/signatures have their own domain state.
 
 ### Boundaries
 
-- Replies to existing conversations are the composer scope: plain text, authored formatting, signatures, retained attachment selection, explicit discard and local MIME capture. New compose, reply-all/forward, recipient/alias editing and arbitrary file import follow later.
+- P1-08 extends the initial reply scope to independent New message/Reply/Reply all/Forward drafts, editable bounded To/Cc/Bcc and subject, plain text, authored formatting, signatures, retained attachment selection, explicit discard and local MIME capture. Alias management and arbitrary file import remain later work.
 - Calendar writes cover nonrecurring create/edit and self RSVP through the existing deterministic provider-fake path. Recurring items are readable; series/occurrence editing beyond this bounded slice is deferred and clearly unavailable. Calendar search and running-app reminders remain later product work.
 - Search includes sender name/email and subject/body plus implemented category, status, attachment and date filters. Search uses source text; summaries have no effect on retrieval.
 - Local capture is explicitly presented as a development action. It must not pretend mail was delivered. Captured outgoing content uses real operation state and conversation identity.
@@ -105,7 +127,7 @@ Wire category correction and retained attachments to real actions. Verify availa
 
 Reuse the tested recurrence/time-zone/permission projection and `CalendarLayout`. Build day/week/month, a reachable agenda/day list, event details, all-day rows, overlaps and overflow access. Keep account/calendar origin visible, including in conflicts. Display only fields actually available to each source; combined viewing does not grant editing rights.
 
-Build timeline duration lanes and event popovers from the same occurrence query. Provide drag plus visible previous/next/today controls and keyboard alternatives. Show a clear date when away from today. Calendar navigation and timeline browsing are independent; mail account switching retains the combined calendar selection. Visible-hour settings must leave early/late/all-day events discoverable.
+Build timeline duration lanes and event popovers from the same occurrence query. Provide drag plus visible previous/next/today controls and keyboard alternatives. Show a clear date when away from today. Calendar navigation and timeline browsing are independent; mail account switching retains the combined calendar selection. Timeline visible-hour settings must leave early/late/all-day events discoverable; the full Calendar covers 00:00–24:00.
 
 Use an injectable clock for repeatable fixtures, the real local clock for ordinary running and an explicit view time zone. Test midnight, DST and date navigation; never use the prototype's static 10:42 as app time. A meeting-link action uses permitted stored links and an explicit user action; existing reminder-acknowledgment product semantics remain later until reminders are implemented.
 

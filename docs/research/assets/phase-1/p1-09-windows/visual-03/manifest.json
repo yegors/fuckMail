@@ -1,0 +1,59 @@
+{
+  "executables_sha256": {
+    "fm-engine.exe": "cfde0d97a05060750f5c1ae3e58244574d13ab5ef47582fd77819c713d7dbc33",
+    "fm.exe": "b316568190a915a5a8dcec73cbb46452b110c18a147885389e4fc560ed34e5aa",
+    "fuckmail-gui.exe": "dd3310642e9513af41767c45bb0c07c019e01007a615acfc06cc885c52945158"
+  },
+  "captures": [
+    {
+      "name": "calendar-settings-paper",
+      "theme": "paper",
+      "text_size": "default",
+      "timeline_position": "header",
+      "logical_width": 1280,
+      "logical_height": 720,
+      "view": "settings",
+      "settings_page": "Calendar"
+    },
+    {
+      "name": "mail-settings-paper",
+      "theme": "paper",
+      "text_size": "default",
+      "timeline_position": "footer",
+      "logical_width": 1280,
+      "logical_height": 720,
+      "view": "settings",
+      "settings_page": "Mail"
+    },
+    {
+      "name": "accounts-settings-paper",
+      "theme": "paper",
+      "text_size": "default",
+      "timeline_position": "footer",
+      "logical_width": 1280,
+      "logical_height": 720,
+      "view": "settings",
+      "settings_page": "Accounts"
+    },
+    {
+      "name": "model-settings-harbour",
+      "theme": "harbour",
+      "text_size": "default",
+      "timeline_position": "footer",
+      "logical_width": 1280,
+      "logical_height": 720,
+      "view": "settings",
+      "settings_page": "Local model"
+    },
+    {
+      "name": "shortcuts-settings-graphite",
+      "theme": "graphite",
+      "text_size": "default",
+      "timeline_position": "footer",
+      "logical_width": 1280,
+      "logical_height": 720,
+      "view": "settings",
+      "settings_page": "Shortcuts"
+    }
+  ]
+}

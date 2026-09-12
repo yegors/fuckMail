@@ -3,6 +3,7 @@
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QRegularExpression>
+#include <QScopedValueRollback>
 #include <QTextCursor>
 #include <QTextDocument>
 #include <QUrl>
@@ -72,6 +73,18 @@ void ReplyDocument::setEditor(QQuickItem *editor) {
 }
 QString ReplyDocument::plainText() const { return m_document ? m_document->textDocument()->toPlainText() : QString{}; }
 QString ReplyDocument::html() const { return m_document ? limitedHtml(m_document->textDocument()->toHtml()) : QString{}; }
+void ReplyDocument::setIdentity(const QString &identity) {
+    if (m_identity == identity) return;
+    m_identity = identity;
+    // Equal text still belongs to a different authoring session. Its undo stack
+    // must never be able to restore words from the previously selected draft.
+    const QScopedValueRollback<bool> loading(m_loading, true);
+    if (m_document) m_document->textDocument()->clearUndoRedoStacks();
+    if (m_editor) {
+        QMetaObject::invokeMethod(m_editor, "select", Q_ARG(int, 0), Q_ARG(int, 0));
+        m_editor->setProperty("cursorPosition", 0);
+    }
+}
 void ReplyDocument::load(const QString &body, const QString &value) {
     if (!m_document) return;
     const bool sameBody = plainText() == body;
@@ -123,8 +136,8 @@ void ReplyDocument::pastePlain() {
     cursor.insertText(QGuiApplication::clipboard()->text());
     m_editor->setProperty("cursorPosition", cursor.position());
 }
-void ReplyDocument::undo() { if (m_document) m_document->textDocument()->undo(); }
-void ReplyDocument::redo() { if (m_document) m_document->textDocument()->redo(); }
+void ReplyDocument::undo() { if (m_document && m_document->textDocument()->isUndoAvailable()) m_document->textDocument()->undo(); }
+void ReplyDocument::redo() { if (m_document && m_document->textDocument()->isRedoAvailable()) m_document->textDocument()->redo(); }
 bool ReplyDocument::eventFilter(QObject *watched, QEvent *event) {
     if (watched == m_editor && event->type() == QEvent::KeyPress && static_cast<QKeyEvent *>(event)->matches(QKeySequence::Paste)) { pastePlain(); return true; }
     if (watched == m_editor && event->type() == QEvent::Drop) return true;

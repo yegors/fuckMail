@@ -1,0 +1,274 @@
+GUI engine launch attempt 1
+GUI self-test stage 0
+GUI engine launch attempt 2
+GUI engine launch attempt 3
+GUI self-test stage 20
+GUI self-test stage 21
+GUI self-test stage 1
+GUI self-test stage 2
+GUI self-test stage 27
+GUI self-test stage 22
+GUI self-test stage 23
+GUI self-test stage 24
+GUI self-test stage 25
+GUI self-test stage 26
+GUI self-test stage 3
+GUI self-test stage 4
+GUI self-test stage 5
+GUI self-test stage 6
+GUI self-test stage 7
+GUI self-test stage 8
+GUI self-test stage 9
+GUI self-test stage 30
+GUI self-test stage 31
+GUI self-test stage 32
+GUI self-test stage 33
+GUI self-test stage 34
+GUI self-test stage 35
+GUI self-test stage 36
+GUI self-test stage 37
+GUI self-test stage 38
+GUI self-test stage 39
+GUI self-test stage 40
+GUI self-test stage 41
+GUI self-test stage 42
+GUI self-test stage 48
+GUI self-test stage 90
+GUI self-test stage 91
+GUI self-test stage 92
+GUI self-test stage 93
+GUI self-test stage 49
+GUI self-test stage 94
+Native Sent/local-capture/Inspect passed: original conversation, operation identity, MIME bytes and non-delivery status verified by CLI.
+GUI self-test stage 95
+GUI self-test stage 96
+GUI self-test stage 97
+GUI self-test stage 98
+GUI self-test stage 99
+GUI self-test stage 100
+GUI self-test stage 101
+GUI self-test stage 102
+GUI self-test stage 103
+GUI self-test stage 104
+GUI self-test stage 105
+GUI self-test stage 106
+GUI self-test stage 107
+GUI self-test stage 108
+GUI self-test stage 109
+GUI self-test stage 110
+GUI self-test stage 111
+GUI self-test stage 112
+Native Discard confirmation passed: opening/Cancel preserved the exact draft; confirmation cleared only its authored fields, preserving source messages, another draft and capture history.
+GUI self-test stage 50
+GUI self-test stage 51
+GUI self-test stage 52
+GUI self-test stage 53
+GUI self-test stage 54
+GUI self-test stage 55
+GUI self-test stage 56
+GUI self-test stage 57
+GUI self-test stage 58
+GUI self-test stage 59
+GUI self-test stage 70
+GUI self-test stage 71
+GUI self-test stage 72
+GUI self-test stage 73
+GUI self-test stage 74
+GUI engine launch attempt 1
+GUI self-test stage 75
+GUI self-test stage 76
+GUI self-test stage 77
+GUI self-test stage 78
+GUI self-test stage 79
+GUI self-test stage 80
+Native Settings stage 0
+Native Settings stage 1
+Native Settings stage 2
+Settings programmatic viewport setup: list= QVariant(double, 240) reader= QVariant(double, 160) editorFocus= true active= "replyComposer" stored list/reader= QVariant(double, 240) QVariant(double, 160)
+Native Settings stage 3
+Native Settings stage 4
+Native Settings stage 5
+Native Settings stage 6
+Native Settings stage 7
+Native Settings stage 8
+Native Settings stage 9
+Native Settings stage 10
+Native Settings stage 11
+Native Settings stage 12
+Native Settings stage 13
+Native Settings stage 14
+Native Settings stage 15
+Native Settings stage 16
+Native Settings stage 17
+Native Settings stage 18
+Native Settings stage 19
+Native Settings stage 20
+Native Settings stage 21
+Native Settings stage 22
+Native Settings stage 23
+Native Settings stage 24
+Native Settings passed: validation retention, account metadata, unchanged authored draft, independent calendar preferences and Mail viewport/focus restoration (programmatic viewport setup; physical wheel input unverified).
+GUI self-test stage 81
+Native mail search stage 0 case 0
+Native mail search stage 1 case 0
+Native mail search stage 2 case 0
+Native mail search stage 3 case 0
+Native mail search stage 1 case 1
+Native mail search stage 2 case 1
+Native mail search stage 3 case 1
+Native mail search stage 1 case 2
+Native mail search stage 2 case 2
+Native mail search stage 3 case 2
+Native mail search stage 1 case 3
+Native mail search stage 2 case 3
+Native mail search stage 3 case 3
+Native mail search stage 4 case 4
+Native mail search stage 10 case 4
+Native mail search stage 11 case 4
+Native mail search stage 12 case 4
+Native mail search stage 13 case 4
+Native mail search stage 14 case 4
+Native mail search stage 15 case 4
+Native mail search stage 16 case 4
+Native mail search stage 17 case 4
+Native mail search stage 18 case 4
+Native mail search stage 19 case 4
+Native mail search stage 20 case 4
+Native mail search stage 21 case 4
+Native mail filters passed valid/date/UTF-8 error/correction/clear controls. Real response "460" from generation 65 was held across a native account switch; forty superseding real queries were admitted; obsolete queued query "461" never reached transport and final query "500" returned the expected member.
+Native mail search stage 22 case 4
+Native mail search stage 23 case 4
+Native mail search stage 24 case 4
+Native mail search stage 25 case 4
+Native mail search stage 26 case 4
+Native mail search stage 27 case 4
+Native mail search stage 28 case 4
+Native mail search stage 29 case 4
+Native mail search stage 30 case 4
+Native mail search stage 31 case 4
+Native mail search stage 32 case 4
+Native mail search stage 33 case 4
+Native mail search stage 34 case 4
+Native mail search stage 35 case 4
+Native mail search stage 36 case 4
+Native mail search stage 37 case 4
+Native mail search stage 38 case 4
+Native mail search stage 39 case 4
+Native snapshot arrival passed: real Done receipt targets the two original members; provider arrival remains unread/unstarred; exact GUI/CLI counts, selected reader and Unicode draft retained. Counts: {"conversation_count":111,"done_conversation_count":80,"held_conversation_count":10,"message_count":146,"starred_count":25,"unread_conversation_count":22,"unread_count":22}
+Native mail search stage 5 case 4
+Native mail search stage 6 case 4
+GUI self-test stage 82
+Native composition stage 0 mode "new"
+Native composition stage 1 mode "new"
+Native composition stage 2 mode "new"
+Native composition stage 42 mode "new"
+Native composition stage 43 mode "new"
+Native composition stage 44 mode "new"
+Native composition stage 45 mode "new"
+Incomplete native recipient retained exact input and saved revision; correcting the same field created its chip.
+Native composition stage 3 mode "new"
+Native composition stage 4 mode "new"
+Native composition stage 5 mode "new"
+Native composition stage 6 mode "new"
+Native composition stage 7 mode "new"
+Native composition stage 8 mode "new"
+Native composition stage 40 mode "new"
+Native composition stage 41 mode "new"
+Native composition stage 9 mode "new"
+Native composition stage 10 mode "new"
+Native composition stage 11 mode "new"
+Native composition stage 12 mode "new"
+Native composition stage 13 mode "new"
+Native composition stage 14 mode "new"
+Native composition stage 15 mode "new"
+Native composition stage 16 mode "new"
+Native composition stage 20 mode "reply_all"
+Native composition stage 21 mode "reply_all"
+Native composition stage 6 mode "reply_all"
+Native composition stage 7 mode "reply_all"
+Native composition stage 8 mode "reply_all"
+Native composition stage 40 mode "reply_all"
+Native composition stage 41 mode "reply_all"
+Native composition stage 22 mode "reply_all"
+Native composition stage 20 mode "forward"
+Native composition stage 21 mode "forward"
+Native composition stage 6 mode "forward"
+Native composition stage 7 mode "forward"
+Native composition stage 8 mode "forward"
+Native composition stage 40 mode "forward"
+Native composition stage 41 mode "forward"
+Native composition stage 22 mode "forward"
+Native composition stage 20 mode "reply"
+Native composition stage 21 mode "reply"
+Native composition stage 6 mode "reply"
+Native composition stage 7 mode "reply"
+Native composition stage 8 mode "reply"
+Native composition stage 40 mode "reply"
+Native composition stage 41 mode "reply"
+Native composition stage 22 mode "reply"
+Native composition stage 23 mode "reply"
+Native composition stage 24 mode "reply"
+Native composition passed: new/reply/reply-all/forward, recipient chips/subject/rich text, Drafts/account restoration, fresh GUI auto-restoration, four exact local MIME captures and unchanged received flags.
+GUI self-test stage 43
+Native calendar form stage 0
+Native calendar form stage 1
+Native calendar form stage 1
+Native calendar form stage 1
+Native calendar form stage 1
+Native calendar form stage 2
+Native calendar form stage 2
+Native calendar form stage 3
+Native calendar form stage 4
+Native calendar form stage 5
+Native calendar form stage 5
+Native calendar form stage 5
+Native calendar form stage 50
+Native calendar form stage 50
+Native calendar form stage 51
+Native calendar form stage 51
+Native calendar form stage 52
+Native calendar form stage 6
+Native calendar form stage 6
+Native calendar form stage 7
+Native calendar form stage 8
+Native calendar form stage 8
+Native calendar form stage 8
+Native calendar form stage 8
+Native calendar form stage 9
+Native calendar form stage 9
+Native calendar form stage 9
+Native calendar form stage 9
+Native calendar form stage 9
+Native calendar form stage 9
+Native calendar form stage 9
+Native calendar form stage 9
+Native calendar form stage 9
+Native calendar form stage 9
+Native calendar form stage 9
+Native calendar form stage 10
+Native calendar form stage 11
+Native calendar form stage 11
+Native calendar form stage 11
+Native calendar form stage 12
+Native calendar form stage 12
+Native calendar form stage 13
+Native calendar form stage 14
+Native calendar form stage 14
+Native calendar form stage 15
+Native calendar form stage 15
+Native calendar form stage 16
+Native calendar form stage 16
+Native calendar form stage 16
+Native timeline passed: Previous/Next/Today changed visible dates, preserved the independent Calendar date and restored starting state.
+GUI self-test stage 46
+GUI self-test stage 47
+GUI self-test stage 60
+GUI self-test stage 61
+GUI self-test stage 62
+GUI self-test stage 63
+GUI self-test passed: native mail/reply/calendar controls, independent CLI readback, retained validation errors, and stale-close recovery with continued polling and merged view persistence.
+GUI process restart preserved exact edited calendar identity, ETag, all authored fields and accepted self RSVP; visible GUI projection and independent CLI agree without duplicates.
+GUI process restart preserved native Settings preferences and account metadata without changing the saved draft snapshot.
+Independent final CLI verified all four native composition drafts, exact retained MIME hashes/content, one-attempt capture identities and unchanged source flags after process restart.
+GUI process restart passed: exact authored fields and capture journal identities/attempt count preserved.
+"There are still \"1\" items in the process of being created at engine destruction."

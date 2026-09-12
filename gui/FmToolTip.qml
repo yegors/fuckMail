@@ -10,7 +10,7 @@ ToolTip {
         textFormat: Text.PlainText
         color: Theme.text
         font.family: Theme.fontFamily
-        font.pixelSize: 11
+        font.pixelSize: Theme.fontSize(11)
         wrapMode: Text.Wrap
     }
     background: Rectangle { color: Theme.surface; radius: 5; border.color: Theme.controlBorder }

@@ -21,6 +21,7 @@ public:
     void setEditor(QQuickItem *editor);
     QString plainText() const;
     QString html() const;
+    Q_INVOKABLE void setIdentity(const QString &identity);
     Q_INVOKABLE void load(const QString &body, const QString &html);
     Q_INVOKABLE void format(const QString &kind);
     Q_INVOKABLE void pastePlain();
@@ -35,5 +36,6 @@ protected:
 private:
     QPointer<QQuickTextDocument> m_document;
     QPointer<QQuickItem> m_editor;
+    QString m_identity;
     bool m_loading = false;
 };

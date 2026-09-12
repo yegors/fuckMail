@@ -9,7 +9,7 @@ fn phase1_fixture_counts_filters_groups_and_cursor_agree() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
     let accounts = store.handle("accounts", None, json!({})).unwrap();
-    assert_eq!(accounts["fixture_revision"], 2);
+    assert_eq!(accounts["fixture_revision"], 3);
     assert_eq!(accounts["accounts"].as_array().unwrap().len(), 3);
     let account = &accounts["accounts"][0];
     assert_eq!(account["conversation_count"], 110);

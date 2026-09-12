@@ -17,7 +17,7 @@ Popup {
         spacing: 12
         RowLayout {
             Layout.fillWidth: true
-            Text { text: eventList.title; color: Theme.text; font.pixelSize: 19; Layout.fillWidth: true; textFormat: Text.PlainText }
+            Text { text: eventList.title; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(19); Layout.fillWidth: true; textFormat: Text.PlainText }
             FmButton { iconName: "close"; implicitWidth: 30; tip: "Close events"; onClicked: eventList.close() }
         }
         ListView {
@@ -27,9 +27,9 @@ Popup {
                 background: Rectangle { color: parent.hovered ? Theme.hover : "transparent"; Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.line } }
                 contentItem: Column {
                     spacing: 5
-                    Text { text: modelData.title; color: Theme.text; font.pixelSize: 13; textFormat: Text.PlainText; width: parent.width; elide: Text.ElideRight }
-                    Text { text: modelData.start_display + " — " + modelData.end_display; color: Theme.muted; font.pixelSize: 11; width: parent.width; elide: Text.ElideRight }
-                    Text { text: modelData.account_name + " / " + modelData.calendar_name; color: Theme.subtle; font.pixelSize: 10; textFormat: Text.PlainText }
+                    Text { text: modelData.title; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); textFormat: Text.PlainText; width: parent.width; elide: Text.ElideRight }
+                    Text { text: modelData.start_display + " — " + modelData.end_display; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11); width: parent.width; elide: Text.ElideRight }
+                    Text { text: modelData.account_name + " / " + modelData.calendar_name; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(10); textFormat: Text.PlainText }
                 }
                 onClicked: { eventList.close(); eventList.eventSelected(modelData) }
             }

@@ -4,7 +4,8 @@ use rusqlite::params;
 use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
-    json!({"density":"comfortable","week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null})
+    json!({"density":"comfortable","week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
+        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60})
 }
 impl Store {
     pub(crate) fn preferences(&self) -> Result<Value> {
@@ -72,11 +73,40 @@ impl Store {
                 "calendar_view",
                 "calendar_date",
                 "timeline_date",
+                "theme",
+                "text_size",
+                "startup_view",
+                "last_workspace",
+                "timeline_position",
+                "default_event_duration_minutes",
             ],
         )?;
         let mut preferences = current["preferences"].clone();
         for (key, value) in patch.as_object().unwrap() {
             preferences[key] = value.clone();
+        }
+        for (key, allowed) in [
+            ("theme", &["graphite", "paper", "harbour"][..]),
+            ("text_size", &["small", "default", "large"][..]),
+            ("startup_view", &["mail", "calendar", "last"][..]),
+            ("last_workspace", &["mail", "calendar"][..]),
+            ("timeline_position", &["footer", "header"][..]),
+        ] {
+            if !preferences[key]
+                .as_str()
+                .is_some_and(|v| allowed.contains(&v))
+            {
+                return Err(err("invalid_request", &format!("Unknown {key} preference")));
+            }
+        }
+        if !matches!(
+            preferences["default_event_duration_minutes"].as_i64(),
+            Some(30 | 45 | 60)
+        ) {
+            return Err(err(
+                "invalid_request",
+                "Default event duration must be 30, 45 or 60 minutes",
+            ));
         }
         if ![Some("comfortable"), Some("compact")].contains(&preferences["density"].as_str())
             || ![Some("monday"), Some("sunday")].contains(&preferences["week_start"].as_str())
@@ -238,4 +268,128 @@ pub(crate) fn required_revision(p: &Value) -> Result<i64> {
                 "expected_revision must be a nonnegative integer",
             )
         })
+}
+
+#[cfg(test)]
+mod appearance_tests {
+    use super::*;
+
+    #[test]
+    fn appearance_defaults_merge_old_preferences_and_preserve_receipts() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        let old = json!({"density":"compact","timeline_start_hour":8,"timeline_end_hour":22,
+            "selected_calendars":[],"calendar_view":"month"});
+        let command =
+            json!({"preferences":old,"expected_revision":0,"request_id":"old-preferences"});
+        let receipt = json!({"revision":1,"preferences":old});
+        store
+            .db
+            .execute("INSERT INTO preferences VALUES(1,1,?1)", [old.to_string()])
+            .unwrap();
+        store
+            .db
+            .execute(
+                "INSERT INTO preference_operations VALUES(?1,?2,?3)",
+                params![
+                    "old-preferences",
+                    format!(
+                        "{:x}",
+                        Sha256::digest(serde_json::to_vec(&command).unwrap())
+                    ),
+                    receipt.to_string()
+                ],
+            )
+            .unwrap();
+        let merged = store.preferences().unwrap();
+        assert_eq!(merged["revision"], 1);
+        assert_eq!(merged["preferences"]["theme"], "graphite");
+        assert_eq!(merged["preferences"]["default_event_duration_minutes"], 60);
+        for (key, value) in old.as_object().unwrap() {
+            assert_eq!(&merged["preferences"][key], value);
+        }
+        // Old operation responses are immutable even as read defaults expand.
+        assert_eq!(
+            store
+                .handle("preferences_save", None, command.clone())
+                .unwrap(),
+            receipt
+        );
+        drop(store);
+        let mut store = Store::open(dir.path()).unwrap();
+        assert_eq!(store.preferences().unwrap(), merged);
+        assert_eq!(
+            store.handle("preferences_save", None, command).unwrap(),
+            receipt
+        );
+    }
+
+    #[test]
+    fn appearance_preferences_are_typed_atomic_revisioned_and_durable() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        let draft_before = store.draft("windscribe", "windscribe-thread-003").unwrap();
+        let command = json!({"preferences":{"theme":"paper","text_size":"large","startup_view":"last",
+            "last_workspace":"calendar","timeline_position":"header","default_event_duration_minutes":45},
+            "expected_revision":0,"request_id":"appearance"});
+        let saved = store
+            .handle("preferences_save", None, command.clone())
+            .unwrap();
+        for invalid in [
+            json!({"theme":"sepia"}),
+            json!({"text_size":15.5}),
+            json!({"startup_view":"settings"}),
+            json!({"last_workspace":"last"}),
+            json!({"timeline_position":"top"}),
+            json!({"default_event_duration_minutes":45.0}),
+            json!({"default_event_duration_minutes":90}),
+            json!({"sync_interval":5}),
+        ] {
+            let error = store
+                .handle(
+                    "preferences_save",
+                    None,
+                    json!({"preferences":invalid,
+                "expected_revision":1,"request_id":"invalid"}),
+                )
+                .unwrap_err();
+            assert_eq!(error.code, "invalid_request");
+            assert_eq!(store.preferences().unwrap(), saved);
+        }
+        assert_eq!(
+            store
+                .handle(
+                    "preferences_save",
+                    None,
+                    json!({"preferences":{"theme":"harbour"},
+            "expected_revision":0,"request_id":"stale"})
+                )
+                .unwrap_err()
+                .code,
+            "stale_revision"
+        );
+        drop(store);
+        let mut store = Store::open(dir.path()).unwrap();
+        assert_eq!(store.preferences().unwrap(), saved);
+        assert_eq!(
+            store.handle("preferences_save", None, command).unwrap(),
+            saved
+        );
+        assert_eq!(
+            store.draft("windscribe", "windscribe-thread-003").unwrap(),
+            draft_before
+        );
+        for (index, theme) in ["harbour", "graphite"].iter().enumerate() {
+            let next = store
+                .handle(
+                    "preferences_save",
+                    None,
+                    json!({"preferences":{"theme":theme},
+                "expected_revision":index+1,"request_id":format!("theme-{index}")}),
+                )
+                .unwrap();
+            assert_eq!(next["preferences"]["theme"], *theme);
+            assert_eq!(next["preferences"]["timeline_position"], "header");
+        }
+    }
 }

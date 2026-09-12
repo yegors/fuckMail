@@ -1,0 +1,38 @@
+{
+  "result": "failed",
+  "started_unix_ms": 1789200258877.6443,
+  "host": "Windows-10-10.0.26200-SP0",
+  "package_manifest": null,
+  "executables_sha256": {
+    "fm": "6d1ab8cc79e8fd9a4b09680c0a8836340277d7b652a7b576f48cdbb76ad24bf3",
+    "fm-engine": "a8c8e7005d533fe6a51111f82ba7e829dd55966678b93496b71aa2d14a61038d",
+    "fuckmail-gui": "f728d8f4980aa673333c61956f598953e51d2e0da477c3e2afda8db6523b7864"
+  },
+  "verifier_sha256": "cb39f570053cdbf25b3d90dac33788124344e267cc3f873c02ba017da3d7f385",
+  "source_seed": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\phase1-gui-search-checkpoint",
+  "source_database_sha256": "2c13f9c17780613e6a24bc6ea9df52bd3aeed262c5955b7be6699c46976c2d40",
+  "outputs": {
+    "gui_report": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p1-08-search-ingestion-dev-02.gui.json",
+    "ingestion_report": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p1-08-search-ingestion-dev-02.ingestion.json",
+    "gui_log": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p1-08-search-ingestion-dev-02.gui.log",
+    "engine_log": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p1-08-search-ingestion-dev-02.engine.log"
+  },
+  "environment": {
+    "QT_QPA_PLATFORM": "windows",
+    "QT_QUICK_BACKEND": null,
+    "QT_D3D_NO_VBLANK_THREAD": null,
+    "PATH": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\Qt\\6.11.2\\msvc2022_64\\bin;C:\\Windows\\System32;C:\\Windows"
+  },
+  "initial_message_count": 102929,
+  "cloned_database_sha256": "33d8c099330e3dc45ce4224ff64e3f3352c14b84c4f8864dde3e2a91e5a5fd56",
+  "gui_exit_code": 9,
+  "engine_exit_code": 0,
+  "error": "Native measurement or engine shutdown failed; inspect the retained logs",
+  "elapsed_seconds": 83.375,
+  "output_sha256": {
+    "gui_report": "cb32297c1af44dc10637329c0cfd7b880bbd5ab1dd60b1d81e0c868e91d300d4",
+    "ingestion_report": "568c05400ad3ccde9bb5880f9349daee4471b617c30910a3bec2c276ca778aa4",
+    "gui_log": "0f9ca38b6297d77c603b0ae8d4153e166a675f287a33d7d9f28508e85e2fb263",
+    "engine_log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

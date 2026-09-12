@@ -1,5 +1,6 @@
 #include "GuiSearchBenchmark.h"
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDebug>
 #include <QEvent>
 #include <QInputMethodEvent>
@@ -123,6 +124,7 @@ void GuiSearchBenchmark::inputQuery(const QString &query, Phase phase) {
     m_requestedGeneration.store(0, std::memory_order_release);
     m_search->forceActiveFocus();
     QMetaObject::invokeMethod(m_search, "selectAll");
+    m_inputUnixMs = QDateTime::currentMSecsSinceEpoch();
     m_inputAt = monotonicNanos();
     if (m_expected.isEmpty()) {
         QKeyEvent key(QEvent::KeyPress, Qt::Key_Backspace, Qt::NoModifier);
@@ -200,6 +202,8 @@ void GuiSearchBenchmark::painted(quint64 generation, quint64 serial, qint64 swap
         m_samples[m_class].append(milliseconds);
         m_modelSamples[m_class].append((m_modelReadyAt - m_inputAt) / 1000000.0);
         m_paintSamples[m_class].append((swappedAt - m_modelReadyAt) / 1000000.0);
+        m_sampleWindows[m_class].append(QJsonObject{{"input_unix_ms", m_inputUnixMs},
+            {"paint_unix_ms", double(m_inputUnixMs) + milliseconds}, {"input_to_paint_ms", milliseconds}});
     }
     if (m_iteration > 0) ++m_modelReplacements[m_class];
     if (++m_iteration > 100) { qInfo() << "Native search class completed:" << m_class << "100 measured replacement frames"; m_iteration = 0; ++m_class; }
@@ -215,6 +219,7 @@ void GuiSearchBenchmark::finish(const QString &error) {
         auto values = m_samples[index]; std::sort(values.begin(), values.end());
         QJsonObject row{{"class", labels[index]}, {"observations", values.size()},
             {"target_model_replacements", m_modelReplacements[index]}, {"unmeasured_empty_reset_paints", m_resetPaints[index]},
+            {"sample_windows", m_sampleWindows[index]},
             {"expected_first_page_ids", QJsonArray::fromStringList(m_expectedIds[index])},
             {"identity_oracle", index < 2 ? "Deterministic generated rare-query IDs sorted by fixture date and ID" : "Fixture-domain-validated warmup first page; exact ordered IDs required on every measured replacement"}};
         if (!values.isEmpty()) {
@@ -238,7 +243,7 @@ void GuiSearchBenchmark::finish(const QString &error) {
         {"swaps", qint64(m_swapCount.load())}, {"update_requests", qint64(m_updateRequests)},
         {"p95_budget_ms", 200}, {"budget_passed", budgetPassed}, {"queries", classes},
         {"reset_policy", "Before every target: actual unique no-match QML input, confirmed zero-row model replacement, and generation-matched empty frame; all reset work is outside the sample. One unmeasured target warmup per class."},
-        {"limits", "Retained synthetic 100k index-density fixture, including retained ingest-* contention rows when present; warm OS cache; no concurrent source ingestion or model inference during this GUI run; Core contention measured separately."}};
+        {"limits", "Retained synthetic 100k index-density fixture, including retained ingest-* contention rows when present; warm OS cache; no model inference. Source-ingestion overlap is not inferred from latency: sample wall-clock windows must be compared with the separately recorded engine ingestion workload."}};
     QSaveFile output(m_output);
     if (!output.open(QIODevice::WriteOnly) || output.write(QJsonDocument(report).toJson()) < 0 || !output.commit()) { QCoreApplication::exit(8); return; }
     if (!error.isEmpty()) { QCoreApplication::exit(7); return; }

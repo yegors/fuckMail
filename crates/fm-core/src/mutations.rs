@@ -26,14 +26,26 @@ impl Store {
             ],
             "draft_save" => &[
                 "conversation_id",
+                "draft_id",
+                "source_message_id",
                 "body",
                 "body_html",
                 "attachment_ids",
                 "signature_text",
+                "subject",
+                "to_recipients",
+                "cc_recipients",
+                "bcc_recipients",
                 "expected_revision",
                 "request_id",
             ],
-            "draft_discard" => &["conversation_id", "expected_revision", "request_id"],
+            "draft_discard" => &[
+                "conversation_id",
+                "draft_id",
+                "expected_revision",
+                "request_id",
+            ],
+            "draft_create" => &["mode", "conversation_id", "source_message_id", "request_id"],
             "view_save" => &["view", "expected_revision", "request_id"],
             _ => return Err(err("unsupported_method", "Unknown mutation")),
         };
@@ -54,24 +66,56 @@ impl Store {
             )
             .optional()?;
         if let Some((old_fingerprint, result)) = previous {
+            let result: Value = serde_json::from_str(&result)?;
             if old_fingerprint != fingerprint {
-                return Err(err(
-                    "request_id_conflict",
-                    "This request ID already identifies a different command",
-                ));
+                // Updated clients bind the displayed member on their first
+                // legacy save. Historical receipts did not record that field.
+                // Only that added field may be omitted when matching an old
+                // receipt; new receipts keep exact source fingerprint checks.
+                let old_first_save = method == "draft_save"
+                    && p["expected_revision"] == 0
+                    && p.get("conversation_id").is_some()
+                    && p.get("draft_id").is_none()
+                    && p.get("source_message_id").is_some()
+                    && result.get("source_message_id").is_none();
+                let compatible = if old_first_save {
+                    let mut original = p.clone();
+                    original
+                        .as_object_mut()
+                        .unwrap()
+                        .remove("source_message_id");
+                    old_fingerprint
+                        == format!(
+                            "{:x}",
+                            Sha256::digest(serde_json::to_vec(&json!([method, original]))?)
+                        )
+                } else {
+                    false
+                };
+                if !compatible {
+                    return Err(err(
+                        "request_id_conflict",
+                        "This request ID already identifies a different command",
+                    ));
+                }
             }
-            return Ok(serde_json::from_str(&result)?);
+            return Ok(result);
         }
-        let expected = p["expected_revision"]
-            .as_i64()
-            .filter(|v| *v >= 0)
-            .ok_or_else(|| {
-                err(
-                    "invalid_request",
-                    "expected_revision must be a nonnegative integer",
-                )
-            })?;
+        let expected = if method == "draft_create" {
+            0
+        } else {
+            p["expected_revision"]
+                .as_i64()
+                .filter(|v| *v >= 0)
+                .ok_or_else(|| {
+                    err(
+                        "invalid_request",
+                        "expected_revision must be a nonnegative integer",
+                    )
+                })?
+        };
         let result = match method {
+            "draft_create" => self.create_composition(account, p)?,
             "flag" | "set_category" => {
                 let conversation = string(p, "id")?;
                 let current: i64 = tx
@@ -146,128 +190,7 @@ impl Store {
                 self.conversation(account, conversation)?
             }
             "draft_save" | "draft_discard" => {
-                let conversation = string(p, "conversation_id")?;
-                let discard = method == "draft_discard";
-                let body = if discard {
-                    ""
-                } else {
-                    p["body"]
-                        .as_str()
-                        .ok_or_else(|| err("invalid_request", "Draft body must be a string"))?
-                };
-                if body.len() > 256 * 1024 {
-                    return Err(err("invalid_request", "Draft body exceeds 256 KiB"));
-                }
-                let exists: bool = tx.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM conversations WHERE account=?1 AND id=?2)",
-                    params![account, conversation],
-                    |r| r.get(0),
-                )?;
-                if !exists {
-                    return Err(err(
-                        "not_found",
-                        "Conversation does not exist in this account",
-                    ));
-                }
-                let (current, old_body, old_html, old_attachments): (i64,String,Option<String>,String) = tx
-                    .query_row(
-                        "SELECT revision,body,body_html,attachments_json FROM drafts WHERE account=?1 AND conversation_id=?2",
-                        params![account, conversation],
-                        |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)),
-                    )
-                    .optional()?
-                    .unwrap_or((0,String::new(),None,"[]".into()));
-                check_revision(expected, current)?;
-                let body_html = if discard {
-                    None
-                } else {
-                    match p.get("body_html") {
-                        Some(Value::Null) => None,
-                        Some(Value::String(html)) if html.len() <= 256 * 1024 => Some(html.clone()),
-                        Some(_) => {
-                            return Err(err(
-                                "invalid_request",
-                                "Draft HTML must be null or a string of at most 256 KiB",
-                            ))
-                        }
-                        None if old_body == body => old_html,
-                        None => None, // A plain-only client must not leave stale rich text behind.
-                    }
-                };
-                let attachments_json = if discard {
-                    "[]".to_owned()
-                } else {
-                    match p.get("attachment_ids") {
-                        None => old_attachments,
-                        Some(value) => {
-                            let ids = value.as_array().filter(|ids| ids.len() <= 50).ok_or_else(
-                                || {
-                                    err(
-                                        "invalid_request",
-                                        "Draft attachment_ids must contain at most 50 identifiers",
-                                    )
-                                },
-                            )?;
-                            let mut seen = HashSet::new();
-                            let mut total = 0u64;
-                            for value in ids {
-                                let attachment = value.as_str().ok_or_else(|| {
-                                    err(
-                                        "invalid_request",
-                                        "Draft attachment identifier must be a string",
-                                    )
-                                })?;
-                                id(attachment)?;
-                                if !seen.insert(attachment) {
-                                    return Err(err(
-                                        "invalid_request",
-                                        "Draft repeats an attachment identifier",
-                                    ));
-                                }
-                                let row: Option<(String,i64,String)> = tx.query_row("SELECT state,size,blob_hash FROM attachments WHERE account=?1 AND id=?2",params![account,attachment],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
-                                let (state, size, hash) = row.ok_or_else(|| {
-                                    err("not_found", "Draft attachment is not in this account")
-                                })?;
-                                let size = u64::try_from(size).map_err(|_| {
-                                    err("content_unavailable", "Draft attachment size is invalid")
-                                })?;
-                                total = total
-                                    .checked_add(size)
-                                    .filter(|total| *total <= fm_mail::MAX_ATTACHMENT_BYTES as u64)
-                                    .ok_or_else(|| {
-                                        err("invalid_request", "Draft attachments exceed 25 MiB")
-                                    })?;
-                                if state != "available" {
-                                    return Err(err(
-                                        "content_unavailable",
-                                        "Draft attachment is not fully retained",
-                                    ));
-                                }
-                                self.verified_blob(&hash, size)?;
-                            }
-                            serde_json::to_string(ids)?
-                        }
-                    }
-                };
-                let snapshot: (String,String,i64) = tx.query_row("SELECT m.signature_text,a.name,m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id WHERE a.id=?1",[account],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
-                tx.execute("INSERT INTO drafts(account,conversation_id,body,revision,body_html,attachments_json,signature_text,from_name,identity_revision) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9) ON CONFLICT(account,conversation_id) DO UPDATE SET body=excluded.body,revision=excluded.revision,body_html=excluded.body_html,attachments_json=excluded.attachments_json,signature_text=CASE WHEN drafts.discarded=1 THEN excluded.signature_text ELSE drafts.signature_text END,from_name=CASE WHEN drafts.discarded=1 THEN excluded.from_name ELSE drafts.from_name END,identity_revision=CASE WHEN drafts.discarded=1 THEN excluded.identity_revision ELSE drafts.identity_revision END,discarded=0",
-                    params![account, conversation, body, next_revision(current)?,body_html,attachments_json,if discard { "" } else { &snapshot.0 },snapshot.1,snapshot.2])?;
-                if let Some(signature) = p.get("signature_text") {
-                    let signature = signature
-                        .as_str()
-                        .filter(|v| v.len() <= 16 * 1024 && !v.contains('\0'))
-                        .ok_or_else(|| {
-                            err(
-                                "invalid_request",
-                                "Draft signature must be text of at most 16 KiB",
-                            )
-                        })?;
-                    tx.execute("UPDATE drafts SET signature_text=?1 WHERE account=?2 AND conversation_id=?3",params![signature,account,conversation])?;
-                }
-                if discard {
-                    tx.execute("UPDATE drafts SET signature_text='',discarded=1 WHERE account=?1 AND conversation_id=?2",params![account,conversation])?;
-                }
-                self.draft(account, conversation)?
+                self.save_composition(account, p, expected, method == "draft_discard")?
             }
             "view_save" => {
                 let view = &p["view"];
@@ -390,6 +313,7 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
             "filters",
             "replyOpen",
             "selectedMember",
+            "selectedDraft",
         ],
     )?;
     for key in [
@@ -421,7 +345,15 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
     if let Some(filters) = view.get("filters") {
         fields(
             filters,
-            &["sender", "status", "has_attachment", "after", "before"],
+            &[
+                "sender",
+                "exact_sender",
+                "kind",
+                "status",
+                "has_attachment",
+                "after",
+                "before",
+            ],
         )?;
         crate::queries::validate_filters(filters)?;
     }
@@ -442,6 +374,22 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
         )?;
         if !found {
             return Err(err("not_found", "Selected member is outside this account"));
+        }
+    }
+    if let Some(value) = view
+        .get("selectedDraft")
+        .filter(|v| !v.is_null() && v.as_str() != Some(""))
+    {
+        let draft = id(value
+            .as_str()
+            .ok_or_else(|| err("invalid_request", "selectedDraft must be an identifier"))?)?;
+        let exists: bool = db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM drafts WHERE account=?1 AND draft_id=?2)",
+            params![account, draft],
+            |r| r.get(0),
+        )?;
+        if !exists {
+            return Err(err("not_found", "Selected draft is outside this account"));
         }
     }
     if let Some(value) = view.get("account") {
@@ -478,7 +426,7 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
     }
     if view
         .get("folder")
-        .is_some_and(|v| !["inbox", "sent", "all"].contains(&v.as_str().unwrap_or("")))
+        .is_some_and(|v| !["inbox", "sent", "all", "drafts"].contains(&v.as_str().unwrap_or("")))
     {
         return Err(err("invalid_request", "Unknown view folder"));
     }
@@ -517,47 +465,180 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
 mod tests {
     use super::*;
 
-    #[test]
-    fn a_new_reply_does_not_inherit_an_earlier_snapshot_action() {
-        let temp = tempfile::tempdir().unwrap();
-        let mut store = Store::open(temp.path()).unwrap();
-        let conversation: String = store
-            .db
-            .query_row(
-                "SELECT id FROM conversations WHERE account='windscribe' ORDER BY id LIMIT 1",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        let before = store.conversation("windscribe", &conversation).unwrap();
-        let snapshot = before["messages"]
+    fn snapshot_counts(
+        store: &mut Store,
+        message_count: i64,
+        unread_count: i64,
+        starred_count: i64,
+        held_conversation_count: i64,
+    ) -> Value {
+        let accounts = store.handle("accounts", None, json!({})).unwrap();
+        let account = accounts["accounts"]
             .as_array()
             .unwrap()
             .iter()
-            .map(|m| m["id"].clone())
-            .collect::<Vec<_>>();
-        // Simulate one already-normalized provider arrival, independent of the
-        // mutation implementation. Only the provider path introduces this row.
-        store.db.execute("INSERT INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision) SELECT account,'arriving-reply',conversation_id,'new-remote-reply',sender_name,sender_email,recipient,subject,'New source reply','2026-09-11T19:00:00Z',1,0,1,0,source_hash,1 FROM messages WHERE account='windscribe' AND conversation_id=?1 LIMIT 1", [&conversation]).unwrap();
-        store
-            .db
-            .execute(
-                "UPDATE conversations SET revision=revision+1 WHERE account='windscribe' AND id=?1",
-                [&conversation],
+            .find(|account| account["id"] == "windscribe")
+            .unwrap();
+        for (key, expected) in json!({
+            "conversation_count":110,
+            "message_count":message_count,
+            "unread_count":unread_count,
+            "starred_count":starred_count,
+            "unread_conversation_count":25,
+            "held_conversation_count":held_conversation_count,
+            "done_conversation_count":76
+        })
+        .as_object()
+        .unwrap()
+        {
+            assert_eq!(&account[key], expected, "account {key}");
+        }
+        let review = store
+            .handle(
+                "conversations",
+                Some("windscribe"),
+                json!({"folder":"all","status":"review","grouped":true,"limit":100}),
             )
             .unwrap();
-        let mut command = json!({"id":conversation,"message_ids":snapshot,"expected_revision":before["revision"],"request_id":"old-snapshot","read":true});
+        assert_eq!(review["filtered_conversation_count"], 25);
+        assert_eq!(review["conversations"].as_array().unwrap().len(), 25);
         assert_eq!(
-            store
-                .handle("flag", Some("windscribe"), command.clone())
-                .unwrap_err()
-                .code,
-            "stale_revision"
+            review["account_counts"],
+            json!({"conversation_count":110,"unread_conversation_count":25,
+                "held_conversation_count":held_conversation_count,"done_conversation_count":76,
+                "scope":"all_account_mail_including_archive","held_includes_unread":true})
         );
-        command["expected_revision"] = json!(before["revision"].as_i64().unwrap() + 1);
-        let after = store.handle("flag", Some("windscribe"), command).unwrap();
-        for message in after["messages"].as_array().unwrap() {
-            assert_eq!(message["unread"], message["id"] == "arriving-reply");
+        review
+    }
+
+    #[test]
+    fn a_new_reply_does_not_inherit_an_earlier_snapshot_action() {
+        for done in [false, true] {
+            let temp = tempfile::tempdir().unwrap();
+            let mut store = Store::open(temp.path()).unwrap();
+            let conversation = "windscribe-thread-000";
+            let before = store.conversation("windscribe", conversation).unwrap();
+            let snapshot = before["message_ids"].clone();
+            assert_eq!(
+                snapshot,
+                json!([
+                    "windscribe-message-000-000",
+                    "windscribe-message-000-001",
+                    "windscribe-message-000-002"
+                ])
+            );
+            let saved_view = store.handle("view_save", Some("windscribe"), json!({
+                "request_id":"snapshot-selection","expected_revision":0,
+                "view":{"selected":conversation,"selectedMember":"windscribe-message-000-002",
+                    "query":"","folder":"all","readerY":42,"listY":17}
+            })).unwrap();
+            let other_account = store.account_counts("personal").unwrap();
+            // Independent fixture oracle: 110 threads, 143 members; 25 unread
+            // threads contain 27 unread members. Eleven held threads contain
+            // 28 stars; two overlap unread, leaving 76 Done threads.
+            snapshot_counts(&mut store, 143, 27, 28, 11);
+
+            // Simulate one already-normalized provider arrival independently
+            // of mutations; this unit test does not claim provider transport.
+            let tx = store.db.unchecked_transaction().unwrap();
+            tx.execute("INSERT INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision) SELECT account,'arriving-reply',conversation_id,'new-remote-reply',sender_name,sender_email,recipient,subject,'New source reply newsourcearrival','2026-09-11T19:00:00Z',1,0,1,0,source_hash,1 FROM messages WHERE account='windscribe' AND conversation_id=?1 LIMIT 1", [conversation]).unwrap();
+            tx.execute("INSERT INTO message_fts(rowid,sender,subject,body) SELECT rowid,sender_name||' '||sender_email,subject,body FROM messages WHERE account='windscribe' AND id='arriving-reply'", []).unwrap();
+            tx.execute(
+                "UPDATE conversations SET revision=revision+1 WHERE account='windscribe' AND id=?1",
+                [conversation],
+            )
+            .unwrap();
+            tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])
+                .unwrap();
+            tx.commit().unwrap();
+            let arrived = store.conversation("windscribe", conversation).unwrap();
+            assert_eq!(arrived["messages"].as_array().unwrap().len(), 4);
+            let new_member = arrived["messages"]
+                .as_array()
+                .unwrap()
+                .last()
+                .unwrap()
+                .clone();
+            assert_eq!(new_member["id"], "arriving-reply");
+            assert_eq!(new_member["unread"], true);
+            assert_eq!(new_member["starred"], false);
+            assert_eq!(new_member["revision"], 1);
+            snapshot_counts(&mut store, 144, 28, 28, 11);
+
+            let mut command = json!({"id":conversation,"message_ids":snapshot,"expected_revision":before["revision"],"request_id":"old-snapshot","read":true});
+            if done {
+                command["starred"] = json!(false);
+            }
+            assert_eq!(
+                store
+                    .handle("flag", Some("windscribe"), command.clone())
+                    .unwrap_err()
+                    .code,
+                "stale_revision"
+            );
+            assert_eq!(
+                store.conversation("windscribe", conversation).unwrap(),
+                arrived
+            );
+            snapshot_counts(&mut store, 144, 28, 28, 11);
+
+            // A deliberate retry updates only the revision, retaining exactly
+            // the IDs seen before arrival, including for atomic Done.
+            command["expected_revision"] = arrived["revision"].clone();
+            let after = store
+                .handle("flag", Some("windscribe"), command.clone())
+                .unwrap();
+            for message in after["messages"].as_array().unwrap() {
+                if message["id"] == "arriving-reply" {
+                    assert_eq!(message, &new_member);
+                } else {
+                    assert_eq!(message["unread"], false);
+                    assert_eq!(message["starred"], !done);
+                }
+            }
+            let review = snapshot_counts(
+                &mut store,
+                144,
+                25,
+                if done { 25 } else { 28 },
+                if done { 10 } else { 11 },
+            );
+            let row = review["conversations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["id"] == conversation)
+                .unwrap();
+            assert_eq!(row["group"], "review");
+            assert_eq!(row["message_count"], 4);
+            assert_eq!(row["unread"], true);
+            assert_eq!(row["starred"], !done);
+            let matching = store
+                .handle(
+                    "conversations",
+                    Some("windscribe"),
+                    json!({
+                        "folder":"all","query":"newsourcearrival","field":"body","grouped":true
+                    }),
+                )
+                .unwrap();
+            assert_eq!(matching["filtered_conversation_count"], 1);
+            assert_eq!(matching["conversations"][0]["id"], conversation);
+            assert_eq!(
+                matching["conversations"][0]["matching_message_ids"],
+                json!(["arriving-reply"])
+            );
+            assert_eq!(
+                store
+                    .handle("view_get", Some("windscribe"), json!({}))
+                    .unwrap(),
+                saved_view
+            );
+            assert_eq!(store.account_counts("personal").unwrap(), other_account);
+            assert_eq!(
+                store.handle("flag", Some("windscribe"), command).unwrap(),
+                after
+            );
         }
     }
 }

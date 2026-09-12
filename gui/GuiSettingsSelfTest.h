@@ -27,11 +27,15 @@ private:
     QElapsedTimer m_wait;
     QProcess m_cli;
     QVariantMap m_result;
+    QVariantMap m_originalPreferences;
     QJsonObject m_draftSnapshot;
     QString m_originalName, m_originalSignature;
     const QString m_name = "Windscribe — Montréal";
     const QString m_signature = "Native settings — Montréal\nA human-written default signature.";
     const QString m_oversizedSignature = QString(QChar(0x03bb)).repeated(9000);
     double m_listY = 0, m_readerY = 0;
+    int m_defaultFontSize = 0;
+    int m_calendarSnapshotGeneration = 0;
+    qint64 m_appearanceRevision = -1;
     int m_stage = 0, m_ticks = 0, m_lastStage = -1;
 };

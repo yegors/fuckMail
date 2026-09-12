@@ -32,7 +32,9 @@ private:
     const QString m_discardId = "windscribe-thread-003";
     QJsonObject m_discardBefore, m_discardReceived, m_protectedDraft;
     QVariantMap m_calendarResult;
+    QJsonObject m_calendarExpected;
     QVariantMap m_settingsExpected;
+    QVariantMap m_compositionExpected;
     QJsonObject m_shutdownViewParams;
     bool m_shutdownExpectedStar = false;
     const QString m_authored = "Hello Maya,\n\nConfirmed — Montréal at 14:00.\nI wrote this reply myself.\n";

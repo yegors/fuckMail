@@ -13,6 +13,13 @@ from pathlib import Path
 from dev import package_environment
 
 
+TARGET_SCHEMA = 7
+BASELINES = {
+    4: {"fixture_revision": 1, "account_ids": ["windscribe", "personal"]},
+    5: {"fixture_revision": 2, "account_ids": ["windscribe", "personal", "sideproject"]},
+}
+
+
 def require(condition, message):
     if not condition:
         raise RuntimeError(message)
@@ -169,7 +176,8 @@ def durable_snapshot(profile, columns=None):
             "columns": columns, "table_digests": table_digests}
 
 
-def check_upgrade(old, new, report):
+def check_upgrade(old, new, report, expected_old_schema):
+    baseline = BASELINES[expected_old_schema]
     with tempfile.TemporaryDirectory(prefix="fuckmail-upgrade-") as temporary:
         check = Check(Path(temporary).resolve(), package_environment())
         try:
@@ -178,10 +186,17 @@ def check_upgrade(old, new, report):
             old_status = check.call(old, "status", account=None)
             require(old_status.get("synthetic") is True, "Upgrade check requires synthetic fixture mode")
             report["old_schema"] = old_status["schema_version"]
-            require(old_status["schema_version"] == 4, "Phase 1 upgrade requires the preserved schema-4 baseline")
+            require(old_status["schema_version"] == expected_old_schema,
+                    f"Selected old package must use schema {expected_old_schema}")
             old_accounts = check.call(old, "accounts", account=None)
-            require(len(old_accounts["accounts"]) == 2 and old_status["fixture_revision"] == 1,
-                    "Old baseline must be the original two-account fixture 1")
+            old_account_ids = [row["id"] for row in old_accounts["accounts"]]
+            require(old_status["fixture_revision"] == baseline["fixture_revision"],
+                    f"Schema-{expected_old_schema} baseline must seed fixture {baseline['fixture_revision']}")
+            require(sorted(old_account_ids) == sorted(baseline["account_ids"]),
+                    f"Schema-{expected_old_schema} baseline must contain exactly these accounts: "
+                    + ", ".join(baseline["account_ids"]))
+            report["old_fixture_revision"] = old_status["fixture_revision"]
+            report["old_account_ids"] = old_account_ids
             old_pid = old_engine.pid
             compatible = check.call(new, "status", account=None)
             require(compatible == old_status and check.pid() == old_pid,
@@ -194,6 +209,10 @@ def check_upgrade(old, new, report):
                             "expected_revision": draft["revision"], "request_id": "upgrade-draft-once"}
             draft_params.update({"body_html": "<p>Human upgrade draft — 日本語</p>",
                                  "attachment_ids": ["windscribe-attachment-0"]})
+            if expected_old_schema == 5:
+                # Schema 5 supports a durable authored signature independent of
+                # account defaults. Its old columns must survive schema 6 exactly.
+                draft_params["signature_text"] = "Upgrade signature — Montréal / 日本語"
             saved = check.call(old, "draft_save", draft_params)
             view_params = {"view": {"query": "maya", "folder": "inbox", "selected": thread,
                                       "readerY": 25, "listY": 15},
@@ -217,6 +236,9 @@ def check_upgrade(old, new, report):
             require(check.pid() == old_pid, "New client replaced the explicit old engine owner")
             check.finish_owners(old_owner, old_engine)
             old_snapshot = durable_snapshot(check.profile)
+            require(old_snapshot["schema"] == expected_old_schema
+                    and old_snapshot["fixture_revision"] == old_status["fixture_revision"],
+                    "Closed old profile does not match the asserted schema/fixture baseline")
             report["compatible_coexistence"] = "passed"
             report["old_final_owner_shutdown"] = "passed"
             report["before_upgrade_counts"] = old_snapshot["record_counts"]
@@ -227,13 +249,15 @@ def check_upgrade(old, new, report):
             upgraded = check.call(new, "status", account=None)
             require(upgraded["schema_version"] > old_status["schema_version"],
                     "Selected packages did not exercise an actual schema upgrade")
-            require(upgraded["schema_version"] == 5 and upgraded["fixture_revision"] == 1,
-                    "Schema 5 must preserve the original fixture revision")
+            require(upgraded["schema_version"] == TARGET_SCHEMA and upgraded.get("synthetic") is True,
+                    f"New package must migrate this synthetic profile to schema {TARGET_SCHEMA}")
+            require(upgraded["fixture_revision"] == old_status["fixture_revision"],
+                    f"Schema {TARGET_SCHEMA} must preserve the selected baseline's original fixture revision")
             current_accounts = check.call(new, "accounts", account=None)
-            require([row["id"] for row in current_accounts["accounts"]] == [row["id"] for row in old_accounts["accounts"]],
+            require([row["id"] for row in current_accounts["accounts"]] == old_account_ids,
                     "Migration added, removed or reset accounts")
             report["new_schema"] = upgraded["schema_version"]
-            report["fixture_revision_preserved"] = 1
+            report["fixture_revision_preserved"] = old_status["fixture_revision"]
             report["accounts_preserved_without_reseed"] = [row["id"] for row in current_accounts["accounts"]]
             recovered = check.call(new, "draft_get", {"conversation_id": thread})
             require(contains_fields(recovered, saved),
@@ -253,6 +277,9 @@ def check_upgrade(old, new, report):
                     "Migrated capture journal does not expose its original entry")
             check.finish_owners(new_owner, new_engine)
             migrated_snapshot = durable_snapshot(check.profile, old_snapshot["columns"])
+            require(migrated_snapshot["schema"] == TARGET_SCHEMA
+                    and migrated_snapshot["fixture_revision"] == old_snapshot["fixture_revision"],
+                    "Closed migrated profile changed the expected schema or fixture revision")
             require(migrated_snapshot["table_digests"] == old_snapshot["table_digests"],
                     "Migration changed existing table columns or logical content")
             report["preexisting_logical_table_hashes_preserved"] = len(old_snapshot["table_digests"])
@@ -264,6 +291,9 @@ def check_upgrade(old, new, report):
                     "Closing the upgraded GUI ended the independent CLI owner")
             check.finish_owners(new_owner, new_engine)
             before = durable_snapshot(check.profile)
+            require(before["schema"] == TARGET_SCHEMA
+                    and before["fixture_revision"] == old_snapshot["fixture_revision"],
+                    "GUI startup changed the migrated schema or original fixture revision")
             require(all(before["retained_blobs"].get(name) == digest
                         for name, digest in old_snapshot["retained_blobs"].items()),
                     "Migration lost or changed a previously retained blob")
@@ -295,8 +325,8 @@ def check_upgrade(old, new, report):
             # Reopen through the new owned engine after the failed old launch.
             final_engine = check.start_engine(new, "new-engine-after-refusal")
             final_owner = check.start_owner(new, "new-owner-after-refusal", seconds=10)
-            require(check.call(new, "draft_get", {"conversation_id": thread})["body"] == body,
-                    "New package cannot recover the draft after rollback refusal")
+            require(contains_fields(check.call(new, "draft_get", {"conversation_id": thread}), recovered),
+                    "GUI startup or rollback refusal changed the full migrated authored draft")
             require(check.call(new, "flag", flag_params) == flagged,
                     "New package cannot replay the flag receipt after rollback refusal")
             check.finish_owners(final_owner, final_engine)
@@ -312,26 +342,39 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--old-bin", type=Path, required=True, help="Older package's executable directory")
     parser.add_argument("--new-bin", type=Path, required=True, help="Newer package's executable directory")
-    parser.add_argument("--report", type=Path, required=True, help="Write a JSON evidence report")
+    parser.add_argument("--expected-old-schema", type=int, choices=sorted(BASELINES), default=4,
+                        help="Preserved baseline: 4 requires fixture 1/two accounts; 5 requires fixture 2/three accounts (default: 4)")
+    parser.add_argument("--report", type=Path, required=True, help="Create a new JSON evidence report; existing paths are refused")
     args = parser.parse_args()
-    report = {"host": platform.platform(), "architecture": platform.machine(),
-              "synthetic_only": True, "sdk_environment": "cleared", "result": "failed",
-              "verifier_sha256": sha256(Path(__file__)),
-              "limits": ["GUI --smoke is launched with the upgraded profile; source honors that option. The independent CLI owner PID stays unchanged, but the script does not instrument the GUI handshake.",
-                         "This is unsigned development-package replacement evidence, not an automatic updater, physical input or OS keychain test."]}
-    started = time.monotonic()
+    # Reserve the evidence path exclusively before reading packages or starting
+    # engines. A second run cannot overwrite an earlier success or failure,
+    # including when another process creates the path concurrently.
     try:
-        old, report["old_package"] = package(args.old_bin)
-        new, report["new_package"] = package(args.new_bin)
-        require(old["fm-engine"] != new["fm-engine"], "Select two distinct preserved package locations")
-        check_upgrade(old, new, report)
-        report["result"] = "passed"
-    except (RuntimeError, OSError, ValueError, sqlite3.Error, subprocess.TimeoutExpired) as error:
-        report["error"] = str(error)
-    finally:
-        report["elapsed_seconds"] = round(time.monotonic() - started, 3)
         args.report.parent.mkdir(parents=True, exist_ok=True)
-        args.report.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        output = args.report.open("x", encoding="utf-8")
+    except FileExistsError:
+        parser.error("Refusing to overwrite an existing report; choose a new --report path")
+    except OSError as error:
+        parser.error("Cannot create the evidence report: " + str(error))
+    with output:
+        report = {"host": platform.platform(), "architecture": platform.machine(),
+                  "synthetic_only": True, "sdk_environment": "cleared", "result": "failed",
+                  "expected_old_schema": args.expected_old_schema, "target_schema": TARGET_SCHEMA,
+                  "verifier_sha256": sha256(Path(__file__)),
+                  "limits": ["GUI --smoke is launched with the upgraded profile; source honors that option. The independent CLI owner PID stays unchanged, but the script does not instrument the GUI handshake.",
+                             "This is unsigned development-package replacement evidence, not an automatic updater, physical input or OS keychain test."]}
+        started = time.monotonic()
+        try:
+            old, report["old_package"] = package(args.old_bin)
+            new, report["new_package"] = package(args.new_bin)
+            require(old["fm-engine"] != new["fm-engine"], "Select two distinct preserved package locations")
+            check_upgrade(old, new, report, args.expected_old_schema)
+            report["result"] = "passed"
+        except (RuntimeError, OSError, ValueError, sqlite3.Error, subprocess.TimeoutExpired) as error:
+            report["error"] = str(error)
+        finally:
+            report["elapsed_seconds"] = round(time.monotonic() - started, 3)
+            output.write(json.dumps(report, indent=2, ensure_ascii=False) + "\n")
     print("Native package upgrade:", report["result"], "—", args.report)
     if report["result"] != "passed":
         raise SystemExit(report.get("error", "Upgrade verification failed"))

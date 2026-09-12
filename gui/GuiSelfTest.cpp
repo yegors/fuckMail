@@ -1,5 +1,6 @@
 #include "GuiSelfTest.h"
 #include "GuiCalendarSelfTest.h"
+#include "GuiCompositionSelfTest.h"
 #include "GuiSettingsSelfTest.h"
 #include "GuiMailNavigationSelfTest.h"
 #include "ReplyDocument.h"
@@ -17,6 +18,8 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QDebug>
+#include <QDateTime>
+#include <QUuid>
 
 namespace {
 QQuickItem *visualChild(QQuickItem *parent, const QString &name) {
@@ -37,17 +40,21 @@ QQuickItem *buttonWithText(QQuickItem *parent, const QString &text) {
     return nullptr;
 }
 QQuickItem *captureItem(QQuickItem *parent, const QString &operationId) {
-    if (!parent) return nullptr;
+    if (!parent || !parent->isVisible()) return nullptr;
     auto value = parent->property("modelData");
     if (value.metaType() == QMetaType::fromType<QJSValue>()) value = value.value<QJSValue>().toVariant();
-    if (parent->metaObject()->indexOfSignal("clicked()") >= 0
-        && value.toMap()["operation_id"].toString() == operationId) return parent;
+    if (value.toMap()["operation_id"].toString() == operationId) return parent;
     for (auto child : parent->childItems()) if (auto found = captureItem(child, operationId)) return found;
     return nullptr;
 }
+bool capturePopupOpen(QObject *window) {
+    for (auto popup : window->findChildren<QObject *>("captureHistoryPopup"))
+        if (popup->property("opened").toBool()) return true;
+    return false;
+}
 QObject *openedDiscardDialog(QObject *window) {
     for (auto object : window->findChildren<QObject *>())
-        if (object->property("title").toString() == "Discard this reply?"
+        if (object->property("title").toString() == "Discard this draft?"
             && object->property("modal").toBool() && object->property("opened").toBool()) return object;
     return nullptr;
 }
@@ -92,13 +99,34 @@ GuiSelfTest::GuiSelfTest(MailBackend &backend, QObject *window, QString profile,
 bool GuiSelfTest::verifyRestart() {
     // Called after the primary GUI event loop exits, while its disposable profile
     // still exists. The child must hydrate the real QML document and close cleanly.
+    if (m_calendarExpected.isEmpty()) { qCritical() << "No validated edited calendar event was retained for restart verification."; return false; }
+    const auto expectedPath = QDir(m_profile).filePath("calendar-restart-"+QUuid::createUuid().toString(QUuid::Id128)+".json");
+    QFile expectedFile(expectedPath);
+    const auto expectedBytes = QJsonDocument(QJsonObject{{"event",m_calendarExpected}}).toJson();
+    if (!expectedFile.open(QIODevice::WriteOnly) || expectedFile.write(expectedBytes)!=expectedBytes.size()) {
+        qCritical() << "Cannot prepare the calendar restart expectation."; return false;
+    }
+    expectedFile.close();
     QProcess gui;
-    gui.start(QCoreApplication::applicationFilePath(), {"--smoke", "--fixture-clock", "--profile", m_profile, "--engine", m_engine});
-    if (!gui.waitForStarted(5000) || !gui.waitForFinished(45000)) {
+    gui.start(QCoreApplication::applicationFilePath(), {"--smoke", "--fixture-clock", "--profile", m_profile, "--engine", m_engine,
+        "--self-test-calendar-restart",expectedPath});
+    if (!gui.waitForStarted(5000)) { qCritical() << "GUI restart verification could not start."; return false; }
+    const auto restartedPid = QString::number(gui.processId());
+    if (!gui.waitForFinished(45000)) {
         gui.kill(); gui.waitForFinished(1000); qCritical() << "GUI restart verification timed out."; return false;
     }
     if (gui.exitStatus() != QProcess::NormalExit || gui.exitCode() != 0) {
         qCritical().noquote() << "GUI restart failed:" << gui.readAllStandardError(); return false;
+    }
+    QFile observedFile(expectedPath+".observed.json");
+    if (!observedFile.open(QIODevice::ReadOnly) || observedFile.size()>65536) {
+        qCritical() << "Restarted GUI did not return a bounded calendar observation."; return false;
+    }
+    QJsonParseError parse;
+    const auto observed = QJsonDocument::fromJson(observedFile.readAll(),&parse).object();
+    if (parse.error != QJsonParseError::NoError || observed["gui_process_id"].toString()!=restartedPid
+        || !observed["native_delegate_verified"].toBool() || observed["event"].toObject()!=m_calendarExpected) {
+        qCritical() << "The actual restarted GUI did not preserve the exact edited calendar projection and RSVP."; return false;
     }
     const auto read = [this](const QStringList &arguments) {
         QProcess oracle;
@@ -112,6 +140,18 @@ bool GuiSelfTest::verifyRestart() {
         }
         return reply["result"].toObject();
     };
+    const auto calendar = read({"calendar","--combined","--from","2026-09-11","--to","2026-09-12"});
+    int calendarMatches = 0;
+    for (const auto &value : calendar["events"].toArray()) {
+        const auto event = value.toObject();
+        if (event["event_id"]!=m_calendarExpected["event_id"]) continue;
+        ++calendarMatches;
+        if (event!=m_calendarExpected || event!=observed["event"].toObject()) {
+            qCritical() << "Post-restart CLI calendar fields/version/RSVP differ from the independent expectation or restarted GUI."; return false;
+        }
+    }
+    if (calendarMatches!=1) { qCritical() << "Post-restart CLI did not find exactly one created calendar source."; return false; }
+    qInfo() << "GUI process restart preserved exact edited calendar identity, ETag, all authored fields and accepted self RSVP; visible GUI projection and independent CLI agree without duplicates.";
     const auto draft = read({"draft", "show", m_id});
     if (draft["body"].toString() != m_recoveredBody || draft["body_html"].toString() != m_recoveredHtml
         || draft["signature_text"].toString() != m_recoveredSignature + "\nNewer unsent signature."
@@ -146,6 +186,48 @@ bool GuiSelfTest::verifyRestart() {
         }
         qInfo() << "GUI process restart preserved native Settings preferences and account metadata without changing the saved draft snapshot.";
     }
+    QString compositionError;
+    if (!GuiCompositionSelfTest::verifyRetained(m_profile,m_engine,m_compositionExpected,compositionError)) {
+        qCritical().noquote() << "Composition restart verification failed:" << compositionError; return false;
+    }
+    const auto originalPreferences = read({"preferences", "show"})["preferences"].toObject();
+    const auto savePreferences = [&](const QJsonObject &patch) {
+        const auto current = read({"preferences", "show"});
+        if (!current.contains("revision")) return false;
+        const auto operation = "startup-" + QUuid::createUuid().toString(QUuid::Id128);
+        const auto path = QDir(m_profile).filePath(operation + ".json");
+        QFile file(path);
+        const auto bytes = QJsonDocument(patch).toJson();
+        if (!file.open(QIODevice::WriteOnly | QIODevice::NewOnly) || file.write(bytes) != bytes.size()) return false;
+        file.close();
+        const auto saved = read({"preferences", "save", "--preferences-file", path,
+            "--expected-revision", QString::number(current["revision"].toInteger()), "--request-id", operation});
+        return saved.contains("revision");
+    };
+    for (const auto &scenario : {QStringList{"mail", "calendar", "mail"}, QStringList{"calendar", "mail", "calendar"},
+                                QStringList{"last", "calendar", "calendar"}, QStringList{"last", "mail", "mail"}}) {
+        if (!savePreferences({{"startup_view", scenario[0]}, {"last_workspace", scenario[1]}})) {
+            qCritical() << "Cannot prepare the independent startup preference."; return false;
+        }
+        QProcess startup;
+        startup.start(QCoreApplication::applicationFilePath(), {"--smoke", "--fixture-clock", "--profile", m_profile,
+            "--engine", m_engine, "--self-test-startup-workspace", scenario[2]});
+        if (!startup.waitForStarted(5000) || !startup.waitForFinished(45000)) {
+            startup.kill(); startup.waitForFinished(1000); qCritical() << "Fresh workspace preference verification timed out."; return false;
+        }
+        const auto output = startup.readAllStandardError();
+        if (startup.exitStatus() != QProcess::NormalExit || startup.exitCode() != 0
+            || !output.contains("Fresh native process verified saved initial workspace")) {
+            qCritical().noquote() << "Fresh workspace preference failed:" << output; return false;
+        }
+        const auto preferences = read({"preferences", "show"})["preferences"].toObject();
+        if (preferences["last_workspace"].toString() != scenario[2]
+            || preferences["theme"] != originalPreferences["theme"] || preferences["text_size"] != originalPreferences["text_size"]) {
+            qCritical() << "Restart did not remember its workspace or changed the saved appearance."; return false;
+        }
+    }
+    if (!savePreferences(originalPreferences)) { qCritical() << "Cannot restore native walkthrough preferences."; return false; }
+    qInfo() << "Four fresh GUI processes verified Mail, Calendar and both last-workspace choices; appearance persisted and shutdown saved the resulting workspace.";
     qInfo() << "GUI process restart passed: exact authored fields and capture journal identities/attempt count preserved.";
     return true;
 }
@@ -452,21 +534,26 @@ void GuiSelfTest::step() {
         if (m_backend.loading() || m_backend.draft().isEmpty() || m_backend.selectedId() == m_id) return;
         auto list = m_window->findChild<QQuickItem *>("conversationList");
         if (!list) { failed("Sent list is missing."); return; }
-        // Explicit viewport setup, then an actual mouse click on the existing
-        // operation's visible row; no backend inspect call drives this route.
+        // Reach the retained operation through the actual Sent footer and
+        // its secondary history popup; no backend inspect call drives this route.
         if (!QMetaObject::invokeMethod(list, "positionViewAtEnd")) { failed("Sent list could not expose its local capture footer."); return; }
         m_backend.remember("listY", list->property("contentY")); m_stage = 92; break;
     }
     case 92: {
         auto window = qobject_cast<QQuickWindow *>(m_window);
+        if (!capturePopupOpen(m_window)) { click("localCapturesButton"); return; }
         auto row = window ? captureItem(window->contentItem(), m_captureId) : nullptr;
-        if (!clickVisible(window, row, .20)) return;
+        if (!clickVisible(window, buttonWithText(row, "Open"))) return;
         m_stage = 93; break;
     }
     case 93: {
         if (m_backend.loading() || m_backend.selectedId() != m_id || m_backend.draft().isEmpty()) return;
         if (m_backend.draft()["body"].toString() != m_authored) { failed("Local capture row did not open its original authored conversation."); return; }
         auto window = qobject_cast<QQuickWindow *>(m_window);
+        if (!capturePopupOpen(m_window)) {
+            if (auto list=m_window->findChild<QQuickItem *>("conversationList")) QMetaObject::invokeMethod(list,"positionViewAtEnd");
+            click("localCapturesButton"); return;
+        }
         auto row = window ? captureItem(window->contentItem(), m_captureId) : nullptr;
         if (!clickVisible(window, buttonWithText(row, "Inspect"))) return;
         m_stage = 49; break;
@@ -474,6 +561,7 @@ void GuiSelfTest::step() {
     case 49:
         if (m_backend.draftBusy() || !m_backend.captureStatus().contains(m_captureId)) return;
         if (!m_backend.captureStatus().contains("accepted") || !m_backend.captureStatus().contains("no email was delivered")) { failed("Native Inspect omitted the original local outcome or claimed delivery."); return; }
+        if (capturePopupOpen(m_window)) key(m_window, Qt::Key_Escape);
         m_stage = 94;
         cli({"draft", "history", "--conversation-id", m_id}, [this](auto result) {
             const auto captures = result["captures"].toArray();
@@ -785,6 +873,17 @@ void GuiSelfTest::step() {
         m_timer.stop();
         new GuiMailNavigationSelfTest(m_backend, window, [this](const auto &error) {
             if (!error.isEmpty()) { failed(error); return; }
+            m_stage = 82; m_timer.start();
+        }, this);
+        break;
+    }
+    case 82: {
+        auto window = qobject_cast<QQuickWindow *>(m_window);
+        if (!window) { failed("Composition controls need the native window."); return; }
+        m_timer.stop();
+        new GuiCompositionSelfTest(m_backend, window, m_profile, m_engine, [this](const auto &result, const auto &error) {
+            if (!error.isEmpty()) { failed(error); return; }
+            m_compositionExpected = result;
             m_stage = 43; m_timer.start();
         }, this);
         break;
@@ -805,9 +904,23 @@ void GuiSelfTest::step() {
             int found = 0;
             for (const auto &event : result["events"].toArray()) if (event.toObject()["event_id"].toString() == m_calendarResult["target"].toMap()["event"].toString()) {
                 ++found;
-                if (event.toObject()["title"].toString() != "Edited native walkthrough event" || event.toObject()["self_response"].toString() != "accepted"
-                    || event.toObject()["account"].toString() != "windscribe" || event.toObject()["location"].toString() != "Fixture room"
-                    || event.toObject()["description"].toString() != "Human calendar edit — Montréal 日本語") { failed("CLI calendar did not observe the native event fields and RSVP."); return; }
+                const auto source = event.toObject();
+                const auto key = source["occurrence_key"].toObject();
+                const QJsonArray attendees{QJsonObject{{"email","you@windscribe.example"},{"self",true},{"responseStatus","accepted"}}};
+                if (source["title"].toString() != "Edited native walkthrough event" || source["self_response"].toString() != "accepted"
+                    || source["account"].toString() != "windscribe" || source["calendar_id"].toString() != "primary"
+                    || source["location"].toString() != "Fixture room" || source["description"].toString() != "Human calendar edit — Montréal 日本語"
+                    || source["conference_url"].toString() != "https://example.test/meeting" || source["time_zone"].toString() != "America/Toronto"
+                    || QDateTime::fromString(source["start"].toString(),Qt::ISODate).toUTC()!=QDateTime::fromString("2026-09-11T19:30:00Z",Qt::ISODate)
+                    || QDateTime::fromString(source["end"].toString(),Qt::ISODate).toUTC()!=QDateTime::fromString("2026-09-11T20:00:00Z",Qt::ISODate)
+                    || source["all_day"]!=false || source["recurring"]!=false || source["busy_only"]!=false || source["read_only"]!=false
+                    || source["can_edit"]!=true || source["can_rsvp"]!=true || source["attendees"].toArray()!=attendees
+                    || source["etag"].toString().isEmpty() || source["etag"].toString()!=m_calendarResult["etag"].toString()
+                    || source["id"].toString().isEmpty() || key["account"].toString()!="windscribe" || key["calendar"].toString()!="primary"
+                    || key["series"]!=source["event_id"] || !key["original_start"].isNull()) {
+                    failed("CLI calendar did not observe the independently expected edited source fields, exact identity/version and self RSVP."); return;
+                }
+                m_calendarExpected = source;
             }
             if (found != 1) { failed("Calendar create/edit/RSVP did not produce exactly one CLI occurrence."); return; }
         });

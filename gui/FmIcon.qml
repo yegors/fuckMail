@@ -19,7 +19,7 @@ Canvas {
         c.reset()
         c.scale(width / 16, height / 16)
         c.strokeStyle = color
-        c.lineWidth = 1.35
+        c.lineWidth = 1.5
         c.lineCap = "round"
         c.lineJoin = "round"
         function line(points) { c.moveTo(points[0], points[1]); for (let i = 2; i < points.length; i += 2) c.lineTo(points[i], points[i + 1]) }
@@ -44,10 +44,24 @@ Canvas {
         case "more": circle(3,8,0.7); circle(8,8,0.7); circle(13,8,0.7); break
         case "accounts": c.roundedRect(2,5,12,9,1.5,1.5); line([4.5,5,4.5,2.5,11.5,2.5,11.5,5]); break
         case "person": circle(8,4.5,2.3); c.moveTo(2.8,14); c.bezierCurveTo(2.8,7.8,13.2,7.8,13.2,14); break
+        case "bot": c.roundedRect(3,6,10,7,1.5,1.5); line([8,6,8,3.5]); line([6.5,9.5,6.51,9.5]); line([9.5,9.5,9.51,9.5]); line([1.5,9,1.5,11]); line([14.5,9,14.5,11]); break
+        case "unknown": circle(8,8,6); c.moveTo(6.1,5.5); c.bezierCurveTo(6.1,3,10.8,3,10.2,5.8); c.bezierCurveTo(10,6.8,8,7,8,8.8); line([8,11,8,11.2]); break
+        case "wind":
+            line([2,5,8.5,5]); c.bezierCurveTo(11,5,11,1.5,8.5,1.5); c.bezierCurveTo(7.5,1.5,6.75,2.3,6.75,3.25)
+            line([2,8.5,11.5,8.5]); c.bezierCurveTo(14,8.5,14,12,11.5,12); c.bezierCurveTo(10.5,12,9.75,11.25,9.75,10.25)
+            line([2,12,7.5,12]); break
+        case "sliders": line([2.5,5.5,4,5.5]); line([7.5,5.5,13.5,5.5]); line([2.5,10.5,8.5,10.5]); line([12,10.5,13.5,10.5]); circle(5.75,5.5,1.75); circle(10.25,10.5,1.75); break
+        case "general": line([3,4.5,13,4.5]); line([3,8,13,8]); line([3,11.5,9,11.5]); circle(11.5,11.5,1.5); break
+        case "chip": c.roundedRect(3.5,3.5,9,9,1.5,1.5); line([6,1.5,6,3.5]); line([10,1.5,10,3.5]); line([6,12.5,6,14.5]); line([10,12.5,10,14.5]); line([1.5,6,3.5,6]); line([1.5,10,3.5,10]); line([12.5,6,14.5,6]); line([12.5,10,14.5,10]); break
         case "keyboard": c.roundedRect(1.5,4,13,8,1.5,1.5); line([4,7,5,7]); line([7.5,7,8.5,7]); line([11,7,12,7]); line([5,9.5,11,9.5]); break
         case "clock": circle(8,8,6); line([8,4,8,8,10.7,9.6]); break
         case "info": circle(8,8,6); line([8,7.5,8,11]); line([8,4.8,8,5]); break
+        case "review": circle(8,8,5.5); circle(8,8,0.75); break
+        case "checkCircle": circle(8,8,6); line([5.5,8.2,7.3,10,10.7,6.2]); break
         case "reply": line([6.5,3.5,2.5,7.5,6.5,11.5]); c.moveTo(3,7.5); c.bezierCurveTo(10,6,13.5,9.5,13.5,13); break
+        case "replyAll": line([5,3.5,1,7.5,5,11.5]); line([8,3.5,4,7.5,8,11.5]); c.moveTo(5,7.5); c.bezierCurveTo(11,6,14,9.5,14,13); break
+        case "forward": line([9.5,3.5,13.5,7.5,9.5,11.5]); c.moveTo(13,7.5); c.bezierCurveTo(6,6,2.5,9.5,2.5,13); break
+        case "edit": line([10,3,13,6,6,13,2.5,13.5,3,10,10,3]); line([9,4,12,7]); break
         case "refresh": c.moveTo(13,7); c.arc(8,8,5,-0.2,Math.PI*0.86); line([3,13,3,10,6,10]); c.moveTo(3,9); c.arc(8,8,5,Math.PI-0.2,Math.PI*1.86); line([13,3,13,6,10,6]); break
         case "settings":
             circle(8,8,2.1)

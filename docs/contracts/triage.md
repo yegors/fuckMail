@@ -1,6 +1,8 @@
 # Daily triage and mailbox categories
 
-State: Draft · Revision: 5 · Updated: 2026-09-11 · Implementation: Phase 0 synthetic experiment verified; Phase 1 planned; whole area remains Draft.
+State: Draft · Revision: 6 · Updated: 2026-09-12 · Implementation: Local snapshot actions verified in earlier slices; P1-09 sender-kind filters/counts in verification. Whole area remains Draft.
+
+Revision 6 binds D018's All/People/Automated views to explicit source-hash-bound sender kinds, with Unknown available through the shared API. Kind is never guessed from an address, name, subject, read state or category. It follows the newest incoming conversation member, falling back to the newest member only when every member is outgoing. Filtered group counts cover the full matching conversation set before paging and use review first, then held, then done; a mixed unread/starred thread counts only in the displayed review group. Existing unfiltered account held counts still include mixed unread/held threads. Missing/stale annotations do not manufacture an all-clear or change flags. Consumers: Core 13, Search 5, CLI 7 and Mail UI 12; schema 7/fresh fixture 3, preserved migrated fixtures and exact action receipts.
 
 Revision 5 applies D014: read-on-open is confirmed, Done clears unread and stars, and Delay remains an untimed hold. Phase 1 proposes explicit existing-member snapshots, overlapping-flag group rules and labeled conversation/message counts on the shared native GUI/CLI boundary. No timed snooze or local completion state is introduced. Consumers: Core, Mail UI, Search, Gmail, CLI and Local assistance.
 

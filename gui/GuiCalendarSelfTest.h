@@ -10,11 +10,14 @@ class GuiCalendarSelfTest final : public QObject {
 public:
     GuiCalendarSelfTest(MailBackend &backend, QQuickWindow *window,
         QString profile, QString engine, std::function<void(const QVariantMap &, const QString &)> finished, QObject *parent);
+    static bool verifyRestartProjection(MailBackend &backend, QQuickWindow *window,
+        const QString &expectedPath, QString &error);
 private:
     void step();
     void finish(const QString &error = {});
     QQuickItem *item(const QString &name) const;
     bool click(const QString &name);
+    bool clickItem(QQuickItem *control);
     bool type(const QString &name, const QString &text);
     QObject *popup(const QString &name) const;
     QVariantMap occurrence() const;
@@ -31,6 +34,8 @@ private:
     QString m_originalTimelineDate, m_timelineCalendarDate, m_timelineCalendarView, m_timelineWorkspace;
     QVariantMap m_timelineDatePreferences;
     QPointer<QQuickItem> m_timelineFocus;
+    QPointer<QQuickItem> m_timelineSurface;
+    QVariantMap m_timelineEvent;
     QProcess m_external;
     int m_stage = 0, m_ticks = 0, m_view = 0;
     bool m_written = false, m_writeOk = false;

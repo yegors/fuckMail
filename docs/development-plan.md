@@ -1,6 +1,6 @@
 # Development plan
 
-Updated 2026-09-11 under [D009–D015](decisions.md). **Phase 0 synthetic foundation is complete on available hosts; Phase 1 implementation is active. Google-first readiness: 0/9 whole areas verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
+Updated 2026-09-12 under [D009–D018](decisions.md). **Phase 0 synthetic foundation is complete on available hosts; Phase 1 implementation and acceptance are active. Google-first readiness: 0/9 whole areas verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
 
 ## Delivery direction
 
@@ -19,7 +19,7 @@ IMAP, SMTP and external iCalendar URL support start only after the founder has d
 | Phase | Deliverable | Exit evidence |
 | --- | --- | --- |
 | 0 — Prove the paired foundation | Native builds, shared small fixtures, one engine/store, small CLI and text/composer GUI, Google prerequisites | Shared query/action through both clients; bounded state, private access and durable recovery; available-host evidence |
-| 1 — Redesigned local client | Flight Progress v2 native shell/mail/calendar/settings, paired CLI, shared search/actions, durable replies/capture and local calendar edits | [Phase 1 walkthrough](plans/phase-1.md) passes; native visual/input and package evidence recorded; live-provider/full-product limits explicit |
+| 1 — Redesigned local client | Latest Flight Progress v2 native shell/mail/calendar/settings and themes, paired CLI, shared search/actions, durable new/reply/reply-all/forward drafts/capture and local calendar edits | [Phase 1 walkthrough](plans/phase-1.md) passes; native visual/input, performance and package evidence recorded; live-provider/full-product limits explicit |
 | 2 — Google daily workflows | Gmail/Workspace mail and Google Calendar, setup, sending, full-history acquisition and an incrementally growing CLI | Real Google flows work; controlled founder use begins; no IMAP/SMTP/feed prerequisites |
 | 3 — Google completion and dogfooding | Usable Google GUI and CLI; complete Google calendar/actions, expanded designs, intended local assistance and later best-effort HTML; delivery/quality evidence | Actual founder workflows, defects and retests recorded; Google-first release gates separately verified on required platforms |
 | 4 — Later protocol support | IMAP, SMTP and external iCalendar subscriptions | Start only after founder Google GUI/CLI dogfooding; then prove their own interoperability and recovery |

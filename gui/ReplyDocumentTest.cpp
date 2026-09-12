@@ -99,6 +99,53 @@ int main(int argc, char **argv) {
     require(reopened.item->property("selectionStart").toInt() == 6 && reopened.item->property("selectionEnd").toInt() == 9 && reopened.item->property("cursorPosition").toInt() == 9, "Removing only formatting preserves the active text selection");
     require(reopened.reply.plainText() == text, "Removing formatting preserves exact Unicode text");
 
+    Editor isolated(engine);
+    const auto sharedText = QString::fromUtf8("Shared Montréal draft text");
+    isolated.reply.setIdentity("windscribe/conversation-a");
+    isolated.reply.load("Earlier words belonging only to draft A", {});
+    auto *isolatedDocument = isolated.document->textDocument();
+    QTextCursor authoring(isolatedDocument);
+    authoring.beginEditBlock();
+    authoring.select(QTextCursor::Document);
+    authoring.insertText(sharedText);
+    authoring.endEditBlock();
+    isolated.select(0, 6);
+    isolated.reply.format("bold");
+    isolated.reply.undo();
+    isolated.select(0, 6);
+    const auto sharedHtml = isolated.reply.html();
+    require(isolatedDocument->isUndoAvailable() && isolatedDocument->isRedoAvailable(), "Draft A has both an earlier authored text edit and a redoable formatting edit");
+    int identityChanges = 0;
+    QObject::connect(&isolated.reply, &ReplyDocument::contentChanged, &isolated.reply, [&identityChanges] { ++identityChanges; });
+
+    // A legacy reply keeps this key when its first save gives it the same
+    // conversation-based draft ID. Save acknowledgements retain editor history.
+    isolated.reply.setIdentity("windscribe/conversation-a");
+    isolated.reply.load(sharedText, sharedHtml);
+    require(isolatedDocument->isUndoAvailable() && isolatedDocument->isRedoAvailable(), "The same draft identity and content preserve undo and redo across a save acknowledgement");
+    require(isolated.item->property("selectionStart").toInt() == 0 && isolated.item->property("selectionEnd").toInt() == 6 && isolated.item->property("cursorPosition").toInt() == 6, "The same draft identity retains its active selection");
+
+    isolated.reply.setIdentity("windscribe/draft-b");
+    require(identityChanges == 0, "Clearing history for a different draft is not a new authored edit");
+    isolated.reply.load(sharedText, sharedHtml);
+    require(identityChanges == 0, "Loading another draft's identical content is not a new authored edit");
+    require(!isolatedDocument->isUndoAvailable() && !isolatedDocument->isRedoAvailable(), "A different draft with identical text and formatting starts without another draft's undo or redo history");
+    require(isolated.item->property("selectionStart").toInt() == 0 && isolated.item->property("selectionEnd").toInt() == 0 && isolated.item->property("cursorPosition").toInt() == 0, "Changing draft identity clears the previous draft's selection and cursor position");
+    isolated.reply.undo();
+    isolated.reply.redo();
+    require(isolated.reply.plainText() == sharedText && isolated.reply.html() == sharedHtml, "Undo and redo cannot restore draft A's earlier words or formatting into draft B");
+    require(identityChanges == 0, "Identity resets and unchanged loads do not emit a new authored edit");
+
+    QTextCursor nextAuthoring(isolatedDocument);
+    nextAuthoring.movePosition(QTextCursor::End);
+    nextAuthoring.insertText(" from B");
+    isolated.reply.undo();
+    require(isolated.reply.plainText() == sharedText && isolatedDocument->isRedoAvailable(), "New edits in draft B still have working undo and redo");
+    isolated.reply.setIdentity("personal/draft-b");
+    isolated.reply.load(sharedText, sharedHtml);
+    isolated.reply.redo();
+    require(!isolatedDocument->isUndoAvailable() && !isolatedDocument->isRedoAvailable() && isolated.reply.plainText() == sharedText, "Changing accounts also isolates history when the draft identifier and content match");
+
     const auto richInput = QStringLiteral("<html><head><style>p { color: red; }</style><title>Not authored text</title></head><body><p onclick=\"ignored()\">Keep <strong>bold</strong> and <a href=\"https://example.test/meeting\" onmouseover=\"ignored()\">link</a>.</p><img src=\"https://example.test/image.png\"><iframe src=\"https://example.test/embed\"></iframe></body></html>");
     const auto limited = ReplyDocument::limitedHtml(richInput);
     require(!limited.contains("onclick", Qt::CaseInsensitive) && !limited.contains("onmouseover", Qt::CaseInsensitive), "Unrelated event attributes are absent from serialized formatting");
@@ -114,6 +161,6 @@ int main(int argc, char **argv) {
     reopened.reply.load("Authoritative words", "<p>Different stale words</p>");
     require(reopened.reply.plainText() == "Authoritative words", "A stale HTML alternative cannot replace authoritative authored text");
 
-    qInfo() << "Reply document passed: real QML editor, exact Unicode, selected formatting, undo/redo, HTML round trip and limited formatting attributes.";
+    qInfo() << "Reply document passed: real QML editor, exact Unicode, selected formatting, undo/redo with draft identity isolation, HTML round trip and limited formatting attributes.";
     return 0;
 }

@@ -12,6 +12,9 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::io::Read;
 
+// Includes the optional 8192-byte subject and its JSON escaping overhead.
+const MAX_CAPTURE_RECORD_BYTES: usize = 32 * 1024;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum Outcome {
@@ -28,10 +31,15 @@ struct CaptureRecord {
     created_at: u64,
     attempts_started: u32,
     operation: SendOperation,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    draft_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    subject: Option<String>,
 }
 
 struct CaptureRequest<'a> {
     conversation_id: &'a str,
+    draft_id: Option<&'a str>,
     request_id: &'a str,
     expected_revision: i64,
     outcome: Outcome,
@@ -43,12 +51,15 @@ impl<'a> CaptureRequest<'a> {
             value,
             &[
                 "conversation_id",
+                "draft_id",
                 "request_id",
                 "expected_revision",
                 "outcome",
             ],
         )?;
-        let conversation_id = string(value, "conversation_id")?;
+        let (selected, legacy) = crate::composition::selector(value)?;
+        let conversation_id = if legacy { selected } else { "" };
+        let draft_id = if legacy { None } else { Some(selected) };
         let request_id = string(value, "request_id")?;
         if request_id.len() > 128 {
             return Err(err(
@@ -78,10 +89,18 @@ impl<'a> CaptureRequest<'a> {
         };
         Ok(Self {
             conversation_id,
+            draft_id,
             request_id,
             expected_revision,
             outcome,
         })
+    }
+
+    fn selector(&self) -> Value {
+        match self.draft_id {
+            Some(id) => json!({"draft_id":id}),
+            None => json!({"conversation_id":self.conversation_id}),
+        }
     }
 }
 
@@ -90,7 +109,10 @@ impl Store {
         let request = CaptureRequest::parse(params)?;
         let mut transport = LocalCapture {
             outcome: request.outcome,
-            thread_id: request.conversation_id.to_owned(),
+            thread_id: request
+                .draft_id
+                .unwrap_or(request.conversation_id)
+                .to_owned(),
         };
         self.capture_with_transport(account, &request, &mut transport)
     }
@@ -103,7 +125,20 @@ impl Store {
     ) -> Result<Value> {
         let mut record = match load_record(&self.db, account, request.request_id)? {
             Some(record) => {
-                if record.conversation_id != request.conversation_id
+                let same_draft = match request.draft_id {
+                    Some(id) => {
+                        record
+                            .draft_id
+                            .as_deref()
+                            .unwrap_or(&record.conversation_id)
+                            == id
+                    }
+                    None => {
+                        record.draft_id.is_none()
+                            && record.conversation_id == request.conversation_id
+                    }
+                };
+                if !same_draft
                     || record.draft_revision != request.expected_revision
                     || record.outcome != request.outcome
                 {
@@ -147,12 +182,17 @@ impl Store {
             SendState::Rejected { .. } => "rejected",
             SendState::AcceptanceUnknown => "acceptance_unknown",
         };
-        Ok(
-            json!({"synthetic":true,"network_used":false,"draft_unchanged":true,"account":account,"request_id":request.request_id,
+        let mut result = json!({"synthetic":true,"network_used":false,"draft_unchanged":true,"account":account,"request_id":request.request_id,
             "conversation_id":record.conversation_id,"draft_revision":record.draft_revision,"state":state,"sha256":record.operation.mime_sha256,
             "size":record.size,"path":path.to_str().ok_or_else(||err("content_unavailable","Capture export path cannot be represented"))?,
-            "attempts_started":record.attempts_started,"created_at":record.created_at}),
-        )
+            "attempts_started":record.attempts_started,"created_at":record.created_at});
+        if let Some(draft_id) = record.draft_id {
+            result["draft_id"] = json!(draft_id);
+            if record.conversation_id.is_empty() {
+                result["conversation_id"] = Value::Null;
+            }
+        }
+        Ok(result)
     }
 
     fn prepare_capture(
@@ -160,37 +200,33 @@ impl Store {
         account: &str,
         request: &CaptureRequest<'_>,
     ) -> Result<CaptureRecord> {
-        let draft = self.draft(account, request.conversation_id)?;
+        let draft = self.composition(account, &request.selector())?;
+        if draft["discarded"] == true {
+            return Err(err("invalid_draft", "Discarded draft cannot be captured"));
+        }
         if draft["revision"].as_i64() != Some(request.expected_revision) {
             return Err(err(
                 "stale_revision",
                 "Draft changed before capture; reload its current revision",
             ));
         }
-        let source_hash: String = self.db.query_row("SELECT source_hash FROM messages WHERE account=?1 AND conversation_id=?2 ORDER BY sent_at DESC,id DESC LIMIT 1", [account, request.conversation_id], |row| row.get(0))?;
-        if !self.blob_present(&source_hash) {
-            return Err(err(
-                "content_unavailable",
-                "Original reply source is unavailable",
-            ));
-        }
-        let source_size =
-            std::fs::symlink_metadata(self.profile.join("blobs").join(&source_hash))?.len();
-        let source = self.capture_bytes(&source_hash, source_size)?;
-        let parsed = mail_parser::MessageParser::default()
-            .parse(&source)
-            .ok_or_else(|| {
+        if draft["mode"] != "new" {
+            let source_hash = draft["source_hash"].as_str().ok_or_else(|| {
                 err(
                     "content_unavailable",
-                    "Original reply source cannot be parsed",
+                    "Original composition source is unavailable",
                 )
             })?;
-        let reply_to_message_id = parsed.message_id().map(|id| format!("<{id}>"));
-        let references = parsed
-            .references()
-            .as_text_list()
-            .map(|ids| ids.iter().map(|id| format!("<{id}>")).collect())
-            .unwrap_or_default();
+            self.composition_source_bytes(source_hash)?;
+            if draft["source_unavailable"] == true {
+                return Err(err(
+                    "content_unavailable",
+                    "Original composition routing was unavailable when saved",
+                ));
+            }
+        }
+        let reply_to_message_id = draft["reply_to_message_id"].as_str().map(str::to_owned);
+        let references: Vec<String> = serde_json::from_value(draft["references"].clone())?;
         let created_at = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|_| err("invalid_request", "System clock cannot date a capture"))?
@@ -215,15 +251,9 @@ impl Store {
         let composed = fm_mail::build_mail(
             &ComposeRequest {
                 account_id: account.to_owned(),
-                to: vec![Address {
-                    name: None,
-                    email: draft["to"]
-                        .as_str()
-                        .ok_or_else(|| err("invalid_request", "Draft recipient is missing"))?
-                        .to_owned(),
-                }],
-                cc: vec![],
-                bcc: vec![],
+                to: crate::composition::recipients(&draft["to_recipients"])?,
+                cc: crate::composition::recipients(&draft["cc_recipients"])?,
+                bcc: crate::composition::recipients(&draft["bcc_recipients"])?,
                 subject: draft["subject"].as_str().unwrap_or("").to_owned(),
                 body_text: draft["body"].as_str().unwrap_or("").to_owned(),
                 body_html: draft["body_html"].as_str().map(str::to_owned),
@@ -243,7 +273,7 @@ impl Store {
         })?;
         let hash = self.stage_blob(&composed.raw)?;
         let record = CaptureRecord {
-            conversation_id: request.conversation_id.to_owned(),
+            conversation_id: draft["conversation_id"].as_str().unwrap_or("").to_owned(),
             draft_revision: request.expected_revision,
             outcome: request.outcome,
             size: composed.raw.len() as u64,
@@ -255,14 +285,24 @@ impl Store {
                 &composed.raw,
             )
             .map_err(capture_error)?,
+            draft_id: if draft["legacy_reply"] == true {
+                None
+            } else {
+                draft["draft_id"].as_str().map(str::to_owned)
+            },
+            subject: if draft["legacy_reply"] == true {
+                None
+            } else {
+                draft["subject"].as_str().map(str::to_owned)
+            },
         };
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let revision: Option<i64> = tx
             .query_row(
-                "SELECT revision FROM drafts WHERE account=?1 AND conversation_id=?2",
-                [account, request.conversation_id],
+                "SELECT revision FROM drafts WHERE account=?1 AND draft_id=?2",
+                [account, draft["draft_id"].as_str().unwrap()],
                 |row| row.get(0),
             )
             .optional()?;
@@ -272,14 +312,16 @@ impl Store {
                 "Draft changed before capture was persisted",
             ));
         }
+        let serialized = serde_json::to_string(&record)?;
+        if serialized.len() > MAX_CAPTURE_RECORD_BYTES {
+            return Err(err(
+                "invalid_draft",
+                "Capture journal entry exceeds its bound",
+            ));
+        }
         tx.execute(
             "INSERT INTO capture_operations(account,id,json,blob_hash) VALUES(?1,?2,?3,?4)",
-            params![
-                account,
-                request.request_id,
-                serde_json::to_string(&record)?,
-                hash
-            ],
+            params![account, request.request_id, serialized, hash],
         )?;
         tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
         tx.commit()?;
@@ -392,7 +434,7 @@ fn load_record(db: &Connection, account: &str, id: &str) -> Result<Option<Captur
     let Some((json, hash)) = row else {
         return Ok(None);
     };
-    if json.len() > 16 * 1024 {
+    if json.len() > MAX_CAPTURE_RECORD_BYTES {
         return Err(err(
             "storage_error",
             "Capture journal entry exceeds its bound",
@@ -483,7 +525,13 @@ impl Store {
     pub(crate) fn capture_history(&self, account: &str, p: &Value) -> Result<Value> {
         fields(
             p,
-            &["conversation_id", "limit", "offset", "unresolved_only"],
+            &[
+                "conversation_id",
+                "draft_id",
+                "limit",
+                "offset",
+                "unresolved_only",
+            ],
         )?;
         let unresolved = match p.get("unresolved_only") {
             None => false,
@@ -494,6 +542,19 @@ impl Store {
             None => "",
             Some(_) => string(p, "conversation_id")?,
         };
+        let draft = match p.get("draft_id") {
+            None => "",
+            Some(_) => string(p, "draft_id")?,
+        };
+        if !conversation.is_empty() && !draft.is_empty() {
+            return Err(err(
+                "invalid_request",
+                "Choose one capture-history draft selector",
+            ));
+        }
+        if !draft.is_empty() {
+            self.composition(account, &json!({"draft_id":draft}))?;
+        }
         if !conversation.is_empty() {
             self.conversation(account, conversation)?;
         }
@@ -513,20 +574,29 @@ impl Store {
         };
         let limit = bounded("limit", 30, 1, 100)?;
         let offset = bounded("offset", 0, 0, 10_000_000)?;
-        let predicate="account=?1 AND (?2='' OR json_extract(json,'$.conversation_id')=?2) AND (NOT ?5 OR json_extract(json,'$.operation.state') IN ('Prepared','InFlight','AcceptanceUnknown'))";
+        let predicate="account=?1 AND (?2='' OR json_extract(json,'$.conversation_id')=?2) AND (NOT ?5 OR json_extract(json,'$.operation.state') IN ('Prepared','InFlight','AcceptanceUnknown')) AND (?6='' OR COALESCE(json_extract(json,'$.draft_id'),json_extract(json,'$.conversation_id'))=?6)";
         let total: i64 = self.db.query_row(
             &format!("SELECT COUNT(*) FROM capture_operations WHERE {predicate}"),
-            params![account, conversation, limit, offset, unresolved],
+            params![account, conversation, limit, offset, unresolved, draft],
             |r| r.get(0),
         )?;
         let mut stmt=self.db.prepare(&format!("SELECT id,json FROM capture_operations WHERE {predicate} ORDER BY json_extract(json,'$.created_at') DESC,id LIMIT ?3 OFFSET ?4"))?;
         let rows = stmt
             .query_map(
-                params![account, conversation, limit, offset, unresolved],
+                params![account, conversation, limit, offset, unresolved, draft],
                 |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
             )?
             .collect::<std::result::Result<Vec<_>, _>>()?;
-        let captures=rows.into_iter().map(|(operation_id,text)|->Result<Value>{let r:CaptureRecord=serde_json::from_str(&text)?;let subject:String=self.db.query_row("SELECT subject FROM conversations WHERE account=?1 AND id=?2",params![account,r.conversation_id],|row|row.get(0)).optional()?.unwrap_or_else(||"Conversation unavailable".into());let state=match r.operation.state{SendState::Prepared=>"prepared",SendState::InFlight=>"in_flight",SendState::Accepted{..}=>"accepted",SendState::Rejected{..}=>"failed",SendState::AcceptanceUnknown=>"acceptance_unknown"};Ok(json!({"account":account,"operation_id":operation_id,"subject":subject,"conversation_id":r.conversation_id,"draft_revision":r.draft_revision,"synthetic_outcome":r.outcome,"state":state,"mime_sha256":r.operation.mime_sha256,"bytes":r.size,"created_at":r.created_at,"attempts_started":r.attempts_started,"local_only":true,"provider_delivered":false}))}).collect::<Result<Vec<_>>>()?;
+        let captures=rows.into_iter().map(|(operation_id,text)|->Result<Value>{
+            let r:CaptureRecord=serde_json::from_str(&text)?;
+            let subject=match r.subject {Some(subject)=>subject,None=>self.db.query_row("SELECT subject FROM conversations WHERE account=?1 AND id=?2",params![account,r.conversation_id],|row|row.get::<_,String>(0)).optional()?.unwrap_or_else(||"Conversation unavailable".into())};
+            let state=match r.operation.state{SendState::Prepared=>"prepared",SendState::InFlight=>"in_flight",SendState::Accepted{..}=>"accepted",SendState::Rejected{..}=>"failed",SendState::AcceptanceUnknown=>"acceptance_unknown"};
+            let draft_id=r.draft_id.unwrap_or_else(||r.conversation_id.clone());
+            Ok(json!({"account":account,"operation_id":operation_id,"subject":subject,"draft_id":draft_id,
+                "conversation_id":if r.conversation_id.is_empty(){None}else{Some(r.conversation_id)},
+                "draft_revision":r.draft_revision,"synthetic_outcome":r.outcome,"state":state,"mime_sha256":r.operation.mime_sha256,
+                "bytes":r.size,"created_at":r.created_at,"attempts_started":r.attempts_started,"local_only":true,"provider_delivered":false}))
+        }).collect::<Result<Vec<_>>>()?;
         Ok(
             json!({"captures":captures,"total":total,"next_offset":if offset+limit<total{Some(offset+limit)}else{None},"local_only":true}),
         )
@@ -1110,6 +1180,8 @@ mod tests {
             created_at: 1_788_800_000,
             attempts_started: 1,
             operation,
+            draft_id: None,
+            subject: None,
         };
         let original_json = serde_json::to_string(&record).unwrap();
         old.db.execute("INSERT INTO capture_operations(account,id,json,blob_hash) VALUES(?1,'v2-capture',?2,?3)",params![ACCOUNT,original_json,hash]).unwrap();

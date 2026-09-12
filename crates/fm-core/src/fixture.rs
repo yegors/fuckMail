@@ -1,6 +1,26 @@
 use crate::*;
 use rusqlite::params;
 
+pub(crate) fn seed_sender_kinds(tx: &rusqlite::Transaction<'_>) -> Result<()> {
+    // Author-specified synthetic roles; never infer a role from sender text.
+    for account in ["windscribe", "personal", "sideproject"] {
+        for n in 0..110 {
+            let members = if n == 0 {
+                3
+            } else if n == 4 {
+                32
+            } else {
+                1
+            };
+            for member in 0..members {
+                let mid = format!("{account}-message-{n:03}-{member:03}");
+                tx.execute("INSERT INTO message_sender_kinds(account,message_id,source_hash,kind,provenance) SELECT account,id,source_hash,?3,'fixture' FROM messages WHERE account=?1 AND id=?2",params![account,mid,if n==5 {"automated"} else {"people"}])?;
+            }
+        }
+    }
+    Ok(())
+}
+
 struct Message {
     account: String,
     cid: String,
@@ -48,6 +68,7 @@ impl Store {
                         2=>("Head of Support — final loop".to_owned(),"Aisha Rahman".to_owned(),format!("aisha@{account}.example"),"3 of 4 recommend hire. Please send your read before Monday.".to_owned(),"hiring"),
                         3=>("WireGuard relay rollout".to_owned(),"Sam Okoro".to_owned(),format!("sam@{account}.example"),"Toronto is clean since Thursday. Can we use Saturday 06:00–10:00 UTC?".to_owned(),"infra"),
                         4=>("Long project discussion".to_owned(),"Maya Lindqvist".to_owned(),format!("maya@{account}.example"),format!("Member {} of 32. The exact human exchange is retained, including this member's distinctive longthread{member} keyword.",member+1),"planning"),
+                        5 if schema>=5 =>("Weekly service availability".to_owned(),"Status Robot".to_owned(),"status@service.example".to_owned(),String::new(),"planning"),
                         _=>(format!("Project correspondence {n:03}"),format!("Colleague {}",n%20),format!("colleague+{}@{account}.example",n%20),format!("This is synthetic human message {n:03}. We discussed the invoice, project delivery, and quarterly planning. Searchable keyword archive{n:03}."),if n%2==0{"finance"}else{"planning"}),
                     };
                     let outgoing = schema >= 5 && (n == 0 && member == 1 || n > 0 && n % 17 == 0);
@@ -55,7 +76,9 @@ impl Store {
                         sender = "You".into();
                         email = format!("you@{account}.example");
                     }
-                    let recipient = if outgoing {
+                    let recipient = if n == 5 && schema >= 5 {
+                        "alex@windscribe.example".into()
+                    } else if outgoing {
                         format!("maya@{account}.example")
                     } else {
                         format!("you@{account}.example")

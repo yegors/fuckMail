@@ -3,6 +3,7 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     MailBackend.cpp
     MailBackend.h
     Phase1Backend.cpp
+    CompositionBackend.cpp
     CalendarOperations.cpp
     ReplyDocument.cpp
     ReplyDocument.h
@@ -12,6 +13,8 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     GuiSelfTest.h
     GuiCalendarSelfTest.cpp
     GuiCalendarSelfTest.h
+    GuiCompositionSelfTest.cpp
+    GuiCompositionSelfTest.h
     GuiSettingsSelfTest.cpp
     GuiSettingsSelfTest.h
     GuiMailNavigationSelfTest.cpp
@@ -25,7 +28,7 @@ set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(fuckmail-gui
     URI FuckMail
     VERSION 1.0
-    QML_FILES Main.qml Theme.qml FmButton.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmComboBox.qml MailView.qml MailFilters.qml ReplyComposer.qml CalendarView.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml TodayStrip.qml
+    QML_FILES Main.qml Theme.qml FmButton.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmComboBox.qml MailView.qml MailFilters.qml SearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml TodayStrip.qml
     RESOURCES fonts/Geist-Regular.ttf fonts/Geist-Medium.ttf fonts/Geist-SemiBold.ttf fonts/LICENSE-Geist.txt
 )
 target_link_libraries(fuckmail-gui PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)

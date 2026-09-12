@@ -1,0 +1,5 @@
+{
+  "result": "failed",
+  "elapsed_seconds": 83.375,
+  "error": "Native measurement or engine shutdown failed; inspect the retained logs"
+}

@@ -3,11 +3,15 @@
 #include <QDebug>
 #include <QDir>
 #include <QImage>
+#include <QFile>
+#include <QFileInfo>
 #include <QInputMethodEvent>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QScopedValueRollback>
+#include <QUuid>
 #include <array>
 
 namespace {
@@ -74,6 +78,17 @@ QString geometryDiagnostic(QQuickItem *item,QQuickWindow *window) {
         {"text_length",item ? item->property("text").toString().size() : -1},{"ancestors",ancestors}})
         .toJson(QJsonDocument::Compact));
 }
+QJsonObject draftFields(const QJsonObject &draft) {
+    QJsonObject fields;
+    for (const auto name:{"body","body_html","signature_text","attachment_ids","from_name","from","to","subject","identity_revision","revision"}) fields[name]=draft[name];
+    return fields;
+}
+QSet<QString> messageIds(const QJsonArray &values) {
+    QSet<QString> ids;
+    for (const auto &value:values) ids.insert(value.toString());
+    return ids;
+}
+const QString arrivalBody=QString::fromUtf8("Retain this reply during arrival — Montréal, 日本語.\nHuman draft; no submission.");
 }
 
 GuiMailNavigationSelfTest::GuiMailNavigationSelfTest(MailBackend &backend, QQuickWindow *window,
@@ -86,12 +101,17 @@ GuiMailNavigationSelfTest::GuiMailNavigationSelfTest(MailBackend &backend, QQuic
     });
     // A real socket write precedes its response. Inspect only the actual active
     // query, not loadingChanged (which fires before request construction).
-    connect(&m_backend.m_socket, &QLocalSocket::bytesWritten, this, [this] { holdInFlightResponse(); });
+    connect(&m_backend.m_socket, &QLocalSocket::bytesWritten, this, [this] { holdInFlightResponse(); observeArrivalReceipt(); });
+    m_arrivalCliTimeout.setSingleShot(true); m_arrivalCliTimeout.setInterval(10000);
+    connect(&m_arrivalCliTimeout,&QTimer::timeout,this,[this] { finish("Independent snapshot-arrival CLI readback timed out."); });
     m_timer.start();
 }
 void GuiMailNavigationSelfTest::finish(const QString &error) {
     if (!m_finished) return;
     m_timer.stop();
+    if (m_queueCheckActive) { m_queueCheckActive = false; m_backend.m_pollTimer.start(); }
+    m_arrivalCliTimeout.stop(); m_arrivalCli.disconnect(this);
+    if (m_arrivalCli.state()!=QProcess::NotRunning) m_arrivalCli.kill();
     m_holdArmed = false;
     if (m_responseHeld && m_heldDelegate) { auto delegate=std::move(m_heldDelegate); m_heldDelegate={}; delegate(m_heldResult,m_heldOk); }
     auto callback = std::move(m_finished); m_finished = {};
@@ -113,15 +133,38 @@ bool GuiMailNavigationSelfTest::typeQuery(const QString &query) {
 bool GuiMailNavigationSelfTest::click(const QString &name) {
     return clickItem(find(m_window->contentItem(), name));
 }
-bool GuiMailNavigationSelfTest::clickItem(QQuickItem *control) {
+bool GuiMailNavigationSelfTest::clickItem(QQuickItem *control,Qt::MouseButton button) {
     // Do not scroll from the test to conceal a missing native reveal path.
-    if (!control || !control->isEnabled() || !fullyVisible(control, m_window)) return false;
+    if (!control || !control->isEnabled()) return false;
+    const bool editable=control->property("cursorPosition").isValid() && !control->property("readOnly").toBool();
+    if (!(editable ? inputViewportVisible(control,m_window) : fullyVisible(control,m_window))) return false;
     const auto position = control->mapToScene({control->width()/2, control->height()/2});
     const QPointF global = m_window->mapToGlobal(position.toPoint());
-    QMouseEvent press(QEvent::MouseButtonPress, position, global, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
-    QMouseEvent release(QEvent::MouseButtonRelease, position, global, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QMouseEvent movement(QEvent::MouseMove, position, global, Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+    QMouseEvent press(QEvent::MouseButtonPress, position, global, button, button, Qt::NoModifier);
+    QMouseEvent release(QEvent::MouseButtonRelease, position, global, button, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(m_window, &movement);
     QCoreApplication::sendEvent(m_window, &press); QCoreApplication::sendEvent(m_window, &release);
     return true;
+}
+QObject *GuiMailNavigationSelfTest::senderPopup() const {
+    for (auto object:m_window->findChildren<QObject *>("senderCard")) if (object->property("opened").toBool()) return object;
+    return nullptr;
+}
+bool GuiMailNavigationSelfTest::hoverSender() {
+    auto sender=find(m_window->contentItem(),"senderFilter_windscribe-message-005-000");
+    if (!fullyVisible(sender,m_window)) return false;
+    const auto position=sender->mapToScene({sender->width()/2,sender->height()/2});
+    QMouseEvent movement(QEvent::MouseMove,position,QPointF(m_window->mapToGlobal(position.toPoint())),
+        Qt::NoButton,Qt::NoButton,Qt::NoModifier);
+    QCoreApplication::sendEvent(m_window,&movement);
+    return true;
+}
+bool GuiMailNavigationSelfTest::openAdvancedFilters() {
+    // The reference's filter surface is reached from the actual search field.
+    // Opening it through a native click also checks that its header anchor fits.
+    if (!find(m_window->contentItem(),"mailFiltersButton")) { click("searchField"); return false; }
+    return click("mailFiltersButton");
 }
 bool GuiMailNavigationSelfTest::typeField(const QString &name,const QString &text) {
     auto field=find(m_window->contentItem(),name);
@@ -199,6 +242,71 @@ void GuiMailNavigationSelfTest::holdInFlightResponse() {
         finalDelegate(result,ok);
     };
 }
+void GuiMailNavigationSelfTest::observeArrivalReceipt() {
+    if (!m_arrivalDoneArmed) return;
+    auto pending=m_backend.m_pending.find(m_backend.m_inFlight);
+    if (pending==m_backend.m_pending.end() || pending->method!="flag" || pending->account!=m_arrivalAccount || pending->started<=0) return;
+    m_arrivalDoneArmed=false;
+    const auto original=pending->callback;
+    QPointer<GuiMailNavigationSelfTest> guard(this);
+    pending->callback=[guard,original](const QJsonObject &result,bool ok) {
+        if (guard) { guard->m_arrivalReceipt=result; guard->m_arrivalReceiptOk=ok; guard->m_arrivalReceiptSeen=true; }
+        original(result,ok);
+    };
+}
+void GuiMailNavigationSelfTest::arrivalCli(const QStringList &arguments,std::function<void(const QJsonObject &)> callback) {
+    m_timer.stop(); m_arrivalCli.disconnect(this);
+    connect(&m_arrivalCli,&QProcess::finished,this,[this,callback](int code,QProcess::ExitStatus status) {
+        m_arrivalCliTimeout.stop();
+        const auto reply=QJsonDocument::fromJson(m_arrivalCli.readAllStandardOutput()).object();
+        if (code!=0 || status!=QProcess::NormalExit || !reply["ok"].toBool()) {
+            finish("Independent snapshot-arrival CLI readback failed: "+QString::fromUtf8(m_arrivalCli.readAllStandardError())); return;
+        }
+        QPointer<GuiMailNavigationSelfTest> guard(this);
+        callback(reply["result"].toObject());
+        if (guard && m_finished) m_timer.start();
+    });
+    connect(&m_arrivalCli,&QProcess::errorOccurred,this,[this](auto) { finish("Cannot run the independent snapshot-arrival CLI."); });
+    const auto program=QDir(QFileInfo(m_backend.m_engine).absolutePath()).filePath("fm"
+#ifdef Q_OS_WIN
+        ".exe"
+#endif
+    );
+    m_arrivalCli.start(program,QStringList{"--profile",m_backend.m_profile,"--engine",m_backend.m_engine,"--account",m_arrivalAccount,"--json"}+arguments);
+    m_arrivalCliTimeout.start();
+}
+QJsonObject GuiMailNavigationSelfTest::arrivalReport() const {
+    QFile report(m_arrivalReportPath);
+    if (!report.open(QIODevice::ReadOnly) || report.size()>1024*1024) return {};
+    return QJsonDocument::fromJson(report.readAll()).object();
+}
+bool GuiMailNavigationSelfTest::arrivalMembersMatch(const QJsonObject &conversation,bool starred,bool includeArrival) const {
+    auto expected=messageIds(m_arrivalOriginalIds);
+    if (includeArrival) {
+        if (m_arrivalId.isEmpty() || expected.contains(m_arrivalId)) return false;
+        expected.insert(m_arrivalId);
+    }
+    const auto members=conversation["messages"].toArray();
+    if (conversation["id"].toString()!=m_arrivalThread || members.size()!=expected.size()
+        || messageIds(conversation["message_ids"].toArray())!=expected) return false;
+    QSet<QString> seen;
+    for (const auto &value:members) {
+        const auto member=value.toObject(); const auto id=member["id"].toString();
+        if (!expected.contains(id) || seen.contains(id)) return false;
+        seen.insert(id);
+        const bool arrived=includeArrival && id==m_arrivalId;
+        if (member["unread"].toBool()!=arrived || member["starred"].toBool()!=(arrived?false:starred)) return false;
+    }
+    return seen==expected;
+}
+bool GuiMailNavigationSelfTest::arrivalCountsMatch() const {
+    const auto account=QJsonObject::fromVariantMap(m_backend.currentAccount());
+    const auto query=QJsonObject::fromVariantMap(m_backend.querySummary().value("account_counts").toMap());
+    for (auto it=m_arrivalExpectedCounts.begin();it!=m_arrivalExpectedCounts.end();++it) if (account[it.key()]!=it.value()) return false;
+    for (const auto key:{"conversation_count","unread_conversation_count","held_conversation_count","done_conversation_count"})
+        if (query[key]!=m_arrivalExpectedCounts[key]) return false;
+    return true;
+}
 bool GuiMailNavigationSelfTest::resultMatches() const {
     const auto &expected = searches[m_case];
     const auto rows = m_backend.conversations();
@@ -235,6 +343,51 @@ void GuiMailNavigationSelfTest::restore() {
     // Passive restoration must not review the original conversation again.
     m_backend.selectConversation(m_originalSelected);
 }
+void GuiMailNavigationSelfTest::beginQueueCheck(bool fairness) {
+    // Queue real requests before yielding the event loop. The first status is
+    // already on the actual socket; subsequent reads remain unsent. Only this
+    // short ordering check pauses the recurring timer, not the idle/painters.
+    m_queueCheckActive = true; m_backend.m_pollTimer.stop();
+    m_queueObserved.clear();
+    m_queueExpected = fairness
+        ? QStringList{"active","q1","q2","q3","q4","poll","q5","q6"}
+        : QStringList{"active","q1","poll1","poll2","manual","q2","poll3","write","q3","poll4"};
+    QPointer<GuiMailNavigationSelfTest> guard(this);
+    const auto queue = [this, guard](const QString &label, const QString &method, bool automatic = false) {
+        QJsonObject params;
+        QString account;
+        if (method == "conversations") { account = m_backend.account(); params = {{"limit",1}}; }
+        if (method == "preferences_save") params = {{"preferences",QJsonObject{}},
+            {"expected_revision",m_backend.m_preferencesRevision},{"request_id","queue-check-"+QUuid::createUuid().toString(QUuid::Id128)}};
+        QScopedValueRollback<bool> origin(m_backend.m_automaticReadScope, automatic);
+        m_backend.request(method, account, params, [guard, label, method](const auto &result, bool ok) {
+            if (!guard || !guard->m_finished) return;
+            if (!ok || result.isEmpty() || (method == "conversations" && result["conversations"].toArray().size()!=1)) {
+                guard->finish("Real queued request failed during priority verification: "+label); return;
+            }
+            if (method == "preferences_save") {
+                if (result["preferences"].toObject()!=QJsonObject::fromVariantMap(guard->m_backend.preferences())) {
+                    guard->finish("The empty preference-write barrier changed stored preferences."); return;
+                }
+                guard->m_backend.m_preferencesRevision=result["revision"].toInteger();
+            }
+            guard->m_queueObserved.append(label);
+            if (guard->m_queueObserved!=guard->m_queueExpected.mid(0,guard->m_queueObserved.size()))
+                guard->finish("Actual engine response order violated query priority, a read/write barrier or bounded polling progress: "+guard->m_queueObserved.join(","));
+        });
+    };
+    queue("active","status");
+    if (fairness) {
+        queue("poll","accounts",true);
+        for (int index=1;index<=6;++index) queue("q"+QString::number(index),"conversations");
+    } else {
+        queue("poll1","accounts",true); queue("poll2","preferences_get",true); queue("q1","conversations");
+        queue("manual","status"); queue("poll3","accounts",true); queue("q2","conversations");
+        // Even an accidental automatic scope must never classify a mutation
+        // as a bypassable read. The empty patch preserves all user values.
+        queue("write","preferences_save",true); queue("poll4","preferences_get",true); queue("q3","conversations");
+    }
+}
 void GuiMailNavigationSelfTest::step() {
     if (++m_ticks > 400) {
         const auto reader = find(m_window->contentItem(), "reader");
@@ -261,7 +414,20 @@ void GuiMailNavigationSelfTest::step() {
         m_originalWorkspace = m_window->property("workspace").toString(); m_originalSettings = m_window->property("settingsOpen").toBool();
         m_window->setProperty("settingsOpen", false); m_window->setProperty("workspace", "mail");
         m_backend.setFolder("inbox"); m_backend.setCategory({}); m_backend.applyFilters({});
-        m_stage = 1; break;
+        m_stage = 80; break;
+    case 80:
+        if (m_backend.loading() || m_backend.draftBusy() || !m_backend.m_pending.isEmpty()
+            || m_backend.m_preferencesSaving || !m_backend.m_preferencesPending.isEmpty()) return;
+        beginQueueCheck(false); m_stage=81; break;
+    case 81:
+        if (m_queueObserved!=m_queueExpected) return;
+        if (!m_backend.m_pending.isEmpty()) return;
+        beginQueueCheck(true); m_stage=82; break;
+    case 82:
+        if (m_queueObserved!=m_queueExpected) return;
+        m_queueCheckActive=false; m_backend.m_pollTimer.start();
+        qInfo() << "Native request ordering passed: real explicit queries preceded unsent automatic reads, retained manual-read/write barriers and delivered polling after four bypasses; stored preferences unchanged.";
+        m_stage=1; break;
     case 1:
         if (m_backend.loading() || m_backend.draftBusy() || m_backend.mutationInFlight()) return;
         if (!typeQuery(searches[m_case].query)) { finish("Text input did not reach the visible native search field."); return; }
@@ -289,7 +455,7 @@ void GuiMailNavigationSelfTest::step() {
         if (!m_loadingSeen || m_backend.loading() || !m_backend.query().isEmpty()) return;
         m_searchPending=false; m_unfilteredRows=m_backend.conversations();
         if (m_unfilteredRows.size()<2 || !m_backend.filters().isEmpty()) { finish("Filter acceptance needs the unfiltered mailbox page."); return; }
-        if (!click("mailFiltersButton")) return;
+        if (!openAdvancedFilters()) return;
         m_stage=11; break;
     case 11:
         if (!filterPopup()) return;
@@ -325,7 +491,7 @@ void GuiMailNavigationSelfTest::step() {
                 + QString::fromUtf8(QJsonDocument(diagnostic).toJson(QJsonDocument::Compact)));
             return;
         }
-        if (!click("mailFiltersButton")) return;
+        if (!openAdvancedFilters()) return;
         m_stage=14; break;
     }
     case 14:
@@ -361,7 +527,7 @@ void GuiMailNavigationSelfTest::step() {
     case 17:
         if (filterPopup() || m_backend.loading()) return;
         if (m_backend.filters()!=m_expectedFilters || !filterResultMatches()) { finish("Corrected filter input did not restore the valid criteria."); return; }
-        if (!click("mailFiltersButton")) return;
+        if (!openAdvancedFilters()) return;
         m_stage=18; break;
     case 18:
         if (!filterPopup() || !click("clearMailFilters")) return;
@@ -407,6 +573,209 @@ void GuiMailNavigationSelfTest::step() {
         m_stage=23; break;
     case 23:
         if (m_backend.account()!=m_originalAccount || m_backend.loading() || m_backend.draftBusy() || m_backend.draft().isEmpty()) return;
+        m_arrivalReportPath=m_backend.property("selfTestArrivalReport").toString();
+        if (m_arrivalReportPath.isEmpty()) {
+            qInfo() << "Native snapshot arrival skipped: no explicit engine verification scenario was configured.";
+            restore(); m_stage=5;
+        } else m_stage=24;
+        break;
+    case 24: {
+        const auto report=arrivalReport();
+        m_arrivalAccount=report["account"].toString(); m_arrivalThread=report["conversation_id"].toString();
+        m_arrivalOriginalIds=report["original_message_ids"].toArray();
+        if (report["version"].toInt()!=1 || report["mode"].toString()!="snapshot" || report["status"].toString()!="ready"
+            || m_arrivalAccount!=m_originalAccount || m_arrivalThread.isEmpty() || m_arrivalOriginalIds.size()!=2
+            || messageIds(m_arrivalOriginalIds).size()!=2 || report["seeded_messages"].toInt()!=2
+            || report["trigger_count"].toInt()!=0 || report["committed_messages"].toInt()!=0 || !report["errors"].toArray().isEmpty()) {
+            finish("The explicit snapshot-arrival engine report is not a fresh two-member provider scenario."); return;
+        }
+        m_backend.setFolder("all"); m_backend.setCategory({}); m_backend.applyFilters({});
+        if (!typeQuery("Snapshot arrival verification")) { finish("Cannot search for the provider-seeded snapshot thread through the native field."); return; }
+        m_stage=25; break;
+    }
+    case 25:
+        if (!m_loadingSeen || m_backend.loading()) return;
+        if (m_backend.conversations().size()!=1 || m_backend.conversations().first().toMap()["id"].toString()!=m_arrivalThread) {
+            finish("The native search did not find the exact provider-seeded snapshot conversation."); return;
+        }
+        if (!click("conversationRow_"+m_arrivalThread)) return;
+        m_searchPending=false; m_stage=26; break;
+    case 26:
+        if (m_backend.loading() || m_backend.mutationInFlight() || m_backend.draftBusy() || m_backend.draft().isEmpty()
+            || m_backend.selectedId()!=m_arrivalThread) return;
+        if (!arrivalMembersMatch(QJsonObject::fromVariantMap(m_backend.conversation()),true,false)) return;
+        m_stage=27;
+        arrivalCli({"mail","read",m_arrivalThread},[this](const auto &source) {
+            if (!arrivalMembersMatch(source,true,false)) finish("Independent CLI did not observe native read-on-open preserving both original stars.");
+        });
+        break;
+    case 27:
+        if (!click("replyButton")) return;
+        m_stage=28; break;
+    case 28: {
+        const auto editor=find(m_window->contentItem(),"replyComposer");
+        if (!editor || !editor->isEnabled() || !inputViewportVisible(editor,m_window)) return;
+        if (!m_backend.draft()["body"].toString().isEmpty()) { finish("The fresh provider conversation unexpectedly already has an authored draft."); return; }
+        editor->forceActiveFocus(); QInputMethodEvent input; input.setCommitString(arrivalBody); QCoreApplication::sendEvent(editor,&input);
+        if (m_backend.draft()["body"].toString()!=arrivalBody) { finish("Unicode native input did not reach the snapshot-arrival draft."); return; }
+        m_backend.saveDraft(); m_stage=29; break;
+    }
+    case 29:
+        if (m_backend.draftBusy() || m_backend.draftStatus()!="Saved on this machine") return;
+        m_arrivalDraft=draftFields(QJsonObject::fromVariantMap(m_backend.draft()));
+        if (m_arrivalDraft["body"].toString()!=arrivalBody) { finish("Saving changed the native snapshot-arrival draft."); return; }
+        m_stage=30;
+        arrivalCli({"draft","show",m_arrivalThread},[this](const auto &draft) {
+            if (draftFields(draft)!=m_arrivalDraft) finish("Independent CLI did not recover the exact new Unicode draft and identity snapshot.");
+        });
+        break;
+    case 30:
+        if (!find(m_window->contentItem(),"unholdConversationButton")) {
+            clickItem(find(m_window->contentItem(),"conversationActionsRow"),Qt::RightButton); return;
+        }
+        if (!click("unholdConversationButton")) return;
+        m_stage=31; break;
+    case 31:
+        if (m_backend.mutationInFlight() || m_backend.loading()) return;
+        if (!arrivalMembersMatch(QJsonObject::fromVariantMap(m_backend.conversation()),false,false)) {
+            finish("Native Unhold did not clear only the two original held members."); return;
+        }
+        if (!click("delayConversationButton")) return;
+        m_stage=32; break;
+    case 32:
+        if (m_backend.mutationInFlight() || m_backend.loading()) return;
+        if (!arrivalMembersMatch(QJsonObject::fromVariantMap(m_backend.conversation()),true,false)) {
+            finish("Native Delay did not hold the two reviewed original members."); return;
+        }
+        m_stage=33;
+        arrivalCli({"mail","read",m_arrivalThread},[this](const auto &source) {
+            if (!arrivalMembersMatch(source,true,false)) finish("Independent CLI did not observe the exact reviewed/held snapshot before Done.");
+        });
+        break;
+    case 33:
+        m_stage=34;
+        arrivalCli({"accounts"},[this](const auto &result) {
+            QJsonObject account;
+            for (const auto &value:result["accounts"].toArray()) if (value.toObject()["id"].toString()==m_arrivalAccount) account=value.toObject();
+            if (account.isEmpty() || account["starred_count"].toInteger()<2 || account["held_conversation_count"].toInteger()<1) {
+                finish("Independent account baseline omits the held snapshot members."); return;
+            }
+            // The independently read baseline has exactly two reviewed/held
+            // originals. Done removes those stars; one unread reply then arrives.
+            for (const auto key:{"message_count","unread_count","starred_count","conversation_count","unread_conversation_count","held_conversation_count","done_conversation_count"})
+                m_arrivalExpectedCounts[key]=account[key];
+            m_arrivalExpectedCounts["message_count"]=account["message_count"].toInteger()+1;
+            m_arrivalExpectedCounts["unread_count"]=account["unread_count"].toInteger()+1;
+            m_arrivalExpectedCounts["starred_count"]=account["starred_count"].toInteger()-m_arrivalOriginalIds.size();
+            m_arrivalExpectedCounts["unread_conversation_count"]=account["unread_conversation_count"].toInteger()+1;
+            m_arrivalExpectedCounts["held_conversation_count"]=account["held_conversation_count"].toInteger()-1;
+        });
+        break;
+    case 34:
+        if (m_backend.mutationInFlight() || m_backend.loading()) return;
+        if (m_backend.selectedId()!=m_arrivalThread || draftFields(QJsonObject::fromVariantMap(m_backend.draft()))!=m_arrivalDraft) {
+            finish("Native Delay or account readback changed the selected reader or authored draft."); return;
+        }
+        m_arrivalDoneArmed=true;
+        if (!click("doneConversationButton")) { m_arrivalDoneArmed=false; return; }
+        m_stage=35; break;
+    case 35: {
+        if (!m_arrivalReceiptSeen || m_backend.mutationInFlight() || m_backend.loading()) return;
+        const auto report=arrivalReport();
+        if (report["status"].toString()=="failed" || !report["errors"].toArray().isEmpty()) { finish("Engine provider ingestion failed during the native snapshot action."); return; }
+        if (report["status"].toString()!="complete") return;
+        m_arrivalId=report["arrival_message_id"].toString();
+        if (!m_arrivalReceiptOk || !arrivalMembersMatch(m_arrivalReceipt,false,false)
+            || report["trigger_count"].toInt()!=1 || report["committed_batches"].toInt()!=1 || report["committed_messages"].toInt()!=1
+            || report["conversation_id"].toString()!=m_arrivalThread || report["original_message_ids"].toArray()!=m_arrivalOriginalIds) {
+            finish("Native Done did not retain its exact original-member receipt across one real provider arrival."); return;
+        }
+        if (m_backend.conversation()["messages"].toList().size()!=3) return;
+        if (m_backend.selectedId()!=m_arrivalThread || !arrivalMembersMatch(QJsonObject::fromVariantMap(m_backend.conversation()),false,true)
+            || draftFields(QJsonObject::fromVariantMap(m_backend.draft()))!=m_arrivalDraft) {
+            finish("The arriving member inherited Done or refresh changed the selected reader or authored draft."); return;
+        }
+        if (!arrivalCountsMatch()) return;
+        m_stage=36; break;
+    }
+    case 36:
+        m_stage=37;
+        arrivalCli({"mail","read",m_arrivalThread},[this](const auto &source) {
+            if (!arrivalMembersMatch(source,false,true)) finish("Independent CLI did not preserve the arrival unread while only original members became Done.");
+        });
+        break;
+    case 37:
+        m_stage=38;
+        arrivalCli({"accounts"},[this](const auto &result) {
+            QJsonObject account;
+            for (const auto &value:result["accounts"].toArray()) if (value.toObject()["id"].toString()==m_arrivalAccount) account=value.toObject();
+            for (auto it=m_arrivalExpectedCounts.begin();it!=m_arrivalExpectedCounts.end();++it) if (account[it.key()]!=it.value()) {
+                finish("Independent CLI snapshot-arrival count differs for "+it.key()+"."); return;
+            }
+        });
+        break;
+    case 38:
+        m_stage=39;
+        arrivalCli({"draft","show",m_arrivalThread},[this](const auto &draft) {
+            if (draftFields(draft)!=m_arrivalDraft) finish("Snapshot arrival changed the independently stored Unicode draft or identity snapshot.");
+        });
+        break;
+    case 39:
+        if (m_backend.selectedId()!=m_arrivalThread || !arrivalCountsMatch()
+            || draftFields(QJsonObject::fromVariantMap(m_backend.draft()))!=m_arrivalDraft) {
+            finish("Independent readback or background polling lost the snapshot-arrival selection, counts or draft."); return;
+        }
+        // The preceding arrival can be observed by the Done callback's explicit
+        // refresh. Change shared state from a separate CLI process now, while
+        // leaving the GUI idle: only ordinary background polling may converge.
+        m_stage=40;
+        arrivalCli({"mail","flag",m_arrivalThread,"--starred","true"},[this](const auto &result) {
+            const auto members=result["messages"].toArray();
+            if (result["id"].toString()!=m_arrivalThread || members.size()!=3) {
+                finish("The independent idle-polling mutation targeted the wrong conversation."); return;
+            }
+            for (const auto &member:members) if (!member.toObject()["starred"].toBool()) {
+                finish("The independent idle-polling mutation did not hold all three exact members."); return;
+            }
+        });
+        break;
+    case 40: {
+        if (m_backend.loading()) return;
+        QVariantMap row;
+        for (const auto &value:m_backend.conversations()) if (value.toMap()["id"].toString()==m_arrivalThread) row=value.toMap();
+        const auto members=m_backend.conversation()["messages"].toList();
+        if (!row["starred"].toBool() || members.size()!=3) return;
+        for (const auto &member:members) if (!member.toMap()["starred"].toBool()) return;
+        if (m_backend.selectedId()!=m_arrivalThread || m_backend.query()!="Snapshot arrival verification"
+            || draftFields(QJsonObject::fromVariantMap(m_backend.draft()))!=m_arrivalDraft) {
+            finish("Idle polling changed the active query, selected reader or authored draft."); return;
+        }
+        m_stage=41;
+        arrivalCli({"mail","flag",m_arrivalThread,"--starred","false"},[this](const auto &result) {
+            if (!arrivalMembersMatch(result,false,true)) finish("Independent idle-polling cleanup changed the arrival's unread state or source snapshot.");
+        });
+        break;
+    }
+    case 41: {
+        if (m_backend.loading() || !arrivalCountsMatch()
+            || !arrivalMembersMatch(QJsonObject::fromVariantMap(m_backend.conversation()),false,true)) return;
+        QVariantMap row;
+        for (const auto &value:m_backend.conversations()) if (value.toMap()["id"].toString()==m_arrivalThread) row=value.toMap();
+        if (row.isEmpty() || row["starred"].toBool()) return;
+        if (!row["unread"].toBool() || m_backend.selectedId()!=m_arrivalThread || m_backend.query()!="Snapshot arrival verification"
+            || draftFields(QJsonObject::fromVariantMap(m_backend.draft()))!=m_arrivalDraft) {
+            finish("Idle polling cleanup lost the arriving unread member, active query, selection or draft."); return;
+        }
+        m_stage=42;
+        arrivalCli({"mail","read",m_arrivalThread},[this](const auto &result) {
+            if (!arrivalMembersMatch(result,false,true)) finish("Final independent readback disagrees with idle polling's restored state.");
+        });
+        break;
+    }
+    case 42:
+        qInfo().noquote() << "Native snapshot arrival passed: real Done receipt targets the two original members; provider arrival remains unread/unstarred; exact GUI/CLI counts, selected reader and Unicode draft retained. Counts:"
+            << QString::fromUtf8(QJsonDocument(m_arrivalExpectedCounts).toJson(QJsonDocument::Compact));
+        qInfo() << "Idle native polling passed: separate CLI hold/unhold converged in the actual list and reader without GUI query, refresh or navigation; original counts, unread arrival and authored draft restored.";
         restore(); m_stage=5; break;
     case 5: {
         if (m_backend.loading() || m_backend.draftBusy() || m_backend.selectedId() != m_originalSelected || m_backend.draft().isEmpty()) return;
@@ -433,7 +802,203 @@ void GuiMailNavigationSelfTest::step() {
         m_stage = 6; break;
     }
     case 6:
+        if (!m_surfacesDone) {
+            m_window->setProperty("settingsOpen",false); m_window->setProperty("workspace","mail");
+            m_backend.setFolder("inbox"); m_backend.setCategory({}); m_backend.applyFilters({});
+            if (!typeQuery({})) { finish("Cannot clear the actual search field for counted groups."); return; }
+            m_arrivalAccount=m_originalAccount;
+            m_stage=60; break;
+        }
         if (m_originalFocus && m_originalFocus->isVisible() && m_originalFocus->isEnabled()) m_originalFocus->forceActiveFocus();
         finish(); break;
+    case 60: {
+        if (m_backend.loading() || m_backend.draftBusy() || m_backend.m_searchTimer.isActive()) return;
+        const auto path=QDir(m_backend.m_profile).filePath("native-mail-group-counts.json");
+        QFile file(path); const auto bytes=QJsonDocument(QJsonObject{{"folder","inbox"},{"grouped",true},{"limit",1}}).toJson();
+        if (!file.open(QIODevice::WriteOnly) || file.write(bytes)!=bytes.size()) { finish("Cannot prepare independent bounded group-count query."); return; }
+        file.close(); m_stage=61;
+        arrivalCli({"call","conversations","--params-file",path},[this](const auto &result) {
+            m_surfaceCounts=result["filtered_group_counts"].toObject();
+            qint64 total=0;
+            for (const auto group:{"review","held","done"}) total+=m_surfaceCounts[group].toInteger();
+            if (m_surfaceCounts.size()!=3 || total!=result["filtered_conversation_count"].toInteger()
+                || total<=result["conversations"].toArray().size() || result["conversations"].toArray().size()!=1)
+                finish("Filtered group counts are not the complete result independently of the CLI's one-row page.");
+        });
+        break;
+    }
+    case 61: {
+        if (m_backend.loading()) return;
+        if (QJsonObject::fromVariantMap(m_backend.querySummary()["filtered_group_counts"].toMap())!=m_surfaceCounts
+            || m_backend.conversations().isEmpty()) { finish("Native group totals disagree with the independent pre-pagination CLI counts."); return; }
+        const auto first=m_backend.conversations().first().toMap();
+        m_surfaceGroup=first["group"].toString(); m_surfaceFirstId=first["id"].toString();
+        auto list=find(m_window->contentItem(),"conversationList");
+        if (!list) return;
+        // This is deliberate setup at the first group, not an assertion that
+        // query results repaired their viewport (the earlier cases prove that).
+        m_backend.remember("listY",list->property("originY"));
+        list->setProperty("contentY",list->property("originY"));
+        if (auto search=find(m_window->contentItem(),"searchField")) key(search,Qt::Key_Escape);
+        m_stage=62; break;
+    }
+    case 62: {
+        auto heading=find(m_window->contentItem(),"mailGroup_"+m_surfaceGroup);
+        if (!heading || !textItem(heading,QString::number(m_surfaceCounts[m_surfaceGroup].toInteger()))) {
+            finish("The native group heading does not display its full filtered count."); return;
+        }
+        if (!clickItem(heading)) return;
+        m_stage=63; break;
+    }
+    case 63: {
+        auto heading=find(m_window->contentItem(),"mailGroup_"+m_surfaceGroup);
+        if (m_backend.loading()) return;
+        if (!heading || !heading->property("collapsed").toBool()
+            || find(m_window->contentItem(),"conversationRow_"+m_surfaceFirstId)
+            || !textItem(heading,QString::number(m_surfaceCounts[m_surfaceGroup].toInteger()))
+            || m_backend.selectedId()!=m_originalSelected
+            || draftFields(QJsonObject::fromVariantMap(m_backend.draft()))!=draftFields(QJsonObject::fromVariantMap(m_originalDraft))) {
+            finish("Collapsing a native group lost its count, kept its row visible or changed the reader/draft."); return;
+        }
+        qint64 expanded=0;
+        for (const auto group:{"review","held","done"}) if (QString(group)!=m_surfaceGroup) expanded+=m_surfaceCounts[group].toInteger();
+        if (m_backend.querySummary()["expanded_conversation_count"].toLongLong()!=expanded
+            || QJsonObject::fromVariantMap(m_backend.querySummary()["filtered_group_counts"].toMap())!=m_surfaceCounts
+            || (expanded>0 && m_backend.conversations().isEmpty())) {
+            finish("Collapsed-group paging lost full counts or left later expanded groups inaccessible."); return;
+        }
+        for (const auto &row:m_backend.conversations()) if (row.toMap()["group"].toString()==m_surfaceGroup) {
+            finish("A collapsed group still consumed actual conversation page slots."); return;
+        }
+        if (auto list=find(m_window->contentItem(),"conversationList")) list->setProperty("contentY",list->property("originY"));
+        if (!clickItem(heading)) return;
+        m_stage=64; break;
+    }
+    case 64:
+        if (m_backend.loading() || !m_backend.collapsedGroups().isEmpty()) return;
+        if (!find(m_window->contentItem(),"conversationRow_"+m_surfaceFirstId)) return;
+        if (!typeQuery("Weekly service availability")) { finish("Cannot type the classified fixture's source subject."); return; }
+        m_stage=65; break;
+    case 65:
+        if (m_backend.loading() || m_backend.m_searchTimer.isActive()) return;
+        if (m_backend.conversations().size()!=1 || m_backend.conversations().first().toMap()["kind"].toString()!="automated"
+            || m_backend.conversations().first().toMap()["id"].toString()!="windscribe-thread-005") {
+            finish("The source-backed automated fixture was not projected as exactly one automated conversation."); return;
+        }
+        if (auto search=find(m_window->contentItem(),"searchField")) key(search,Qt::Key_Escape);
+        if (!click("senderKind_people")) return;
+        m_stage=66; break;
+    case 66:
+        if (m_backend.loading() || m_backend.filters()["kind"].toString()!="people") return;
+        if (!m_backend.conversations().isEmpty() || m_backend.querySummary()["filtered_conversation_count"].toInt()!=0) {
+            finish("The People toggle included the explicitly automated retained source."); return;
+        }
+        if (!click("senderKind_people")) return;
+        m_stage=67; break;
+    case 67:
+        if (m_backend.loading() || m_backend.filters()["kind"].toString()=="people") return;
+        if (m_backend.conversations().size()!=1) { finish("Clearing People did not restore the filtered source."); return; }
+        if (!click("senderKind_automated")) return;
+        m_stage=68; break;
+    case 68:
+        if (m_backend.loading() || m_backend.filters()["kind"].toString()!="automated") return;
+        if (m_backend.conversations().size()!=1 || m_backend.conversations().first().toMap()["kind"].toString()!="automated") {
+            finish("The Automated toggle lost the exact source classification."); return;
+        }
+        // Passive selection establishes an unreviewed source baseline. Only the
+        // later actual card row click is allowed to review it.
+        m_backend.selectConversation("windscribe-thread-005"); m_stage=69; break;
+    case 69:
+        if (m_backend.loading() || m_backend.draftBusy() || m_backend.selectedId()!="windscribe-thread-005"
+            || m_backend.conversation()["id"].toString()!="windscribe-thread-005") return;
+        if (auto reader=find(m_window->contentItem(),"reader")) reader->setProperty("contentY",0);
+        m_stage=70;
+        arrivalCli({"mail","read","windscribe-thread-005"},[this](const auto &result) { m_senderBefore=result; });
+        break;
+    case 70:
+        if (!hoverSender()) return;
+        m_stage=71; break;
+    case 71: {
+        const auto card=m_backend.senderCard();
+        if (!senderPopup() || card["loading"].toBool()) return;
+        const auto rows=card["conversations"].toList();
+        if (card["account"].toString()!=m_originalAccount || card["email"].toString()!="status@service.example"
+            || card["conversation_count"].toInt()!=1 || rows.size()!=1 || rows.first().toMap()["id"].toString()!="windscribe-thread-005") {
+            finish("Sender hover mixed accounts, display-name identities or recent-source rows."); return;
+        }
+        m_stage=72;
+        arrivalCli({"mail","read","windscribe-thread-005"},[this](const auto &result) {
+            if (result!=m_senderBefore) finish("Pure sender hover changed the independently stored source or review flags.");
+        });
+        break;
+    }
+    case 72:
+        if (!senderPopup()) { m_stage=70; break; }
+        if (!click("senderCardRow_windscribe-thread-005")) return;
+        m_stage=73; break;
+    case 73:
+        if (m_backend.loading() || m_backend.mutationInFlight() || senderPopup()) return;
+        m_stage=74;
+        arrivalCli({"mail","read","windscribe-thread-005"},[this](const auto &result) {
+            const auto members=result["messages"].toArray();
+            if (result["id"].toString()!="windscribe-thread-005" || members.size()!=1
+                || members.first().toObject()["id"].toString()!="windscribe-message-005-000"
+                || members.first().toObject()["unread"].toBool()) finish("Explicit native sender-card Open did not review exactly the retained source.");
+        });
+        break;
+    case 74:
+        if (auto reader=find(m_window->contentItem(),"reader")) reader->setProperty("contentY",0);
+        if (!hoverSender()) return;
+        m_stage=75; break;
+    case 75:
+        if (!senderPopup() || m_backend.senderCard()["loading"].toBool()) return;
+        if (!click("senderCardFilter")) return;
+        m_stage=76; break;
+    case 76:
+        if (m_backend.loading() || senderPopup()) return;
+        if (m_backend.filters()["exact_sender"].toString()!="status@service.example"
+            || m_backend.filters()["kind"].toString()!="automated" || m_backend.query()!="Weekly service availability"
+            || m_backend.conversations().size()!=1 || m_backend.selectedId()!="windscribe-thread-005") {
+            finish("Sender-card Filter lost the exact address, existing kind/query or reader."); return;
+        }
+        if (!hoverSender()) return;
+        m_stable=0; m_stage=77; break;
+    case 77:
+        if (!senderPopup()) {
+            if (++m_stable>10) finish("Sender hover did not reopen its card after Filter. Sender geometry: "
+                +geometryDiagnostic(find(m_window->contentItem(),"senderFilter_windscribe-message-005-000"),m_window)
+                +"; card="+QString::fromUtf8(QJsonDocument(QJsonObject::fromVariantMap(m_backend.senderCard())).toJson(QJsonDocument::Compact)));
+            return;
+        }
+        if (m_backend.senderCard()["loading"].toBool() || m_backend.draftBusy()) return;
+        if (!click("senderCardWrite")) {
+            finish("Sender-card Write is missing, disabled or clipped: "+geometryDiagnostic(find(m_window->contentItem(),"senderCardWrite"),m_window)); return;
+        }
+        m_stage=78; break;
+    case 78: {
+        if (m_backend.draftBusy() || m_backend.m_draftDirty || m_backend.activeDraftId().isEmpty() || m_backend.draft()["mode"].toString()!="new") return;
+        const auto draft=m_backend.draft(); const auto recipients=draft["to_recipients"].toList();
+        if (m_backend.account()!=m_originalAccount || recipients.size()!=1
+            || recipients.first().toMap()["email"].toString()!="status@service.example") {
+            finish("Sender-card Write lost its account or exact address recipient."); return;
+        }
+        m_senderDraftId=m_backend.activeDraftId(); m_stage=79;
+        arrivalCli({"draft","show","--draft-id",m_senderDraftId},[this](const auto &result) {
+            const auto recipients=result["to_recipients"].toArray();
+            if (result["draft_id"].toString()!=m_senderDraftId || result["mode"].toString()!="new"
+                || result["account"].toString()!=m_originalAccount || recipients.size()!=1
+                || recipients.first().toObject()["email"].toString()!="status@service.example")
+                finish("Independent CLI did not retain the native sender-card Write draft and recipient.");
+        });
+        break;
+    }
+    case 79:
+        if (m_backend.draftBusy()) return;
+        qInfo() << "Native Update2 mail passed: complete CLI group counts, collapse retention, source-backed People/Automated toggles, account-scoped sender hover without review, explicit Open, exact Filter and durable Write recipient.";
+        // The counted-group check deliberately persisted a temporary origin.
+        // Restore its independent saved mailbox position before the existing
+        // cleanup oracle checks actual viewport restoration and authored fields.
+        m_backend.remember("listY",m_originalView.value("listY",0));
+        m_surfacesDone=true; restore(); m_stage=5; break;
     }
 }

@@ -13,6 +13,8 @@
 #include <QJsonArray>
 #include <QDebug>
 #include <QDate>
+#include <QSaveFile>
+#include <QSet>
 
 namespace {
 QQuickItem *findVisible(QQuickItem *parent, const QString &name) {
@@ -39,6 +41,85 @@ void reveal(QQuickItem *field) {
         else if (rect.bottom() > ancestor->height() - 4) ancestor->setProperty("contentY", current + rect.bottom() - ancestor->height() + 4);
     }
 }
+QVariant variantValue(const QVariant &value) {
+    return value.canConvert<QJSValue>() ? value.value<QJSValue>().toVariant() : value;
+}
+bool visibleTitle(QQuickItem *parent, const QString &title) {
+    if (!parent->isVisible()) return false;
+    if (parent->property("text").toString().contains(title) && unclipped(parent)) return true;
+    for (auto child : parent->childItems()) if (visibleTitle(child,title)) return true;
+    return false;
+}
+QQuickItem *headerTimeline(QQuickItem *parent) {
+    if (parent->isVisible() && parent->property("headerPosition").toBool()
+        && parent->property("blocks").isValid()) return parent;
+    for (auto child:parent->childItems()) if (auto found=headerTimeline(child)) return found;
+    return nullptr;
+}
+QQuickItem *editableTimelineBlock(QQuickItem *parent) {
+    const auto data=variantValue(parent->property("modelData")).toMap();
+    if (parent->isVisible() && parent->property("eventColor").isValid() && parent->width()>0
+        && parent->height()>0 && unclipped(parent) && data["can_edit"].toBool()
+        && !data["recurring"].toBool() && !data["event_id"].toString().isEmpty()) return parent;
+    for (auto child:parent->childItems()) if (auto found=editableTimelineBlock(child)) return found;
+    return nullptr;
+}
+}
+
+bool GuiCalendarSelfTest::verifyRestartProjection(MailBackend &backend, QQuickWindow *window,
+    const QString &expectedPath, QString &error) {
+    const auto reject = [&error](const QString &message) { error = message; return false; };
+    QFile input(expectedPath);
+    if (!QDir::isAbsolutePath(expectedPath) || !input.open(QIODevice::ReadOnly) || input.size()>65536)
+        return reject("Cannot read the bounded calendar restart expectation.");
+    QJsonParseError parse;
+    const auto document = QJsonDocument::fromJson(input.readAll(),&parse);
+    const auto expected = document.object()["event"].toObject();
+    const auto eventId = expected["event_id"].toString();
+    if (parse.error != QJsonParseError::NoError || eventId.isEmpty() || expected["etag"].toString().isEmpty()
+        || expected["account"].toString() != "windscribe" || expected["calendar_id"].toString() != "primary")
+        return reject("Calendar restart expectation has no valid source identity and version.");
+    if (!window || !backend.connected() || !backend.calendarReady() || backend.calendarDate() != "2026-09-11"
+        || backend.calendarView() != "day" || window->property("workspace").toString() != "calendar")
+        return reject("Restarted GUI did not load the expected combined Calendar day.");
+    const auto calendar = findVisible(window->contentItem(),"calendarWorkspace");
+    if (!calendar) return reject("Restarted native Calendar surface is not visible.");
+    const auto qmlRows = variantValue(calendar->property("visibleEvents")).toList();
+    QJsonObject observed;
+    const auto checkRows = [&](const QVariantList &rows, const QString &surface) {
+        int matches = 0;
+        QSet<QString> accounts;
+        for (const auto &value : rows) {
+            const auto row = value.toMap(); accounts.insert(row["account"].toString());
+            if (row["event_id"].toString() != eventId) continue;
+            ++matches;
+            const auto object = QJsonObject::fromVariantMap(row);
+            for (auto it = expected.begin(); it != expected.end(); ++it) {
+                if (object[it.key()] != it.value()) return reject(surface + " changed calendar field " + it.key() + " after restart.");
+                observed[it.key()] = object[it.key()];
+            }
+        }
+        if (matches != 1) return reject(surface + " did not contain exactly one edited event after restart.");
+        if (!accounts.contains("windscribe") || !accounts.contains("personal") || !accounts.contains("sideproject"))
+            return reject(surface + " lost the three-account combined calendar scope.");
+        return true;
+    };
+    if (!checkRows(backend.events(),"Restarted adapter") || !checkRows(qmlRows,"Restarted QML model")) return false;
+    const auto delegate = findVisible(window->contentItem(),"calendarEvent-"+eventId);
+    if (!delegate || delegate->width()<=0 || delegate->height()<=0 || !unclipped(delegate)
+        || !QRectF(0,0,window->width(),window->height()).contains(delegate->mapToScene({delegate->width()/2,delegate->height()/2}))
+        || !visibleTitle(delegate,expected["title"].toString()))
+        return reject("Restarted native event delegate and edited title are not visible.");
+    const auto displayed = QJsonObject::fromVariantMap(variantValue(delegate->property("modelData")).toMap());
+    for (auto it = expected.begin(); it != expected.end(); ++it)
+        if (displayed[it.key()] != it.value()) return reject("Restarted native event delegate changed field " + it.key());
+    const QJsonObject report{{"event",observed},{"combined_accounts",QJsonArray{"windscribe","personal","sideproject"}},
+        {"gui_process_id",QString::number(QCoreApplication::applicationPid())},{"native_delegate_verified",true}};
+    QSaveFile output(expectedPath+".observed.json"); const auto bytes = QJsonDocument(report).toJson();
+    if (!output.open(QIODevice::WriteOnly) || output.write(bytes)!=bytes.size() || !output.commit())
+        return reject("Cannot retain the restarted GUI calendar observation.");
+    qInfo() << "Restarted GUI Calendar verified one edited event, exact source fields/version and accepted self RSVP in the adapter, QML model and visible delegate.";
+    return true;
 }
 
 GuiCalendarSelfTest::GuiCalendarSelfTest(MailBackend &backend, QQuickWindow *window,
@@ -59,7 +140,9 @@ QObject *GuiCalendarSelfTest::popup(const QString &name) const {
     return nullptr;
 }
 bool GuiCalendarSelfTest::click(const QString &name) {
-    auto control = item(name);
+    return clickItem(item(name));
+}
+bool GuiCalendarSelfTest::clickItem(QQuickItem *control) {
     if (!control || !control->isEnabled()) return false;
     reveal(control);
     const auto position = control->mapToScene({control->width() / 2, control->height() / 2});
@@ -141,6 +224,12 @@ void GuiCalendarSelfTest::step() {
         const auto editor = popup("eventEditor"); const auto title = item("eventTitle");
         if (!editor || !title) return;
         if (!unclipped(title) || title->width() < editor->property("width").toDouble() * .75) { finish("Event Title must be initially visible and use the form width."); return; }
+        if (m_backend.preferences()["default_event_duration_minutes"].toInt()!=45
+            || !item("eventStartTime") || !item("eventEndTime")
+            || item("eventStartTime")->property("text").toString()!="09:00"
+            || item("eventEndTime")->property("text").toString()!="09:45") {
+            finish("The new native event did not use the 45-minute duration saved through Settings."); return;
+        }
         if (!capture("event-editor.png")) return;
         auto target = item("eventTargetCalendar");
         if (!target) { finish("The writable calendar selector is missing."); return; }
@@ -183,6 +272,11 @@ void GuiCalendarSelfTest::step() {
         ++m_stage; break;
     case 5:
         if (!popup("eventEditor")) return;
+        if (!item("eventStartTime") || !item("eventEndTime")
+            || item("eventStartTime")->property("text").toString()!="15:30"
+            || item("eventEndTime")->property("text").toString()!="16:00") {
+            finish("The new-event duration preference rewrote an existing event's native edit fields."); return;
+        }
         if (!type("eventTitle", "Edited native walkthrough event")) { finish("Native edit title input failed."); return; }
         if (!startConcurrentEdit()) return;
         m_stage = 50; break;
@@ -289,6 +383,43 @@ void GuiCalendarSelfTest::step() {
         if (!m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.preferencesPending()) return;
         if (!checkTimeline("2026-09-11","Fri 11 Sep")) return;
         if (item("timelineToday")) { finish("Back to today remained visible after returning to the fixture date."); return; }
+        m_timelineSurface=headerTimeline(m_window->contentItem());
+        if (!m_timelineSurface || m_backend.preferences()["timeline_position"].toString()!="header") {
+            finish("The saved Header timeline preference did not produce a visible native header strip."); return;
+        }
+        if (auto block=editableTimelineBlock(m_timelineSurface)) {
+            m_timelineEvent=variantValue(block->property("modelData")).toMap();
+            if (!clickItem(block)) return;
+        } else { finish("No permitted native timeline event is accessible for the header popover walkthrough."); return; }
+        m_stage=17; break;
+    case 17: {
+        const auto details=popup("eventDetails");
+        if (!details) return;
+        const auto bottom=m_timelineSurface->mapToScene({0,m_timelineSurface->height()}).y();
+        const auto data=variantValue(details->property("eventData")).toMap();
+        if (!details->property("timelineSource").toBool() || details->property("y").toDouble()<bottom
+            || details->property("y").toDouble()+details->property("height").toDouble()>m_window->height()
+            || data["event_id"]!=m_timelineEvent["event_id"] || data["account"]!=m_timelineEvent["account"]
+            || data["calendar_id"]!=m_timelineEvent["calendar_id"]) {
+            finish("Header timeline details overlap the strip, leave the window or change source identity."); return;
+        }
+        if (!capture("timeline-header-details.png") || !click("eventEditButton")) return;
+        m_stage=18; break;
+    }
+    case 18: {
+        const auto editor=popup("eventEditor");
+        if (!editor) return;
+        const auto bottom=m_timelineSurface->mapToScene({0,m_timelineSurface->height()}).y();
+        if (!editor->property("timelineAtTop").toBool() || editor->property("y").toDouble()<bottom
+            || editor->property("y").toDouble()+editor->property("height").toDouble()>m_window->height()+1
+            || !item("eventTitle") || item("eventTitle")->property("text").toString()!=m_timelineEvent["title"].toString()) {
+            finish("Header timeline Edit did not retain readable source fields below the strip."); return;
+        }
+        if (!capture("timeline-header-editor.png") || !click("eventCancelButton")) return;
+        m_stage=19; break;
+    }
+    case 19:
+        if (popup("eventEditor") || popup("eventDetails")) return;
         m_backend.setCalendarDate(m_timelineCalendarDate);
         m_backend.moveTimeline(int(QDate::fromString(m_backend.timelineDate(),Qt::ISODate)
             .daysTo(QDate::fromString(m_originalTimelineDate,Qt::ISODate))));
@@ -306,7 +437,7 @@ void GuiCalendarSelfTest::step() {
         for (auto it = m_timelineDatePreferences.cbegin(); it != m_timelineDatePreferences.cend(); ++it)
             if (m_backend.preferences().value(it.key()) != it.value()) { finish("Timeline navigation changed the original saved date preference."); return; }
         if (m_timelineFocus && m_timelineFocus->isVisible() && m_timelineFocus->isEnabled()) m_timelineFocus->forceActiveFocus();
-        qInfo() << "Native timeline passed: Previous/Next/Today changed visible dates, preserved the independent Calendar date and restored starting state.";
+        qInfo() << "Native timeline passed: Previous/Next/Today preserve the independent Calendar date; Header details/editor retain exact permitted source below the strip; 45-minute create default leaves existing edit duration intact; starting state restored.";
         finish(); break;
     }
 }

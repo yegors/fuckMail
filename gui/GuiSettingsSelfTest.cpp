@@ -10,6 +10,7 @@
 #include <QQuickItem>
 #include <QPointer>
 #include <QDebug>
+#include <QFont>
 
 namespace {
 QQuickItem *findVisible(QQuickItem *parent, const QString &name) {
@@ -33,7 +34,8 @@ void reveal(QQuickItem *field) {
 }
 QJsonObject authoredFields(const QJsonObject &draft) {
     QJsonObject result;
-    for (const auto &field : {"body", "body_html", "signature_text", "attachment_ids", "from_name", "from", "to", "subject", "identity_revision"})
+    for (const auto &field : {"body", "body_html", "signature_text", "attachment_ids", "from_name", "from", "to", "subject", "identity_revision",
+             "draft_id", "mode", "source_message_id", "source_hash", "conversation_id", "to_recipients", "cc_recipients", "bcc_recipients"})
         result[field] = draft[field];
     return result;
 }
@@ -119,6 +121,7 @@ void GuiSettingsSelfTest::step() {
         if (m_backend.account() != "windscribe") { finish("Settings walkthrough requires the existing Windscribe reply."); return; }
         m_id = m_backend.selectedId(); m_draftSnapshot = authoredFields(QJsonObject::fromVariantMap(m_backend.draft()));
         m_originalName = m_backend.currentAccount()["name"].toString(); m_originalSignature = m_backend.currentAccount()["signature_text"].toString();
+        m_originalPreferences = m_backend.preferences();
         m_window->setProperty("workspace", "mail"); m_window->setProperty("settingsOpen", false);
         m_backend.setQuery(""); m_backend.setCategory(""); m_backend.applyFilters({}); m_backend.setFolder("all");
         QMetaObject::invokeMethod(m_window->findChild<QObject *>("mailWorkspace"), "openReply");
@@ -183,6 +186,7 @@ void GuiSettingsSelfTest::step() {
         if (!click("settingsPage_Mail")) return;
         ++m_stage; break;
     case 8:
+        if (!item("signature_windscribe")) { click("settingsSignaturesButton"); return; }
         if (!type("signature_windscribe", m_oversizedSignature)) return;
         m_backend.setProperty("selfTestExpectedError", true);
         if (!click("saveSignature_windscribe")) return;
@@ -213,18 +217,20 @@ void GuiSettingsSelfTest::step() {
     case 13:
         if (!saved() || m_backend.preferences()["week_start"].toString() != "sunday") return;
         // End selects 23:00 for the start, which must be rejected against 22:00.
-        if (auto start = item("calendar_start_hour")) { reveal(start); start->forceActiveFocus(); key(start,Qt::Key_End); }
+        if (auto start = item("timeline_start_hour")) { reveal(start); start->forceActiveFocus(); key(start,Qt::Key_End); }
         else return;
         ++m_stage; break;
     case 14:
         if (!item("settingsStatus") || item("settingsStatus")->property("text").toString() != "The end of the visible range must be later than its start."
-            || m_backend.preferences()["calendar_start_hour"].toInt() != 7 || item("calendar_start_hour")->property("currentIndex").toInt() != 7) { finish("Invalid visible-hour range was not rejected/restored."); return; }
-        if (!choose("calendar_start_hour",8) || !choose("calendar_end_hour",19) || !choose("timeline_start_hour",9) || !choose("timeline_end_hour",17)) { finish("Native hour choices did not reach their requested values."); return; }
+            || m_backend.preferences()["timeline_start_hour"] != m_originalPreferences["timeline_start_hour"]
+            || !item("timeline_start_hour") || item("timeline_start_hour")->property("currentIndex").toInt() != m_originalPreferences["timeline_start_hour"].toInt()) { finish("Invalid timeline-hour range was not rejected/restored."); return; }
+        if (!choose("timeline_start_hour",9) || !choose("timeline_end_hour",17)) { finish("Native timeline-hour choices did not reach their requested values."); return; }
         ++m_stage; break;
     case 15:
         if (!saved() || !m_backend.calendarReady() || !m_backend.timelineReady()) return;
-        if (m_backend.preferences()["calendar_start_hour"].toInt()!=8 || m_backend.preferences()["calendar_end_hour"].toInt()!=20
-            || m_backend.preferences()["timeline_start_hour"].toInt()!=9 || m_backend.preferences()["timeline_end_hour"].toInt()!=18) { finish("Hour preferences did not persist in the adapter."); return; }
+        if (m_backend.preferences()["calendar_start_hour"] != m_originalPreferences["calendar_start_hour"] || m_backend.preferences()["calendar_end_hour"] != m_originalPreferences["calendar_end_hour"]
+            || m_backend.preferences()["timeline_start_hour"].toInt()!=9 || m_backend.preferences()["timeline_end_hour"].toInt()!=18) { finish("Timeline hours did not persist or changed the retained legacy calendar-hour values."); return; }
+        if (!item("hideAllCalendars")) { click("calendarDisplayButton"); return; }
         if (!click("hideAllCalendars")) return;
         ++m_stage; break;
     case 16:
@@ -252,7 +258,7 @@ void GuiSettingsSelfTest::step() {
         if (!m_backend.preferences()["selected_calendars"].isNull() || !draftIntact()) { finish("Restoring all sources changed mailbox draft identity."); return; }
         m_result = {{"account", "windscribe"}, {"name", m_name}, {"signature_text", m_signature},
             {"draft_snapshot", m_draftSnapshot.toVariantMap()},
-            {"preferences", QVariantMap{{"density","compact"},{"week_start","sunday"},{"calendar_start_hour",8},{"calendar_end_hour",20},
+            {"preferences", QVariantMap{{"density","compact"},{"week_start","sunday"},{"calendar_start_hour",m_originalPreferences["calendar_start_hour"]},{"calendar_end_hour",m_originalPreferences["calendar_end_hour"]},
                 {"timeline_start_hour",9},{"timeline_end_hour",18},{"selected_calendars",QVariant()}}}};
         ++m_stage;
         cli({"preferences","show"}, [this](auto result) {
@@ -270,7 +276,7 @@ void GuiSettingsSelfTest::step() {
         });
         break;
     case 22:
-        ++m_stage;
+        m_stage = 30;
         cli({"draft","show",m_id}, [this](auto result) { if (authoredFields(result)!=m_draftSnapshot) finish("Settings changed the independently persisted authored draft snapshot."); });
         break;
     case 23:
@@ -284,8 +290,68 @@ void GuiSettingsSelfTest::step() {
             finish(QString("Settings did not restore independent Mail scroll and editor focus/selection (list %1/%2, reader %3/%4).")
                 .arg(list?list->property("contentY").toDouble():-1).arg(m_listY).arg(reader?reader->property("contentY").toDouble():-1).arg(m_readerY)); return;
         }
-        qInfo() << "Native Settings passed: validation retention, account metadata, unchanged authored draft, independent calendar preferences and Mail viewport/focus restoration (programmatic viewport setup; physical wheel input unverified).";
+        qInfo() << "Native Settings passed: all three palettes and text sizes, saved startup/placement/duration, validation retention, account metadata, unchanged authored draft, independent calendar preferences and Mail viewport/focus restoration (programmatic viewport setup; physical wheel input unverified).";
         finish(); break;
+    }
+    case 30:
+        if (!click("settingsPage_General")) return;
+        ++m_stage; break;
+    case 31:
+        if (!item("settingsPage_General") || !m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.m_calendarRevision < 0) return;
+        m_defaultFontSize = item("settingsPage_General")->property("font").value<QFont>().pixelSize();
+        m_calendarSnapshotGeneration = m_backend.m_calendarGeneration;
+        m_appearanceRevision = m_backend.m_revision;
+        if (!click("theme_paper")) return;
+        m_wait.restart();
+        ++m_stage; break;
+    case 32:
+        if (!saved() || m_backend.preferences()["theme"] != "paper") return;
+        if (m_wait.elapsed() < 1400 || m_backend.m_revision <= m_appearanceRevision) return;
+        if (m_backend.m_calendarGeneration != m_calendarSnapshotGeneration) { finish("Appearance save reloaded Calendar during the following status-poll cycle."); return; }
+        if (m_window->color() != QColor("#F4F1EA")) { finish("Paper preference did not update the actual window palette."); return; }
+        if (!click("textSize_large")) return;
+        ++m_stage; break;
+    case 33:
+        if (!saved() || m_backend.preferences()["text_size"] != "large") return;
+        if (item("settingsPage_General")->property("font").value<QFont>().pixelSize() <= m_defaultFontSize) { finish("Large text did not scale the native sidebar control."); return; }
+        if (!click("textSize_small")) return;
+        ++m_stage; break;
+    case 34:
+        if (!saved() || m_backend.preferences()["text_size"] != "small") return;
+        if (item("settingsPage_General")->property("font").value<QFont>().pixelSize() >= m_defaultFontSize) { finish("Small text did not scale the native sidebar control."); return; }
+        if (!click("textSize_default") || !click("theme_graphite")) return;
+        ++m_stage; break;
+    case 35:
+        if (!saved() || m_backend.preferences()["text_size"] != "default" || m_backend.preferences()["theme"] != "graphite") return;
+        if (m_window->color() != QColor("#0E0F11") || item("settingsPage_General")->property("font").value<QFont>().pixelSize() != m_defaultFontSize) { finish("Default typography or Graphite palette did not restore."); return; }
+        if (!click("theme_harbour") || !click("startup_calendar")) return;
+        ++m_stage; break;
+    case 36:
+        if (!saved() || m_backend.preferences()["theme"] != "harbour" || m_backend.preferences()["startup_view"] != "calendar") return;
+        if (m_window->color() != QColor("#0A0F18") || m_window->property("workspace").toString() != "mail") { finish("Harbour failed to render or changing initial workspace navigated the active workspace."); return; }
+        if (!click("startup_last")) return;
+        ++m_stage; break;
+    case 37:
+        if (!saved() || m_backend.preferences()["startup_view"] != "last") return;
+        if (!click("settingsPage_Calendar")) return;
+        ++m_stage; break;
+    case 38:
+        if (!click("timeline_header") || !click("duration_45")) return;
+        ++m_stage; break;
+    case 39: {
+        if (!saved() || m_backend.preferences()["timeline_position"] != "header" || m_backend.preferences()["default_event_duration_minutes"].toInt() != 45) return;
+        if (!draftIntact()) { finish("Appearance or layout preferences changed the authored draft."); return; }
+        auto expected = m_result["preferences"].toMap();
+        for (const auto &key : {"theme", "text_size", "startup_view", "timeline_position", "default_event_duration_minutes"}) expected[key] = m_backend.preferences()[key];
+        m_result["preferences"] = expected;
+        m_stage = 23;
+        cli({"preferences","show"}, [this, expected](auto result) {
+            const auto actual = result["preferences"].toObject();
+            const auto jsonExpected = QJsonObject::fromVariantMap(expected);
+            for (auto it = jsonExpected.begin(); it != jsonExpected.end(); ++it)
+                if (actual.value(it.key()) != it.value()) { finish("Independent CLI did not observe the new native preference: " + it.key()); return; }
+        });
+        break;
     }
     }
 }

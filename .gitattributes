@@ -2,4 +2,7 @@
 * text=auto eol=lf
 # Wire-format MIME fixtures have intentional CRLF and recorded SHA-256 values.
 fixtures/messages/*.eml -text whitespace=cr-at-eol
+# Supplied exports and measured artifacts retain verbatim bytes and formatting.
+docs/research/assets/2026-09-*/** -text -whitespace
+docs/research/assets/phase-1/** -text -whitespace
 *.png binary

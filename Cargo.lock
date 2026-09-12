@@ -407,10 +407,13 @@ dependencies = [
 name = "fm-engine"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "clap",
  "fm-core",
+ "fm-google",
  "fm-ipc",
  "libc",
+ "rusqlite",
  "serde_json",
  "tempfile",
  "tokio",

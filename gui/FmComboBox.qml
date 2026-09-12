@@ -8,7 +8,7 @@ ComboBox {
     leftPadding: 11
     rightPadding: 32
     font.family: Theme.fontFamily
-    font.pixelSize: 13
+    font.pixelSize: Theme.fontSize(13)
     hoverEnabled: true
     contentItem: Text { text: control.displayText; color: control.enabled ? Theme.text : Theme.subtle; font: control.font; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
     indicator: FmIcon { x: control.width - width - 10; y: (control.height - height)/2; name: "down"; size: 12 }

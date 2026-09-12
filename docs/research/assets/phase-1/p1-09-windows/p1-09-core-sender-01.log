@@ -1,0 +1,31 @@
+   Compiling fm-mail v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-mail)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+    Finished `release` profile [optimized] target(s) in 53.13s
+     Running unittests src\lib.rs (target\release\deps\fm_core-dabc8292e4ba1c10.exe)
+
+running 4 tests
+test sender_kind_tests::explicit_fixture_roles_and_filtered_counts_are_independent_of_the_page ... ok
+test sender_kind_tests::schema6_migration_keeps_old_profiles_receipts_and_sources_unclassified ... ok
+test sender_kind_tests::latest_incoming_kind_is_source_bound_and_invalidates_cached_filters_and_cursors ... ok
+test sender_kind_tests::sender_history_uses_exact_identity_full_counts_and_actual_recent_instants_without_reviewing ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 4.86s
+
+     Running tests\coverage.rs (target\release\deps\coverage-296c6b61a2f2c068.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests\mutations.rs (target\release\deps\mutations-0032f94b18e6ea24.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests\search.rs (target\release\deps\search-cee158c0822a5dcb.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+

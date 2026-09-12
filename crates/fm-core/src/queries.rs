@@ -14,8 +14,63 @@ pub(crate) struct ConversationState {
     position: usize,
     unread: bool,
     starred: bool,
+    unread_messages: i64,
+    starred_messages: i64,
     latest: f64,
+    kind: u8,
+    kind_incoming: bool,
+    kind_at: f64,
+    kind_id: String,
 }
+impl ConversationState {
+    fn empty(position: usize) -> Self {
+        Self {
+            position,
+            unread: false,
+            starred: false,
+            unread_messages: 0,
+            starred_messages: 0,
+            latest: 0.0,
+            kind: 0,
+            kind_incoming: false,
+            kind_at: 0.0,
+            kind_id: String::new(),
+        }
+    }
+    fn absorb(&mut self, row: &rusqlite::Row<'_>) -> rusqlite::Result<()> {
+        let unread = row.get::<_, bool>(1)?;
+        let starred = row.get::<_, bool>(2)?;
+        self.unread |= unread;
+        self.starred |= starred;
+        self.unread_messages += i64::from(unread);
+        self.starred_messages += i64::from(starred);
+        let at = row.get::<_, Option<f64>>(3)?.unwrap_or(0.0);
+        self.latest = self.latest.max(at);
+        let incoming = !row.get::<_, bool>(6)?;
+        let id = row.get_ref(5)?.as_str().map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
+        })?;
+        if self.kind_id.is_empty()
+            || incoming && !self.kind_incoming
+            || incoming == self.kind_incoming
+                && (at > self.kind_at || at == self.kind_at && id > self.kind_id.as_str())
+        {
+            self.kind = row.get(7)?;
+            self.kind_incoming = incoming;
+            self.kind_at = at;
+            self.kind_id = id.into();
+        }
+        Ok(())
+    }
+}
+fn kind_name(kind: u8) -> &'static str {
+    match kind {
+        1 => "people",
+        2 => "automated",
+        _ => "unknown",
+    }
+}
+const STATE_SELECT:&str = "SELECT m.conversation_id,m.unread,m.starred,julianday(m.sent_at),m.rowid,m.id,m.sent,CASE k.kind WHEN 'people' THEN 1 WHEN 'automated' THEN 2 ELSE 0 END FROM messages m LEFT JOIN message_sender_kinds k ON k.account=m.account AND k.message_id=m.id AND k.source_hash=m.source_hash WHERE m.account=?1";
 pub(crate) struct ConversationProjection {
     generation: u64,
     message_count: i64,
@@ -45,6 +100,7 @@ struct ChangeSnapshot {
 #[derive(Default)]
 struct Changes {
     hooks: u64,
+    calendar: u64,
     messages: u64,
     coverage: u64,
     search: u64,
@@ -67,6 +123,9 @@ impl MailChanges {
         db.update_hook(Some(move |action, _: &str, table: &str, rowid| {
             let mut c = hook.lock().unwrap();
             c.hooks += 1;
+            if table.starts_with("calendar_") {
+                c.calendar += 1;
+            }
             if table == "messages" {
                 c.messages += 1;
                 c.coverage += 1;
@@ -81,6 +140,10 @@ impl MailChanges {
                     c.inserts.clear();
                     c.coverage_reset_after = c.coverage;
                 }
+            } else if table == "message_sender_kinds" {
+                c.messages += 1;
+                c.reset_after = c.messages;
+                c.inserts.clear();
             } else if table == "attachments" || table.starts_with("message_fts") {
                 c.coverage += 1;
                 if table == "message_fts_docsize"
@@ -98,7 +161,12 @@ impl MailChanges {
             }
             if matches!(
                 table,
-                "messages" | "conversations" | "attachments" | "categories" | "message_categories"
+                "messages"
+                    | "conversations"
+                    | "attachments"
+                    | "categories"
+                    | "message_categories"
+                    | "message_sender_kinds"
             ) || table.starts_with("message_fts")
             {
                 c.search += 1;
@@ -118,6 +186,12 @@ impl MailChanges {
             SERIAL.fetch_add(1, Ordering::Relaxed)
         );
         Self(changes, epoch)
+    }
+    pub(crate) fn calendar_generation(&self) -> u64 {
+        self.0.lock().unwrap().calendar
+    }
+    pub(crate) fn reset_calendar_generation(&self) {
+        self.0.lock().unwrap().calendar = 0;
     }
     fn snapshot(&self, db: &Connection) -> ChangeSnapshot {
         let mut c = self.0.lock().unwrap();
@@ -178,7 +252,7 @@ impl Store {
             .collect::<std::result::Result<Vec<_>, _>>()?;
         let mut out = Vec::new();
         for (account, name, email, provider) in accounts {
-            let (unread,starred,messages):(i64,i64,i64)=self.db.query_row("SELECT COALESCE(SUM(unread),0),COALESCE(SUM(starred),0),COUNT(*) FROM messages WHERE account=?1",[&account],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?;
+            let (unread, starred, messages) = self.account_message_counts(&account)?;
             let count: i64 = self.db.query_row(
                 "SELECT COUNT(*) FROM conversations WHERE account=?1",
                 [&account],
@@ -191,6 +265,12 @@ impl Store {
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )?;
             out.push(json!({"metadata_revision":metadata_revision,"unread_conversation_count":counts["unread_conversation_count"],"held_conversation_count":counts["held_conversation_count"],"done_conversation_count":counts["done_conversation_count"],"count_scope":"all_account_mail_including_archive","id":account,"name":name,"email":email,"provider":provider,"signature_text":signature_text,"unread_count":unread,"starred_count":starred,"conversation_count":count,"message_count":messages,"coverage":self.coverage(&account)?}));
+            let drafts: i64 = self.db.query_row(
+                "SELECT COUNT(*) FROM drafts WHERE account=?1 AND discarded=0",
+                [&account],
+                |r| r.get(0),
+            )?;
+            out.last_mut().unwrap()["draft_count"] = json!(drafts);
         }
         Ok(json!({"accounts":out,"fixture_revision":self.fixture_revision()?}))
     }
@@ -215,6 +295,14 @@ impl Store {
     }
     pub(crate) fn account_counts(&self, account: &str) -> Result<Value> {
         self.cached_projection(account, "counts", || self.compute_account_counts(account))
+    }
+    fn account_message_counts(&self, account: &str) -> Result<(i64, i64, i64)> {
+        let states = self.conversation_states(account)?;
+        let (unread, starred) = states.values().fold((0, 0), |(u, s), state| {
+            (u + state.unread_messages, s + state.starred_messages)
+        });
+        let messages = self.conversation_cache.borrow()[account].message_count;
+        Ok((unread, starred, messages))
     }
     fn conversation_states(
         &self,
@@ -261,19 +349,18 @@ impl Store {
                 // delete, and a truncate mixed with otherwise ordinary inserts.
                 if append_only && actual == old.message_count + additions.len() as i64 {
                     let states = Arc::make_mut(&mut old.states);
-                    let mut aggregate=self.db.prepare_cached("SELECT MAX(unread),MAX(starred),MAX(julianday(sent_at)) FROM messages WHERE account=?1 AND conversation_id=?2")?;
+                    let mut aggregate = self
+                        .db
+                        .prepare_cached(&format!("{STATE_SELECT} AND m.conversation_id=?2"))?;
                     for cid in conversations {
                         let position = states
                             .get(&cid)
                             .map_or(states.len(), |state| state.position);
-                        let state = aggregate.query_row(params![account, cid], |r| {
-                            Ok(ConversationState {
-                                position,
-                                unread: r.get(0)?,
-                                starred: r.get(1)?,
-                                latest: r.get::<_, Option<f64>>(2)?.unwrap_or(0.0),
-                            })
-                        })?;
+                        let mut state = ConversationState::empty(position);
+                        let mut rows = aggregate.query(params![account, cid])?;
+                        while let Some(row) = rows.next()? {
+                            state.absorb(row)?;
+                        }
                         states.insert(cid, state);
                     }
                     old.message_count = actual;
@@ -283,27 +370,20 @@ impl Store {
                 }
             }
         }
-        let mut stmt=self.db.prepare_cached("SELECT conversation_id,MAX(unread),MAX(starred),MAX(julianday(sent_at)),COUNT(*),MAX(rowid) FROM messages WHERE account=?1 GROUP BY conversation_id")?;
+        let mut stmt = self.db.prepare_cached(STATE_SELECT)?;
         let mut message_count = 0;
         let mut max_rowid = 0;
-        let mut position = 0;
-        let states = stmt
-            .query_map([account], |r| {
-                message_count += r.get::<_, i64>(4)?;
-                max_rowid = max_rowid.max(r.get::<_, i64>(5)?);
-                let current_position = position;
-                position += 1;
-                Ok((
-                    r.get::<_, String>(0)?,
-                    ConversationState {
-                        position: current_position,
-                        unread: r.get(1)?,
-                        starred: r.get(2)?,
-                        latest: r.get::<_, Option<f64>>(3)?.unwrap_or(0.0),
-                    },
-                ))
-            })?
-            .collect::<std::result::Result<HashMap<_, _>, _>>()?;
+        let mut states = HashMap::new();
+        let mut rows = stmt.query([account])?;
+        while let Some(row) = rows.next()? {
+            message_count += 1;
+            max_rowid = max_rowid.max(row.get::<_, i64>(4)?);
+            let position = states.len();
+            let state = states
+                .entry(row.get::<_, String>(0)?)
+                .or_insert_with(|| ConversationState::empty(position));
+            state.absorb(row)?;
+        }
         let states = Arc::new(states);
         self.conversation_cache.borrow_mut().insert(
             account.into(),
@@ -479,6 +559,9 @@ impl Store {
         )
     }
     pub(crate) fn conversations(&self, account: &str, p: &Value) -> Result<Value> {
+        self.conversations_ordered(account, p, false)
+    }
+    fn conversations_ordered(&self, account: &str, p: &Value, recent: bool) -> Result<Value> {
         fields(
             p,
             &[
@@ -489,18 +572,46 @@ impl Store {
                 "limit",
                 "offset",
                 "sender",
+                "exact_sender",
+                "kind",
                 "status",
                 "has_attachment",
                 "after",
                 "before",
                 "grouped",
                 "cursor",
+                "collapsed_groups",
             ],
         )?;
         let limit = number(p, "limit", 50, 1, 100)?;
         let mut offset = number(p, "offset", 0, 0, 10_000_000)?;
+        let mut collapsed = HashSet::new();
+        if let Some(groups) = p.get("collapsed_groups") {
+            let groups = groups
+                .as_array()
+                .filter(|groups| groups.len() <= 3)
+                .ok_or_else(|| {
+                    err(
+                        "invalid_request",
+                        "collapsed_groups must be an array of up to three groups",
+                    )
+                })?;
+            for group in groups {
+                let group = group
+                    .as_str()
+                    .filter(|g| ["review", "held", "done"].contains(g))
+                    .ok_or_else(|| err("invalid_request", "Unknown collapsed group"))?;
+                if !collapsed.insert(group) {
+                    return Err(err("invalid_request", "Collapsed groups must be unique"));
+                }
+            }
+        }
         validate_filters(p)?;
         let sender = optional_string(p, "sender", "")?;
+        let exact_sender = optional_string(p, "exact_sender", "")?
+            .trim()
+            .to_lowercase();
+        let kind = optional_string(p, "kind", "all")?;
         let sender_pattern = format!(
             "%{}%",
             sender
@@ -641,9 +752,19 @@ impl Store {
             status,
             attachment,
             after,
-            before
+            before,
+            exact_sender
         ])?;
         while let Some(row) = rows.next()? {
+            if !exact_sender.is_empty() {
+                let candidate = row
+                    .get_ref(3)?
+                    .as_str()
+                    .map_err(|_| err("storage_error", "Invalid sender address"))?;
+                if candidate.trim().to_lowercase() != exact_sender {
+                    continue;
+                }
+            }
             let cid = row
                 .get_ref(0)?
                 .as_str()
@@ -651,6 +772,9 @@ impl Store {
             let (cid, state) = states
                 .get_key_value(cid)
                 .ok_or_else(|| err("storage_error", "Matching conversation has no source state"))?;
+            if kind != "all" && kind != kind_name(state.kind) {
+                continue;
+            }
             if !match status {
                 "review" => state.unread,
                 "held" => state.starred,
@@ -660,7 +784,7 @@ impl Store {
                 continue;
             }
             let rowid: i64 = row.get(1)?;
-            let at = if grouped {
+            let at = if grouped || recent {
                 ""
             } else {
                 row.get_ref(2)?
@@ -685,6 +809,16 @@ impl Store {
             }
         }
         let filtered_count = page.len();
+        let mut group_counts = [0usize; 3];
+        for (_, state) in &page {
+            group_counts[if state.unread {
+                0
+            } else if state.starred {
+                1
+            } else {
+                2
+            }] += 1;
+        }
         let group_rank = |s: &ConversationState| {
             if s.unread {
                 0
@@ -694,12 +828,21 @@ impl Store {
                 2
             }
         };
+        if !collapsed.is_empty() {
+            page.retain(|(_, state)| {
+                !collapsed.contains(["review", "held", "done"][group_rank(state)])
+            });
+        }
+        let expanded_count = page.len();
         let compare = |(aid, a): &(&str, &ConversationState),
                        (bid, b): &(&str, &ConversationState)| {
-            let order = if grouped {
-                group_rank(a)
-                    .cmp(&group_rank(b))
-                    .then_with(|| b.latest.total_cmp(&a.latest))
+            let order = if grouped || recent {
+                (if grouped {
+                    group_rank(a).cmp(&group_rank(b))
+                } else {
+                    std::cmp::Ordering::Equal
+                })
+                .then_with(|| b.latest.total_cmp(&a.latest))
             } else {
                 matches[b.position]
                     .as_ref()
@@ -716,7 +859,7 @@ impl Store {
             page.truncate(end);
         }
         page.sort_unstable_by(compare);
-        let more = (offset + limit) < filtered_count as i64;
+        let more = (offset + limit) < expanded_count as i64;
         let page = page
             .into_iter()
             .skip(offset as usize)
@@ -778,10 +921,26 @@ impl Store {
             } else {
                 "done"
             };
-            out.push(json!({"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if expression.is_empty() && category.is_empty() && sender.is_empty() && after.is_empty() && before.is_empty() && attachment.is_none(){Vec::<String>::new()}else{matching}}));
+            out.push(json!({"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if expression.is_empty() && category.is_empty() && sender.is_empty() && exact_sender.is_empty() && after.is_empty() && before.is_empty() && attachment.is_none(){Vec::<String>::new()}else{matching}}));
         }
         Ok(
-            json!({"conversations":out,"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(serde_json::to_string(&json!({"revision":revision,"epoch":epoch,"search_generation":search_generation,"offset":offset+limit,"fingerprint":fingerprint}))?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?}),
+            json!({"conversations":out,"expanded_conversation_count":expanded_count,"filtered_group_counts":{"review":group_counts[0],"held":group_counts[1],"done":group_counts[2]},"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(serde_json::to_string(&json!({"revision":revision,"epoch":epoch,"search_generation":search_generation,"offset":offset+limit,"fingerprint":fingerprint}))?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?}),
+        )
+    }
+    pub(crate) fn sender_summary(&self, account: &str, p: &Value) -> Result<Value> {
+        fields(p, &["email"])?;
+        let email = canonical_email(
+            p.get("email")
+                .and_then(Value::as_str)
+                .ok_or_else(|| err("invalid_request", "Sender summary needs an email address"))?,
+        )?;
+        let result = self.conversations_ordered(
+            account,
+            &json!({"exact_sender":email,"folder":"all","limit":3}),
+            true,
+        )?;
+        Ok(
+            json!({"account":account,"email":email,"conversation_count":result["filtered_conversation_count"],"conversations":result["conversations"]}),
         )
     }
     pub(crate) fn conversation(&self, account: &str, cid: &str) -> Result<Value> {
@@ -795,8 +954,8 @@ impl Store {
             )
             .optional()?
             .ok_or_else(|| err("not_found", "Conversation not found in this account"))?;
-        let mut stmt=self.db.prepare("SELECT id,sender_name,sender_email,recipient,subject,sent_at,body,unread,starred,revision,source_hash FROM messages WHERE account=?1 AND conversation_id=?2 ORDER BY julianday(sent_at),id LIMIT 201")?;
-        let mut messages=stmt.query_map(params![account,cid],|r|Ok(json!({"id":r.get::<_,String>(0)?,"sender_name":r.get::<_,String>(1)?,"sender_email":r.get::<_,String>(2)?,"to":r.get::<_,String>(3)?,"subject":r.get::<_,String>(4)?,"sent_at":r.get::<_,String>(5)?,"text":r.get::<_,String>(6)?,"unread":r.get::<_,bool>(7)?,"starred":r.get::<_,bool>(8)?,"revision":r.get::<_,i64>(9)?,"source_hash":r.get::<_,String>(10)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;
+        let mut stmt=self.db.prepare("SELECT m.id,sender_name,sender_email,recipient,subject,sent_at,body,unread,starred,revision,m.source_hash,COALESCE(k.kind,'unknown') FROM messages m LEFT JOIN message_sender_kinds k ON k.account=m.account AND k.message_id=m.id AND k.source_hash=m.source_hash WHERE m.account=?1 AND conversation_id=?2 ORDER BY julianday(sent_at),m.id LIMIT 201")?;
+        let mut messages=stmt.query_map(params![account,cid],|r|Ok(json!({"id":r.get::<_,String>(0)?,"sender_name":r.get::<_,String>(1)?,"sender_email":r.get::<_,String>(2)?,"to":r.get::<_,String>(3)?,"subject":r.get::<_,String>(4)?,"sent_at":r.get::<_,String>(5)?,"text":r.get::<_,String>(6)?,"unread":r.get::<_,bool>(7)?,"starred":r.get::<_,bool>(8)?,"revision":r.get::<_,i64>(9)?,"source_hash":r.get::<_,String>(10)?,"kind":r.get::<_,String>(11)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;
         if messages.is_empty() || messages.len() > 200 {
             return Err(err(
                 "limit_exceeded",
@@ -830,54 +989,18 @@ impl Store {
             })
             .collect::<Result<Vec<_>>>()?;
         let ids: Vec<_> = messages.iter().map(|m| m["id"].clone()).collect();
+        let states = self.conversation_states(account)?;
+        let kind = states
+            .get(cid)
+            .map_or("unknown", |state| kind_name(state.kind));
         Ok(
-            json!({"id":cid,"subject":subject,"revision":revision,"message_ids":ids,"categories":categories,"messages":messages}),
+            json!({"kind":kind,"id":cid,"subject":subject,"revision":revision,"message_ids":ids,"categories":categories,"messages":messages}),
         )
     }
     pub(crate) fn categories(&self, account: &str) -> Result<Value> {
         let mut stmt=self.db.prepare("SELECT c.id,c.name,COUNT(DISTINCT m.conversation_id) FROM categories c LEFT JOIN message_categories mc ON mc.account=c.account AND mc.category_id=c.id LEFT JOIN messages m ON m.account=mc.account AND m.id=mc.message_id WHERE c.account=?1 GROUP BY c.id,c.name ORDER BY c.name")?;
         Ok(
             json!({"categories":stmt.query_map([account],|r|Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"conversation_count":r.get::<_,i64>(2)?})))?.collect::<std::result::Result<Vec<_>,_>>()?}),
-        )
-    }
-    pub(crate) fn draft(&self, account: &str, cid: &str) -> Result<Value> {
-        let conversation = self.conversation(account, cid)?;
-        let (body, revision, body_html, attachments_json) = self
-            .db
-            .query_row(
-                "SELECT body,revision,body_html,attachments_json FROM drafts WHERE account=?1 AND conversation_id=?2",
-                params![account, cid],
-                |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?,r.get::<_,Option<String>>(2)?,r.get::<_,String>(3)?)),
-            )
-            .optional()?
-            .unwrap_or((String::new(),0,None,"[]".into()));
-        let attachment_ids: Vec<String> = serde_json::from_str(&attachments_json)?;
-        if attachment_ids.len() > 50 {
-            return Err(err(
-                "storage_error",
-                "Draft attachment references exceed their bound",
-            ));
-        }
-        let attachments = attachment_ids.iter().map(|id| {
-            self.db.query_row("SELECT name,mime_type,size,state FROM attachments WHERE account=?1 AND id=?2",params![account,id],|row|Ok(json!({"id":id,"name":row.get::<_,String>(0)?,"mime_type":row.get::<_,String>(1)?,"size":row.get::<_,i64>(2)?,"state":row.get::<_,String>(3)?})))
-                .optional().map(|row|row.unwrap_or_else(||json!({"id":id,"state":"missing"})))
-        }).collect::<std::result::Result<Vec<_>,_>>()?;
-        let saved_snapshot: Option<(String,String,i64)> = self.db.query_row("SELECT signature_text,from_name,identity_revision FROM drafts WHERE account=?1 AND conversation_id=?2",params![account,cid],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
-        let (signature_text,from_name,identity_revision)=match saved_snapshot { Some(v)=>v,None=>self.db.query_row("SELECT m.signature_text,a.name,m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id WHERE a.id=?1",[account],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))? };
-        let from: String =
-            self.db
-                .query_row("SELECT email FROM accounts WHERE id=?1", [account], |r| {
-                    r.get(0)
-                })?;
-        let messages = conversation["messages"].as_array().unwrap();
-        let to = messages
-            .iter()
-            .rev()
-            .find(|message| message["sender_email"].as_str() != Some(&from))
-            .map(|message| message["sender_email"].clone())
-            .unwrap_or_else(|| messages.last().unwrap()["to"].clone());
-        Ok(
-            json!({"signature_text":signature_text,"from_name":from_name,"identity_revision":identity_revision,"conversation_id":cid,"body":body,"body_html":body_html,"attachment_ids":attachment_ids,"to":to,"from":from,"subject":format!("Re: {}",conversation["subject"].as_str().unwrap()),"revision":revision,"attachments":attachments}),
         )
     }
     pub(crate) fn view(&self, account: &str) -> Result<Value> {
@@ -955,6 +1078,16 @@ fn search_snippet(body: &str, tokens: &[&str]) -> String {
 
 // Structured filters combine on the same source message; status considers the whole conversation.
 pub(crate) fn validate_filters(p: &Value) -> Result<()> {
+    if let Some(value) = p.get("exact_sender") {
+        canonical_email(
+            value
+                .as_str()
+                .ok_or_else(|| err("invalid_request", "Exact sender must be an email address"))?,
+        )?;
+    }
+    if !["all", "people", "automated", "unknown"].contains(&optional_string(p, "kind", "all")?) {
+        return Err(err("invalid_request", "Unknown sender kind"));
+    }
     let sender = optional_string(p, "sender", "")?;
     if sender.len() > 256 || sender.chars().any(char::is_control) {
         return Err(err(
@@ -985,6 +1118,24 @@ pub(crate) fn validate_filters(p: &Value) -> Result<()> {
     }
     Ok(())
 }
+fn canonical_email(email: &str) -> Result<String> {
+    let trimmed = email.trim();
+    if email.len() > 256
+        || trimmed.is_empty()
+        || email.chars().any(char::is_control)
+        || fm_mail::validate_address(&fm_mail::Address {
+            name: None,
+            email: trimmed.into(),
+        })
+        .is_err()
+    {
+        return Err(err(
+            "invalid_request",
+            "Sender must be a valid email address of at most 256 bytes",
+        ));
+    }
+    Ok(trimmed.to_lowercase())
+}
 pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
     // Only add predicates actually requested. Bound optional OR expressions kept
     // sender/body columns in the old query's scan even for unfiltered listings.
@@ -1003,6 +1154,14 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
     if p["sender"].as_str().is_some_and(|s| !s.is_empty()) {
         predicate.push_str(
             " AND (m.sender_name LIKE ?7 ESCAPE '\\' OR m.sender_email LIKE ?7 ESCAPE '\\')",
+        );
+    }
+    if p.get("exact_sender").is_some() {
+        // SQLite NOCASE covers the common ASCII candidate path. The pinned
+        // mailbox parser also accepts Unicode domains, so retain non-ASCII
+        // candidates for the same bounded Rust lowercase comparison as input.
+        predicate.push_str(
+            " AND (trim(m.sender_email)=?12 COLLATE NOCASE OR m.sender_email GLOB '*[^ -~]*')",
         );
     }
     if let Some(has) = p["has_attachment"].as_bool() {
@@ -1024,7 +1183,12 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
     } else {
         "messages m"
     };
-    format!("WITH bindings AS (SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11) SELECT m.conversation_id,m.rowid,m.sent_at FROM {source} WHERE {predicate}")
+    let exact_column = if p.get("exact_sender").is_some() {
+        "m.sender_email"
+    } else {
+        "''"
+    };
+    format!("WITH bindings AS (SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) SELECT m.conversation_id,m.rowid,m.sent_at,{exact_column} FROM {source} WHERE {predicate}")
 }
 
 #[cfg(test)]
@@ -1043,6 +1207,11 @@ mod projection_tests {
             assert_eq!(actual["unread_conversation_count"], expected.1);
             assert_eq!(actual["held_conversation_count"], expected.2);
             assert_eq!(actual["done_conversation_count"], expected.3);
+            let expected_messages:(i64,i64,i64)=store.db.query_row("SELECT COALESCE(SUM(unread),0),COALESCE(SUM(starred),0),COUNT(*) FROM messages WHERE account=?1",[account],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap();
+            assert_eq!(
+                store.account_message_counts(account).unwrap(),
+                expected_messages
+            );
             let indexed:i64=store.db.query_row("SELECT COUNT(*) FROM messages m JOIN message_fts f ON f.rowid=m.rowid WHERE m.account=?1",[account],|r|r.get(0)).unwrap();
             let coverage = store.coverage(account).unwrap();
             assert_eq!(coverage["indexed_messages"], indexed);

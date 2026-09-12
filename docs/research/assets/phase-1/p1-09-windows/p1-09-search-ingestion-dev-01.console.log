@@ -1,0 +1,39 @@
+{
+  "result": "failed",
+  "elapsed_seconds": 77.563,
+  "queries": [
+    {
+      "class": "rare subject",
+      "p95_ms": 102.2391,
+      "first_input_unix_ms": 1789202275847,
+      "last_paint_unix_ms": 1789202288110.0012,
+      "overlapping_committed_batches": 51,
+      "overlapping_committed_messages": 1275
+    },
+    {
+      "class": "rare body",
+      "p95_ms": 71.3814,
+      "first_input_unix_ms": 1789202288343,
+      "last_paint_unix_ms": 1789202302074.813,
+      "overlapping_committed_batches": 51,
+      "overlapping_committed_messages": 1275
+    },
+    {
+      "class": "grouped first50",
+      "p95_ms": 147.139,
+      "first_input_unix_ms": 1789202302405,
+      "last_paint_unix_ms": 1789202320009.3096,
+      "overlapping_committed_batches": 48,
+      "overlapping_committed_messages": 1200
+    },
+    {
+      "class": "combined filters first50",
+      "p95_ms": 208.087,
+      "first_input_unix_ms": 1789202320695,
+      "last_paint_unix_ms": 1789202345688.5476,
+      "overlapping_committed_batches": 51,
+      "overlapping_committed_messages": 1275
+    }
+  ],
+  "error": "Native paint latency did not meet its unchanged 200 ms budget; source and overlap checks passed"
+}
