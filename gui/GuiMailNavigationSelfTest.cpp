@@ -7,6 +7,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <array>
 
 namespace {
@@ -46,6 +47,32 @@ bool fullyVisible(QQuickItem *item, QQuickWindow *window) {
     for (auto ancestor = item->parentItem(); ancestor; ancestor = ancestor->parentItem())
         if (ancestor->clip() && !ancestor->mapRectToScene(ancestor->boundingRect()).contains(rect)) return false;
     return true;
+}
+bool inputViewportVisible(QQuickItem *item,QQuickWindow *window) {
+    if (!item || !item->isVisible() || item->width()<=0 || item->height()<=0) return false;
+    // TextInput's boundingRect follows its horizontally scrolled glyphs. The
+    // editable control keeps its own viewport when retained input is longer.
+    const auto rect=item->mapRectToScene(QRectF(0,0,item->width(),item->height())).adjusted(1,1,-1,-1);
+    if (!QRectF(0,0,window->width(),window->height()).contains(rect)) return false;
+    for (auto ancestor=item->parentItem();ancestor;ancestor=ancestor->parentItem())
+        if (ancestor->clip() && !ancestor->mapRectToScene(QRectF(0,0,ancestor->width(),ancestor->height())).contains(rect)) return false;
+    return true;
+}
+QString geometryDiagnostic(QQuickItem *item,QQuickWindow *window) {
+    QJsonArray ancestors;
+    for (auto current=item; current && ancestors.size()<8; current=current->parentItem()) {
+        const auto rect=current->mapRectToScene(current->boundingRect());
+        ancestors.append(QJsonObject{{"name",current->objectName()},{"type",current->metaObject()->className()},
+            {"x",rect.x()},{"y",rect.y()},{"width",rect.width()},{"height",rect.height()},
+            {"control_width",current->width()},{"control_height",current->height()},
+            {"implicit_width",current->implicitWidth()},{"implicit_height",current->implicitHeight()},
+            {"visible",current->isVisible()},{"enabled",current->isEnabled()},{"clip",current->clip()}});
+    }
+    return QString::fromUtf8(QJsonDocument(QJsonObject{{"found",item!=nullptr},
+        {"fully_visible",fullyVisible(item,window)},{"input_viewport_visible",inputViewportVisible(item,window)},
+        {"window_width",window->width()},{"window_height",window->height()},
+        {"text_length",item ? item->property("text").toString().size() : -1},{"ancestors",ancestors}})
+        .toJson(QJsonDocument::Compact));
 }
 }
 
@@ -98,7 +125,7 @@ bool GuiMailNavigationSelfTest::clickItem(QQuickItem *control) {
 }
 bool GuiMailNavigationSelfTest::typeField(const QString &name,const QString &text) {
     auto field=find(m_window->contentItem(),name);
-    if (!field || !field->isEnabled() || !fullyVisible(field,m_window)) return false;
+    if (!field || !field->isEnabled() || !inputViewportVisible(field,m_window)) return false;
     field->forceActiveFocus(); QMetaObject::invokeMethod(field,"selectAll");
     if (text.isEmpty()) key(field,Qt::Key_Backspace);
     else { QInputMethodEvent input; input.setCommitString(text); QCoreApplication::sendEvent(field,&input); }
@@ -266,7 +293,9 @@ void GuiMailNavigationSelfTest::step() {
         m_stage=11; break;
     case 11:
         if (!filterPopup()) return;
-        if (!typeField("filterSender",searches[0].query) || !choose("filterStatus",3) || !choose("filterAttachments",2)
+        // This source has retained attachment metadata whose bytes are missing;
+        // attachment presence includes that truthful, unavailable attachment.
+        if (!typeField("filterSender",searches[0].query) || !choose("filterStatus",3) || !choose("filterAttachments",1)
             || !typeField("filterAfter","2026-02-30") || !typeField("filterBefore","2026-09-12") || !click("applyMailFilters")) return;
         m_stage=12; break;
     case 12:
@@ -274,24 +303,56 @@ void GuiMailNavigationSelfTest::step() {
             || m_backend.conversations()!=m_unfilteredRows || find(m_window->contentItem(),"filterAfter")->property("text").toString()!="2026-02-30"
             || find(m_window->contentItem(),"filterSender")->property("text").toString()!=searches[0].query) { finish("Invalid date closed the filter popover, lost input or changed active results."); return; }
         if (!typeField("filterAfter","2026-09-11") || !click("applyMailFilters")) return;
-        m_expectedFilters={{"sender",QString(searches[0].query)},{"status","done"},{"has_attachment",false},{"after","2026-09-11"},{"before","2026-09-12"}};
+        m_expectedFilters={{"sender",QString(searches[0].query)},{"status","done"},{"has_attachment",true},{"after","2026-09-11"},{"before","2026-09-12"}};
         m_stage=13; break;
-    case 13:
+    case 13: {
         if (filterPopup() || m_backend.loading()) return;
-        if (m_backend.filters()!=m_expectedFilters || !filterResultMatches()) { finish("Native combined filters did not return the exact source member with the requested state and date bounds."); return; }
+        if (m_backend.filters()!=m_expectedFilters || !filterResultMatches()) {
+            QJsonArray rows;
+            for (const auto &value:m_backend.conversations().mid(0,3)) {
+                const auto row=value.toMap();
+                QJsonObject summary;
+                for (const auto name:{"id","group","display_group","sender_name","sender_email","latest_at","unread","starred","message_ids","matching_message_ids"})
+                    summary[name]=QJsonValue::fromVariant(row.value(name));
+                rows.append(summary);
+            }
+            const QJsonObject diagnostic{{"account",m_backend.account()},{"query",m_backend.query()},
+                {"folder",m_backend.folder()},{"category",m_backend.category()},
+                {"filters",QJsonObject::fromVariantMap(m_backend.filters())},
+                {"expected_filters",QJsonObject::fromVariantMap(m_expectedFilters)},
+                {"row_count",m_backend.conversations().size()},{"first_rows",rows}};
+            finish("Native combined filters did not return the exact source member with the requested state and date bounds. "
+                + QString::fromUtf8(QJsonDocument(diagnostic).toJson(QJsonDocument::Compact)));
+            return;
+        }
         if (!click("mailFiltersButton")) return;
         m_stage=14; break;
+    }
     case 14:
         if (!filterPopup()) return;
         if (find(m_window->contentItem(),"filterSender")->property("text").toString()!=searches[0].query
             || find(m_window->contentItem(),"filterBefore")->property("text").toString()!="2026-09-12") { finish("Reopening filters lost the saved criteria."); return; }
         if (!typeField("filterSender",QString(QChar(0x00e9)).repeated(129)) || !click("applyMailFilters")) return;
         m_stage=15; break;
-    case 15:
+    case 15: {
+        const auto directory=qEnvironmentVariable("FM_GUI_TEST_SCREENSHOTS");
+        if (!directory.isEmpty() && (!QDir::isAbsolutePath(directory) || !QDir().mkpath(directory)
+            || !m_window->grabWindow().save(QDir(directory).filePath("filter-validation.png")))) {
+            finish("Cannot save the explicitly requested native filter validation screenshot."); return;
+        }
         if (!filterFeedback("Use a shorter sender name or email without control characters.") || m_backend.filters()!=m_expectedFilters || !filterResultMatches()
             || find(m_window->contentItem(),"filterSender")->property("text").toString()!=QString(QChar(0x00e9)).repeated(129)) { finish("Overlong UTF-8 sender input was not retained with the old active filters."); return; }
-        if (!typeField("filterSender",searches[0].query) || !typeField("filterBefore","2026-09-11") || !click("applyMailFilters")) return;
+        if (!typeField("filterSender",searches[0].query)) {
+            finish("Cannot correct the retained Unicode sender input. " + geometryDiagnostic(find(m_window->contentItem(),"filterSender"),m_window)); return;
+        }
+        if (!typeField("filterBefore","2026-09-11")) {
+            finish("Cannot edit the date after correcting the Unicode sender. " + geometryDiagnostic(find(m_window->contentItem(),"filterBefore"),m_window)); return;
+        }
+        if (!click("applyMailFilters")) {
+            finish("Cannot apply the corrected sender and date fields. " + geometryDiagnostic(find(m_window->contentItem(),"applyMailFilters"),m_window)); return;
+        }
         m_stage=16; break;
+    }
     case 16:
         if (!filterFeedback("The before date must be later than the on or after date.") || m_backend.filters()!=m_expectedFilters || !filterResultMatches()
             || find(m_window->contentItem(),"filterBefore")->property("text").toString()!="2026-09-11") { finish("Inverted date bounds changed active filters or lost correction input."); return; }
