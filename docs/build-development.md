@@ -75,6 +75,14 @@ fm --profile /absolute/local/phase1-walkthrough --json preferences show
 
 Use a native Windows path in place of the illustrative absolute path. `mail read ID` is a query and does not mark the conversation reviewed; `mail review`, `mail done` and `mail delay` are explicit actions. Run `fm --help` and the command's `--help` for mutation parameters. The [fixture API](../fixtures/README.md) defines exact fields and limits. [Phase 1 execution evidence](research/phase-1-execution.md) distinguishes executed checks from remaining acceptance work.
 
+The verified Windows development package at runtime `c34b82e` is `dist/fuckmail-windows-amd64.zip`; its staged GUI can run without rebuilding or the SDK:
+
+```powershell
+./dist/windows-amd64/bin/fuckmail-gui.exe --profile C:/Users/Yegor/Projects/Fuckaround/fuckMail/.tools/phase1-walkthrough --fixture-clock
+```
+
+Use `dist/windows-amd64/bin/fm.exe` with that same profile for the paired CLI. The [final package evidence](research/phase-1-execution.md#final-windows-development-package--c34b82e) records native control/restart/relocation, schema 4→5 preservation/refusal and passing packaged search measurements. Final-source CI and physical-input limits remain explicit.
+
 ## Selected tooling and provenance
 
 | Input | Selected version / route |

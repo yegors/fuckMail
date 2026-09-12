@@ -6,19 +6,19 @@ Human correspondence comes first. Unread means unreviewed; stars mean action lef
 
 ## Current state
 
-**Windows development is ready. Phase 1 final acceptance is in progress. Google-first MVP readiness: 0/9 whole areas verified.** The schema-5/fixture-2 client at `1132c44` passes all nine Windows release tests, relocated package checks and upgrade/refusal. Mail, Calendar, Settings and reply captures have been reviewed. Final interaction tests, a packaged search timing correction and final-source native CI remain open. Native Mac/Windows/Ubuntu checks at `204fa62` remain the completed Phase 0 baseline. Real Google accounts remain a later milestone. See [development commands](docs/build-development.md), [status](docs/status.md), [Phase 1 evidence](docs/research/phase-1-execution.md) and the [Phase 1 plan](docs/plans/phase-1.md).
+**Windows development and local Phase 1 verification pass; final-source native CI remains pending. Google-first MVP readiness: 0/9 whole areas verified.** The clean schema-5/fixture-2 package at `c34b82e` passes native GUI/CLI acceptance, restart, SDK-free relocation, upgrade/refusal and measured warm search targets. Mail, Calendar, Settings and reply captures have been reviewed. Phase 1 still needs final-source Mac/Windows/Ubuntu CI and packages. Runtime `204fa62` remains the completed Phase 0 baseline; real Google accounts remain a later milestone. See [development commands](docs/build-development.md), [status](docs/status.md), [Phase 1 evidence](docs/research/phase-1-execution.md) and the [Phase 1 plan](docs/plans/phase-1.md).
 
 | Google-first feature area | Build status |
 | --- | --- |
-| [Core and complete offline storage](docs/contracts/core-storage.md) | Phase 0 synthetic evidence; whole area Draft |
+| [Core and complete offline storage](docs/contracts/core-storage.md) | Phase 1 shared state/migration verified locally; whole area Draft |
 | [Gmail / Google Workspace](docs/contracts/gmail.md) | Phase 0 synthetic evidence; whole area Draft |
-| [Mail UI and human composition](docs/contracts/mail-ui.md) | Phase 0 synthetic evidence; whole area Draft |
-| [Local search](docs/contracts/search.md) | Phase 0 synthetic evidence; whole area Draft |
-| [User-owned triage and categories](docs/contracts/triage.md) | Phase 0 synthetic evidence; whole area Draft |
-| [Google Calendar](docs/contracts/calendar.md) | Phase 0 synthetic evidence; whole area Draft |
+| [Mail UI and human composition](docs/contracts/mail-ui.md) | Phase 1 native replies/recovery verified locally; whole area Draft |
+| [Local search](docs/contracts/search.md) | Phase 1 typed queries and warm 100k budgets pass on Windows; whole area Draft |
+| [User-owned triage and categories](docs/contracts/triage.md) | Phase 1 explicit local review/Done/Delay verified; whole area Draft |
+| [Google Calendar](docs/contracts/calendar.md) | Phase 1 combined local views/writes verified; live Google pending; whole area Draft |
 | [Optional local classification/summaries](docs/contracts/local-ai.md) | Phase 0 synthetic evidence; whole area Draft |
-| [Platform installation and lifecycle](docs/contracts/platform.md) | Phase 0 synthetic evidence; whole area Draft |
-| [CLI alongside the GUI](docs/contracts/cli.md) | Phase 0 synthetic evidence; whole area Draft |
+| [Platform installation and lifecycle](docs/contracts/platform.md) | Phase 1 Windows package/lifetime verified; final-source CI pending; whole area Draft |
+| [CLI alongside the GUI](docs/contracts/cli.md) | Phase 1 paired synthetic workflows verified; whole area Draft |
 
 IMAP, SMTP and external iCalendar subscriptions are deferred until the founder has dogfooded working Google GUI and CLI workflows. Their retained contracts are future scope, not missing first-milestone requirements. CalDAV and a broad public launch remain separately deferred. The denominator changed from ten to nine because IMAP/SMTP left the current target, not because anything was built.
 

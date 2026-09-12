@@ -1,6 +1,6 @@
 # Phase 1 execution
 
-Active implementation record, 2026-09-12 UTC. The whole phase remains in progress. Working-tree evidence below does not establish Mac/Windows/Ubuntu packaged acceptance, physical input/scaling acceptance, live Google workflows or whole-product readiness. Completed Phase 0 evidence remains in [its original record](phase-0-execution.md).
+Implementation record, 2026-09-12 UTC. Windows local/native/package verification passes at `c34b82e`; the whole phase remains in progress pending final-source Mac/Windows/Ubuntu CI and packages. Physical input/scaling, live Google workflows and whole-product readiness remain separate. Completed Phase 0 evidence remains in [its original record](phase-0-execution.md).
 
 ## Shared boundary and Windows integration — P1-00/P1-01/P1-02
 
@@ -113,3 +113,24 @@ The corrected filter result passed. The following Unicode correction check initi
 The focused native integration rerun then **passed in 28.40 seconds**; [full acceptance output](assets/phase-1/windows-native-final-acceptance.log) records the new filters, UTF-8/date input retention, corrected/reopened/cleared criteria, 40 superseding real queries, and an actual held engine response released after clicking another account without changing its rows/summary/draft/selection/error. Native timeline Previous/Next/Today updates visible dates while the full Calendar remains independently dated, then restores the original nullable preferences. Sent/Inspect, Discard/Cancel, authored conflict/unknown-capture recovery, Settings, calendar mutation and actual GUI-process restart all pass in this same run. The eight other CTests from the preceding full run remain valid; only this native test's fixture expectation/geometry diagnostics changed afterward.
 
 An isolated development-executable rerun of the unchanged 100-observation paint benchmark passed after the scheduling correction: rare subject/body/grouped/combined p95 **41.75/49.12/73.25/129.24 ms**. Its local diagnostic is `build/phase1-search-25ms.json`; final packaged provenance and measurements are still required below. The measurement keeps the complete input/debounce/queue/IPC/paint boundary and uses the application's Windows default without an external VBlank override.
+
+## Final Windows development package — `c34b82e`
+
+Clean runtime `c34b82e48a6ff94785aab33ae29fdfc86eb2256e` passes the standard relocated, SDK-free package checks, including the complete native GUI acceptance and actual process restart. The [package log](assets/phase-1/windows-package-final.log) and [manifest](assets/phase-1/windows-package-final-manifest.json) retain the executed commands and `source_dirty: false`. The current local archive is `dist/fuckmail-windows-amd64.zip`, **65,068,078 bytes**, SHA-256 **`1dc5d5b3836b68c1f5508545aed61894f1684ba9f3447f4dd9b4e2b029390f35`**. It contains the GUI, CLI, engine and required Qt runtime; it is an unsigned development package.
+
+The final [packaged native measurement](assets/phase-1/search-gui-100k-package-final.json), with [manifest/executable/report hashes](assets/phase-1/search-gui-100k-package-final-provenance.json), passed all four **100-observation** classes in **65.250 seconds**:
+
+| Query | Input-to-painted-result p95 |
+| --- | ---: |
+| Rare subject | 49.13 ms |
+| Rare body | 56.11 ms |
+| Grouped first 50 | 85.03 ms |
+| Combined filters, first 50 | 135.53 ms |
+
+Every class includes 100 actual target-model replacements and independently confirmed empty reset paints. The unchanged target is 200 ms; the earlier 221.80 ms failure remains recorded above. Native D3D11 on the RTX 5090 used the application's timer fallback without a caller override, with 2,762 synchronization/render/swap callbacks and 2,761 update requests. The complete input/debounce/engine queue/IPC/paint boundary remains measured; new component timings are diagnostic and their percentiles are not additive. Generated 100k density, warm cache, no concurrent source ingestion/model work and the separate Core contention measurement remain the same limits. The [native log](assets/phase-1/search-gui-100k-package-final.log) records one clipboard-acquisition retry and ten pending QML-incubation items at rapid benchmark shutdown, followed by successful normal exit; neither establishes physical clipboard/IME qualification.
+
+The [final packaged Calendar Settings capture](assets/phase-1/windows-visual/settings-calendar-final.png), supported by its [native renderer log](assets/phase-1/windows-visual/settings-calendar-final.log), verifies the readable permission labels at 1440×900 logical/125% display scale. The earlier reference-size/compact Mail and calendar captures remain representative of the unchanged layout. Actual filter feedback and input correction are covered by the complete native control test, whose source-body visibility checks remain strict.
+
+The [final two-package schema 4→5 walkthrough](assets/phase-1/windows-schema4-upgrade-final.json) also passed in **91.406 seconds** against this clean `c34b82e` package and the unchanged preserved schema-4 baseline. It retains all 31 old table projections and 287 blob hashes, fixture 1/two accounts, exact authored draft/flag/view/capture receipts and MIME with one transport attempt. The new GUI preserves an independent CLI owner; the old engine refuses schema 5 without resetting data, and the new package reopens successfully. The earlier `1132c44` report remains intact.
+
+Final-source Mac/Windows/Ubuntu CI and their package artifacts still require publishing this local branch. The prior `738601e` Mac/Ubuntu passes do not cover these final changes. Physical host input/clipboard/IME/accessibility and wider scaling, live Google workflows, million-message retention and trusted distribution remain explicitly unverified; only their applicable local Phase 1 gates are being completed here.

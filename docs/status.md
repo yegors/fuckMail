@@ -1,6 +1,6 @@
 # Current status
 
-As of 2026-09-12. **The Windows development chain is ready; Phase 1 final acceptance is in progress. Google-first MVP readiness remains 0/9 whole areas verified.** Branch `codex/phase-1` uses schema 5, fresh fixture 2 and additive protocol 1. Runtime `1132c44` passes all nine Windows release tests, relocated SDK-free package checks and actual schema 4→5 preservation/refusal. Warm 100k Core search passes; the packaged native rerun exceeded the combined-filter paint target and is under correction. Native Mail, Calendar, Settings and reply captures have been reviewed at the reference and compact sizes. See [Phase 1 execution evidence](research/phase-1-execution.md). Runtime `204fa62` remains the completed Phase 0 baseline; [its evidence](research/phase-0-execution.md) is unchanged. No live Google account or model is connected.
+As of 2026-09-12. **Windows development and local Phase 1 verification pass; final-source native CI remains pending. Google-first MVP readiness remains 0/9 whole areas verified.** The clean `c34b82e` development package on `codex/phase-1` uses schema 5, fresh fixture 2 and additive protocol 1. Native GUI/CLI acceptance, actual process restart, SDK-free relocation, schema 4→5 preservation/refusal and the warm 100k Core/native search targets pass. Reviewed captures cover the reference and compact sizes. The full release run's eight passing checks plus corrected native integration are recorded explicitly in [Phase 1 evidence](research/phase-1-execution.md); no failed test is hidden. Runtime `204fa62` remains the completed Phase 0 baseline; [its evidence](research/phase-0-execution.md) is unchanged. No live Google account or model is connected.
 
 ## Established direction
 
@@ -12,7 +12,7 @@ The proposed stack remains Rust engine/CLI, C++20/Qt Quick/QML UI, private local
 
 ## Next work
 
-Finish [P1-07](plans/phase-1.md#p1-07--acceptance-and-packages): close the remaining native filter/discard/capture/timeline interaction checks, verify the packaged search correction, then run native CI and packages for the final source on Mac, Windows and Ubuntu. The earlier `738601e` checkpoint passed Mac/Ubuntu; Windows exhausted its old aggregate Rust-suite watchdog while individual tests continued passing. The corrected 600-second suite allowance and later runtime fixes pass locally but need fresh CI. Automatic approval review rejected the next GitHub push because publishing the source snapshot required explicit authorization; changes stay local until approved. Phase 1 is not complete yet.
+Finish [P1-07](plans/phase-1.md#p1-07--acceptance-and-packages) with native CI and packages for the final source on Mac, Windows and Ubuntu. The earlier `738601e` checkpoint passed Mac/Ubuntu; Windows exhausted its old aggregate Rust-suite watchdog while individual tests continued passing. The corrected 600-second suite allowance and later runtime fixes pass locally but need fresh CI. Automatic approval review rejected the next GitHub push because publishing the source snapshot required explicit authorization; the concrete verified branch and evidence stay local until approved. Phase 1 is not complete yet.
 
 Physical mouse/keyboard, clipboard/IME, accessibility and wider display-scaling checks remain explicitly unverified; desktop input automation was paused after Escape. Native programmatic controls, exact CLI readback, actual GUI restart and screenshots establish their recorded scopes only. The initial failed search measurements are retained alongside the passing optimized results.
 
@@ -24,15 +24,15 @@ The home Windows 11 PC is ready for Phase 1 development at planning checkpoint `
 
 | Required area | State | Verified |
 | --- | --- | --- |
-| [Core/offline storage](contracts/core-storage.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Core/offline storage](contracts/core-storage.md) | Phase 1 shared state/migration verified locally; whole area Draft | No |
 | [Gmail/Workspace](contracts/gmail.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
-| [Mail UI/composition](contracts/mail-ui.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
-| [Search](contracts/search.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
-| [Triage/categories](contracts/triage.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
-| [Google Calendar](contracts/calendar.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Mail UI/composition](contracts/mail-ui.md) | Phase 1 native replies/recovery verified locally; whole area Draft | No |
+| [Search](contracts/search.md) | Phase 1 typed queries and warm 100k budgets pass on Windows; whole area Draft | No |
+| [Triage/categories](contracts/triage.md) | Phase 1 explicit review/Done/Delay verified locally; whole area Draft | No |
+| [Google Calendar](contracts/calendar.md) | Phase 1 combined local views/writes verified; live Google pending; whole area Draft | No |
 | [Optional local assistance](contracts/local-ai.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
-| [Platform/install/lifecycle](contracts/platform.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
-| [CLI](contracts/cli.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
+| [Platform/install/lifecycle](contracts/platform.md) | Phase 1 Windows package/lifetime verified; final-source CI pending; whole area Draft | No |
+| [CLI](contracts/cli.md) | Phase 1 paired synthetic workflows verified; whole area Draft | No |
 
 The denominator changed from ten to nine under D009: IMAP/SMTP is now a deferred area, and external subscriptions are outside the current Calendar gates. This is a reporting scope change, not progress. Local assistance remains an intended capability, optional to enable. Partial CLI or text-only GUI delivery can satisfy the first usable slice without marking its entire feature Verified. Record completed slice evidence explicitly; docs and screenshots do not count.
 
@@ -43,7 +43,7 @@ The Google-first release still requires its applicable quality and OS gates. It 
 | Phase | Outcome | State |
 | --- | --- | --- |
 | 0 — Paired foundation | Native builds, small fixtures, storage, private engine/CLI/GUI, text/composer and Google prerequisites | Completed on available hosts; external/physical gates explicit |
-| 1 — Redesigned local client | Updated native design and paired CLI, shared triage/search/preferences, replies/capture and combined calendar workflows | Windows package/upgrade pass; final interaction/performance checks and CI pending |
+| 1 — Redesigned local client | Updated native design and paired CLI, shared triage/search/preferences, replies/capture and combined calendar workflows | Windows local verification passes; final-source CI/packages pending |
 | 2 — Google daily workflows | Gmail/Workspace and Google Calendar, growing CLI with GUI; controlled founder use | Planned |
 | 3 — Google completion and dogfooding | Usable Google GUI and CLI, expanded designs, later best-effort HTML/local assistance, recovery/performance and delivery evidence | Planned |
 | 4 — Later protocols | IMAP, SMTP and external iCalendar subscriptions, only after actual Google dogfooding | Deferred; not started |
