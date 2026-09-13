@@ -109,6 +109,7 @@ void MailBackend::startDraftAttachmentImport(const QString &key) {
         }
         // A newer projection or another account/draft is never replaced by the
         // original receipt, including a replay returned after navigation.
+        if (current) mergeGoogleDraftStatus(draft["google"].toObject(), intent["account"].toString(), intent["draft_id"].toString());
         emit draftChanged();
         if (current) saveDraft();
         if (m_shutdown) finishShutdown();

@@ -14,6 +14,30 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         vec!["google", "calendar-reconcile", "request"],
         vec!["google", "calendar-operation", "request"],
         vec!["google", "calendar-resume", "request"],
+        vec!["google", "draft-status", "--draft-id", "draft-1"],
+        vec!["google", "draft-reconcile", "--draft-id", "draft-1"],
+        vec![
+            "google",
+            "draft-sync",
+            "--draft-id",
+            "draft-1",
+            "--expected-revision",
+            "3",
+            "--request-id",
+            "upload-1",
+        ],
+        vec![
+            "google",
+            "draft-replace",
+            "--draft-id",
+            "draft-1",
+            "--expected-revision",
+            "3",
+            "--expected-google-revision",
+            "2",
+            "--request-id",
+            "replace-1",
+        ],
         vec![
             "google",
             "calendar-abandon",
@@ -44,6 +68,10 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         "calendar-operation",
         "calendar-resume",
         "calendar-abandon",
+        "draft-sync",
+        "draft-status",
+        "draft-reconcile",
+        "draft-replace",
         "labels",
         "labels-refresh",
         "category-bind",
@@ -79,6 +107,113 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         !absent.exists(),
         "missing Calendar input must fail before storage starts"
     );
+}
+
+#[test]
+fn google_draft_preflight_refuses_ambiguous_revisions_and_identities_before_storage() {
+    let root = tempfile::tempdir().unwrap();
+    let absent = root.path().join("not-created");
+    let long_id = "x".repeat(257);
+    let long_request = "x".repeat(129);
+    for tail in [
+        vec!["draft-status", "--draft-id", ""],
+        vec!["draft-reconcile", "--draft-id", "draft\nother"],
+        vec!["draft-status", "--draft-id", &long_id],
+        vec![
+            "draft-sync",
+            "--draft-id",
+            "draft-1",
+            "--expected-revision",
+            "0",
+            "--request-id",
+            "upload-1",
+        ],
+        vec![
+            "draft-sync",
+            "--draft-id",
+            "draft-1",
+            "--expected-revision",
+            "9223372036854775808",
+            "--request-id",
+            "upload-1",
+        ],
+        vec![
+            "draft-sync",
+            "--draft-id",
+            "draft-1",
+            "--expected-revision",
+            "3",
+            "--request-id",
+            "",
+        ],
+        vec![
+            "draft-sync",
+            "--draft-id",
+            "draft-1",
+            "--expected-revision",
+            "3",
+            "--request-id",
+            &long_request,
+        ],
+        vec![
+            "draft-replace",
+            "--draft-id",
+            "draft-1",
+            "--expected-revision",
+            "3",
+            "--request-id",
+            "replace-1",
+        ],
+        vec![
+            "draft-replace",
+            "--draft-id",
+            "draft-1",
+            "--expected-revision",
+            "3",
+            "--expected-google-revision",
+            "0",
+            "--request-id",
+            "replace-1",
+        ],
+        vec![
+            "draft-replace",
+            "--draft-id",
+            "draft-1",
+            "--expected-revision",
+            "3",
+            "--expected-google-revision",
+            "2",
+            "--request-id",
+            "replace\nother",
+        ],
+        vec![
+            "draft-reconcile",
+            "--draft-id",
+            "draft-1",
+            "--request-id",
+            "invented-retry",
+        ],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args([
+                "--profile",
+                absent.to_str().unwrap(),
+                "--account",
+                "chosen-account",
+                "google",
+            ])
+            .args(&tail)
+            .output()
+            .unwrap();
+        assert!(
+            !output.status.success(),
+            "accepted invalid draft arguments: {tail:?}"
+        );
+        assert!(
+            !absent.exists(),
+            "invalid draft arguments started storage: {tail:?}"
+        );
+    }
 }
 
 #[test]

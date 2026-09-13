@@ -1,0 +1,5 @@
+{
+  "result": "failed",
+  "elapsed_seconds": 0.39100000029429793,
+  "error": "Wrong attachment identity: [('multipart/mixed', None, None), ('application/octet-stream', 'attachment', 'Human attachment \u65e5\u672c\u8a9e.bin')]"
+}

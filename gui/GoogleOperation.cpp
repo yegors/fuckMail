@@ -39,6 +39,7 @@ void GoogleOperation::start(const QString &profile, qint64 enginePid, const QStr
     m_started = true; m_method = method; m_callback = std::move(callback);
     if (method != "google_calendar_write" && method != "google_calendar_reconcile"
         && method != "google_calendar_resume" && method != "google_labels_refresh"
+        && method != "google_draft_reconcile" && method != "google_draft_resolve"
         && method != "draft_attachment_import") {
         reject("invalid_request", "Unsupported Google operation."); return;
     }

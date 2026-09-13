@@ -1,6 +1,7 @@
 //! Explicit Google read sessions share quotas, one Store writer and cancellation.
 pub(crate) mod calendar;
 pub(crate) mod calendar_writes;
+pub(crate) mod drafts;
 pub(crate) mod labels;
 pub(crate) mod mail;
 pub(crate) mod mail_mutations;
@@ -129,6 +130,7 @@ impl SyncContext {
                 call.method(),
                 fm_google::gmail_api::GmailMethod::MessageRaw
                     | fm_google::gmail_api::GmailMethod::LabelsList
+                    | fm_google::gmail_api::GmailMethod::DraftGet
             )
         {
             return Err(GoogleError::PermissionDenied);
@@ -149,6 +151,46 @@ impl SyncContext {
             .execute(call, "engine-managed", &self.cancel)
             .await?;
         Ok((reply, memory))
+    }
+    pub(crate) async fn gmail_draft_request(
+        &self,
+        method: fm_google::gmail_api::GmailMethod,
+    ) -> Result<(
+        GmailApi<QuotaTransport>,
+        OwnedSemaphorePermit,
+        Arc<AtomicBool>,
+    )> {
+        use fm_google::gmail_api::GmailMethod;
+        if !matches!(method, GmailMethod::DraftCreate | GmailMethod::DraftUpdate) {
+            return Err(failure(
+                "invalid_request",
+                "Only draft create/update is admitted",
+            ));
+        }
+        let work = Work {
+            account: self.account.clone(),
+            service: Service::Gmail,
+            class: WorkClass::DraftMutation,
+            units: method.quota_units(),
+        };
+        // Queued work retains identifiers only. Admission precedes frozen MIME
+        // loading and base64 encoding, and this same lease is charged at HTTP.
+        let quota = self
+            .quota
+            .acquire(work.clone(), &self.cancel)
+            .await
+            .map_err(|_| failure("cancelled", "Google draft work stopped"))?;
+        let memory = self.prepare_permit().await?;
+        let mut http = self.transport(work);
+        http.admitted = true;
+        http.permit = Mutex::new(Some(quota));
+        let dispatched = Arc::new(AtomicBool::new(false));
+        http.dispatched = Some(dispatched.clone());
+        Ok((
+            GmailApi::new(self.account.clone(), Arc::new(http)),
+            memory,
+            dispatched,
+        ))
     }
     pub(crate) async fn calendar_request(
         &self,
@@ -218,6 +260,7 @@ impl SyncContext {
             admitted: false,
             permit: Mutex::new(None),
             used: AtomicBool::new(false),
+            dispatched: None,
         }
     }
     #[cfg(test)]
@@ -250,6 +293,7 @@ pub(crate) struct QuotaTransport {
     admitted: bool,
     permit: Mutex<Option<quota::Lease>>,
     used: AtomicBool,
+    dispatched: Option<Arc<AtomicBool>>,
 }
 impl HttpTransport for QuotaTransport {
     fn execute<'a>(
@@ -263,7 +307,8 @@ impl HttpTransport for QuotaTransport {
             }
             let admitted = self.permit.lock().unwrap().take();
             // Typed mutation workers have a separate one-shot lane. Read workers
-            // cannot borrow that lane, and submission/draft endpoints are absent.
+            // cannot borrow that lane. Only exact state/Calendar/draft writes
+            // are allowed; draft/message submission remains unavailable.
             let read_request = request.method() == HttpMethod::Get
                 || (self.work.service == Service::Calendar
                     && request.method() == HttpMethod::Post
@@ -274,6 +319,7 @@ impl HttpTransport for QuotaTransport {
                 matches!(
                     (self.work.service, self.work.class),
                     (Service::Gmail, WorkClass::StateMutation)
+                        | (Service::Gmail, WorkClass::DraftMutation)
                         | (Service::Calendar, WorkClass::CalendarMutation)
                 ) && mutation_request_matches(&self.work, &request)
             };
@@ -296,6 +342,9 @@ impl HttpTransport for QuotaTransport {
                 .map_err(|_| TransportError::Cancelled)?;
             let request = request.header("authorization", &format!("Bearer {token}"))?;
             permit.dispatch(cancel)?;
+            if let Some(dispatched) = &self.dispatched {
+                dispatched.store(true, Ordering::Release);
+            }
             let response = self.context.http.execute(request, cancel).await;
             if let Ok(reply) = &response {
                 if let GoogleError::RateLimited { retry_after_secs } = fm_google::classify_api_error(
@@ -326,6 +375,19 @@ fn mutation_request_matches(work: &Work, request: &HttpRequest) -> bool {
     let path = request.url().split('?').next().unwrap_or("");
     match work.service {
         Service::Gmail => {
+            if work.class == WorkClass::DraftMutation {
+                let root = "https://gmail.googleapis.com/gmail/v1/users/me/drafts";
+                return match (request.method(), work.units) {
+                    (HttpMethod::Post, 10) => path == root,
+                    (HttpMethod::Put, 15) => path
+                        .strip_prefix(&format!("{root}/"))
+                        .is_some_and(|id| !id.is_empty() && !id.contains('/')),
+                    _ => false,
+                };
+            }
+            if work.class != WorkClass::StateMutation {
+                return false;
+            }
             let Some(tail) =
                 path.strip_prefix("https://gmail.googleapis.com/gmail/v1/users/me/messages/")
             else {
@@ -439,6 +501,10 @@ impl Runtime {
                 | "google_calendar_resume"
                 | "google_calendar_abandon"
                 | "google_labels_refresh"
+                | "google_draft_sync"
+                | "google_draft_status"
+                | "google_draft_reconcile"
+                | "google_draft_resolve"
         )
     }
     async fn operation_context(
@@ -514,6 +580,23 @@ impl Runtime {
             .filter(|id| !id.is_empty())
             .ok_or_else(|| failure("account_required", "Choose a Google account"))?
             .to_owned();
+        if method.starts_with("google_draft_") {
+            let writing = matches!(method, "google_draft_sync" | "google_draft_resolve");
+            drafts::validate(&params, writing)?;
+            if writing && ((method == "google_draft_resolve") != params.get("action").is_some()) {
+                return Err(failure(
+                    "invalid_request",
+                    "Choose the matching draft sync or conflict action",
+                ));
+            }
+            if method == "google_draft_status" {
+                let draft_id = params["draft_id"].as_str().unwrap().to_owned();
+                return self
+                    .core
+                    .call(move |store| store.google_draft_status(&account, &draft_id))
+                    .await;
+            }
+        }
         if method == "google_calendar_operation" {
             operation_params(&params)?;
             let request_id = params["request_id"]
@@ -563,6 +646,9 @@ impl Runtime {
                 | "google_calendar_reconcile"
                 | "google_calendar_resume"
                 | "google_labels_refresh"
+                | "google_draft_sync"
+                | "google_draft_reconcile"
+                | "google_draft_resolve"
         ) {
             let (context, _operation_owner) = self
                 .operation_context(&account, owner_id, owner_cancel.clone())
@@ -578,6 +664,12 @@ impl Runtime {
             // cancellation and never authorizes a second provider attempt.
             let result = async {
                 match method {
+                    "google_draft_sync" | "google_draft_resolve" => {
+                        drafts::execute(&context, params).await
+                    }
+                    "google_draft_reconcile" => {
+                        drafts::reconcile(&context, params["draft_id"].as_str().unwrap()).await
+                    }
                     "google_calendar_write" => calendar_writes::execute(&context, params).await,
                     "google_calendar_resume" => {
                         operation_params(&params)?;
@@ -793,7 +885,7 @@ impl Runtime {
             calendar_preparation: self.calendar_preparation.clone(),
         };
         let progress = Arc::new(std::sync::Mutex::new(
-            json!({"mail":if has_mail {"starting"} else {"not_granted"},"mail_mutations":if has_mail_write {"starting"} else {"not_granted"},"labels":if has_mail {"starting"} else {"not_granted"},"calendar":if has_calendar {"starting"} else {"not_granted"},"mail_steps":0,"calendar_pages":0}),
+            json!({"mail":if has_mail {"starting"} else {"not_granted"},"mail_mutations":if has_mail_write {"starting"} else {"not_granted"},"drafts":if has_mail_write {"starting"} else {"not_granted"},"labels":if has_mail {"starting"} else {"not_granted"},"calendar":if has_calendar {"starting"} else {"not_granted"},"mail_steps":0,"calendar_pages":0}),
         ));
         let task_progress = progress.clone();
         let owners = Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::from([(
@@ -814,6 +906,7 @@ impl Runtime {
             }
             if has_mail_write {
                 workers.spawn(mail_mutation_loop(context.clone(), task_progress.clone()));
+                workers.spawn(draft_loop(context.clone(), task_progress.clone()));
             }
             if has_calendar {
                 workers.spawn(calendar_loop(context.clone(), task_progress.clone()));
@@ -1027,6 +1120,38 @@ async fn mail_mutation_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Val
         }
     }
     progress_state(&progress, "mail_mutations", "stopped", None);
+}
+async fn draft_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
+    let mut failures: u32 = 0;
+    while !ctx.cancel.is_cancelled() {
+        let delay = match drafts::step(&ctx).await {
+            Ok(step) => {
+                failures = 0;
+                progress_state(&progress, "drafts", "running", None);
+                match step {
+                    mail::Step::Progress => Duration::from_millis(1),
+                    mail::Step::Idle(delay) => delay,
+                }
+            }
+            Err(error) => {
+                progress_state(&progress, "drafts", "paused", Some(&error.code));
+                if error.code == "cancelled"
+                    || (error.code == "stale_google_work"
+                        && ctx.core_call(|_| Ok(())).await.is_err())
+                {
+                    break;
+                }
+                failures = failures.saturating_add(1).min(6);
+                // Core only returns eligible unsent work or acknowledged reads.
+                // Unknown/in-flight outcomes never re-enter this upload loop.
+                retry_wait(&error, failures).unwrap_or(Duration::from_secs(1))
+            }
+        };
+        if !pause(&ctx.cancel, delay).await {
+            break;
+        }
+    }
+    progress_state(&progress, "drafts", "stopped", None);
 }
 async fn calendar_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
     let mut refresh = std::time::Instant::now() - Duration::from_secs(60);

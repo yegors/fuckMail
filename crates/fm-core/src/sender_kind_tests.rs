@@ -451,6 +451,10 @@ fn schema6_migration_keeps_old_profiles_receipts_and_sources_unclassified() {
             // Trash projection, which is checked separately below.
             let columns = if *table == "messages" {
                 "rowid,account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision"
+            } else if *table == "drafts" {
+                "account,draft_id,conversation_id,legacy_reply,mode,source_message_id,source_hash,routing_json,body,revision,body_html,attachments_json,discarded,signature_text,from_name,identity_revision,created_at,updated_at"
+            } else if *table == "capture_operations" {
+                "account,id,json,blob_hash"
             } else {
                 "*"
             };

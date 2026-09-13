@@ -1,6 +1,6 @@
 //! Shared runtime admission checks; no OAuth, credentials or provider network.
 use super::*;
-use fm_google::transport::HttpResponse;
+use fm_google::{gmail_api::GmailMethod, transport::HttpResponse};
 use std::{
     future::{poll_fn, Future},
     pin::pin,
@@ -40,6 +40,119 @@ struct Contexts {
     // These checks exercise transport admission only. Any attempted Store call
     // remains queued and causes a timeout; no alternate Store is substituted.
     _writer_queue: tokio::sync::mpsc::Receiver<crate::Work>,
+}
+
+#[derive(Default)]
+struct DraftHttp(AtomicUsize);
+impl HttpTransport for DraftHttp {
+    fn execute<'a>(&'a self, request: HttpRequest, _: &'a CancellationToken) -> HttpFuture<'a> {
+        Box::pin(async move {
+            assert_eq!(request.method(), HttpMethod::Post);
+            assert_eq!(
+                request.url(),
+                "https://gmail.googleapis.com/gmail/v1/users/me/drafts"
+            );
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(HttpResponse {
+                status: 200,
+                body: br#"{"id":"fixture-draft","message":{"id":"fixture-message","threadId":"fixture-thread"}}"#.to_vec(),
+                retry_after_secs: None,
+                etag: None,
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn draft_quota_wait_precedes_memory_and_each_dispatch_is_charged_once() {
+    let mut h = Contexts::new(25, 25, 4); // Confirmed limits retain exactly 20 units.
+    let http = Arc::new(DraftHttp::default());
+    h.first.http = http.clone();
+    let mime = b"From: author@example.test\r\n\r\nAuthored draft\r\n";
+    for _ in 0..2 {
+        let (api, memory, dispatched) = tokio::time::timeout(
+            Duration::from_secs(2),
+            h.first.gmail_draft_request(GmailMethod::DraftCreate),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert!(!dispatched.load(Ordering::Acquire));
+        let call = GmailCall::create_draft(&h.first.account, mime, None).unwrap();
+        assert!(matches!(
+            api.execute(call, "managed", &h.first.cancel).await.unwrap(),
+            GmailReply::Draft(_)
+        ));
+        assert!(dispatched.load(Ordering::Acquire));
+        // The admitted transport is one-shot; a second call cannot spend this
+        // same reservation or silently obtain another one.
+        assert!(api
+            .execute(
+                GmailCall::create_draft(&h.first.account, mime, None).unwrap(),
+                "managed",
+                &h.first.cancel
+            )
+            .await
+            .is_err());
+        drop(api);
+        drop(memory);
+    }
+    assert_eq!(http.0.load(Ordering::SeqCst), 2);
+    let mut third = pin!(h.first.gmail_draft_request(GmailMethod::DraftCreate));
+    assert!(matches!(
+        poll_fn(|cx| Poll::Ready(third.as_mut().poll(cx))).await,
+        Poll::Pending
+    ));
+    assert_eq!(
+        h.first.preparation.available_permits(),
+        1,
+        "quota-queued drafts must retain no MIME memory permit"
+    );
+    h.first.cancel.cancel();
+    assert!(third.await.is_err());
+}
+
+#[tokio::test]
+async fn draft_transport_allowlist_has_only_exact_create_update_paths_and_costs() {
+    let h = Contexts::new(1000, 1000, 4);
+    assert!(h
+        .first
+        .gmail_draft_request(GmailMethod::DraftGet)
+        .await
+        .is_err());
+    assert!(h
+        .first
+        .gmail_draft_request(GmailMethod::DraftDelete)
+        .await
+        .is_err());
+    assert!(h
+        .first
+        .gmail_draft_request(GmailMethod::DraftSend)
+        .await
+        .is_err());
+    for (method, path, units) in [
+        (HttpMethod::Post, "drafts", 10),
+        (HttpMethod::Put, "drafts/d", 15),
+    ] {
+        let work = Work {
+            account: h.first.account.clone(),
+            service: Service::Gmail,
+            class: WorkClass::DraftMutation,
+            units,
+        };
+        let request = HttpRequest::new(
+            method,
+            &format!("https://gmail.googleapis.com/gmail/v1/users/me/{path}"),
+        )
+        .unwrap();
+        assert!(mutation_request_matches(&work, &request));
+        let mut wrong = work.clone();
+        wrong.units = units + 1;
+        assert!(!mutation_request_matches(&wrong, &request));
+        wrong = work;
+        wrong.class = WorkClass::StateMutation;
+        assert!(!mutation_request_matches(&wrong, &request));
+    }
 }
 impl Contexts {
     fn new(project: u32, account: u32, in_flight: usize) -> Self {

@@ -241,6 +241,7 @@ fn schema_ten_to_eleven_preserves_profile_authored_rows_and_receipts() {
         let receipt_raw:String=store.db.query_row("SELECT result_json FROM operations WHERE account=?1 AND request_id='migration-draft'",[&account],|row|row.get(0)).unwrap();
         // Schema 11 adds only these two tables. Remove both before lowering the
         // version so this is the actual prior schema, not a mislabeled new one.
+        crate::test_profiles::restore_schema_twelve(&store.db);
         store.db.execute_batch("DROP TABLE google_label_catalog_items; DROP TABLE google_label_catalogs; PRAGMA user_version=10;").unwrap();
         drop(store);
         let mut reopened = Store::open(dir.path()).unwrap();

@@ -626,6 +626,7 @@ fn local_schema11_upgrade_preserves_existing_rows_receipts_and_fixture_revision(
         "message_fts",
     ];
     let before = tables.map(|name| table(&store, name));
+    crate::test_profiles::restore_schema_twelve(&store.db);
     store.db.execute_batch("BEGIN; CREATE TABLE attachments_old(account TEXT NOT NULL,id TEXT NOT NULL,message_id TEXT NOT NULL,name TEXT NOT NULL,mime_type TEXT NOT NULL,size INTEGER NOT NULL,state TEXT NOT NULL,blob_hash TEXT NOT NULL,PRIMARY KEY(account,id),FOREIGN KEY(account,message_id) REFERENCES messages(account,id)); INSERT INTO attachments_old SELECT * FROM attachments; DROP TABLE attachments; ALTER TABLE attachments_old RENAME TO attachments; CREATE INDEX attachments_message ON attachments(account,message_id); PRAGMA user_version=11; COMMIT;").unwrap();
     let fixture = store.fixture_revision().unwrap();
     drop(store);
@@ -633,7 +634,7 @@ fn local_schema11_upgrade_preserves_existing_rows_receipts_and_fixture_revision(
     assert_eq!(store.fixture_revision().unwrap(), fixture);
     assert_eq!(
         store.handle("status", None, json!({})).unwrap()["schema_version"],
-        12
+        crate::SCHEMA_VERSION
     );
     for (name, rows) in tables.into_iter().zip(before) {
         assert_eq!(table(&store, name), rows, "{name}");

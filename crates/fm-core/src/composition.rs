@@ -8,6 +8,41 @@ use std::{collections::HashSet, io::Read};
 const MAX_BODY: usize = 256 * 1024;
 const MAX_SUBJECT: usize = 8192;
 
+pub(crate) fn compose_request(
+    account: &str,
+    draft: &Value,
+    message_id: String,
+    timestamp_secs: u64,
+) -> Result<(fm_mail::ComposeRequest, fm_mail::AccountIdentity)> {
+    Ok((
+        fm_mail::ComposeRequest {
+            account_id: account.into(),
+            to: recipients(&draft["to_recipients"])?,
+            cc: recipients(&draft["cc_recipients"])?,
+            bcc: recipients(&draft["bcc_recipients"])?,
+            subject: draft["subject"].as_str().unwrap_or("").into(),
+            body_text: draft["body"].as_str().unwrap_or("").into(),
+            body_html: draft["body_html"].as_str().map(str::to_owned),
+            message_id,
+            reply_to_message_id: draft["reply_to_message_id"].as_str().map(str::to_owned),
+            references: serde_json::from_value(draft["references"].clone())?,
+            timestamp_secs,
+        },
+        fm_mail::AccountIdentity {
+            account_id: account.into(),
+            from: fm_mail::Address {
+                name: Some(draft["from_name"].as_str().unwrap_or("").into()),
+                email: draft["from"]
+                    .as_str()
+                    .ok_or_else(|| err("invalid_request", "Draft From identity is missing"))?
+                    .into(),
+            },
+            signature_text: draft["signature_text"].as_str().unwrap_or("").into(),
+            signature_html: None,
+        },
+    ))
+}
+
 pub(crate) fn selector(p: &Value) -> Result<(&str, bool)> {
     match (p.get("draft_id"), p.get("conversation_id")) {
         (Some(_), None) => Ok((string(p, "draft_id")?, false)),
@@ -176,6 +211,11 @@ impl Store {
         row["attachment_ids"] = json!(ids);
         row["attachments"] = json!(attachments);
         row["account"] = json!(account);
+        row["google"] = if row["revision"].as_i64().unwrap_or(0) > 0 {
+            self.google_draft_status(account, row["draft_id"].as_str().unwrap())?
+        } else {
+            Value::Null
+        };
         row["to"] = row["to_recipients"]
             .as_array()
             .and_then(|v| v.first())

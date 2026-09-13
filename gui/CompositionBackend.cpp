@@ -31,7 +31,7 @@ void MailBackend::acceptDraft(const QJsonObject &result, bool restoreView) {
     m_recipientInputs.clear();
     m_activeDraft = result["draft_id"].toString();
     m_selected = result["conversation_id"].toString();
-    m_draft = result.toVariantMap(); m_draftDirty = false; m_draftConflict = false;
+    m_draft = mergedDraftProjection(result); m_draftDirty = false; m_draftConflict = false;
     m_draftStatus = "Saved on this machine";
     m_conversation.clear(); m_pinnedRow.clear(); m_pinnedIndex = -1;
     remember("selectedDraft", m_activeDraft); remember("selected", m_selected);
@@ -110,16 +110,20 @@ void MailBackend::openDraft(const QString &draftId, bool restoreView) {
 }
 
 void MailBackend::loadActiveDraft() {
-    if (m_activeDraft.isEmpty() || m_draftDirty || draftBusy()) return;
+    if (m_activeDraft.isEmpty() || (m_syntheticProfile && (m_draftDirty || draftBusy()))) return;
     const auto account = m_account, id = m_activeDraft;
     const int generation = m_generation;
     request("draft_get", account, {{"draft_id", id}}, [this, account, id, generation](auto result, bool ok) {
-        if (!ok || account != m_account || id != m_activeDraft || generation != m_generation || m_draftDirty || draftBusy() || olderDraftProjection(result)) return;
-        const auto next = result.toVariantMap();
+        if (!ok || account != m_account || id != m_activeDraft || generation != m_generation
+            || result["account"].toString() != account || result["draft_id"].toString() != id) return;
+        const bool metadataChanged = mergeGoogleDraftStatus(result["google"].toObject(), account, id);
+        if (m_draftDirty || draftBusy() || olderDraftProjection(result)) { if (metadataChanged) emit draftChanged(); return; }
+        const auto next = mergedDraftProjection(result);
         if (next != m_draft) {
             m_draft = next; m_draftStatus = result["discarded"].toBool() ? "Draft discarded" : "Saved on this machine";
             emit draftChanged();
         }
+        else if (metadataChanged) emit draftChanged();
     });
 }
 

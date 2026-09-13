@@ -1,0 +1,10 @@
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --build build/dev --target gui-google-draft-controls-test gui-google-operation-test --parallel 8
+[1/5] Automatic MOC and UIC for target gui-google-draft-controls-test
+[2/4] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\GoogleDraftBackend.cpp.obj
+[3/4] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\GoogleDraftControlsTest.cpp.obj
+[4/4] Linking CXX executable gui-google-draft-controls-test.exe
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --build build/p2-05b1-gui-dev --target fuckmail-gui --parallel 8
+[1/52] Automatic MOC and UIC for target fuckmail-gui
+[2/51] Running AUTOMOC file extraction for target fuckmail-gui
+[3/4] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleDraftBackend.cpp.obj
+[4/4] Linking CXX executable fuckmail-gui.exe

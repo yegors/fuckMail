@@ -538,14 +538,18 @@ void MailBackend::loadConversation(bool loadDraft, bool reviewOnLoad) {
     });
     if (loadDraft && !m_activeDraft.isEmpty()) { loadActiveDraft(); return; }
     if (loadDraft) request("draft_get", account, {{"conversation_id", id}}, [this, id, account, generation](auto result, bool ok) {
-        if (!ok || id != m_selected || account != m_account || generation != m_generation || m_draftDirty || draftBusy() || olderDraftProjection(result)) return;
-        const auto draft = result.toVariantMap();
+        if (!ok || id != m_selected || account != m_account || generation != m_generation
+            || result["account"].toString() != account || result["conversation_id"].toString() != id) return;
+        const bool metadataChanged = mergeGoogleDraftStatus(result["google"].toObject(), account, result["draft_id"].toString());
+        if (m_draftDirty || draftBusy() || olderDraftProjection(result)) { if (metadataChanged) emit draftChanged(); return; }
+        const auto draft = mergedDraftProjection(result);
         const QString status = draft.value("discarded").toBool() ? "Draft discarded"
             : draft.value("revision").toInt() > 0 ? "Saved on this machine" : "A reply stays here until you save it";
         if (draft != m_draft || m_draftConflict || status != m_draftStatus) {
             m_draft = draft; m_draftConflict = false; m_draftStatus = status;
             emit draftChanged();
         }
+        else if (metadataChanged) emit draftChanged();
     });
 }
 
@@ -649,7 +653,8 @@ void MailBackend::saveDraft() {
         if (m_draft.contains(key)) { headers[key] = m_draft[key]; params[key] = QJsonValue::fromVariant(m_draft[key]); }
     }
     m_savingDraft = true;
-    request("draft_save", m_account, params, [this, body, html, attachments, signature, headers](auto result, bool ok) {
+    const auto account = m_account;
+    request("draft_save", account, params, [this, account, body, html, attachments, signature, headers](auto result, bool ok) {
         m_savingDraft = false;
         if (!ok) {
             m_draftConflict = result["code"].toString() == "stale_revision";
@@ -665,6 +670,7 @@ void MailBackend::saveDraft() {
         for (auto it = headers.cbegin(); it != headers.cend(); ++it) m_draftDirty = m_draftDirty || m_draft[it.key()] != it.value();
         for (const auto &key : {"draft_id", "mode", "source_message_id", "updated_at", "reply_all_available", "discarded"})
             if (result.contains(key)) m_draft[key] = result[key].toVariant();
+        mergeGoogleDraftStatus(result["google"].toObject(), account, result["draft_id"].toString());
         m_draftStatus = m_draftDirty ? "Saving…" : "Saved on this machine"; emit draftChanged();
         if (m_folder == "drafts") loadDraftRows(false);
         loadAccounts();
@@ -773,8 +779,9 @@ void MailBackend::refreshState(bool refreshList, bool refreshCalendar, bool auto
     if (refreshList) loadConversations(false, true);
     {
         QScopedValueRollback<bool> origin(m_automaticReadScope, automatic);
-        loadConversation(!m_draftDirty && !draftBusy());
-        if (m_selected.isEmpty() && !m_activeDraft.isEmpty() && !m_draftDirty && !draftBusy()) loadActiveDraft();
+        const bool refreshDraft = !m_syntheticProfile || (!m_draftDirty && !draftBusy());
+        loadConversation(refreshDraft);
+        if (m_selected.isEmpty() && !m_activeDraft.isEmpty() && refreshDraft) loadActiveDraft();
     }
     if (refreshCalendar) loadCalendar();
     {

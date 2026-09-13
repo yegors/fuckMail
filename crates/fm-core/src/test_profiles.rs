@@ -3,6 +3,10 @@
 use rusqlite::Connection;
 use std::collections::{BTreeMap, BTreeSet};
 
+pub(crate) fn restore_schema_twelve(db: &Connection) {
+    db.execute_batch("DROP INDEX google_drafts_due; DROP INDEX capture_execution_kind; ALTER TABLE drafts DROP COLUMN google_json; ALTER TABLE capture_operations DROP COLUMN execution_kind; PRAGMA user_version=12;").unwrap();
+}
+
 /// Remove only post-schema-8 structures from a disposable seeded test profile.
 /// Merely lowering user_version leaves an invalid migration fixture behind.
 pub(crate) fn restore_schema_eight(db: &Connection) {

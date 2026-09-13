@@ -26,6 +26,188 @@ fn limits() -> Value {
     json!({"gmail_project_units_per_minute":1_000_000,"gmail_account_units_per_minute":500_000,"calendar_project_units_per_minute":10_000,"calendar_account_units_per_minute":5_000})
 }
 
+#[tokio::test]
+async fn draft_fixture_retains_exact_raw_and_replaces_message_identity_in_separate_accounts() {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    use sha2::{Digest, Sha256};
+    let (_directory, _store, fixture) = setup();
+    let cancel = CancellationToken::new();
+    for index in 0..2 {
+        let owner = account(&fixture, index);
+        let token = fixture.accounts[index].token();
+        let api = api(&fixture, index);
+        let raw = format!("From: {}\r\nBcc: retained@example.test\r\nSubject: Draft {index}\r\n\r\nExact synthetic body\r\n", fixture.accounts[index].email);
+        let GmailReply::Draft(created) = api
+            .execute(
+                GmailCall::create_draft(&owner, raw.as_bytes(), None).unwrap(),
+                &token,
+                &cancel,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("draft create reply");
+        };
+        assert_eq!(created.id, "vd0001");
+        assert_eq!(created.message.id, "vmd0001");
+        assert!(created.message.raw.is_none());
+        let GmailReply::Draft(read) = api
+            .execute(
+                GmailCall::get_draft(&owner, &created.id).unwrap(),
+                &token,
+                &cancel,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("draft read reply");
+        };
+        assert_eq!(
+            URL_SAFE_NO_PAD.decode(read.message.raw.unwrap()).unwrap(),
+            raw.as_bytes()
+        );
+        let replacement = format!("{raw}Human replacement {index}\r\n");
+        let GmailReply::Draft(updated) = api
+            .execute(
+                GmailCall::update_draft(
+                    &owner,
+                    &created.id,
+                    replacement.as_bytes(),
+                    Some(&created.message.thread_id),
+                )
+                .unwrap(),
+                &token,
+                &cancel,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("draft update reply");
+        };
+        assert_eq!(updated.id, created.id);
+        assert_ne!(updated.message.id, created.message.id);
+        let GmailReply::Draft(read) = api
+            .execute(
+                GmailCall::get_draft(&owner, &created.id).unwrap(),
+                &token,
+                &cancel,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("updated draft read reply");
+        };
+        assert_eq!(read.message.id, updated.message.id);
+        assert_eq!(
+            URL_SAFE_NO_PAD.decode(read.message.raw.unwrap()).unwrap(),
+            replacement.as_bytes()
+        );
+        let report = fixture.report(false);
+        let publication = report["draft_fixture"]["publications"]
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap();
+        assert_eq!(publication["account"], owner.as_str());
+        assert_eq!(
+            publication["sha256"],
+            format!("{:x}", Sha256::digest(replacement.as_bytes()))
+        );
+        assert_eq!(publication["size"], replacement.len());
+    }
+    // Re-read the first account after the second reused the same provider IDs.
+    // A accidentally shared draft map must not satisfy either account's bytes.
+    for index in 0..2 {
+        let GmailReply::Draft(read) = api(&fixture, index)
+            .execute(
+                GmailCall::get_draft(&account(&fixture, index), "vd0001").unwrap(),
+                &fixture.accounts[index].token(),
+                &cancel,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("isolated draft read reply");
+        };
+        let expected = format!("From: {}\r\nBcc: retained@example.test\r\nSubject: Draft {index}\r\n\r\nExact synthetic body\r\nHuman replacement {index}\r\n",fixture.accounts[index].email);
+        assert_eq!(
+            URL_SAFE_NO_PAD.decode(read.message.raw.unwrap()).unwrap(),
+            expected.as_bytes()
+        );
+    }
+    let report = fixture.report(false);
+    assert_eq!(report["counters"]["draft_created"], 2);
+    assert_eq!(report["counters"]["draft_updated"], 2);
+    assert_eq!(report["counters"]["draft_read"], 6);
+    assert!(report["errors"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn draft_fixture_bounds_retained_data_and_never_supports_send_or_delete() {
+    let (_directory, _store, fixture) = setup();
+    let owner = account(&fixture, 0);
+    let token = fixture.accounts[0].token();
+    let api = api(&fixture, 0);
+    let cancel = CancellationToken::new();
+    let raw = b"From: personal@example.test\r\n\r\nGenerated only";
+    for _ in 0..16 {
+        api.execute(
+            GmailCall::create_draft(&owner, raw, None).unwrap(),
+            &token,
+            &cancel,
+        )
+        .await
+        .unwrap();
+    }
+    assert!(api
+        .execute(
+            GmailCall::create_draft(&owner, raw, None).unwrap(),
+            &token,
+            &cancel
+        )
+        .await
+        .is_err());
+    assert!(api
+        .execute(
+            GmailCall::delete_draft(&owner, "vd0001").unwrap(),
+            &token,
+            &cancel
+        )
+        .await
+        .is_err());
+    for endpoint in ["messages/send", "drafts/send"] {
+        let request = HttpRequest::new(
+            HttpMethod::Post,
+            &format!("https://gmail.googleapis.com/gmail/v1/users/me/{endpoint}"),
+        )
+        .unwrap()
+        .header("authorization", &format!("Bearer {token}"))
+        .unwrap()
+        .body(b"{}".to_vec(), "application/json")
+        .unwrap();
+        assert!(fixture.http.execute(request, &cancel).await.is_err());
+    }
+    let oversized = vec![b'x'; 2 * 1024 * 1024 + 1];
+    assert!(api
+        .execute(
+            GmailCall::update_draft(&owner, "vd0001", &oversized, None).unwrap(),
+            &token,
+            &cancel
+        )
+        .await
+        .is_err());
+    let report = fixture.report(false);
+    assert_eq!(report["counters"]["draft_created"], 16);
+    assert_eq!(report["counters"]["draft_updated"], 0);
+    assert_eq!(
+        report["draft_fixture"]["publications"]
+            .as_array()
+            .unwrap()
+            .len(),
+        16
+    );
+}
+
 #[test]
 fn empty_claim_and_bootstrap_never_adopt_existing_data_or_seed_mail() {
     let directory = tempfile::tempdir().unwrap();

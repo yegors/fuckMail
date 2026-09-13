@@ -1,0 +1,12 @@
+Python syntax passed
+usage: verify_google_drafts.py [-h] --cli CLI --engine ENGINE --report REPORT
+
+Exercise ordinary CLI Google drafts against the isolated in-memory engine.
+Generated accounts and content only. No real provider, send, GUI or restart
+claim.
+
+options:
+  -h, --help       show this help message and exit
+  --cli CLI
+  --engine ENGINE
+  --report REPORT

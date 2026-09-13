@@ -1,0 +1,36 @@
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.85s
+     Running unittests src\main.rs (target\debug\deps\fm_engine-a688adde29aa596e.exe)
+
+running 16 tests
+test google_sync::drafts::tests::actual_cached_queries_and_newer_edits_progress_during_upload_and_late_ack ... ok
+test google_sync::drafts::tests::authored_binary_attachment_and_all_recipient_headers_reach_exact_retained_mime ... ok
+test google_sync::drafts::tests::cancellation_immediately_after_core_claim_does_not_lose_the_returned_lease ... ok
+test google_sync::drafts::tests::cancelled_preparation_retains_memory_until_the_actual_blocking_work_finishes ... ok
+test google_sync::drafts::tests::changed_prepared_update_is_stopped_and_revision_bound_replace_handles_missing_twin ... ok
+test google_sync::drafts::tests::changed_remote_message_or_missing_twin_blocks_automatic_overwrite ... ok
+test google_sync::drafts::tests::ipc_grammar_is_exact_and_send_is_absent ... ok
+test google_sync::drafts::tests::late_ack_after_connection_generation_change_is_durable_without_publishing_a_baseline ... ok
+test google_sync::drafts::tests::lost_ack_survives_restart_without_automatic_duplicate_creation ... ok
+test google_sync::drafts::tests::normalized_raw_has_a_distinct_retained_baseline_not_claimed_byte_fidelity ... ok
+test google_sync::drafts::tests::prepared_update_survives_quota_cancellation_and_replays_old_bytes_before_new_revision ... ok
+test google_sync::drafts::tests::primary_mailbox_mismatch_never_dispatches_the_frozen_from ... ok
+test google_sync::drafts::tests::quota_blocked_draft_keeps_core_available_and_preparation_memory_unclaimed ... ok
+test google_sync::drafts::tests::recipient_free_create_update_ack_raw_and_changed_message_identity ... ok
+test google_sync::drafts::tests::same_revision_coalesces_but_exact_request_reuse_still_validates_its_original_fields ... ok
+test google_sync::drafts::tests::unknown_update_requires_fresh_observation_and_new_explicit_replacement_identity ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 86 filtered out; finished in 2.02s
+
+     Running tests\sessions.rs (target\debug\deps\sessions-e884e73169c03277.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests\verification_profile.rs (target\debug\deps\verification_profile-2cf96aa401dc94d3.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+

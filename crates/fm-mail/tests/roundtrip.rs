@@ -48,6 +48,264 @@ fn staged(filename: &str, cid: Option<&str>, bytes: &[u8]) -> StagedAttachment {
     }
 }
 
+fn recipient_free_draft() -> ComposeRequest {
+    let mut request = draft();
+    request.to.clear();
+    request.cc.clear();
+    request.bcc.clear();
+    request
+}
+
+#[test]
+fn recipient_free_plain_draft_keeps_exact_headers_and_text_without_an_envelope() {
+    let mut request = recipient_free_draft();
+    request.body_text = "Unfinished café draft\r\n日本語\n".into();
+    let account = identity();
+    let built = build_draft_mail(&request, &account, &[]).unwrap();
+    let parsed = MessageParser::default().parse(&built.raw).unwrap();
+    assert!(parsed.to().is_none() && parsed.cc().is_none() && parsed.bcc().is_none());
+    assert_eq!(
+        parsed.from().unwrap().first().unwrap().name(),
+        account.from.name.as_deref()
+    );
+    assert_eq!(
+        parsed.from().unwrap().first().unwrap().address(),
+        Some(account.from.email.as_str())
+    );
+    assert_eq!(parsed.subject(), Some(request.subject.as_str()));
+    assert_eq!(parsed.message_id(), Some("local-draft-1@example.test"));
+    assert_eq!(parsed.in_reply_to().as_text(), Some("parent@example.test"));
+    assert_eq!(
+        parsed.references().as_text_list().unwrap(),
+        ["root@example.test", "parent@example.test"]
+    );
+    assert_eq!(
+        parsed.date().unwrap().to_timestamp(),
+        request.timestamp_secs as i64
+    );
+    let plain: Vec<_> = parsed
+        .parts
+        .iter()
+        .filter(|part| part.is_content_type("text", "plain"))
+        .collect();
+    assert_eq!(plain.len(), 1);
+    assert_eq!(
+        plain[0].contents(),
+        format!("{}\n\n-- \n{}", request.body_text, account.signature_text).as_bytes()
+    );
+    assert!(!parsed
+        .parts
+        .iter()
+        .any(|part| part.is_content_type("text", "html")));
+    assert!(parsed.parts[0].is_content_type("multipart", "mixed"));
+    let raw = std::str::from_utf8(&built.raw).unwrap();
+    let top_headers = raw.split_once("\r\n\r\n").unwrap().0;
+    assert!(top_headers.contains("\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed;"));
+    assert_eq!(built.sha256, format!("{:x}", Sha256::digest(&built.raw)));
+    assert_eq!(
+        build_draft_mail(&request, &account, &[]).unwrap().raw,
+        built.raw
+    );
+    assert!(matches!(
+        build_mail(&request, &account, &[]),
+        Err(ComposeError::NoRecipients)
+    ));
+
+    request.body_text.clear();
+    request.subject.clear();
+    request.reply_to_message_id = None;
+    request.references.clear();
+    let mut empty_identity = identity();
+    empty_identity.signature_text.clear();
+    let empty = build_draft_mail(&request, &empty_identity, &[]).unwrap();
+    let parsed = MessageParser::default().parse(&empty.raw).unwrap();
+    assert!(parsed
+        .parts
+        .iter()
+        .any(|part| part.is_content_type("text", "plain") && part.contents().is_empty()));
+    assert!(parsed.to().is_none() && parsed.cc().is_none() && parsed.bcc().is_none());
+}
+
+#[test]
+fn recipient_free_rich_draft_retains_exact_alternatives_and_attachment_metadata() {
+    let mut request = recipient_free_draft();
+    request.body_text = "Authored café 日本語\r\nSecond line\n".into();
+    request.body_html =
+        Some("<p>Authored café 日本語</p><img src=\"cid:logo-1\" alt=\"Logo\">".into());
+    let mut account = identity();
+    account.signature_html = Some("<b>Signature</b>".into());
+    let attachments = [
+        staged("résumé 📄.bin", None, b"\0\x01\xffexact attachment\r\n"),
+        staged("logo.png", Some("logo-1"), b"\x89PNG\r\n\0\xffexact inline"),
+    ];
+    let built = build_draft_mail(&request, &account, &attachments).unwrap();
+    let parsed = MessageParser::default().parse(&built.raw).unwrap();
+    assert!(parsed.to().is_none() && parsed.cc().is_none() && parsed.bcc().is_none());
+    let texts: Vec<_> = parsed
+        .parts
+        .iter()
+        .filter(|part| part.is_content_type("text", "plain"))
+        .collect();
+    assert_eq!(texts.len(), 1);
+    assert_eq!(
+        texts[0].contents(),
+        format!("{}\n\n-- \n{}", request.body_text, account.signature_text).as_bytes()
+    );
+    let html: Vec<_> = parsed
+        .parts
+        .iter()
+        .filter(|part| part.is_content_type("text", "html"))
+        .collect();
+    assert_eq!(html.len(), 1);
+    assert_eq!(html[0].contents(), "<p>Authored café 日本語</p><img src=\"cid:logo-1\" alt=\"Logo\"><div>-- <br><b>Signature</b></div>".as_bytes());
+    let parts: BTreeMap<_, _> = parsed
+        .attachments()
+        .map(|part| (part.attachment_name().unwrap(), part))
+        .collect();
+    assert_eq!(parts.len(), 2);
+    for attachment in &attachments {
+        let part = parts[attachment.filename.as_str()];
+        assert_eq!(part.contents(), attachment.bytes);
+        assert_eq!(part.content_id(), attachment.content_id.as_deref());
+        let (main, sub) = attachment.content_type.split_once('/').unwrap();
+        assert!(part.is_content_type(main, sub));
+        assert_eq!(
+            part.content_disposition().unwrap().ctype(),
+            if attachment.content_id.is_some() {
+                "inline"
+            } else {
+                "attachment"
+            }
+        );
+    }
+    assert!(!built.html_was_sanitized);
+}
+
+#[test]
+fn recipient_bearing_drafts_are_byte_identical_to_existing_submission_formatting() {
+    for rich in [false, true] {
+        for recipients in 0..4 {
+            let mut request = draft();
+            if recipients != 0 && recipients != 1 {
+                request.to.clear();
+            }
+            if recipients != 0 && recipients != 2 {
+                request.cc.clear();
+            }
+            if recipients != 0 && recipients != 3 {
+                request.bcc.clear();
+            }
+            let mut attachments = vec![staged("binary.bin", None, b"\0\xfe\xffattachment\r\n")];
+            if rich {
+                request.body_html =
+                    Some("<p>Exact Unicode 日本語</p><img src=\"cid:logo-1\" alt=\"Logo\">".into());
+                attachments.push(staged("logo.png", Some("logo-1"), b"\x89PNG\0\xff"));
+            }
+            let submission = build_mail(&request, &identity(), &attachments).unwrap();
+            let stored = build_draft_mail(&request, &identity(), &attachments).unwrap();
+            assert_eq!(stored.raw, submission.raw);
+            assert_eq!(stored.sha256, submission.sha256);
+            assert_eq!(stored.html_was_sanitized, submission.html_was_sanitized);
+            if !request.bcc.is_empty() {
+                let parsed = MessageParser::default().parse(&stored.raw).unwrap();
+                assert_eq!(
+                    parsed.bcc().unwrap().first().unwrap().address(),
+                    Some("private@example.test")
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn unfinished_drafts_keep_account_header_address_and_attachment_validation() {
+    let request = recipient_free_draft();
+    let mut cases = Vec::new();
+    let mut invalid = request.clone();
+    invalid.subject = "subject\r\nInjected: header".into();
+    cases.push((invalid, ComposeError::InvalidHeader("subject")));
+    let mut invalid = request.clone();
+    invalid.message_id = "missing-brackets@example.test".into();
+    cases.push((invalid, ComposeError::InvalidHeader("message identity")));
+    let mut invalid = request.clone();
+    invalid.references = vec!["bad reference".into()];
+    cases.push((invalid, ComposeError::InvalidHeader("message identity")));
+    let mut invalid = request.clone();
+    invalid.reply_to_message_id = Some("bad reply".into());
+    cases.push((invalid, ComposeError::InvalidHeader("message identity")));
+    let mut invalid = request.clone();
+    invalid.account_id = "personal".into();
+    cases.push((invalid, ComposeError::WrongAccount));
+    let mut invalid = request.clone();
+    invalid.timestamp_secs = 253_402_300_800;
+    cases.push((invalid, ComposeError::InvalidDate));
+    let mut invalid = request.clone();
+    invalid.body_text = "x".repeat(MAX_BODY_BYTES + 1);
+    cases.push((invalid, ComposeError::LimitExceeded("authored body")));
+    let mut invalid = request.clone();
+    invalid.to = vec![address("Invalid", "not-an-address")];
+    cases.push((invalid, ComposeError::InvalidAddress));
+    for (invalid, expected) in cases {
+        assert_eq!(
+            build_draft_mail(&invalid, &identity(), &[]).err(),
+            Some(expected)
+        );
+    }
+    let mut invalid_from = identity();
+    invalid_from.from.email = "not-an-address".into();
+    assert_eq!(
+        build_draft_mail(&request, &invalid_from, &[]).err(),
+        Some(ComposeError::InvalidAddress)
+    );
+    invalid_from.from = address("Name\r\nInjected: header", "valid@example.test");
+    assert_eq!(
+        build_draft_mail(&request, &invalid_from, &[]).err(),
+        Some(ComposeError::InvalidHeader("display name"))
+    );
+
+    let mut parts = Vec::new();
+    let mut invalid = staged("file.bin", None, b"x");
+    invalid.account_id = "personal".into();
+    parts.push((invalid, ComposeError::WrongAccount));
+    let mut invalid = staged("file.bin", None, b"x");
+    invalid.sha256 = "wrong".into();
+    parts.push((invalid, ComposeError::AttachmentNotVerified));
+    let mut invalid = staged("file.bin", None, b"x");
+    invalid.content_type = "not a MIME type".into();
+    parts.push((invalid, ComposeError::InvalidContentType));
+    parts.push((
+        staged("file\r\nInjected: header", None, b"x"),
+        ComposeError::InvalidHeader("filename"),
+    ));
+    parts.push((
+        staged("", None, b"x"),
+        ComposeError::InvalidHeader("filename"),
+    ));
+    parts.push((
+        staged("logo.png", Some("bad cid"), b"x"),
+        ComposeError::InvalidContentId,
+    ));
+    for (invalid, expected) in parts {
+        assert_eq!(
+            build_draft_mail(&request, &identity(), &[invalid]).err(),
+            Some(expected)
+        );
+    }
+    let parts: Vec<_> = (0..51).map(|_| staged("file.bin", None, b"x")).collect();
+    assert_eq!(
+        build_draft_mail(&request, &identity(), &parts).err(),
+        Some(ComposeError::LimitExceeded("attachments"))
+    );
+    let oversized = StagedAttachment {
+        bytes: vec![0; MAX_ATTACHMENT_BYTES + 1],
+        ..staged("large.bin", None, b"")
+    };
+    assert_eq!(
+        build_draft_mail(&request, &identity(), &[oversized]).err(),
+        Some(ComposeError::LimitExceeded("attachment bytes"))
+    );
+}
+
 #[test]
 fn plain_unicode_reply_roundtrips_exact_author_text_signature_and_headers() {
     let request = draft();

@@ -18,6 +18,7 @@ mod composition;
 mod composition_tests;
 mod content;
 mod fixture;
+pub mod google_drafts;
 pub mod google_labels;
 pub mod google_live_mail;
 pub mod google_live_mutations;
@@ -36,7 +37,7 @@ mod queries;
 mod sender_kind_tests;
 #[cfg(test)]
 mod test_profiles;
-pub const SCHEMA_VERSION: u32 = 12;
+pub const SCHEMA_VERSION: u32 = 13;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -285,8 +286,18 @@ impl Store {
             tx.execute_batch("PRAGMA user_version=12")?;
             tx.commit()?;
         }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 12 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-013-google-drafts.sql"))?;
+            tx.execute_batch("PRAGMA user_version=13")?;
+            tx.commit()?;
+        }
         store.validate_profile_identity()?;
         store.recover_captures()?;
+        store.recover_google_drafts()?;
         store.calendar_live_recover()?;
         store.mail_changes.reset_calendar_generation();
         Ok(store)

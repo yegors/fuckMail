@@ -230,7 +230,7 @@ void MailBackend::reloadDraft() {
         m_resolvingDraft = false;
         if (account != m_account || id != draftContext()) return;
         if (ok) {
-            m_draft = result.toVariantMap(); m_recipientInputs.clear(); m_draftDirty = false; m_draftConflict = false;
+            m_draft = mergedDraftProjection(result); m_recipientInputs.clear(); m_draftDirty = false; m_draftConflict = false;
             m_afterDraftSave = {}; m_draftStatus = "Saved on this machine";
         } else { m_draftStatus = "Not saved — could not reload. Your version remains here."; cancelShutdown(); }
         emit draftChanged();
@@ -258,6 +258,7 @@ void MailBackend::saveMyDraftVersion() {
             }
         }
         m_draft["revision"] = result["revision"].toVariant();
+        mergeGoogleDraftStatus(result["google"].toObject(), account, result["draft_id"].toString());
         m_draftConflict = false; m_draftDirty = true; m_draftStatus = "Saving your version…"; emit draftChanged();
         saveDraft();
     });
@@ -269,7 +270,7 @@ void MailBackend::discardDraft() {
     auto params = draftSelector(); params["request_id"] = mutation()["request_id"]; params["expected_revision"] = m_draft["revision"].toLongLong();
     request("draft_discard", m_account, params, [this](auto result, bool ok) {
         m_discarding = false;
-        if (ok) { m_draft = result.toVariantMap(); m_recipientInputs.clear(); m_draftDirty = false; m_draftConflict = false; m_draftStatus = "Draft discarded"; remember("replyOpen", false); remember("selectedDraft", ""); loadAccounts(); if (m_folder == "drafts") loadDraftRows(false); }
+        if (ok) { m_draft = mergedDraftProjection(result); m_recipientInputs.clear(); m_draftDirty = false; m_draftConflict = false; m_draftStatus = "Draft discarded"; remember("replyOpen", false); remember("selectedDraft", ""); loadAccounts(); if (m_folder == "drafts") loadDraftRows(false); }
         else { m_draftStatus = "Discard failed — your reply remains here"; cancelShutdown(); }
         emit draftChanged();
         if (ok) saveDraft();

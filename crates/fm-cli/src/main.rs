@@ -160,6 +160,38 @@ enum Google {
         #[arg(long)]
         expected_revision: u64,
     },
+    /// Synchronize one saved draft through an already active owned Google session.
+    /// Unknown outcomes are inspected without automatically repeating creation.
+    DraftSync {
+        #[arg(long)]
+        draft_id: String,
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        expected_revision: i64,
+        #[arg(long)]
+        request_id: String,
+    },
+    /// Inspect the retained Google draft state without contacting Google.
+    DraftStatus {
+        #[arg(long)]
+        draft_id: String,
+    },
+    /// Read the current Google draft without repeating a create or update.
+    DraftReconcile {
+        #[arg(long)]
+        draft_id: String,
+    },
+    /// Explicitly replace a known remote conflict with the exact saved local revision.
+    /// Another client can still edit between the provider read and replacement.
+    DraftReplace {
+        #[arg(long)]
+        draft_id: String,
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        expected_revision: i64,
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        expected_google_revision: i64,
+        #[arg(long)]
+        request_id: String,
+    },
     /// Browse cached account labels; pagination is bound to the catalog revision.
     Labels {
         #[arg(long,default_value_t=100,value_parser=clap::value_parser!(u32).range(1..=100))]
@@ -515,6 +547,48 @@ fn attachment_import_params(command: &Command) -> Result<Option<Value>, Failure>
     })))
 }
 
+fn google_draft_request(command: &Command) -> Result<Option<(&'static str, Value)>, Failure> {
+    let Command::Google { command } = command else {
+        return Ok(None);
+    };
+    let (method, params) = match command {
+        Google::DraftSync {
+            draft_id,
+            expected_revision,
+            request_id,
+        } => (
+            "google_draft_sync",
+            json!({"draft_id":draft_id,"expected_revision":expected_revision,"request_id":request_id}),
+        ),
+        Google::DraftStatus { draft_id } => ("google_draft_status", json!({"draft_id":draft_id})),
+        Google::DraftReconcile { draft_id } => {
+            ("google_draft_reconcile", json!({"draft_id":draft_id}))
+        }
+        Google::DraftReplace {
+            draft_id,
+            expected_revision,
+            expected_google_revision,
+            request_id,
+        } => (
+            "google_draft_resolve",
+            json!({"draft_id":draft_id,"expected_revision":expected_revision,
+                "expected_google_revision":expected_google_revision,"request_id":request_id,
+                "action":"replace_local"}),
+        ),
+        _ => return Ok(None),
+    };
+    for (field, limit) in [("draft_id", 256), ("request_id", 128)] {
+        if let Some(value) = params.get(field).and_then(Value::as_str) {
+            if value.is_empty() || value.len() > limit || value.chars().any(char::is_control) {
+                return Err(invalid(
+                    "Choose a nonempty bounded draft and request identity",
+                ));
+            }
+        }
+    }
+    Ok(Some((method, params)))
+}
+
 fn open_google_browser(url: &str) -> Result<(), Failure> {
     // The engine supplies one fixed HTTPS authorization endpoint. No shell
     // evaluates the query, and URLs/state are never copied to terminal logs.
@@ -649,6 +723,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
         None
     };
     let attachment_import = attachment_import_params(&args.command)?;
+    let google_draft = google_draft_request(&args.command)?;
     let mut client = if live_command {
         Client::connect_live(&profile, engine.as_deref()).await?
     } else {
@@ -667,6 +742,18 @@ async fn run(args: &Args) -> Result<(), Failure> {
         Command::Google {
             command: Google::SyncStop,
         } => client.call("google_sync_stop", scope, json!({})).await?,
+        Command::Google {
+            command:
+                Google::DraftSync { .. }
+                | Google::DraftStatus { .. }
+                | Google::DraftReconcile { .. }
+                | Google::DraftReplace { .. },
+        } => {
+            let (method, params) = google_draft
+                .as_ref()
+                .expect("draft request validated before connection");
+            client.call(method, scope, params.clone()).await?
+        }
         Command::Google {
             command:
                 Google::Labels {

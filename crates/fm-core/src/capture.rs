@@ -5,7 +5,7 @@ use fm_google::send::{
     submit_once, SendJournal, SendOperation, SendState, SubmissionResult, SubmissionTransport,
 };
 use fm_google::{AccountId, GoogleError};
-use fm_mail::{AccountIdentity, Address, ComposeRequest, StagedAttachment};
+use fm_mail::StagedAttachment;
 use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -380,7 +380,7 @@ impl Store {
 
     pub(crate) fn recover_captures(&mut self) -> Result<()> {
         let operations = {
-            let mut stmt = self.db.prepare("SELECT account,id FROM capture_operations WHERE json_extract(json,'$.operation.state')='InFlight'")?;
+            let mut stmt = self.db.prepare("SELECT account,id FROM capture_operations WHERE execution_kind='synthetic' AND json_extract(json,'$.operation.state')='InFlight'")?;
             let found = stmt
                 .query_map([], |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -431,45 +431,23 @@ pub(crate) fn prepare_capture_content(
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|_| err("invalid_request", "System clock cannot date a capture"))?
             .as_secs();
-        let identity = AccountIdentity {
-            account_id: account.into(),
-            from: Address {
-                name: Some(draft["from_name"].as_str().unwrap_or("").into()),
-                email: draft["from"]
-                    .as_str()
-                    .ok_or_else(|| err("invalid_request", "Draft From identity is missing"))?
-                    .into(),
-            },
-            signature_text: draft["signature_text"].as_str().unwrap_or("").into(),
-            signature_html: None,
-        };
         let digest = format!(
             "{:x}",
             Sha256::digest(format!("{account}\0{}", request.request_id).as_bytes())
         );
-        let composed = fm_mail::build_mail(
-            &ComposeRequest {
-                account_id: account.into(),
-                to: crate::composition::recipients(&draft["to_recipients"])?,
-                cc: crate::composition::recipients(&draft["cc_recipients"])?,
-                bcc: crate::composition::recipients(&draft["bcc_recipients"])?,
-                subject: draft["subject"].as_str().unwrap_or("").into(),
-                body_text: draft["body"].as_str().unwrap_or("").into(),
-                body_html: draft["body_html"].as_str().map(str::to_owned),
-                message_id: format!("<capture-{digest}@fuckmail.invalid>"),
-                reply_to_message_id: draft["reply_to_message_id"].as_str().map(str::to_owned),
-                references: serde_json::from_value(draft["references"].clone())?,
-                timestamp_secs: created_at,
-            },
-            &identity,
-            attachments,
-        )
-        .map_err(|_| {
-            err(
-                "invalid_draft",
-                "Draft headers or content cannot form a bounded MIME message",
-            )
-        })?;
+        let (compose_request, identity) = crate::composition::compose_request(
+            account,
+            draft,
+            format!("<capture-{digest}@fuckmail.invalid>"),
+            created_at,
+        )?;
+        let composed =
+            fm_mail::build_mail(&compose_request, &identity, attachments).map_err(|_| {
+                err(
+                    "invalid_draft",
+                    "Draft headers or content cannot form a bounded MIME message",
+                )
+            })?;
         blobs.stage_blob(&composed.raw)?;
         CaptureRecord {
             conversation_id: draft["conversation_id"].as_str().unwrap_or("").into(),
@@ -618,9 +596,10 @@ impl Store {
 }
 
 fn load_record(db: &Connection, account: &str, id: &str) -> Result<Option<CaptureRecord>> {
+    crate::google_drafts::check_execution_kind(db, account, id, "synthetic")?;
     let row: Option<(String, String)> = db
         .query_row(
-            "SELECT json,blob_hash FROM capture_operations WHERE account=?1 AND id=?2",
+            "SELECT json,blob_hash FROM capture_operations WHERE execution_kind='synthetic' AND account=?1 AND id=?2",
             [account, id],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
@@ -678,7 +657,7 @@ impl SendJournal for SqliteCaptureJournal<'_> {
         }
         record.operation = next.clone();
         tx.execute(
-            "UPDATE capture_operations SET json=?1 WHERE account=?2 AND id=?3",
+            "UPDATE capture_operations SET json=?1 WHERE execution_kind='synthetic' AND account=?2 AND id=?3",
             params![
                 serde_json::to_string(&record).map_err(|_| GoogleError::StoreUnavailable)?,
                 expected.account.as_str(),
@@ -768,7 +747,7 @@ impl Store {
         };
         let limit = bounded("limit", 30, 1, 100)?;
         let offset = bounded("offset", 0, 0, 10_000_000)?;
-        let predicate="account=?1 AND (?2='' OR json_extract(json,'$.conversation_id')=?2) AND (NOT ?5 OR json_extract(json,'$.operation.state') IN ('Prepared','InFlight','AcceptanceUnknown')) AND (?6='' OR COALESCE(json_extract(json,'$.draft_id'),json_extract(json,'$.conversation_id'))=?6)";
+        let predicate="execution_kind='synthetic' AND account=?1 AND (?2='' OR json_extract(json,'$.conversation_id')=?2) AND (NOT ?5 OR json_extract(json,'$.operation.state') IN ('Prepared','InFlight','AcceptanceUnknown')) AND (?6='' OR COALESCE(json_extract(json,'$.draft_id'),json_extract(json,'$.conversation_id'))=?6)";
         let total: i64 = self.db.query_row(
             &format!("SELECT COUNT(*) FROM capture_operations WHERE {predicate}"),
             params![account, conversation, limit, offset, unresolved, draft],

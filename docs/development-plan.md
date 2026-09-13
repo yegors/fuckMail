@@ -1,6 +1,6 @@
 # Development plan
 
-Updated 2026-09-13 under [D009–D027](decisions.md). **Phases 0 and 1 are complete on available hosts; Phase 2 implementation is active on `codex/phase-2`. Google-first readiness: 0/9 whole areas verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
+Updated 2026-09-13 under [D009–D028](decisions.md). **Phases 0 and 1 are complete on available hosts; Phase 2 implementation is active on `codex/phase-2`. Google-first readiness: 0/9 whole areas verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
 
 ## Delivery direction
 

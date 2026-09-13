@@ -102,6 +102,9 @@ pub(super) struct Counters {
     pub(super) raw_active: u64,
     pub(super) raw_held_active: u64,
     pub(super) modify_completed: u64,
+    pub(super) draft_created: u64,
+    pub(super) draft_updated: u64,
+    pub(super) draft_read: u64,
     pub(super) vault_loads: u64,
     pub(super) vault_stores: u64,
 }
@@ -109,7 +112,8 @@ impl Counters {
     fn value(&self) -> Value {
         json!({"http_started":self.http_started,"http_completed":self.http_completed,"http_cancelled":self.http_cancelled,"http_rejected":self.http_rejected,
             "raw_started":self.raw_started,"raw_completed":self.raw_completed,"raw_cancelled":self.raw_cancelled,"raw_active":self.raw_active,"raw_held_active":self.raw_held_active,
-            "modify_completed":self.modify_completed,"vault_loads":self.vault_loads,"vault_stores":self.vault_stores})
+            "modify_completed":self.modify_completed,"draft_created":self.draft_created,"draft_updated":self.draft_updated,"draft_read":self.draft_read,
+            "vault_loads":self.vault_loads,"vault_stores":self.vault_stores})
     }
 }
 #[derive(Default)]
@@ -119,6 +123,7 @@ pub(super) struct Evidence {
     publications: Vec<Value>,
     receipts: HashSet<(String, String)>,
     item_count: usize,
+    pub(super) draft_publications: Vec<Value>,
 }
 impl Evidence {
     pub(super) fn error(&mut self, code: &'static str) {
@@ -311,6 +316,7 @@ impl Fixture {
             "config":{"recent_messages_per_account":RECENT_MESSAGES,"recent_threads_per_account":RECENT_MESSAGES/2,"backfill_messages_per_account":BACKFILL_MESSAGES,"raw_delay_ms":RAW_DELAY_MS,"max_publications":MAX_PUBLICATIONS},
             "counters":evidence.counters.value(),"publication_count":evidence.publications.len(),"published_item_count":evidence.item_count,
             "publications":if final_report{evidence.publications.clone()}else{vec![]},"errors":evidence.errors,
+            "draft_fixture":{"max_drafts_per_account":16,"max_mime_bytes":2097152,"max_publications":128,"publications":evidence.draft_publications},
             "stop_reason":if final_report{Some("owning_sessions_or_engine_shutdown")}else{None}})
     }
     fn persist_blocking(&self, final_report: bool) -> io::Result<()> {

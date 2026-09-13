@@ -59,7 +59,93 @@ struct AttachmentRef {
     hash: String,
 }
 
+/// SQL-only frozen saved-draft selection shared by capture and provider drafts.
+/// Its source and attachments are verified only by the blocking preparation.
+pub(crate) struct RetainedDraft {
+    pub(crate) blobs: content::BlobStore,
+    account: String,
+    params: Value,
+    snapshot: DraftSnapshot,
+    attachments: Vec<AttachmentRef>,
+}
+
+impl RetainedDraft {
+    pub(crate) fn draft(&self) -> &Value {
+        &self.snapshot.draft
+    }
+    pub(crate) fn prepare(&self, cancel: &CancellationToken) -> Result<Vec<StagedAttachment>> {
+        cancelled(cancel)?;
+        let draft = self.draft();
+        if draft["discarded"] == true {
+            return Err(err("invalid_draft", "Discarded draft cannot be uploaded"));
+        }
+        if draft["mode"] != "new" {
+            if draft["source_unavailable"] == true {
+                return Err(err(
+                    "content_unavailable",
+                    "Original composition routing is unavailable",
+                ));
+            }
+            read_source(
+                &self.blobs,
+                draft["source_hash"].as_str().ok_or_else(invalid_proof)?,
+            )?;
+        }
+        self.attachments
+            .iter()
+            .map(|file| {
+                cancelled(cancel)?;
+                Ok(StagedAttachment {
+                    account_id: self.account.clone(),
+                    filename: file.name.clone(),
+                    content_type: file.mime_type.clone(),
+                    bytes: read_blob(&self.blobs, &file.hash, file.size)?,
+                    sha256: file.hash.clone(),
+                    content_id: None,
+                })
+            })
+            .collect()
+    }
+}
+
 impl Store {
+    pub(crate) fn retained_draft(&self, account: &str, params: Value) -> Result<RetainedDraft> {
+        let snapshot = self.local_draft_snapshot(account, &params)?;
+        if snapshot.draft["revision"].as_i64().unwrap_or(0) <= 0 {
+            return Err(err(
+                "invalid_draft",
+                "Save the local draft before uploading it",
+            ));
+        }
+        let attachments = self.local_attachment_refs(account, &snapshot.draft["attachment_ids"])?;
+        Ok(RetainedDraft {
+            blobs: self.google_blob_store(),
+            account: account.into(),
+            params,
+            snapshot,
+            attachments,
+        })
+    }
+
+    pub(crate) fn check_retained_draft(&self, retained: &RetainedDraft) -> Result<()> {
+        if retained.blobs.profile != self.profile {
+            return Err(err(
+                "scope_mismatch",
+                "Draft proof belongs to another profile",
+            ));
+        }
+        let current = self.local_draft_snapshot(&retained.account, &retained.params)?;
+        if current.stamp != retained.snapshot.stamp
+            || self.local_attachment_refs(&retained.account, &current.draft["attachment_ids"])?
+                != retained.attachments
+        {
+            return Err(err(
+                "stale_revision",
+                "Draft source, identity or attachments changed during preparation",
+            ));
+        }
+        Ok(())
+    }
     pub fn local_content_begin(
         &self,
         method: &str,
@@ -576,7 +662,7 @@ fn read_source(blobs: &content::BlobStore, hash: &str) -> Result<Vec<u8>> {
     read_blob(blobs, hash, size)
 }
 
-fn read_blob(blobs: &content::BlobStore, hash: &str, size: u64) -> Result<Vec<u8>> {
+pub(crate) fn read_blob(blobs: &content::BlobStore, hash: &str, size: u64) -> Result<Vec<u8>> {
     let path = blobs.verified_blob(hash, size)?;
     let mut bytes = Vec::new();
     content::open_regular(&path)?

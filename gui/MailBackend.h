@@ -70,6 +70,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(bool draftConflict READ draftConflict NOTIFY draftChanged)
     Q_PROPERTY(QVariantMap attachmentImport READ attachmentImport NOTIFY draftChanged)
     Q_PROPERTY(bool attachmentImportBusy READ attachmentImportBusy NOTIFY draftChanged)
+    Q_PROPERTY(QVariantMap googleDraft READ googleDraft NOTIFY draftChanged)
     Q_PROPERTY(QVariantList calendarSources READ calendarSources NOTIFY eventsChanged)
     Q_PROPERTY(QString calendarView READ calendarView NOTIFY eventsChanged)
     Q_PROPERTY(QString calendarDate READ calendarDate NOTIFY eventsChanged)
@@ -197,6 +198,11 @@ public:
     Q_INVOKABLE void retryDraftAttachment();
     QVariantMap attachmentImport() const;
     bool attachmentImportBusy() const { return !m_attachmentImportActive.isEmpty(); }
+    QVariantMap googleDraft() const;
+    Q_INVOKABLE void reconcileGoogleDraft();
+    Q_INVOKABLE QVariantMap googleDraftReplacementContext();
+    Q_INVOKABLE void replaceGoogleDraft(const QVariantMap &context);
+    Q_INVOKABLE void cancelGoogleDraftOperation();
     Q_INVOKABLE void setDraftSignature(const QString &signature);
     Q_INVOKABLE void discardDraft();
     Q_INVOKABLE void captureDraft();
@@ -263,6 +269,7 @@ private:
     friend class GuiInteractionBenchmark;
     friend class GuiSettingsSelfTest;
     friend class GuiCompositionSelfTest;
+    friend class GoogleDraftControlsTest;
     using Callback = std::function<void(const QJsonObject &, bool)>;
     struct Pending {
         Callback callback; qint64 started;
@@ -314,6 +321,14 @@ private:
     void loadActiveDraft();
     void acceptDraft(const QJsonObject &result, bool restoreView = false);
     bool olderDraftProjection(const QJsonObject &result) const;
+    QVariantMap mergedDraftProjection(const QJsonObject &result) const;
+    bool mergeGoogleDraftStatus(const QJsonObject &status, const QString &account, const QString &draftId);
+    void startGoogleDraftOperation(const QString &method, const QJsonObject &params);
+    bool googleDraftRecoveryReady() const;
+    QJsonObject m_googleDraftReplacement;
+    QString m_googleDraftOperationAccount, m_googleDraftOperationId, m_googleDraftOperationMethod;
+    QString m_googleDraftFeedbackAccount, m_googleDraftFeedbackId, m_googleDraftFeedback;
+    QSet<QString> m_googleDraftRequiresCheck;
     void beginDraftWithRecipient(const QString &mode, const QString &email, const QString &name);
     bool commitRecipientInputs();
     QString attachmentImportKey() const;

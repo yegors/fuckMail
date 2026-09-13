@@ -1,0 +1,32 @@
+{
+  "status": "passed",
+  "exit_code": 0,
+  "started_utc": "2026-09-13T10:52:14.4456255-04:00",
+  "elapsed_seconds": 92.7292723,
+  "command": "cargo test -p fm-engine --release --features verification-google --target-dir target/verification-google --locked --test verification_profile -- --test-threads=1",
+  "host": "Microsoft Windows NT 10.0.26200.0",
+  "source_manifest": "feature-process-01.source.json",
+  "source_file_count": 194,
+  "source_unchanged": true,
+  "changed_sources": [],
+  "log": "feature-process-01.log",
+  "binaries": {
+    "target/verification-google/release/fm-engine.exe": {
+      "bytes": 14492160,
+      "sha256": "f286e42f14c95d724cf8cebcdc48d1fcf64244cee66883ca7d571e4ef5f3c68f"
+    },
+    "target/verification-google/release/deps/verification_profile-b66777d6c64ed695.exe": {
+      "bytes": 2945024,
+      "sha256": "399ed338215384c4c51f4cc4ecf950dd105e43327c805eb9b308ca975d1a61fe"
+    }
+  },
+  "tests": {
+    "passed": 3,
+    "failed": 0,
+    "ignored": 0,
+    "seconds": 0.98
+  },
+  "expected_test_count": 3,
+  "source_manifest_sha256": "9e2eec26e8f5f59a802b577eb1dd89a451c6c8cb042df93a840a41e1af34d5bd",
+  "log_sha256": "15a611a368b98e287ae4892a764e1671e32a57c13505cff632aa273ca2e232d1"
+}

@@ -1,0 +1,96 @@
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe -S . -B build/dev
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Configuring done (1.5s)
+-- Generating done (0.5s)
+-- Build files have been written to: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --build build/dev --target fuckmail-gui gui-google-draft-controls-test gui-google-operation-test --parallel 8
+   Compiling fm-cli v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-cli)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+error[E0689]: can't call method `saturating_add` on ambiguous numeric type `{integer}`
+    --> crates\fm-engine\src\google_sync.rs:1110:37
+     |
+1110 |                 failures = failures.saturating_add(1).min(6);
+     |                                     ^^^^^^^^^^^^^^
+     |
+help: you must specify a type for this binding, like `i32`
+     |
+1098 |     let mut failures: i32 = 0;
+     |                     +++++
+
+For more information about this error, try `rustc --explain E0689`.
+error: could not compile `fm-engine` (bin "fm-engine") due to 1 previous error
+[0/96] Build the shared Rust engine and CLI
+[5/95] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\MailBackend.cpp.obj
+FAILED: gui/CMakeFiles/gui-google-draft-controls-test.dir/MailBackend.cpp.obj 
+C:\PROGRA~2\MICROS~2\2022\BUILDT~1\VC\Tools\MSVC\1444~1.352\bin\Hostx64\x64\cl.exe  /nologo /TP -DFM_GUI_SOURCE_DIR=\"C:/Users/Yegor/Projects/Fuckaround/fuckMail/gui\" -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICKCONTROLS2_LIB -DQT_QUICK_LIB -DUNICODE -DWIN32 -DWIN64 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN64 -IC:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\gui\gui-google-draft-controls-test_autogen\include -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtQuick -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtCore -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\mkspecs\win32-msvc -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtGui -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtQml -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtQmlIntegration -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtNetwork -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtOpenGL -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtQuickControls2 -external:W0 /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++20 -MDd -Zc:__cplusplus -permissive- -utf-8 /showIncludes /Fogui\CMakeFiles\gui-google-draft-controls-test.dir\MailBackend.cpp.obj /Fdgui\CMakeFiles\gui-google-draft-controls-test.dir\ /FS -c C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\MailBackend.cpp
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\MailBackend.cpp(672): error C3867: 'MailBackend::account': non-standard syntax; use '&' to create a pointer to member
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\MailBackend.cpp(672): note: the template instantiation context (the oldest one first) is
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\MailBackend.cpp(677): note: while compiling class template member function 'std::function<void (const QJsonObject &,bool)>::function(_Fx &&)'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\MailBackend.cpp(677): note: while processing the default template argument of 'std::function<void (const QJsonObject &,bool)>::function(_Fx &&)'
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\functional(1102): note: see reference to alias template instantiation 'std::_Func_class<_Ret,const QJsonObject &,bool>::_Enable_if_callable_t<MailBackend::saveDraft::<lambda_1>,std::function<void (const QJsonObject &,bool)>>' being compiled
+        with
+        [
+            _Ret=void
+        ]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\functional(940): note: see reference to variable template 'const bool conjunction_v<std::negation<std::is_same<`MailBackend::saveDraft'::`2'::<lambda_1>,std::function<void __cdecl(QJsonObject const &,bool)> > >,std::_Is_invocable_r<void,`MailBackend::saveDraft'::`2'::<lambda_1> &,QJsonObject const &,bool> >' being compiled
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\functional(940): note: see reference to class template instantiation 'std::_Is_invocable_r<_Ret,MailBackend::saveDraft::<lambda_1> &,const QJsonObject &,bool>' being compiled
+        with
+        [
+            _Ret=void
+        ]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\type_traits(1827): note: see reference to alias template instantiation 'std::_Is_invocable_r_<_Rx,_Callable,const QJsonObject&,bool>' being compiled
+        with
+        [
+            _Rx=void,
+            _Callable=MailBackend::saveDraft::<lambda_1> &
+        ]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\type_traits(1789): note: see reference to alias template instantiation 'std::_Decltype_invoke_nonzero<_Callable,const QJsonObject&,bool>' being compiled
+        with
+        [
+            _Callable=MailBackend::saveDraft::<lambda_1> &
+        ]
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\type_traits(1785): note: while compiling class template member function 'unknown-type std::_Invoker_functor::_Call(_Callable &&,_Types ...) noexcept(<expr>)'
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\include\type_traits(1576): note: see reference to function template instantiation 'void MailBackend::saveDraft::<lambda_1>::operator ()<QJsonObject>(_T1,bool) const' being compiled
+        with
+        [
+            _T1=QJsonObject
+        ]
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\MailBackend.cpp(656): error C2664: 'void MailBackend::request(const QString &,const QString &,const QJsonObject &,MailBackend::Callback)': cannot convert argument 4 from 'MailBackend::saveDraft::<lambda_1>' to 'MailBackend::Callback'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\MailBackend.cpp(677): note: No user-defined-conversion operator available that can perform this conversion, or the operator cannot be called
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\MailBackend.cpp(192): note: see declaration of 'MailBackend::request'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\MailBackend.cpp(656): note: while trying to match the argument list '(const char [11], QString, QJsonObject, MailBackend::saveDraft::<lambda_1>)'
+[10/95] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\GoogleDraftControlsTest.cpp.obj
+FAILED: gui/CMakeFiles/gui-google-draft-controls-test.dir/GoogleDraftControlsTest.cpp.obj 
+C:\PROGRA~2\MICROS~2\2022\BUILDT~1\VC\Tools\MSVC\1444~1.352\bin\Hostx64\x64\cl.exe  /nologo /TP -DFM_GUI_SOURCE_DIR=\"C:/Users/Yegor/Projects/Fuckaround/fuckMail/gui\" -DQT_CORE_LIB -DQT_GUI_LIB -DQT_NETWORK_LIB -DQT_OPENGL_LIB -DQT_QMLINTEGRATION_LIB -DQT_QML_LIB -DQT_QUICKCONTROLS2_LIB -DQT_QUICK_LIB -DUNICODE -DWIN32 -DWIN64 -D_ENABLE_EXTENDED_ALIGNED_STORAGE -D_UNICODE -D_WIN64 -IC:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\gui\gui-google-draft-controls-test_autogen\include -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtQuick -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtCore -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\mkspecs\win32-msvc -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtGui -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtQml -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtQmlIntegration -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtNetwork -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtOpenGL -external:IC:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtQuickControls2 -external:W0 /DWIN32 /D_WINDOWS /EHsc /Zi /Ob0 /Od /RTC1 -std:c++20 -MDd -Zc:__cplusplus -permissive- -utf-8 /showIncludes /Fogui\CMakeFiles\gui-google-draft-controls-test.dir\GoogleDraftControlsTest.cpp.obj /Fdgui\CMakeFiles\gui-google-draft-controls-test.dir\ /FS -c C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\GoogleDraftControlsTest.cpp
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\GoogleDraftControlsTest.cpp(40): error C2027: use of undefined type 'QJsonArray'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtCore/qmetatype.h(1558): note: see declaration of 'QJsonArray'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\GoogleDraftControlsTest.cpp(40): error C2027: use of undefined type 'QJsonArray'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtCore/qmetatype.h(1558): note: see declaration of 'QJsonArray'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\GoogleDraftControlsTest.cpp(41): error C2027: use of undefined type 'QJsonArray'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtCore/qmetatype.h(1558): note: see declaration of 'QJsonArray'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\GoogleDraftControlsTest.cpp(41): error C2027: use of undefined type 'QJsonArray'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtCore/qmetatype.h(1558): note: see declaration of 'QJsonArray'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\GoogleDraftControlsTest.cpp(41): error C2027: use of undefined type 'QJsonArray'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\include\QtCore/qmetatype.h(1558): note: see declaration of 'QJsonArray'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\GoogleDraftControlsTest.cpp(37): error C2440: 'return': cannot convert from 'initializer list' to 'QJsonObject'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\GoogleDraftControlsTest.cpp(37): note: 'QJsonObject::QJsonObject(std::initializer_list<std::pair<QString,QJsonValue>>)': cannot convert argument 1 from 'initializer list' to 'std::initializer_list<std::pair<QString,QJsonValue>>'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\GoogleDraftControlsTest.cpp(37): note: Element '13': no conversion from 'initializer list' to 'std::pair<QString,QJsonValue>'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\GoogleDraftControlsTest.cpp(37): note: Element '14': no conversion from 'initializer list' to 'std::pair<QString,QJsonValue>'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\GoogleDraftControlsTest.cpp(37): note: Element '15': no conversion from 'initializer list' to 'std::pair<QString,QJsonValue>'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\GoogleDraftControlsTest.cpp(37): note: Element '16': no conversion from 'initializer list' to 'std::pair<QString,QJsonValue>'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\GoogleDraftControlsTest.cpp(37): note: Element '17': no conversion from 'initializer list' to 'std::pair<QString,QJsonValue>'
+C:\Users\Yegor\Projects\Fuckaround\fuckMail\gui\GoogleDraftControlsTest.cpp(37): note: while trying to match the argument list '(initializer list)'
+[11/95] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\gui-google-draft-controls-test_autogen\mocs_compilation.cpp.obj
+FAILED: CMakeFiles/fm-rust C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/CMakeFiles/fm-rust 
+C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Yegor\Projects\Fuckaround\fuckMail && C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.exe build --workspace --locked --target-dir C:/Users/Yegor/Projects/Fuckaround/fuckMail/target"
+ninja: build stopped: subcommand failed.
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\Users\Yegor\Projects\Fuckaround\fuckMail\scripts\dev.py", line 37, in run
+    result = subprocess.run(args, cwd=str(cwd), env=env, check=True,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Yegor\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\bootstrap\\Scripts\\cmake.exe', '--build', 'build/dev', '--target', 'fuckmail-gui', 'gui-google-draft-controls-test', 'gui-google-operation-test', '--parallel', '8']' returned non-zero exit status 1.

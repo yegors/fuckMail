@@ -10,7 +10,7 @@ Rectangle {
     property bool signatureOpen: false
     property bool ccOpen: false
     property bool bccOpen: false
-    readonly property bool popupOpen: discardDialog.opened || reloadDialog.opened || conflictDialog.opened || attachmentMenu.opened || contextMenu.opened || localAttachmentDialog.visible
+    readonly property bool popupOpen: discardDialog.opened || reloadDialog.opened || conflictDialog.opened || googleDraftDialog.opened || attachmentMenu.opened || contextMenu.opened || localAttachmentDialog.visible
     readonly property string mode: backend.draft.mode || "reply"
     readonly property string draftTitle: ({new:"New message",reply:"Reply",reply_all:"Reply all",forward:"Forward"})[mode] || "Reply"
     readonly property bool hasSelection: bodyEditor.selectionEnd > bodyEditor.selectionStart
@@ -234,6 +234,27 @@ Rectangle {
             Text { objectName: "draftAttachmentStatus"; Layout.fillWidth: true; text: backend.attachmentImport.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.attachmentImport.retry ? Theme.warn : text.indexOf("Not attached") === 0 ? Theme.error : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
             FmButton { objectName: "retryDraftAttachment"; visible: backend.attachmentImport.retry || false; text: "Retry attachment"; outlined: true; enabled: backend.connected && !backend.attachmentImportBusy && !backend.draftBusy; onClicked: { backend.clearError(); backend.retryDraftAttachment() } }
         }
+        ColumnLayout {
+            visible: backend.googleDraft.visible || false
+            Layout.fillWidth: true; Layout.topMargin: visible ? 8 : 0; spacing: 6
+            Text { objectName: "googleDraftStatus"; Layout.fillWidth: true; text: backend.googleDraft.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.googleDraft.warning ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            RowLayout {
+                visible: backend.googleDraft.can_check || backend.googleDraft.can_replace || backend.googleDraft.busy
+                spacing: 6
+                FmButton { objectName: "checkGoogleDraft"; text: "Check Google"; outlined: true; visible: !backend.googleDraft.busy; enabled: backend.googleDraft.can_check || false; onClicked: backend.reconcileGoogleDraft() }
+                FmButton {
+                    objectName: "replaceGoogleDraft"; text: "Replace Google copy…"; visible: backend.googleDraft.can_replace || false
+                    enabled: backend.googleDraft.can_replace || false
+                    onClicked: {
+                        const context = backend.googleDraftReplacementContext()
+                        if (!context.request_id) return
+                        googleDraftDialog.capturedContext = context
+                        googleDraftDialog.open()
+                    }
+                }
+                FmButton { objectName: "cancelGoogleDraft"; text: "Cancel"; visible: backend.googleDraft.busy || false; onClicked: backend.cancelGoogleDraftOperation() }
+            }
+        }
         RowLayout {
             visible: backend.draftStatus.indexOf("Not saved") >= 0 && !backend.draftConflict
             FmButton { text: "Retry save"; outlined: true; enabled: !backend.draftLocked; onClicked: { backend.clearError(); backend.saveDraft() } }
@@ -304,6 +325,24 @@ Rectangle {
         standardButtons: Dialog.Ok | Dialog.Cancel
         contentItem: Label { property bool blocksWorkspaceShortcuts: true; text: "This replaces the unsaved text in this editor with the last saved draft."; wrapMode: Text.WordWrap }
         onAccepted: { backend.clearError(); backend.reloadDraft() }
+    }
+    Dialog {
+        id: googleDraftDialog
+        objectName: "googleDraftReplaceDialog"
+        property var capturedContext: ({})
+        implicitWidth: 480; parent: Overlay.overlay; anchors.centerIn: parent; modal: true
+        title: "Replace the Google draft?"
+        contentItem: ColumnLayout {
+            property bool blocksWorkspaceShortcuts: true
+            spacing: 16
+            Text { Layout.fillWidth: true; text: "Upload this saved local version to Google. Your local version and any previously fetched Google copy stay retained. Another client can edit between the last check and the upload; that unseen edit can be overwritten. A changed local draft or known Google revision will require a new confirmation."; color: Theme.text; textFormat: Text.PlainText; wrapMode: Text.Wrap; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                FmButton { objectName: "cancelReplaceGoogleDraft"; text: "Cancel"; onClicked: googleDraftDialog.close() }
+                FmButton { objectName: "confirmReplaceGoogleDraft"; text: "Replace Google copy"; prominent: true; onClicked: { const context = googleDraftDialog.capturedContext; googleDraftDialog.close(); backend.replaceGoogleDraft(context) } }
+            }
+        }
     }
     Dialog {
         id: conflictDialog
