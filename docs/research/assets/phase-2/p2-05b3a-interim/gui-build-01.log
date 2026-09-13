@@ -1,0 +1,181 @@
+[1/181] Copying fuckmail-gui qml resources into build dir
+[2/181] Populating .qmlls.ini file at C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev/.qt/.qmlls.build.ini
+[3/181] Automatic MOC and UIC for target gui-ipc-trust-test
+[4/181] Automatic MOC and UIC for target gui-composer-probe
+[5/181] Copying fuckmail-gui qml sources into build dir
+[6/181] Automatic MOC and UIC for target gui-calendar-layout-test
+[7/181] Automatic MOC and UIC for target gui-google-operation-test
+[8/181] Automatic MOC and UIC for target gui-google-send-controls-test
+[9/181] Automatic MOC and UIC for target gui-google-draft-snapshot-controls-test
+[10/181] Automatic MOC and UIC for target gui-reply-document-test
+[11/181] Automatic MOC and UIC for target gui-google-draft-controls-test
+[12/181] Building CXX object gui\CMakeFiles\gui-ipc-trust-test.dir\gui-ipc-trust-test_autogen\mocs_compilation.cpp.obj
+[13/181] Automatic MOC and UIC for target gui-calendar-controls-test
+[14/181] Building CXX object gui\CMakeFiles\gui-composer-probe.dir\gui-composer-probe_autogen\mocs_compilation.cpp.obj
+[15/181] Running qmlimportscanner for fuckmail-gui
+[16/181] Automatic MOC and UIC for target gui-conversation-list-model-test
+[17/181] Building CXX object gui\CMakeFiles\gui-composer-probe.dir\ComposerProbe.cpp.obj
+[18/181] Building CXX object gui\CMakeFiles\gui-ipc-trust-test.dir\IpcTrust.cpp.obj
+[19/181] Building CXX object gui\CMakeFiles\gui-ipc-trust-test.dir\IpcTrustWindowsTest.cpp.obj
+[20/181] Building CXX object gui\CMakeFiles\gui-reply-document-test.dir\gui-reply-document-test_autogen\mocs_compilation.cpp.obj
+[21/181] Building CXX object gui\CMakeFiles\gui-calendar-layout-test.dir\gui-calendar-layout-test_autogen\mocs_compilation.cpp.obj
+[22/181] Linking CXX executable gui-composer-probe.exe
+[23/181] Building CXX object gui\CMakeFiles\gui-reply-document-test.dir\ReplyDocumentTest.cpp.obj
+[24/181] Linking CXX executable gui-ipc-trust-test.exe
+[25/181] Building CXX object gui\CMakeFiles\gui-reply-document-test.dir\ReplyDocument.cpp.obj
+[26/181] Automatic MOC and UIC for target fuckmail-gui
+[27/181] Linking CXX executable gui-reply-document-test.exe
+[28/181] Running rcc for resource qmake_FuckMail
+[29/181] Generating .rcc/qmlcache/fuckmail-gui_qmlcache_loader.cpp
+[30/181] Running rcc for resource fuckmail-gui_raw_qml_0
+[31/181] Running rcc for resource fuckmail-gui_raw_res_0
+[32/181] Running AUTOMOC file extraction for target fuckmail-gui
+[33/181] Running moc --collect-json for target fuckmail-gui
+[34/181] Automatic QML type registration for target fuckmail-gui
+[35/181] Generating .rcc/qmlcache/fuckmail-gui_Main_qml.cpp, .rcc/qmlcache/fuckmail-gui_Main_qml.cpp.aotstats
+[36/181] Generating .rcc/qmlcache/fuckmail-gui_Theme_qml.cpp, .rcc/qmlcache/fuckmail-gui_Theme_qml.cpp.aotstats
+[37/181] Generating .rcc/qmlcache/fuckmail-gui_FmButton_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmButton_qml.cpp.aotstats
+[38/181] Building CXX object gui\CMakeFiles\gui-calendar-layout-test.dir\CalendarLayoutTest.cpp.obj
+[39/181] Building CXX object gui\CMakeFiles\gui-calendar-layout-test.dir\CalendarLayout.cpp.obj
+[40/181] Building CXX object gui\CMakeFiles\gui-conversation-list-model-test.dir\gui-conversation-list-model-test_autogen\mocs_compilation.cpp.obj
+[41/181] Generating .rcc/qmlcache/fuckmail-gui_FmToolTip_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmToolTip_qml.cpp.aotstats
+[42/181] Generating .rcc/qmlcache/fuckmail-gui_FmTextField_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmTextField_qml.cpp.aotstats
+[43/181] Generating .rcc/qmlcache/fuckmail-gui_FmIcon_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmIcon_qml.cpp.aotstats
+[44/181] Generating .rcc/qmlcache/fuckmail-gui_FmComboBox_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmComboBox_qml.cpp.aotstats
+[45/181] Linking CXX executable gui-calendar-layout-test.exe
+[46/181] Generating .rcc/qmlcache/fuckmail-gui_MailFilters_qml.cpp, .rcc/qmlcache/fuckmail-gui_MailFilters_qml.cpp.aotstats
+[47/181] Generating .rcc/qmlcache/fuckmail-gui_SearchPopup_qml.cpp, .rcc/qmlcache/fuckmail-gui_SearchPopup_qml.cpp.aotstats
+[48/181] Generating .rcc/qmlcache/fuckmail-gui_FmSegmented_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmSegmented_qml.cpp.aotstats
+[49/181] Building CXX object gui\CMakeFiles\gui-conversation-list-model-test.dir\ConversationListModel.cpp.obj
+[50/181] Generating .rcc/qmlcache/fuckmail-gui_MailView_qml.cpp, .rcc/qmlcache/fuckmail-gui_MailView_qml.cpp.aotstats
+[51/181] Generating .rcc/qmlcache/fuckmail-gui_RecipientField_qml.cpp, .rcc/qmlcache/fuckmail-gui_RecipientField_qml.cpp.aotstats
+[52/181] Generating .rcc/qmlcache/fuckmail-gui_SenderCard_qml.cpp, .rcc/qmlcache/fuckmail-gui_SenderCard_qml.cpp.aotstats
+[53/181] Generating .rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp, .rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp.aotstats
+[54/181] Generating .rcc/qmlcache/fuckmail-gui_EventDetails_qml.cpp, .rcc/qmlcache/fuckmail-gui_EventDetails_qml.cpp.aotstats
+[55/181] Generating .rcc/qmlcache/fuckmail-gui_CalendarView_qml.cpp, .rcc/qmlcache/fuckmail-gui_CalendarView_qml.cpp.aotstats
+[56/181] Generating .rcc/qmlcache/fuckmail-gui_CalendarOperations_qml.cpp, .rcc/qmlcache/fuckmail-gui_CalendarOperations_qml.cpp.aotstats
+[57/181] Generating .rcc/qmlcache/fuckmail-gui_EventEditor_qml.cpp, .rcc/qmlcache/fuckmail-gui_EventEditor_qml.cpp.aotstats
+[58/181] Generating .rcc/qmlcache/fuckmail-gui_CalendarEventList_qml.cpp, .rcc/qmlcache/fuckmail-gui_CalendarEventList_qml.cpp.aotstats
+[59/181] Building CXX object gui\CMakeFiles\gui-calendar-controls-test.dir\gui-calendar-controls-test_autogen\mocs_compilation.cpp.obj
+[60/181] Building CXX object gui\CMakeFiles\gui-google-operation-test.dir\gui-google-operation-test_autogen\mocs_compilation.cpp.obj
+[61/181] Generating .rcc/qmlcache/fuckmail-gui_GoogleLabelSetup_qml.cpp, .rcc/qmlcache/fuckmail-gui_GoogleLabelSetup_qml.cpp.aotstats
+[62/181] Generating .rcc/qmlcache/fuckmail-gui_TodayStrip_qml.cpp, .rcc/qmlcache/fuckmail-gui_TodayStrip_qml.cpp.aotstats
+[63/181] Generating .rcc/qmlcache/fuckmail-gui_SettingsView_qml.cpp, .rcc/qmlcache/fuckmail-gui_SettingsView_qml.cpp.aotstats
+[64/181] Building CXX object gui\CMakeFiles\gui-conversation-list-model-test.dir\ConversationListModelTest.cpp.obj
+[65/181] Building CXX object gui\CMakeFiles\gui-google-operation-test.dir\GoogleOperation.cpp.obj
+[66/181] Building CXX object gui\CMakeFiles\gui-google-operation-test.dir\IpcTrust.cpp.obj
+[67/181] Building CXX object gui\CMakeFiles\gui-google-operation-test.dir\GoogleOperationTest.cpp.obj
+[68/181] Building CXX object gui\CMakeFiles\gui-calendar-controls-test.dir\CalendarControlsTest.cpp.obj
+[69/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\fuckmail-gui_autogen\mocs_compilation.cpp.obj
+[70/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\main.cpp.obj
+[71/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleLabels.cpp.obj
+[72/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleBackend.cpp.obj
+[73/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\MailBackend.cpp.obj
+[74/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleOperation.cpp.obj
+[75/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\Phase1Backend.cpp.obj
+[76/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\CompositionBackend.cpp.obj
+[77/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\ConversationListModel.cpp.obj
+[78/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleDraftBackend.cpp.obj
+[79/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\DraftAttachmentBackend.cpp.obj
+[80/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleDraftSnapshotBackend.cpp.obj
+[81/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleSendBackend.cpp.obj
+[82/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\CalendarOperations.cpp.obj
+[83/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\ReplyDocument.cpp.obj
+[84/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\CalendarLayout.cpp.obj
+[85/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\HatchItem.cpp.obj
+[86/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiCalendarSelfTest.cpp.obj
+[87/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiSelfTest.cpp.obj
+[88/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiGoogleDraftSnapshotSelfTest.cpp.obj
+[89/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiCompositionSelfTest.cpp.obj
+[90/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiSettingsSelfTest.cpp.obj
+[91/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiMailNavigationSelfTest.cpp.obj
+[92/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.qt\rcc\qrc_qmake_FuckMail.cpp.obj
+[93/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiSearchBenchmark.cpp.obj
+[94/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiInteractionBenchmark.cpp.obj
+[95/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\fuckmail-gui_qmltyperegistrations.cpp.obj
+[96/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\IpcTrust.cpp.obj
+[97/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiResizeBenchmark.cpp.obj
+[98/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_qmlcache_loader.cpp.obj
+[99/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_Theme_qml.cpp.obj
+[100/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_Main_qml.cpp.obj
+[101/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_FmButton_qml.cpp.obj
+[102/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_FmToolTip_qml.cpp.obj
+[103/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_FmIcon_qml.cpp.obj
+[104/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_FmTextField_qml.cpp.obj
+[105/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_FmComboBox_qml.cpp.obj
+[106/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_SearchPopup_qml.cpp.obj
+[107/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_MailFilters_qml.cpp.obj
+[108/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_MailView_qml.cpp.obj
+[109/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_FmSegmented_qml.cpp.obj
+[110/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_RecipientField_qml.cpp.obj
+[111/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_ReplyComposer_qml.cpp.obj
+[112/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_SenderCard_qml.cpp.obj
+[113/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_CalendarView_qml.cpp.obj
+[114/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_EventDetails_qml.cpp.obj
+[115/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_EventEditor_qml.cpp.obj
+[116/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.qt\rcc\qrc_fuckmail-gui_raw_qml_0.cpp.obj
+[117/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_CalendarOperations_qml.cpp.obj
+[118/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.qt\rcc\qrc_fuckmail-gui_raw_res_0.cpp.obj
+[119/181] Linking CXX executable gui-conversation-list-model-test.exe
+[120/181] Linking CXX executable gui-calendar-controls-test.exe
+[121/181] Linking CXX executable gui-google-operation-test.exe
+[122/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_CalendarEventList_qml.cpp.obj
+[123/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_GoogleLabelSetup_qml.cpp.obj
+[124/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_SettingsView_qml.cpp.obj
+[125/181] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_TodayStrip_qml.cpp.obj
+[126/181] Linking CXX executable fuckmail-gui.exe
+[127/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\gui-google-draft-controls-test_autogen\mocs_compilation.cpp.obj
+[128/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\MailBackend.cpp.obj
+[129/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\GoogleDraftBackend.cpp.obj
+[130/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\GoogleBackend.cpp.obj
+[131/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\GoogleDraftControlsTest.cpp.obj
+[132/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\GoogleDraftSnapshotBackend.cpp.obj
+[133/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\GoogleSendBackend.cpp.obj
+[134/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\GoogleOperation.cpp.obj
+[135/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\GoogleLabels.cpp.obj
+[136/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\Phase1Backend.cpp.obj
+[137/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\CompositionBackend.cpp.obj
+[138/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\DraftAttachmentBackend.cpp.obj
+[139/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\ConversationListModel.cpp.obj
+[140/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\CalendarOperations.cpp.obj
+[141/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\CalendarLayout.cpp.obj
+[142/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\ReplyDocument.cpp.obj
+[143/181] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\IpcTrust.cpp.obj
+[144/181] Linking CXX executable gui-google-draft-controls-test.exe
+[145/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\gui-google-send-controls-test_autogen\mocs_compilation.cpp.obj
+[146/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\GoogleBackend.cpp.obj
+[147/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\MailBackend.cpp.obj
+[148/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\GoogleDraftBackend.cpp.obj
+[149/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\GoogleSendControlsTest.cpp.obj
+[150/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\GoogleDraftSnapshotBackend.cpp.obj
+[151/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\GoogleSendBackend.cpp.obj
+[152/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\GoogleLabels.cpp.obj
+[153/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\GoogleOperation.cpp.obj
+[154/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\Phase1Backend.cpp.obj
+[155/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\CompositionBackend.cpp.obj
+[156/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\DraftAttachmentBackend.cpp.obj
+[157/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\CalendarOperations.cpp.obj
+[158/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\ConversationListModel.cpp.obj
+[159/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\CalendarLayout.cpp.obj
+[160/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\ReplyDocument.cpp.obj
+[161/181] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\IpcTrust.cpp.obj
+[162/181] Linking CXX executable gui-google-send-controls-test.exe
+[163/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\gui-google-draft-snapshot-controls-test_autogen\mocs_compilation.cpp.obj
+[164/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\MailBackend.cpp.obj
+[165/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\GuiGoogleDraftSnapshotSelfTest.cpp.obj
+[166/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\GoogleDraftSnapshotControlsTest.cpp.obj
+[167/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\GoogleBackend.cpp.obj
+[168/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\GoogleDraftBackend.cpp.obj
+[169/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\GoogleSendBackend.cpp.obj
+[170/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\GoogleLabels.cpp.obj
+[171/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\GoogleDraftSnapshotBackend.cpp.obj
+[172/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\GoogleOperation.cpp.obj
+[173/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\Phase1Backend.cpp.obj
+[174/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\CompositionBackend.cpp.obj
+[175/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\ConversationListModel.cpp.obj
+[176/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\CalendarOperations.cpp.obj
+[177/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\DraftAttachmentBackend.cpp.obj
+[178/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\CalendarLayout.cpp.obj
+[179/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\ReplyDocument.cpp.obj
+[180/181] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\IpcTrust.cpp.obj
+[181/181] Linking CXX executable gui-google-draft-snapshot-controls-test.exe

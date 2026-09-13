@@ -30,7 +30,7 @@ void MailBackend::googleOperation(const QString &method, const QString &account,
             error["details"] = QJsonObject{{"send_invocation_finished_before_dispatch", true}};
         callback(error, false);
     };
-    if (!m_connected || m_shutdown || (m_syntheticProfile && method != "draft_attachment_import")) {
+    if (!m_connected || m_shutdown || (m_syntheticProfile && method != "draft_attachment_import" && method != "google_draft_source")) {
         refuseBeforeRequest("cancelled", "Reconnect to continue Google work."); return;
     }
     if (m_googleOperations.size() >= 4) {
@@ -60,10 +60,11 @@ void MailBackend::cancelGoogleOperations(bool notify) {
 void MailBackend::cancelGoogleProviderOperations(const QString &account) {
     const auto operations = m_googleOperations;
     for (auto operation : operations)
-        if (operation->account() == account && operation->method() != "draft_attachment_import") operation->cancel();
+        if (operation->account() == account && operation->method() != "draft_attachment_import" && operation->method() != "google_draft_source") operation->cancel();
 }
 
 void MailBackend::pollGoogleSync() {
+    if (m_folder == "drafts") loadGoogleDraftInventory();
     if (m_syntheticProfile || !m_connected || m_shutdown || m_googleSyncPolling) return;
     m_googleSyncPolling = true;
     QScopedValueRollback<bool> automatic(m_automaticReadScope, true);

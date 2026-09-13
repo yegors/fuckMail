@@ -164,6 +164,19 @@ int main(int argc, char **argv) {
     reopened.reply.load("Authoritative words", "<p>Different stale words</p>");
     require(reopened.reply.plainText() == "Authoritative words", "A stale HTML alternative cannot replace authoritative authored text");
 
+    Editor readOnlyEditor(engine);
+    readOnlyEditor.reply.load("Retained remote words", {});
+    readOnlyEditor.select(0, 8);
+    readOnlyEditor.reply.format("bold");
+    const auto retainedFormat = readOnlyEditor.reply.html();
+    require(readOnlyEditor.document->textDocument()->isUndoAvailable(), "read-only test begins with a real undoable formatting change");
+    readOnlyEditor.reply.setReadOnly(true);
+    readOnlyEditor.reply.undo(); readOnlyEditor.reply.redo(); readOnlyEditor.reply.format("italic"); readOnlyEditor.reply.pastePlain();
+    require(readOnlyEditor.reply.html() == retainedFormat && readOnlyEditor.reply.plainText() == "Retained remote words",
+        "read-only document refuses undo/redo/format/paste even with live edit history");
+    readOnlyEditor.reply.setReadOnly(false); readOnlyEditor.reply.undo();
+    require(readOnlyEditor.reply.html() != retainedFormat, "returning to local authoring restores ordinary undo behavior");
+
     qInfo() << "Reply document passed: real QML editor, exact Unicode, selected formatting, undo/redo with draft identity isolation, HTML round trip and limited formatting attributes.";
     return 0;
 }

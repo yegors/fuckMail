@@ -1,0 +1,10 @@
+{
+  "scope": "Python syntax only; no provider, native, migration or performance execution",
+  "sources": {
+    "scripts/verify_google_remote_drafts.py": "997dd2c1d2bd8cbe0346d39a03d58a71c1025564bfda8e699b6814dd39aef9a5",
+    "scripts/verify_draft_snapshot_upgrade.py": "45879c43e9fab23b4b7a865bdd0523ef9042a7816a9535d2caa124173d9c16a6",
+    "scripts/verify_google_drafts.py": "76b58f154378393b03aa2345d75087ff3b1fc450ebbcddeb83ba121590e2dbd3",
+    "scripts/verify_google_navigation.py": "599d9c89f75e766006662764b40e6a81daaea99d65cd953fdd226c25b3334ce0"
+  },
+  "result": "passed"
+}

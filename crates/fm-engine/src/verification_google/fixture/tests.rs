@@ -30,6 +30,121 @@ fn limits() -> Value {
 }
 
 #[tokio::test]
+async fn seeded_remote_drafts_have_separate_read_only_accounts_versions_and_bounded_pages() {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    let directory = tempfile::tempdir().unwrap();
+    let profile = fm_ipc::private_profile(&directory.path().join("profile")).unwrap();
+    claim_empty_profile(&profile).unwrap();
+    let mut store = Store::open_live(&profile).unwrap();
+    let fixture = Fixture::prepare_with_drafts(&profile, &mut store, false, true).unwrap();
+    let cancel = CancellationToken::new();
+    for index in 0..2 {
+        let owner = account(&fixture, index);
+        let api = api(&fixture, index);
+        let token = fixture.accounts[index].token();
+        let GmailReply::Drafts(first) = api
+            .execute(
+                GmailCall::list_drafts(&owner, None, 50).unwrap(),
+                &token,
+                &cancel,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("page")
+        };
+        assert_eq!(first.drafts.len(), 50);
+        assert_eq!(first.drafts[1].message.id, "rm0001v1");
+        let GmailReply::Drafts(last) = api
+            .execute(
+                GmailCall::list_drafts(&owner, first.next_page_token.as_deref(), 50).unwrap(),
+                &token,
+                &cancel,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("page")
+        };
+        assert_eq!(last.drafts.len(), 2);
+        assert!(last.next_page_token.is_none());
+        let GmailReply::Draft(read) = api
+            .execute(
+                GmailCall::get_draft(&owner, "rd0001").unwrap(),
+                &token,
+                &cancel,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("draft")
+        };
+        assert_eq!(read.message.id, "rm0001v2");
+        assert_eq!(
+            URL_SAFE_NO_PAD.decode(read.message.raw.unwrap()).unwrap(),
+            remote_drafts::source(fixture.accounts[index].key, 1, 2, fixture.base_unix_secs)
+        );
+        assert!(matches!(
+            api.execute(
+                GmailCall::get_draft(&owner, "rd0002").unwrap(),
+                &token,
+                &cancel
+            )
+            .await,
+            Err(fm_google::GoogleError::NotFound)
+        ));
+        let binding = store
+            .google_account_bindings()
+            .unwrap()
+            .into_iter()
+            .find(|binding| binding.account == owner.as_str())
+            .unwrap();
+        let scopes = fm_google::auth::ScopeSet::new(&binding.scopes);
+        assert!(scopes.mail_read());
+        assert!(!scopes.mail_write());
+    }
+    fixture.remote_version_two.store(true, Ordering::Release);
+    let GmailReply::Draft(read) = api(&fixture, 0)
+        .execute(
+            GmailCall::get_draft(&account(&fixture, 0), "rd0000").unwrap(),
+            &fixture.accounts[0].token(),
+            &cancel,
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("draft")
+    };
+    assert_eq!(read.message.id, "rm0000v2");
+    assert_eq!(
+        URL_SAFE_NO_PAD.decode(read.message.raw.unwrap()).unwrap(),
+        remote_drafts::source("personal", 0, 2, fixture.base_unix_secs)
+    );
+    assert_eq!(fixture.report(false)["counters"]["draft_list"], 4);
+    assert_eq!(fixture.report(false)["counters"]["draft_created"], 0);
+    assert_eq!(fixture.report(false)["counters"]["send_completed"], 0);
+    assert!(fixture.report(false)["errors"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    // The mode also refuses a write from an erroneously enabled consumer.
+    assert!(api(&fixture, 0)
+        .execute(
+            GmailCall::create_draft(&account(&fixture, 0), b"Subject: no\r\n\r\nNo write", None)
+                .unwrap(),
+            &fixture.accounts[0].token(),
+            &cancel
+        )
+        .await
+        .is_err());
+    assert_eq!(fixture.report(false)["counters"]["draft_created"], 0);
+    assert_eq!(
+        fixture.report(false)["errors"],
+        json!(["remote_drafts_write_refused"])
+    );
+}
+
+#[tokio::test]
 async fn draft_fixture_retains_exact_raw_and_replaces_message_identity_in_separate_accounts() {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
     use sha2::{Digest, Sha256};

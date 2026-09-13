@@ -1,0 +1,21 @@
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.36s
+     Running unittests src\main.rs (target\debug\deps\fm_engine-bdc9187f3bef88d8.exe)
+
+running 1 test
+test verification_google::fixture::tests::seeded_remote_drafts_have_separate_read_only_accounts_versions_and_bounded_pages ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 138 filtered out; finished in 0.09s
+
+     Running tests\sessions.rs (target\debug\deps\sessions-af28bb105765f6d8.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests\verification_profile.rs (target\debug\deps\verification_profile-64cb4cff853453cc.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+

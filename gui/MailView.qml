@@ -339,6 +339,23 @@ Item {
                         }
                     }
                     RowLayout {
+                    visible: mail.draftsMode && !backend.syntheticProfile
+                    Layout.fillWidth: true; spacing: 8
+                    Text {
+                        objectName: "googleDraftInventoryStatus"
+                        Layout.fillWidth: true
+                        text: backend.googleDraftInventory.status || "Cached Google drafts"
+                        textFormat: Text.PlainText; wrapMode: Text.Wrap
+                        color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12)
+                    }
+                    FmButton {
+                        objectName: "refreshGoogleDrafts"; text: "Refresh"; outlined: true
+                        enabled: backend.googleDraftInventory.can_refresh || false
+                        tip: "Check Google drafts using this account's active sync session"
+                        onClicked: backend.refreshGoogleDraftInventory()
+                    }
+                }
+                RowLayout {
                     visible: !mail.draftsMode; Layout.fillWidth: true; spacing: 6
                     Flickable {
                         visible: !mail.draftsMode
@@ -456,7 +473,7 @@ Item {
                         Item {
                             width: list.width; height: backend.hasMore || (backend.folder==="sent" && backend.captures.length) ? 48 : 0
                             Row { anchors.centerIn: parent; spacing: 12
-                                FmButton { visible: backend.hasMore; text: backend.loading ? "Loading…" : "Load more"; enabled: !backend.loading; onClicked: backend.loadMore() }
+                                FmButton { objectName: "loadMoreConversations"; visible: backend.hasMore; text: backend.loading ? "Loading…" : "Load more"; enabled: !backend.loading; onClicked: backend.loadMore() }
                                 FmButton { objectName: "localCapturesButton"; visible: backend.folder==="sent" && backend.captures.length>0; text: "Local captures"; font.pixelSize: Theme.fontSize(12); onClicked: capturePopup.open() }
                             }
                         }

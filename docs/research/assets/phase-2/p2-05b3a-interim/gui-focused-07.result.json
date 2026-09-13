@@ -1,0 +1,8 @@
+{
+  "exit": 0,
+  "binary": {
+    "sha256": "f52c54c851fb09eb6b2bf46b22ea4b9b37f70c3a27dfed3b23f1abcf754f18d7",
+    "size": 2884608,
+    "path": "build/p2-05b3a-gui-dev/gui-google-draft-snapshot-controls-test.exe"
+  }
+}

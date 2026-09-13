@@ -2,6 +2,7 @@
 #include "GuiSelfTest.h"
 #include "GuiCalendarSelfTest.h"
 #include "GuiCompositionSelfTest.h"
+#include "GuiGoogleDraftSnapshotSelfTest.h"
 #include "GuiSearchBenchmark.h"
 #include "GuiInteractionBenchmark.h"
 #include "GuiResizeBenchmark.h"
@@ -65,7 +66,17 @@ int main(int argc, char **argv) {
     parser.addOption({"benchmark-search-output", "Measure actual QML input to rendered first-page results on a retained generated 100k profile; writes a JSON report.", "file"});
     parser.addOption({"benchmark-navigation-output", "Measure native mailbox and conversation input to correct content paint on a disposable fixture profile.", "file"});
     parser.addOption({"benchmark-resize-output", "Measure native resize frames and retain separate rendering captures on a disposable fixture profile.", "file"});
+    parser.addOption({"google-drafts-self-test", "Verify cached imported Google drafts without starting provider sync.", "report"});
+    parser.addOption({"google-drafts-expectation", "Independently verified cached draft/source expectation for the dedicated walkthrough.", "file"});
     parser.process(app);
+    const bool snapshotTest = parser.isSet("google-drafts-self-test");
+    if (snapshotTest != parser.isSet("google-drafts-expectation")
+        || (snapshotTest && (!parser.isSet("profile") || !parser.isSet("engine")
+            || parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("self-test-live-empty")
+            || parser.isSet("screenshot") || parser.isSet("fixture-clock")
+            || parser.isSet("self-test-startup-workspace") || parser.isSet("self-test-calendar-restart")
+            || parser.isSet("self-test-composition-restart") || parser.isSet("benchmark-search-output")
+            || parser.isSet("benchmark-navigation-output") || parser.isSet("benchmark-resize-output")))) parser.showHelp(1);
     if (parser.isSet("self-test-attachments") && (!parser.isSet("self-test") || parser.isSet("profile")
         || parser.isSet("smoke") || parser.isSet("screenshot") || parser.isSet("live-profile")
         || parser.isSet("self-test-live-empty") || parser.isSet("benchmark-search-output")
@@ -111,7 +122,7 @@ int main(int argc, char **argv) {
         ".exe"
 #endif
     );
-    MailBackend backend(profile, program, nullptr, parser.isSet("fixture-clock") || parser.isSet("self-test"), parser.isSet("live-profile") || parser.isSet("self-test-live-empty"));
+    MailBackend backend(profile, program, nullptr, parser.isSet("fixture-clock") || parser.isSet("self-test"), parser.isSet("live-profile") || parser.isSet("self-test-live-empty") || snapshotTest);
     if (parser.isSet("self-test")) {
         backend.setProperty("verificationFixture", "snapshot");
         backend.setProperty("selfTestArrivalReport", QDir(profile).filePath("verification-ingestion.json"));
@@ -238,7 +249,7 @@ int main(int argc, char **argv) {
         QCoreApplication::exit(3);
     });
     engine.loadFromModule("FuckMail", "Main");
-    if (!parser.isSet("self-test-startup-workspace") && (parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("screenshot") || benchmarkCount) && !engine.rootObjects().isEmpty())
+    if (!parser.isSet("self-test-startup-workspace") && (parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("screenshot") || benchmarkCount || snapshotTest) && !engine.rootObjects().isEmpty())
         engine.rootObjects().first()->setProperty("suppressStartupPreference", true);
     if (parser.isSet("self-test-calendar-restart") && !engine.rootObjects().isEmpty()) {
         auto root = engine.rootObjects().first();
@@ -254,6 +265,7 @@ int main(int argc, char **argv) {
         if (auto settings = root->findChild<QObject *>("settingsView")) settings->setProperty("page", parser.value("screenshot-settings-page"));
     }
     std::unique_ptr<GuiSelfTest> selfTest;
+    std::unique_ptr<GuiGoogleDraftSnapshotSelfTest> snapshotSelfTest;
     QVariantMap attachmentExpected;
     if (parser.isSet("benchmark-search-output") && !engine.rootObjects().isEmpty()) {
         auto window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
@@ -280,6 +292,11 @@ int main(int argc, char **argv) {
             },&app,true);
         } else selfTest = std::make_unique<GuiSelfTest>(backend, engine.rootObjects().first(), profile, program, &app);
         QTimer::singleShot(parser.isSet("self-test-attachments")?80000:120000, &app, [] { QCoreApplication::exit(6); });
+    }
+    if (snapshotTest && !engine.rootObjects().isEmpty()) {
+        snapshotSelfTest = std::make_unique<GuiGoogleDraftSnapshotSelfTest>(backend,
+            qobject_cast<QQuickWindow *>(engine.rootObjects().first()),
+            parser.value("google-drafts-expectation"), parser.value("google-drafts-self-test"), &app);
     }
     QTimer::singleShot(0, &backend, &MailBackend::start);
     const auto result = app.exec();
@@ -312,6 +329,7 @@ int main(int argc, char **argv) {
         return 5;
     }
     if (!restartVerified) return 5;
+    if (result == 0 && snapshotTest && (!snapshotSelfTest || !snapshotSelfTest->passed())) return 5;
     if (result == 0 && searchBenchmark && !searchBenchmark->passed()) return 9;
     if (result == 0 && interactionBenchmark && !interactionBenchmark->passed()) return 9;
     if (result == 0 && resizeBenchmark && !resizeBenchmark->passed()) return 9;

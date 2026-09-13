@@ -297,6 +297,7 @@ impl Contexts {
             quota: quota.clone(),
             preparation: preparation.clone(),
             calendar_preparation: calendar_preparation.clone(),
+            remote_drafts_wake: Arc::new(Notify::new()),
         };
         let second = SyncContext {
             account: AccountId::new("synthetic-second").unwrap(),
@@ -308,6 +309,7 @@ impl Contexts {
             quota,
             preparation,
             calendar_preparation,
+            remote_drafts_wake: Arc::new(Notify::new()),
         };
         Self {
             first,
@@ -687,6 +689,7 @@ impl fm_google::auth::CredentialVault for CachedVault {
 
 struct ParkedMailHttp {
     calls: AtomicUsize,
+    draft_lists: AtomicUsize,
     cancellations: AtomicUsize,
     entered: tokio::sync::Notify,
     cancelled: tokio::sync::Notify,
@@ -696,6 +699,7 @@ impl Default for ParkedMailHttp {
     fn default() -> Self {
         Self {
             calls: AtomicUsize::new(0),
+            draft_lists: AtomicUsize::new(0),
             cancellations: AtomicUsize::new(0),
             entered: tokio::sync::Notify::new(),
             cancelled: tokio::sync::Notify::new(),
@@ -726,6 +730,15 @@ impl HttpTransport for ParkedMailHttp {
                 return Ok(HttpResponse {
                     status: 200,
                     body: br#"{"labels":[]}"#.to_vec(),
+                    retry_after_secs: None,
+                    etag: None,
+                });
+            }
+            if suffix == "drafts?maxResults=50" {
+                self.draft_lists.fetch_add(1, Ordering::SeqCst);
+                return Ok(HttpResponse {
+                    status: 200,
+                    body: br#"{"drafts":[],"resultSizeEstimate":0}"#.to_vec(),
                     retry_after_secs: None,
                     etag: None,
                 });
@@ -1021,6 +1034,106 @@ async fn two_owner_lifecycle(disconnect: bool) {
         0,
         "sync with a fresh grant neither reconnects nor changes credentials"
     );
+    h.close().await;
+}
+
+#[tokio::test]
+async fn remote_inventory_refresh_is_bounded_owned_and_does_not_restart_for_an_additional_owner() {
+    let h = RuntimeHarness::new();
+    let account = h.account.clone();
+    let cached = h
+        .core
+        .call(move |store| store.google_draft_inventory_status(&account))
+        .await
+        .unwrap();
+    assert_eq!(cached["generation"], 0);
+    assert_eq!(h.http.draft_lists.load(Ordering::SeqCst), 0);
+    assert_eq!(
+        h.runtime
+            .handle(
+                "reader",
+                CancellationToken::new(),
+                "google_drafts_refresh",
+                Some(&h.account),
+                json!({})
+            )
+            .await
+            .unwrap_err()
+            .code,
+        "sync_not_running"
+    );
+    h.start("owner-one", CancellationToken::new()).await;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while h.http.draft_lists.load(Ordering::SeqCst) != 1 {
+            tokio::task::yield_now().await;
+        }
+        loop {
+            let account = h.account.clone();
+            if h.core
+                .call(move |store| store.google_draft_inventory_status(&account))
+                .await
+                .unwrap()["enumeration_complete"]
+                == true
+            {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let repeated = h.start("owner-two", CancellationToken::new()).await;
+    assert_eq!(repeated["started"], false);
+    let account = h.account.clone();
+    assert_eq!(
+        h.core
+            .call(move |store| store.google_draft_inventory_status(&account))
+            .await
+            .unwrap()["generation"],
+        1
+    );
+    // Hold the actual shared preparation seat: refresh must still return its
+    // durable acknowledgement, with all HTTP deferred to the existing worker.
+    let memory = h.runtime.preparation.clone().acquire_owned().await.unwrap();
+    let reply = tokio::time::timeout(
+        Duration::from_secs(2),
+        h.runtime.handle(
+            "owner-two",
+            CancellationToken::new(),
+            "google_drafts_refresh",
+            Some(&h.account),
+            json!({}),
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(reply["generation"], 2);
+    assert_eq!(reply["enumeration_complete"], false);
+    assert_eq!(h.http.draft_lists.load(Ordering::SeqCst), 1);
+    let coalesced = h
+        .runtime
+        .handle(
+            "owner-two",
+            CancellationToken::new(),
+            "google_drafts_refresh",
+            Some(&h.account),
+            json!({}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(coalesced["generation"], 2);
+    drop(memory);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while h.http.draft_lists.load(Ordering::SeqCst) != 2 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(h.release("owner-one").await["active"], true);
+    assert_eq!(h.release("owner-two").await["active"], false);
+    h.wait_stopped().await;
     h.close().await;
 }
 

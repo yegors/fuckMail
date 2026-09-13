@@ -104,7 +104,11 @@ fn marked_profile_is_refused_by_an_actual_ordinary_startup_without_store_mutatio
 #[test]
 fn ordinary_binary_has_no_verification_option_and_does_not_create_a_profile() {
     let directory = tempfile::tempdir().unwrap();
-    for option in ["--verification-google", "--verification-google-send"] {
+    for option in [
+        "--verification-google",
+        "--verification-google-send",
+        "--verification-google-drafts",
+    ] {
         let profile = directory.path().join(option.trim_start_matches('-'));
         let log = profile.with_extension("log");
         let mut child = spawn(&profile, &["--live-profile", option], &log);
@@ -137,6 +141,23 @@ fn isolated_binary_requires_both_explicit_fixture_mode_and_live_profile_before_c
         (
             "send-missing-live",
             vec!["--verification-google", "--verification-google-send"],
+        ),
+        (
+            "drafts-missing-mode",
+            vec!["--live-profile", "--verification-google-drafts"],
+        ),
+        (
+            "drafts-missing-live",
+            vec!["--verification-google", "--verification-google-drafts"],
+        ),
+        (
+            "drafts-and-send-conflict",
+            vec![
+                "--live-profile",
+                "--verification-google",
+                "--verification-google-drafts",
+                "--verification-google-send",
+            ],
         ),
     ] {
         let profile = directory.path().join(name);

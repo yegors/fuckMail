@@ -838,6 +838,7 @@ fn schema13_migration_preserves_absent_draft_kind_json_and_old_engine_refuses14(
         .unwrap();
     let draft = body(&mut store, &scope, &id);
     let fixture = store.fixture_revision().unwrap();
+    crate::test_profiles::restore_schema_fourteen(&store.db);
     store.db.execute_batch("DROP INDEX google_send_recovery; DROP INDEX google_drafts_due; PRAGMA user_version=13;").unwrap();
     let old_index = include_str!("../migration-013-google-drafts.sql")
         .split_once("CREATE INDEX google_drafts_due")
@@ -867,18 +868,21 @@ fn schema13_migration_preserves_absent_draft_kind_json_and_old_engine_refuses14(
             .db
             .query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
             .unwrap(),
-        14
+        crate::SCHEMA_VERSION
     );
     // The same admission check used by historical engines refuses a future
     // schema before migrations, identity checks or journal recovery can run.
-    store.db.execute_batch("PRAGMA user_version=15;").unwrap();
+    store
+        .db
+        .pragma_update(None, "user_version", crate::SCHEMA_VERSION + 1)
+        .unwrap();
     drop(store);
     assert_eq!(error(Store::open_live(dir.path())), "schema_mismatch");
     let db = rusqlite::Connection::open(dir.path().join("store.sqlite3")).unwrap();
     assert_eq!(
         db.query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
             .unwrap(),
-        15
+        crate::SCHEMA_VERSION + 1
     );
 }
 

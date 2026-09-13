@@ -1,0 +1,18 @@
+{
+  "result": "passed",
+  "files": [
+    {
+      "sha256": "1080f2d35f9ef3b837c18e6f248a5b135f6ec9bef7971f5856ec267bd3380df1",
+      "path": "scripts/verify_google_remote_drafts.py"
+    },
+    {
+      "sha256": "76b58f154378393b03aa2345d75087ff3b1fc450ebbcddeb83ba121590e2dbd3",
+      "path": "scripts/verify_google_drafts.py"
+    },
+    {
+      "sha256": "599d9c89f75e766006662764b40e6a81daaea99d65cd953fdd226c25b3334ce0",
+      "path": "scripts/verify_google_navigation.py"
+    }
+  ],
+  "check": "Python bytecode compilation"
+}

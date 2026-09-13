@@ -51,6 +51,15 @@ struct Args {
     #[cfg(feature = "verification-google")]
     #[arg(long, hide = true, requires = "verification_google")]
     verification_google_send: bool,
+    /// Seed read-only generated remote Drafts only in the isolated provider fixture.
+    #[cfg(feature = "verification-google")]
+    #[arg(
+        long,
+        hide = true,
+        requires = "verification_google",
+        conflicts_with = "verification_google_send"
+    )]
+    verification_google_drafts: bool,
 }
 
 enum Work {
@@ -657,10 +666,11 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let google_fixture = args
         .verification_google
         .then(|| {
-            verification_google::Fixture::prepare(
+            verification_google::Fixture::prepare_with_drafts(
                 &profile,
                 &mut store,
                 args.verification_google_send,
+                args.verification_google_drafts,
             )
         })
         .transpose()?;
@@ -934,7 +944,8 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
             "mail_filing","google_mail_mutation_status","google_calendar_write","google_calendar_reconcile","google_calendar_operation",
             "google_calendar_resume","google_calendar_abandon","google_labels","google_labels_refresh","google_category_bind",
             "google_draft_sync","google_draft_status","google_draft_reconcile","google_draft_resolve",
-            "google_send","google_send_status","google_send_reconcile","google_send_abandon"]}),
+            "google_send","google_send_status","google_send_reconcile","google_send_abandon",
+            "google_drafts_refresh","google_drafts_status","google_draft_sources","google_draft_source"]}),
     )
 }
 
@@ -1038,6 +1049,10 @@ mod session_tests {
                 "google_send_status",
                 "google_send_reconcile",
                 "google_send_abandon",
+                "google_drafts_refresh",
+                "google_drafts_status",
+                "google_draft_sources",
+                "google_draft_source",
             ] {
                 assert!(methods.contains(&json!(method)), "missing {method}");
             }

@@ -1,0 +1,1 @@
+Tool launch failed before compilation: Python subprocess could not locate bare cargo (WinError 2). The full traceback was retained in the agent tool output. No tests started.

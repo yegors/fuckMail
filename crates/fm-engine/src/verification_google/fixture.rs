@@ -19,6 +19,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+mod remote_drafts;
 mod transport;
 use transport::{FixtureHttp, FixtureVault};
 
@@ -28,6 +29,7 @@ pub(super) const RAW_DELAY_MS: u64 = 16;
 const MAX_PUBLICATIONS: usize = 4096;
 const REPORT: &str = "verification-google-report.json";
 const HOLD_RAW: &str = "verification-google-hold-raw";
+const DRAFT_VERSION_TWO: &str = "verification-google-draft-version-2";
 const CLIENT: &str = "verification-google.apps.googleusercontent.com";
 
 /// Only a new, empty, private profile may enter this mode. The marker is
@@ -105,6 +107,7 @@ pub(super) struct Counters {
     pub(super) draft_created: u64,
     pub(super) draft_updated: u64,
     pub(super) draft_read: u64,
+    pub(super) draft_list: u64,
     pub(super) send_completed: u64,
     pub(super) sent_read: u64,
     pub(super) vault_loads: u64,
@@ -114,7 +117,7 @@ impl Counters {
     fn value(&self) -> Value {
         json!({"http_started":self.http_started,"http_completed":self.http_completed,"http_cancelled":self.http_cancelled,"http_rejected":self.http_rejected,
             "raw_started":self.raw_started,"raw_completed":self.raw_completed,"raw_cancelled":self.raw_cancelled,"raw_active":self.raw_active,"raw_held_active":self.raw_held_active,
-            "modify_completed":self.modify_completed,"draft_created":self.draft_created,"draft_updated":self.draft_updated,"draft_read":self.draft_read,
+            "modify_completed":self.modify_completed,"draft_created":self.draft_created,"draft_updated":self.draft_updated,"draft_read":self.draft_read,"draft_list":self.draft_list,
             "send_completed":self.send_completed,"sent_read":self.sent_read,
             "vault_loads":self.vault_loads,"vault_stores":self.vault_stores})
     }
@@ -128,6 +131,7 @@ pub(super) struct Evidence {
     item_count: usize,
     pub(super) draft_publications: Vec<Value>,
     pub(super) send_publications: Vec<Value>,
+    pub(super) remote_draft_reads: Vec<Value>,
 }
 impl Evidence {
     pub(super) fn error(&mut self, code: &'static str) {
@@ -195,13 +199,29 @@ pub(crate) struct Fixture {
     vault: Arc<FixtureVault>,
     hold_raw: Arc<AtomicBool>,
     send_enabled: bool,
+    remote_drafts_enabled: bool,
+    remote_version_two: Arc<AtomicBool>,
 }
 impl Fixture {
+    #[cfg(test)]
     pub(crate) fn prepare(
         profile: &Path,
         store: &mut Store,
         send_enabled: bool,
     ) -> fm_core::Result<Self> {
+        Self::prepare_with_drafts(profile, store, send_enabled, false)
+    }
+    pub(crate) fn prepare_with_drafts(
+        profile: &Path,
+        store: &mut Store,
+        send_enabled: bool,
+        remote_drafts_enabled: bool,
+    ) -> fm_core::Result<Self> {
+        if send_enabled && remote_drafts_enabled {
+            return Err(core_error(
+                "Choose one isolated Google verification scenario",
+            ));
+        }
         if store.profile_kind()? != ProfileKind::Live
             || !store.handle("accounts", None, json!({}))?["accounts"]
                 .as_array()
@@ -226,7 +246,11 @@ impl Fixture {
         let scopes: BTreeSet<String> = [
             "openid",
             "email",
-            "https://www.googleapis.com/auth/gmail.modify",
+            if remote_drafts_enabled {
+                "https://www.googleapis.com/auth/gmail.readonly"
+            } else {
+                "https://www.googleapis.com/auth/gmail.modify"
+            },
         ]
         .map(str::to_owned)
         .into();
@@ -249,13 +273,18 @@ impl Fixture {
         let base_unix_secs = (started_unix_ms / 1000 / 60) * 60;
         let evidence = Arc::new(Mutex::new(Evidence::default()));
         let hold_raw = Arc::new(AtomicBool::new(false));
-        let http = Arc::new(FixtureHttp::new(
+        let remote_version_two = Arc::new(AtomicBool::new(false));
+        let mut http = FixtureHttp::new(
             accounts.clone(),
             base_unix_secs,
             evidence.clone(),
             hold_raw.clone(),
             send_enabled,
-        ));
+        );
+        if remote_drafts_enabled {
+            http.enable_remote_drafts(remote_version_two.clone());
+        }
+        let http = Arc::new(http);
         let vault = Arc::new(FixtureVault::new(
             accounts.clone(),
             base_unix_secs + 3600,
@@ -271,6 +300,8 @@ impl Fixture {
             vault,
             hold_raw,
             send_enabled,
+            remote_drafts_enabled,
+            remote_version_two,
         };
         fixture.persist_blocking(false)?;
         Ok(fixture)
@@ -308,6 +339,13 @@ impl Fixture {
                                 Err(error) if error.kind() == io::ErrorKind::NotFound => {},
                                 Err(_) => copy.evidence.lock().unwrap().error("hold_marker_unreadable"),
                             }
+                            if copy.remote_drafts_enabled {
+                                match std::fs::symlink_metadata(copy.profile.join(DRAFT_VERSION_TWO)) {
+                                    Ok(_) => copy.remote_version_two.store(true, Ordering::Release),
+                                    Err(error) if error.kind() == io::ErrorKind::NotFound => {},
+                                    Err(_) => copy.evidence.lock().unwrap().error("draft_version_marker_unreadable"),
+                                }
+                            }
                             copy.persist_blocking(false)
                         }).await, Ok(Ok(()))) {
                             fixture.evidence.lock().unwrap().error("progress_report_failed");
@@ -329,6 +367,7 @@ impl Fixture {
             "publications":if final_report{evidence.publications.clone()}else{vec![]},"errors":evidence.errors,
             "draft_fixture":{"max_drafts_per_account":16,"max_mime_bytes":2097152,"max_publications":128,"publications":evidence.draft_publications},
             "send_fixture":{"enabled":self.send_enabled,"max_sends_per_account":16,"max_mime_bytes":2097152,"publications":evidence.send_publications},
+            "remote_drafts_fixture":{"enabled":self.remote_drafts_enabled,"containers_per_account":remote_drafts::COUNT,"page_size":50,"version_two":self.remote_version_two.load(Ordering::Acquire),"reads":evidence.remote_draft_reads},
             "stop_reason":if final_report{Some("owning_sessions_or_engine_shutdown")}else{None}})
     }
     fn persist_blocking(&self, final_report: bool) -> io::Result<()> {

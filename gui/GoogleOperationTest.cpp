@@ -125,6 +125,21 @@ void localImportProfileModes() {
         }
     }
 }
+void localSourceProfileModes() {
+    for (const auto &mode : {QString("synthetic"), QString("live"), QString("unexpected")}) {
+        Engine engine; engine.profileMode=mode; engine.expectedMethod="google_draft_source";
+        engine.expectedParams={{"draft_id","remote-draft"},{"source_revision",3},{"attachment_id","retained-part"}};
+        Completion done; GoogleOperation operation("fixture-account","",nullptr);
+        operation.start(engine.profile,QCoreApplication::applicationPid(),"google_draft_source",engine.expectedParams,done.callback());
+        if(mode=="unexpected") {
+            await([&]{return done.calls==1;},"invalid source-export profile refused");
+            require(!done.ok && engine.operations==0,"unknown profile sends no source request");
+        } else {
+            await([&]{return engine.operations==1;},"verified source export supports cached live/synthetic profiles");
+            engine.complete(); await([&]{return done.calls==1;},"source export returns once"); require(done.ok,"local source export completed");
+        }
+    }
+}
 void exactDraftRecoveryMethods() {
     for (const auto &method : {QString("google_draft_reconcile"), QString("google_draft_resolve")}) {
         Engine engine; engine.expectedMethod = method;
@@ -169,6 +184,7 @@ int main(int argc, char **argv) {
     refusals();
     callbackMayDestroyOperation();
     localImportProfileModes();
+    localSourceProfileModes();
     exactDraftRecoveryMethods();
     exactSendMethods();
     qInfo() << "Google operation IPC checks passed: private discovery/peer identity, independent cached query, cancellation, response bounds/order/types, one-shot callbacks and callback destruction. Synthetic local IPC only; no app latency or provider claim.";

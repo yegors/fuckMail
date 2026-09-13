@@ -1,0 +1,26 @@
+[1/75] Copying fuckmail-gui qml sources into build dir
+[2/75] Automatic MOC and UIC for target gui-google-draft-controls-test
+[3/74] Automatic MOC and UIC for target gui-google-draft-snapshot-controls-test
+[4/73] Automatic MOC and UIC for target gui-google-send-controls-test
+[5/72] Running qmlimportscanner for fuckmail-gui
+[6/72] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\CompositionBackend.cpp.obj
+[7/72] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\CompositionBackend.cpp.obj
+[8/72] Building CXX object gui\CMakeFiles\gui-google-draft-controls-test.dir\GoogleDraftSnapshotBackend.cpp.obj
+[9/72] Automatic MOC and UIC for target fuckmail-gui
+[10/71] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\GoogleDraftSnapshotBackend.cpp.obj
+[11/71] Running rcc for resource fuckmail-gui_raw_qml_0
+[12/71] Running AUTOMOC file extraction for target fuckmail-gui
+[13/26] Linking CXX executable gui-google-draft-controls-test.exe
+[14/26] Generating .rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp, .rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp.aotstats
+[15/26] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\GuiGoogleDraftSnapshotSelfTest.cpp.obj
+[16/26] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\GoogleDraftSnapshotControlsTest.cpp.obj
+[17/26] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\GoogleDraftSnapshotBackend.cpp.obj
+[18/26] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\CompositionBackend.cpp.obj
+[19/26] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.qt\rcc\qrc_fuckmail-gui_raw_qml_0.cpp.obj
+[20/26] Linking CXX executable gui-google-send-controls-test.exe
+[21/26] Linking CXX executable gui-google-draft-snapshot-controls-test.exe
+[22/26] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\CompositionBackend.cpp.obj
+[23/26] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleDraftSnapshotBackend.cpp.obj
+[24/26] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiGoogleDraftSnapshotSelfTest.cpp.obj
+[25/26] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_ReplyComposer_qml.cpp.obj
+[26/26] Linking CXX executable fuckmail-gui.exe

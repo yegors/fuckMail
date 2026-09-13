@@ -1,0 +1,17 @@
+Internal ctest changing into directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev
+Test project C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev
+    Start 10: gui-google-draft-snapshot-controls
+1/1 Test #10: gui-google-draft-snapshot-controls ...***Failed    0.84 sec
+Imported editor boundary: provenance=1 dirty=0 body=1 subject=1 document=0 bodyReadOnly=1 subjectReadOnly=1 documentReadOnly=0 enabled=1 selectable=1.
+QThreadStorage: entry 3 destroyed before end of thread 0x20c4b6ec250
+QThreadStorage: entry 2 destroyed before end of thread 0x20c4b6ec250
+QThreadStorage: entry 1 destroyed before end of thread 0x20c4b6ec250
+
+
+0% tests passed, 1 tests failed out of 1
+
+Total Test time (real) =   0.85 sec
+
+The following tests FAILED:
+	 10 - gui-google-draft-snapshot-controls (Failed)
+Errors while running CTest

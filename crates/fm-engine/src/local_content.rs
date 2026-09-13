@@ -29,7 +29,7 @@ impl Runtime {
     pub(crate) fn handles(method: &str) -> bool {
         matches!(
             method,
-            "draft_attachment_import" | "draft_save" | "draft_capture"
+            "draft_attachment_import" | "draft_save" | "draft_capture" | "google_draft_source"
         )
     }
 
@@ -50,6 +50,23 @@ impl Runtime {
             .ok_or_else(|| failure("account_required", "Choose an account"))?
             .to_owned();
         let method = method.to_owned();
+        if method == "google_draft_source" {
+            let begin_cancel = cancel.clone();
+            let plan = self
+                .core
+                .call(move |store| {
+                    if begin_cancel.is_cancelled() {
+                        return Err(stopped());
+                    }
+                    store.google_draft_source_begin(&account, &params)
+                })
+                .await?;
+            return self
+                .prepare(cancel, move |cancel| {
+                    fm_core::google_draft_inventory::export_google_draft_source(plan, &cancel)
+                })
+                .await;
+        }
         let begin_cancel = cancel.clone();
         // Begin resolves matching durable replies before any source-file access.
         // It snapshots only bounded metadata/authored text and never reads blobs.

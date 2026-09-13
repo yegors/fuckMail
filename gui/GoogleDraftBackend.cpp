@@ -26,6 +26,10 @@ QString preparationReason(const QString &code) {
 
 QVariantMap MailBackend::mergedDraftProjection(const QJsonObject &result) const {
     auto next = result.toVariantMap();
+    if (result["read_only"].toBool() || result["origin"].toString() == "google_snapshot") {
+        next["google"] = QVariant{}; next["google_send"] = QVariant{};
+        return next;
+    }
     const auto account = result["account"].toString(), id = result["draft_id"].toString();
     const auto incoming = result["google"].toObject();
     const auto current = QJsonObject::fromVariantMap(m_draft.value("google").toMap());
@@ -38,6 +42,7 @@ QVariantMap MailBackend::mergedDraftProjection(const QJsonObject &result) const 
 }
 
 bool MailBackend::mergeGoogleDraftStatus(const QJsonObject &status, const QString &account, const QString &draftId) {
+    if (draftReadOnly()) return false;
     if (account != m_account || draftId != m_draft.value("draft_id").toString()
         || !validStatus(status, account, draftId)) return false;
     const auto current = QJsonObject::fromVariantMap(m_draft.value("google").toMap());
@@ -50,12 +55,13 @@ bool MailBackend::mergeGoogleDraftStatus(const QJsonObject &status, const QStrin
 }
 
 bool MailBackend::googleDraftRecoveryReady() const {
-    return !m_syntheticProfile && m_connected && !m_shutdown && accountCapability(m_account, "mail_delivery")
+    return !draftReadOnly() && !m_syntheticProfile && m_connected && !m_shutdown && accountCapability(m_account, "mail_delivery")
         && !m_draft.value("draft_id").toString().isEmpty() && m_draft.value("revision").toLongLong() > 0
         && !m_draft.value("discarded").toBool() && !googleSendBlocksDraftSync();
 }
 
 QVariantMap MailBackend::googleDraft() const {
+    if (draftReadOnly()) return {{"visible", false}};
     const auto id = m_draft.value("draft_id").toString();
     const auto status = QJsonObject::fromVariantMap(m_draft.value("google").toMap());
     const bool visible = !m_syntheticProfile && validStatus(status, m_account, id);
@@ -145,6 +151,7 @@ void MailBackend::replaceGoogleDraft(const QVariantMap &context) {
 }
 
 void MailBackend::startGoogleDraftOperation(const QString &method, const QJsonObject &params) {
+    if (draftReadOnly()) return;
     const auto account = m_account, id = m_draft.value("draft_id").toString();
     const auto generation = m_generation;
     m_googleDraftOperationAccount = account; m_googleDraftOperationId = id; m_googleDraftOperationMethod = method;

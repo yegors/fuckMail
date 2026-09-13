@@ -110,6 +110,7 @@ impl RetainedDraft {
 
 impl Store {
     pub(crate) fn retained_draft(&self, account: &str, params: Value) -> Result<RetainedDraft> {
+        self.check_draft_writable(account, &params)?;
         let snapshot = self.local_draft_snapshot(account, &params)?;
         if snapshot.draft["revision"].as_i64().unwrap_or(0) <= 0 {
             return Err(err(
@@ -134,6 +135,7 @@ impl Store {
                 "Draft proof belongs to another profile",
             ));
         }
+        self.check_draft_writable(&retained.account, &retained.params)?;
         let current = self.local_draft_snapshot(&retained.account, &retained.params)?;
         if current.stamp != retained.snapshot.stamp
             || self.local_attachment_refs(&retained.account, &current.draft["attachment_ids"])?
@@ -190,6 +192,9 @@ impl Store {
             }
             None
         };
+        if existing_capture.is_none() {
+            self.check_draft_writable(account, &params)?;
+        }
         if method == "draft_attachment_import" {
             let path = params["path"]
                 .as_str()
@@ -298,6 +303,7 @@ impl Store {
                 None => self.local_content_begin(&plan.method, &plan.account, plan.params),
             };
         }
+        self.check_draft_writable(&plan.account, &plan.params)?;
         let snapshot = plan.snapshot.as_ref().ok_or_else(invalid_proof)?;
         let current = self.local_draft_snapshot(&plan.account, &plan.params)?;
         if current.stamp != snapshot.stamp {

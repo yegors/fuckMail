@@ -1,0 +1,47 @@
+{
+  "status": "passed",
+  "exit_code": 0,
+  "recorded_at_utc": "2026-09-13T18:50:18.374124+00:00",
+  "elapsed_seconds": 155.14099999982864,
+  "command": [
+    "test",
+    "--release",
+    "--locked",
+    "-p",
+    "fm-engine",
+    "--features",
+    "verification-google",
+    "--target-dir",
+    "target/verification-google",
+    "--bin",
+    "fm-engine",
+    "--test",
+    "verification_profile"
+  ],
+  "source_manifest_sha256": "31f92a7a5b673a73d3e46f3321536bea98d44e0f839d91a9138b901f52bdf28b",
+  "changed_sources": [],
+  "log_sha256": "70e33f925fb505529d5a9a930a4300c57cafc4360c6f66cbf2e689c29771ce79",
+  "executables": {
+    "engine": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\verification-google\\release\\fm-engine.exe",
+      "sha256": "ca363221ce060d795936e7b949f40d1f83cb6d0de268238d9adc77d291512a3d",
+      "size": 15505920
+    }
+  },
+  "suites": [
+    {
+      "status": "ok",
+      "passed": 139,
+      "failed": 0,
+      "ignored": 0,
+      "seconds": 13.85
+    },
+    {
+      "status": "ok",
+      "passed": 3,
+      "failed": 0,
+      "ignored": 0,
+      "seconds": 0.89
+    }
+  ]
+}

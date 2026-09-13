@@ -1,0 +1,38 @@
+[
+  {
+    "path": "Cargo.toml",
+    "sha256": "8e789e663090c7b78781a746cf834d09c036b4a3625fc4ef7a981474692c397e"
+  },
+  {
+    "path": "Cargo.lock",
+    "sha256": "f9f7cacd924bbbc38c7b56e1a5a5957ae18fd0f98e56a3b1907ae560f9dcddba"
+  },
+  {
+    "path": "rust-toolchain.toml",
+    "sha256": "6a3177dca3783745b00765ea571974808dad2644947fc0a8df5927048edf13a5"
+  },
+  {
+    "path": "crates/fm-cli\\tests\\arguments.rs",
+    "sha256": "47793f04de698137fd76c4a2aa4e6044b0df0fcacdccd7fd49dd3b5a011336b8"
+  },
+  {
+    "path": "crates/fm-ipc\\src\\windows.rs",
+    "sha256": "e288d97c77da17a7b6c85b19bd053e423bd4e0ae0a244e1939fbb31a0ed98464"
+  },
+  {
+    "path": "crates/fm-ipc\\src\\lib.rs",
+    "sha256": "fbc07261ab11ddfc253d75579e97aaf05297a21573ec5e762a76772177158b57"
+  },
+  {
+    "path": "crates/fm-ipc\\Cargo.toml",
+    "sha256": "9aae4c119d69df38f7dcb5c1792ebcfd9c7d49cec8c8c70304a2a4cb50af7ba4"
+  },
+  {
+    "path": "crates/fm-cli\\Cargo.toml",
+    "sha256": "399536b7abe9a52f873c106010898accce3a714e994ada0e8878f24fd4c9a278"
+  },
+  {
+    "path": "crates/fm-cli\\src\\main.rs",
+    "sha256": "bb1c3ec7e757f54ea9f68148d1d1624cc091b3c8976228acd5030029d248bdc1"
+  }
+]

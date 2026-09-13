@@ -69,6 +69,8 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         ],
         vec!["google", "labels"],
         vec!["google", "labels-refresh"],
+        vec!["google", "drafts-refresh"],
+        vec!["google", "drafts-status"],
         vec!["mail", "delivery"],
         vec!["mail", "filing", "thread", "--action", "delete"],
     ] {
@@ -100,6 +102,8 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         "send-abandon",
         "labels",
         "labels-refresh",
+        "drafts-refresh",
+        "drafts-status",
         "category-bind",
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_fm"))
@@ -652,6 +656,118 @@ fn attachment_import_requires_scope_saved_draft_revision_and_stable_identity() {
         assert!(String::from_utf8_lossy(&help.stdout).contains(flag));
     }
     assert!(!absent.exists());
+}
+
+#[test]
+fn remote_draft_sources_reject_invalid_identity_revision_and_paging_before_storage() {
+    let root = tempfile::tempdir().unwrap();
+    let absent = root.path().join("not-created");
+    let output_path = root.path().join("must-not-be-created.eml");
+    for command in ["source", "sources"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args([
+                "--profile",
+                absent.to_str().unwrap(),
+                "draft",
+                command,
+                "--help",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert!(!absent.exists());
+    }
+    let valid_source = vec![
+        "draft",
+        "source",
+        "--draft-id",
+        "remote-draft",
+        "--source-revision",
+        "1",
+        "--output",
+        output_path.to_str().unwrap(),
+    ];
+    let mut invalid = Vec::new();
+    for revision in ["0", "-1", "9223372036854775808"] {
+        let mut args = valid_source.clone();
+        args[5] = revision;
+        invalid.push(args);
+    }
+    for field in ["--draft-id", "--source-revision"] {
+        let mut args = valid_source.clone();
+        let index = args.iter().position(|arg| *arg == field).unwrap();
+        args.drain(index..index + 2);
+        invalid.push(args);
+    }
+    for (field, value) in [
+        ("--limit", "0"),
+        ("--limit", "101"),
+        ("--offset", "10000001"),
+        ("--offset", "-1"),
+    ] {
+        invalid.push(vec![
+            "draft",
+            "sources",
+            "--draft-id",
+            "remote-draft",
+            field,
+            value,
+        ]);
+    }
+    let overlong = "x".repeat(257);
+    for id in ["", "private\nidentity", overlong.as_str()] {
+        let mut args = valid_source.clone();
+        args[3] = id;
+        invalid.push(args);
+        let mut args = valid_source.clone();
+        args.extend(["--attachment-id", id]);
+        invalid.push(args);
+        invalid.push(vec!["draft", "sources", "--draft-id", id]);
+    }
+    for args in invalid {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args([
+                "--profile",
+                absent.to_str().unwrap(),
+                "--account",
+                "account",
+                "--json",
+            ])
+            .args(args)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(
+            !absent.exists(),
+            "Invalid source request must not open storage"
+        );
+        assert!(
+            !output_path.exists(),
+            "Invalid source request must not create an export"
+        );
+        assert!(!String::from_utf8_lossy(&output.stdout).contains("private\nidentity"));
+    }
+    for args in [
+        valid_source,
+        vec!["draft", "sources", "--draft-id", "remote-draft"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args(["--profile", absent.to_str().unwrap(), "--json"])
+            .args(&args)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(!absent.exists());
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args(["--account", "account", "--json"])
+            .args(args)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        let data: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(data["error"]["code"], "invalid_request");
+        assert!(!output_path.exists());
+    }
 }
 
 #[test]

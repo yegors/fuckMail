@@ -1,5 +1,5 @@
 //! Fixed Gmail-shaped responses. There is deliberately no network implementation.
-use super::{Account, Evidence, BACKFILL_MESSAGES, RAW_DELAY_MS, RECENT_MESSAGES};
+use super::{remote_drafts, Account, Evidence, BACKFILL_MESSAGES, RAW_DELAY_MS, RECENT_MESSAGES};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use fm_google::{
     auth::{CredentialVault, StoredToken},
@@ -221,6 +221,7 @@ pub(super) struct FixtureHttp {
     evidence: Arc<Mutex<Evidence>>,
     hold_raw: Arc<AtomicBool>,
     send_enabled: bool,
+    remote_version_two: Option<Arc<AtomicBool>>,
 }
 impl FixtureHttp {
     pub(super) fn new(
@@ -240,6 +241,24 @@ impl FixtureHttp {
             evidence,
             hold_raw,
             send_enabled,
+            remote_version_two: None,
+        }
+    }
+    pub(super) fn enable_remote_drafts(&mut self, version_two: Arc<AtomicBool>) {
+        self.remote_version_two = Some(version_two);
+        for (account, state) in self.accounts.iter().zip(&mut self.states) {
+            let state = state.get_mut().unwrap();
+            for index in 0..remote_drafts::COUNT {
+                let version = if index == 1 { 2 } else { 1 };
+                state.drafts.insert(
+                    format!("rd{index:04}"),
+                    FixtureDraft {
+                        message_id: format!("rm{index:04}v{version}"),
+                        thread_id: format!("rt{index:04}"),
+                        raw: remote_drafts::source(account.key, index, version, self.base),
+                    },
+                );
+            }
         }
     }
     fn reject(&self, code: &'static str) -> TransportError {
@@ -262,10 +281,32 @@ impl FixtureHttp {
             .ok_or_else(|| self.reject("unexpected_synthetic_origin"))?;
         let (path, query) = path.split_once('?').unwrap_or((path, ""));
         let params = parameters(query).ok_or_else(|| self.reject("invalid_synthetic_query"))?;
+        if self.remote_version_two.is_some() && request.method() != HttpMethod::Get {
+            return Err(self.reject("remote_drafts_write_refused"));
+        }
         if request.method() == HttpMethod::Get && request.body_bytes().is_empty() {
             match path {
                 "profile" if params.is_empty() => return Ok((account, Route::Profile)),
                 "labels" if params.is_empty() => return Ok((account, Route::Labels)),
+                "drafts" => {
+                    if params.get("maxResults") != Some(&"50")
+                        || params
+                            .keys()
+                            .any(|key| !["maxResults", "pageToken"].contains(key))
+                    {
+                        return Err(self.reject("unexpected_synthetic_draft_list_query"));
+                    }
+                    let count = self.states[account].lock().unwrap().drafts.len();
+                    let offset = match params.get("pageToken") {
+                        None => 0,
+                        Some(value) => value
+                            .strip_prefix("drafts-")
+                            .and_then(|value| value.parse::<usize>().ok())
+                            .filter(|offset| *offset > 0 && *offset < count && offset % 50 == 0)
+                            .ok_or_else(|| self.reject("unexpected_synthetic_draft_cursor"))?,
+                    };
+                    return Ok((account, Route::DraftList(offset)));
+                }
                 "messages" => {
                     if self.send_enabled
                         && params.get("maxResults") == Some(&"10")
@@ -370,7 +411,10 @@ impl FixtureHttp {
                 }
             }
             if let Some(id) = path.strip_prefix("drafts/") {
-                if fixture_draft_id(id) && params.len() == 1 && params.get("format") == Some(&"raw")
+                if (fixture_draft_id(id)
+                    || (self.remote_version_two.is_some() && remote_drafts::index(id).is_some()))
+                    && params.len() == 1
+                    && params.get("format") == Some(&"raw")
                 {
                     return Ok((account, Route::DraftGet(id.into())));
                 }
@@ -553,13 +597,65 @@ impl FixtureHttp {
                 }
                 Route::DraftGet(id) => {
                     self.evidence.lock().unwrap().counters.draft_read += 1;
+                    if self.remote_version_two.is_some() && id == "rd0002" {
+                        return Ok((
+                            404,
+                            json!({"error":{"code":404,"message":"Generated remote draft is absent"}}),
+                        ));
+                    }
+                    if id == "rd0000"
+                        && self
+                            .remote_version_two
+                            .as_ref()
+                            .is_some_and(|flag| flag.load(Ordering::Acquire))
+                    {
+                        state.drafts.insert(
+                            id.clone(),
+                            FixtureDraft {
+                                message_id: "rm0000v2".into(),
+                                thread_id: "rt0000".into(),
+                                raw: remote_drafts::source(owner.key, 0, 2, self.base),
+                            },
+                        );
+                    }
                     let Some(draft) = state.drafts.get(&id) else {
                         return Ok((
                             404,
                             json!({"error":{"code":404,"message":"Generated draft is absent"}}),
                         ));
                     };
+                    if self.remote_version_two.is_some() {
+                        let row = json!({"account":owner.id,"draft_id":id,"message_id":draft.message_id,"thread_id":draft.thread_id,"size":draft.raw.len(),"sha256":format!("{:x}", Sha256::digest(&draft.raw))});
+                        let mut evidence = self.evidence.lock().unwrap();
+                        if !evidence.remote_draft_reads.contains(&row) {
+                            if evidence.remote_draft_reads.len() >= 2 * (remote_drafts::COUNT + 1) {
+                                evidence.error("remote_draft_read_trace_limit");
+                                return Err(TransportError::InvalidRequest);
+                            }
+                            evidence.remote_draft_reads.push(row);
+                        }
+                    }
                     draft.value(&id, true)
+                }
+                Route::DraftList(offset) => {
+                    self.evidence.lock().unwrap().counters.draft_list += 1;
+                    let count = state.drafts.len();
+                    let end = (offset + 50).min(count);
+                    let rows = state
+                        .drafts
+                        .iter()
+                        .skip(offset)
+                        .take(50)
+                        .map(|(id, draft)| {
+                            let mut row = draft.value(id, false);
+                            // A list can legitimately race a subsequent replacement.
+                            if self.remote_version_two.is_some() && id == "rd0001" {
+                                row["message"]["id"] = json!("rm0001v1");
+                            }
+                            row
+                        })
+                        .collect::<Vec<_>>();
+                    json!({"drafts":rows,"nextPageToken":(end<count).then(||format!("drafts-{end}")),"resultSizeEstimate":count})
                 }
                 Route::DraftWrite { id, raw, thread } => {
                     let creating = id.is_none();
@@ -677,6 +773,7 @@ enum Route {
     State(Message),
     Review(Message),
     DraftGet(String),
+    DraftList(usize),
     DraftWrite {
         id: Option<String>,
         raw: Vec<u8>,

@@ -230,10 +230,11 @@ void MailBackend::reloadDraft() {
     request("draft_get", account, draftSelector(), [this, account, id](auto result, bool ok) {
         m_resolvingDraft = false;
         if (account != m_account || id != draftContext()) return;
-        if (ok) {
+        if (ok && !olderDraftProjection(result)) {
             m_draft = mergedDraftProjection(result); m_recipientInputs.clear(); m_draftDirty = false; m_draftConflict = false;
-            m_afterDraftSave = {}; m_draftStatus = "Saved on this machine";
-        } else { m_draftStatus = "Not saved — could not reload. Your version remains here."; cancelShutdown(); }
+            m_afterDraftSave = {}; m_draftStatus = draftReadOnly() ? "Read-only Google draft preview" : "Saved on this machine";
+        } else if (!ok) { m_draftStatus = "Not saved — could not reload. Your version remains here."; cancelShutdown(); }
+        else if (draftReadOnly()) m_draftStatus = "Read-only Google draft preview";
         emit draftChanged();
         if (m_shutdown) finishShutdown();
     });
@@ -242,7 +243,7 @@ void MailBackend::saveMyDraftVersion() {
     // Called only after the user confirms replacement of the other saved
     // version. Fetch its revision, retaining every authored field locally, then
     // use the normal optimistic save. A concurrent edit can conflict again.
-    if (!m_draftConflict || draftBusy() || m_draft.isEmpty()) return;
+    if (draftReadOnly() || !m_draftConflict || draftBusy() || m_draft.isEmpty()) return;
     m_draftTimer.stop(); clearError(); m_resolvingDraft = true;
     m_draftStatus = "Checking the current saved revision…"; emit draftChanged();
     const auto account = m_account, id = draftContext();
@@ -266,6 +267,7 @@ void MailBackend::saveMyDraftVersion() {
     });
 }
 void MailBackend::discardDraft() {
+    if (draftReadOnly()) return;
     cancelPendingGoogleSend("Send cancelled before discarding the draft.");
     if (attachmentImportPending()) return;
     if (m_draft.isEmpty() || draftBusy()) return;
@@ -306,7 +308,7 @@ void MailBackend::loadCaptures(bool append) {
 }
 void MailBackend::loadMoreCaptures() { loadCaptures(true); }
 void MailBackend::inspectCapture(const QString &operationId) {
-    if (draftBusy()) return;
+    if (draftReadOnly() || draftBusy()) return;
     QVariantMap record;
     for (const auto &value : m_captures) if (value.toMap()["operation_id"].toString() == operationId) { record = value.toMap(); break; }
     if (record.isEmpty()) return;

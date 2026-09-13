@@ -67,6 +67,10 @@ class MailBackend final : public QObject {
     Q_PROPERTY(bool capturesMore READ capturesMore NOTIFY capturesChanged)
     Q_PROPERTY(bool draftBusy READ draftBusy NOTIFY draftChanged)
     Q_PROPERTY(bool draftLocked READ draftLocked NOTIFY draftChanged)
+    Q_PROPERTY(bool draftReadOnly READ draftReadOnly NOTIFY draftChanged)
+    Q_PROPERTY(QVariantMap googleDraftInventory READ googleDraftInventory NOTIFY googleDraftInventoryChanged)
+    Q_PROPERTY(QVariantList draftSnapshotHeaders READ draftSnapshotHeaders NOTIFY draftChanged)
+    Q_PROPERTY(QVariantMap draftSources READ draftSources NOTIFY draftSourcesChanged)
     Q_PROPERTY(bool draftConflict READ draftConflict NOTIFY draftChanged)
     Q_PROPERTY(QVariantMap attachmentImport READ attachmentImport NOTIFY draftChanged)
     Q_PROPERTY(bool attachmentImportBusy READ attachmentImportBusy NOTIFY draftChanged)
@@ -138,7 +142,8 @@ public:
     QString captureStatus() const { return m_captureStatus; }
     bool capturesMore() const { return m_captureNextOffset >= 0; }
     bool draftBusy() const { return m_savingDraft || m_capturing || m_discarding || m_resolvingDraft; }
-    bool draftLocked() const { return m_capturing || m_discarding || m_resolvingDraft; }
+    bool draftReadOnly() const { return m_draft.value("read_only").toBool() || m_draft.value("origin").toString() == "google_snapshot"; }
+    bool draftLocked() const { return draftReadOnly() || m_capturing || m_discarding || m_resolvingDraft; }
     bool draftConflict() const { return m_draftConflict; }
     QVariantList calendarSources() const { return m_calendarSources; }
     QString calendarView() const { return m_calendarView; }
@@ -201,6 +206,14 @@ public:
     bool attachmentImportBusy() const { return !m_attachmentImportActive.isEmpty(); }
     QVariantMap googleDraft() const;
     Q_INVOKABLE void reconcileGoogleDraft();
+    QVariantMap googleDraftInventory() const;
+    QVariantList draftSnapshotHeaders() const;
+    QVariantMap draftSources() const;
+    Q_INVOKABLE void loadGoogleDraftInventory();
+    Q_INVOKABLE void refreshGoogleDraftInventory();
+    Q_INVOKABLE void loadDraftSources(bool append = false);
+    Q_INVOKABLE void exportDraftSource(qint64 sourceRevision, const QString &attachmentId = {});
+    Q_INVOKABLE void showDraftSourceFolder();
     Q_INVOKABLE QVariantMap googleDraftReplacementContext();
     Q_INVOKABLE void replaceGoogleDraft(const QVariantMap &context);
     Q_INVOKABLE void cancelGoogleDraftOperation();
@@ -260,6 +273,8 @@ signals:
     void conversationChanged();
     void senderCardChanged();
     void draftChanged();
+    void googleDraftInventoryChanged();
+    void draftSourcesChanged();
     void eventsChanged();
     void preferencesChanged();
     void capturesChanged();
@@ -278,6 +293,8 @@ private:
     friend class GuiSettingsSelfTest;
     friend class GuiCompositionSelfTest;
     friend class GoogleDraftControlsTest;
+    friend class GoogleDraftSnapshotControlsTest;
+    friend class GuiGoogleDraftSnapshotSelfTest;
     friend class GoogleSendControlsTest;
     using Callback = std::function<void(const QJsonObject &, bool)>;
     struct Pending {
@@ -354,6 +371,17 @@ private:
     QString m_googleDraftOperationAccount, m_googleDraftOperationId, m_googleDraftOperationMethod;
     QString m_googleDraftFeedbackAccount, m_googleDraftFeedbackId, m_googleDraftFeedback;
     QSet<QString> m_googleDraftRequiresCheck;
+    QString draftSourcesKey() const;
+    void resetDraftSourcesContext();
+    QVariantMap m_draftInventory;
+    QString m_draftInventoryAccount, m_draftInventoryFeedback;
+    int m_draftInventoryGeneration = 0;
+    bool m_draftInventoryLoading = false, m_draftInventoryRefreshing = false;
+    QString m_draftSourcesKey, m_draftSourceFeedback;
+    QVariantMap m_draftSources, m_draftSourceExport;
+    int m_draftSourcesGeneration = 0;
+    quint64 m_draftSourceExportGeneration = 0;
+    bool m_draftSourcesLoading = false, m_draftSourceExporting = false;
     void beginDraftWithRecipient(const QString &mode, const QString &email, const QString &name);
     bool commitRecipientInputs();
     QString attachmentImportKey() const;

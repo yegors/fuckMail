@@ -43,6 +43,42 @@ fn setup() -> (Arc<Fake>, GmailApi<Fake>) {
     let api = GmailApi::new(account("a"), fake.clone());
     (fake, api)
 }
+
+#[tokio::test]
+async fn rejected_draft_continuation_is_a_read_restart_only_for_a_supplied_token() {
+    let (fake, api) = setup();
+    let cancel = CancellationToken::new();
+    fake.respond(400, json!({"error":{"code":400}}));
+    assert!(matches!(
+        api.execute(
+            GmailCall::list_drafts(&account("a"), Some("expired"), 50).unwrap(),
+            "token",
+            &cancel
+        )
+        .await
+        .unwrap(),
+        GmailReply::DraftPageExpired
+    ));
+    fake.respond(400, json!({"error":{"code":400}}));
+    assert!(api
+        .execute(
+            GmailCall::list_drafts(&account("a"), None, 50).unwrap(),
+            "token",
+            &cancel
+        )
+        .await
+        .is_err());
+    fake.respond(429, json!({"error":{"code":429}}));
+    assert!(matches!(
+        api.execute(
+            GmailCall::list_drafts(&account("a"), Some("valid"), 50).unwrap(),
+            "token",
+            &cancel
+        )
+        .await,
+        Err(GoogleError::RateLimited { .. })
+    ));
+}
 fn raw(id: &str, encoded: &str) -> Value {
     json!({"id":id,"threadId":"thread-a","historyId":"123","raw":encoded,"labelIds":["INBOX","UNREAD"],"internalDate":"1000","sizeEstimate":24})
 }

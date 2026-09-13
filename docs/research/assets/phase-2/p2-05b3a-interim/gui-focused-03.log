@@ -1,0 +1,23 @@
+Internal ctest changing into directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev
+Test project C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev
+    Start 10: gui-google-draft-snapshot-controls
+1/1 Test #10: gui-google-draft-snapshot-controls ...***Failed    1.45 sec
+Snapshot geometry graphite default QSize(390, 1500) 1 QSize(390, 1500)
+Snapshot geometry graphite large QSize(390, 1500) 1 QSize(390, 1500)
+Snapshot geometry paper default QSize(390, 1500) 1 QSize(390, 1500)
+Snapshot geometry paper large QSize(390, 1500) 1 QSize(390, 1500)
+Snapshot geometry harbour default QSize(390, 1500) 1 QSize(390, 1500)
+Snapshot geometry harbour large QSize(390, 1500) 1 QSize(390, 1500)
+same-source older scan metadata cannot erase unseen freshness
+QThreadStorage: entry 3 destroyed before end of thread 0x1c2dd9c3aa0
+QThreadStorage: entry 2 destroyed before end of thread 0x1c2dd9c3aa0
+QThreadStorage: entry 1 destroyed before end of thread 0x1c2dd9c3aa0
+
+
+0% tests passed, 1 tests failed out of 1
+
+Total Test time (real) =   1.45 sec
+
+The following tests FAILED:
+	 10 - gui-google-draft-snapshot-controls (Failed)
+Errors while running CTest

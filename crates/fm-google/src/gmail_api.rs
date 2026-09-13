@@ -485,6 +485,9 @@ pub enum GmailReply {
     MessageState(Option<GmailMessageState>),
     Labels(GmailLabels),
     Drafts(GmailDraftPage),
+    /// A supplied draft inventory continuation was rejected. Restarting the
+    /// read enumeration must preserve already retained snapshots.
+    DraftPageExpired,
     Draft(GmailDraft),
     Message(MessageRef),
     DeletedDraft,
@@ -546,6 +549,12 @@ impl<T: HttpTransport> GmailApi<T> {
         }
         if response.status == 404 && call.method == GmailMethod::MessageState {
             return Ok(GmailReply::MessageState(None));
+        }
+        if response.status == 400
+            && call.method == GmailMethod::DraftsList
+            && call.previous_page.is_some()
+        {
+            return Ok(GmailReply::DraftPageExpired);
         }
         if !(200..300).contains(&response.status) {
             return Err(crate::classify_api_error(

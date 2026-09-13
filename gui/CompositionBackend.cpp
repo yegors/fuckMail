@@ -17,26 +17,38 @@ QString MailBackend::draftContext() const {
 bool MailBackend::olderDraftProjection(const QJsonObject &result) const {
     // Cached queries and attachment imports have independent connections. A
     // late read must not move a known draft revision backwards after a receipt.
-    return result["account"].toString() == m_account
+    const bool same = result["account"].toString() == m_account
         && !result["draft_id"].toString().isEmpty()
-        && result["draft_id"].toString() == m_draft.value("draft_id").toString()
-        && result["revision"].toInteger() < m_draft.value("revision").toLongLong();
+        && result["draft_id"].toString() == m_draft.value("draft_id").toString();
+    if (!same) return false;
+    // Imported observations have their own source clock; an unchanged authored
+    // revision does not make an earlier cached source safe to publish.
+    if (draftReadOnly()) {
+        const auto incoming = result["remote_source"].toObject();
+        const auto current = m_draft.value("remote_source").toMap();
+        const auto scan = incoming["latest_scan_generation"].toInteger(), oldScan = current.value("latest_scan_generation").toLongLong();
+        return result["origin"].toString() != "google_snapshot" || !result["read_only"].toBool()
+            || incoming["source_revision"].toInteger() < current.value("source_revision").toLongLong()
+            || scan < oldScan || incoming["seen_generation"].toInteger() < current.value("seen_generation").toLongLong()
+            || (scan == oldScan && current.value("latest_scan_complete").toBool() && !incoming["latest_scan_complete"].toBool());
+    }
+    return result["revision"].toInteger() < m_draft.value("revision").toLongLong();
 }
 
 void MailBackend::acceptDraft(const QJsonObject &result, bool restoreView) {
     if (olderDraftProjection(result)) {
-        m_draftStatus = m_draftDirty ? "Saving…" : "Saved on this machine";
+        if (!draftReadOnly()) m_draftStatus = m_draftDirty ? "Saving…" : "Saved on this machine";
         emit draftChanged(); return;
     }
     m_recipientInputs.clear();
     m_activeDraft = result["draft_id"].toString();
     m_selected = result["conversation_id"].toString();
     m_draft = mergedDraftProjection(result); m_draftDirty = false; m_draftConflict = false;
-    m_draftStatus = "Saved on this machine";
+    m_draftStatus = draftReadOnly() ? "Read-only Google draft preview" : "Saved on this machine";
     m_conversation.clear(); m_pinnedRow.clear(); m_pinnedIndex = -1;
     remember("selectedDraft", m_activeDraft); remember("selected", m_selected);
     if (!restoreView) { remember("readerY", 0); remember("replyOpen", true); }
-    emit conversationChanged(); emit draftChanged();
+    emit conversationChanged(); emit draftChanged(); emit draftSourcesChanged();
     if (!m_selected.isEmpty()) loadConversation(false);
     else emit ready();
 }
@@ -123,7 +135,7 @@ void MailBackend::loadActiveDraft() {
         if (m_draftDirty || draftBusy() || olderDraftProjection(result)) { if (metadataChanged) emit draftChanged(); return; }
         const auto next = mergedDraftProjection(result);
         if (next != m_draft) {
-            m_draft = next; m_draftStatus = result["discarded"].toBool() ? "Draft discarded" : "Saved on this machine";
+            m_draft = next; m_draftStatus = draftReadOnly() ? "Read-only Google draft preview" : result["discarded"].toBool() ? "Draft discarded" : "Saved on this machine";
             emit draftChanged();
         }
         else if (metadataChanged) emit draftChanged();
@@ -131,6 +143,7 @@ void MailBackend::loadActiveDraft() {
 }
 
 void MailBackend::loadDraftRows(bool append, bool preserveLoaded) {
+    loadGoogleDraftInventory();
     const auto account = m_account;
     const int generation = ++m_listGeneration, offset = append ? m_nextOffset : 0;
     if (offset < 0) return;
@@ -207,6 +220,7 @@ void MailBackend::stageDraftRecipient(const QString &field, const QString &text)
     else { m_recipientInputs[field] = text; m_draftDirty = true; }
 }
 bool MailBackend::commitRecipientInputs() {
+    if (draftReadOnly()) return m_recipientInputs.isEmpty();
     const auto inputs = m_recipientInputs;
     for (auto it = inputs.cbegin(); it != inputs.cend(); ++it) {
         if (!addDraftRecipient(it.key(), it.value())) {

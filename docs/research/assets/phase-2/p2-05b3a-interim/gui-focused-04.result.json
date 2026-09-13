@@ -1,0 +1,35 @@
+{
+  "exit": 0,
+  "binaries": [
+    {
+      "path": "build\\p2-05b3a-gui-dev\\fuckmail-gui.exe",
+      "size": 11338752,
+      "sha256": "0718eb6b7fc8f87745d026fa8d443f2dd1aee09720923b42cfdcbc9f5a47b954"
+    },
+    {
+      "path": "build\\p2-05b3a-gui-dev\\gui-reply-document-test.exe",
+      "size": 220160,
+      "sha256": "bc384b82bcdfa3a96e6aa937d38294e808c3f4ed231debb41c3dc722630313b6"
+    },
+    {
+      "path": "build\\p2-05b3a-gui-dev\\gui-google-operation-test.exe",
+      "size": 254976,
+      "sha256": "e0ef88caf71356956a2354c209a5e2f293a091f57f3ddaca11a0d76d2188bd86"
+    },
+    {
+      "path": "build\\p2-05b3a-gui-dev\\gui-google-draft-controls-test.exe",
+      "size": 2748928,
+      "sha256": "240c6f54b25d5b95c100e4219ad6068a6a0d2c05e436583a2a7d73b610c6be69"
+    },
+    {
+      "path": "build\\p2-05b3a-gui-dev\\gui-google-send-controls-test.exe",
+      "size": 2820608,
+      "sha256": "304709f27c0b8128550a3e4808a1ddc28fd661f88bfe325f647ca9d8483ad6a2"
+    },
+    {
+      "path": "build\\p2-05b3a-gui-dev\\gui-google-draft-snapshot-controls-test.exe",
+      "size": 2809856,
+      "sha256": "d1d340adbfbac857cfe917dd26611eb05d45b486bf894022a793e108295f4eb1"
+    }
+  ]
+}

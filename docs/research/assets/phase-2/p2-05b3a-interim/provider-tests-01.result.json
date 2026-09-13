@@ -1,0 +1,9 @@
+{
+  "log_sha256": "1bc14f6b978117a6acba219e63a8826ef57b356f25d78d5802018acca5a30e8c",
+  "status": "failed",
+  "exit_code": 127,
+  "scope": "fm-google",
+  "phase": "tool_launch",
+  "tests_started": false,
+  "source_sha256": "2b5578608ab0fedc347e00f4bd63af67dec94ac24a75fa8ea66d1e2dda395e38"
+}

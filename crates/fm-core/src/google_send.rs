@@ -240,6 +240,7 @@ impl Store {
             }
             return Err(failure);
         }
+        self.check_draft_writable(&scope.account, &json!({"draft_id":draft_id}))?;
         let guard = self.send_guard(&scope.account, draft_id)?;
         if guard.as_ref().is_some_and(|g| pending(&g.state)) {
             return Err(err(
@@ -597,6 +598,7 @@ impl Store {
         account: &str,
         draft_id: &str,
     ) -> Result<()> {
+        self.check_draft_writable(account, &json!({"draft_id":draft_id}))?;
         if self
             .send_guard(account, draft_id)?
             .is_some_and(|g| g.blocks_drafts)
@@ -610,6 +612,7 @@ impl Store {
         account: &str,
         draft_id: &str,
     ) -> Result<()> {
+        self.check_draft_writable(account, &json!({"draft_id":draft_id}))?;
         if self.send_guard(account, draft_id)?.is_some_and(|g| {
             g.last_accepted_draft_revision.is_some()
                 || matches!(g.state.as_str(), "in_flight" | "acceptance_unknown")
@@ -622,6 +625,7 @@ impl Store {
         Ok(())
     }
     fn check_send_identity(&self, scope: &GoogleSendScope, draft_id: &str) -> Result<()> {
+        self.check_draft_writable(&scope.account, &json!({"draft_id":draft_id}))?;
         let (from,discarded):(String,bool)=self.db.query_row("SELECT json_extract(routing_json,'$.from'),discarded FROM drafts WHERE account=?1 AND draft_id=?2",params![scope.account,draft_id],|r|Ok((r.get(0)?,r.get(1)?)))?;
         google_drafts::same_from(&from, &scope.primary_email)?;
         if discarded {

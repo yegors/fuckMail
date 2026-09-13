@@ -123,7 +123,7 @@ void ReplyDocument::load(const QString &body, const QString &value) {
     m_loading = false;
 }
 void ReplyDocument::format(const QString &kind) {
-    if (!m_document || !m_editor) return;
+    if (m_readOnly || !m_document || !m_editor) return;
     QTextCursor cursor(m_document->textDocument());
     const auto start = m_editor->property("selectionStart").toInt(), end = m_editor->property("selectionEnd").toInt();
     cursor.setPosition(start); cursor.setPosition(end, QTextCursor::KeepAnchor);
@@ -135,15 +135,15 @@ void ReplyDocument::format(const QString &kind) {
     cursor.mergeCharFormat(style); m_editor->forceActiveFocus();
 }
 void ReplyDocument::pastePlain() {
-    if (!m_document || !m_editor) return;
+    if (m_readOnly || !m_document || !m_editor) return;
     QTextCursor cursor(m_document->textDocument());
     cursor.setPosition(m_editor->property("selectionStart").toInt());
     cursor.setPosition(m_editor->property("selectionEnd").toInt(), QTextCursor::KeepAnchor);
     cursor.insertText(QGuiApplication::clipboard()->text());
     m_editor->setProperty("cursorPosition", cursor.position());
 }
-void ReplyDocument::undo() { if (m_document && m_document->textDocument()->isUndoAvailable()) m_document->textDocument()->undo(); }
-void ReplyDocument::redo() { if (m_document && m_document->textDocument()->isRedoAvailable()) m_document->textDocument()->redo(); }
+void ReplyDocument::undo() { if (!m_readOnly && m_document && m_document->textDocument()->isUndoAvailable()) m_document->textDocument()->undo(); }
+void ReplyDocument::redo() { if (!m_readOnly && m_document && m_document->textDocument()->isRedoAvailable()) m_document->textDocument()->redo(); }
 bool ReplyDocument::eventFilter(QObject *watched, QEvent *event) {
     if (watched == m_editor && event->type() == QEvent::KeyPress && static_cast<QKeyEvent *>(event)->matches(QKeySequence::Paste)) { pastePlain(); return true; }
     if (watched == m_editor && event->type() == QEvent::Drop) return true;

@@ -1,0 +1,28 @@
+Internal ctest changing into directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev
+Test project C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev
+    Start  3: gui-reply-document
+1/5 Test  #3: gui-reply-document ...................   Passed    0.29 sec
+    Start  7: gui-google-operation
+2/5 Test  #7: gui-google-operation .................   Passed    0.27 sec
+    Start  8: gui-google-draft-controls
+3/5 Test  #8: gui-google-draft-controls ............   Passed    1.37 sec
+    Start  9: gui-google-send-controls
+4/5 Test  #9: gui-google-send-controls .............   Passed    1.88 sec
+    Start 10: gui-google-draft-snapshot-controls
+5/5 Test #10: gui-google-draft-snapshot-controls ...***Failed    1.51 sec
+Snapshot geometry graphite default QSize(390, 1500) 1 QSize(390, 1500)
+Snapshot geometry graphite large QSize(390, 1500) 1 QSize(390, 1500)
+Snapshot geometry paper default QSize(390, 1500) 1 QSize(390, 1500)
+Snapshot geometry paper large QSize(390, 1500) 1 QSize(390, 1500)
+Snapshot geometry harbour default QSize(390, 1500) 1 QSize(390, 1500)
+Snapshot geometry harbour large QSize(390, 1500) 1 QSize(390, 1500)
+account switch clears prior source export state
+
+
+80% tests passed, 1 tests failed out of 5
+
+Total Test time (real) =   5.34 sec
+
+The following tests FAILED:
+	 10 - gui-google-draft-snapshot-controls (Failed)
+Errors while running CTest

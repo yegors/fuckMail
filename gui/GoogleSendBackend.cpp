@@ -56,6 +56,7 @@ void MailBackend::mergeGoogleSendProjection(QVariantMap &next, const QJsonObject
 }
 
 bool MailBackend::mergeGoogleSendStatus(const QJsonObject &status, const QString &account, const QString &draftId) {
+    if (draftReadOnly()) return false;
     if (account != m_account || draftId != m_draft.value("draft_id").toString() || !validSend(status, account, draftId)
         || !status["operation_is_current"].toBool()) return false;
     const auto current = QJsonObject::fromVariantMap(m_draft.value("google_send").toMap());
@@ -82,6 +83,7 @@ bool MailBackend::googleSendBlocksDraftSync() const {
 }
 
 QVariantMap MailBackend::googleSend() const {
+    if (draftReadOnly()) return {{"visible", false}, {"can_send", false}};
     const auto id = m_draft.value("draft_id").toString();
     const auto current = QJsonObject::fromVariantMap(m_draft.value("google_send").toMap());
     const auto ui = m_googleSendUi.value(googleSendKey());
@@ -198,6 +200,7 @@ void MailBackend::refreshGoogleSendMetadata(const QString &account, const QStrin
 }
 
 void MailBackend::startGoogleSendOperation(const QString &method, const QJsonObject &params) {
+    if (draftReadOnly()) return;
     const auto account = m_account, draftId = m_draft.value("draft_id").toString(), key = googleSendKey();
     auto &ui = m_googleSendUi[key];
     if (ui.active) return;

@@ -45,7 +45,7 @@ enum Command {
         #[command(subcommand)]
         command: Mail,
     },
-    /// Human-authored draft content; no send command in this phase.
+    /// Local authoring and retained Google draft sources; Google Send is explicit.
     Draft {
         #[command(subcommand)]
         command: Draft,
@@ -232,6 +232,10 @@ enum Google {
     },
     /// Refresh the label catalog through the currently active owned sync runtime.
     LabelsRefresh,
+    /// Begin or resume remote Drafts inventory through an already owned sync session.
+    DraftsRefresh,
+    /// Read cached remote Drafts coverage without contacting Google.
+    DraftsStatus,
     /// Bind an existing Google label to a local category; never creates provider labels.
     CategoryBind {
         category_id: String,
@@ -373,6 +377,28 @@ enum Preferences {
 
 #[derive(Subcommand)]
 enum Draft {
+    /// Browse retained Google source versions without contacting Google.
+    Sources {
+        #[arg(long)]
+        draft_id: String,
+        #[arg(long, default_value_t=30, value_parser=clap::value_parser!(u32).range(1..=100))]
+        limit: u32,
+        #[arg(long, default_value_t=0, value_parser=clap::value_parser!(u64).range(0..=10_000_000))]
+        offset: u64,
+    },
+    /// Export exact retained Google RAW or an attachment at the specified source revision.
+    /// Requires an explicit profile and account, but no active Google sync session.
+    Source {
+        #[arg(long)]
+        draft_id: String,
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        source_revision: i64,
+        #[arg(long)]
+        attachment_id: Option<String>,
+        /// Copy the verified bytes to a new file; never overwrites an existing file.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
     /// Browse durable drafts in the selected account.
     List {
         #[arg(long)]
@@ -641,6 +667,64 @@ fn google_composition_request(command: &Command) -> Result<Option<(&'static str,
     Ok(Some((method, params)))
 }
 
+fn draft_source_request(command: &Command) -> Result<Option<(&'static str, Value)>, Failure> {
+    let (method, params) = match command {
+        Command::Draft {
+            command:
+                Draft::Sources {
+                    draft_id,
+                    limit,
+                    offset,
+                },
+        } => (
+            "google_draft_sources",
+            json!({"draft_id":draft_id,"limit":limit,"offset":offset}),
+        ),
+        Command::Draft {
+            command:
+                Draft::Source {
+                    draft_id,
+                    source_revision,
+                    attachment_id,
+                    ..
+                },
+        } => {
+            let mut params = json!({"draft_id":draft_id,"source_revision":source_revision});
+            if let Some(id) = attachment_id {
+                params["attachment_id"] = json!(id);
+            }
+            ("google_draft_source", params)
+        }
+        _ => return Ok(None),
+    };
+    for field in ["draft_id", "attachment_id"] {
+        if let Some(value) = params.get(field).and_then(Value::as_str) {
+            if value.is_empty() || value.len() > 256 || value.chars().any(char::is_control) {
+                return Err(invalid(
+                    "Choose a nonempty bounded draft and attachment identity",
+                ));
+            }
+        }
+    }
+    Ok(Some((method, params)))
+}
+
+fn copy_export(reply: &Value, output: &Path) -> Result<(), Failure> {
+    let data = result(reply.clone())?;
+    let source = data["path"].as_str().ok_or_else(|| Failure {
+        code: "content_unavailable".into(),
+        message: "Retained content is not fully available offline".into(),
+    })?;
+    let mut source = std::fs::File::open(source)?;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(output)?;
+    io::copy(&mut source, &mut file)?;
+    file.sync_all()?;
+    Ok(())
+}
+
 fn open_google_browser(url: &str) -> Result<(), Failure> {
     // The engine supplies one fixed HTTPS authorization endpoint. No shell
     // evaluates the query, and URLs/state are never copied to terminal logs.
@@ -744,10 +828,17 @@ async fn run(args: &Args) -> Result<(), Failure> {
     ) {
         account(args)?;
     }
-    let live_command = matches!(args.command, Command::ProfileInit | Command::Google { .. });
+    let live_command = matches!(
+        args.command,
+        Command::ProfileInit
+            | Command::Google { .. }
+            | Command::Draft {
+                command: Draft::Source { .. } | Draft::Sources { .. }
+            }
+    );
     if live_command && args.profile.is_none() {
         return Err(invalid(
-            "profile-init and Google commands require an explicit --profile path",
+            "profile-init, Google and Google draft source commands require an explicit --profile path",
         ));
     }
     let google_client_path = if let Command::Google {
@@ -776,6 +867,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
     };
     let attachment_import = attachment_import_params(&args.command)?;
     let google_composition = google_composition_request(&args.command)?;
+    let draft_source = draft_source_request(&args.command)?;
     let mut client = if live_command {
         Client::connect_live(&profile, engine.as_deref()).await?
     } else {
@@ -794,6 +886,20 @@ async fn run(args: &Args) -> Result<(), Failure> {
         Command::Google {
             command: Google::SyncStop,
         } => client.call("google_sync_stop", scope, json!({})).await?,
+        Command::Google {
+            command: Google::DraftsRefresh,
+        } => {
+            client
+                .call("google_drafts_refresh", scope, json!({}))
+                .await?
+        }
+        Command::Google {
+            command: Google::DraftsStatus,
+        } => {
+            client
+                .call("google_drafts_status", scope, json!({}))
+                .await?
+        }
         Command::Google {
             command:
                 Google::DraftSync { .. }
@@ -1232,6 +1338,20 @@ async fn run(args: &Args) -> Result<(), Failure> {
             }
         },
         Command::Draft { command } => match command {
+            Draft::Sources { .. } | Draft::Source { .. } => {
+                let (method, params) = draft_source
+                    .as_ref()
+                    .expect("Draft source request validated before connection");
+                let reply = client.call(method, scope, params.clone()).await?;
+                if let Draft::Source {
+                    output: Some(output),
+                    ..
+                } = command
+                {
+                    copy_export(&reply, output)?;
+                }
+                reply
+            }
             Draft::List {
                 query,
                 limit,
@@ -1394,17 +1514,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
         Command::Attachment { id, output } => {
             let reply = client.call("attachment", scope, json!({"id":id})).await?;
             if let Some(output) = output {
-                let data = result(reply.clone())?;
-                let source = data["path"].as_str().ok_or_else(|| Failure {
-                    code: "content_unavailable".into(),
-                    message: "attachment is not fully available offline".into(),
-                })?;
-                let mut file = std::fs::OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .open(output)?;
-                io::copy(&mut std::fs::File::open(source)?, &mut file)?;
-                file.sync_all()?;
+                copy_export(&reply, output)?;
             }
             reply
         }
@@ -1524,6 +1634,31 @@ fn emit(args: &Args, reply: &Value) -> Result<(), Failure> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn verified_export_preserves_exact_bytes_and_never_overwrites() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("verified.eml");
+        let output = root.path().join("saved.eml");
+        let bytes: Vec<u8> = (0..=255).cycle().take(4096).collect();
+        std::fs::write(&source, &bytes).unwrap();
+        let reply = json!({"ok":true,"result":{"path":source}});
+        copy_export(&reply, &output).unwrap();
+        assert_eq!(std::fs::read(&output).unwrap(), bytes);
+        std::fs::write(&source, b"new remote version").unwrap();
+        assert!(copy_export(&reply, &output).is_err());
+        assert_eq!(std::fs::read(&output).unwrap(), bytes);
+        let refused = root.path().join("refused.eml");
+        assert!(copy_export(
+            &json!({"ok":false,"error":{"code":"stale_revision","message":"Changed source"}}),
+            &refused
+        )
+        .is_err());
+        assert!(!refused.exists());
+        std::fs::remove_file(&source).unwrap();
+        assert!(copy_export(&reply, &refused).is_err());
+        assert!(!refused.exists());
+    }
 
     #[test]
     fn attachment_request_maps_exact_fields_without_opening_relative_or_deleted_sources() {

@@ -29,6 +29,14 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
         if (!m_googleSendPending.isEmpty() && m_googleSendPending["authored"].toObject() != googleSendAuthorSnapshot())
             cancelPendingGoogleSend("The draft changed before sending. Review it and press Send again.");
     });
+    connect(this, &MailBackend::accountChanged, this, [this] {
+        resetDraftSourcesContext();
+        emit googleDraftInventoryChanged(); emit draftSourcesChanged();
+    });
+    connect(this, &MailBackend::draftChanged, this, [this] {
+        resetDraftSourcesContext(); emit draftSourcesChanged();
+    });
+    connect(this, &MailBackend::googleSyncChanged, this, &MailBackend::googleDraftInventoryChanged);
     m_calendarDate = todayDate(); m_timelineDate = todayDate();
     m_clockTimer.setInterval(30000);
     connect(&m_clockTimer, &QTimer::timeout, this, [this] { emit eventsChanged(); });
@@ -625,6 +633,14 @@ void MailBackend::editDraft(const QString &body) {
 }
 void MailBackend::saveDraft() {
     m_draftTimer.stop();
+    if (draftReadOnly()) {
+        // Preview/open/close may share this continuation with local editors.
+        // Imported source is never turned into an authored save implicitly.
+        finishGoogleSendSave(false);
+        if (m_afterDraftSave) { auto callback = std::move(m_afterDraftSave); m_afterDraftSave = {}; callback(); }
+        if (m_shutdown) finishShutdown();
+        return;
+    }
     // The import advances this exact draft's revision. Keep newer edits local
     // until its receipt, without occupying the cached-query connection.
     if (attachmentImportPending()) {

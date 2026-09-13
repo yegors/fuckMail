@@ -47,6 +47,7 @@ void MailBackend::importDraftAttachment(const QUrl &file, const QString &account
 }
 
 void MailBackend::retryDraftAttachment() {
+    if (draftReadOnly()) return;
     const auto key = attachmentImportKey();
     if (!m_attachmentImportRetry.contains(key) || attachmentImportBusy() || draftBusy() || !m_connected || m_shutdown) return;
     // Do not stat/reopen the path or regenerate the request/revision. Core

@@ -1,0 +1,17 @@
+{
+  "command": [
+    "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\cargo\\bin\\cargo.EXE",
+    "test",
+    "-p",
+    "fm-google",
+    "--locked"
+  ],
+  "scope": "fm-google",
+  "exit_code": 0,
+  "elapsed_seconds": 11.266000000294298,
+  "source_count": 17,
+  "source_changes": [],
+  "status": "passed",
+  "source_sha256": "2b5578608ab0fedc347e00f4bd63af67dec94ac24a75fa8ea66d1e2dda395e38",
+  "log_sha256": "e5e1ecab25013040aa2660cdd211c2b4aec883a254625a369497030784d5c308"
+}

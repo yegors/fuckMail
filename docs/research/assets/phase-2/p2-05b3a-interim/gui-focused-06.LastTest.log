@@ -1,0 +1,25 @@
+Start testing: Sep 13 14:39 Eastern Daylight Time
+----------------------------------------------------------
+10/10 Testing: gui-google-draft-snapshot-controls
+10/10 Test: gui-google-draft-snapshot-controls
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev/gui-google-draft-snapshot-controls-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev/gui
+"gui-google-draft-snapshot-controls" start time: Sep 13 14:39 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+Snapshot geometry graphite default QSize(390, 1500) 1 QSize(390, 1500)
+Snapshot geometry graphite large QSize(390, 1500) 1 QSize(390, 1500)
+Snapshot geometry paper default QSize(390, 1500) 1 QSize(390, 1500)
+Snapshot geometry paper large QSize(390, 1500) 1 QSize(390, 1500)
+Snapshot geometry harbour default QSize(390, 1500) 1 QSize(390, 1500)
+Snapshot geometry harbour large QSize(390, 1500) 1 QSize(390, 1500)
+Google draft snapshot controls passed: real selectable preview and mutation guards, all themes/narrow fonts, cached source revision/account floors, history/export handlers and provider-Pause isolation. Synthetic local IPC; no provider or latency claim.
+<end of output>
+Test time =   1.58 sec
+----------------------------------------------------------
+Test Passed.
+"gui-google-draft-snapshot-controls" end time: Sep 13 14:39 Eastern Daylight Time
+"gui-google-draft-snapshot-controls" time elapsed: 00:00:01
+----------------------------------------------------------
+
+End testing: Sep 13 14:39 Eastern Daylight Time

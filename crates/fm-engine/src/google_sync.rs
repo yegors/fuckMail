@@ -6,6 +6,7 @@ pub(crate) mod labels;
 pub(crate) mod mail;
 pub(crate) mod mail_mutations;
 mod quota;
+pub(crate) mod remote_drafts;
 #[cfg(test)]
 mod runtime_tests;
 pub(crate) mod send;
@@ -32,7 +33,7 @@ use std::{
     },
     time::Duration,
 };
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
 
 #[derive(Clone)]
 enum TokenSource {
@@ -61,6 +62,7 @@ pub(crate) struct SyncContext {
     quota: Arc<quota::QuotaGate>,
     preparation: Arc<Semaphore>,
     calendar_preparation: Arc<Semaphore>,
+    remote_drafts_wake: Arc<Notify>,
 }
 impl SyncContext {
     pub(crate) async fn core_call<T, F>(&self, operation: F) -> Result<T>
@@ -132,6 +134,7 @@ impl SyncContext {
                 fm_google::gmail_api::GmailMethod::MessageRaw
                     | fm_google::gmail_api::GmailMethod::LabelsList
                     | fm_google::gmail_api::GmailMethod::DraftGet
+                    | fm_google::gmail_api::GmailMethod::DraftsList
             )
         {
             return Err(GoogleError::PermissionDenied);
@@ -314,6 +317,7 @@ impl SyncContext {
             quota: quota::QuotaGate::new(SchedulerConfig::new(budget, budget)).unwrap(),
             preparation: Arc::new(Semaphore::new(1)),
             calendar_preparation: Arc::new(Semaphore::new(2)),
+            remote_drafts_wake: Arc::new(Notify::new()),
         }
     }
 }
@@ -542,6 +546,7 @@ impl Runtime {
                 | "google_calendar_resume"
                 | "google_calendar_abandon"
                 | "google_labels_refresh"
+                | "google_drafts_refresh"
                 | "google_draft_sync"
                 | "google_draft_status"
                 | "google_draft_reconcile"
@@ -632,6 +637,34 @@ impl Runtime {
                 }
             })?
             .to_owned();
+        if method == "google_drafts_refresh" {
+            if params.as_object().is_none_or(|object| !object.is_empty()) {
+                return Err(failure(
+                    "invalid_request",
+                    "Draft inventory refresh takes no parameters",
+                ));
+            }
+            let (context, _owner) = self
+                .operation_context(&account, owner_id, owner_cancel.clone())
+                .await?;
+            // This RPC only changes bounded durable metadata. The sole account
+            // worker owns HTTP and keeps running only while a sync owner exists.
+            let scope = remote_drafts::scope(&context);
+            let wake = context.remote_drafts_wake.clone();
+            let reply = context
+                .core_call(move |store| {
+                    if owner_cancel.is_cancelled() {
+                        return Err(failure("cancelled", "Draft inventory refresh stopped"));
+                    }
+                    let reply = store.google_draft_inventory_begin(&scope)?;
+                    // Commit and wake belong together even if the requesting
+                    // socket closes before its short metadata reply is read.
+                    wake.notify_one();
+                    Ok(reply)
+                })
+                .await?;
+            return Ok(reply);
+        }
         if method.starts_with("google_draft_") {
             let writing = matches!(method, "google_draft_sync" | "google_draft_resolve");
             drafts::validate(&params, writing)?;
@@ -975,9 +1008,10 @@ impl Runtime {
             quota,
             preparation: self.preparation.clone(),
             calendar_preparation: self.calendar_preparation.clone(),
+            remote_drafts_wake: Arc::new(Notify::new()),
         };
         let progress = Arc::new(std::sync::Mutex::new(
-            json!({"mail":if has_mail {"starting"} else {"not_granted"},"mail_mutations":if has_mail_write {"starting"} else {"not_granted"},"drafts":if has_mail_write {"starting"} else {"not_granted"},"labels":if has_mail {"starting"} else {"not_granted"},"calendar":if has_calendar {"starting"} else {"not_granted"},"mail_steps":0,"calendar_pages":0}),
+            json!({"mail":if has_mail {"starting"} else {"not_granted"},"mail_mutations":if has_mail_write {"starting"} else {"not_granted"},"drafts":if has_mail_write {"starting"} else {"not_granted"},"remote_drafts":if has_mail {"starting"} else {"not_granted"},"labels":if has_mail {"starting"} else {"not_granted"},"calendar":if has_calendar {"starting"} else {"not_granted"},"mail_steps":0,"calendar_pages":0}),
         ));
         let task_progress = progress.clone();
         let owners = Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::from([(
@@ -995,6 +1029,7 @@ impl Runtime {
             if has_mail {
                 workers.spawn(mail_loop(context.clone(), task_progress.clone()));
                 workers.spawn(labels_loop(context.clone(), task_progress.clone()));
+                workers.spawn(remote_drafts::run(context.clone(), task_progress.clone()));
             }
             if has_mail_write {
                 workers.spawn(mail_mutation_loop(context.clone(), task_progress.clone()));

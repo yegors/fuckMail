@@ -1,0 +1,349 @@
+{
+  "head": "6be77d569408304f99532aaab9eb0af01763813f",
+  "sources": [
+    {
+      "path": "gui\\TodayStrip.qml",
+      "sha256": "7048fd3aefbe3cb01fdfaf21bcb8906e330e4fbbcd6b8d2ee19b53a4a99a1797"
+    },
+    {
+      "path": "gui\\Theme.qml",
+      "sha256": "40a2081782d69fa972d895ff5b4bc59564b5aa26c39b0e7e89cfb56f86ae6e84"
+    },
+    {
+      "path": "gui\\SettingsView.qml",
+      "sha256": "f0806a606bb3c1215dca9dbbd5168fcd4fc938ab936bdc4bc15082381644f6df"
+    },
+    {
+      "path": "gui\\SenderCard.qml",
+      "sha256": "1ea273c87a602216d1ab295859f6b3e19059fa4d82aacc5d399b8796bd4b73eb"
+    },
+    {
+      "path": "gui\\SearchPopup.qml",
+      "sha256": "557453cbd1a04602d157f064486858d79e15271d7947a82551885787c0d914f3"
+    },
+    {
+      "path": "gui\\ReplyDocumentTest.cpp",
+      "sha256": "06495c23640f4e67ea675adef438be686a28c48801bba5070412c80eaaeb8063"
+    },
+    {
+      "path": "gui\\ReplyDocument.h",
+      "sha256": "b8533db623704a0e397f85afa74dd6ee1b21679682e7a6af8a4ebe8132517ee0"
+    },
+    {
+      "path": "gui\\ReplyDocument.cpp",
+      "sha256": "02c5ea491ab2705aacc8f4c5927205c7ea889e36c294af555c18cf584f0757e3"
+    },
+    {
+      "path": "gui\\ReplyComposer.qml",
+      "sha256": "6f91eb5d6ff496d1eb1a298df2611689dd96caf549069e4749c295218faf1427"
+    },
+    {
+      "path": "gui\\RecipientField.qml",
+      "sha256": "a78217962c3e6d64db3aa990b54d3a9cfb18a4e1b0ac35770372185b0eba1843"
+    },
+    {
+      "path": "gui\\README.md",
+      "sha256": "bc54124c3d714df3bd1575dc8066b6914afb8f5ae490b7d47279b04fefd30996"
+    },
+    {
+      "path": "gui\\Phase1Backend.cpp",
+      "sha256": "ce4baf5d162bf1a9c31eb1ae8bac7dda4b7c8338a9cd37ae3f2ab3519f9263bb"
+    },
+    {
+      "path": "gui\\Main.qml",
+      "sha256": "fa21770a181f761c7b72e2d0ca64a96f8f18ab18fb5de76f9713f9df04ef6505"
+    },
+    {
+      "path": "gui\\main.cpp",
+      "sha256": "e57a5b746ac820a1e15df924c231d4c5a906cfb4660d7c2013d84621a1d8a17d"
+    },
+    {
+      "path": "gui\\MailView.qml",
+      "sha256": "a9758010145f7d7d890da7bc53c2bb685aafe94f2cc51212704095b3c0605fbf"
+    },
+    {
+      "path": "gui\\MailFilters.qml",
+      "sha256": "f672fd3c20792c45e1394d716867a4e4812a96a1917eeda4c390b39bc73ade12"
+    },
+    {
+      "path": "gui\\MailBackend.h",
+      "sha256": "1221e52c81c24e8dec32bbeaf5e6c0f5b7dc3aedddb38a93f52608084596bf8d"
+    },
+    {
+      "path": "gui\\MailBackend.cpp",
+      "sha256": "4fd849ae56b1a3f091120f30d0856d09ba6d93dfbdd168d7b7503d39740d7de1"
+    },
+    {
+      "path": "gui\\IpcTrustWindowsTest.cpp",
+      "sha256": "bce7fc482c6924b4e98120ec6dde68e5c308071cc9072d606b7eb3c71e5908b8"
+    },
+    {
+      "path": "gui\\IpcTrustTest.cpp",
+      "sha256": "f042dc53c8f920f1a4bdaf6f48e3028524e23fb4ba17f51a4360954321e42ce4"
+    },
+    {
+      "path": "gui\\IpcTrust.h",
+      "sha256": "0cd854952a13c41109f5145c8d1b395c84d977441c1642ae11cc4f1505d991b1"
+    },
+    {
+      "path": "gui\\IpcTrust.cpp",
+      "sha256": "70a78af92569adf6cc16b51b81b91dd222f96acfe5592e2400c0df4c59f78349"
+    },
+    {
+      "path": "gui\\HatchItem.h",
+      "sha256": "b8b1e98daf84d10b3fca85f2e4e51991a05bb9a998708ffed119ff9150260433"
+    },
+    {
+      "path": "gui\\HatchItem.cpp",
+      "sha256": "739e268f5cbe598157fc70ac45b18593d25eddcb46544e7b3ce1ad4c3e10f626"
+    },
+    {
+      "path": "gui\\GuiSettingsSelfTest.h",
+      "sha256": "92e2313e6b0452e4dd0a70edc6dc77cdf0814d338a2457431f19f8b1fbe9d21d"
+    },
+    {
+      "path": "gui\\GuiSettingsSelfTest.cpp",
+      "sha256": "a41abc62bc05a7e9a51c910f10a1572588a390b45026353a2a693707a0e2bd02"
+    },
+    {
+      "path": "gui\\GuiSelfTest.h",
+      "sha256": "1b71a45ca139a0500f73e7dea5d3239f2d69f33c2cf565c0ffb6e5671f39fe9e"
+    },
+    {
+      "path": "gui\\GuiSelfTest.cpp",
+      "sha256": "22d4743a8052c57e984759719df1f3d01019e8b6fdadcbe9e8b1aef7958e8012"
+    },
+    {
+      "path": "gui\\GuiSearchBenchmark.h",
+      "sha256": "16df9a920ea223112bb894f5db337d910f62e4639e070809efc8a94ce55ba6db"
+    },
+    {
+      "path": "gui\\GuiSearchBenchmark.cpp",
+      "sha256": "34bdc6a8c1e08f03242d9c334c96ca4cb61072f777fdec67ce58c6392ac05dff"
+    },
+    {
+      "path": "gui\\GuiResizeBenchmark.h",
+      "sha256": "c171ab0da1cf813e56215a8e0983c9cec430077f9df5686eb7c9efe37047bbe0"
+    },
+    {
+      "path": "gui\\GuiResizeBenchmark.cpp",
+      "sha256": "b2b17bd589a6a261145c9ca854b3e66e03e596f74d07022d80ea264ceb9496f6"
+    },
+    {
+      "path": "gui\\GuiPaintObserver.h",
+      "sha256": "12689c068b529c3fa011ffe23f946e4943bd79ffdec2858fe4fa6a11c32ba807"
+    },
+    {
+      "path": "gui\\GuiMailNavigationSelfTest.h",
+      "sha256": "c93aaf5e89152078639bd1ee2a487e39a3a2a41e67cd88773b0a2fa638ee378d"
+    },
+    {
+      "path": "gui\\GuiMailNavigationSelfTest.cpp",
+      "sha256": "38bfad27431cd1ab378be0488697d5531af55cb8d180abbfd9f8b2593bb81573"
+    },
+    {
+      "path": "gui\\GuiInteractionBenchmark.h",
+      "sha256": "80d6535b72f7ac68d595526351e72c47ce514619ee119fcf7c727be514f2fa42"
+    },
+    {
+      "path": "gui\\GuiInteractionBenchmark.cpp",
+      "sha256": "e567c5a30b7034087c999d2ef85263294eaa754093588066f917402894a51454"
+    },
+    {
+      "path": "gui\\GuiGoogleDraftSnapshotSelfTest.h",
+      "sha256": "297af24adf7e9ca1f0a676189270bb6be8eae33111ccd5dfdfa59361554bb5d4"
+    },
+    {
+      "path": "gui\\GuiGoogleDraftSnapshotSelfTest.cpp",
+      "sha256": "00922c43eea55e3c2843c10e85bdf5478f72282fd57f3281cc954408c54379d9"
+    },
+    {
+      "path": "gui\\GuiCompositionSelfTest.h",
+      "sha256": "c2efce76753a01bb735fb527164e76dcbc0c8ab8f74ee78ab98d15df3d4442a3"
+    },
+    {
+      "path": "gui\\GuiCompositionSelfTest.cpp",
+      "sha256": "87af11e6c85c341be138c1c8a3a25458d696b04a12945e4ccf70aa85e207b5a2"
+    },
+    {
+      "path": "gui\\GuiCalendarSelfTest.h",
+      "sha256": "037dc1e3b1f77ac54c25a083cda9cd8e390d63cfdf241bce47738766027f3666"
+    },
+    {
+      "path": "gui\\GuiCalendarSelfTest.cpp",
+      "sha256": "cd8bdeec97dc69584ece0899b6e5f72b2a3835474b66f4b3e46d0ceebcb183df"
+    },
+    {
+      "path": "gui\\GoogleSendControlsTest.cpp",
+      "sha256": "5b94e9e279816f056c860e7bf5e609a6e3bd16df890a9d4543a9507827a717fc"
+    },
+    {
+      "path": "gui\\GoogleSendBackend.cpp",
+      "sha256": "77fd53c8f12ee05196bd0dd6e9725ea17d6f5ce5c8b5607eef6d9c050b6a98cd"
+    },
+    {
+      "path": "gui\\GoogleOperationTestFixture.h",
+      "sha256": "7f54ce6294323db9743395e63ad6b5d04e972d2547ffdd15dd1cd113323f05ab"
+    },
+    {
+      "path": "gui\\GoogleOperationTest.cpp",
+      "sha256": "73bbb6e74fe91e7f767691bc9bd4493a953b598aaa8bcfc3183013881d2b7798"
+    },
+    {
+      "path": "gui\\GoogleOperation.h",
+      "sha256": "c2298dd41dd24fb4e3bb620a58b7da26a9ce30cc8b2a33965ced53b6a739013f"
+    },
+    {
+      "path": "gui\\GoogleOperation.cpp",
+      "sha256": "56c89b13c982eb0aecd9fc2d4da0e7bb3ae7b687545673db3a7a01e7f29c16f4"
+    },
+    {
+      "path": "gui\\GoogleLabelSetup.qml",
+      "sha256": "53be94ac8a790052581d789d55a906445f05fed126db42351e5894cc08d445b3"
+    },
+    {
+      "path": "gui\\GoogleLabels.cpp",
+      "sha256": "56c69973f74f69dc89013643f133ee9755e6140ecfd9fc27d4ece484271e82c0"
+    },
+    {
+      "path": "gui\\GoogleDraftSnapshotControlsTest.cpp",
+      "sha256": "d1c8a1b9547dca6959837bb35b66eea9bf6d03b86e700b083a575840c646d4d4"
+    },
+    {
+      "path": "gui\\GoogleDraftSnapshotBackend.cpp",
+      "sha256": "1b70eee4af582a79ec521fa1437d46caa3c9390a927057605470fe5170df367c"
+    },
+    {
+      "path": "gui\\GoogleDraftControlsTest.cpp",
+      "sha256": "2a01807866a680679fa0142dd50ca11645d12c545756c693e952bc176373a760"
+    },
+    {
+      "path": "gui\\GoogleDraftBackend.cpp",
+      "sha256": "68911cff237610a1aec926770d411ed2216db1a4791917308ee7f2a81e4964df"
+    },
+    {
+      "path": "gui\\GoogleBackend.cpp",
+      "sha256": "bb5a5cdb393f1d3781e37107a3325e680a9a1ac512604e043bfe0c6c37d9c613"
+    },
+    {
+      "path": "gui\\ConversationListModel.cpp",
+      "sha256": "08178b3a5133bf77d6084cdb31a2a564f56b482d20d4621f820e8aacaf012891"
+    },
+    {
+      "path": "gui\\CompositionBackend.cpp",
+      "sha256": "9875943e2d3fe3dce93b09fc931aad88483648920b270f00bbf18e0fc2c6f12b"
+    },
+    {
+      "path": "gui\\ComposerProbe.cpp",
+      "sha256": "3b584d1da7985ebfe7457608cb9dab05225d11aad99ccc1ec813030ca512a495"
+    },
+    {
+      "path": "gui\\CMakeLists.txt",
+      "sha256": "7074f4aa5c1ae24327fc2f8ded6ab473381406301fe3906225514f8993f317ed"
+    },
+    {
+      "path": "gui\\CalendarView.qml",
+      "sha256": "99d0b521435295305d2e25a9f8e13186318279ba2166e05ee8c471e9cc29f3b7"
+    },
+    {
+      "path": "gui\\CalendarOperations.qml",
+      "sha256": "b6dd7f30ed490b18c790a05f590c5e2e6068878d180d60f8ff58c0ce18c4e072"
+    },
+    {
+      "path": "gui\\CalendarOperations.cpp",
+      "sha256": "040747aaa6598e035a73e3c00229f5fe5410d0913517f27884cb48ed6aea6222"
+    },
+    {
+      "path": "gui\\CalendarLayoutTest.cpp",
+      "sha256": "79c3c585d64242f329b94da295476818bc632b4063a2118c0a7cbf6312578aff"
+    },
+    {
+      "path": "gui\\CalendarLayout.h",
+      "sha256": "65a0e26bdc628b2ffcd7fd0214ea58e3fb74dca029027e5a892cd0f1def01ce0"
+    },
+    {
+      "path": "gui\\CalendarLayout.cpp",
+      "sha256": "4cf58082f3ecd62c5435d4121cd755d42b9b0866d70f2ada18f8e59b784547ff"
+    },
+    {
+      "path": "gui\\CalendarEventList.qml",
+      "sha256": "f29c5367b0fc60ae1aacb585a7350121fa99d5559df02bb34c39046554c6a9cc"
+    },
+    {
+      "path": "gui\\CalendarControlsTest.cpp",
+      "sha256": "7bc01dc4438539600a59490e6e5cc05d9d1c7cd6c8e3148cbe4671183e91913a"
+    },
+    {
+      "path": "gui\\FmButton.qml",
+      "sha256": "ef91b8213bd0e6574705d71547eab7828d29f4f726fcbcc43020a0bfa4be2682"
+    },
+    {
+      "path": "gui\\EventEditor.qml",
+      "sha256": "e14dfa03511f43addd78b39678a12a0c640cebad6a1d5c3026fe7deb3b108990"
+    },
+    {
+      "path": "gui\\EventDetails.qml",
+      "sha256": "63133319e1846e1a8e1d5941a1faa84a708ee772d48d5cc900d8bae943e8c825"
+    },
+    {
+      "path": "gui\\DraftAttachmentBackend.cpp",
+      "sha256": "7537af4aa5149d8250e6d0ceab17b04080237d1274727adedb321d10bce63b16"
+    },
+    {
+      "path": "gui\\ConversationListModelTest.cpp",
+      "sha256": "7a252061c82aae80992f853c15e9ba2eaa043a5b5089c096b1b2a70fa242ec91"
+    },
+    {
+      "path": "gui\\ConversationListModel.h",
+      "sha256": "b003c60d54d3b73bb759c32bd82a5fbcbd2930e61ba00f5880b5c2e460eacef5"
+    },
+    {
+      "path": "gui\\FmSegmented.qml",
+      "sha256": "a4284642383c07bc37f01c01bdd2347f618579e747c2eb36eacbb45c7b57eb1f"
+    },
+    {
+      "path": "gui\\FmIcon.qml",
+      "sha256": "d29a159d764bfd060d08f21482fd4195f3ed90463858adf74ec7a0c38670ebd5"
+    },
+    {
+      "path": "gui\\FmComboBox.qml",
+      "sha256": "8211a0cfe55ca336543b00428623a23550bb5df578972fed335c96f434dcf674"
+    },
+    {
+      "path": "gui\\FmTextField.qml",
+      "sha256": "71c1a522229acea29c8a0631f6682c14b571523bf5e89d0af648b3827cbaab56"
+    },
+    {
+      "path": "gui\\FmToolTip.qml",
+      "sha256": "b6ab0965b5a92958062915c0c71c123af0fe6e679afa33c7b234ab4a3fedb7cb"
+    },
+    {
+      "path": "gui\\fonts\\README.md",
+      "sha256": "e31fe6bcdf6fabeb4435c2fa2b52115c58854a5a6a8657565c060fe4c98c682b"
+    },
+    {
+      "path": "gui\\fonts\\LICENSE-Geist.txt",
+      "sha256": "930853ee1daa68554d9e35c8a9175affb74f699fad9a5da6ee5ebe76379d9137"
+    },
+    {
+      "path": "gui\\fonts\\Geist-SemiBold.ttf",
+      "sha256": "b9f52322d6d20a7ff1e7fe1310ff12ec851aebb83d24f8b4f1d4149298f489b2"
+    },
+    {
+      "path": "gui\\fonts\\Geist-Regular.ttf",
+      "sha256": "85a1c6b18a6b0a06dfe9fd4f6d6a5d4979f74ec861eaef4bc7868b5492b8a117"
+    },
+    {
+      "path": "gui\\fonts\\Geist-Medium.ttf",
+      "sha256": "3a3b36f0d0b981f4857f7f00eeef4a5ee123605575d362ab31ee7c19e3d11f2f"
+    },
+    {
+      "path": "CMakeLists.txt",
+      "sha256": "4d5b988b189547a6283e0ecdce7ec20c736a4465e5aab697811fc152a25ea2b0"
+    },
+    {
+      "path": "scripts/toolchain.json",
+      "sha256": "66d629bad28b902e7a3863205c1b127a8bd015a9fda7f85cff846984df6ae02d"
+    }
+  ]
+}

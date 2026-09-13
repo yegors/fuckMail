@@ -1,0 +1,39 @@
+   Compiling reqwest v0.12.28
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+   Compiling fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.89s
+     Running unittests src\lib.rs (target\debug\deps\fm_core-fbf5e23cd42bc787.exe)
+
+running 10 tests
+test google_draft_inventory::tests::capable_account_cannot_mutate_upload_or_send_read_only_snapshot ... ok
+test google_draft_inventory::tests::export_validates_ids_version_membership_cancellation_and_corruption ... ok
+test google_draft_inventory::tests::exact_raw_routing_cid_parts_and_account_isolation_survive_restart ... ok
+test google_draft_inventory::tests::schema14_upgrade_preserves_live_draft_journal_and_refuses_future_schema ... ok
+test google_draft_inventory::tests::unknown_create_similarity_is_evidence_only_and_late_exact_ack_links_without_retargeting ... ok
+test google_draft_inventory::tests::publication_rechecks_new_exact_owner_and_preserves_pending_and_accepted_send ... ok
+test google_draft_inventory::tests::page_checkpoint_cancel_generation_and_expiry_are_bounded_and_restartable ... ok
+test google_draft_inventory::tests::latest_preview_history_empty_scan_and_missing_observation_are_distinct ... ok
+test google_draft_inventory::tests::cached_page_reads_only_requested_routing_and_caps_enriched_payload ... ok
+test google_draft_inventory::tests::truncation_issues_and_large_read_cap_preserve_original_raw ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 201 filtered out; finished in 3.25s
+
+     Running tests\coverage.rs (target\debug\deps\coverage-d45801a9ede6c797.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests\mutations.rs (target\debug\deps\mutations-02a89e4e68fb19e7.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests\search.rs (target\debug\deps\search-27805b72a5496663.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
