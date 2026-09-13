@@ -58,7 +58,7 @@ Popup {
         startTime.text = editEvent.start && !editEvent.all_day ? editEvent.start.slice(11, 16) : "09:00"
         const duration = backend.preferences.default_event_duration_minutes || 60
         endTime.text = editEvent.end && !editEvent.all_day ? editEvent.end.slice(11, 16) : (duration === 60 ? "10:00" : "09:" + duration)
-        zoneField.text = editEvent.time_zone || "America/Toronto"
+        zoneField.text = editEvent.time_zone || backend.preferences.calendar_display_time_zone || ""
         locationField.text = editEvent.location || ""
         conferenceField.text = editEvent.conference_url || ""
         notesField.text = editEvent.description || ""

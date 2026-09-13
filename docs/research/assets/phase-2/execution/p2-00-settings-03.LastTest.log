@@ -1,0 +1,148 @@
+Start testing: Sep 12 21:42 Eastern Daylight Time
+----------------------------------------------------------
+5/10 Testing: gui-integration
+5/10 Test: gui-integration
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/fuckmail-gui.exe" "--self-test"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+"gui-integration" start time: Sep 12 21:42 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+GUI engine launch attempt 1
+GUI self-test stage 0
+GUI engine launch attempt 2
+GUI self-test stage 20
+GUI self-test stage 21
+GUI self-test stage 1
+GUI self-test stage 2
+GUI self-test stage 27
+GUI self-test stage 22
+GUI self-test stage 23
+GUI self-test stage 24
+GUI self-test stage 25
+GUI self-test stage 26
+GUI self-test stage 3
+GUI self-test stage 4
+GUI self-test stage 5
+GUI self-test stage 6
+GUI self-test stage 7
+GUI self-test stage 8
+GUI self-test stage 9
+GUI self-test stage 30
+GUI self-test stage 31
+GUI self-test stage 32
+GUI self-test stage 33
+GUI self-test stage 34
+GUI self-test stage 35
+GUI self-test stage 36
+GUI self-test stage 37
+GUI self-test stage 38
+GUI self-test stage 39
+GUI self-test stage 40
+GUI self-test stage 41
+GUI self-test stage 42
+GUI self-test stage 48
+GUI self-test stage 90
+GUI self-test stage 91
+GUI self-test stage 92
+GUI self-test stage 93
+GUI self-test stage 49
+GUI self-test stage 94
+Native Sent/local-capture/Inspect passed: original conversation, operation identity, MIME bytes and non-delivery status verified by CLI.
+GUI self-test stage 95
+GUI self-test stage 96
+GUI self-test stage 97
+GUI self-test stage 98
+GUI self-test stage 99
+GUI self-test stage 100
+GUI self-test stage 101
+GUI self-test stage 102
+GUI self-test stage 103
+GUI self-test stage 104
+GUI self-test stage 105
+GUI self-test stage 106
+GUI self-test stage 107
+GUI self-test stage 108
+GUI self-test stage 109
+GUI self-test stage 110
+GUI self-test stage 111
+GUI self-test stage 112
+Native Discard confirmation passed: opening/Cancel preserved the exact draft; confirmation cleared only its authored fields, preserving source messages, another draft and capture history.
+GUI self-test stage 50
+GUI self-test stage 51
+GUI self-test stage 52
+GUI self-test stage 53
+GUI self-test stage 54
+GUI self-test stage 55
+GUI self-test stage 56
+GUI self-test stage 57
+GUI self-test stage 58
+GUI self-test stage 59
+GUI self-test stage 70
+GUI self-test stage 71
+GUI self-test stage 72
+GUI self-test stage 73
+GUI self-test stage 74
+GUI engine launch attempt 1
+GUI self-test stage 75
+GUI self-test stage 76
+GUI self-test stage 77
+GUI self-test stage 78
+GUI self-test stage 79
+GUI self-test stage 80
+Native Settings stage 0
+Native Settings stage 1
+Native Settings stage 2
+Settings programmatic viewport setup: list= QVariant(double, 240) reader= QVariant(double, 160) editorFocus= true active= "replyComposer" stored list/reader= QVariant(double, 240) QVariant(double, 160)
+Native Settings stage 3
+Native Settings stage 4
+Native Settings stage 5
+Native Settings stage 6
+Native Settings stage 7
+Native Settings stage 8
+Native Settings stage 9
+Native Settings stage 10
+Native Settings stage 11
+Native Settings stage 12
+Native Settings stage 13
+Native Settings stage 14
+Native Settings stage 15
+Native Settings stage 16
+Native Settings stage 17
+Native Settings stage 18
+Native Settings stage 19
+Native Settings stage 20
+Native Settings stage 21
+Native Settings stage 22
+Native Settings stage 30
+Native Settings stage 31
+Native Settings stage 32
+Native Settings stage 33
+Native Settings stage 34
+Native Settings stage 35
+Native Settings stage 36
+Native Settings stage 37
+Native Settings stage 38
+Native Settings stage 39
+Native Settings stage 23
+Native Settings stage 24
+Native Settings passed: all three palettes and text sizes, saved startup/placement/duration, validation retention, account metadata, unchanged authored draft, independent calendar preferences and Mail viewport/focus restoration (programmatic viewport setup; physical wheel input unverified).
+GUI self-test stage 81
+Native mail search stage 0 case 0
+Native mail search stage 80 case 0
+Native mail search stage 81 case 0
+Native mail search stage 82 case 0
+Native request ordering passed: real explicit queries preceded unsent automatic reads, retained manual-read/write barriers and delivered polling after four bypasses; stored preferences unchanged.
+Native mail search stage 90 case 0
+Native mail search stage 91 case 0
+Deferred first candidate "windscribe-thread-085" "{\"ancestors\":[{\"clip\":false,\"control_height\":44,\"control_width\":720,\"enabled\":true,\"height\":44,\"implicit_height\":36,\"implicit_width\":1029,\"name\":\"conversationRow_windscribe-thread-085\",\"type\":\"ItemDelegate_QMLTYPE_48\",\"visible\":true,\"width\":720,\"x\":0,\"y\":467},{\"clip\":false,\"control_height\":44,\"control_width\":720,\"enabled\":true,\"height\":44,\"implicit_height\":0,\"implicit_width\":0,\"name\":\"\",\"type\":\"QQuickItem_QML_73\",\"visible\":true,\"width\":720,\"x\":0,\"y\":467},{\"clip\":false,\"control_height\":1030,\"control_width\":720,\"enabled\":true,\"height\":1030,\"implicit_height\":0,\"implicit_width\":0,\"name\":\"\",\"type\":\"QQuickItem\",\"visible\":true,\"width\":720,\"x\":0,\"y\":301},{\"clip\":true,\"contentHeight\":1030,\"contentWidth\":-1,\"contentX\":0,\"contentY\":0,\"control_height\":599,\"control_width\":720,\"enabled\":true,\"height\":599,\"implicit_height\":0,\"implicit_width\":0,\"name\":\"conversationList\",\"originX\":0,\"originY\":0,\"type\":\"QQuickListView\",\"visible\":true,\"width\":720,\"x\":0,\"y\":301},{\"clip\":false,\"control_height\":720,\"control_width\":720,\"enabled\":true,\"height\":720,\"implicit_height\":121,\"implicit_width\":419,\"name\":\"\",\"type\":\"QQuickColumnLayout\",\"visible\":true,\"width\":720,\"x\":0,\"y\":180},{\"clip\":false,\"control_height\":720,\"control_width\":720,\"enabled\":true,\"height\":720,\"implicit_height\":0,\"implicit_width\":0,\"name\":\"\",\"type\":\"QQuickItem\",\"visible\":true,\"width\":720,\"x\":0,\"y\":180},{\"clip\":false,\"control_height\":720,\"control_width\":1440,\"enabled\":true,\"height\":720,\"implicit_height\":0,\"implicit_width\":0,\"name\":\"SplitView\",\"type\":\"QQuickContentItem\",\"visible\":true,\"width\":1440,\"x\":0,\"y\":180},{\"clip\":false,\"contentHeight\":0,\"contentWidth\":0,\"control_height\":720,\"control_width\":1440,\"enabled\":true,\"height\":720,\"implicit_height\":0,\"implicit_width\":0,\"name\":\"\",\"type\":\"SplitView_QMLTYPE_61\",\"visible\":true,\"width\":1440,\"x\":0,\"y\":180}],\"found\":true,\"fully_visible\":true,\"input_viewport_visible\":true,\"text_length\":0,\"window_height\":900,\"window_width\":1440}"
+Native mail search stage 92 case 0
+GUI self-test failed at stage 81 : The source-verified deferred-click candidate changed geometry before input: {"ancestors":[{"clip":false,"control_height":44,"control_width":720,"enabled":true,"height":44,"implicit_height":36,"implicit_width":1029,"name":"conversationRow_windscribe-thread-085","type":"ItemDelegate_QMLTYPE_48","visible":true,"width":720,"x":0,"y":227},{"clip":false,"control_height":44,"control_width":720,"enabled":true,"height":44,"implicit_height":0,"implicit_width":0,"name":"","type":"QQuickItem_QML_73","visible":true,"width":720,"x":0,"y":227},{"clip":false,"control_height":962,"control_width":720,"enabled":true,"height":962,"implicit_height":0,"implicit_width":0,"name":"","type":"QQuickItem","visible":true,"width":720,"x":0,"y":61},{"clip":true,"contentHeight":962,"contentWidth":-1,"contentX":0,"contentY":240,"control_height":599,"control_width":720,"enabled":true,"height":599,"implicit_height":0,"implicit_width":0,"name":"conversationList","originX":0,"originY":0,"type":"QQuickListView","visible":true,"width":720,"x":0,"y":301},{"clip":false,"control_height":720,"control_width":720,"enabled":true,"height":720,"implicit_height":121,"implicit_width":419,"name":"","type":"QQuickColumnLayout","visible":true,"width":720,"x":0,"y":180},{"clip":false,"control_height":720,"control_width":720,"enabled":true,"height":720,"implicit_height":0,"implicit_width":0,"name":"","type":"QQuickItem","visible":true,"width":720,"x":0,"y":180},{"clip":false,"control_height":720,"control_width":1440,"enabled":true,"height":720,"implicit_height":0,"implicit_width":0,"name":"SplitView","type":"QQuickContentItem","visible":true,"width":1440,"x":0,"y":180},{"clip":false,"contentHeight":0,"contentWidth":0,"control_height":720,"control_width":1440,"enabled":true,"height":720,"implicit_height":0,"implicit_width":0,"name":"","type":"SplitView_QMLTYPE_61","visible":true,"width":1440,"x":0,"y":180}],"found":true,"fully_visible":false,"input_viewport_visible":false,"text_length":0,"window_height":900,"window_width":1440}
+<end of output>
+Test time =  41.91 sec
+----------------------------------------------------------
+Test Failed.
+"gui-integration" end time: Sep 12 21:42 Eastern Daylight Time
+"gui-integration" time elapsed: 00:00:41
+----------------------------------------------------------
+
+End testing: Sep 12 21:42 Eastern Daylight Time

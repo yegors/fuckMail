@@ -267,8 +267,16 @@ def verify_package(preset, stage):
             if not qt_lines or any(str(relocated) not in line for line in qt_lines):
                 raise RuntimeError("A Qt framework loaded from outside the relocated package")
         verify_engine_stopped(gui_profile)
+        live_profile = scratch / "empty-live-profile"
+        live = json.loads(run(cli, "--profile", live_profile, "--json", "profile-init",
+                              env=env, cwd=relocated, capture=True, timeout=45))
+        if not live.get("ok") or live.get("result", {}).get("profile_kind") != "live" or live["result"].get("fixture_revision") != 0:
+            raise RuntimeError("Packaged CLI did not create an empty live profile")
+        verify_engine_stopped(live_profile)
+        run(gui, "--self-test-live-empty", "--profile", live_profile, env=env, cwd=relocated, timeout=45)
+        verify_engine_stopped(live_profile)
         run(gui, "--self-test", env=env, cwd=relocated, timeout=180)
-        print("Relocated package passed: SDK-free GUI smoke/self-test, fresh-terminal CLI help/query, final engine shutdown", flush=True)
+        print("Relocated package passed: SDK-free GUI smoke/self-test, paired empty live profile, fresh-terminal CLI help/query, final engine shutdown", flush=True)
 
 
 def package(preset):

@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub mod edits;
+pub mod google_api;
 pub mod sync;
 pub use edits::*;
 pub use sync::*;
@@ -99,6 +100,9 @@ pub struct Event {
     pub organizer: Option<String>,
     pub attendees: Vec<Value>,
     pub private: bool,
+    /// None on an unresolved instance; resolved only against its retained master.
+    /// This context never changes the original provider source.
+    pub series_private: Option<bool>,
     pub series_id: Option<String>,
     pub original_start: Option<EventTime>,
     pub start: Option<EventTime>,
@@ -113,8 +117,45 @@ pub enum Access {
     None,
     FreeBusy,
     Reader,
+    WriterWithoutPrivateAccess,
     Writer,
     Owner,
+}
+impl Access {
+    /// Resolve source privacy before exposing fields or planning a write. An
+    /// instance without its master cannot establish public visibility.
+    pub fn for_event(self, event: &Event) -> Self {
+        if matches!(self, Self::Reader | Self::WriterWithoutPrivateAccess)
+            && (event.private || (event.series_id.is_some() && event.series_private != Some(false)))
+        {
+            Self::FreeBusy
+        } else if self == Self::WriterWithoutPrivateAccess {
+            Self::Writer
+        } else {
+            self
+        }
+    }
+}
+impl Event {
+    /// Bind an instance to its current same-scope master before a direct edit or
+    /// RSVP. A public-looking exception cannot override private master access.
+    pub fn with_recurring_master(&self, master: &Event) -> Result<Self> {
+        if self.key.account != master.key.account
+            || self.key.calendar != master.key.calendar
+            || self.series_id.as_deref() != Some(master.key.event.as_str())
+            || master.series_id.is_some()
+            || (!master.cancelled && master.recurrence.is_empty())
+        {
+            return Err(error(
+                "scope_mismatch",
+                "Instance does not belong to this recurring master",
+            ));
+        }
+        let mut resolved = self.clone();
+        resolved.series_private = Some(master.private);
+        resolved.cancelled |= master.cancelled;
+        Ok(resolved)
+    }
 }
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Occurrence {
@@ -316,6 +357,7 @@ pub fn normalize(
         organizer: source["organizer"]["email"].as_str().map(str::to_owned),
         attendees: source["attendees"].as_array().cloned().unwrap_or_default(),
         private: source["visibility"] == "private",
+        series_private: None,
         conference_url,
         series_id,
         original_start,
@@ -336,7 +378,8 @@ fn project(
     if access == Access::None {
         return None;
     }
-    let busy = access == Access::FreeBusy || (event.private && access == Access::Reader);
+    let access = access.for_event(event);
+    let busy = access == Access::FreeBusy;
     Some(Occurrence {
         key,
         start,
@@ -372,7 +415,9 @@ pub fn expand(
         return Ok(vec![]);
     }
     // An exception cannot restore fields hidden by the recurring master's privacy.
-    let access = if event.private && access == Access::Reader {
+    // Keep limited-writer identity for public masters: an individual exception
+    // can still be private and must not receive full writer access.
+    let access = if access.for_event(event) == Access::FreeBusy {
         Access::FreeBusy
     } else {
         access
@@ -530,7 +575,12 @@ pub fn expand(
             .unwrap_or_else(|| candidate.identity());
         seen.insert(original.clone());
         if let Some(exception) = overrides.get(&original) {
-            append_exception(&mut output, exception, window, access)?;
+            append_exception(
+                &mut output,
+                &exception.with_recurring_master(event)?,
+                window,
+                access,
+            )?;
             continue;
         }
         let occurrence_end = match (start, end, &candidate) {
@@ -580,7 +630,12 @@ pub fn expand(
     // A moved exception can enter this window from an original start outside it.
     for (original, exception) in overrides {
         if !seen.contains(&original) {
-            append_exception(&mut output, exception, window, access)?;
+            append_exception(
+                &mut output,
+                &exception.with_recurring_master(event)?,
+                window,
+                access,
+            )?;
         }
     }
     output.sort_by_key(|occurrence| occurrence.start.identity());
@@ -677,9 +732,15 @@ pub fn project_google_events_in_window(
         .collect::<Result<Vec<_>>>()?;
     let masters = events
         .iter()
-        .filter(|event| !event.recurrence.is_empty())
+        .filter(|event| event.series_id.is_none())
         .map(|event| event.key.event.as_str())
         .collect::<BTreeSet<_>>();
+    let mut exceptions: BTreeMap<&str, Vec<Event>> = BTreeMap::new();
+    for event in &events {
+        if let Some(series) = event.series_id.as_deref() {
+            exceptions.entry(series).or_default().push(event.clone());
+        }
+    }
     let mut seen = BTreeSet::new();
     let mut output = Vec::new();
     for event in &events {
@@ -696,61 +757,90 @@ pub fn project_google_events_in_window(
         {
             continue;
         }
-        let exceptions = events
-            .iter()
-            .filter(|instance| instance.series_id.as_deref() == Some(&event.key.event))
-            .cloned()
-            .collect::<Vec<_>>();
-        for occurrence in expand(event, &exceptions, window, access)? {
-            let (start, end, all_day, time_zone) = match (&occurrence.start, &occurrence.end) {
-                (EventTime::Date { date: start }, EventTime::Date { date: end }) => (
-                    start.to_string(),
-                    end.to_string(),
-                    true,
-                    calendar_zone.to_owned(),
-                ),
-                (
-                    EventTime::Zoned {
-                        instant: start,
-                        time_zone,
-                    },
-                    EventTime::Zoned { instant: end, .. },
-                ) => (
-                    start.to_rfc3339(),
-                    end.to_rfc3339(),
-                    false,
-                    time_zone.clone(),
-                ),
-                _ => return Err(error("invalid_time", "Mixed projected event types")),
-            };
-            let mut row = json!({
-                "id":serde_json::to_string(&occurrence.key).map_err(|_| error("invalid_identity", "Cannot encode occurrence identity"))?,
-                "occurrence_key":occurrence.key,
-                "calendar_id":calendar,"title":occurrence.title,"start":start,"end":end,
-                "time_zone":time_zone,"all_day":all_day,"read_only":occurrence.read_only,"busy_only":occurrence.busy_only
-            });
-            if let Some(value) = occurrence.description {
-                row["description"] = value.into();
-            }
-            if let Some(value) = occurrence.location {
-                row["location"] = value.into();
-            }
-            if let Some(value) = occurrence.conference_url {
-                row["conference_url"] = value.into();
-            }
-            if let Some(value) = occurrence.organizer {
-                row["organizer"] = value.into();
-            }
-            if let Some(value) = occurrence.attendees {
-                row["attendees"] = value.into();
-            }
-            output.push(row);
-            if output.len() > MAX_OCCURRENCES as usize {
-                return Err(error(
-                    "limit_exceeded",
-                    "Projected calendar contains too many occurrences",
-                ));
-            }
+        let instances = exceptions
+            .get(event.key.event.as_str())
+            .map_or(&[][..], Vec::as_slice);
+        output.extend(project_event_in_window(
+            event,
+            instances,
+            calendar_zone,
+            window,
+            access,
+        )?);
+        if output.len() > MAX_OCCURRENCES as usize {
+            return Err(error(
+                "limit_exceeded",
+                "Projected calendar contains too many occurrences",
+            ));
+        }
+    }
+    sort_projected_events(&mut output, window)?;
+    Ok(output)
+}
+
+/// Project one already normalized candidate and its bounded, same-scope
+/// instances. Core can isolate a malformed series without rescanning all source.
+pub fn project_event_in_window(
+    event: &Event,
+    exceptions: &[Event],
+    calendar_zone: &str,
+    window: Window,
+    access: Access,
+) -> Result<Vec<Value>> {
+    let _: Tz = calendar_zone
+        .parse()
+        .map_err(|_| error("unsupported_zone", "Invalid calendar zone"))?;
+    let calendar = &event.key.calendar;
+    let mut output = Vec::new();
+    for occurrence in expand(event, exceptions, window, access)? {
+        let (start, end, all_day, time_zone) = match (&occurrence.start, &occurrence.end) {
+            (EventTime::Date { date: start }, EventTime::Date { date: end }) => (
+                start.to_string(),
+                end.to_string(),
+                true,
+                calendar_zone.to_owned(),
+            ),
+            (
+                EventTime::Zoned {
+                    instant: start,
+                    time_zone,
+                },
+                EventTime::Zoned { instant: end, .. },
+            ) => (
+                start.to_rfc3339(),
+                end.to_rfc3339(),
+                false,
+                time_zone.clone(),
+            ),
+            _ => return Err(error("invalid_time", "Mixed projected event types")),
+        };
+        let mut row = json!({
+            "id":serde_json::to_string(&occurrence.key).map_err(|_| error("invalid_identity", "Cannot encode occurrence identity"))?,
+            "occurrence_key":occurrence.key,
+            "calendar_id":calendar,"title":occurrence.title,"start":start,"end":end,
+            "time_zone":time_zone,"all_day":all_day,"read_only":occurrence.read_only,"busy_only":occurrence.busy_only
+        });
+        if let Some(value) = occurrence.description {
+            row["description"] = value.into();
+        }
+        if let Some(value) = occurrence.location {
+            row["location"] = value.into();
+        }
+        if let Some(value) = occurrence.conference_url {
+            row["conference_url"] = value.into();
+        }
+        if let Some(value) = occurrence.organizer {
+            row["organizer"] = value.into();
+        }
+        if let Some(value) = occurrence.attendees {
+            row["attendees"] = value.into();
+        }
+        output.push(row);
+        if output.len() > MAX_OCCURRENCES as usize {
+            return Err(error(
+                "limit_exceeded",
+                "Projected calendar contains too many occurrences",
+            ));
         }
     }
     sort_projected_events(&mut output, window)?;

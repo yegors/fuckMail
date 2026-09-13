@@ -1,6 +1,6 @@
-# Synthetic desktop fixture — revision 2 (Phase 1)
+# Synthetic desktop fixture — revision 3
 
-This is a disposable, deterministic local development profile, never real mail. The Rust generator in `crates/fm-core/src/fixture.rs` is its source. Opening a new empty profile seeds it transactionally. Opening an existing profile never resets authored drafts or actions. Provider IDs intentionally collide across accounts; local identities and all commands include account scope.
+This is a disposable, deterministic local development profile, never real mail. The Rust generator in `crates/fm-core/src/fixture.rs` is its source. Opening a new ordinary profile seeds it transactionally. Explicit Phase 2 live-profile initialization uses fixture revision 0 and seeds nothing; it cannot convert a demo profile. Schema 8 preserves historical synthetic revisions 1/2/3. Opening an existing profile never resets authored drafts or actions. Provider IDs intentionally collide across accounts; local identities and all commands include account scope.
 
 Accounts: `windscribe` (synthetic Google Workspace), `personal` and `sideproject` (synthetic consumer Gmail). Each has 110 conversations, with a long 32-member thread, ordinary human mail, automated HTML-only mail, mixed read/star/category state, archived unread mail, and an explicitly missing and partial attachment. Dates are fixed to the week 2026-09-07 through 2026-09-13; fixture today is **2026-09-11**. The app must label the profile and clock as synthetic. No live provider/model connection occurs. Reading source through Core/CLI remains a query; the GUI deliberately opens a loaded snapshot with an explicit journaled read action.
 

@@ -1,0 +1,41 @@
+   Compiling ring v0.17.14
+   Compiling libsqlite3-sys v0.30.1
+   Compiling rustls v0.23.44
+   Compiling rusqlite v0.32.1
+   Compiling rustls-webpki v0.103.15
+   Compiling jsonwebtoken v9.3.1
+   Compiling tokio-rustls v0.26.5
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+   Compiling fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 16.46s
+     Running unittests src\main.rs (target\debug\deps\fm_engine-8f43be620f559423.exe)
+
+running 7 tests
+test google_sync::runtime_tests::transient_retries_remain_recoverable_after_fast_attempts_and_preserve_provider_delay ... ok
+test google_sync::runtime_tests::actual_quota_configuration_preserves_service_units_and_headroom ... ok
+test google_sync::runtime_tests::cancellation_while_waiting_for_memory_releases_admitted_http_capacity ... ok
+test google_sync::runtime_tests::quota_waiting_backfill_does_not_hold_memory_needed_by_other_accounts_recent_mail ... ok
+test google_sync::runtime_tests::raw_response_keeps_memory_lease_until_preparation_releases_it ... ok
+
+thread 'google_sync::runtime_tests::releasing_one_real_runtime_owner_preserves_other_owner_and_final_release_cancels' panicked at crates\fm-engine\src\google_sync\runtime_tests.rs:381:10:
+expected live worker request did not arrive: Elapsed(())
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'google_sync::runtime_tests::disconnecting_one_real_runtime_owner_preserves_other_owner_until_last_disconnect' panicked at crates\fm-engine\src\google_sync\runtime_tests.rs:381:10:
+expected live worker request did not arrive: Elapsed(())
+test google_sync::runtime_tests::disconnecting_one_real_runtime_owner_preserves_other_owner_until_last_disconnect ... FAILED
+test google_sync::runtime_tests::releasing_one_real_runtime_owner_preserves_other_owner_and_final_release_cancels ... FAILED
+
+failures:
+
+failures:
+    google_sync::runtime_tests::disconnecting_one_real_runtime_owner_preserves_other_owner_until_last_disconnect
+    google_sync::runtime_tests::releasing_one_real_runtime_owner_preserves_other_owner_and_final_release_cancels
+
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 37 filtered out; finished in 5.07s
+
+error: test failed, to rerun pass `-p fm-engine --bin fm-engine`

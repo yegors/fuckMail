@@ -92,7 +92,7 @@ Popup {
                 color: Theme.subtle; font.pixelSize: Theme.fontSize(12)
             }
             }
-            Text { text: (details.eventData.calendar_name || details.eventData.calendar_id || "") + " · America/Toronto"; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Text { text: (details.eventData.calendar_name || details.eventData.calendar_id || "") + " · " + (backend.preferences.calendar_display_time_zone || "Time zone unavailable"); color: Theme.subtle; font.pixelSize: Theme.fontSize(10); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
             RowLayout {
                 visible: !!details.eventData.location; Layout.fillWidth: true; spacing: 9
                 FmIcon { name: "info"; size: 13; color: Theme.subtle }

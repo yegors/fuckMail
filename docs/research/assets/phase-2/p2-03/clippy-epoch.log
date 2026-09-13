@@ -1,0 +1,192 @@
+    Checking ring v0.17.14
+    Checking libsqlite3-sys v0.30.1
+    Checking rusqlite v0.32.1
+    Checking rustls-webpki v0.103.15
+    Checking jsonwebtoken v9.3.1
+    Checking rustls v0.23.44
+    Checking tokio-rustls v0.26.5
+    Checking hyper-rustls v0.27.9
+    Checking reqwest v0.12.28
+    Checking fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+    Checking fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+    Checking fm-mail v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-mail)
+    Checking fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+error: this looks like an `else if` but the `else` is missing
+  --> crates\fm-core\src\live_calendar.rs:69:76
+   |
+69 | ...   crate::id(account)?;if let Some(after)=after {provider_id(after)?;}if limit==0||limit>100{return Err(err("invalid_request","Calenda...
+   |                                                                          ^
+   |
+   = note: to remove this lint, add the missing `else` or add a new line before the second `if`
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#suspicious_else_formatting
+   = note: `-D clippy::suspicious-else-formatting` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::suspicious_else_formatting)]`
+
+error[E0061]: this method takes 6 arguments but 5 arguments were supplied
+   --> crates\fm-core\src\live_calendar_tests.rs:120:10
+    |
+120 |         .calendar_observe_permission(
+    |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+124 |             Access::WriterWithoutPrivateAccess,
+    |             ---------------------------------- argument #4 of type `i64` is missing
+    |
+note: method defined here
+   --> crates\fm-core\src\live_calendar.rs:597:12
+    |
+597 |     pub fn calendar_observe_permission(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+602 |         expected_permission_epoch:i64,
+    |         -----------------------------
+help: provide the argument
+    |
+120 -         .calendar_observe_permission(
+121 -             &account,
+122 -             CAL,
+123 -             1,
+124 -             Access::WriterWithoutPrivateAccess,
+125 -             "America/Los_Angeles",
+126 -         )
+120 +         .calendar_observe_permission(&account, CAL, 1, /* i64 */, Access::WriterWithoutPrivateAccess, "America/Los_Angeles")
+    |
+
+error[E0061]: this method takes 6 arguments but 5 arguments were supplied
+   --> crates\fm-core\src\live_calendar_tests.rs:144:10
+    |
+144 |         .calendar_observe_permission(&account, CAL, 1, Access::Writer, "America/Los_Angeles")
+    |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^                   -------------- argument #4 of type `i64` is missing
+    |
+note: method defined here
+   --> crates\fm-core\src\live_calendar.rs:597:12
+    |
+597 |     pub fn calendar_observe_permission(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+602 |         expected_permission_epoch:i64,
+    |         -----------------------------
+help: provide the argument
+    |
+144 |         .calendar_observe_permission(&account, CAL, 1, /* i64 */, Access::Writer, "America/Los_Angeles")
+    |                                                        ++++++++++
+
+error[E0061]: this method takes 6 arguments but 5 arguments were supplied
+   --> crates\fm-core\src\live_calendar_tests.rs:303:10
+    |
+303 |         .calendar_observe_permission(
+    |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+307 |             Access::FreeBusy,
+    |             ---------------- argument #4 of type `i64` is missing
+    |
+note: method defined here
+   --> crates\fm-core\src\live_calendar.rs:597:12
+    |
+597 |     pub fn calendar_observe_permission(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+602 |         expected_permission_epoch:i64,
+    |         -----------------------------
+help: provide the argument
+    |
+303 -         .calendar_observe_permission(
+304 -             &account,
+305 -             CAL,
+306 -             run.connection_generation,
+307 -             Access::FreeBusy,
+308 -             "America/Los_Angeles",
+309 -         )
+303 +         .calendar_observe_permission(&account, CAL, run.connection_generation, /* i64 */, Access::FreeBusy, "America/Los_Angeles")
+    |
+
+error[E0061]: this method takes 6 arguments but 5 arguments were supplied
+   --> crates\fm-core\src\live_calendar_tests.rs:327:10
+    |
+327 |         .calendar_observe_permission(
+    |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+331 |             Access::Owner,
+    |             ------------- argument #4 of type `i64` is missing
+    |
+note: method defined here
+   --> crates\fm-core\src\live_calendar.rs:597:12
+    |
+597 |     pub fn calendar_observe_permission(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+602 |         expected_permission_epoch:i64,
+    |         -----------------------------
+help: provide the argument
+    |
+327 -         .calendar_observe_permission(
+328 -             &account,
+329 -             CAL,
+330 -             run.connection_generation,
+331 -             Access::Owner,
+332 -             "America/Los_Angeles",
+333 -         )
+327 +         .calendar_observe_permission(&account, CAL, run.connection_generation, /* i64 */, Access::Owner, "America/Los_Angeles")
+    |
+
+error[E0061]: this method takes 6 arguments but 5 arguments were supplied
+   --> crates\fm-core\src\live_calendar_tests.rs:485:10
+    |
+485 |         .calendar_observe_permission(
+    |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+489 |             Access::FreeBusy,
+    |             ---------------- argument #4 of type `i64` is missing
+    |
+note: method defined here
+   --> crates\fm-core\src\live_calendar.rs:597:12
+    |
+597 |     pub fn calendar_observe_permission(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+602 |         expected_permission_epoch:i64,
+    |         -----------------------------
+help: provide the argument
+    |
+485 -         .calendar_observe_permission(
+486 -             &account,
+487 -             CAL,
+488 -             generation,
+489 -             Access::FreeBusy,
+490 -             "America/Los_Angeles",
+491 -         )
+485 +         .calendar_observe_permission(&account, CAL, generation, /* i64 */, Access::FreeBusy, "America/Los_Angeles")
+    |
+
+error[E0061]: this method takes 6 arguments but 5 arguments were supplied
+   --> crates\fm-core\src\live_calendar_tests.rs:541:10
+    |
+541 |         .calendar_observe_permission(
+    |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+545 |             Access::None,
+    |             ------------ argument #4 of type `i64` is missing
+    |
+note: method defined here
+   --> crates\fm-core\src\live_calendar.rs:597:12
+    |
+597 |     pub fn calendar_observe_permission(
+    |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+602 |         expected_permission_epoch:i64,
+    |         -----------------------------
+help: provide the argument
+    |
+541 -         .calendar_observe_permission(
+542 -             &account,
+543 -             CAL,
+544 -             generation,
+545 -             Access::None,
+546 -             "America/Los_Angeles",
+547 -         )
+541 +         .calendar_observe_permission(&account, CAL, generation, /* i64 */, Access::None, "America/Los_Angeles")
+    |
+
+error: could not compile `fm-core` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+For more information about this error, try `rustc --explain E0061`.
+error: could not compile `fm-core` (lib test) due to 7 previous errors

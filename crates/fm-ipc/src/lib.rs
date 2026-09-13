@@ -17,6 +17,8 @@ pub const MAX_CLIENTS: usize = 16;
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 pub const IO_TIMEOUT: Duration = Duration::from_secs(15);
 pub const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
+/// Engine refusal is permanent; other launch failures retain bounded race recovery.
+pub const ENGINE_PROFILE_KIND_MISMATCH: i32 = 12;
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -272,6 +274,19 @@ pub struct Client {
 }
 impl Client {
     pub async fn connect(profile: &Path, engine: Option<&Path>) -> io::Result<Self> {
+        Self::connect_profile(profile, engine, false).await
+    }
+
+    /// Explicit live initialization must also refuse an already-running demo.
+    pub async fn connect_live(profile: &Path, engine: Option<&Path>) -> io::Result<Self> {
+        Self::connect_profile(profile, engine, true).await
+    }
+
+    async fn connect_profile(
+        profile: &Path,
+        engine: Option<&Path>,
+        require_live: bool,
+    ) -> io::Result<Self> {
         let profile = private_profile(profile)?;
         let until = tokio::time::Instant::now() + STARTUP_TIMEOUT;
         let mut child: Option<tokio::process::Child> = None;
@@ -329,6 +344,9 @@ impl Client {
                             Err(e) => return Err(e),
                         };
                         if hello.get("ok") == Some(&Value::Bool(true)) {
+                            if require_live && hello["result"]["mode"] != "live" {
+                                return Err(io::Error::new(io::ErrorKind::InvalidInput, "The selected profile is synthetic; choose a separate live profile path"));
+                            }
                             // Reap our child asynchronously while this client process exists.
                             if let Some(mut process) = child {
                                 tokio::spawn(async move {
@@ -364,6 +382,9 @@ impl Client {
             }
             if let Some(process) = child.as_mut() {
                 if let Some(status) = process.try_wait()? {
+                    if require_live && status.code() == Some(ENGINE_PROFILE_KIND_MISMATCH) {
+                        return Err(io::Error::new(io::ErrorKind::InvalidInput, "The selected profile is synthetic; choose a separate live profile path"));
+                    }
                     // Reap our exact child. A losing startup can exit while the
                     // old writer is still closing after discovery was removed.
                     last_exit = Some(status.to_string());
@@ -382,6 +403,9 @@ impl Client {
                     }),
                 };
                 let mut command = tokio::process::Command::new(binary);
+                if require_live {
+                    command.arg("--live-profile");
+                }
                 command
                     .arg("--profile")
                     .arg(&profile)

@@ -35,6 +35,9 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
     Q_PROPERTY(QString draftStatus READ draftStatus NOTIFY draftChanged)
     Q_PROPERTY(bool connected READ connected NOTIFY connectedChanged)
+    Q_PROPERTY(bool syntheticProfile READ syntheticProfile NOTIFY connectedChanged)
+    Q_PROPERTY(QVariantMap googleAuth READ googleAuth NOTIFY googleAuthChanged)
+    Q_PROPERTY(bool googleAuthBusy READ googleAuthBusy NOTIFY googleAuthChanged)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(bool mutationInFlight READ mutationInFlight NOTIFY mutationChanged)
     Q_PROPERTY(bool hasMore READ hasMore NOTIFY conversationsChanged)
@@ -72,7 +75,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(double nowHour READ nowHour NOTIFY eventsChanged)
     Q_PROPERTY(QDateTime clockNow READ clockNow NOTIFY eventsChanged)
 public:
-    explicit MailBackend(QString profile, QString engine, QObject *parent = nullptr, bool fixtureClock = false);
+    explicit MailBackend(QString profile, QString engine, QObject *parent = nullptr, bool fixtureClock = false, bool liveProfile = false);
     ~MailBackend() override;
     QVariantList accounts() const { return m_accounts; }
     QVariantList conversations() const { return m_conversations; }
@@ -93,6 +96,9 @@ public:
     QString error() const { return m_error; }
     QString draftStatus() const { return m_draftStatus; }
     bool connected() const { return m_connected; }
+    bool syntheticProfile() const { return m_syntheticProfile; }
+    QVariantMap googleAuth() const { return m_googleAuth; }
+    bool googleAuthBusy() const { return m_googleAuthBusy; }
     bool loading() const { return m_loading; }
     bool mutationInFlight() const { return m_mutatingConversation; }
     bool hasMore() const { return m_nextOffset >= 0; }
@@ -141,6 +147,9 @@ public:
     Q_INVOKABLE void writeToSender(const QString &email, const QString &name);
     Q_INVOKABLE void loadMore();
     Q_INVOKABLE void refresh();
+    Q_INVOKABLE void connectGoogle(const QString &configFile, const QString &account = {}, bool reauthorize = false);
+    Q_INVOKABLE void cancelGoogleAuth();
+    Q_INVOKABLE void disconnectGoogle(const QString &account);
     Q_INVOKABLE void setRead(bool read);
     Q_INVOKABLE void setStarred(bool starred);
     Q_INVOKABLE void doneConversation();
@@ -189,6 +198,7 @@ public:
     Q_INVOKABLE void shutdown();
 signals:
     void accountsChanged();
+    void googleAuthChanged();
     void currentAccountChanged();
     void categoriesChanged();
     void conversationsChanged();
@@ -228,6 +238,8 @@ private:
     void receive();
     void fail(const QString &message);
     void loadAccounts();
+    void pollGoogleAuth();
+    void setGoogleAuth(const QJsonObject &status);
     void refreshState(bool refreshList, bool refreshCalendar, bool automatic = false);
     void selectConversationInternal(const QString &id, bool review, QVariantMap clickedRow = {}, int clickedIndex = -1);
     void loadCategories();
@@ -257,6 +269,10 @@ private:
     QString m_profile, m_engine, m_token, m_account, m_query, m_selected, m_error, m_category;
     QString m_folder = "inbox", m_weekStart = "2026-09-07", m_fixtureToday = "2026-09-11";
     QString m_draftStatus;
+    QVariantMap m_googleAuth;
+    QString m_googleAuthAttempt;
+    bool m_googleAuthBusy = false;
+    bool m_googleAuthCancelRequested = false;
     QString m_activeDraft;
     QMap<QString, QString> m_recipientInputs;
     QJsonObject m_draftCreation;
@@ -304,6 +320,7 @@ private:
     int m_desiredConversationCount = 50;
     int m_launchAttempts = 0, m_launchDelay = 1000;
     bool m_connected = false, m_loading = false;
+    bool m_liveProfileRequested = false, m_syntheticProfile = true;
     bool m_listRefreshPending = false;
     bool m_automaticReadScope = false;
     bool m_mutatingConversation = false;

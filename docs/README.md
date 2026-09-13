@@ -17,7 +17,8 @@ fuckMail is a personal, opinionated mail/calendar client for large separate acco
 | [Development commands](build-development.md) | Repeatable Mac/Windows bootstrap, build, test, run and packaging |
 | [Local protocol](local-protocol.md) | Implemented synthetic CLI/GUI command boundary and limits |
 | [Phase 0 execution evidence](research/phase-0-execution.md) | Observed checks, artifacts and remaining gates |
-| [Phase 1 execution evidence](research/phase-1-execution.md) | Active schema/fixture boundary, native integration and acceptance results |
+| [Phase 1 execution evidence](research/phase-1-execution.md) | Completed local client, native integration and acceptance results |
+| [Phase 2 execution evidence](research/phase-2-execution.md) | Active Google/live-profile integration, tests and admission gaps |
 | [Current status](status.md) | What exists, what is active/next, what is deferred or excluded, and evidence for readiness |
 | [Decision log](decisions.md) | Append-only timestamped decisions, pivots and Q&A |
 | [Research index](research/README.md) | Evidence, alternatives and experiments organized by subject |

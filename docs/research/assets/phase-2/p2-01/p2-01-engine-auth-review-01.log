@@ -1,0 +1,41 @@
+   Compiling tokio-rustls v0.26.5
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+   Compiling fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+warning: method `http_transport` is never used
+   --> crates\fm-engine\src\google_auth.rs:161:19
+    |
+117 | impl Runtime {
+    | ------------ method in this implementation
+...
+161 |     pub(crate) fn http_transport(&self) -> Arc<dyn HttpTransport> {
+    |                   ^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` on by default
+
+warning: `fm-engine` (bin "fm-engine") generated 1 warning
+warning: `fm-engine` (bin "fm-engine" test) generated 1 warning (1 duplicate)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.84s
+     Running unittests src\main.rs (target\debug\deps\fm_engine-9bc10b91fc1802fa.exe)
+
+running 8 tests
+test google_auth::tests::real_loopback_callback_uses_fixed_fixture_transport_and_retains_no_failed_grant ... ok
+test google_auth::tests::saved_client_load_and_disconnect_use_one_shared_vault_without_deletion ... ok
+test google_auth::tests::attempts_are_session_owned_cancelled_on_owner_exit_and_status_is_redacted ... ok
+test google_auth::tests::aborted_begin_releases_its_reserved_attempt_without_starting_login_later ... ok
+test google_auth::tests::rejected_refresh_stops_sibling_account_work_and_keeps_the_vault ... ok
+test google_auth::tests::queued_refresh_rejection_cannot_downgrade_a_disconnect ... ok
+test google_auth::tests::configuration_is_bounded_installed_only_and_never_supplies_endpoints ... ok
+test google_auth::tests::completed_status_retention_is_bounded_and_shutdown_closes_the_listener ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 2.24s
+
+     Running tests\sessions.rs (target\debug\deps\sessions-f3c63303ebc9a2fd.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+

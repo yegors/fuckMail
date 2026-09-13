@@ -19,6 +19,13 @@ pub fn extract_incoming_text(raw: &[u8]) -> Result<String, IncomingError> {
     let message = MessageParser::default()
         .parse(raw)
         .ok_or(IncomingError::InvalidMime)?;
+    extract_parsed_incoming_text(&message)
+}
+
+/// Reuse a caller's bounded MIME parse for normalization; performs no I/O.
+pub fn extract_parsed_incoming_text(
+    message: &mail_parser::Message<'_>,
+) -> Result<String, IncomingError> {
     let plain: Vec<&str> = message
         .text_body
         .iter()

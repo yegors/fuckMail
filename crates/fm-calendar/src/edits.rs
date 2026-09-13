@@ -25,6 +25,7 @@ pub fn edit(
     expected_etag: &str,
     body: Value,
 ) -> Result<GoogleWrite> {
+    let access = access.for_event(event);
     if !matches!(access, Access::Writer | Access::Owner) {
         return Err(error("permission_denied", "This calendar is not writable"));
     }
@@ -59,6 +60,7 @@ pub fn rsvp(
     expected_etag: &str,
     response: ResponseStatus,
 ) -> Result<GoogleWrite> {
+    let access = access.for_event(event);
     if matches!(access, Access::None | Access::FreeBusy) {
         return Err(error(
             "permission_denied",

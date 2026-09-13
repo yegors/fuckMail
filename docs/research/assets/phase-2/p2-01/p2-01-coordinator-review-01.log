@@ -1,0 +1,27 @@
+   Compiling reqwest v0.12.28
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.95s
+     Running unittests src\lib.rs (target\debug\deps\fm_google-c90179e4a4c01f57.exe)
+
+running 12 tests
+test desktop_auth::tests::native_vault_synthetic_roundtrip_and_cleanup ... ignored, explicit isolated native-vault exercise; never part of credential-free CI
+test desktop_auth::tests::callback_parser_rejects_wrong_target_host_duplicates_and_injection ... ok
+test desktop_auth::tests::refresh_requires_bound_subject_and_rejects_changed_identity ... ok
+test desktop_auth::tests::exchange_checks_identity_reports_partial_grants_and_persists_only_explicitly ... ok
+test desktop_auth::tests::identity_accepts_documented_issuer_and_explicit_authorized_party ... ok
+test desktop_auth::tests::refused_grants_and_vault_write_failures_never_publish_tokens ... ok
+test desktop_auth::tests::eight_async_consumers_share_one_durable_refresh_and_locked_vault_fails_closed ... ok
+test desktop_auth::tests::signed_identity_checks_signature_claims_nonce_and_expected_subject ... ok
+test desktop_auth::tests::denial_timeout_and_cancel_close_the_listener ... ok
+test desktop_auth::tests::aborted_waiter_keeps_refresh_serialized_until_blocking_vault_store_finishes ... ok
+test desktop_auth::tests::verified_reconnect_and_refresh_share_durable_finalization_after_caller_abort ... ok
+test desktop_auth::tests::bound_login_has_full_scopes_and_accepts_only_matching_one_use_callback ... ok
+
+test result: ok. 11 passed; 0 failed; 1 ignored; 0 measured; 28 filtered out; finished in 2.03s
+
+     Running tests\feasibility.rs (target\debug\deps\feasibility-293e383ca9e1b7a9.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.00s
+

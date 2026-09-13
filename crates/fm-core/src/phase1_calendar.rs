@@ -1,5 +1,5 @@
 //! P1-04/P1-06: one permission-filtered combined calendar and durable local writes.
-use crate::calendar_store::{calendar_error, fingerprint, parse_access, CALENDAR_VIEW_ZONE};
+use crate::calendar_store::{calendar_error, fingerprint, parse_access};
 use crate::{err, fields, id, string, Result, Store};
 use fm_calendar::{Access, EventKey};
 use rusqlite::{params, OptionalExtension};
@@ -8,15 +8,40 @@ use std::collections::BTreeSet;
 
 impl Store {
     pub(crate) fn calendar_sources(&self) -> Result<Value> {
-        let mut statement = self.db.prepare("SELECT c.account,c.calendar_id,a.name,a.email,c.time_zone,c.access,c.revision,c.sync_token FROM calendar_sync_state c JOIN accounts a ON a.id=c.account ORDER BY a.name,c.calendar_id")?;
-        let calendars = statement.query_map([], |row| {
-            let permission: String = row.get(5)?;
+        let live = self.profile_kind()? == crate::live_profile::ProfileKind::Live;
+        let mut statement = self.db.prepare("SELECT c.account,c.calendar_id,a.name,a.email,c.time_zone,c.access,c.revision,c.sync_token,k.json,COALESCE(k.deleted,0),COALESCE(k.observed_epoch,0),COALESCE(cs.full_generation,0),COALESCE(cs.complete,0),c.published_generation,c.retained_errors,c.full_generation FROM calendar_sync_state c JOIN accounts a ON a.id=c.account LEFT JOIN calendar_catalog k USING(account,calendar_id) LEFT JOIN calendar_catalog_state cs ON cs.account=c.account ORDER BY a.name,c.calendar_id LIMIT 101")?;
+        let mut calendars = Vec::new();
+        let mut rows = statement.query([])?;
+        while let Some(row) = rows.next()? {
+            let mut permission: String = row.get(5)?;
             let calendar: String = row.get(1)?;
-            let complete = row.get::<_,Option<String>>(7)?.is_some();
-            let name=match calendar.as_str(){"primary"=>"Primary", "availability"=>"Availability",_=>calendar.as_str()};
-            Ok(json!({"account":row.get::<_,String>(0)?,"calendar_id":calendar,"name":name,"account_name":row.get::<_,String>(2)?,"account_email":row.get::<_,String>(3)?,"time_zone":row.get::<_,String>(4)?,"permission":permission,"writable":matches!(permission.as_str(),"owner"|"writer"),"revision":row.get::<_,i64>(6)?,"coverage":if permission=="none"{"denied"}else if complete{"cached"}else{"incomplete"}}))
-        })?.collect::<std::result::Result<Vec<_>,_>>()?;
-        Ok(json!({"calendars":calendars,"revision":self.revision()?}))
+            let metadata: Option<String> = row.get(8)?;
+            let metadata: Value = metadata
+                .map(|v| serde_json::from_str(&v))
+                .transpose()?
+                .unwrap_or(Value::Null);
+            if live && (row.get::<_, bool>(9)? || row.get::<_, i64>(10)? < row.get::<_, i64>(11)?) {
+                permission = "none".into();
+            }
+            let generation: i64 = row.get(13)?;
+            let complete = if live {
+                row.get::<_,bool>(12)? && row.get::<_,i64>(14)?==0 && row.get::<_,i64>(15)?>0 && generation>0 && self.db.query_row("SELECT errors=0 AND identity_complete=1 FROM calendar_sync_runs WHERE id=?1",[generation],|r|r.get::<_,bool>(0)).optional()?.unwrap_or(false)
+            } else {
+                row.get::<_, Option<String>>(7)?.is_some()
+            };
+            let name = metadata["summaryOverride"]
+                .as_str()
+                .or(metadata["summary"].as_str())
+                .unwrap_or(match calendar.as_str() {
+                    "primary" => "Primary",
+                    "availability" => "Availability",
+                    _ => calendar.as_str(),
+                });
+            calendars.push(json!({"account":row.get::<_,String>(0)?,"calendar_id":calendar,"name":name,"account_name":row.get::<_,String>(2)?,"account_email":row.get::<_,String>(3)?,"time_zone":row.get::<_,String>(4)?,"permission":permission,"writable":matches!(permission.as_str(),"owner"|"writer"|"writer_without_private_access"),"revision":row.get::<_,i64>(6)?,"primary":metadata["primary"]==true,"hidden":metadata["hidden"]==true,"provider_selected":metadata["selected"],"color":metadata["backgroundColor"],"coverage":if permission=="none"{"denied"}else if complete{"cached"}else{"incomplete"}}));
+        }
+        let truncated = calendars.len() > 100;
+        calendars.truncate(100);
+        Ok(json!({"calendars":calendars,"revision":self.revision()?,"truncated":truncated}))
     }
 
     pub(crate) fn calendar_combined(&self, p: &Value) -> Result<Value> {
@@ -26,19 +51,16 @@ impl Store {
         if to <= from || (to - from).num_days() > 42 {
             return Err(err("invalid_request", "Calendar range must be 1–42 days"));
         }
-        let preferences;
-        let selection = if let Some(selection) = p.get("calendars") {
-            selection
-        } else {
-            preferences = self.preferences()?;
-            &preferences["preferences"]["selected_calendars"]
-        };
+        let preferences = self.preferences()?;
+        let selection = p
+            .get("calendars")
+            .unwrap_or(&preferences["preferences"]["selected_calendars"]);
         let selected = if selection.is_null() {
             None
         } else {
             let entries = selection
                 .as_array()
-                .filter(|a| a.len() <= 100)
+                .filter(|v| v.len() <= 100)
                 .ok_or_else(|| {
                     err(
                         "invalid_request",
@@ -50,7 +72,12 @@ impl Store {
                 fields(entry, &["account", "calendar_id"])?;
                 selected.insert((
                     id(string(entry, "account")?)?.to_owned(),
-                    id(string(entry, "calendar_id")?)?.to_owned(),
+                    crate::live_calendar::provider_id(
+                        entry["calendar_id"]
+                            .as_str()
+                            .ok_or_else(|| err("invalid_request", "Calendar ID must be text"))?,
+                    )?
+                    .to_owned(),
                 ));
             }
             Some(selected)
@@ -61,25 +88,40 @@ impl Store {
             for (account, calendar) in selected {
                 if !sources
                     .iter()
-                    .any(|s| s["account"] == *account && s["calendar_id"] == *calendar)
+                    .any(|v| v["account"] == *account && v["calendar_id"] == *calendar)
                 {
                     return Err(err("not_found", "A selected calendar no longer exists"));
                 }
             }
         }
+        let live = self.profile_kind()? == crate::live_profile::ProfileKind::Live;
+        let Some(display_zone) = self.calendar_display_zone()? else {
+            return Ok(
+                json!({"total":0,"events":[],"from":from.to_string(),"to":to.to_string(),"time_zone":null,"revision":self.revision()?,"coverage":{"state":"display_zone_required","complete":false,"live":false,"selected_calendars":0,"denied_calendars":0,"incomplete_calendars":sources.len()},"continuation":null}),
+            );
+        };
+        let window =
+            fm_calendar::Window::from_dates(from, to, &display_zone).map_err(calendar_error)?;
         let mut events = Vec::new();
-        let mut source_count = 0usize;
         let mut selected_count = 0;
         let mut denied = 0;
-        let mut incomplete = 0;
-        let window = fm_calendar::Window::from_dates(from, to, CALENDAR_VIEW_ZONE)
-            .map_err(calendar_error)?;
+        let mut incomplete = usize::from(catalog["truncated"] == true);
+        let mut candidates = 0;
+        let mut budgets = 0;
+        let mut details = Vec::new();
+        if live && selected.is_none() {
+            let pending:i64=self.db.query_row("SELECT COUNT(*) FROM google_accounts g LEFT JOIN calendar_catalog_state c ON c.account=g.account WHERE COALESCE(c.complete,0)=0",[],|r|r.get(0))?;
+            incomplete += pending as usize;
+            if sources.is_empty() && pending == 0 {
+                incomplete += 1;
+            }
+        }
         for source in sources {
             let account = source["account"].as_str().unwrap();
             let calendar = source["calendar_id"].as_str().unwrap();
             if selected
                 .as_ref()
-                .is_some_and(|s| !s.contains(&(account.to_owned(), calendar.to_owned())))
+                .is_some_and(|s| !s.contains(&(account.into(), calendar.into())))
             {
                 continue;
             }
@@ -89,54 +131,61 @@ impl Store {
                 denied += 1;
                 continue;
             }
-            if source["coverage"] == "incomplete" {
+            if candidates >= 4096 {
+                incomplete += 1;
+                budgets += 1;
+                break;
+            }
+            let (mut projected, limited, covered) = if live && permission == Access::FreeBusy {
+                let (rows, covered) = self.calendar_busy_projection(account, calendar, window)?;
+                (rows, false, covered)
+            } else {
+                let projection = self.calendar_indexed_projection(
+                    account,
+                    calendar,
+                    source["time_zone"].as_str().unwrap(),
+                    permission,
+                    window,
+                )?;
+                candidates += projection.candidates;
+                (
+                    projection.events,
+                    projection.incomplete,
+                    source["coverage"] == "cached",
+                )
+            };
+            if !covered || limited {
                 incomplete += 1;
             }
-            let mut statement=self.db.prepare("SELECT s.json FROM calendar_sources s LEFT JOIN calendar_event_state e ON e.account=s.account AND e.calendar_id=s.calendar_id AND e.event_id=s.event_id WHERE s.account=?1 AND s.calendar_id=?2 AND COALESCE(e.visible,1)=1 ORDER BY s.event_id LIMIT 5001")?;
-            let raw = statement
-                .query_map(params![account, calendar], |r| r.get::<_, String>(0))?
-                .collect::<std::result::Result<Vec<_>, _>>()?;
-            source_count += raw.len();
-            if source_count > 5000 {
-                return Err(err(
-                    "limit_exceeded",
-                    "Combined calendar exceeds 5,000 retained sources; select fewer calendars",
-                ));
+            if limited {
+                budgets += 1;
             }
-            let raw = raw
-                .iter()
-                .map(|v| serde_json::from_str(v))
-                .collect::<std::result::Result<Vec<Value>, _>>()?;
-            let mut projected = fm_calendar::project_google_events_in_window(
-                account,
-                calendar,
-                source["time_zone"].as_str().unwrap(),
-                &raw,
-                window,
-                permission,
-            )
-            .map_err(calendar_error)?;
+            details.push(json!({"account":account,"calendar_id":calendar,"covered":covered,"projection_limited":limited}));
             for row in &mut projected {
                 row["account"] = account.into();
                 row["account_name"] = source["account_name"].clone();
                 row["calendar_name"] = source["name"].clone();
                 let recurring = !row["occurrence_key"]["original_start"].is_null();
                 row["recurring"] = recurring.into();
-                row["can_edit"] = false.into();
                 row["can_rsvp"] = false.into();
                 if row["busy_only"] != true && !recurring {
-                    let event_id = row["occurrence_key"]["series"].as_str().unwrap();
-                    if let Some(raw) = raw.iter().find(|r| r["id"] == event_id) {
-                        row["event_id"] = raw["id"].clone();
-                        row["etag"] = raw["etag"].clone();
-                        let versioned = raw["etag"].as_str().is_some_and(|etag| !etag.is_empty());
-                        row["can_edit"] = (source["writable"] == true && versioned).into();
-                        if let Some(actor) = raw["attendees"].as_array().and_then(|a| {
-                            a.iter().find(|a| {
-                                a["email"] == source["account_email"] && a["self"] == true
-                            })
+                    if let Some(event_id) = row["event_id"].as_str() {
+                        let (event, access) =
+                            self.stored_calendar_event(account, calendar, event_id)?;
+                        if let Some(actor) = event.attendees.iter().find(|v| {
+                            v["self"] == true
+                                && v["email"].as_str().is_some_and(|email| {
+                                    email.eq_ignore_ascii_case(
+                                        source["account_email"].as_str().unwrap(),
+                                    )
+                                })
                         }) {
-                            row["can_rsvp"] = versioned.into();
+                            row["can_rsvp"] = (!event.etag.is_empty()
+                                && matches!(
+                                    access.for_event(&event),
+                                    Access::Reader | Access::Writer | Access::Owner
+                                ))
+                            .into();
                             row["self_response"] = actor["responseStatus"].clone();
                         }
                     }
@@ -144,15 +193,20 @@ impl Store {
             }
             events.extend(projected);
             if events.len() > 1000 {
-                return Err(err("limit_exceeded","Combined calendar exceeds 1,000 occurrences; narrow the date range or calendars"));
+                if !live {
+                    return Err(err("limit_exceeded","Combined calendar exceeds 1,000 occurrences; narrow the date range or calendars"));
+                }
+                events.truncate(1000);
+                incomplete += 1;
+                budgets += 1;
+                break;
             }
         }
         fm_calendar::sort_projected_events(&mut events, window).map_err(calendar_error)?;
         Ok(
-            json!({"total":events.len(),"events":events,"from":from.to_string(),"to":to.to_string(),"time_zone":CALENDAR_VIEW_ZONE,"revision":self.revision()?,"coverage":{"state":if denied>0{"restricted"}else if incomplete>0{"incomplete"}else{"cached"},"complete":denied==0&&incomplete==0,"live":false,"selected_calendars":selected_count,"denied_calendars":denied,"incomplete_calendars":incomplete},"continuation":null}),
+            json!({"total":events.len(),"events":events,"from":from.to_string(),"to":to.to_string(),"time_zone":display_zone,"revision":self.revision()?,"coverage":{"state":if denied>0{"restricted"}else if incomplete>0{"incomplete"}else{"cached"},"complete":denied==0&&incomplete==0,"live":false,"selected_calendars":selected_count,"denied_calendars":denied,"incomplete_calendars":incomplete,"projection_limited":budgets>0,"candidates":candidates,"calendars":details},"continuation":null}),
         )
     }
-
     pub(crate) fn calendar_write(&mut self, account: &str, p: &Value) -> Result<Value> {
         fields(
             p,
@@ -169,7 +223,11 @@ impl Store {
         )?;
         let request_id = id(string(p, "request_id")?)?;
         let kind = string(p, "kind")?;
-        let calendar = id(string(p, "calendar_id")?)?;
+        let calendar = crate::live_calendar::provider_id(
+            p["calendar_id"]
+                .as_str()
+                .ok_or_else(|| err("invalid_request", "Calendar ID must be text"))?,
+        )?;
         let prepare_only = p
             .get("prepare_only")
             .map(|v| {
@@ -187,7 +245,12 @@ impl Store {
                     &fingerprint(&json!([account, calendar, request_id]))?[..40]
                 )
             } else {
-                id(string(p, "event_id")?)?.into()
+                crate::live_calendar::provider_id(
+                    p["event_id"]
+                        .as_str()
+                        .ok_or_else(|| err("invalid_request", "Event ID must be text"))?,
+                )?
+                .into()
             },
         };
         let mut request = p.clone();
@@ -361,6 +424,7 @@ impl Store {
         request_id: &str,
         intent: &Value,
     ) -> Result<Value> {
+        self.calendar_assert_no_pending(&target.account, &target.calendar)?;
         let checkpoint = self.calendar_checkpoint(&target.account, &target.calendar)?;
         let access = parse_access(checkpoint["access"].as_str().unwrap())?;
         let creating = intent["request"]["kind"] == "create";

@@ -2,7 +2,7 @@
 //! No transport, AI, file reads or database.
 mod incoming;
 use ammonia::{Builder as HtmlCleaner, UrlRelative};
-pub use incoming::{extract_incoming_text, IncomingError};
+pub use incoming::{extract_incoming_text, extract_parsed_incoming_text, IncomingError};
 use lettre::message::{
     header::{ContentTransferEncoding, ContentType},
     Attachment, Mailbox, Message, MultiPart, SinglePart,

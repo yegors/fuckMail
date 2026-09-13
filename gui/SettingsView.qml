@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 
 Item {
     id: settings
@@ -12,6 +13,7 @@ Item {
     property string localError: ""
     property bool signaturesOpen: false
     property bool calendarDetailsOpen: false
+    property string reconnectAccount: ""
     readonly property string modifier: Qt.platform.os === "osx" ? "⌘" : "Ctrl+"
     readonly property var hourLabels: Array.from({length:25}, (_, h) => (h < 10 ? "0" : "") + h + ":00")
     Connections {
@@ -28,6 +30,7 @@ Item {
             }
             settings.accountEdits = pending
         }
+        function onGoogleAuthChanged() { if (backend.googleAuth.phase === "connected") googleSignIn.close() }
     }
     function accountValue(account, field) {
         const edited = accountEdits[account.id]
@@ -48,7 +51,7 @@ Item {
         const chosen = backend.preferences.selected_calendars
         return chosen === null || chosen === undefined || chosen.some(item => item.account === source.account && item.calendar_id === source.calendar_id)
     }
-    function calendarPermissionLabel(permission) { return ({none:"No access",free_busy:"Availability only",reader:"Can view events",writer:"Can edit events",owner:"Owner"})[permission] || "Unknown access" }
+    function calendarPermissionLabel(permission) { return ({none:"No access",free_busy:"Availability only",reader:"Can view events",writer_without_private_access:"Can edit public events",writer:"Can edit events",owner:"Owner"})[permission] || "Unknown access" }
     function saveHour(key, otherKey, value, isStart) {
         const other = Number(backend.preferences[otherKey])
         if ((isStart && value >= other) || (!isStart && value <= other)) { localError = "The end of the visible range must be later than its start."; return }
@@ -59,6 +62,51 @@ Item {
         const scrolls = Object.assign({},pageScroll); scrolls[page] = contentFlick.contentY; pageScroll = scrolls
         page = nextPage; localError = ""
         Qt.callLater(function() { contentFlick.contentY = pageScroll[nextPage] || 0 })
+    }
+    FileDialog {
+        id: googleClientFile
+        title: "Choose the Google desktop client configuration"
+        nameFilters: ["Google client configuration (*.json)"]
+        fileMode: FileDialog.OpenFile
+        onAccepted: googleConfigPath.text = selectedFile.toString()
+    }
+    Dialog {
+        id: googleSignIn
+        objectName: "googleSignInDialog"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(520, parent.width - 32)
+        modal: true
+        padding: 24
+        closePolicy: Popup.CloseOnEscape
+        background: Rectangle { color: Theme.canvas; border.color: Theme.controlBorder; radius: 8 }
+        onClosed: if (backend.googleAuthBusy) backend.cancelGoogleAuth()
+        contentItem: ColumnLayout {
+            spacing: 16
+            property bool blocksWorkspaceShortcuts: true
+            Heading { text: settings.reconnectAccount.length ? "Reconnect Google" : "Connect Google" }
+            Description { text: "Choose your Google desktop client JSON file, then sign in with your browser. Google will ask for Mail and Calendar access." }
+            RowLayout {
+                Layout.fillWidth: true; spacing: 8
+                FmTextField { id: googleConfigPath; objectName: "googleClientConfigPath"; Layout.fillWidth: true; placeholderText: "Desktop client JSON file"; enabled: !backend.googleAuthBusy; Accessible.name: "Google desktop client configuration file" }
+                FmButton { text: "Choose file"; outlined: true; enabled: !backend.googleAuthBusy; onClicked: googleClientFile.open() }
+            }
+            CheckBox {
+                id: renewGoogleAccess
+                text: "Ask Google to renew access"
+                enabled: !backend.googleAuthBusy
+                font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13)
+                palette.windowText: Theme.text; palette.buttonText: Theme.text
+            }
+            Caption { text: renewGoogleAccess.checked ? "Use this if previous access expired or Google did not supply renewable access." : "You can connect personal Gmail and Google Workspace accounts." }
+            Description { visible: (backend.googleAuth.message || "").length > 0; text: backend.googleAuth.message || "" }
+            RowLayout {
+                Layout.fillWidth: true; spacing: 10
+                Item { Layout.fillWidth: true }
+                FmButton { text: "Cancel"; onClicked: googleSignIn.close() }
+                FmButton { objectName: "beginGoogleSignIn"; text: "Sign in"; prominent: true; enabled: backend.connected && !backend.googleAuthBusy && googleConfigPath.text.trim().length > 0; onClicked: { backend.clearError(); backend.connectGoogle(googleConfigPath.text.trim(), settings.reconnectAccount, renewGoogleAccess.checked) } }
+            }
+        }
     }
     component Heading: Text {
         color: Theme.text; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(22); weight: Font.Medium; letterSpacing: -0.44 }
@@ -278,7 +326,7 @@ Item {
                                             }
                                             Text { text: accountCard.modelData.email + " · Mail and Calendar"; color: Theme.muted; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } elide: Text.ElideRight; Layout.fillWidth: true; textFormat: Text.PlainText }
                                         }
-                                        Row { visible: !settings.accountDirty(accountCard.modelData); spacing: 7; FmIcon { name: "refresh"; size: 13; color: Theme.subtle; anchors.verticalCenter: parent.verticalCenter } Text { text: "Local copy"; color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } } }
+                                        Row { visible: !settings.accountDirty(accountCard.modelData); spacing: 7; FmIcon { name: "refresh"; size: 13; color: Theme.subtle; anchors.verticalCenter: parent.verticalCenter } Text { text: backend.syntheticProfile ? "Local copy" : (accountCard.modelData.google || {}).connection_state === "connected" ? "Connected" : "Access paused"; color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } } }
                                         FmButton { objectName: "saveAccount_" + accountCard.modelData.id; visible: settings.accountDirty(accountCard.modelData); text: "Save"; outlined: true; onClicked: settings.saveAccount(accountCard.modelData) }
                                     }
                                     Divider {}
@@ -291,10 +339,18 @@ Item {
                                         Layout.fillWidth: true; implicitHeight: 2; color: Theme.hover; radius: 1; Layout.topMargin: -6
                                         Rectangle { height: parent.height; width: parent.width * Math.max(0,Math.min(1,((accountCard.modelData.coverage || {}).indexed_messages || 0) / Math.max(1,accountCard.modelData.message_count))); color: Theme.subtle; radius: 1 }
                                     }
+                                    RowLayout {
+                                        visible: !backend.syntheticProfile; Layout.fillWidth: true; spacing: 10
+                                        Caption { text: ((accountCard.modelData.google || {}).connection_state === "reauthorization_required") ? "Sign in again to restore Google access." : (accountCard.modelData.coverage || {}).text || "Your downloaded copy stays on this machine." }
+                                        FmButton { objectName: "reconnectGoogle_" + accountCard.modelData.id; text: "Reconnect"; outlined: true; enabled: backend.connected && !backend.googleAuthBusy; onClicked: { settings.reconnectAccount = accountCard.modelData.id; renewGoogleAccess.checked = true; googleSignIn.open() } }
+                                        FmButton { objectName: "disconnectGoogle_" + accountCard.modelData.id; text: "Disconnect"; enabled: backend.connected && !backend.googleAuthBusy && (accountCard.modelData.google || {}).connection_state !== "disconnected"; onClicked: backend.disconnectGoogle(accountCard.modelData.id) }
+                                    }
                                 }
                             }
                         }
-                        Caption { Layout.topMargin: 4; text: "Live account sign-in and removal are not available in this local version." }
+                        FmButton { objectName: "connectGoogleButton"; visible: !backend.syntheticProfile; text: "Connect Google account"; iconName: "plus"; outlined: true; enabled: backend.connected && !backend.googleAuthBusy; onClicked: { settings.reconnectAccount = ""; renewGoogleAccess.checked = false; googleSignIn.open() } }
+                        Caption { visible: !backend.syntheticProfile && (backend.googleAuth.message || "").length > 0; text: backend.googleAuth.message || "" }
+                        Caption { Layout.topMargin: 4; visible: backend.syntheticProfile; text: "Open a separate live profile to connect your Google accounts." }
                     }
                     ColumnLayout {
                         visible: settings.page === "Local model"; Layout.fillWidth: true; spacing: 14
@@ -364,6 +420,12 @@ Item {
                     }
                     ColumnLayout {
                         visible: settings.page === "Calendar"; Layout.fillWidth: true; spacing: 0
+                        RowLayout {
+                            visible: !backend.syntheticProfile; Layout.fillWidth: true; Layout.bottomMargin: 20; spacing: 12
+                            PreferenceLabel { label: "Display time zone"; detail: "Used for calendar grids, the Mail timeline and Today." }
+                            FmTextField { id: displayTimeZone; objectName: "calendarDisplayTimeZone"; Layout.preferredWidth: 200; text: backend.preferences.calendar_display_time_zone || ""; placeholderText: "America/Toronto"; Accessible.name: "Calendar display time zone" }
+                            FmButton { text: "Save"; outlined: true; enabled: displayTimeZone.text.trim().length > 0 && displayTimeZone.text.trim() !== backend.preferences.calendar_display_time_zone; onClicked: backend.setPreferences({calendar_display_time_zone:displayTimeZone.text.trim()}) }
+                        }
                         Description { text: "One combined feed across your selected calendars. Events keep their account name and the details you have permission to see."; Layout.maximumWidth: 560; Layout.bottomMargin: 16 }
                         RowLayout {
                             Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24

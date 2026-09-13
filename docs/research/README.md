@@ -4,6 +4,11 @@ Evidence, alternatives and experiments organized by subject. This index is navig
 
 | Scope | Existing material | Build contract |
 | --- | --- | --- |
+| [Phase 2 execution](phase-2-execution.md) | Live-profile/account boundary, integrated tests and remaining real-account gates | [Core](../contracts/core-storage.md), [Platform](../contracts/platform.md), [Quality](../contracts/quality.md) |
+| [Phase 2 OAuth/vault](phase-2-auth.md) | Desktop authorization, identity/refreshed grant fixtures and isolated native vault evidence | [Platform](../contracts/platform.md), [Gmail](../contracts/gmail.md) |
+| [Phase 2 transport](phase-2-transport.md) | Bounded native HTTPS, quota scheduling and cancellation/fault evidence | [Gmail](../contracts/gmail.md), [Quality](../contracts/quality.md) |
+| [Phase 2 Gmail HTTP](phase-2-gmail-http.md) | Typed Google mail endpoints, method costs and single-attempt submission outcomes | [Gmail](../contracts/gmail.md) |
+| [Phase 2 Calendar HTTP](phase-2-calendar.md) | Catalog/events, limited-access availability and conditional write fixtures | [Calendar](../contracts/calendar.md) |
 | [Flight Progress v2 design](flight-progress-v2.md) | Exact HTML/export support files, source and browser review, confirmed changes and native Phase 1 adaptation | [Mail UI](../contracts/mail-ui.md), [Calendar](../contracts/calendar.md) |
 | [Phase 1 execution](phase-1-execution.md) | Completed local phase, schema/fixture boundary, measured integration and acceptance evidence | [Core](../contracts/core-storage.md), [Mail UI](../contracts/mail-ui.md), [Calendar](../contracts/calendar.md), [Quality](../contracts/quality.md) |
 | [Phase 0 execution](phase-0-execution.md) | Native experiment evidence and outstanding gates | [Quality](../contracts/quality.md) |

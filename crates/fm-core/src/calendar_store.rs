@@ -6,8 +6,6 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-pub(crate) const CALENDAR_VIEW_ZONE: &str = "America/Toronto";
-
 #[cfg(test)]
 #[path = "calendar_store_tests.rs"]
 mod tests;
@@ -19,53 +17,29 @@ impl Store {
         from: chrono::NaiveDate,
         to: chrono::NaiveDate,
     ) -> Result<Vec<Value>> {
-        let mut stmt=self.db.prepare("SELECT s.calendar_id,s.json,COALESCE(c.time_zone,'America/Toronto'),COALESCE(c.access,'reader') FROM calendar_sources s LEFT JOIN calendar_sync_state c ON c.account=s.account AND c.calendar_id=s.calendar_id LEFT JOIN calendar_event_state v ON v.account=s.account AND v.calendar_id=s.calendar_id AND v.event_id=s.event_id WHERE s.account=?1 AND COALESCE(v.visible,1)=1 AND COALESCE(c.access,'reader')<>'none' ORDER BY s.calendar_id,s.event_id LIMIT 5001")?;
-        let records = stmt
-            .query_map([account], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
-                    r.get::<_, String>(3)?,
-                ))
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        if records.len() > 5000 {
+        let catalog = self.calendar_sources()?;
+        let selected = catalog["calendars"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|v| v["account"] == account)
+            .map(|v| json!({"account":account,"calendar_id":v["calendar_id"]}))
+            .collect::<Vec<_>>();
+        let combined = self.calendar_combined(
+            &json!({"from":from.to_string(),"to":to.to_string(),"calendars":selected}),
+        )?;
+        if combined["coverage"]["incomplete_calendars"]
+            .as_u64()
+            .unwrap_or(0)
+            > 0
+            || combined["coverage"]["state"] == "display_zone_required"
+        {
             return Err(err(
-                "limit_exceeded",
-                "Too many retained calendar sources for one projection",
+                "calendar_incomplete",
+                "Calendar projection is incomplete; inspect combined Calendar coverage",
             ));
         }
-        let mut groups = std::collections::BTreeMap::<String, (String, Access, Vec<Value>)>::new();
-        for (calendar, raw, zone, access) in records {
-            let access = parse_access(&access)?;
-            groups
-                .entry(calendar)
-                .or_insert_with(|| (zone, access, Vec::new()))
-                .2
-                .push(serde_json::from_str(&raw)?);
-        }
-        let mut events = Vec::new();
-        // The account view advertises Toronto independently of source calendars.
-        // Every calendar must use these same instant/date boundaries.
-        let window = fm_calendar::Window::from_dates(from, to, CALENDAR_VIEW_ZONE)
-            .map_err(calendar_error)?;
-        for (calendar, (zone, access, sources)) in groups {
-            events.extend(
-                fm_calendar::project_google_events_in_window(
-                    account, &calendar, &zone, &sources, window, access,
-                )
-                .map_err(calendar_error)?,
-            );
-            if events.len() > fm_calendar::MAX_OCCURRENCES as usize {
-                return Err(err(
-                    "limit_exceeded",
-                    "Too many combined calendar occurrences",
-                ));
-            }
-        }
-        fm_calendar::sort_projected_events(&mut events, window).map_err(calendar_error)?;
-        Ok(events)
+        Ok(combined["events"].as_array().unwrap().clone())
     }
     /// Explicit local setup. Changing ACL/zone invalidates an in-flight batch.
     /// A different query scope requires an explicit full-resync workflow; it
@@ -107,8 +81,8 @@ impl Store {
 
     pub fn calendar_checkpoint(&self, account: &str, calendar: &str) -> Result<Value> {
         crate::id(account)?;
-        crate::id(calendar)?;
-        self.db.query_row("SELECT query_fingerprint,time_zone,access,sync_token,revision FROM calendar_sync_state WHERE account=?1 AND calendar_id=?2",params![account,calendar],|r|Ok(json!({"account":account,"calendar_id":calendar,"query_fingerprint":r.get::<_,String>(0)?,"time_zone":r.get::<_,String>(1)?,"access":r.get::<_,String>(2)?,"sync_token":r.get::<_,Option<String>>(3)?,"revision":r.get::<_,i64>(4)?}))).optional()?.ok_or_else(||err("not_found","Calendar scope is not configured"))
+        crate::live_calendar::provider_id(calendar)?;
+        self.db.query_row("SELECT query_fingerprint,time_zone,access,sync_token,revision,permission_epoch,published_generation,full_generation,retained_errors FROM calendar_sync_state WHERE account=?1 AND calendar_id=?2",params![account,calendar],|r|Ok(json!({"account":account,"calendar_id":calendar,"query_fingerprint":r.get::<_,String>(0)?,"time_zone":r.get::<_,String>(1)?,"access":r.get::<_,String>(2)?,"sync_token":r.get::<_,Option<String>>(3)?,"revision":r.get::<_,i64>(4)?,"permission_epoch":r.get::<_,i64>(5)?,"published_generation":r.get::<_,i64>(6)?,"full_generation":r.get::<_,i64>(7)?,"retained_errors":r.get::<_,i64>(8)?}))).optional()?.ok_or_else(||err("not_found","Calendar scope is not configured"))
     }
 
     /// Partial SyncBatch pages cannot call this API. Exactly one completed batch
@@ -123,7 +97,7 @@ impl Store {
         if expected_revision < 0
             || batch.replacements.len() > 10_000
             || batch.next_sync_token.is_empty()
-            || batch.next_sync_token.len() > 4096
+            || batch.next_sync_token.len() > 8192
         {
             return Err(err("invalid_request", "Calendar batch exceeds bounds"));
         }
@@ -144,6 +118,7 @@ impl Store {
             };
         }
         let checkpoint = self.calendar_checkpoint(account, calendar)?;
+        self.calendar_assert_no_pending(account, calendar)?;
         check_batch_scope(&checkpoint, expected_revision, &batch.scope)?;
         if checkpoint["sync_token"].is_null() && !batch.full_replace {
             return Err(err(
@@ -156,7 +131,7 @@ impl Store {
         // retain their exact observation separately from sparse merged identity.
         let mut replacements = Vec::new();
         for (id, observed) in &batch.replacements {
-            crate::id(id)?;
+            crate::live_calendar::provider_id(id)?;
             if observed["id"] != *id {
                 return Err(err("scope_mismatch", "Event ID differs from its batch key"));
             }
@@ -173,11 +148,13 @@ impl Store {
                     }
                 }
             }
-            fm_calendar::normalize(account, calendar, zone, &source).map_err(calendar_error)?;
+            let normalized =
+                fm_calendar::normalize(account, calendar, zone, &source).map_err(calendar_error)?;
             replacements.push((
                 id,
                 serde_json::to_string(&source)?,
                 serde_json::to_string(observed)?,
+                normalized,
             ));
         }
         let next_revision = expected_revision
@@ -198,9 +175,11 @@ impl Store {
                 params![account, calendar],
             )?;
         }
-        for (id, source, observed) in replacements {
+        for (id, source, observed, normalized) in replacements {
             tx.execute("INSERT INTO calendar_sources(account,calendar_id,event_id,json) VALUES(?1,?2,?3,?4) ON CONFLICT(account,calendar_id,event_id) DO UPDATE SET json=excluded.json",params![account,calendar,id,source])?;
             tx.execute("INSERT INTO calendar_event_state(account,calendar_id,event_id,visible,observed_json) VALUES(?1,?2,?3,1,?4) ON CONFLICT(account,calendar_id,event_id) DO UPDATE SET visible=1,observed_json=excluded.observed_json",params![account,calendar,id,observed])?;
+            let generation:i64=tx.query_row("SELECT source_generation FROM calendar_sources WHERE account=?1 AND calendar_id=?2 AND event_id=?3",params![account,calendar,id],|r|r.get(0))?;
+            crate::live_calendar::index_event(&tx, &normalized, 0, generation)?;
         }
         tx.execute("INSERT INTO calendar_batch_commits(account,calendar_id,expected_revision,fingerprint,result_json) VALUES(?1,?2,?3,?4,?5)",params![account,calendar,expected_revision,fingerprint,serde_json::to_string(&result)?])?;
         tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
@@ -214,18 +193,37 @@ impl Store {
         calendar: &str,
         event: &str,
     ) -> Result<(Event, Access)> {
-        crate::id(event)?;
+        crate::live_calendar::provider_id(event)?;
         let scope = self.calendar_checkpoint(account, calendar)?;
-        let raw:Option<String>=self.db.query_row("SELECT s.json FROM calendar_sources s LEFT JOIN calendar_event_state v ON v.account=s.account AND v.calendar_id=s.calendar_id AND v.event_id=s.event_id WHERE s.account=?1 AND s.calendar_id=?2 AND s.event_id=?3 AND COALESCE(v.visible,1)=1",params![account,calendar,event],|r|r.get(0)).optional()?;
+        let raw:Option<String>=self.db.query_row("SELECT json FROM calendar_visible_sources WHERE account=?1 AND calendar_id=?2 AND event_id=?3",params![account,calendar,event],|r|r.get(0)).optional()?;
         let raw = raw.ok_or_else(|| err("not_found", "Event is not visible in this calendar"))?;
-        let event = fm_calendar::normalize(
+        let mut event = fm_calendar::normalize(
             account,
             calendar,
             scope["time_zone"].as_str().unwrap(),
             &serde_json::from_str(&raw)?,
         )
         .map_err(calendar_error)?;
-        Ok((event, parse_access(scope["access"].as_str().unwrap())?))
+        if let Some(parent) = &event.series_id {
+            let raw:Option<String>=self.db.query_row("SELECT json FROM calendar_visible_sources WHERE account=?1 AND calendar_id=?2 AND event_id=?3",params![account,calendar,parent],|r|r.get(0)).optional()?;
+            if let Some(raw) = raw {
+                let master = fm_calendar::normalize(
+                    account,
+                    calendar,
+                    scope["time_zone"].as_str().unwrap(),
+                    &serde_json::from_str(&raw)?,
+                )
+                .map_err(calendar_error)?;
+                event = event
+                    .with_recurring_master(&master)
+                    .map_err(calendar_error)?;
+            }
+        }
+        let mut access = parse_access(scope["access"].as_str().unwrap())?;
+        if self.calendar_membership_denied(account, calendar)? {
+            access = Access::None;
+        }
+        Ok((event, access))
     }
 
     /// Prepare a fake provider write from current retained source and ACL.
@@ -316,8 +314,8 @@ impl Store {
     ) -> Result<Value> {
         crate::id(request_id)?;
         crate::id(&target.account)?;
-        crate::id(&target.calendar)?;
-        crate::id(&target.event)?;
+        crate::live_calendar::provider_id(&target.calendar)?;
+        crate::live_calendar::provider_id(&target.event)?;
         let (intent,previous):(String,Option<String>)=self.db.query_row("SELECT intent_json,result_json FROM calendar_write_operations WHERE account=?1 AND request_id=?2",params![target.account,request_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?.ok_or_else(||err("not_found","Calendar write intent does not exist"))?;
         let intent: Value = serde_json::from_str(&intent)?;
         if intent["write"]["target"] != serde_json::to_value(target)?
@@ -339,6 +337,7 @@ impl Store {
             }
             return Ok(previous);
         }
+        self.calendar_assert_no_pending(&target.account, &target.calendar)?;
         let (event, access) =
             self.stored_calendar_event(&target.account, &target.calendar, &target.event)?;
         let etag = intent["write"]["if_match"]
@@ -412,17 +411,29 @@ impl Store {
         if tx.execute("UPDATE calendar_sync_state SET revision=?1 WHERE account=?2 AND calendar_id=?3 AND revision=?4",params![next,target.account,target.calendar,revision])?!=1 {return Err(err("stale_revision","Calendar changed before acknowledgement"));}
         let source = serde_json::to_string(&provider_source)?;
         tx.execute("UPDATE calendar_sources SET json=?1 WHERE account=?2 AND calendar_id=?3 AND event_id=?4",params![source,target.account,target.calendar,target.event])?;
+        let generation:i64=tx.query_row("SELECT source_generation FROM calendar_sources WHERE account=?1 AND calendar_id=?2 AND event_id=?3",params![target.account,target.calendar,target.event],|r|r.get(0))?;
+        crate::live_calendar::index_event(&tx, &acknowledged, 0, generation)?;
         tx.execute("INSERT INTO calendar_event_state(account,calendar_id,event_id,visible,observed_json) VALUES(?1,?2,?3,1,?4) ON CONFLICT(account,calendar_id,event_id) DO UPDATE SET visible=1,observed_json=excluded.observed_json",params![target.account,target.calendar,target.event,source])?;
         tx.execute("UPDATE calendar_write_operations SET result_json=?1 WHERE account=?2 AND request_id=?3 AND result_json IS NULL",params![serde_json::to_string(&result)?,target.account,request_id])?;
         tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
         tx.commit()?;
         Ok(result)
     }
+    pub(crate) fn calendar_assert_no_pending(&self, account: &str, calendar: &str) -> Result<()> {
+        let pending:bool=self.db.query_row("SELECT EXISTS(SELECT 1 FROM calendar_sync_runs WHERE account=?1 AND calendar_id=?2 AND kind='events' AND state='staging') OR EXISTS(SELECT 1 FROM calendar_sources WHERE account=?1 AND calendar_id=?2 AND pending_generation IS NOT NULL)",params![account,calendar],|r|r.get(0))?;
+        if pending {
+            return Err(err(
+                "calendar_sync_pending",
+                "Publish or discard the Calendar sync before acknowledging a write",
+            ));
+        }
+        Ok(())
+    }
 }
 
 fn validate_scope(scope: &SyncScope) -> Result<()> {
     crate::id(&scope.account)?;
-    crate::id(&scope.calendar)?;
+    crate::live_calendar::provider_id(&scope.calendar)?;
     crate::id(&scope.query_fingerprint)?;
     Ok(())
 }
@@ -443,16 +454,18 @@ pub(crate) fn parse_access(value: &str) -> Result<Access> {
         "free_busy" => Ok(Access::FreeBusy),
         "reader" => Ok(Access::Reader),
         "writer" => Ok(Access::Writer),
+        "writer_without_private_access" => Ok(Access::WriterWithoutPrivateAccess),
         "owner" => Ok(Access::Owner),
         _ => Err(err("invalid_request", "Unknown calendar access")),
     }
 }
-fn access_name(access: Access) -> &'static str {
+pub(crate) fn access_name(access: Access) -> &'static str {
     match access {
         Access::None => "none",
         Access::FreeBusy => "free_busy",
         Access::Reader => "reader",
         Access::Writer => "writer",
+        Access::WriterWithoutPrivateAccess => "writer_without_private_access",
         Access::Owner => "owner",
     }
 }

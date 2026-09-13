@@ -1,0 +1,30 @@
+{
+  "captured_utc": "2026-09-13T06:33:49.8847875Z",
+  "scope": "P2-01 engine OAuth and shared token coordinator fixtures; excludes live authorization, full native app and provider sync",
+  "files": [
+    {
+      "path": "crates/fm-engine/src/google_auth.rs",
+      "sha256": "b4093acf2ab623b5b27a67e7d407346c81fe8b3969a7d04fb95d25302eb900a4"
+    },
+    {
+      "path": "crates/fm-engine/src/google_auth/tests.rs",
+      "sha256": "7b4c6b58efcb2999cf2bf460116de95730ca5e4e319643e456157870b54f66ea"
+    },
+    {
+      "path": "crates/fm-engine/Cargo.toml",
+      "sha256": "633541966a8c57139ceaa68639a9e63f5a0193167536a84e91c0e8650e2e95f2"
+    },
+    {
+      "path": "crates/fm-google/src/auth.rs",
+      "sha256": "d251e66b341e0e2810e68a04fcd0b2591ad33c2a8b68037a9410546afec4b1b1"
+    },
+    {
+      "path": "crates/fm-google/src/desktop_auth.rs",
+      "sha256": "49e241ac1d1e1f503f8c970ad0884b812d53506462e401c72b1ae08cd862f60b"
+    },
+    {
+      "path": "crates/fm-google/src/desktop_auth/tests.rs",
+      "sha256": "e3fb43b01ada3985bbb6ae0d179ce2c921228932f5073c5966ea98736b5b1ccb"
+    }
+  ]
+}

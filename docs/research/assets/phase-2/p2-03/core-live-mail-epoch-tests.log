@@ -1,0 +1,51 @@
+   Compiling ring v0.17.14
+   Compiling libsqlite3-sys v0.30.1
+   Compiling rusqlite v0.32.1
+   Compiling rustls v0.23.44
+   Compiling rustls-webpki v0.103.15
+   Compiling jsonwebtoken v9.3.1
+   Compiling tokio-rustls v0.26.5
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+   Compiling fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.28s
+     Running unittests src\lib.rs (target\debug\deps\fm_core-fbf5e23cd42bc787.exe)
+
+running 14 tests
+test google_live_mail::tests::cancellation_leaves_no_staged_work_and_same_source_label_refresh_skips_fts ... ok
+test google_live_mail::tests::bounded_preparation_retains_attachments_and_remote_drafts_without_publishing_drafts ... ok
+test google_live_mail::tests::recovery_rehash_rejects_corruption_and_preparation_is_store_independent ... ok
+test google_live_mail::tests::date_order_uses_internal_date_and_original_rfc_date_is_retained ... ok
+test google_live_mail::tests::parallel_content_publication_reuses_one_verified_blob ... ok
+test google_live_mail::tests::newer_deletion_cannot_be_resurrected_by_an_older_inventory_result ... ok
+test google_live_mail::tests::oversized_and_malformed_items_do_not_poison_page_or_claim_offline_coverage ... ok
+test google_live_mail::tests::transaction_failure_rolls_back_fts_coverage_receipt_and_messages ... ok
+test google_live_mail::tests::expired_history_absence_needs_reconciliation_and_never_erases_authored_work ... ok
+test google_live_mail::tests::explicit_retry_repairs_older_message_history_and_counters_survive_resync_deletion ... ok
+test google_live_mail::tests::visible_parts_replay_resume_and_page_cursor_wait_for_every_outcome ... ok
+test google_live_mail::tests::independent_delta_wins_over_older_inventory_and_preserves_manual_intent ... ok
+test google_live_mail::tests::part_item_and_normalized_byte_limits_are_enforced_before_any_publication ... ok
+test google_live_mail::tests::generation_connection_and_profile_fences_reject_old_preparation ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 101 filtered out; finished in 0.62s
+
+     Running tests\coverage.rs (target\debug\deps\coverage-d45801a9ede6c797.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests\mutations.rs (target\debug\deps\mutations-02a89e4e68fb19e7.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests\search.rs (target\debug\deps\search-27805b72a5496663.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+

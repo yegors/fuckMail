@@ -5,10 +5,14 @@ use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
     json!({"density":"comfortable","week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
-        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60})
+        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"calendar_display_time_zone":null})
 }
 impl Store {
     pub(crate) fn preferences(&self) -> Result<Value> {
+        let mut profile_defaults = defaults();
+        if self.profile_kind()? == crate::live_profile::ProfileKind::Synthetic {
+            profile_defaults["calendar_display_time_zone"] = "America/Toronto".into();
+        }
         let found: Option<(i64, String)> = self
             .db
             .query_row(
@@ -19,7 +23,7 @@ impl Store {
             .optional()?;
         let (revision, preferences) = match found {
             Some((r, j)) => {
-                let mut merged = defaults();
+                let mut merged = profile_defaults;
                 let saved: Value = serde_json::from_str(&j)?;
                 for (key, value) in saved
                     .as_object()
@@ -29,7 +33,7 @@ impl Store {
                 }
                 (r, merged)
             }
-            None => (0, defaults()),
+            None => (0, profile_defaults),
         };
         Ok(json!({"revision":revision,"preferences":preferences}))
     }
@@ -79,11 +83,26 @@ impl Store {
                 "last_workspace",
                 "timeline_position",
                 "default_event_duration_minutes",
+                "calendar_display_time_zone",
             ],
         )?;
         let mut preferences = current["preferences"].clone();
         for (key, value) in patch.as_object().unwrap() {
             preferences[key] = value.clone();
+        }
+        if !preferences["calendar_display_time_zone"].is_null() {
+            let zone = preferences["calendar_display_time_zone"]
+                .as_str()
+                .filter(|v| !v.is_empty() && v.len() <= 256 && !v.chars().any(char::is_control))
+                .ok_or_else(|| {
+                    err(
+                        "invalid_request",
+                        "Calendar display zone must be an IANA zone",
+                    )
+                })?;
+            let day = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+            fm_calendar::Window::from_dates(day, day.succ_opt().unwrap(), zone)
+                .map_err(crate::calendar_store::calendar_error)?;
         }
         for (key, allowed) in [
             ("theme", &["graphite", "paper", "harbour"][..]),
@@ -155,7 +174,9 @@ impl Store {
             for source in selected {
                 fields(source, &["account", "calendar_id"])?;
                 let account = string(source, "account")?;
-                let calendar = string(source, "calendar_id")?;
+                let calendar = crate::live_calendar::provider_id(
+                    source["calendar_id"].as_str().unwrap_or_default(),
+                )?;
                 if !seen.insert((account, calendar)) {
                     return Err(err("invalid_request", "Repeated calendar source"));
                 }
@@ -173,6 +194,12 @@ impl Store {
             params![request, fingerprint, serde_json::to_string(&result)?],
         )?;
         tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
+        if preferences["calendar_display_time_zone"]
+            != current["preferences"]["calendar_display_time_zone"]
+            || preferences["selected_calendars"] != current["preferences"]["selected_calendars"]
+        {
+            tx.execute("UPDATE calendar_publication SET revision=revision+1", [])?;
+        }
         tx.commit()?;
         Ok(result)
     }

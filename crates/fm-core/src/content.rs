@@ -7,11 +7,34 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 pub const MAX_BLOB_BYTES: u64 = 64 * 1024 * 1024;
 static STAGE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+static BLOB_PUBLICATION: Mutex<()> = Mutex::new(());
+
+/// A private profile's content handle. No SQLite connection or credentials.
+#[derive(Clone)]
+pub struct BlobStore {
+    pub(crate) profile: PathBuf,
+}
+
+impl BlobStore {
+    pub fn stage_blob(&self, bytes: &[u8]) -> Result<String> {
+        stage_blob(&self.profile, bytes)
+    }
+
+    pub fn verified_blob(&self, hash: &str, size: u64) -> Result<PathBuf> {
+        verified_blob(&self.profile, hash, size)
+    }
+}
 
 impl Store {
+    pub fn google_blob_store(&self) -> BlobStore {
+        BlobStore {
+            profile: self.profile.clone(),
+        }
+    }
     /// Cheap list coverage check; content use still requires full hash verification.
     pub(crate) fn blob_present(&self, hash: &str) -> bool {
         if validate_hash(hash).is_err() {
@@ -28,49 +51,73 @@ impl Store {
     /// Publish verified bytes before the caller starts the referencing SQL transaction.
     /// Interrupted writes may leave `.stage-*` orphans; they never count as available.
     pub fn stage_blob(&self, bytes: &[u8]) -> Result<String> {
-        if bytes.len() as u64 > MAX_BLOB_BYTES {
-            return Err(err(
-                "content_too_large",
-                "Retained content exceeds the 64 MiB limit",
-            ));
-        }
-        let hash = format!("{:x}", Sha256::digest(bytes));
-        let directory = blob_directory(&self.profile, true)?;
-        let destination = directory.join(&hash);
-        match fs::symlink_metadata(&destination) {
-            Ok(_) => {
-                self.verified_blob(&hash, bytes.len() as u64)?;
-                return Ok(hash);
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
-        }
-        let (temporary, mut file) = create_stage(&directory)?;
-        file.write_all(bytes)?;
-        file.sync_all()?;
-        drop(file);
-        // Both names are in one directory/on one volume. The exclusive Store lock
-        // is the only application writer; no DB reference exists before publication.
-        fs::rename(&temporary, &destination)?;
-        sync_directory(&directory)?;
-        self.verified_blob(&hash, bytes.len() as u64)?;
-        Ok(hash)
+        stage_blob(&self.profile, bytes)
     }
 
     /// Resolve content only by a validated hash, never by an untrusted filename.
     pub fn verified_blob(&self, hash: &str, expected_size: u64) -> Result<PathBuf> {
-        validate_hash(hash)?;
-        if expected_size > MAX_BLOB_BYTES {
-            return Err(unavailable());
-        }
-        let path = blob_directory(&self.profile, false)
-            .map_err(|_| unavailable())?
-            .join(hash);
-        verify_file(&path, hash, expected_size)?;
-        Ok(path)
+        verified_blob(&self.profile, hash, expected_size)
     }
 
     pub(crate) fn export_attachment(&self, hash: &str, size: u64, name: &str) -> Result<PathBuf> {
+        self.export_verified_attachment(hash, size, name)
+    }
+}
+
+fn stage_blob(profile: &Path, bytes: &[u8]) -> Result<String> {
+    if bytes.len() as u64 > MAX_BLOB_BYTES {
+        return Err(err(
+            "content_too_large",
+            "Retained content exceeds the 64 MiB limit",
+        ));
+    }
+    let hash = format!("{:x}", Sha256::digest(bytes));
+    let directory = blob_directory(profile, true)?;
+    let destination = directory.join(&hash);
+    match fs::symlink_metadata(&destination) {
+        Ok(_) => {
+            verified_blob(profile, &hash, bytes.len() as u64)?;
+            return Ok(hash);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let (temporary, mut file) = create_stage(&directory)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    drop(file);
+    // Background preparation may race another immutable publication. Hold
+    // only the final name publication, never input hashing or file writes.
+    {
+        let _publication = BLOB_PUBLICATION.lock().map_err(|_| unavailable())?;
+        match fs::symlink_metadata(&destination) {
+            Ok(_) => fs::remove_file(&temporary)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                fs::rename(&temporary, &destination)?;
+                sync_directory(&directory)?;
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+    verified_blob(profile, &hash, bytes.len() as u64)?;
+    Ok(hash)
+}
+
+/// Resolve content only by a validated hash, never by an untrusted filename.
+fn verified_blob(profile: &Path, hash: &str, expected_size: u64) -> Result<PathBuf> {
+    validate_hash(hash)?;
+    if expected_size > MAX_BLOB_BYTES {
+        return Err(unavailable());
+    }
+    let path = blob_directory(profile, false)
+        .map_err(|_| unavailable())?
+        .join(hash);
+    verify_file(&path, hash, expected_size)?;
+    Ok(path)
+}
+
+impl Store {
+    fn export_verified_attachment(&self, hash: &str, size: u64, name: &str) -> Result<PathBuf> {
         let source = self.verified_blob(hash, size)?;
         let exports = private_directory(&self.profile, "exports", true)?;
         let directory = private_directory(&exports, hash, true)?;
@@ -313,12 +360,12 @@ fn create_stage(directory: &Path) -> Result<(PathBuf, File)> {
 }
 
 #[cfg(unix)]
-fn sync_directory(directory: &Path) -> Result<()> {
+pub(crate) fn sync_directory(directory: &Path) -> Result<()> {
     File::open(directory)?.sync_all()?;
     Ok(())
 }
 #[cfg(not(unix))]
-fn sync_directory(_: &Path) -> Result<()> {
+pub(crate) fn sync_directory(_: &Path) -> Result<()> {
     // std exposes atomic same-volume rename and file flushing on Windows, but no
     // portable directory fsync. Native power-loss testing remains a separate gate.
     Ok(())

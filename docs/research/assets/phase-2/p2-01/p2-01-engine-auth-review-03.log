@@ -1,0 +1,25 @@
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.84s
+     Running unittests src\main.rs (target\debug\deps\fm_engine-8f43be620f559423.exe)
+
+running 11 tests
+test google_auth::tests::saved_client_load_and_disconnect_use_one_shared_vault_without_deletion ... ok
+test google_auth::tests::attempts_are_session_owned_cancelled_on_owner_exit_and_status_is_redacted ... ok
+test google_auth::tests::configuration_is_bounded_installed_only_and_never_supplies_endpoints ... ok
+test google_auth::tests::cancelled_reconnect_after_vault_write_cannot_restart_with_stale_connected_scopes ... ok
+test google_auth::tests::real_loopback_callback_uses_fixed_fixture_transport_and_retains_no_failed_grant ... ok
+test google_auth::tests::aborted_begin_releases_its_reserved_attempt_without_starting_login_later ... ok
+test google_auth::tests::rejected_refresh_stops_sibling_account_work_and_keeps_the_vault ... ok
+test google_auth::tests::queued_refresh_rejection_cannot_downgrade_a_disconnect ... ok
+test google_auth::tests::successful_signed_login_and_partial_reconnect_publish_only_durable_verified_grants ... ok
+test google_auth::tests::failed_core_binding_after_vault_write_leaves_reconnect_required ... ok
+test google_auth::tests::completed_status_retention_is_bounded_and_shutdown_closes_the_listener ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 2.29s
+
+     Running tests\sessions.rs (target\debug\deps\sessions-2239c75e63845bf7.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+

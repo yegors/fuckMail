@@ -1,15 +1,21 @@
+use crate::transport::CancellationToken;
 use crate::{AccountId, GoogleError};
 use oauth2::{
     basic::BasicClient, AuthUrl, ClientId, CsrfToken, PkceCodeChallenge, PkceCodeVerifier,
     RedirectUrl, Scope, TokenUrl,
 };
 use std::collections::BTreeMap;
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
-pub const GOOGLE_SCOPES: [&str; 3] = [
+pub const GOOGLE_SCOPES: [&str; 6] = [
+    "openid",
+    "email",
     "https://www.googleapis.com/auth/gmail.modify",
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+    "https://www.googleapis.com/auth/calendar.events.freebusy",
 ];
 
 /// Held in the engine only for one system-browser attempt. Deliberately no Debug.
@@ -18,19 +24,34 @@ pub struct DesktopAuthorization {
     pub redirect_uri: String,
     csrf: CsrfToken,
     verifier: PkceCodeVerifier,
+    nonce: CsrfToken,
+    client_id: String,
 }
 
 impl DesktopAuthorization {
     /// Port must come from a successfully bound ephemeral IPv4 loopback listener.
     /// Binding, callback timeout and the actual token exchange remain adapter work.
     pub fn new(client_id: String, loopback_port: u16) -> Result<Self, GoogleError> {
-        if client_id.is_empty() || loopback_port == 0 {
+        Self::build(client_id, loopback_port, false)
+    }
+
+    /// Explicit recovery after a missing/revoked refresh token; never a refresh retry.
+    pub fn new_reauthorization(client_id: String, loopback_port: u16) -> Result<Self, GoogleError> {
+        Self::build(client_id, loopback_port, true)
+    }
+
+    fn build(client_id: String, loopback_port: u16, reconsent: bool) -> Result<Self, GoogleError> {
+        if client_id.is_empty()
+            || client_id.len() > 1024
+            || client_id.chars().any(char::is_control)
+            || loopback_port == 0
+        {
             return Err(GoogleError::InvalidResponse(
                 "OAuth client or callback unavailable",
             ));
         }
         let redirect_uri = format!("http://127.0.0.1:{loopback_port}/oauth2/callback");
-        let client = BasicClient::new(ClientId::new(client_id))
+        let client = BasicClient::new(ClientId::new(client_id.clone()))
             .set_auth_uri(
                 AuthUrl::new("https://accounts.google.com/o/oauth2/v2/auth".to_owned()).unwrap(),
             )
@@ -44,15 +65,27 @@ impl DesktopAuthorization {
             client.authorize_url(CsrfToken::new_random),
             |request, scope| request.add_scope(Scope::new((*scope).to_owned())),
         );
+        let nonce = CsrfToken::new_random();
         let (url, csrf) = request
             .set_pkce_challenge(challenge)
             .add_extra_param("access_type", "offline")
+            .add_extra_param(
+                "prompt",
+                if reconsent {
+                    "consent select_account"
+                } else {
+                    "select_account"
+                },
+            )
+            .add_extra_param("nonce", nonce.secret())
             .url();
         Ok(Self {
             url: url.to_string(),
             redirect_uri,
             csrf,
             verifier,
+            nonce,
+            client_id,
         })
     }
 
@@ -70,7 +103,13 @@ impl DesktopAuthorization {
             code,
             verifier: self.verifier,
             redirect_uri: self.redirect_uri,
+            nonce: self.nonce,
+            client_id: self.client_id,
         })
+    }
+
+    pub(crate) fn matches_state(&self, state: &str) -> bool {
+        state.len() <= 1024 && CsrfToken::new(state.to_owned()) == self.csrf
     }
 }
 
@@ -78,6 +117,8 @@ pub struct AuthorizationCode {
     pub code: String,
     pub verifier: PkceCodeVerifier,
     pub redirect_uri: String,
+    pub(crate) nonce: CsrfToken,
+    pub(crate) client_id: String,
 }
 
 #[derive(Clone)]
@@ -108,14 +149,51 @@ pub trait RefreshTransport: Send + Sync {
     ) -> Result<RefreshResult, GoogleError>;
 }
 
+/// Production transport path. The future must honor the caller's cancellation.
+pub trait AsyncRefreshTransport: Send + Sync {
+    fn refresh_async<'a>(
+        &'a self,
+        account: &'a AccountId,
+        refresh_token: &'a str,
+        now_secs: u64,
+        cancel: &'a CancellationToken,
+    ) -> Pin<Box<dyn Future<Output = Result<RefreshResult, GoogleError>> + Send + 'a>>;
+}
+
 /// One short-lived refresh lock per account, shared by Gmail and Calendar in one engine.
 /// Secrets remain with the vault/transport; no token type derives Debug/Serialize.
 #[derive(Default)]
 pub struct TokenCoordinator {
-    accounts: Mutex<BTreeMap<AccountId, Arc<Mutex<()>>>>,
+    accounts: Mutex<BTreeMap<AccountId, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl TokenCoordinator {
+    /// A newly verified login shares refresh finalization's account mutex. The
+    /// native store owns the guard even if its awaiting owner is cancelled.
+    pub async fn persist_verified_grant<V: CredentialVault + 'static>(
+        &self,
+        account: &AccountId,
+        grant: crate::desktop_auth::VerifiedGrant,
+        vault: Arc<V>,
+        cancel: &CancellationToken,
+    ) -> Result<(), GoogleError> {
+        let guard = {
+            let mut accounts = self
+                .accounts
+                .lock()
+                .map_err(|_| GoogleError::StoreUnavailable)?;
+            accounts.entry(account.clone()).or_default().clone()
+        };
+        let guard = tokio::select! {
+            _ = cancel.cancelled() => return Err(GoogleError::TransportInterrupted),
+            guard = guard.lock_owned() => guard,
+        };
+        if cancel.is_cancelled() {
+            return Err(GoogleError::TransportInterrupted);
+        }
+        grant.persist_guarded(account, vault, guard).await
+    }
+
     pub fn access_token<V: CredentialVault, T: RefreshTransport>(
         &self,
         account: &AccountId,
@@ -130,7 +208,8 @@ impl TokenCoordinator {
                 .map_err(|_| GoogleError::StoreUnavailable)?;
             accounts.entry(account.clone()).or_default().clone()
         };
-        let _refresh = guard.lock().map_err(|_| GoogleError::StoreUnavailable)?;
+        // The synchronous fixture/worker path must not run on a Tokio worker.
+        let _refresh = guard.blocking_lock();
         let token = vault
             .load(account)?
             .ok_or(GoogleError::ReauthorizationRequired)?;
@@ -141,7 +220,13 @@ impl TokenCoordinator {
             return Ok(token.access_token);
         }
         let result = transport.refresh(account, &token.refresh_token)?;
-        if result.access_token.is_empty() || result.expires_at_secs <= now_secs.saturating_add(60) {
+        if result.access_token.is_empty()
+            || result.expires_at_secs <= now_secs.saturating_add(60)
+            || result
+                .rotated_refresh_token
+                .as_ref()
+                .is_some_and(String::is_empty)
+        {
             return Err(GoogleError::InvalidResponse(
                 "invalid refreshed token lifetime",
             ));
@@ -153,6 +238,81 @@ impl TokenCoordinator {
         };
         let access = updated.access_token.clone();
         vault.store(account, updated)?;
+        Ok(access)
+    }
+
+    /// Native vault calls run on Tokio's blocking pool; provider waits never block it.
+    /// The same account mutex also serializes the legacy synchronous worker path.
+    pub async fn access_token_async<
+        V: CredentialVault + 'static,
+        T: AsyncRefreshTransport + ?Sized,
+    >(
+        &self,
+        account: &AccountId,
+        now_secs: u64,
+        vault: Arc<V>,
+        transport: &T,
+        cancel: &CancellationToken,
+    ) -> Result<String, GoogleError> {
+        let guard = {
+            let mut accounts = self
+                .accounts
+                .lock()
+                .map_err(|_| GoogleError::StoreUnavailable)?;
+            accounts.entry(account.clone()).or_default().clone()
+        };
+        let refresh_guard = tokio::select! {
+            _ = cancel.cancelled() => return Err(GoogleError::TransportInterrupted),
+            guard = guard.lock_owned() => guard,
+        };
+        let load_vault = vault.clone();
+        let load_account = account.clone();
+        let token = tokio::task::spawn_blocking(move || load_vault.load(&load_account))
+            .await
+            .map_err(|_| GoogleError::StoreUnavailable)??
+            .ok_or(GoogleError::ReauthorizationRequired)?;
+        if cancel.is_cancelled() {
+            return Err(GoogleError::TransportInterrupted);
+        }
+        if token.refresh_token.is_empty() || token.access_token.is_empty() {
+            return Err(GoogleError::ReauthorizationRequired);
+        }
+        if token.expires_at_secs > now_secs.saturating_add(60) {
+            return Ok(token.access_token);
+        }
+        let result = transport
+            .refresh_async(account, &token.refresh_token, now_secs, cancel)
+            .await?;
+        if result.access_token.is_empty()
+            || result.expires_at_secs <= now_secs.saturating_add(60)
+            || result
+                .rotated_refresh_token
+                .as_ref()
+                .is_some_and(String::is_empty)
+        {
+            return Err(GoogleError::InvalidResponse(
+                "invalid refreshed token lifetime",
+            ));
+        }
+        let updated = StoredToken {
+            access_token: result.access_token,
+            expires_at_secs: result.expires_at_secs,
+            refresh_token: result.rotated_refresh_token.unwrap_or(token.refresh_token),
+        };
+        let access = updated.access_token.clone();
+        let store_account = account.clone();
+        // Finalization owns the account lock, including if this awaiting task is
+        // aborted. A queued/running native store must finish before another refresh.
+        tokio::task::spawn_blocking(move || {
+            let result = vault.store(&store_account, updated);
+            drop(refresh_guard);
+            result
+        })
+        .await
+        .map_err(|_| GoogleError::StoreUnavailable)??;
+        if cancel.is_cancelled() {
+            return Err(GoogleError::TransportInterrupted);
+        }
         Ok(access)
     }
 }

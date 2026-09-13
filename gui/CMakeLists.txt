@@ -1,6 +1,7 @@
 qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     main.cpp
     MailBackend.cpp
+    GoogleBackend.cpp
     MailBackend.h
     Phase1Backend.cpp
     CompositionBackend.cpp

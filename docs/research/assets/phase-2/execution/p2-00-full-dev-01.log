@@ -1,0 +1,167 @@
+Host: Windows-10-10.0.26200-SP0 AMD64
+Qt kit: C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64
+Source: C:\Users\Yegor\Projects\Fuckaround\fuckMail
++ "C:\Program Files\Git\cmd\git.EXE" --version
+git version 2.53.0.windows.1 at C:\Program Files\Git\cmd\git.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\rustc.EXE --version
+rustc 1.88.0 (6b00bc388 2025-06-23) at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\rustc.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.EXE --version
+cargo 1.88.0 (873a06493 2025-05-10) at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.EXE --version
+cmake version 3.31.6 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ninja.EXE --version
+1.11.1.git.kitware.jobserver-1 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ninja.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE --qt-version
+6.11.2 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE
+Native C++ compiler: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\cl.exe
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --preset dev
+Preset CMake variables:
+
+  BUILD_TESTING:BOOL="TRUE"
+  CMAKE_BUILD_TYPE="Debug"
+  CMAKE_EXPORT_COMPILE_COMMANDS:BOOL="TRUE"
+  CMAKE_PREFIX_PATH="C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64"
+
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Configuring done (1.2s)
+-- Generating done (0.4s)
+-- Build files have been written to: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --build --preset dev --parallel
+   Compiling ring v0.17.14
+   Compiling rustls v0.23.44
+   Compiling rustls-webpki v0.103.15
+   Compiling jsonwebtoken v9.3.1
+   Compiling tokio-rustls v0.26.5
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+   Compiling fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 10.53s
+[0/63] Build the shared Rust engine and CLI
+[4/57] Automatic MOC and UIC for target gui-reply-document-test
+[6/55] Automatic MOC and UIC for target fuckmail-gui
+[7/54] Running AUTOMOC file extraction for target fuckmail-gui
+[8/8] C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev && C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Lib\site-packages\cmake\data\bin\cmake.exe -E copy_if_different C:/Users/Yegor/Projects/Fuckaround/fuckMail/target/debug/fm-engine.exe C:/Users/Yegor/Projects/Fuckaround/fuckMail/target/debug/fm.exe C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev"
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ctest.exe --preset dev
+Test project C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+      Start  1: rust-test-build
+ 1/10 Test  #1: rust-test-build ..................   Passed   10.51 sec
+      Start  2: rust-workspace
+ 2/10 Test  #2: rust-workspace ...................   Passed   91.96 sec
+      Start  3: gui-smoke
+ 3/10 Test  #3: gui-smoke ........................   Passed    7.22 sec
+      Start  4: gui-live-empty
+ 4/10 Test  #4: gui-live-empty ...................   Passed    6.14 sec
+      Start  5: gui-integration
+ 5/10 Test  #5: gui-integration ..................***Failed   25.96 sec
+GUI engine launch attempt 1
+GUI self-test stage 0
+GUI engine launch attempt 2
+GUI self-test stage 20
+GUI self-test stage 21
+GUI self-test stage 1
+GUI self-test stage 2
+GUI self-test stage 27
+GUI self-test stage 22
+GUI self-test stage 23
+GUI self-test stage 24
+GUI self-test stage 25
+GUI self-test stage 26
+GUI self-test stage 3
+GUI self-test stage 4
+GUI self-test stage 5
+GUI self-test stage 6
+GUI self-test stage 7
+GUI self-test stage 8
+GUI self-test stage 9
+GUI self-test stage 30
+GUI self-test stage 31
+GUI self-test stage 32
+GUI self-test stage 33
+GUI self-test stage 34
+GUI self-test stage 35
+GUI self-test stage 36
+GUI self-test stage 37
+GUI self-test stage 38
+GUI self-test stage 39
+GUI self-test stage 40
+GUI self-test stage 41
+GUI self-test stage 42
+GUI self-test stage 48
+GUI self-test stage 90
+GUI self-test stage 91
+GUI self-test stage 92
+GUI self-test stage 93
+GUI self-test stage 49
+GUI self-test stage 94
+Native Sent/local-capture/Inspect passed: original conversation, operation identity, MIME bytes and non-delivery status verified by CLI.
+GUI self-test stage 95
+GUI self-test stage 96
+GUI self-test stage 97
+GUI self-test stage 98
+GUI self-test stage 99
+GUI self-test stage 100
+GUI self-test stage 101
+GUI self-test stage 102
+GUI self-test stage 103
+GUI self-test stage 104
+GUI self-test stage 105
+GUI self-test stage 106
+GUI self-test stage 107
+GUI self-test stage 108
+GUI self-test stage 109
+GUI self-test stage 110
+GUI self-test stage 111
+GUI self-test stage 112
+Native Discard confirmation passed: opening/Cancel preserved the exact draft; confirmation cleared only its authored fields, preserving source messages, another draft and capture history.
+GUI self-test stage 50
+GUI self-test stage 51
+GUI self-test stage 52
+GUI self-test stage 53
+GUI self-test stage 54
+GUI self-test stage 55
+GUI self-test stage 56
+GUI self-test stage 57
+GUI self-test stage 58
+GUI self-test stage 59
+GUI self-test stage 70
+GUI self-test stage 71
+GUI self-test stage 72
+GUI self-test stage 73
+GUI self-test stage 74
+GUI engine launch attempt 1
+GUI self-test stage 75
+GUI self-test stage 76
+GUI self-test stage 77
+GUI self-test stage 78
+GUI self-test stage 79
+GUI self-test stage 80
+Native Settings stage 0
+Native Settings stage 1
+Native Settings stage 2
+Settings programmatic viewport setup: list= QVariant(double, 240) reader= QVariant(double, 590) editorFocus= true active= "replyComposer" stored list/reader= QVariant(double, 240) QVariant(double, 590)
+GUI self-test failed at stage 80 : Programmatic viewport setup failed: list=240 (extent=2398, viewport=605), reader=590 (extent=1388, viewport=558), editorFocus=1, active=replyComposer.
+"There are still \"2\" items in the process of being created at engine destruction."
+
+      Start  6: gui-startup-recovery
+ 6/10 Test  #6: gui-startup-recovery .............   Passed    7.93 sec
+      Start  7: gui-ipc-trust
+ 7/10 Test  #7: gui-ipc-trust ....................   Passed    0.07 sec
+      Start  8: gui-composer-probe
+ 8/10 Test  #8: gui-composer-probe ...............   Passed    0.07 sec
+      Start  9: gui-reply-document
+ 9/10 Test  #9: gui-reply-document ...............   Passed    0.26 sec
+      Start 10: gui-calendar-layout
+10/10 Test #10: gui-calendar-layout ..............   Passed    0.06 sec
+
+90% tests passed, 1 tests failed out of 10
+
+Total Test time (real) = 150.19 sec
+
+The following tests FAILED:
+	  5 - gui-integration (Failed)
+Errors while running CTest
+ERROR: Command '['C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\bootstrap\\Scripts\\ctest.exe', '--preset', 'dev']' returned non-zero exit status 8.

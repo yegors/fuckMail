@@ -1,0 +1,45 @@
+    Checking ring v0.17.14
+    Checking parking_lot_core v0.9.12
+    Checking ahash v0.8.12
+    Checking icu_normalizer v2.3.0
+    Checking cssparser v0.37.0
+    Checking libsqlite3-sys v0.30.1
+    Checking tempfile v3.27.0
+    Checking parking_lot v0.12.5
+    Checking hashbrown v0.14.5
+    Checking string_cache v0.9.0
+    Checking idna_adapter v1.2.2
+    Checking web_atoms v0.2.6
+    Checking idna v1.1.0
+    Checking hashlink v0.9.1
+    Checking url v2.5.8
+    Checking lettre v0.11.23
+    Checking rusqlite v0.32.1
+    Checking rustls-webpki v0.103.15
+    Checking jsonwebtoken v9.3.1
+    Checking markup5ever v0.39.0
+    Checking tower-http v0.6.11
+    Checking oauth2 v5.0.0
+    Checking html5ever v0.39.0
+    Checking rustls v0.23.44
+    Checking ammonia v4.1.4
+    Checking fm-mail v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-mail)
+    Checking tokio-rustls v0.26.5
+    Checking hyper-rustls v0.27.9
+    Checking reqwest v0.12.28
+    Checking fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+    Checking fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+    Checking fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+error: redundant closure
+   --> crates\fm-core\src\live_calendar.rs:699:30
+    |
+699 |                 .is_some_and(|zone| valid_zone(zone)))
+    |                              ^^^^^^^^^^^^^^^^^^^^^^^ help: replace the closure with the function itself: `valid_zone`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_closure
+    = note: `-D clippy::redundant-closure` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::redundant_closure)]`
+
+error: could not compile `fm-core` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `fm-core` (lib test) due to 1 previous error

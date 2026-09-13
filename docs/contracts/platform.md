@@ -1,6 +1,6 @@
 # Platform, lifecycle and release
 
-State: Draft · Revision: 11 · Updated: 2026-09-12 · Implementation: Phase 2 planned under D020; no live provider capability verified. Phase 1 evidence retains its exact source/host scope; whole area remains Draft.
+State: Draft · Revision: 11 · Updated: 2026-09-13 · Implementation: Phase 2 active under D021. Empty live-profile creation and OAuth/HTTP integration are in progress; no live provider workflow is verified. [Execution evidence](../research/phase-2-execution.md) separates targeted tests from packet acceptance; whole area remains Draft.
 
 Revision 11 prepares D020's real-account pilot. The founder explicitly selected OS account permissions and verified full-disk/device encryption for local mail, indexes, attachments and backups; app-level mail-store encryption is deferred. Verify the actual host/volumes and private profile/temporary-file permissions before real import. Credential protection remains separate: native Windows/macOS/Linux vault adapters must fail clearly when locked/unavailable, with no plaintext fallback or secrets exposed to QML, CLI output or logs. Windows is the first physical pilot; other-host live access waits for each host's vault, data protection and lifecycle qualification.
 

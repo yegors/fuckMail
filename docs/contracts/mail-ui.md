@@ -1,6 +1,6 @@
 # Mail UI, reader and human composer
 
-State: Draft · Revision: 14 · Updated: 2026-09-12 · Implementation: Phase 2 planned under D020; no live provider capability verified. Phase 1 evidence retains its exact source/host scope; whole area remains Draft.
+State: Draft · Revision: 14 · Updated: 2026-09-12 · Implementation: Phase 2 implementation active under D021/D022; no live provider workflow verified. Phase 1 evidence retains its exact source/host scope; whole area remains Draft.
 
 Revision 14 prepares D020's live Google workflows while preserving the current prototype and verified P1-10 layout/performance. Mailboxes stay separate; Calendar combines only permitted details. Existing Settings adds actual connect/reconnect/disconnect, provider progress and effective quota-aware cadence when the engine supports them. Display inventory/source/attachment/index coverage and paused/denied/uncertain states without exposing developer implementation detail or inventing completion. Cached navigation never waits for a provider round-trip.
 

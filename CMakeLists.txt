@@ -93,6 +93,9 @@ if(BUILD_TESTING)
     add_test(NAME gui-smoke COMMAND "$<TARGET_FILE:fuckmail-gui>" --smoke)
     set_tests_properties(gui-smoke PROPERTIES TIMEOUT 45
         ENVIRONMENT "${FM_GUI_TEST_ENV}")
+    add_test(NAME gui-live-empty COMMAND "$<TARGET_FILE:fuckmail-gui>" --self-test-live-empty)
+    set_tests_properties(gui-live-empty PROPERTIES TIMEOUT 45
+        ENVIRONMENT "${FM_GUI_TEST_ENV}")
     add_test(NAME gui-integration COMMAND "$<TARGET_FILE:fuckmail-gui>" --self-test)
     set_tests_properties(gui-integration PROPERTIES TIMEOUT 150
         ENVIRONMENT "${FM_GUI_TEST_ENV};FM_GUI_TEST_TRACE=1")

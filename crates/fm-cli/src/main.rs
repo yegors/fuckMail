@@ -12,7 +12,7 @@ use std::{
     name = "fm",
     version,
     about = "fuckMail: local mail and calendar, through the same engine as the GUI",
-    after_help = "The initial profile is synthetic. No Google connection or sending is performed.\nUse --json for versioned responses. fm never opens the mail database directly."
+    after_help = "The default profile is synthetic. Use profile-init with an explicit path for live Google accounts.\nGoogle sign-in starts only with an explicit google connect command. fm never opens the mail database directly."
 )]
 struct Args {
     #[arg(long, global = true)]
@@ -29,6 +29,13 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Initialize a separate empty live profile; requires an explicit --profile.
+    ProfileInit,
+    /// Explicit Google sign-in and retained-account connection management.
+    Google {
+        #[command(subcommand)]
+        command: Google,
+    },
     /// List separate accounts and truthful coverage.
     Accounts,
     /// Engine/schema/fixture status (starts an explicit temporary session).
@@ -104,6 +111,38 @@ enum Command {
         #[arg(long)]
         params_file: Option<PathBuf>,
     },
+}
+
+#[derive(Subcommand)]
+enum Google {
+    /// Open your browser and keep this CLI session until login finishes or Ctrl-C.
+    /// Add --account for an identity-checked reconnect.
+    Connect {
+        #[arg(long)]
+        client_config: PathBuf,
+        #[arg(long)]
+        reauthorize: bool,
+    },
+    /// Stop Google access while retaining downloaded content, drafts and credentials.
+    Disconnect,
+    /// Download mail and Calendar while this explicit CLI session remains open.
+    /// Supply the four actual Google Console per-minute quota limits.
+    Sync {
+        #[arg(long, value_parser=clap::value_parser!(u32).range(100..=100_000_000))]
+        gmail_project_units_per_minute: u32,
+        #[arg(long, value_parser=clap::value_parser!(u32).range(100..=100_000_000))]
+        gmail_account_units_per_minute: u32,
+        #[arg(long, value_parser=clap::value_parser!(u32).range(100..=100_000_000))]
+        calendar_project_units_per_minute: u32,
+        #[arg(long, value_parser=clap::value_parser!(u32).range(100..=100_000_000))]
+        calendar_account_units_per_minute: u32,
+        #[arg(long)]
+        seconds: Option<u64>,
+    },
+    /// Inspect active acquisition; does not start provider requests.
+    SyncStatus,
+    /// Stop this account's acquisition and retain all downloaded and unsent work.
+    SyncStop,
 }
 
 #[derive(Subcommand)]
@@ -380,6 +419,54 @@ fn account(args: &Args) -> Result<&str, Failure> {
     })
 }
 
+fn open_google_browser(url: &str) -> Result<(), Failure> {
+    // The engine supplies one fixed HTTPS authorization endpoint. No shell
+    // evaluates the query, and URLs/state are never copied to terminal logs.
+    if !url.starts_with("https://accounts.google.com/o/oauth2/v2/auth?")
+        || url.len() > 16384
+        || url.chars().any(char::is_control)
+        || url.contains('#')
+    {
+        return Err(invalid("The engine returned an invalid Google sign-in URL"));
+    }
+    #[cfg(windows)]
+    let mut command = {
+        use std::os::windows::process::CommandExt;
+        let windows = std::env::var_os("SystemRoot")
+            .ok_or_else(|| invalid("Windows browser launcher is unavailable"))?;
+        let mut command =
+            std::process::Command::new(PathBuf::from(windows).join("System32/rundll32.exe"));
+        command
+            .arg("url.dll,FileProtocolHandler")
+            .arg(url)
+            .creation_flags(0x08000000);
+        command
+    };
+    #[cfg(target_os = "macos")]
+    let mut command = {
+        let mut command = std::process::Command::new("/usr/bin/open");
+        command.arg(url);
+        command
+    };
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let mut command = {
+        let mut command = std::process::Command::new("xdg-open");
+        command.arg(url);
+        command
+    };
+    let mut child = command
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|_| invalid("The default browser could not be opened"))?;
+    // Reap only the launcher; OAuth remains tied to this CLI's engine session.
+    std::thread::spawn(move || {
+        let _ = child.wait();
+    });
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
@@ -425,14 +512,176 @@ async fn run(args: &Args) -> Result<(), Failure> {
             | Command::Preferences { .. }
             | Command::CalendarSources
             | Command::Calendar { combined: true, .. }
+            | Command::ProfileInit
+            | Command::Google {
+                command: Google::Connect { .. }
+            }
+            | Command::Google {
+                command: Google::SyncStatus
+            }
     ) {
         account(args)?;
     }
-    let mut client = Client::connect(&profile, engine.as_deref()).await?;
+    let live_command = matches!(args.command, Command::ProfileInit | Command::Google { .. });
+    if live_command && args.profile.is_none() {
+        return Err(invalid(
+            "profile-init and Google commands require an explicit --profile path",
+        ));
+    }
+    let google_client_path = if let Command::Google {
+        command: Google::Connect { client_config, .. },
+    } = &args.command
+    {
+        Some(
+            std::fs::canonicalize(client_config)
+                .map_err(|_| invalid("Choose an existing desktop client JSON file"))?,
+        )
+    } else {
+        None
+    };
+    let mut client = if live_command {
+        Client::connect_live(&profile, engine.as_deref()).await?
+    } else {
+        Client::connect(&profile, engine.as_deref()).await?
+    };
     let scope = args.account.as_deref();
     let reply = match &args.command {
         Command::Accounts => client.call("accounts", None, json!({})).await?,
-        Command::Status => client.call("status", None, json!({})).await?,
+        Command::Status | Command::ProfileInit => client.call("status", None, json!({})).await?,
+        Command::Google {
+            command: Google::Disconnect,
+        } => client.call("google_disconnect", scope, json!({})).await?,
+        Command::Google {
+            command: Google::SyncStatus,
+        } => client.call("google_sync_status", scope, json!({})).await?,
+        Command::Google {
+            command: Google::SyncStop,
+        } => client.call("google_sync_stop", scope, json!({})).await?,
+        Command::Google {
+            command:
+                Google::Sync {
+                    gmail_project_units_per_minute,
+                    gmail_account_units_per_minute,
+                    calendar_project_units_per_minute,
+                    calendar_account_units_per_minute,
+                    seconds,
+                },
+        } => {
+            let reply=client.call("google_sync_start",scope,json!({"gmail_project_units_per_minute":gmail_project_units_per_minute,"gmail_account_units_per_minute":gmail_account_units_per_minute,"calendar_project_units_per_minute":calendar_project_units_per_minute,"calendar_account_units_per_minute":calendar_account_units_per_minute})).await?;
+            result(reply.clone())?;
+            emit(args, &reply)?;
+            if !args.json {
+                eprintln!("Google sync is running in this CLI session. Press Ctrl-C to stop.");
+            }
+            let started = tokio::time::Instant::now();
+            let mut previous = Value::Null;
+            loop {
+                if seconds.is_some_and(|limit| started.elapsed() >= Duration::from_secs(limit)) {
+                    break;
+                }
+                let wait = seconds
+                    .map(|limit| {
+                        Duration::from_secs(limit)
+                            .saturating_sub(started.elapsed())
+                            .min(Duration::from_secs(1))
+                    })
+                    .unwrap_or(Duration::from_secs(1));
+                let interrupted = tokio::select! {_=tokio::signal::ctrl_c()=>true,_=tokio::time::sleep(wait)=>false};
+                if interrupted {
+                    break;
+                }
+                let status = client.call("google_sync_status", scope, json!({})).await?;
+                let state = result(status.clone())?;
+                if state != previous {
+                    emit(args, &status)?;
+                    previous = state.clone();
+                }
+                if state["accounts"]
+                    .as_array()
+                    .is_none_or(|accounts| accounts.iter().all(|a| a["active"] != true))
+                {
+                    break;
+                }
+            }
+            client.call("google_sync_release", scope, json!({})).await?
+        }
+        Command::Google {
+            command: Google::Connect { reauthorize, .. },
+        } => {
+            let path = google_client_path
+                .as_ref()
+                .ok_or_else(|| invalid("Choose an existing desktop client JSON file"))?;
+            let path = path
+                .to_str()
+                .ok_or_else(|| invalid("Desktop client path is not valid Unicode"))?;
+            let begin = result(
+                client
+                    .call(
+                        "google_auth_begin",
+                        scope,
+                        json!({"client_config_path":path,"reauthorize":reauthorize}),
+                    )
+                    .await?,
+            )?;
+            let attempt = begin["attempt_id"]
+                .as_str()
+                .ok_or_else(|| invalid("Engine omitted the sign-in attempt"))?
+                .to_owned();
+            let url = begin["authorization_url"]
+                .as_str()
+                .ok_or_else(|| invalid("Engine omitted Google sign-in"))?;
+            if let Err(error) = open_google_browser(url) {
+                let _ = client
+                    .call("google_auth_cancel", None, json!({"attempt_id":attempt}))
+                    .await;
+                return Err(error);
+            }
+            if !args.json {
+                eprintln!("Finish Google sign-in in your browser. Press Ctrl-C to cancel.");
+            }
+            let start = tokio::time::Instant::now();
+            loop {
+                let reply = client
+                    .call("google_auth_status", None, json!({"attempt_id":attempt}))
+                    .await?;
+                let state = result(reply.clone())?;
+                match state["phase"].as_str() {
+                    Some("connected") => {
+                        emit(args, &reply)?;
+                        return Ok(());
+                    }
+                    Some("cancelled") => {
+                        return Err(Failure {
+                            code: "cancelled".into(),
+                            message: "Google sign-in was cancelled".into(),
+                        })
+                    }
+                    Some("failed") => {
+                        return Err(Failure {
+                            code: state["error"]["code"]
+                                .as_str()
+                                .unwrap_or("google_auth_failed")
+                                .into(),
+                            message: state["error"]["message"]
+                                .as_str()
+                                .unwrap_or("Google sign-in failed")
+                                .into(),
+                        })
+                    }
+                    _ => {}
+                }
+                let interrupted = tokio::select! { _=tokio::signal::ctrl_c()=>true, _=tokio::time::sleep(Duration::from_millis(500))=>false };
+                if interrupted || start.elapsed() >= Duration::from_secs(330) {
+                    let _ = client
+                        .call("google_auth_cancel", None, json!({"attempt_id":attempt}))
+                        .await;
+                    return Err(Failure {
+                        code: "cancelled".into(),
+                        message: "Google sign-in was cancelled".into(),
+                    });
+                }
+            }
+        }
         Command::Preferences { command } => match command {
             Preferences::Show => client.call("preferences_get", None, json!({})).await?,
             Preferences::Save {

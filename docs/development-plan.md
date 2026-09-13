@@ -1,6 +1,6 @@
 # Development plan
 
-Updated 2026-09-12 under [D009–D020](decisions.md). **Phases 0 and 1 are complete on available hosts; Phase 2 planning is prepared on `codex/phase-2`. Google-first readiness: 0/9 whole areas verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
+Updated 2026-09-13 under [D009–D021](decisions.md). **Phases 0 and 1 are complete on available hosts; Phase 2 implementation is active on `codex/phase-2`. Google-first readiness: 0/9 whole areas verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
 
 ## Delivery direction
 
@@ -55,7 +55,7 @@ No Google credentials or further product decision is needed to begin the first p
 
 ## Phase 2: Google mail and calendar together
 
-D020's [detailed packets](plans/phase-2.md) start from merged `885de67` on `codex/phase-2`. The founder has Cloud/OAuth/admin access and selected OS permissions plus verified disk encryption for the pilot; app-level mail-store encryption is deferred. The branch currently contains planning only.
+D020's [detailed packets](plans/phase-2.md) start from merged `885de67` on `codex/phase-2`; D021 starts implementation after planning checkpoint `0ced122`. The founder has Cloud/OAuth/admin access and selected OS permissions plus verified disk encryption for the pilot; app-level mail-store encryption is deferred. [Execution evidence](research/phase-2-execution.md) distinguishes current tested slices from live admission and full-phase acceptance.
 
 Implement consumer Gmail and Workspace setup, durable desktop OAuth, recent-first access with resumable full body/attachment retention, history reconciliation, labels/flags, signatures, human reply/forward/send and uncertain-submission recovery. All send/retrieve operations use Google APIs; one shared MIME interpretation serves GUI and CLI.
 

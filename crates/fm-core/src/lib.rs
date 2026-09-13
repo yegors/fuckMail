@@ -9,6 +9,7 @@ use std::{
 pub mod assist_store;
 #[cfg(test)]
 mod benchmark;
+mod calendar_projection;
 pub mod calendar_store;
 mod cancellation;
 mod capture;
@@ -17,7 +18,10 @@ mod composition;
 mod composition_tests;
 mod content;
 mod fixture;
+pub mod google_live_mail;
 pub mod google_store;
+pub mod live_calendar;
+pub mod live_profile;
 mod mutations;
 mod phase1_calendar;
 #[cfg(test)]
@@ -26,7 +30,9 @@ mod preferences;
 mod queries;
 #[cfg(test)]
 mod sender_kind_tests;
-pub const SCHEMA_VERSION: u32 = 7;
+#[cfg(test)]
+mod test_profiles;
+pub const SCHEMA_VERSION: u32 = 9;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -75,6 +81,16 @@ pub struct Store {
 }
 impl Store {
     pub fn open(profile: &Path) -> Result<Self> {
+        Self::open_profile(profile, None)
+    }
+
+    /// Explicit live creation never seeds demo content, including after a crash.
+    /// Existing profiles must already be live; this never converts a demo store.
+    pub fn open_live(profile: &Path) -> Result<Self> {
+        Self::open_profile(profile, Some(live_profile::ProfileKind::Live))
+    }
+
+    fn open_profile(profile: &Path, requested: Option<live_profile::ProfileKind>) -> Result<Self> {
         std::fs::create_dir_all(profile)?;
         let mut options = OpenOptions::new();
         options.read(true).write(true).create(true).truncate(false);
@@ -86,6 +102,18 @@ impl Store {
         let lock = options.open(profile.join("store.lock"))?;
         lock.try_lock_exclusive()
             .map_err(|_| err("store_in_use", "This profile already has a writer"))?;
+        // Persist live creation intent before the first SQLite transaction. A
+        // killed first transaction must not make a later ordinary open seed demo.
+        let marker = live_profile::live_initialization_marker(
+            profile,
+            requested == Some(live_profile::ProfileKind::Live)
+                && !profile.join("store.sqlite3").exists(),
+        )?;
+        let requested = if marker {
+            Some(live_profile::ProfileKind::Live)
+        } else {
+            requested
+        };
         let db = Connection::open(profile.join("store.sqlite3"))?;
         db.busy_timeout(std::time::Duration::from_secs(2))?;
         db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA trusted_schema=OFF;")?;
@@ -93,8 +121,33 @@ impl Store {
         if version > SCHEMA_VERSION {
             return Err(err("schema_mismatch", "This profile needs a newer engine"));
         }
+        if version != 0 {
+            let stored_kind: Option<i64> = db
+                .query_row("SELECT value FROM meta WHERE key='profile_kind'", [], |r| {
+                    r.get(0)
+                })
+                .optional()?;
+            let kind = live_profile::ProfileKind::from_stored(stored_kind.unwrap_or(0))?;
+            if requested.is_some_and(|requested| requested != kind) {
+                return Err(err(
+                    "profile_kind_mismatch",
+                    "A synthetic profile cannot be opened as a live profile",
+                ));
+            }
+        }
         if version == 0 {
-            db.execute_batch(include_str!("schema.sql"))?;
+            // Kind and fixture sentinel are in the first schema transaction.
+            // A crash between migrations therefore cannot turn live into demo.
+            let marker = if requested == Some(live_profile::ProfileKind::Live) {
+                live_profile::live_initialization_marker(profile, true)?;
+                "INSERT INTO meta VALUES('profile_kind',1); INSERT INTO meta VALUES('fixture_revision',0);"
+            } else {
+                "INSERT INTO meta VALUES('profile_kind',0);"
+            };
+            db.execute_batch(&include_str!("schema.sql").replace(
+                "PRAGMA user_version=2;",
+                &format!("{marker}\nPRAGMA user_version=2;"),
+            ))?;
         }
         if version == 1 {
             db.execute_batch(include_str!("migration-002.sql"))?;
@@ -142,6 +195,17 @@ impl Store {
             )
             .optional()?;
         if seeded.is_none() {
+            let live: bool = store.db.query_row(
+                "SELECT COALESCE((SELECT value FROM meta WHERE key='profile_kind'),0)=1",
+                [],
+                |r| r.get(0),
+            )?;
+            if live {
+                return Err(err(
+                    "profile_invalid",
+                    "Live profile fixture marker is missing",
+                ));
+            }
             store.seed()?;
         }
         let version: u32 = store
@@ -169,6 +233,27 @@ impl Store {
             tx.execute_batch("PRAGMA user_version=7")?;
             tx.commit()?;
         }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 7 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-008.sql"))?;
+            tx.execute_batch("PRAGMA user_version=8")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 8 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-009-runtime.sql"))?;
+            tx.execute_batch(include_str!("migration-009-mail.sql"))?;
+            tx.execute_batch(include_str!("migration-009-calendar.sql"))?;
+            tx.execute_batch("PRAGMA user_version=9")?;
+            tx.commit()?;
+        }
+        store.validate_profile_identity()?;
         store.recover_captures()?;
         store.mail_changes.reset_calendar_generation();
         Ok(store)
@@ -183,9 +268,21 @@ impl Store {
         }
         if method == "status" {
             fields(&params, &[])?;
+            let synthetic = self.profile_kind()? == live_profile::ProfileKind::Synthetic;
             return Ok(
-                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"calendar_generation":self.mail_changes.calendar_generation(),"synthetic":true,"fixture_today":FIXTURE_TODAY,"capabilities":{"mail":true,"drafts":true,"calendar_read":true,"phase1":true,"typed_filters":true,"preferences":true,"capture_history":true,"calendar_write_local":true,"send":false,"models":false}}),
+                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"calendar_generation":self.mail_changes.calendar_generation(),"synthetic":synthetic,"profile_kind":if synthetic {"synthetic"} else {"live"},"fixture_today":if synthetic {Some(FIXTURE_TODAY)} else {None},"capabilities":{"mail":synthetic,"drafts":synthetic,"calendar_read":synthetic,"phase1":synthetic,"typed_filters":true,"preferences":true,"capture_history":synthetic,"calendar_write_local":synthetic,"send":false,"models":false,"google_auth":!synthetic,"google_sync":!synthetic}}),
             );
+        }
+        if self.profile_kind()? == live_profile::ProfileKind::Live
+            && matches!(
+                method,
+                "draft_capture" | "calendar_write_ack" | "calendar_write" | "flag" | "set_category"
+            )
+        {
+            return Err(err(
+                "capability_unavailable",
+                "This operation is not available for a live account yet",
+            ));
         }
         match method {
             "preferences_get" => {

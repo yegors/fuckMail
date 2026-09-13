@@ -9,6 +9,7 @@
 #include <QCommandLineParser>
 #include <QDir>
 #include <QDebug>
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFont>
 #include <QFontDatabase>
@@ -39,9 +40,11 @@ int main(int argc, char **argv) {
     app.setFont(QFont("Geist", 10));
     QQuickStyle::setStyle("Basic");
     QCommandLineParser parser;
-    parser.setApplicationDescription("A local mail and calendar client — Phase 1 synthetic profile");
+    parser.setApplicationDescription("A local mail and calendar client");
     parser.addHelpOption(); parser.addVersionOption();
-    parser.addOption({"profile", "Disposable local profile directory.", "directory"});
+    parser.addOption({"profile", "Local profile directory.", "directory"});
+    parser.addOption({"live-profile", "Create or open an explicitly selected live profile without demo content."});
+    parser.addOption({"self-test-live-empty", "Verify a new empty live profile and close without connecting Google."});
     parser.addOption({"engine", "Path to fm-engine.", "executable"});
     parser.addOption({"smoke", "Exit successfully after the real engine supplies a conversation."});
     parser.addOption({"self-test", "Exercise GUI/CLI state against a new disposable profile."});
@@ -62,6 +65,8 @@ int main(int argc, char **argv) {
     parser.addOption({"benchmark-navigation-output", "Measure native mailbox and conversation input to correct content paint on a disposable fixture profile.", "file"});
     parser.addOption({"benchmark-resize-output", "Measure native resize frames and retain separate rendering captures on a disposable fixture profile.", "file"});
     parser.process(app);
+    if (parser.isSet("live-profile") && (!parser.isSet("profile") || parser.isSet("self-test") || parser.isSet("fixture-clock"))) parser.showHelp(1);
+    if (parser.isSet("self-test-live-empty") && (parser.isSet("self-test") || parser.isSet("fixture-clock") || parser.isSet("smoke") || parser.isSet("screenshot"))) parser.showHelp(1);
     if (parser.isSet("self-test-startup-workspace") && (!parser.isSet("smoke") || !parser.isSet("profile") || parser.isSet("self-test")
         || parser.isSet("self-test-calendar-restart") || parser.isSet("self-test-composition-restart") || parser.isSet("screenshot")
         || !QStringList{"mail", "calendar"}.contains(parser.value("self-test-startup-workspace")))) parser.showHelp(1);
@@ -77,7 +82,7 @@ int main(int argc, char **argv) {
     if (parser.isSet("screenshot-date") && !QDate::fromString(parser.value("screenshot-date"), Qt::ISODate).isValid()) parser.showHelp(1);
     auto profile = parser.value("profile");
     std::unique_ptr<QTemporaryDir> smokeProfile;
-    if (parser.isSet("self-test") || (profile.isEmpty() && parser.isSet("smoke"))) {
+    if (parser.isSet("self-test") || (profile.isEmpty() && (parser.isSet("smoke") || parser.isSet("self-test-live-empty")))) {
         smokeProfile = std::make_unique<QTemporaryDir>(QDir::tempPath() + "/fuckmail-gui-smoke-XXXXXX");
         if (!smokeProfile->isValid()) return 4;
         profile = QDir(smokeProfile->path()).filePath("profile");
@@ -101,7 +106,7 @@ int main(int argc, char **argv) {
         ".exe"
 #endif
     );
-    MailBackend backend(profile, program, nullptr, parser.isSet("fixture-clock") || parser.isSet("self-test"));
+    MailBackend backend(profile, program, nullptr, parser.isSet("fixture-clock") || parser.isSet("self-test"), parser.isSet("live-profile") || parser.isSet("self-test-live-empty"));
     if (parser.isSet("self-test")) {
         backend.setProperty("verificationFixture", "snapshot");
         backend.setProperty("selfTestArrivalReport", QDir(profile).filePath("verification-ingestion.json"));
@@ -123,6 +128,36 @@ int main(int argc, char **argv) {
     engine.rootContext()->setContextProperty("backend", &backend);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     QObject::connect(&backend, &MailBackend::shutdownReady, &app, &QCoreApplication::quit);
+    QTimer emptyLiveCheck;
+    QElapsedTimer emptyLiveStable;
+    QString emptyLiveDensity;
+    qlonglong emptyLiveInitialRevision = -1;
+    if (parser.isSet("self-test-live-empty")) {
+        emptyLiveCheck.setInterval(50);
+        QObject::connect(&emptyLiveCheck, &QTimer::timeout, &app, [&] {
+            if (!backend.error().isEmpty()) { qCritical().noquote() << backend.error(); app.exit(5); return; }
+            if (!backend.connected() || !backend.diagnostics().contains("synthetic") || !backend.calendarReady() || !backend.timelineReady()) return;
+            if (backend.syntheticProfile() || backend.diagnostics().value("synthetic").toBool()
+                || backend.diagnostics().value("fixture_revision").toInt() != 0
+                || !backend.accounts().isEmpty() || !backend.conversations().isEmpty()
+                || !backend.events().isEmpty() || !backend.todayEvents().isEmpty()) {
+                qCritical() << "Live native profile contains synthetic or unexpected data"; app.exit(5); return;
+            }
+            if (!emptyLiveStable.isValid()) {
+                emptyLiveInitialRevision = backend.diagnostics().value("revision").toLongLong();
+                emptyLiveDensity = backend.preferences().value("density").toString() == "compact" ? "comfortable" : "compact";
+                backend.setPreferences({{"density", emptyLiveDensity}});
+                emptyLiveStable.start(); return;
+            }
+            if (emptyLiveStable.elapsed() < 2500 || backend.preferencesPending()
+                || backend.preferences().value("density").toString() != emptyLiveDensity
+                || backend.diagnostics().value("revision").toLongLong() <= emptyLiveInitialRevision) return;
+            emptyLiveCheck.stop(); qInfo() << "Native empty live profile verified through preference save and repeated idle polls: no accounts, conversations or calendar events; fixture revision 0";
+            backend.shutdown();
+        });
+        emptyLiveCheck.start();
+        QTimer::singleShot(30000, &app, [&] { if (emptyLiveCheck.isActive()) { qCritical() << "Live profile verification timed out"; app.exit(5); } });
+    }
     bool captured = false;
     QTimer captureTimer;
     captureTimer.setInterval(100);
@@ -248,6 +283,10 @@ int main(int argc, char **argv) {
     }
     if (result == 0 && parser.isSet("self-test") && !selfTestCompleted) {
         qCritical() << "GUI self-test exited before its final independent recovery check.";
+        return 5;
+    }
+    if (result == 0 && parser.isSet("self-test-live-empty") && emptyLiveCheck.isActive()) {
+        qCritical() << "Live profile verification exited before its final checks.";
         return 5;
     }
     if (!restartVerified) return 5;

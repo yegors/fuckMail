@@ -1,6 +1,6 @@
 # CLI and external agent interface
 
-State: Draft · Revision: 8 · Updated: 2026-09-12 · Implementation: Phase 2 planned under D020; no live provider capability verified. Phase 1 evidence retains its exact source/host scope; whole area remains Draft.
+State: Draft · Revision: 8 · Updated: 2026-09-13 · Implementation: Phase 2 active under D021. `profile-init` creates/reopens an explicitly selected live profile through the same engine and releases its session; no live provider workflow is verified. [Protocol fields](../local-protocol.md) and [execution evidence](../research/phase-2-execution.md) own the implemented/tested slice; whole area remains Draft.
 
 Revision 8 prepares D020's Google-account pilot alongside the GUI. Grow real account authorization/reconnect/disconnect, sync/progress, mail state/draft/send/attachment and Calendar read/write/RSVP coverage as each shared engine workflow lands. Exact command names, fields and exit codes are agreed in P2-00 and published with implementation, not invented here. Pure read/query commands never mark mail reviewed, launch hidden login or activate ongoing background work. Explicit login can use the shared browser/vault path; noninteractive credential failure returns an actionable error without plaintext fallback.
 

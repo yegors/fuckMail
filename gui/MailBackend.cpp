@@ -23,8 +23,8 @@ QString uuid() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 
 }
 
-MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool fixtureClock)
-    : QObject(parent), m_profile(std::move(profile)), m_engine(std::move(engine)), m_fixtureClock(fixtureClock) {
+MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool fixtureClock, bool liveProfile)
+    : QObject(parent), m_profile(std::move(profile)), m_engine(std::move(engine)), m_fixtureClock(fixtureClock), m_liveProfileRequested(liveProfile), m_syntheticProfile(!liveProfile) {
     m_calendarDate = todayDate(); m_timelineDate = todayDate();
     m_clockTimer.setInterval(30000);
     connect(&m_clockTimer, &QTimer::timeout, this, [this] { emit eventsChanged(); });
@@ -38,13 +38,18 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
         if (!verifyEnginePeer(m_socket.socketDescriptor(), m_enginePid, trustError)) {
             m_connectTimer.stop(); fail(trustError); m_socket.abort(); return;
         }
-        request("hello", {}, {{"token", m_token}, {"client", "gui"}}, [this](auto, bool ok) {
+        request("hello", {}, {{"token", m_token}, {"client", "gui"}}, [this](auto result, bool ok) {
             if (!ok) {
                 // A rejected response already supplied a fatal error. A socket
                 // disappearing before hello can be a writer still shutting down.
                 if (!m_error.isEmpty()) m_connectTimer.stop();
                 m_socket.abort(); return;
             }
+            const bool synthetic = result["mode"] != "live";
+            if ((m_liveProfileRequested && synthetic) || (!synthetic && m_fixtureClock)) {
+                m_connectTimer.stop(); fail("The selected profile does not match the requested live or fixture mode."); m_socket.abort(); return;
+            }
+            m_syntheticProfile = synthetic;
             m_connectTimer.stop();
             m_connected = true; m_error.clear();
             m_calendarRevision = -1;
@@ -59,6 +64,8 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
     connect(&m_socket, &QLocalSocket::disconnected, this, [this] {
         const auto wasConnected = m_connected;
         m_connected = false; m_pollTimer.stop(); emit connectedChanged();
+        m_googleAuthAttempt.clear();
+        if (m_googleAuthBusy) setGoogleAuth({{"phase", "cancelled"}});
         m_outgoing.clear(); m_inFlight.clear(); m_buffer.clear();
         auto pending = std::move(m_pending); m_pending.clear();
         for (auto &item : pending) item.callback({}, false);
@@ -165,6 +172,7 @@ void MailBackend::attemptConnection() {
         m_launchDelay = qMin(m_launchDelay * 2, 4000);
         QProcess process;
         process.setProgram(m_engine); process.setArguments({"--profile", m_profile});
+        if (m_liveProfileRequested) process.setArguments({"--profile", m_profile, "--live-profile"});
         if (m_launchAttempts == 1 && property("verificationFixture").toString() == "snapshot")
             process.setArguments({"--profile", m_profile, "--verification-fixture", "snapshot"});
         process.setStandardOutputFile(QProcess::nullDevice());
@@ -362,6 +370,7 @@ void MailBackend::setCollapsedGroups(const QStringList &groups) {
     ++m_listGeneration; emit queryChanged(); loadConversations();
 }
 void MailBackend::loadCategories() {
+    if (!m_connected || m_account.isEmpty()) return;
     const auto account = m_account;
     request("categories", account, {}, [this, account](auto result, bool ok) {
         if (!ok || account != m_account) return;
@@ -626,8 +635,9 @@ void MailBackend::loadCalendar() {
     const auto selection = QJsonValue::fromVariant(m_preferences.value("selected_calendars"));
     const QJsonObject calendarParams{{"from", from}, {"to", QDate::fromString(from, Qt::ISODate).addDays(days).toString(Qt::ISODate)}, {"calendars", selection}};
     const QJsonObject timelineParams{{"from", timeline}, {"to", QDate::fromString(timeline, Qt::ISODate).addDays(1).toString(Qt::ISODate)}, {"calendars", selection}};
-    const auto calendarScope = QString::fromUtf8(QJsonDocument(calendarParams).toJson(QJsonDocument::Compact));
-    const auto timelineScope = QString::fromUtf8(QJsonDocument(timelineParams).toJson(QJsonDocument::Compact));
+    const auto displayZone = m_preferences.value("calendar_display_time_zone").toString();
+    const auto calendarScope = QString::fromUtf8(QJsonDocument(calendarParams).toJson(QJsonDocument::Compact)) + "/" + displayZone;
+    const auto timelineScope = QString::fromUtf8(QJsonDocument(timelineParams).toJson(QJsonDocument::Compact)) + "/" + displayZone;
     if (calendarScope != m_calendarScope) {
         m_calendarScope = calendarScope; m_events.clear(); m_calendarReady = false;
     }
@@ -643,9 +653,12 @@ void MailBackend::loadCalendar() {
     m_calendarCoverage = hadCalendarSnapshot ? "Refreshing cached calendar…" : "Loading calendars…";
     m_timelineCoverage = hadTimelineSnapshot ? "Refreshing cached timeline…" : "Loading timeline…";
     emit eventsChanged();
-    auto coverageText = [](const QJsonObject &coverage) {
+    auto coverageText = [this](const QJsonObject &coverage) {
+        if (coverage["state"] == "display_zone_required") return QString("Choose a display time zone in Calendar settings");
+        if (!m_syntheticProfile && coverage["selected_calendars"].toInt() == 0)
+            return QString("No Google calendars connected");
         const QString suffix = coverage["state"] == "restricted" ? "some calendars are unavailable"
-            : coverage["complete"].toBool() ? "cached fixture data" : "incomplete cached data";
+            : coverage["complete"].toBool() ? (m_syntheticProfile ? "cached fixture data" : "cached calendar data") : "incomplete cached data";
         return QString("%1 selected calendars · %2").arg(coverage["selected_calendars"].toInt()).arg(suffix);
     };
     request("calendar_combined", {}, calendarParams,
@@ -658,7 +671,7 @@ void MailBackend::loadCalendar() {
             m_calendarCoverage = (m_events.isEmpty() ? "Calendar unavailable: " : "Cached calendar is stale: ") + result["message"].toString();
             emit eventsChanged(); return;
         }
-        m_events = calendarPresentation(result["events"].toArray(), QDate::fromString(from, Qt::ISODate), days, QTimeZone(result["time_zone"].toString("America/Toronto").toUtf8()));
+        m_events = calendarPresentation(result["events"].toArray(), QDate::fromString(from, Qt::ISODate), days, QTimeZone(result["time_zone"].toString().toUtf8()));
         m_calendarReady = true; m_calendarCoverage = coverageText(result["coverage"].toObject());
         emit eventsChanged();
     });
@@ -672,7 +685,7 @@ void MailBackend::loadCalendar() {
                 m_timelineCoverage = (m_todayEvents.isEmpty() ? "Timeline unavailable: " : "Cached timeline is stale: ") + result["message"].toString();
                 emit eventsChanged(); return;
             }
-            m_todayEvents = calendarPresentation(result["events"].toArray(), QDate::fromString(timeline, Qt::ISODate), 1, QTimeZone(result["time_zone"].toString("America/Toronto").toUtf8()));
+            m_todayEvents = calendarPresentation(result["events"].toArray(), QDate::fromString(timeline, Qt::ISODate), 1, QTimeZone(result["time_zone"].toString().toUtf8()));
             m_timelineReady = true; m_timelineCoverage = coverageText(result["coverage"].toObject()); emit eventsChanged();
         });
 }

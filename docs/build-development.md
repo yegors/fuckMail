@@ -1,6 +1,6 @@
 # Build, run and move between machines
 
-This is the shared Phase 0/Phase 1 developer workflow. The app is Rust engine/CLI plus a C++20 Qt Quick/QML client and SQLite. Python is used only to orchestrate developer tools; the packaged app has no Python, Node.js or JavaScript build dependency. Phase 1 integration is active; [its execution record](research/phase-1-execution.md) owns current results. The historical host checks below retain their original source and limits.
+This is the shared native developer workflow. The app is Rust engine/CLI plus a C++20 Qt Quick/QML client and SQLite. Python is used only to orchestrate developer tools; the packaged app has no Python, Node.js or JavaScript build dependency. Phase 1 is complete on available hosts; [Phase 2 execution](research/phase-2-execution.md) owns current integration results. The historical host checks below retain their original source and limits.
 
 ## First setup
 

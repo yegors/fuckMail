@@ -426,7 +426,10 @@ fn schema6_migration_keeps_old_profiles_receipts_and_sources_unclassified() {
     );
     let capture_params = json!({"conversation_id":"windscribe-thread-000","expected_revision":1,"request_id":"migration-capture","outcome":"accepted"});
     let receipt = call(&mut old, "draft_capture", capture_params.clone());
-    old.db.execute_batch("DROP TABLE message_sender_kinds; UPDATE meta SET value=2 WHERE key='fixture_revision'; PRAGMA user_version=6;").unwrap();
+    crate::test_profiles::restore_schema_eight(&old.db);
+    // Reconstruct the actual historical schema, including removal of later
+    // profile tables; merely lowering user_version is not a schema-6 fixture.
+    old.db.execute_batch("DROP TABLE google_accounts; DROP TABLE profile_identity; DELETE FROM meta WHERE key='profile_kind'; DROP TABLE message_sender_kinds; UPDATE meta SET value=2 WHERE key='fixture_revision'; PRAGMA user_version=6;").unwrap();
     let snapshot = |db: &Connection| -> Vec<Vec<Vec<String>>> {
         [
             "accounts",
@@ -439,8 +442,15 @@ fn schema6_migration_keeps_old_profiles_receipts_and_sources_unclassified() {
         ]
         .iter()
         .map(|table| {
+            let where_clause = if *table == "meta" {
+                " WHERE key!='profile_kind'"
+            } else {
+                ""
+            };
             let mut stmt = db
-                .prepare(&format!("SELECT * FROM {table} ORDER BY rowid"))
+                .prepare(&format!(
+                    "SELECT * FROM {table}{where_clause} ORDER BY rowid"
+                ))
                 .unwrap();
             let count = stmt.column_count();
             stmt.query_map([], |r| {

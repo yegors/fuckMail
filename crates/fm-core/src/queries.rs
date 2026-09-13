@@ -123,7 +123,7 @@ impl MailChanges {
         db.update_hook(Some(move |action, _: &str, table: &str, rowid| {
             let mut c = hook.lock().unwrap();
             c.hooks += 1;
-            if table.starts_with("calendar_") {
+            if table == "calendar_publication" {
                 c.calendar += 1;
             }
             if table == "messages" {
@@ -271,6 +271,9 @@ impl Store {
                 |r| r.get(0),
             )?;
             out.last_mut().unwrap()["draft_count"] = json!(drafts);
+            if let Some(status) = self.google_account_status(&account)? {
+                out.last_mut().unwrap()["google"] = status;
+            }
         }
         Ok(json!({"accounts":out,"fixture_revision":self.fixture_revision()?}))
     }
@@ -465,6 +468,17 @@ impl Store {
         )
     }
     fn coverage(&self, account: &str) -> Result<Value> {
+        if self.profile_kind()? == live_profile::ProfileKind::Live {
+            let coverage = self.google_live_coverage(account)?;
+            return Ok(
+                json!({"synthetic":false,"inventory_complete":coverage.inventory_complete,"delta_current":coverage.delta_current,
+                "messages":coverage.observed,"indexed_messages":coverage.indexed,"text_index_complete":coverage.indexed==coverage.observed,
+                "retained_source_records":coverage.retained_sources,"retained_sources":coverage.retained_sources,"source_verification":"verified_on_acquisition",
+                "attachments":null,"recorded_available_attachments":null,"complete_attachments":null,"verified_attachments":null,"attachment_verification":"verified_on_acquisition",
+                "messages_with_complete_attachments":coverage.complete_attachments,"unavailable_messages":coverage.unavailable,"offline_complete":coverage.offline_complete,
+                "text":format!("Cached text: {}/{} observed messages. {} source records retained; {} items need attention. {}",coverage.indexed,coverage.observed,coverage.retained_sources,coverage.unavailable,if coverage.offline_complete {"Inventory and catch-up are complete at the last sync."} else {"Full offline acquisition is incomplete."})}),
+            );
+        }
         let changes = self.mail_changes.snapshot(&self.db);
         if let Some(old) = self.coverage_cache.borrow().get(account) {
             if old.generation == changes.coverage {
@@ -607,14 +621,15 @@ impl Store {
         // List queries count actual indexed rows but never hash the whole corpus.
         // Individual attachment use verifies its bytes; there is no aggregate
         // full-profile verification pass in this API yet.
+        let synthetic = self.profile_kind()? == live_profile::ProfileKind::Synthetic;
         Ok(
-            json!({"synthetic":true,"inventory_complete":true,"messages":messages,
+            json!({"synthetic":synthetic,"inventory_complete":synthetic,"messages":messages,
             "indexed_messages":indexed_messages,"text_index_complete":indexed_messages==messages,
             "retained_source_records":source_records,"retained_sources":null,"source_verification":"not_run",
             "attachments":attachments,"recorded_available_attachments":recorded_available,
             "complete_attachments":null,"verified_attachments":null,"attachment_verification":"not_run",
             "offline_complete":false,
-            "text":format!("Synthetic text index: {indexed_messages}/{messages} messages. Full offline content verification has not run; missing/partial attachment fixtures are included.")}),
+            "text":if synthetic {format!("Synthetic text index: {indexed_messages}/{messages} messages. Full offline content verification has not run; missing/partial attachment fixtures are included.")} else {format!("Cached text index: {indexed_messages}/{messages} downloaded messages. Google inventory and offline content verification have not completed.")}}),
         )
     }
     pub(crate) fn conversations(&self, account: &str, p: &Value) -> Result<Value> {
@@ -1117,6 +1132,13 @@ impl Store {
     }
     pub(crate) fn calendar(&self, account: &str, p: &Value) -> Result<Value> {
         fields(p, &["from", "to"])?;
+        let synthetic = self.profile_kind()? == crate::live_profile::ProfileKind::Synthetic;
+        if !synthetic && (p.get("from").is_none() || p.get("to").is_none()) {
+            return Err(err(
+                "invalid_request",
+                "Live calendar queries need explicit from and to dates",
+            ));
+        }
         let from = optional_string(p, "from", "2026-09-07")?;
         let to = optional_string(p, "to", "2026-09-14")?;
         let parse = |s: &str| {
@@ -1129,7 +1151,7 @@ impl Store {
         }
         let events = self.project_cached_calendars(account, start, end)?;
         Ok(
-            json!({"events":events,"from":from,"to":to,"time_zone":crate::calendar_store::CALENDAR_VIEW_ZONE,"fixture_today":FIXTURE_TODAY}),
+            json!({"events":events,"from":from,"to":to,"time_zone":self.calendar_display_zone()?,"fixture_today":if synthetic {Some(FIXTURE_TODAY)} else {None}}),
         )
     }
 }

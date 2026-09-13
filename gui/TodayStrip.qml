@@ -171,7 +171,7 @@ Rectangle {
             FmButton { objectName: "timelineNextDay"; iconName: "next"; iconSize: 10; implicitWidth: 18; implicitHeight: 20; leftPadding: 4; rightPadding: 4; tip: "Next day"; onClicked: backend.moveTimeline(1) }
             Text { objectName: "timelineDateLabel"; text: Qt.formatDate(new Date(backend.timelineDate + "T12:00:00"), "ddd d MMM"); color: Theme.subtle; font.pixelSize: Theme.fontSize(10); height: 20; verticalAlignment: Text.AlignVCenter }
             FmButton { objectName: "timelineToday"; visible: backend.timelineDate !== backend.todayDate; text: "Back to today"; foreground: Theme.accent; implicitHeight: 20; font.pixelSize: Theme.fontSize(10); leftPadding: 5; rightPadding: 5; onClicked: backend.showTimelineToday() }
-            FmButton { id: overflowButton; text: timeline.hiddenEvents > 0 ? "+" + timeline.hiddenEvents : ""; iconName: "more"; iconSize: 12; implicitHeight: 20; leftPadding: 5; rightPadding: 5; font.pixelSize: Theme.fontSize(10); tip: "All events · America/Toronto · " + backend.timelineCoverage; onClicked: timelineMenu.open() }
+            FmButton { id: overflowButton; text: timeline.hiddenEvents > 0 ? "+" + timeline.hiddenEvents : ""; iconName: "more"; iconSize: 12; implicitHeight: 20; leftPadding: 5; rightPadding: 5; font.pixelSize: Theme.fontSize(10); tip: "All events · " + (backend.preferences.calendar_display_time_zone || "Time zone unavailable") + " · " + backend.timelineCoverage; onClicked: timelineMenu.open() }
         }
     }
     Popup {
@@ -182,7 +182,7 @@ Rectangle {
             spacing: 4
             FmButton { text: "All " + backend.todayEvents.length + " events"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { timelineMenu.close(); dayEvents.open() } }
             FmButton { text: "Open calendar"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { timelineMenu.close(); timeline.openCalendar() } }
-            Text { text: "America/Toronto\n" + backend.timelineCoverage; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); Layout.fillWidth: true; wrapMode: Text.Wrap }
+            Text { text: (backend.preferences.calendar_display_time_zone || "Time zone unavailable") + "\n" + backend.timelineCoverage; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); Layout.fillWidth: true; wrapMode: Text.Wrap }
         }
     }
     EventDetails { id: details; timelineSource: true; timelineInset: timeline.height; timelineAtTop: timeline.headerPosition; timelineEdge: timeline.mapToItem(Overlay.overlay, 0, timeline.headerPosition ? timeline.height : 0).y; onEditRequested: function(event) { editor.editEvent = event; editor.openForDate(event.start.slice(0, 10)) } }

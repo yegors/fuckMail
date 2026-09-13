@@ -18,7 +18,7 @@ Item {
     property string pendingReveal: ""
     property string replyRevealIdentity: ""
     readonly property string composerIdentity: backend.account + (backend.activeDraftId.length ? "/draft/" + backend.activeDraftId : "/" + backend.selectedId)
-    readonly property bool newMessageAvailable: backend.connected
+    readonly property bool newMessageAvailable: backend.connected && backend.account.length > 0
     readonly property bool popupOpen: filterPopup.opened || categoryPopup.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
     readonly property bool singleKeyActionsAllowed: mail.visible && !popupOpen && mail.ApplicationWindow.window && mail.ApplicationWindow.window.singleKeysAllowed
     readonly property bool draftsMode: backend.folder === "drafts"
@@ -214,6 +214,7 @@ Item {
     }
     Timer {
         id: replyReveal
+        objectName: "replyReveal"
         interval: 16; repeat: true
         property int pass: 0
         property int stable: 0
@@ -460,7 +461,7 @@ Item {
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter; y: 48; width: parent.width-48
                         visible: list.count===0 && mail.trailingCollapsed.length===0
-                        text: !backend.connected ? "Connecting to your local mail…" : backend.loading ? "Searching…" : mail.filtering ? "No conversations match these filters." : "No conversations in this view."
+                        text: !backend.connected ? "Connecting to your local mail…" : !backend.accounts.length ? "No accounts connected." : backend.loading ? "Searching…" : mail.filtering ? "No conversations match these filters." : "No conversations in this view."
                         color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
                     }
                 }

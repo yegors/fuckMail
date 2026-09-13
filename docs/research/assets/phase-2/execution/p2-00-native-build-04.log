@@ -1,0 +1,51 @@
+Host: Windows-10-10.0.26200-SP0 AMD64
+Qt kit: C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64
+Source: C:\Users\Yegor\Projects\Fuckaround\fuckMail
++ "C:\Program Files\Git\cmd\git.EXE" --version
+git version 2.53.0.windows.1 at C:\Program Files\Git\cmd\git.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\rustc.EXE --version
+rustc 1.88.0 (6b00bc388 2025-06-23) at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\rustc.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.EXE --version
+cargo 1.88.0 (873a06493 2025-05-10) at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.EXE --version
+cmake version 3.31.6 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ninja.EXE --version
+1.11.1.git.kitware.jobserver-1 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ninja.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE --qt-version
+6.11.2 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE
+Native C++ compiler: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\cl.exe
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --preset dev
+Preset CMake variables:
+
+  BUILD_TESTING:BOOL="TRUE"
+  CMAKE_BUILD_TYPE="Debug"
+  CMAKE_EXPORT_COMPILE_COMMANDS:BOOL="TRUE"
+  CMAKE_PREFIX_PATH="C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64"
+
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Configuring done (1.2s)
+-- Generating done (0.3s)
+-- Build files have been written to: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --build --preset dev --parallel
+   Compiling fm-mail v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-mail)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+error[E0425]: cannot find function `extract_parsed_incoming_text` in crate `fm_mail`
+   --> crates\fm-core\src\google_store.rs:425:29
+    |
+425 |         let body = fm_mail::extract_parsed_incoming_text(&parsed)
+    |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: a function with a similar name exists: `extract_incoming_text`
+    |
+   ::: C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-mail\src\incoming.rs:15:1
+    |
+15  | pub fn extract_incoming_text(raw: &[u8]) -> Result<String, IncomingError> {
+    | ------------------------------------------------------------------------- similarly named function `extract_incoming_text` defined here
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `fm-core` (lib) due to 1 previous error
+[0/64] Build the shared Rust engine and CLI
+[4/58] Automatic MOC and UIC for target gui-reply-document-test
+FAILED: CMakeFiles/fm-rust C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/CMakeFiles/fm-rust 
+C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Yegor\Projects\Fuckaround\fuckMail && C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.exe build --workspace --locked --target-dir C:/Users/Yegor/Projects/Fuckaround/fuckMail/target"
+ninja: build stopped: subcommand failed.
+ERROR: Command '['C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\bootstrap\\Scripts\\cmake.exe', '--build', '--preset', 'dev', '--parallel']' returned non-zero exit status 1.

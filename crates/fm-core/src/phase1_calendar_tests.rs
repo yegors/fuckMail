@@ -21,7 +21,7 @@ fn combined_scope_is_independent_with_restricted_fields_and_empty_selection() {
     store
         .db
         .execute(
-            "INSERT INTO calendar_sources VALUES('personal','primary','private-only',?1)",
+            "INSERT INTO calendar_sources(account,calendar_id,event_id,json) VALUES('personal','primary','private-only',?1)",
             [private.to_string()],
         )
         .unwrap();
@@ -209,7 +209,7 @@ fn invalid_fields_and_recurring_changes_are_explicitly_rejected() {
     store
         .db
         .execute(
-            "INSERT INTO calendar_sources VALUES('personal','primary','series-test',?1)",
+            "INSERT INTO calendar_sources(account,calendar_id,event_id,json) VALUES('personal','primary','series-test',?1)",
             [raw.to_string()],
         )
         .unwrap();
@@ -242,7 +242,7 @@ fn aggregate_occurrence_limit_never_silently_truncates_multiple_accounts() {
         for index in 0..count {
             let source = json!({"id":format!("limit-{index}"),"etag":"v1","summary":"Bound check","start":{"date":"2026-12-10"},"end":{"date":"2026-12-11"}});
             tx.execute(
-                "INSERT INTO calendar_sources VALUES(?1,'primary',?2,?3)",
+                "INSERT INTO calendar_sources(account,calendar_id,event_id,json) VALUES(?1,'primary',?2,?3)",
                 params![account, source["id"].as_str().unwrap(), source.to_string()],
             )
             .unwrap();

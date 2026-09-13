@@ -301,7 +301,7 @@ Item {
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
             RowLayout { Layout.fillWidth: true
                 FmButton { text: "Today"; foreground: Theme.accent; implicitHeight: 24; font.pixelSize: Theme.fontSize(12); onClicked: { backend.showCalendarToday(); datePicker.close() } }
-                Text { text: "America/Toronto"; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); Layout.fillWidth: true; horizontalAlignment: Text.AlignRight }
+                Text { text: backend.preferences.calendar_display_time_zone || "Time zone unavailable"; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); Layout.fillWidth: true; horizontalAlignment: Text.AlignRight }
             }
         }
     }
@@ -314,7 +314,7 @@ Item {
             FmButton { text: "Agenda"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { backend.setCalendarView("agenda"); moreMenu.close() } }
             FmButton { objectName: "calendarActivityButton"; text: "Local calendar activity"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { moreMenu.close(); operationHistory.open() } }
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
-            Text { text: "Combined · America/Toronto\n" + backend.calendarCoverage; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Text { text: "Combined · " + (backend.preferences.calendar_display_time_zone || "Time zone unavailable") + "\n" + backend.calendarCoverage; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
         }
     }
     EventDetails { id: details; onEditRequested: function(event) { editor.editEvent = event; editor.openForDate(event.start.slice(0, 10)) } }

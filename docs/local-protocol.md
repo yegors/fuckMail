@@ -1,10 +1,51 @@
-# Local protocol — protocol 1, Phase 1 additive boundary
+# Local protocol — protocol 1, Phase 2 additive boundary
+
+P2-00 adds explicit empty live-profile initialization with `fm --profile <absolute-path> profile-init`. This starts the same engine with `--live-profile`, reports `status` and releases the CLI session. It requires an explicit path and refuses a synthetic profile, including an already-running demo engine. Ordinary later GUI/CLI opens use the persisted kind. `hello.mode` and `status.profile_kind` are `synthetic` or `live`; `status.synthetic` agrees. Current schema 9 under D022 preserves existing fixture revisions; new synthetic profiles remain fixture 3 and live profiles use fixture 0 with no fixture date. Status capabilities remain false for unwired provider workflows. This command creates no Google account and performs no network request.
+
+Live account rows add `google.connection_state`, `granted_scopes`, actual `capabilities` and `sync` state. A scope grant alone never enables a workflow. Core accepts stable Google-subject bindings only from the internal verified OAuth path; there is no IPC method accepting a caller-supplied Google subject. Tokens and vault namespaces are absent from responses. Simulated `draft_capture` and `calendar_write_ack` are refused in live profiles. This first packet also refuses live mail flags/categories and calendar writes until their remote journals are integrated. See [Phase 2 execution](research/phase-2-execution.md) for the current tested scope.
+
+The historical Phase 1 surface below remains supported. Schema 8 adds profile/vault identity and Google account bindings; schema 9 adds connection generations/client references and bounded Gmail/Calendar work, coverage and projection metadata in the same store. Only ordinary new profiles seed the synthetic fixture; explicit live initialization never does. The exact currently tested migration/native scope belongs in the execution record.
+
+## Explicit Google authorization
+
+The implemented CLI provides `fm --profile <absolute-path> google connect --client-config <desktop-json-path>` and account-scoped `google disconnect`. Add `--account <account-id>` for an identity-checked reconnect and `--reauthorize` for explicit renewed consent. Connect opens the system browser and keeps its session alive while polling until success, failure or Ctrl-C. The authorization URL, client secret and token values are never printed, including with `--json`. Disconnect stops account work while retaining local data, drafts and native-vault credentials; it does not revoke the Google grant or delete the account.
+
+Engine dispatch implements the following protocol-1 additions. These are session-owned operations, not direct Store methods:
+
+| Method | Account / parameters | Result |
+| --- | --- | --- |
+| `google_auth_begin` | Optional reconnect account; `client_config_path` absolute installed-desktop JSON path, optional `reauthorize` boolean | One-use `authorization_url`, `attempt_id`, `expires_in_seconds` (300) |
+| `google_auth_status` | No account; `attempt_id` from this same authenticated session | `attempt_id`, `phase`, optional resolved `account`, sanitized `error` |
+| `google_auth_cancel` | Same owner and parameters as status | Cancels that attempt; returns its status |
+| `google_disconnect` | Required account; empty parameters | Account and `connection_state: disconnected` |
+
+One login may be active per profile; at most 16 terminal statuses are retained. Phases are `waiting_for_browser`, `exchanging`, `persisting`, `connected`, `cancelled` and `failed`. A different session cannot inspect or cancel another session's attempt. Session exit/shutdown cancels the attempt and its loopback listener. Status never repeats the browser URL. A standalone `call google_auth_begin` followed by CLI exit cannot be used as a detached login because it releases the owning session.
+
+Verified reconnect pauses an existing account durably before replacing its vault grant; only a successful, generation-checked Core binding publishes Connected and the actual granted scopes. Cancellation or failed binding leaves reauthorization required even if the OS accepted the credential write. GUI Accounts controls and shared CLI dispatch use this runtime. The [engine OAuth fixtures](research/phase-2-auth.md#engine-owned-login-reconnect-and-cancellation--2026-09-13-utc) pass, but actual browser consent/native paired acceptance is outstanding. Sign-in alone never imports mail or calendars.
+
+## Explicit Google acquisition sessions
+
+Live `status`/`hello` capabilities now advertise callable `google_auth` and `google_sync` interfaces. These do not enable ordinary live Mail browsing/read-on-open, drafts/send or Calendar writes; those capability gates remain false. Each connected account must also have its relevant granted scopes before a service worker starts.
+
+`fm --profile <absolute-path> --account <account-id> google sync` requires all four actual Console values: `--gmail-project-units-per-minute`, `--gmail-account-units-per-minute`, `--calendar-project-units-per-minute` and `--calendar-account-units-per-minute`. Each is an integer from 100 through 100,000,000; the scheduler uses 80% headroom with separate account/project/service budgets. Values are required, without guessed defaults, and all accounts in one engine must use the same configuration. Changing it requires an engine restart. `--seconds <duration>` limits this CLI owner's lifetime; Ctrl-C or exit releases only that owner. Another explicit sync owner may continue the shared account workers. `google sync-status` reads progress (optional account), while `google sync-stop` deliberately stops the selected account's acquisition for every owner.
+
+| Method | Account / parameters | Result and lifetime |
+| --- | --- | --- |
+| `google_sync_start` | Required account; `gmail_project_units_per_minute`, `gmail_account_units_per_minute`, `calendar_project_units_per_minute`, `calendar_account_units_per_minute` | Account, `started`, `active`; starts or joins one account job for this authenticated session |
+| `google_sync_status` | Optional account; empty parameters | `accounts` with worker `active` and `progress`, plus whether shared quotas are `configured`; starts no provider request |
+| `google_sync_release` | Required account; empty parameters | `session_stopped`, remaining `active`; releases only this session and cancels workers when no owners remain |
+| `google_sync_stop` | Required account; empty parameters | `stopped`; cancels and awaits all acquisition workers for that account |
+| `google_sync_busy` | Required account with active acquisition; `from`, `to` ISO dates and IANA `time_zone` | Refreshes permitted free/busy snapshots for at most 42 days and reports calendar count/window; no provider event/edit identity is fabricated |
+
+Workers share pooled HTTPS, token refresh, quota admission and one Core writer. Gmail recent/inventory/delta work publishes bounded durable parts; downloaded RAW retains its memory permit through preparation. Calendar publishes staged generations and uses indexed view candidates. Account disconnect/reconnect fences prior work, and final owning-session exit ends acquisition. Shared RAW limits have fixture evidence; a global decoded-Calendar-page budget and removing repeated whole-page hashing from the writer remain performance work before unrestricted import.
+
+Live account sync summaries now use incremental acquisition counters: observed messages, retained sources, indexed messages, unavailable items, inventory completion, current catch-up and offline completion. Conversation coverage also exposes `messages_with_complete_attachments`, which counts messages rather than attachment files; aggregate attachment-file counts remain null. `verified_on_acquisition` describes retained-byte verification during ingestion, not a fresh full-profile integrity scan. Progress step/page counts are activity indicators and do not replace these coverage fields. [Integrated execution evidence](research/phase-2-execution.md#shared-runtime-integration--2026-09-13) records exactly which worker and admission fixtures passed.
 
 Implementation is in `crates/fm-ipc`, `crates/fm-engine`, `crates/fm-cli` and `gui/MailBackend.cpp`. This is the shared interface for the synthetic Phase 1 implementation, preserving the Phase 0 protocol. The domain method fields and fixture expectations are in [the fixture API](../fixtures/README.md). It is not a promise of the final CLI command catalogue or provider APIs.
 
 ## Ownership and discovery
 
-One engine owns a profile's SQLite connection, migration and journal; the core holds an OS file lock for its lifetime. Clients never open SQLite. A newly created profile seeds synthetic fixture revision 3. Existing profiles are never reset on startup; schemas 1–6 migrate to schema 7 while retaining their actual fixture revision and original accounts. Schema 6 generalizes the existing drafts table without rewriting historical authored fields or operation/capture records. Schema 7 adds explicit source-bound sender kinds; old fixture1/2 profiles stay unclassified, without rewriting sources or reseeding. The default is `fuckMail/demo-v1` beneath the user's local application-data directory (macOS `~/Library/Application Support`, Windows `%LOCALAPPDATA%`, Linux `$XDG_DATA_HOME` or `~/.local/share`). `--profile` chooses an explicit absolute path.
+One engine owns a profile's SQLite connection, migration and journal; the core holds an OS file lock for its lifetime. Clients never open SQLite. A newly created ordinary demo profile seeds synthetic fixture revision 3; explicit live creation seeds nothing. Existing profiles are never reset on startup; incremental migrations through schema 9 retain their actual fixture revision and original accounts. Historically, schema 6 generalized the existing drafts table without rewriting authored fields or operation/capture records. Schema 7 added explicit source-bound sender kinds; old fixture1/2 profiles stay unclassified, without rewriting sources or reseeding. The default is `fuckMail/demo-v1` beneath the user's local application-data directory (macOS `~/Library/Application Support`, Windows `%LOCALAPPDATA%`, Linux `$XDG_DATA_HOME` or `~/.local/share`). `--profile` chooses an explicit absolute path.
 
 The engine writes `engine.json` inside the private profile with protocol version, process ID, local endpoint and a random per-launch handshake token. The token is credential material; do not log, commit or put it in command-line arguments. Unix uses a user-private directory and socket plus peer credentials. Deep Unix paths use a hashed socket in a private `/tmp/fuckmail-UID` directory. Windows uses a named pipe with a current-user DACL and remote clients rejected. Clients validate the expected engine peer before sending the token. The supported boundary is the current OS user, not mutually hostile processes already running as that user.
 
@@ -12,7 +53,7 @@ Concurrent launches acquire the core writer lock before replacing an old owned s
 
 ## Wire format
 
-Messages are UTF-8 JSON objects terminated by one newline. This selects bounded newline framing from the earlier alternatives; no browser, HTTP listener or Rust/C++ ABI is involved. Both directions allow at most 1 MiB per frame, including the newline. Binary attachments are separate retained files; they are not embedded in list responses.
+Messages are UTF-8 JSON objects terminated by one newline. Private IPC uses the OS endpoint above, with no HTTP transport or Rust/C++ ABI. Explicit OAuth separately owns its temporary loopback HTTP callback. Both IPC directions allow at most 1 MiB per frame, including the newline. Binary attachments are separate retained files; they are not embedded in list responses.
 
 First request:
 
@@ -57,7 +98,7 @@ fm --account windscribe calendar --from 2026-09-07 --to 2026-09-14
 fm watch --seconds 30 --json
 ```
 
-`--body-file -` and `call METHOD --params-file -` accept bounded UTF-8/JSON input from stdin. Human output is for reading; `--json` emits versioned response envelopes. Core errors have stable codes; CLI exit codes are 2 for invalid input, 3 for authentication/permission failures, 4 for stale revisions/cursors, 5 for unavailable/not-found content and 1 for other failures. Closing an output pipe ends cleanly. The initial CLI does not authenticate real accounts or send messages. `draft capture` is an explicit local diagnostic: it builds a saved revision into a verified `.eml` file through the shared MIME builder and a persisted synthetic Gmail capture journal. `--outcome unknown` tests ambiguous acceptance; retrying the same immutable request cannot submit it twice. Schema 6 migrates schemas 1/2/3/4/5 in place; protocol remains 1 and existing profiles keep their recorded fixture revision. `draft save --html-file`, `--signature-file`, repeated `--attachment` and `--clear-attachments` expose authored formatting/signature/retained selections through the same revisioned API. Per-draft identity/signature snapshots preserve exact capture content even when account preferences change.
+`--body-file -` and `call METHOD --params-file -` accept bounded UTF-8/JSON input from stdin. Human output is for reading; `--json` emits versioned response envelopes. Core errors have stable codes; CLI exit codes are 2 for invalid input, 3 for authentication/permission failures, 4 for stale revisions/cursors, 5 for unavailable/not-found content and 1 for other failures. Closing an output pipe ends cleanly. Explicit Google authorization is described above; live sending remains unimplemented. `draft capture` is an explicit local diagnostic: it builds a saved revision into a verified `.eml` file through the shared MIME builder and a persisted synthetic Gmail capture journal. `--outcome unknown` tests ambiguous acceptance; retrying the same immutable request cannot submit it twice. Historical schema-6 migration preserves authored state; protocol remains 1 and existing profiles keep their recorded fixture revision through later migrations. `draft save --html-file`, `--signature-file`, repeated `--attachment` and `--clear-attachments` expose authored formatting/signature/retained selections through the same revisioned API. Per-draft identity/signature snapshots preserve exact capture content even when account preferences change.
 
 ## Phase 1 commands and scope
 
@@ -105,6 +146,6 @@ The first legacy save binds the source member loaded by the client; later saves 
 
 ## Verification and limits
 
-Framing/private-discovery unit tests and engine session integration tests live beside the Rust code. The Qt client has a native trust test and a `--self-test` path that invokes the separate CLI. These must be run on the native target; writing a test is not pass evidence. Current execution and remaining Phase 1 work are tracked in [status](status.md).
+Framing/private-discovery unit tests and engine session integration tests live beside the Rust code. The Qt client has a native trust test and a `--self-test` path that invokes the separate CLI. These must be run on the native target; writing a test is not pass evidence. Current Phase 2 execution and native failures are tracked in [status](status.md) and the [execution record](research/phase-2-execution.md).
 
-Full change streams, long-body transfer/paged members, real credential-vault integration, provider execution, recurring-calendar mutations and the larger retention/recovery matrix remain their subsequent product gates as specified in the [plan](plans/phase-1.md). This initial protocol document does not remove those obligations.
+The Windows vault has an isolated synthetic roundtrip and engine OAuth fixtures pass; real consent, integrated provider execution/writes, long-body transfer/paged members, recurring-calendar operations and the full retention/recovery/native matrix retain their applicable [Phase 2 gates](plans/phase-2.md). Full change streams are not promised by revision polling. This document does not remove those obligations.

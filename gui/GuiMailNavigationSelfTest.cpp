@@ -461,6 +461,14 @@ void GuiMailNavigationSelfTest::step() {
         m_stage=91; break;
     case 91: {
         if (m_backend.loading() || m_backend.m_searchTimer.isActive()) return;
+        const auto list=find(m_window->contentItem(),"conversationList");
+        if (!list) { finish("Deferred-click setup lost the conversation list."); return; }
+        // A loaded IPC result precedes QML's model/viewport restoration. Choose
+        // source-check candidates from the restored view, not its reset origin.
+        const auto minimum=list->property("originY").toDouble();
+        const auto maximum=minimum+qMax(0.0,list->property("contentHeight").toDouble()-list->height());
+        const auto restored=qBound(minimum,m_backend.presentation()["listY"].toDouble(),maximum);
+        if (qAbs(list->property("contentY").toDouble()-restored)>1) return;
         QStringList candidates;
         for (const auto &value:m_backend.conversations()) {
             const auto row=value.toMap();
@@ -482,7 +490,9 @@ void GuiMailNavigationSelfTest::step() {
         break;
     }
     case 92:
-        if (!click("conversationRow_"+m_deferredFirst)) return;
+        if (!click("conversationRow_"+m_deferredFirst)) {
+            finish("The source-verified deferred-click candidate changed geometry before input: " + geometryDiagnostic(find(m_window->contentItem(),"conversationRow_"+m_deferredFirst),m_window)); return;
+        }
         m_stage=93; break;
     case 93:
         if (m_backend.loading() || m_backend.draftBusy() || m_backend.mutationInFlight()

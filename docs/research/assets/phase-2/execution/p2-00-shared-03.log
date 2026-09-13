@@ -1,0 +1,200 @@
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+   Compiling fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 10.66s
+     Running unittests src\main.rs (target\debug\deps\fm-bc85e1f47b26e4a3.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\arguments.rs (target\debug\deps\arguments-6e869f4c6ae32d5e.exe)
+
+running 5 tests
+test live_profile_initialization_requires_an_explicit_path ... ok
+test help_and_version_are_headless_and_do_not_start_a_profile ... ok
+test scope_and_bound_errors_are_machine_readable_without_a_live_engine ... ok
+test sender_commands_and_kinds_are_headless_and_reject_invalid_kinds ... ok
+test composition_selectors_reject_ambiguity_before_starting_an_engine ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+     Running unittests src\lib.rs (target\debug\deps\fm_core-c16a4300718408a8.exe)
+
+running 90 tests
+test benchmark::search_100k ... ignored, Opt-in 100k search experiment: cargo test -p fm-core --release search_100k -- --ignored --nocapture
+test calendar_store::tests::incomplete_expired_batch_retains_previous_view_until_complete_commit_and_replay ... ok
+test calendar_store::tests::sparse_cancelled_instance_keeps_identity_and_exact_observation ... ok
+test calendar_store::tests::mixed_calendar_midnights_use_display_day_and_rows_sort_by_actual_instant ... ok
+test calendar_store::tests::remote_etag_change_preserves_pending_edit_and_query_scope_cannot_reuse_cursor ... ok
+test cancellation::tests::cancelled_queued_mutation_has_no_journal_or_draft_effect ... ok
+test calendar_store::tests::fake_edit_ack_is_durable_scoped_etag_checked_and_revoked_acl_cannot_commit ... ok
+test assist_store::tests::forbidden_output_and_failed_result_commit_have_no_partial_category_effect ... ok
+test assist_store::tests::disabled_or_absent_runner_never_starts_and_suggestions_exclude_drafts ... ok
+test calendar_store::tests::fake_rsvp_uses_account_self_attendee_and_ack_transaction_is_replayable ... ok
+test cancellation::tests::active_sqlite_read_stops_without_cancelling_the_next_owner ... ok
+test assist_store::tests::manual_correction_defeats_late_output_and_future_routine_reclassification ... ok
+test calendar_store::tests::failed_second_calendar_source_rolls_back_sources_visibility_cursor_and_receipt ... ok
+test calendar_store::tests::shared_calendar_projection_keeps_real_identity_and_filters_each_acl ... ok
+test assist_store::tests::independent_summary_switch_and_source_count_bound_are_enforced ... ok
+test assist_store::tests::permitted_auto_apply_and_summary_commit_once_and_replay_after_restart ... ok
+test capture::tests::actual_v2_profile_upgrade_preserves_accepted_capture_without_resubmission ... ok
+test capture::tests::v1_migration_preserves_authored_drafts_views_flags_and_operation_journal ... ok
+test content::tests::attachment_lookup_is_account_scoped_and_checks_content_before_returning_path ... ok
+test content::tests::content_is_published_verified_and_idempotent ... ok
+test content::tests::export_names_cannot_choose_paths_or_reserved_device_names ... ok
+test content::tests::interrupted_orphans_are_never_available_or_removed_by_later_staging ... ok
+test content::tests::missing_corrupt_wrong_size_and_invalid_hash_are_rejected ... ok
+test content::tests::over_limit_content_is_rejected_before_creating_storage ... ok
+test capture::tests::older_plain_clients_clear_stale_html_and_preserve_selected_attachments ... ok
+test capture::tests::interrupted_in_flight_capture_recovers_unknown_without_repeat_transport_call ... ok
+test capture::tests::actual_qt_formatting_and_retained_attachment_survive_draft_restart_and_capture ... ok
+test capture::tests::invalid_or_cross_account_attachments_cannot_replace_an_authored_draft ... ok
+test composition_tests::composition_maximum_escaped_subject_capture_remains_replayable ... ok
+test capture::tests::durable_draft_capture_replays_exact_mime_after_reopen_without_changing_draft ... ok
+test capture::tests::prepared_capture_resumes_immutable_bytes_and_parameter_conflicts_are_rejected ... ok
+test capture::tests::explicit_unknown_and_failed_receipt_commit_never_resubmit ... ok
+test composition_tests::composition_drafts_page_search_scope_and_invalid_edits_are_bounded ... ok
+test composition_tests::composition_new_draft_capture_and_restart_never_manufacture_received_mail ... ok
+test composition_tests::composition_legacy_first_save_binds_loaded_member_across_actual_arrival ... ok
+test composition_tests::composition_reply_all_and_forward_freeze_retained_source_without_bcc_or_attachments ... ok
+test live_profile::tests::interrupted_first_live_transaction_or_marker_never_seeds_demo ... ok
+test live_profile::tests::empty_live_profile_reopens_without_seed_or_simulated_operations ... ok
+test live_profile::tests::interrupted_live_schema_migration_keeps_empty_identity ... ok
+test live_profile::tests::subject_binding_deduplicates_preserves_drafts_and_rejects_wrong_reconnect ... ok
+test capture::tests::unresolved_history_precedes_limit_and_replays_older_revision_without_changing_new_draft ... ok
+test google_store::tests::accepted_assistance_category_survives_provider_observation_but_manual_value_wins ... ok
+test composition_tests::composition_schema5_upgrade_preserves_authored_columns_and_exact_old_journals ... ok
+test google_store::tests::category_mappings_reject_all_system_ids_and_existing_invalid_mapping_blocks_import ... ok
+test google_store::tests::expired_cursor_restart_preserves_unseen_messages_and_rate_limit_does_not_advance ... ok
+test google_store::tests::manual_intents_and_draft_survive_newer_provider_snapshot_and_explicit_delete ... ok
+test google_store::tests::missing_or_corrupt_staged_content_never_advances_checkpoint ... ok
+test google_store::tests::partial_transport_staging_is_invisible_and_retry_survives_restart ... ok
+test google_store::tests::sql_failure_rolls_back_messages_fts_checkpoint_and_commit_journal ... ok
+test google_store::tests::two_page_import_catchup_reopen_replay_and_colliding_accounts ... ok
+test google_store::tests::mime_corpus_import_preserves_bytes_visible_search_and_attachment_checksums ... ok
+test live_profile::tests::schema_seven_upgrade_preserves_demo_and_refuses_live_conversion ... ok
+test phase1_calendar::tests::combined_scope_is_independent_with_restricted_fields_and_empty_selection ... ok
+test phase1_calendar::tests::creation_replay_restart_edit_and_stale_revision_preserve_one_source ... ok
+test phase1_calendar::tests::aggregate_occurrence_limit_never_silently_truncates_multiple_accounts ... ok
+test phase1_tests::phase1_schema4_upgrade_preserves_existing_fixture_and_authored_state ... ok
+test phase1_calendar::tests::durable_prepare_rechecks_revoked_permissions_before_publishing ... ok
+test phase1_calendar::tests::invalid_fields_and_recurring_changes_are_explicitly_rejected ... ok
+test phase1_calendar::tests::public_operation_history_prioritizes_pending_and_pages_through_all_records ... ok
+test phase1_calendar::tests::six_week_month_across_fall_dst_is_a_valid_bounded_calendar_window ... ok
+test phase1_calendar::tests::title_edit_preserves_self_and_existing_attendee_response_metadata ... ok
+test phase1_calendar::tests::self_rsvp_preserves_other_attendees_and_replays ... ok
+test phase1_calendar::tests::unloaded_or_revoked_selected_calendars_are_not_reported_as_complete_empty_days ... ok
+test phase1_tests::phase1_authored_signature_override_captures_once_after_preference_change ... ok
+test phase1_tests::phase1_cached_counts_invalidate_after_source_and_flag_changes ... ok
+test phase1_tests::phase1_discarded_reply_restarts_with_current_identity_and_outgoing_reply_targets_recipient ... ok
+test mutations::tests::a_new_reply_does_not_inherit_an_earlier_snapshot_action ... ok
+test phase1_tests::phase1_fixture_counts_filters_groups_and_cursor_agree ... ok
+test phase1_tests::phase1_signature_snapshot_capture_discard_and_history_are_durable ... ok
+test phase1_tests::phase1_preferences_validate_replay_and_keep_none_distinct_from_all ... ok
+test phase1_tests::phase1_status_filters_use_entire_conversation_and_source_filters_share_one_member ... ok
+test preferences::appearance_tests::appearance_defaults_merge_old_preferences_and_preserve_receipts ... ok
+test preferences::appearance_tests::appearance_preferences_are_typed_atomic_revisioned_and_durable ... ok
+test queries::projection_tests::category_counts_survive_navigation_and_follow_direct_membership_changes_and_rollback ... ok
+test queries::projection_tests::coverage_append_deltas_preserve_independent_index_source_and_attachment_counts ... ok
+test queries::projection_tests::committed_flags_preserve_other_accounts_and_source_coverage_without_promoting_stale_caches ... ok
+test queries::projection_tests::first_page_navigation_reuses_mail_without_source_reads_and_refreshes_cursor_revision ... ok
+test queries::projection_tests::cursor_survives_non_search_writes_and_rejects_search_changes_and_writer_restart ... ok
+test assist_store::tests::policy_provider_content_mapping_or_new_member_changes_reject_stale_results ... ok
+test queries::projection_tests::projection_cache_rebuilds_after_delta_overflow_and_unhooked_truncate ... ok
+test queries::projection_tests::first_page_cache_follows_flags_source_edits_rollback_filters_and_account_scope ... ok
+test queries::projection_tests::projection_reads_inside_transactions_never_survive_rollback_or_savepoint_restore ... ok
+test queries::projection_tests::projection_cache_skips_navigation_writes_and_handles_appends_replacements_and_rollback ... ok
+test queries::projection_tests::reader_and_flag_receipts_keep_kind_without_loading_an_account_projection ... ok
+test sender_kind_tests::calendar_generation_tracks_actual_calendar_writes_but_not_appearance_or_mail ... ok
+test sender_kind_tests::collapsed_groups_page_expanded_rows_without_changing_full_filter_counts ... ok
+test sender_kind_tests::explicit_fixture_roles_and_filtered_counts_are_independent_of_the_page ... ok
+test sender_kind_tests::latest_incoming_kind_is_source_bound_and_invalidates_cached_filters_and_cursors ... ok
+test sender_kind_tests::schema6_migration_keeps_old_profiles_receipts_and_sources_unclassified ... ok
+test sender_kind_tests::sender_history_uses_exact_identity_full_counts_and_actual_recent_instants_without_reviewing ... ok
+
+test result: ok. 89 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 50.66s
+
+     Running tests\coverage.rs (target\debug\deps\coverage-afac95ef97a8b3a6.exe)
+
+running 2 tests
+test recorded_available_attachment_never_implies_a_verified_offline_copy ... ok
+test coverage_counts_real_index_rows_and_marks_file_verification_unknown ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.84s
+
+     Running tests\mutations.rs (target\debug\deps\mutations-f648c4abe8f26b34.exe)
+
+running 7 tests
+test manual_categories_preserve_all_flags_and_other_members ... ok
+test stale_and_cross_account_snapshot_rejections_have_no_partial_effect ... ok
+test account_view_is_durable_and_rejects_foreign_selection ... ok
+test draft_unicode_and_empty_discard_survive_restart_without_changing_flags ... ok
+test explicit_flags_target_only_snapshot_and_remain_independent ... ok
+test invalid_mutations_reject_duplicates_unknown_fields_and_size_overflow ... ok
+test journal_replay_returns_original_response_across_restart_and_later_edits ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.24s
+
+     Running tests\search.rs (target\debug\deps\search-e64d2f2a2861dd23.exe)
+
+running 5 tests
+test long_thread_search_groups_once_and_returns_actual_matching_member ... ok
+test punctuation_partial_sender_and_source_fields_are_scoped ... ok
+test query_bounds_and_unknown_fields_are_rejected ... ok
+test unsent_drafts_never_replace_or_enter_source_search ... ok
+test pagination_is_stable_distinct_and_does_not_change_account_totals ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.13s
+
+     Running unittests src\main.rs (target\debug\deps\fm_engine-9bc10b91fc1802fa.exe)
+
+running 8 tests
+test session_tests::foreground_overtakes_background_with_bounded_fair_work_and_owned_permits ... ok
+test session_tests::disconnect_marks_only_that_queued_request_cancelled ... ok
+test session_tests::hello_preserves_migrated_fixture_revision_and_advertises_additive_methods ... ok
+test verification_fixture::tests::abandoned_staging_is_reported_and_never_enters_visible_mail ... ok
+test verification_fixture::tests::snapshot_uses_source_ingestion_and_preserves_the_original_receipt ... ok
+test verification_fixture::tests::normal_fixture_is_refused_for_search_without_starting_an_import ... ok
+test verification_fixture::tests::cooperative_staging_yields_invisible_sources_and_publishes_whole_pages ... ok
+test verification_fixture::tests::search_sources_match_combined_filters_and_publish_distinct_members ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.52s
+
+     Running tests\sessions.rs (target\debug\deps\sessions-f3c63303ebc9a2fd.exe)
+
+running 9 tests
+test gui_startup_recovers_after_writer_closes ... ignored, Requires the actual native GUI; invoked by CTest gui-startup-recovery
+test live_profile_stays_empty_through_shared_clients_and_owner_restart ... ok
+test private_handshake_and_version_are_enforced_before_queries ... ok
+test killed_engine_recovers_an_unread_draft_receipt_without_repeating_it ... ok
+test partial_frame_owner_does_not_stall_another_client_or_keep_engine_after_disconnect ... ok
+test simultaneous_launches_elect_one_writer ... ok
+test live_initialization_refuses_a_running_synthetic_profile_without_conversion ... ok
+test paired_clients_share_durable_state_and_explicit_lifetimes ... ok
+test startup_recovers_when_a_previous_writer_releases_its_lock ... ok
+
+test result: ok. 8 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 9.77s
+
+     Running unittests src\lib.rs (target\debug\deps\fm_ipc-62aad3fa7bef9bf0.exe)
+
+running 3 tests
+test windows::tests::private_file_has_explicit_process_user_owner ... ok
+test tests::framing_is_bounded_and_handles_fragmentation ... ok
+test tests::discovery_roundtrip_and_profile_permissions ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Doc-tests fm_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests fm_ipc
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

@@ -18,6 +18,9 @@ use tokio::{
     io::{AsyncBufReadExt, BufReader},
     sync::{mpsc, oneshot, OwnedSemaphorePermit, Semaphore},
 };
+mod core_tasks;
+mod google_auth;
+mod google_sync;
 mod verification_fixture;
 
 #[derive(Parser)]
@@ -28,6 +31,9 @@ mod verification_fixture;
 struct Args {
     #[arg(long)]
     profile: Option<PathBuf>,
+    /// Create or open an explicitly selected live profile; never seed demo data.
+    #[arg(long, requires = "profile", conflicts_with = "verification_fixture")]
+    live_profile: bool,
     #[arg(long, hide = true, value_enum)]
     verification_fixture: Option<verification_fixture::Mode>,
 }
@@ -35,6 +41,7 @@ struct Args {
 enum Work {
     Request(ClientWork),
     VerificationBatch(verification_fixture::Batch),
+    Provider(core_tasks::CoreCall),
 }
 
 struct ClientWork {
@@ -51,6 +58,7 @@ const FOREGROUND_BURST_LIMIT: usize = 4;
 struct PendingWork {
     requests: VecDeque<ClientWork>,
     batches: VecDeque<verification_fixture::Batch>,
+    provider: VecDeque<core_tasks::CoreCall>,
     foreground_burst: usize,
 }
 impl PendingWork {
@@ -58,6 +66,7 @@ impl PendingWork {
         match work {
             Work::Request(work) => self.requests.push_back(work),
             Work::VerificationBatch(batch) => self.batches.push_back(batch),
+            Work::Provider(call) => self.provider.push_back(call),
         }
     }
 
@@ -75,6 +84,13 @@ struct RequestOwner(Arc<AtomicBool>);
 impl Drop for RequestOwner {
     fn drop(&mut self) {
         self.0.store(true, Ordering::Release);
+    }
+}
+
+struct SessionCancellation(fm_google::transport::CancellationToken);
+impl Drop for SessionCancellation {
+    fn drop(&mut self) {
+        self.0.cancel();
     }
 }
 
@@ -160,12 +176,20 @@ fn authenticated(expected: &str, provided: Option<&str>) -> bool {
         == 0
 }
 
+#[derive(Clone)]
+struct GoogleServices {
+    auth: Arc<google_auth::Runtime>,
+    sync: Arc<google_sync::Runtime>,
+}
+
 async fn session(
     stream: AnyStream,
     token: Arc<String>,
     queue: mpsc::Sender<Work>,
     hello_metadata: Arc<Value>,
     foreground_slots: Arc<Semaphore>,
+    providers: Option<GoogleServices>,
+    engine_cancel: fm_google::transport::CancellationToken,
 ) -> io::Result<()> {
     let mut stream = BufReader::new(stream);
     let hello = tokio::time::timeout(HANDSHAKE_TIMEOUT, fm_ipc::read_frame(&mut stream))
@@ -197,6 +221,9 @@ async fn session(
         &response(&request.id, (*hello_metadata).clone()),
     )
     .await?;
+    let owner_id = fm_ipc::random_token();
+    let owner_cancel = engine_cancel.child_token();
+    let _owner_cancel = SessionCancellation(owner_cancel.clone());
     loop {
         // An idle authenticated GUI/watch is an explicit owner, not a stale job.
         if stream.fill_buf().await?.is_empty() {
@@ -240,6 +267,51 @@ async fn session(
                 &error(&request.id, "protocol_mismatch", "supported protocol is 1"),
             )
             .await?;
+            continue;
+        }
+        if google_auth::Runtime::handles(&request.method) {
+            let reply = if let Some(provider) = &providers {
+                let result = tokio::select! {
+                    result = provider.auth.handle(&owner_id, owner_cancel.clone(), &request.method, request.account.as_deref(), request.params) => result,
+                    ready = stream.fill_buf() => {
+                        if ready?.is_empty() { return Ok(()); }
+                        return Err(io::Error::new(io::ErrorKind::InvalidData, "only one request may be in flight per connection"));
+                    }
+                };
+                match result {
+                    Ok(result) => response(&request.id, result),
+                    Err(e) => error(&request.id, &e.code, &e.message),
+                }
+            } else {
+                error(
+                    &request.id,
+                    "capability_unavailable",
+                    "Connect Google accounts in a separate live profile",
+                )
+            };
+            tokio::time::timeout(IO_TIMEOUT, fm_ipc::write_frame(stream.get_mut(), &reply))
+                .await??;
+            continue;
+        }
+        if google_sync::Runtime::handles(&request.method) {
+            let result = if let Some(provider) = &providers {
+                tokio::select! {
+                    result=provider.sync.handle(&owner_id,owner_cancel.clone(),&request.method,request.account.as_deref(),request.params)=>result,
+                    ready=stream.fill_buf()=> {if ready?.is_empty(){return Ok(());}return Err(io::Error::new(io::ErrorKind::InvalidData,"only one request may be in flight per connection"));}
+                }
+            } else {
+                Err(fm_core::CoreError {
+                    code: "capability_unavailable".into(),
+                    message: "Google sync requires a live profile".into(),
+                    details: Value::Null,
+                })
+            };
+            let reply = match result {
+                Ok(result) => response(&request.id, result),
+                Err(e) => error(&request.id, &e.code, &e.message),
+            };
+            tokio::time::timeout(IO_TIMEOUT, fm_ipc::write_frame(stream.get_mut(), &reply))
+                .await??;
             continue;
         }
         let id = request.id.clone();
@@ -319,7 +391,15 @@ fn cleanup(profile: &Path, endpoint: &str, pid: u32) {
 async fn main() {
     if let Err(e) = run(Args::parse()).await {
         eprintln!("fm-engine: {e}");
-        std::process::exit(1);
+        let code = if e
+            .downcast_ref::<fm_core::CoreError>()
+            .is_some_and(|e| e.code == "profile_kind_mismatch")
+        {
+            fm_ipc::ENGINE_PROFILE_KIND_MISMATCH
+        } else {
+            1
+        };
+        std::process::exit(code);
     }
 }
 
@@ -331,7 +411,11 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(mode) = args.verification_fixture {
         verification_fixture::preflight(mode, &profile)?;
     }
-    let mut store = match fm_core::Store::open(&profile) {
+    let mut store = match if args.live_profile {
+        fm_core::Store::open_live(&profile)
+    } else {
+        fm_core::Store::open(&profile)
+    } {
         Ok(s) => s,
         Err(e) => {
             // A launch race is benign only if the existing engine responds.
@@ -340,12 +424,15 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                     return Ok(());
                 }
             }
-            return Err(format!("cannot open profile: {e}").into());
+            return Err(e.into());
         }
     };
     let mut fixture = args
         .verification_fixture
         .map(|mode| verification_fixture::Fixture::prepare(mode, &profile, &mut store))
+        .transpose()?;
+    let provider_namespace = (store.profile_kind()? == fm_core::live_profile::ProfileKind::Live)
+        .then(|| store.vault_namespace())
         .transpose()?;
     let hello_metadata = Arc::new(handshake_metadata(&mut store)?);
     let endpoint = fm_ipc::endpoint(&profile)?;
@@ -363,12 +450,31 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let (queue, mut receive) = mpsc::channel::<Work>(WORK_LIMIT);
     let search_fixture = args.verification_fixture == Some(verification_fixture::Mode::Search);
-    let foreground_slots = Arc::new(Semaphore::new(if search_fixture {
-        WORK_LIMIT - verification_fixture::BACKGROUND_LIMIT
-    } else {
-        WORK_LIMIT
-    }));
+    let foreground_slots = Arc::new(Semaphore::new(
+        if search_fixture || provider_namespace.is_some() {
+            WORK_LIMIT - verification_fixture::BACKGROUND_LIMIT
+        } else {
+            WORK_LIMIT
+        },
+    ));
     let background_slots = Arc::new(Semaphore::new(verification_fixture::BACKGROUND_LIMIT));
+    let engine_cancel = fm_google::transport::CancellationToken::new();
+    let provider = provider_namespace
+        .map(|namespace| {
+            google_auth::Runtime::new(
+                core_tasks::CoreBridge::new(queue.clone(), background_slots.clone()),
+                namespace,
+                engine_cancel.clone(),
+            )
+        })
+        .transpose()?;
+    let sync = provider.as_ref().map(|auth| {
+        google_sync::Runtime::new(
+            core_tasks::CoreBridge::new(queue.clone(), background_slots.clone()),
+            auth.clone(),
+            engine_cancel.clone(),
+        )
+    });
     let owners = Arc::new(AtomicUsize::new(0));
     let authenticated_work = Arc::new(AtomicBool::new(false));
     let schedule = Arc::new(verification_fixture::Schedule::default());
@@ -404,10 +510,15 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-            let background_active = ingestion.is_some() || !pending.batches.is_empty();
+            let background_active =
+                ingestion.is_some() || !pending.batches.is_empty() || !pending.provider.is_empty();
             let Some(work) = pending.request(background_active) else {
                 if background_active {
                     pending.foreground_burst = 0;
+                    if let Some(call) = pending.provider.pop_front() {
+                        call.run(&mut store);
+                        continue;
+                    }
                     if let Some(fixture) = &mut fixture {
                         if ingestion.is_none() {
                             ingestion = pending
@@ -470,14 +581,21 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let mut tick = tokio::time::interval(Duration::from_millis(verification_fixture::INTERVAL_MS));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut next_batch = 0;
+    let mut clients = tokio::task::JoinSet::new();
     loop {
         tokio::select! {
             incoming=accept(&mut listener)=>match incoming {
                 Ok(stream)=> {
                     let Ok(permit)=slots.clone().try_acquire_owned() else {drop(stream);continue;};
                     owners.fetch_add(1,Ordering::SeqCst);ever_connected=true;idle_since=None;
-                    let owner=Owner(owners.clone());let token=token.clone();let queue=queue.clone();let hello_metadata=hello_metadata.clone();let foreground_slots=foreground_slots.clone();
-                    tokio::spawn(async move {let _owner=owner;let _permit=permit;let _=session(stream,token,queue,hello_metadata,foreground_slots).await;});
+                    let owner=Owner(owners.clone());let token=token.clone();let queue=queue.clone();let hello_metadata=hello_metadata.clone();let foreground_slots=foreground_slots.clone();let providers=provider.as_ref().zip(sync.as_ref()).map(|(auth,sync)|GoogleServices{auth:auth.clone(),sync:sync.clone()});let stop=engine_cancel.clone();
+                    clients.spawn(async move {
+                        let _owner=owner;let _permit=permit;
+                        tokio::select! {
+                            _=stop.cancelled()=>{},
+                            _=session(stream,token,queue,hello_metadata,foreground_slots,providers,stop.clone())=>{},
+                        }
+                    });
                 },
                 Err(e)=> {eprintln!("fm-engine: local accept failed: {}",e.kind());tokio::time::sleep(Duration::from_millis(50)).await;}
             },
@@ -506,16 +624,25 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 }
             },
             _=tokio::signal::ctrl_c()=>break,
+            _=clients.join_next(), if !clients.is_empty()=>{},
         }
     }
     // Stop accepting before removing discovery. Outstanding client jobs finish
     // durable core writes; normal final-client shutdown already has no clients.
     drop(listener);
     cleanup(&profile, &endpoint, pid);
-    drop(queue);
-    if owners.load(Ordering::SeqCst) == 0 {
-        let _ = worker.join();
+    engine_cancel.cancel();
+    while clients.join_next().await.is_some() {}
+    if let Some(sync) = &sync {
+        sync.shutdown().await;
     }
+    drop(sync);
+    if let Some(provider) = &provider {
+        provider.shutdown().await;
+    }
+    drop(provider);
+    drop(queue);
+    let _ = worker.join();
     Ok(())
 }
 
@@ -524,12 +651,14 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
     Ok(
         json!({"protocol":PROTOCOL_VERSION,"schema_version":status["schema_version"],
         "fixture_revision":status["fixture_revision"],"capabilities":status["capabilities"],
-        "mode":"synthetic","max_frame_bytes":fm_ipc::MAX_FRAME,"max_page_size":100,
+        "mode":status["profile_kind"],"max_frame_bytes":fm_ipc::MAX_FRAME,"max_page_size":100,
         "methods":["accounts","status","conversations","conversation","flag","draft_get",
             "draft_save","draft_capture","calendar","attachment","categories","set_category",
             "view_get","view_save","preferences_get","preferences_save","calendar_sources",
             "calendar_combined","account_update","draft_discard","capture_history","calendar_write",
-            "calendar_write_ack","calendar_operations","drafts","draft_create","sender_summary"]}),
+            "calendar_write_ack","calendar_operations","drafts","draft_create","sender_summary",
+            "google_auth_begin","google_auth_status","google_auth_cancel","google_disconnect",
+            "google_sync_start","google_sync_stop","google_sync_release","google_sync_status","google_sync_busy"]}),
     )
 }
 
@@ -606,6 +735,8 @@ mod session_tests {
                 queue,
                 metadata,
                 Arc::new(Semaphore::new(WORK_LIMIT)),
+                None,
+                fm_google::transport::CancellationToken::new(),
             ));
             fm_ipc::write_frame(client.get_mut(), &json!({"version":1,"id":"hello","method":"hello","params":{"token":"fixture-token"}})).await.unwrap();
             let hello: Value =
@@ -652,6 +783,8 @@ mod session_tests {
             queue,
             Arc::new(json!({"protocol":1,"fixture_revision":2})),
             foreground_slots.clone(),
+            None,
+            fm_google::transport::CancellationToken::new(),
         ));
         fm_ipc::write_frame(
             client.get_mut(),

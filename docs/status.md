@@ -1,8 +1,10 @@
 # Current status
 
-**Phase 1 is complete on available hosts; Phase 2 planning is prepared on `codex/phase-2` under D020.** The [plan](plans/phase-2.md) covers real personal Gmail and Workspace mail/Calendar through Google APIs, staged account verification, controlled writes and a daily pilot. The founder confirms existing Cloud/OAuth setup and Workspace admin access, and selects OS account permissions plus verified disk encryption; app-level mail-store encryption is deferred. These are setup/policy inputs, not verified live access.
+**Phase 1 is complete on available hosts; Phase 2 implementation is active on `codex/phase-2` under D021/D022 after planning checkpoint `0ced122`.** The [plan](plans/phase-2.md) covers real personal Gmail and Workspace mail/Calendar through Google APIs, staged account verification, controlled writes and a daily pilot. The founder confirms existing Cloud/OAuth setup and Workspace admin access, and selects OS account permissions plus verified disk encryption; app-level mail-store encryption is deferred. These are setup/policy inputs, not verified live access.
 
-As of 2026-09-12 (Toronto). **P1-10 Windows release/package, all 900 navigation checks, concurrent search and three-theme resize/visual acceptance pass at runtime `25b8b1e`. Final CI passes 9/9 on Mac, Windows and Ubuntu, with relocated packages and logs retained.** [CI/source equivalence](research/phase-1-execution.md#p1-10-final-native-ci-and-phase-1-closure) proves generated PR merge `8e9179b`, pushed `cb6489b` and merged `main` `885de67` have the same tree. Phase 2 branches from that merge; no Phase 2 implementation, real account or model is connected. Runtime remains schema 7/fresh fixture 3/additive protocol 1; whole Google-first readiness remains **0/9**. Phase 0 runtime `204fa62` and earlier failures remain preserved.
+As of 2026-09-13 (Toronto). **Current Phase 2 code uses schema 9, live fixture 0, synthetic fixture 3 and additive protocol 1. The complete Windows dev run passes 10/10 CTests in 292.33 seconds**, including 292 executed Rust workspace tests and native GUI/CLI/restart checks. Settings/deferred-click regressions now pass; earlier failures and the remaining Qt shutdown warning are preserved. Explicit CLI sync requires actual Console limits and holds its own session; sign-in alone never imports. Runtime multi-owner acceptance, Calendar memory/writer bounds, measured acquisition performance, packages, live writes and actual Google accounts remain outstanding. Whole Google-first readiness remains **0/9**. [Current execution](research/phase-2-execution.md) records the exact scope; functional test duration does not establish navigation latency.
+
+**The completed Phase 1 evidence remains unchanged:** P1-10 Windows release/package, all 900 navigation checks, concurrent search and three-theme resize/visual acceptance pass at runtime `25b8b1e`. Final CI passes 9/9 on Mac, Windows and Ubuntu, with relocated packages and logs retained. [CI/source equivalence](research/phase-1-execution.md#p1-10-final-native-ci-and-phase-1-closure) proves generated PR merge `8e9179b`, pushed `cb6489b` and merged `main` `885de67` have the same tree. Phase 2 branches from that merge; its ongoing changes are not covered by the older package/performance passes. Phase 0 runtime `204fa62` and earlier failures remain preserved.
 
 ## Established direction
 
@@ -14,7 +16,7 @@ The proposed stack remains Rust engine/CLI, C++20/Qt Quick/QML UI, private local
 
 ## Next work
 
-Start **P2-00**, then shared OAuth/vault and HTTP/quota packets P2-01/02, followed by Gmail and Calendar acquisition in parallel. Planning contracts are Core 14, Gmail 4, Calendar 12, Platform 11, Mail UI 14, CLI 8 and Quality 11; these revisions do not change the implemented schema/fixture. Verify the actual Cloud scopes/publishing mode/Workspace policy/quotas and native disk/vault protection before import. Confirm remaining inventory-retention and backup/restore choices. [Phase 2 milestones](plans/phase-2.md#builds-the-founder-can-test) separate initial access, explicit canary sends/calendar writes and daily use with full-history progress.
+Complete runtime multi-owner acceptance, bound shared decoded Calendar pages and move repeated Calendar page hashing off the writer, then measure acquisition responsiveness and package the current source. Current contracts remain Core 15, Gmail 5, Calendar 13, Platform 11, Mail UI 14, CLI 8 and Quality 11 under D022; Search 5/Triage 6 remain consumers. Real read-on-open/Done/Delay, remote drafts/send, Calendar write reconciliation and reminders still need their packets. Verify actual Cloud scopes/publishing mode/Workspace policy/quotas, protected profile/disk and backup restore before import; confirm inventory-retention choices. [Phase 2 milestones](plans/phase-2.md#builds-the-founder-can-test) separate initial access, explicit canary writes and daily use with full-history progress.
 
 ## Recorded Phase 1 foundation
 
@@ -40,12 +42,12 @@ The home Windows 11 PC is ready for Phase 1 development at planning checkpoint `
 
 | Required area | State | Verified |
 | --- | --- | --- |
-| [Core/offline storage](contracts/core-storage.md) | Schema-7 native draft/restart, Core migration and preserved package upgrades pass; whole area Draft | No |
-| [Gmail/Workspace](contracts/gmail.md) | Phase 2 personal/Workspace adapter planned; no live account verified; whole area Draft | No |
+| [Core/offline storage](contracts/core-storage.md) | Schema-9 migration, shared acquisition and Windows native checks pass; packages/complete live coverage pending; whole area Draft | No |
+| [Gmail/Workspace](contracts/gmail.md) | OAuth, HTTP, Core and engine worker fixtures pass; paired runtime/live-write acceptance pending; whole area Draft | No |
 | [Mail UI/composition](contracts/mail-ui.md) | Phase 1 native/package and Windows navigation/rendering pass; Phase 2 live workflows planned; whole area Draft | No |
 | [Search](contracts/search.md) | Native filters/idle convergence and all four development/packaged concurrent budgets pass; whole area Draft | No |
 | [Triage/categories](contracts/triage.md) | Phase 1 explicit review/Done/Delay verified locally; whole area Draft | No |
-| [Google Calendar](contracts/calendar.md) | P1-09 local views/writes, header timeline, duration preference and edited-event/RSVP restart pass; live Google pending; whole area Draft | No |
+| [Google Calendar](contracts/calendar.md) | HTTP, indexed storage and engine worker fixtures pass; shared page bounds, live writes/reminders pending; whole area Draft | No |
 | [Optional local assistance](contracts/local-ai.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
 | [Platform/install/lifecycle](contracts/platform.md) | P1-09 Mac/Windows/Ubuntu native tests and relocated development packages pass; Windows upgrades pass; whole area Draft | No |
 | [CLI](contracts/cli.md) | Paired composition/MIME/restart readback verified locally; whole area Draft | No |
@@ -60,7 +62,7 @@ The Google-first release still requires its applicable quality and OS gates. It 
 | --- | --- | --- |
 | 0 — Paired foundation | Native builds, small fixtures, storage, private engine/CLI/GUI, text/composer and Google prerequisites | Completed on available hosts; external/physical gates explicit |
 | 1 — Redesigned local client | September 12 native design and paired CLI, shared triage/search/preferences, durable new/reply/reply-all/forward drafts/capture and combined calendar workflows | Completed on available hosts; P1-10 Windows measurements and final three-host CI/packages pass |
-| 2 — Google daily workflows | Gmail/Workspace and Google Calendar, growing CLI with GUI; controlled founder use | Plan prepared on codex/phase-2; implementation and live gates not started |
+| 2 — Google daily workflows | Gmail/Workspace and Google Calendar, growing CLI with GUI; controlled founder use | Implementation active on codex/phase-2; live account gates not verified |
 | 3 — Google completion and dogfooding | Usable Google GUI and CLI, expanded designs, later best-effort HTML/local assistance, recovery/performance and delivery evidence | Planned |
 | 4 — Later protocols | IMAP, SMTP and external iCalendar subscriptions, only after actual Google dogfooding | Deferred; not started |
 | Later | CalDAV and possible public/open-source launch | Separate scope |

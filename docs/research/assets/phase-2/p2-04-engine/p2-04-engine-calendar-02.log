@@ -1,0 +1,21 @@
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.91s
+     Running unittests src\main.rs (target\debug\deps\fm_engine-8f43be620f559423.exe)
+
+running 6 tests
+test google_sync::calendar::tests::a_reconnected_account_rejects_the_previous_worker_before_network_or_store_changes ... ok
+test google_sync::calendar::tests::metadata_permission_loss_redacts_and_free_busy_errors_never_become_free_time ... ok
+test google_sync::calendar::tests::unusable_calendar_page_does_not_block_other_calendar_and_cancellation_stops_all_reads ... ok
+test google_sync::calendar::tests::changed_partial_page_is_expired_and_replaced_without_publishing_mixed_sources ... ok
+test google_sync::calendar::tests::expired_catalog_and_event_tokens_replace_only_after_complete_publication ... ok
+test google_sync::calendar::tests::catalog_pagination_calendar_fairness_and_saved_event_cursor_survive_restart ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 31 filtered out; finished in 0.26s
+
+     Running tests\sessions.rs (target\debug\deps\sessions-2239c75e63845bf7.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+

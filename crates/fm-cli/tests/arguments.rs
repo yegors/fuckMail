@@ -1,6 +1,56 @@
 use std::process::Command;
 
 #[test]
+fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
+    let root = tempfile::tempdir().unwrap();
+    let absent = root.path().join("not-created");
+    for args in [
+        vec!["google", "connect", "--client-config", "absent-client.json"],
+        vec!["google", "disconnect"],
+        vec!["google", "sync-stop"],
+        vec!["google", "sync"],
+        vec!["google", "sync", "--gmail-project-units-per-minute", "0"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args(["--profile", absent.to_str().unwrap()])
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(!absent.exists());
+    }
+    for command in ["connect", "sync", "sync-status", "sync-stop"] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args([
+                "--profile",
+                absent.to_str().unwrap(),
+                "google",
+                command,
+                "--help",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert!(!absent.exists());
+    }
+}
+
+#[test]
+fn live_profile_initialization_requires_an_explicit_path() {
+    let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+        .args(["--json", "profile-init"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let response: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["error"]["code"], "invalid_request");
+    assert!(response["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("explicit --profile"));
+}
+
+#[test]
 fn help_and_version_are_headless_and_do_not_start_a_profile() {
     let root = tempfile::tempdir().unwrap();
     let absent = root.path().join("not-created");

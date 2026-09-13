@@ -1,0 +1,34 @@
+Start testing: Sep 12 21:07 Eastern Daylight Time
+----------------------------------------------------------
+3/10 Testing: gui-smoke
+3/10 Test: gui-smoke
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/fuckmail-gui.exe" "--smoke"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+"gui-smoke" start time: Sep 12 21:07 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   7.13 sec
+----------------------------------------------------------
+Test Passed.
+"gui-smoke" end time: Sep 12 21:07 Eastern Daylight Time
+"gui-smoke" time elapsed: 00:00:07
+----------------------------------------------------------
+
+4/10 Testing: gui-live-empty
+4/10 Test: gui-live-empty
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/fuckmail-gui.exe" "--self-test-live-empty"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+"gui-live-empty" start time: Sep 12 21:07 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+Native empty live profile verified: no accounts, conversations or calendar events; fixture revision 0
+<end of output>
+Test time =   5.34 sec
+----------------------------------------------------------
+Test Passed.
+"gui-live-empty" end time: Sep 12 21:07 Eastern Daylight Time
+"gui-live-empty" time elapsed: 00:00:05
+----------------------------------------------------------
+
+End testing: Sep 12 21:07 Eastern Daylight Time

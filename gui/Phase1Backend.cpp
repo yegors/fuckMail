@@ -4,17 +4,18 @@
 #include <QTimeZone>
 
 namespace {
-QTimeZone viewZone() { return QTimeZone("America/Toronto"); }
 bool changesCalendarQuery(const QVariantMap &before, const QVariantMap &after) {
-    for (const auto &key : {"week_start", "selected_calendars", "calendar_view", "calendar_date", "timeline_date"})
+    for (const auto &key : {"week_start", "selected_calendars", "calendar_view", "calendar_date", "timeline_date", "calendar_display_time_zone"})
         if (before.value(key) != after.value(key)) return true;
     return before.isEmpty();
 }
 }
 
 QDateTime MailBackend::clockNow() const {
-    return m_fixtureClock ? QDateTime::fromString("2026-09-11T10:42:00-04:00", Qt::ISODate).toTimeZone(viewZone())
-                          : QDateTime::currentDateTimeUtc().toTimeZone(viewZone());
+    const QTimeZone chosen(m_preferences.value("calendar_display_time_zone").toString().toUtf8());
+    const auto zone = m_syntheticProfile ? QTimeZone("America/Toronto") : chosen.isValid() ? chosen : QTimeZone::systemTimeZone();
+    return m_fixtureClock ? QDateTime::fromString("2026-09-11T10:42:00-04:00", Qt::ISODate).toTimeZone(zone)
+                          : QDateTime::currentDateTimeUtc().toTimeZone(zone);
 }
 QString MailBackend::todayDate() const { return clockNow().date().toString(Qt::ISODate); }
 QString MailBackend::calendarDateTime(const QString &date, const QString &time, const QString &zone) const {
@@ -90,6 +91,12 @@ void MailBackend::loadPreferences() {
             m_timelineDate = preferences.value("timeline_date").isNull() ? todayDate() : preferences.value("timeline_date").toString();
             emit preferencesChanged(); if (reloadCalendar) loadCalendar();
         }
+        if (!m_syntheticProfile && m_preferences.value("calendar_display_time_zone").isNull()
+            && !m_preferencesPending.contains("calendar_display_time_zone")) {
+            // Resolve the host zone once; the shared Core validates the IANA ID.
+            const auto systemZone = QTimeZone::systemTimeZone();
+            if (systemZone.isValid()) setPreferences({{"calendar_display_time_zone", QString::fromUtf8(systemZone.id())}});
+        }
     });
 }
 void MailBackend::setPreferences(const QVariantMap &patch) {
@@ -118,7 +125,7 @@ void MailBackend::savePreferences() {
             if (m_preferencesPending.value(it.key()) == it.value()) m_preferencesPending.remove(it.key());
         m_preferencesStatus = m_preferencesPending.isEmpty() ? "Saved on this machine" : "Saving…";
         emit preferencesChanged();
-        for (const auto &key : {"week_start", "selected_calendars"})
+        for (const auto &key : {"week_start", "selected_calendars", "calendar_display_time_zone"})
             if (submitted.contains(key)) { loadCalendar(); break; }
         if (!m_preferencesPending.isEmpty()) savePreferences();
         if (m_shutdown) finishShutdown();
