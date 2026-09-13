@@ -179,7 +179,7 @@ def verify_sources(profile, fixture):
     checked, by_account, receipts = [], {}, {}
     with closing(read_database(profile)) as db:
         db.row_factory = sqlite3.Row
-        require(db.execute("PRAGMA user_version").fetchone()[0] == 15, "Schema boundary changed")
+        require(db.execute("PRAGMA user_version").fetchone()[0] == 16, "Schema boundary changed")
         meta = dict(db.execute("SELECT key,value FROM meta"))
         require(str(meta["fixture_revision"]) == "0" and str(meta["profile_kind"]) == "1", "Disposable profile is not empty-live derived")
         require({r[0] for r in db.execute("SELECT id FROM accounts")} == set(accounts), "Unexpected account in disposable profile")

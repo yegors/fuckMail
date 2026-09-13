@@ -1,5 +1,8 @@
 //! Fixed Gmail-shaped responses. There is deliberately no network implementation.
-use super::{remote_drafts, Account, Evidence, BACKFILL_MESSAGES, RAW_DELAY_MS, RECENT_MESSAGES};
+use super::{
+    draft_actions, remote_drafts, Account, Evidence, BACKFILL_MESSAGES, RAW_DELAY_MS,
+    RECENT_MESSAGES,
+};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use fm_google::{
     auth::{CredentialVault, StoredToken},
@@ -222,6 +225,7 @@ pub(super) struct FixtureHttp {
     hold_raw: Arc<AtomicBool>,
     send_enabled: bool,
     remote_version_two: Option<Arc<AtomicBool>>,
+    action_version_two: Option<Arc<AtomicBool>>,
 }
 impl FixtureHttp {
     pub(super) fn new(
@@ -242,6 +246,7 @@ impl FixtureHttp {
             hold_raw,
             send_enabled,
             remote_version_two: None,
+            action_version_two: None,
         }
     }
     pub(super) fn enable_remote_drafts(&mut self, version_two: Arc<AtomicBool>) {
@@ -260,6 +265,26 @@ impl FixtureHttp {
                 );
             }
         }
+    }
+    pub(super) fn enable_draft_actions(&mut self, version_two: Arc<AtomicBool>) {
+        self.action_version_two = Some(version_two);
+        for (account, state) in self.accounts.iter().zip(&mut self.states) {
+            let state = state.get_mut().unwrap();
+            for index in 0..draft_actions::COUNT {
+                state.drafts.insert(
+                    format!("ra{index:04}"),
+                    FixtureDraft {
+                        message_id: format!("ram{index:04}v1"),
+                        thread_id: format!("rat{index:04}"),
+                        raw: draft_actions::source(account.key, index, 1, self.base),
+                    },
+                );
+            }
+        }
+    }
+    fn writable_draft_id(&self, id: &str) -> bool {
+        fixture_draft_id(id)
+            || (self.action_version_two.is_some() && draft_actions::index(id).is_some())
     }
     fn reject(&self, code: &'static str) -> TransportError {
         self.evidence.lock().unwrap().error(code);
@@ -411,13 +436,25 @@ impl FixtureHttp {
                 }
             }
             if let Some(id) = path.strip_prefix("drafts/") {
-                if (fixture_draft_id(id)
+                if (self.writable_draft_id(id)
                     || (self.remote_version_two.is_some() && remote_drafts::index(id).is_some()))
                     && params.len() == 1
                     && params.get("format") == Some(&"raw")
                 {
                     return Ok((account, Route::DraftGet(id.into())));
                 }
+            }
+        }
+        if self.action_version_two.is_some()
+            && request.method() == HttpMethod::Delete
+            && params.is_empty()
+            && request.body_bytes().is_empty()
+        {
+            if let Some(id) = path
+                .strip_prefix("drafts/")
+                .filter(|id| self.writable_draft_id(id))
+            {
+                return Ok((account, Route::DraftDelete(id.into())));
             }
         }
         if params.is_empty()
@@ -440,7 +477,7 @@ impl FixtureHttp {
                     }
                     let id = body["id"]
                         .as_str()
-                        .filter(|id| fixture_draft_id(id))
+                        .filter(|id| self.writable_draft_id(id))
                         .ok_or_else(|| self.reject("invalid_synthetic_send_target"))?;
                     (Some(id.to_owned()), &body["message"])
                 } else {
@@ -464,7 +501,7 @@ impl FixtureHttp {
                 Some(None)
             } else {
                 path.strip_prefix("drafts/")
-                    .filter(|id| fixture_draft_id(id) && request.method() == HttpMethod::Put)
+                    .filter(|id| self.writable_draft_id(id) && request.method() == HttpMethod::Put)
                     .map(|id| Some(id.to_owned()))
             };
             if let Some(draft_id) = draft_id {
@@ -618,6 +655,25 @@ impl FixtureHttp {
                             },
                         );
                     }
+                    if id == "ra0003"
+                        && self
+                            .action_version_two
+                            .as_ref()
+                            .is_some_and(|flag| flag.load(Ordering::Acquire))
+                        && state
+                            .drafts
+                            .get(&id)
+                            .is_some_and(|draft| draft.message_id == "ram0003v1")
+                    {
+                        state.drafts.insert(
+                            id.clone(),
+                            FixtureDraft {
+                                message_id: "ram0003v2".into(),
+                                thread_id: "rat0003".into(),
+                                raw: draft_actions::source(owner.key, 3, 2, self.base),
+                            },
+                        );
+                    }
                     let Some(draft) = state.drafts.get(&id) else {
                         return Ok((
                             404,
@@ -635,7 +691,41 @@ impl FixtureHttp {
                             evidence.remote_draft_reads.push(row);
                         }
                     }
+                    if self.action_version_two.is_some() {
+                        let row = json!({"account":owner.id,"draft_id":id,"message_id":draft.message_id,"thread_id":draft.thread_id,"size":draft.raw.len(),"sha256":format!("{:x}", Sha256::digest(&draft.raw))});
+                        let mut evidence = self.evidence.lock().unwrap();
+                        if !evidence.draft_action_reads.contains(&row) {
+                            if evidence.draft_action_reads.len() >= MAX_DRAFT_PUBLICATIONS {
+                                evidence.error("draft_action_read_trace_limit");
+                                return Err(TransportError::InvalidRequest);
+                            }
+                            evidence.draft_action_reads.push(row);
+                        }
+                    }
                     draft.value(&id, true)
+                }
+                Route::DraftDelete(id) => {
+                    let existed = state.drafts.remove(&id).is_some();
+                    let mut evidence = self.evidence.lock().unwrap();
+                    evidence.counters.draft_delete_attempts += 1;
+                    if evidence.draft_deletions.len() >= MAX_DRAFT_PUBLICATIONS {
+                        evidence.error("draft_delete_trace_limit");
+                        return Err(TransportError::InvalidRequest);
+                    }
+                    let lost = id == "ra0004" && existed;
+                    evidence.draft_deletions.push(json!({"account":owner.id,"draft_id":id,"existed":existed,"response":if lost {"lost_response"} else if existed {"acknowledged"} else {"absent"}}));
+                    if lost {
+                        evidence.counters.draft_delete_unknown += 1;
+                        return Err(TransportError::Network);
+                    }
+                    if !existed {
+                        return Ok((
+                            404,
+                            json!({"error":{"code":404,"message":"Generated draft is absent"}}),
+                        ));
+                    }
+                    evidence.counters.draft_deleted += 1;
+                    return Ok((204, json!({})));
                 }
                 Route::DraftList(offset) => {
                     self.evidence.lock().unwrap().counters.draft_list += 1;
@@ -773,6 +863,7 @@ enum Route {
     State(Message),
     Review(Message),
     DraftGet(String),
+    DraftDelete(String),
     DraftList(usize),
     DraftWrite {
         id: Option<String>,
@@ -993,14 +1084,18 @@ impl HttpTransport for FixtureHttp {
                 return Err(TransportError::Cancelled);
             }
             let result = self.response(account, route).and_then(|(status, value)| {
-                serde_json::to_vec(&value)
-                    .map(|body| HttpResponse {
-                        status,
-                        body,
-                        retry_after_secs: None,
-                        etag: None,
-                    })
-                    .map_err(|_| self.reject("synthetic_serialization_failed"))
+                (if status == 204 {
+                    Ok(Vec::new())
+                } else {
+                    serde_json::to_vec(&value)
+                })
+                .map(|body| HttpResponse {
+                    status,
+                    body,
+                    retry_after_secs: None,
+                    etag: None,
+                })
+                .map_err(|_| self.reject("synthetic_serialization_failed"))
             });
             active.finish(result.is_ok());
             result

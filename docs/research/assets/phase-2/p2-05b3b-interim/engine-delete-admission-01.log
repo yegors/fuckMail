@@ -1,0 +1,20 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.37s
+     Running unittests src\main.rs (target\debug\deps\fm_engine-3a2ea17661e1de87.exe)
+
+running 1 test
+test google_sync::runtime_tests::deletion_admission_is_exact_one_shot_and_cannot_become_create_update_or_send ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 133 filtered out; finished in 0.00s
+
+     Running tests\sessions.rs (target\debug\deps\sessions-e8feea43ad5a8afa.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests\verification_profile.rs (target\debug\deps\verification_profile-fe647fe5df0088b4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+

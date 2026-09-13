@@ -1,0 +1,89 @@
+   Compiling tokio-rustls v0.26.5
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.16s
+     Running unittests src\lib.rs (target\debug\deps\fm_google-c90179e4a4c01f57.exe)
+
+running 50 tests
+test desktop_auth::tests::native_vault_synthetic_roundtrip_and_cleanup ... ignored, explicit isolated native-vault exercise; never part of credential-free CI
+test auth::scope_tests::granted_mail_scopes_distinguish_read_access_from_mutation_access ... ok
+test desktop_auth::tests::callback_parser_rejects_wrong_target_host_duplicates_and_injection ... ok
+test gmail_api::tests::account_mismatch_never_calls_transport_and_bearer_stays_out_of_url_debug ... ok
+test gmail_api::tests::api_quota_and_permission_errors_remain_sanitized_and_do_not_retry ... ok
+test gmail_api::tests::draft_container_identity_survives_message_replacement_and_frozen_send ... ok
+test gmail_api::tests::deletion_certainty_distinguishes_completion_absence_and_accepted_only ... ok
+test gmail_api::tests::endpoint_inventory_has_documented_costs_and_fixed_mutation_classes ... ok
+test desktop_auth::tests::identity_accepts_documented_issuer_and_explicit_authorized_party ... ok
+test gmail_api::tests::ids_and_queries_are_encoded_and_boundaries_reject_invalid_calls ... ok
+test desktop_auth::tests::refresh_requires_bound_subject_and_rejects_changed_identity ... ok
+test gmail_api::tests::local_cooldown_preserves_retry_delay_without_replaying_reads_or_state_writes ... ok
+test gmail_api::tests::labels_and_remote_drafts_keep_resource_ids_and_full_raw ... ok
+test gmail_api::tests::pages_preserve_opaque_tokens_estimates_and_history_checkpoint_boundary ... ok
+test gmail_api::tests::rejected_draft_continuation_is_a_read_restart_only_for_a_supplied_token ... ok
+test gmail_api::tests::rejected_submissions_retain_auth_policy_and_quota_metadata_without_retry ... ok
+test gmail_api::tests::raw_outcomes_isolate_missing_oversized_malformed_and_valid_source ... ok
+test gmail_api::tests::state_mutation_targets_one_message_and_checks_returned_identity ... ok
+test scheduler::tests::cancelled_reservation_charges_once_and_frees_concurrency_during_cooldown ... ok
+test scheduler::tests::backfill_reserves_quota_and_one_foreground_slot ... ok
+test gmail_api::tests::uncertain_send_is_single_attempt_and_rejection_is_distinct ... ok
+test gmail_api::tests::versioned_label_read_excludes_bodies_and_validates_identity_and_history ... ok
+test scheduler::tests::continuous_urgent_work_does_not_starve_eligible_backfill_or_lanes ... ok
+test desktop_auth::tests::exchange_checks_identity_reports_partial_grants_and_persists_only_explicitly ... ok
+test scheduler::tests::reads_and_manual_mutations_have_bounded_ordered_lanes ... ok
+test scheduler::tests::delayed_dispatch_keeps_reservation_then_starts_the_actual_rolling_minute ... ok
+test scheduler::tests::confirmed_quota_json_has_one_exact_bounded_headroom_contract ... ok
+test scheduler::tests::delayed_backfill_still_reserves_foreground_budget_and_concurrency ... ok
+test scheduler::tests::retry_policy_never_replays_writes_and_stops_terminal_errors ... ok
+test scheduler::tests::rolling_units_account_project_and_services_are_distinct ... ok
+test scheduler::tests::shared_cooldowns_cancel_and_capacity_do_not_leak_work ... ok
+test scheduler::tests::slow_response_does_not_extend_the_dispatch_charge ... ok
+test transport::tests::native_roots_public_google_jwks_smoke ... ignored, explicit native HTTPS probe of public Google JWKS; no credentials or mailbox access
+test transport::tests::endpoints_and_debug_are_bounded_and_private ... ok
+test transport::tests::retry_after_delta_date_and_invalid_values ... ok
+test vault::tests::namespaces_are_profile_and_account_scoped ... ok
+test desktop_auth::tests::refused_grants_and_vault_write_failures_never_publish_tokens ... ok
+test desktop_auth::tests::eight_async_consumers_share_one_durable_refresh_and_locked_vault_fails_closed ... ok
+test desktop_auth::tests::signed_identity_checks_signature_claims_nonce_and_expected_subject ... ok
+test transport::tests::conditional_read_preserves_not_modified_status_and_etag ... ok
+test desktop_auth::tests::denial_timeout_and_cancel_close_the_listener ... ok
+test transport::tests::size_checks_and_cancel_precede_network ... ok
+test transport::tests::returns_status_once_and_caps_actual_chunked_body ... ok
+test transport::tests::redirect_never_forwards_authorization ... ok
+test transport::tests::interrupted_submission_is_one_attempt_and_never_returns_partial_content ... ok
+test transport::tests::whole_deadline_bounds_a_body_that_keeps_making_progress ... ok
+test desktop_auth::tests::aborted_waiter_keeps_refresh_serialized_until_blocking_vault_store_finishes ... ok
+test desktop_auth::tests::verified_reconnect_and_refresh_share_durable_finalization_after_caller_abort ... ok
+test transport::tests::cancellation_interrupts_headers_and_body_and_read_deadline ... ok
+test desktop_auth::tests::bound_login_has_full_scopes_and_accepts_only_matching_one_use_callback ... ok
+
+test result: ok. 48 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.06s
+
+     Running tests\feasibility.rs (target\debug\deps\feasibility-293e383ca9e1b7a9.exe)
+
+running 16 tests
+test uncertain_send_is_never_automatically_submitted_again ... ok
+test attachments_publish_only_complete_verified_content ... ok
+test locked_vault_read_releases_no_token_and_never_refreshes_or_falls_back ... ok
+test colliding_google_ids_cannot_commit_into_another_account ... ok
+test malformed_paging_history_and_oversized_json_fail_closed ... ok
+test error_classification_distinguishes_history_expiry_permissions_and_quota ... ok
+test partial_message_retrieval_never_advances_inventory_token ... ok
+test expiry_requests_new_generation_without_erase_and_rate_limit_keeps_checkpoint ... ok
+test raw_source_is_preserved_and_identity_mismatch_is_rejected ... ok
+test retry_budget_respects_provider_delay_without_retrying_permissions ... ok
+test refreshed_tokens_are_not_returned_before_vault_persistence ... ok
+test paginated_inventory_replay_and_interleaved_history_keep_local_intent ... ok
+test journal_before_send_and_unknown_recovery_after_receipt_commit_failure ... ok
+test modified_mime_and_duplicate_operation_are_not_sent ... ok
+test desktop_authorization_uses_system_browser_url_pkce_and_one_time_state ... ok
+test simultaneous_mail_and_calendar_requests_share_one_refresh ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests fm_google
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

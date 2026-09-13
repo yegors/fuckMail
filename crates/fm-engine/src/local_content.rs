@@ -29,7 +29,12 @@ impl Runtime {
     pub(crate) fn handles(method: &str) -> bool {
         matches!(
             method,
-            "draft_attachment_import" | "draft_save" | "draft_capture" | "google_draft_source"
+            "draft_attachment_import"
+                | "draft_save"
+                | "draft_capture"
+                | "google_draft_source"
+                | "google_draft_authoring"
+                | "google_draft_copy"
         )
     }
 
@@ -47,9 +52,59 @@ impl Runtime {
             ));
         }
         let account = account
-            .ok_or_else(|| failure("account_required", "Choose an account"))?
+            .ok_or_else(|| {
+                let error = failure("account_required", "Choose an account");
+                if method == "google_draft_copy" {
+                    authoring_uncommitted(error)
+                } else {
+                    error
+                }
+            })?
             .to_owned();
         let method = method.to_owned();
+        if matches!(
+            method.as_str(),
+            "google_draft_authoring" | "google_draft_copy"
+        ) {
+            use fm_core::google_draft_actions::GoogleDraftAuthoringStep;
+            let begin_cancel = cancel.clone();
+            let step = self
+                .core
+                .call(move |store| {
+                    if begin_cancel.is_cancelled() {
+                        return Err(stopped());
+                    }
+                    if method == "google_draft_authoring" {
+                        store.google_draft_authoring_begin(&account, &params)
+                    } else {
+                        store.google_draft_copy_begin(&account, &params)
+                    }
+                })
+                .await
+                .map_err(authoring_uncommitted)?;
+            let plan = match step {
+                GoogleDraftAuthoringStep::Reply(reply) => return Ok(reply),
+                GoogleDraftAuthoringStep::Prepare(plan) => plan,
+            };
+            let (proof, permit) = self
+                .prepare_held(cancel.clone(), move |cancel| {
+                    fm_core::google_draft_actions::prepare_google_draft_authoring(
+                        plan, None, &cancel,
+                    )
+                })
+                .await
+                .map_err(authoring_uncommitted)?;
+            return self
+                .core
+                .call(move |store| {
+                    let _permit = permit;
+                    if cancel.is_cancelled() {
+                        return Err(authoring_uncommitted(stopped()));
+                    }
+                    store.google_draft_authoring_finish(proof)
+                })
+                .await;
+        }
         if method == "google_draft_source" {
             let begin_cancel = cancel.clone();
             let plan = self
@@ -118,6 +173,20 @@ impl Runtime {
         T: Send + 'static,
         F: FnOnce(CancellationToken) -> Result<T> + Send + 'static,
     {
+        self.prepare_held(cancel, operation)
+            .await
+            .map(|(value, _permit)| value)
+    }
+
+    async fn prepare_held<T, F>(
+        &self,
+        cancel: CancellationToken,
+        operation: F,
+    ) -> Result<(T, tokio::sync::OwnedSemaphorePermit)>
+    where
+        T: Send + 'static,
+        F: FnOnce(CancellationToken) -> Result<T> + Send + 'static,
+    {
         let permit = tokio::select! {
             biased;
             _=cancel.cancelled()=>return Err(stopped()),
@@ -128,7 +197,6 @@ impl Runtime {
         #[cfg(test)]
         let before_prepare = self.before_prepare.clone();
         tokio::task::spawn_blocking(move || {
-            let _permit = permit;
             if cancel.is_cancelled() {
                 return Err(stopped());
             }
@@ -136,7 +204,7 @@ impl Runtime {
             if let Some(hook) = before_prepare {
                 hook(&cancel)?;
             }
-            operation(cancel)
+            operation(cancel).map(|value| (value, permit))
         })
         .await
         .map_err(|_| failure("content_unavailable", "Local content preparation failed"))?
@@ -145,6 +213,16 @@ impl Runtime {
 
 fn stopped() -> CoreError {
     failure("cancelled", "Local content work stopped")
+}
+
+/// Only this completed invocation is proven to have made no authored commit.
+/// An earlier lost invocation with the same request remains uncertain.
+pub(crate) fn authoring_uncommitted(mut error: CoreError) -> CoreError {
+    if !error.details.is_object() {
+        error.details = json!({});
+    }
+    error.details["draft_authoring_invocation_finished_without_commit"] = Value::Bool(true);
+    error
 }
 
 fn failure(code: &str, message: &str) -> CoreError {

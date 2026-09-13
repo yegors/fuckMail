@@ -1,0 +1,354 @@
+[
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\CalendarControlsTest.cpp",
+    "sha256": "7BC01DC4438539600A59490E6E5CC05D9D1C7CD6C8E3148CBE4671183E91913A"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\CalendarEventList.qml",
+    "sha256": "F29C5367B0FC60AE1AACB585A7350121FA99D5559DF02BB34C39046554C6A9CC"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\CalendarLayout.cpp",
+    "sha256": "4CF58082F3ECD62C5435D4121CD755D42B9B0866D70F2ADA18F8E59B784547FF"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\CalendarLayout.h",
+    "sha256": "65A0E26BDC628B2FFCD7FD0214EA58E3FB74DCA029027E5A892CD0F1DEF01CE0"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\CalendarLayoutTest.cpp",
+    "sha256": "79C3C585D64242F329B94DA295476818BC632B4063A2118C0A7CBF6312578AFF"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\CalendarOperations.cpp",
+    "sha256": "040747AAA6598E035A73E3C00229F5FE5410D0913517F27884CB48ED6AEA6222"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\CalendarOperations.qml",
+    "sha256": "B6DD7F30ED490B18C790A05F590C5E2E6068878D180D60F8FF58C0CE18C4E072"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\CalendarView.qml",
+    "sha256": "99D0B521435295305D2E25A9F8E13186318279BA2166E05EE8C471E9CC29F3B7"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\CMakeLists.txt",
+    "sha256": "0DA8BBAEACEFE6E21C57D34419B4A204D0F7AC2751329641A240C8B2E172DDD3"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\ComposerProbe.cpp",
+    "sha256": "3B584D1DA7985EBFE7457608CB9DAB05225D11AAD99CCC1EC813030CA512A495"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\CompositionBackend.cpp",
+    "sha256": "BD9D3CC30857EF86B079574986CA8711EB7A89BD164AF6D0CF05E735083FB63B"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\ConversationListModel.cpp",
+    "sha256": "08178B3A5133BF77D6084CDB31A2A564F56B482D20D4621F820E8AACAF012891"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\ConversationListModel.h",
+    "sha256": "B003C60D54D3B73BB759C32BD82A5FBCBD2930E61BA00F5880B5C2E460EACEF5"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\ConversationListModelTest.cpp",
+    "sha256": "7A252061C82AAE80992F853C15E9BA2EAA043A5B5089C096B1B2A70FA242EC91"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\DraftAttachmentBackend.cpp",
+    "sha256": "7537AF4AA5149D8250E6D0CEAB17B04080237D1274727ADEDB321D10BCE63B16"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\EventDetails.qml",
+    "sha256": "63133319E1846E1A8E1D5941A1FAA84A708EE772D48D5CC900D8BAE943E8C825"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\EventEditor.qml",
+    "sha256": "E14DFA03511F43ADDD78B39678A12A0C640CEBAD6A1D5C3026FE7DEB3B108990"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\FmButton.qml",
+    "sha256": "EF91B8213BD0E6574705D71547EAB7828D29F4F726FCBCC43020A0BFA4BE2682"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\FmComboBox.qml",
+    "sha256": "8211A0CFE55CA336543B00428623A23550BB5DF578972FED335C96F434DCF674"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\FmIcon.qml",
+    "sha256": "D29A159D764BFD060D08F21482FD4195F3ED90463858ADF74EC7A0C38670EBD5"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\FmSegmented.qml",
+    "sha256": "A4284642383C07BC37F01C01BDD2347F618579E747C2EB36EACBB45C7B57EB1F"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\FmTextField.qml",
+    "sha256": "71C1A522229ACEA29C8A0631F6682C14B571523BF5E89D0AF648B3827CBAAB56"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\FmToolTip.qml",
+    "sha256": "B6AB0965B5A92958062915C0C71C123AF0FE6E679AFA33C7B234AB4A3FEDB7CB"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GoogleBackend.cpp",
+    "sha256": "7BBA56D305733382DF4FFCCC678C64A9EA06E340705FEB87B4471AB558F4F09E"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GoogleDraftAuthoringBackend.cpp",
+    "sha256": "480E48DF93B8F6CD9EACDB09667FF2C8C19E2E1DEFC8DD442685B3056BC678A2"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GoogleDraftAuthoringControlsTest.cpp",
+    "sha256": "E4548BA852370D567F6B220EA39AC269A0177ED0524A92B4A4DF6950FB884696"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GoogleDraftBackend.cpp",
+    "sha256": "E694E75792238059A6D08F7B06F2055C6DD44E07331332E7B8E17E97779EFE28"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GoogleDraftControlsTest.cpp",
+    "sha256": "2A01807866A680679FA0142DD50CA11645D12C545756C693E952BC176373A760"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GoogleDraftSnapshotBackend.cpp",
+    "sha256": "0EB7730DF4B2083F46391FDBD4C464F7704563D9C7019C907A5AED3926D69ED7"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GoogleDraftSnapshotControlsTest.cpp",
+    "sha256": "63A59B4164ACD3F2174BB8B50396204C201C513C89F2D81C59EAD72451F21DE4"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GoogleLabels.cpp",
+    "sha256": "56C69973F74F69DC89013643F133EE9755E6140ECFD9FC27D4ECE484271E82C0"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GoogleLabelSetup.qml",
+    "sha256": "53BE94AC8A790052581D789D55A906445F05FED126DB42351E5894CC08D445B3"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GoogleOperation.cpp",
+    "sha256": "C2121938E12E891EA26B8AAD0F5D42FA24B41159A5BDA989D993702737B824FB"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GoogleOperation.h",
+    "sha256": "C2298DD41DD24FB4E3BB620A58B7DA26A9CE30CC8B2A33965CED53B6A739013F"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GoogleOperationTest.cpp",
+    "sha256": "14E0A7C262285FA29916C41C1AF47261418E5537BD07C8BE2F5BFBA8A1C5887C"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GoogleOperationTestFixture.h",
+    "sha256": "7F54CE6294323DB9743395E63AD6B5D04E972D2547FFDD15DD1CD113323F05AB"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GoogleSendBackend.cpp",
+    "sha256": "8FB3724D65CEB9A189932CFA40996B4266D3B5B9AA0B6507DFB123CE1DA983F5"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GoogleSendControlsTest.cpp",
+    "sha256": "5B94E9E279816F056C860E7BF5E609A6E3BD16DF890A9D4543A9507827A717FC"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiCalendarSelfTest.cpp",
+    "sha256": "CD8BDEEC97DC69584ECE0899B6E5F72B2A3835474B66F4B3E46D0CEEBCB183DF"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiCalendarSelfTest.h",
+    "sha256": "037DC1E3B1F77AC54C25A083CDA9CD8E390D63CFDF241BCE47738766027F3666"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiCompositionSelfTest.cpp",
+    "sha256": "87AF11E6C85C341BE138C1C8A3A25458D696B04A12945E4CCF70AA85E207B5A2"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiCompositionSelfTest.h",
+    "sha256": "C2EFCE76753A01BB735FB527164E76DCBC0C8AB8F74EE78AB98D15DF3D4442A3"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiGoogleDraftActionsSelfTest.cpp",
+    "sha256": "ED9F63F22A690A07D56EC243122645E8A8B95D6F287CF7DCFFC29FE7800B5EFF"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiGoogleDraftActionsSelfTest.h",
+    "sha256": "014FB32B43F29EAD080C9BE82CC516FBBA3F330757C30B2C4A1D06DD2AB37D8E"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiGoogleDraftSnapshotSelfTest.cpp",
+    "sha256": "BE67B1143D28976DF40F120BE667B2A20972BFC900C51D74DC7A35B0C688BCDF"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiGoogleDraftSnapshotSelfTest.h",
+    "sha256": "297AF24ADF7E9CA1F0A676189270BB6BE8EAE33111CCD5DFDFA59361554BB5D4"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiInteractionBenchmark.cpp",
+    "sha256": "E567C5A30B7034087C999D2EF85263294EAA754093588066F917402894A51454"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiInteractionBenchmark.h",
+    "sha256": "80D6535B72F7AC68D595526351E72C47CE514619EE119FCF7C727BE514F2FA42"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiMailNavigationSelfTest.cpp",
+    "sha256": "38BFAD27431CD1AB378BE0488697D5531AF55CB8D180ABBFD9F8B2593BB81573"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiMailNavigationSelfTest.h",
+    "sha256": "C93AAF5E89152078639BD1EE2A487E39A3A2A41E67CD88773B0A2FA638EE378D"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiPaintObserver.h",
+    "sha256": "12689C068B529C3FA011FFE23F946E4943BD79FFDEC2858FE4FA6A11C32BA807"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiResizeBenchmark.cpp",
+    "sha256": "B2B17BD589A6A261145C9CA854B3E66E03E596F74D07022D80EA264CEB9496F6"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiResizeBenchmark.h",
+    "sha256": "C171AB0DA1CF813E56215A8E0983C9CEC430077F9DF5686EB7C9EFE37047BBE0"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiSearchBenchmark.cpp",
+    "sha256": "34BDC6A8C1E08F03242D9C334C96CA4CB61072F777FDEC67CE58C6392AC05DFF"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiSearchBenchmark.h",
+    "sha256": "16DF9A920EA223112BB894F5DB337D910F62E4639E070809EFC8A94CE55BA6DB"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiSelfTest.cpp",
+    "sha256": "22D4743A8052C57E984759719DF1F3D01019E8B6FDADCBE9E8B1AEF7958E8012"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiSelfTest.h",
+    "sha256": "1B71A45CA139A0500F73E7DEA5D3239F2D69F33C2CF565C0FFB6E5671F39FE9E"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiSettingsSelfTest.cpp",
+    "sha256": "A41ABC62BC05A7E9A51C910F10A1572588A390B45026353A2A693707A0E2BD02"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\GuiSettingsSelfTest.h",
+    "sha256": "92E2313E6B0452E4DD0A70EDC6DC77CDF0814D338A2457431F19F8B1FBE9D21D"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\HatchItem.cpp",
+    "sha256": "739E268F5CBE598157FC70AC45B18593D25EDDCB46544E7B3CE1AD4C3E10F626"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\HatchItem.h",
+    "sha256": "B8B1E98DAF84D10B3FCA85F2E4E51991A05BB9A998708FFED119FF9150260433"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\IpcTrust.cpp",
+    "sha256": "70A78AF92569ADF6CC16B51B81B91DD222F96ACFE5592E2400C0DF4C59F78349"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\IpcTrust.h",
+    "sha256": "0CD854952A13C41109F5145C8D1B395C84D977441C1642AE11CC4F1505D991B1"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\IpcTrustTest.cpp",
+    "sha256": "F042DC53C8F920F1A4BDAF6F48E3028524E23FB4BA17F51A4360954321E42CE4"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\IpcTrustWindowsTest.cpp",
+    "sha256": "BCE7FC482C6924B4E98120EC6DDE68E5C308071CC9072D606B7EB3C71E5908B8"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\MailBackend.cpp",
+    "sha256": "B478AFA6828C9025739C81F28D25178A5031C7B65FF10D76B5ACC42394EE9811"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\MailBackend.h",
+    "sha256": "8CFB442FC83223FA5FBB21CB0478403E36DA1D2D23E7A70CA4D261C52FF60047"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\MailFilters.qml",
+    "sha256": "F672FD3C20792C45E1394D716867A4E4812A96A1917EEDA4C390B39BC73ADE12"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\MailView.qml",
+    "sha256": "A9758010145F7D7D890DA7BC53C2BB685AAFE94F2CC51212704095B3C0605FBF"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\main.cpp",
+    "sha256": "E88808E25248730A508365FBA6D6D3BAADBA466A2AE55BAF3EE0D12D90D477B2"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\Main.qml",
+    "sha256": "FA21770A181F761C7B72E2D0CA64A96F8F18AB18FB5DE76F9713F9DF04EF6505"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\Phase1Backend.cpp",
+    "sha256": "CE4BAF5D162BF1A9C31EB1AE8BAC7DDA4B7C8338A9CD37AE3F2AB3519F9263BB"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\README.md",
+    "sha256": "BC54124C3D714DF3BD1575DC8066B6914AFB8F5AE490B7D47279B04FEFD30996"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\RecipientField.qml",
+    "sha256": "A78217962C3E6D64DB3AA990B54D3A9CFB18A4E1B0AC35770372185B0EBA1843"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\ReplyComposer.qml",
+    "sha256": "5F50E7EF3428C9B7D3F69252FA9C52D3F0E2F6AAB9DBE74D4040E3088F380021"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\ReplyDocument.cpp",
+    "sha256": "02C5EA491AB2705AACC8F4C5927205C7EA889E36C294AF555C18CF584F0757E3"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\ReplyDocument.h",
+    "sha256": "B8533DB623704A0E397F85AFA74DD6EE1B21679682E7A6AF8A4EBE8132517EE0"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\ReplyDocumentTest.cpp",
+    "sha256": "06495C23640F4E67EA675ADEF438BE686A28C48801BBA5070412C80EAAEB8063"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\SearchPopup.qml",
+    "sha256": "557453CBD1A04602D157F064486858D79E15271D7947A82551885787C0D914F3"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\SenderCard.qml",
+    "sha256": "1EA273C87A602216D1AB295859F6B3E19059FA4D82AACC5D399B8796BD4B73EB"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\SettingsView.qml",
+    "sha256": "F0806A606BB3C1215DCA9DBBD5168FCD4FC938AB936BDC4BC15082381644F6DF"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\Theme.qml",
+    "sha256": "40A2081782D69FA972D895FF5B4BC59564B5AA26C39B0E7E89CFB56F86AE6E84"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\TodayStrip.qml",
+    "sha256": "7048FD3AEFBE3CB01FDFAF21BCB8906E330E4FBBCD6B8D2EE19B53A4A99A1797"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\fonts\\Geist-Medium.ttf",
+    "sha256": "3A3B36F0D0B981F4857F7F00EEEF4A5EE123605575D362AB31EE7C19E3D11F2F"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\fonts\\Geist-Regular.ttf",
+    "sha256": "85A1C6B18A6B0A06DFE9FD4F6D6A5D4979F74EC861EAEF4BC7868B5492B8A117"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\fonts\\Geist-SemiBold.ttf",
+    "sha256": "B9F52322D6D20A7FF1E7FE1310FF12EC851AEBB83D24F8B4F1D4149298F489B2"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\fonts\\LICENSE-Geist.txt",
+    "sha256": "930853EE1DAA68554D9E35C8A9175AFFB74F699FAD9A5DA6EE5EBE76379D9137"
+  },
+  {
+    "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\gui\\fonts\\README.md",
+    "sha256": "E31FE6BCDF6FABEB4435C2FA2B52115C58854A5A6A8657565C060FE4C98C682B"
+  }
+]

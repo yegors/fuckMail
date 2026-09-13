@@ -42,6 +42,7 @@ struct Plan {
     target: Option<String>,
     thread_id: Option<String>,
     baseline: Value,
+    expected_target: Option<Value>,
 }
 impl GoogleSendPlan {
     pub fn provider_draft_id(&self) -> Option<&str> {
@@ -78,6 +79,8 @@ struct Operation {
     provider_draft_id: Option<String>,
     thread_id: Option<String>,
     baseline: Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    expected_target: Option<Value>,
     message_id: String,
     upload_sha256: String,
     size: u64,
@@ -241,6 +244,7 @@ impl Store {
             return Err(failure);
         }
         self.check_draft_writable(&scope.account, &json!({"draft_id":draft_id}))?;
+        self.check_google_draft_deletion_write(&scope.account, draft_id)?;
         let guard = self.send_guard(&scope.account, draft_id)?;
         if guard.as_ref().is_some_and(|g| pending(&g.state)) {
             return Err(err(
@@ -267,7 +271,9 @@ impl Store {
         let target = if accepted.is_some() {
             None
         } else {
-            twin["baseline"]["draft_id"].as_str().map(str::to_owned)
+            twin["effective_target"]["provider_draft_id"]
+                .as_str()
+                .map(str::to_owned)
         };
         Ok(GoogleSendIntent::Submit {
             provider_draft_id: target,
@@ -288,16 +294,20 @@ impl Store {
             json!({"draft_id":draft_id,"expected_revision":positive(p,"expected_revision")?}),
         )?;
         let draft = retained.draft();
+        let twin = self.google_draft_status(&scope.account, draft_id)?;
         let thread_id = if matches!(draft["mode"].as_str(), Some("reply" | "reply_all")) {
             self.db.query_row("SELECT remote_thread_id FROM google_message_state WHERE account=?1 AND message_id=?2 AND deleted=0",params![scope.account,draft["source_message_id"].as_str()],|r|r.get(0)).optional()?
         } else {
-            None
+            twin["effective_target"]["thread_id"]
+                .as_str()
+                .map(str::to_owned)
         };
         let baseline = if target.is_some() {
             self.google_draft_status(&scope.account, draft_id)?["baseline"].clone()
         } else {
             Value::Null
         };
+        let expected_target = target.as_ref().map(|_| twin["effective_target"].clone());
         Ok(GoogleSendStep::Prepare(GoogleSendPlan(Box::new(Plan {
             scope: scope.clone(),
             request: p.clone(),
@@ -305,6 +315,7 @@ impl Store {
             target,
             thread_id,
             baseline,
+            expected_target,
         }))))
     }
 
@@ -359,6 +370,7 @@ impl Store {
             provider_draft_id: plan.target,
             thread_id: plan.thread_id,
             baseline: plan.baseline,
+            expected_target: plan.expected_target,
             message_id: proof.message_id,
             upload_sha256: proof.hash,
             size: proof.size,
@@ -599,6 +611,7 @@ impl Store {
         draft_id: &str,
     ) -> Result<()> {
         self.check_draft_writable(account, &json!({"draft_id":draft_id}))?;
+        self.check_google_draft_deletion_write(account, draft_id)?;
         if self
             .send_guard(account, draft_id)?
             .is_some_and(|g| g.blocks_drafts)
@@ -613,6 +626,7 @@ impl Store {
         draft_id: &str,
     ) -> Result<()> {
         self.check_draft_writable(account, &json!({"draft_id":draft_id}))?;
+        self.check_google_draft_deletion_write(account, draft_id)?;
         if self.send_guard(account, draft_id)?.is_some_and(|g| {
             g.last_accepted_draft_revision.is_some()
                 || matches!(g.state.as_str(), "in_flight" | "acceptance_unknown")
@@ -626,6 +640,7 @@ impl Store {
     }
     fn check_send_identity(&self, scope: &GoogleSendScope, draft_id: &str) -> Result<()> {
         self.check_draft_writable(&scope.account, &json!({"draft_id":draft_id}))?;
+        self.check_google_draft_deletion_write(&scope.account, draft_id)?;
         let (from,discarded):(String,bool)=self.db.query_row("SELECT json_extract(routing_json,'$.from'),discarded FROM drafts WHERE account=?1 AND draft_id=?2",params![scope.account,draft_id],|r|Ok((r.get(0)?,r.get(1)?)))?;
         google_drafts::same_from(&from, &scope.primary_email)?;
         if discarded {
@@ -650,7 +665,13 @@ impl Store {
         }
         let twin = self.google_draft_status(&scope.account, &op.draft_id)?;
         if op.provider_draft_id.is_some()
-            && (twin["baseline"] != op.baseline || twin["state"] == "conflict")
+            && (op
+                .expected_target
+                .as_ref()
+                .map_or(twin["baseline"] != op.baseline, |target| {
+                    twin["effective_target"] != *target
+                })
+                || twin["state"] == "conflict")
         {
             return Err(err(
                 "google_draft_conflict",

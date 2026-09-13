@@ -100,6 +100,7 @@ QVariantMap MailBackend::googleSend() const {
     const auto googleState = google.value("state").toString();
     const bool draftBlocked = googleState == "in_flight" || googleState == "prepared" || googleState == "acknowledged"
         || googleState == "acceptance_unknown" || googleState == "conflict";
+    const bool deletionBlocked = google.value("deletion").toMap().value("blocks_target").toBool();
     const bool selectedCurrent = validSend(selected, m_account, id) && selected["operation_is_current"].toBool()
         && (current.isEmpty() || (selected["request_id"] == current["request_id"] && !earlierSend(selected, current)));
     QString text = sendSummary(selected);
@@ -117,7 +118,7 @@ QVariantMap MailBackend::googleSend() const {
         {"can_cancel", saving || (ui.active && ui.method != "google_send_status")},
         {"can_select_current", !ui.active && !saving && !ui.uncertain && validSend(current, m_account, id) && !selected.isEmpty() && current["request_id"] != selected["request_id"]},
         {"check_label", !ui.uncertain && state == "acceptance_unknown" && ready ? "Check Google" : "Check status"},
-        {"state", state}, {"can_send", ready && cleanTarget && !saving && !ui.active && !ui.uncertain && (accepted > 0 || !draftBlocked)
+        {"state", state}, {"can_send", ready && cleanTarget && !saving && !ui.active && !ui.uncertain && !deletionBlocked && (accepted > 0 || !draftBlocked)
             && !pendingSend(current["state"].toString()) && (accepted == 0 || newer)},
         {"can_check", m_connected && !m_shutdown && !ui.active && !saving && (!selected.isEmpty() || !ui.request.isEmpty())},
         {"resume_label", ui.uncertain ? "Resume original request" : "Send prepared version"},

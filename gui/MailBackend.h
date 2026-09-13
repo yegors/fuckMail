@@ -71,6 +71,8 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QVariantMap googleDraftInventory READ googleDraftInventory NOTIFY googleDraftInventoryChanged)
     Q_PROPERTY(QVariantList draftSnapshotHeaders READ draftSnapshotHeaders NOTIFY draftChanged)
     Q_PROPERTY(QVariantMap draftSources READ draftSources NOTIFY draftSourcesChanged)
+    Q_PROPERTY(QVariantMap draftAuthoring READ draftAuthoring NOTIFY draftAuthoringChanged)
+    Q_PROPERTY(QVariantMap draftDeletion READ draftDeletion NOTIFY draftDeletionChanged)
     Q_PROPERTY(bool draftConflict READ draftConflict NOTIFY draftChanged)
     Q_PROPERTY(QVariantMap attachmentImport READ attachmentImport NOTIFY draftChanged)
     Q_PROPERTY(bool attachmentImportBusy READ attachmentImportBusy NOTIFY draftChanged)
@@ -214,6 +216,17 @@ public:
     Q_INVOKABLE void loadDraftSources(bool append = false);
     Q_INVOKABLE void exportDraftSource(qint64 sourceRevision, const QString &attachmentId = {});
     Q_INVOKABLE void showDraftSourceFolder();
+    QVariantMap draftAuthoring() const;
+    QVariantMap draftDeletion() const;
+    Q_INVOKABLE void loadDraftAuthoring();
+    Q_INVOKABLE QVariantMap draftSourceActionContext(const QString &action);
+    Q_INVOKABLE void confirmDraftSourceAction(const QVariantMap &context);
+    Q_INVOKABLE void retryDraftSourceAction();
+    Q_INVOKABLE void openDraftSourceActionResult();
+    Q_INVOKABLE void loadDraftDeletion(const QString &requestId = {});
+    Q_INVOKABLE void checkDraftDeletion();
+    Q_INVOKABLE QVariantMap draftDeletionAbandonContext();
+    Q_INVOKABLE void abandonDraftDeletion(const QVariantMap &context);
     Q_INVOKABLE QVariantMap googleDraftReplacementContext();
     Q_INVOKABLE void replaceGoogleDraft(const QVariantMap &context);
     Q_INVOKABLE void cancelGoogleDraftOperation();
@@ -275,6 +288,8 @@ signals:
     void draftChanged();
     void googleDraftInventoryChanged();
     void draftSourcesChanged();
+    void draftAuthoringChanged();
+    void draftDeletionChanged();
     void eventsChanged();
     void preferencesChanged();
     void capturesChanged();
@@ -294,6 +309,7 @@ private:
     friend class GuiCompositionSelfTest;
     friend class GoogleDraftControlsTest;
     friend class GoogleDraftSnapshotControlsTest;
+    friend class GoogleDraftAuthoringControlsTest;
     friend class GuiGoogleDraftSnapshotSelfTest;
     friend class GoogleSendControlsTest;
     using Callback = std::function<void(const QJsonObject &, bool)>;
@@ -373,6 +389,27 @@ private:
     QSet<QString> m_googleDraftRequiresCheck;
     QString draftSourcesKey() const;
     void resetDraftSourcesContext();
+    void resetDraftAuthoringContext();
+    void startDraftSourceAction(const QString &key);
+    bool mergeDraftDeletion(const QJsonObject &status, const QString &account, const QString &draftId);
+    void mergeDraftDeletionProjection(QVariantMap &next, const QJsonObject &result) const;
+    struct SourceActionUi {
+        QJsonObject request;
+        QJsonObject source;
+        QString action, feedback, resultDraftId;
+        bool active = false, uncertain = false;
+        bool freshDeleteFinished = false;
+    };
+    QString m_draftAuthoringKey;
+    QJsonObject m_draftAuthoring, m_draftSourceConfirmation, m_draftDeleteConfirmation;
+    QString m_draftAuthoringFeedback;
+    quint64 m_draftAuthoringGeneration = 0;
+    bool m_draftAuthoringLoading = false;
+    QHash<QString, SourceActionUi> m_draftSourceActions;
+    QJsonObject m_draftDeletionSelected;
+    QString m_draftDeletionAccount, m_draftDeletionDraft, m_draftDeletionFeedback;
+    quint64 m_draftDeletionGeneration = 0;
+    bool m_draftDeletionLoading = false, m_draftDeletionActive = false;
     QVariantMap m_draftInventory;
     QString m_draftInventoryAccount, m_draftInventoryFeedback;
     int m_draftInventoryGeneration = 0;

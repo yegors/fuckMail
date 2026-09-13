@@ -41,6 +41,8 @@ void GoogleOperation::start(const QString &profile, qint64 enginePid, const QStr
         && method != "google_calendar_resume" && method != "google_labels_refresh"
         && method != "google_draft_reconcile" && method != "google_draft_resolve"
         && method != "google_send" && method != "google_send_reconcile" && method != "google_send_abandon"
+        && method != "google_draft_authoring" && method != "google_draft_copy" && method != "google_draft_adopt"
+        && method != "google_draft_delete" && method != "google_draft_delete_reconcile" && method != "google_draft_delete_abandon"
         && method != "draft_attachment_import" && method != "google_draft_source" && method != "google_drafts_refresh") {
         reject("invalid_request", "Unsupported Google operation."); return;
     }
@@ -89,7 +91,8 @@ void GoogleOperation::receive() {
     const auto result = response[ok ? "result" : "error"].toObject();
     if (!ok || m_hello) { finish(result, ok); return; }
     const auto mode = result["mode"].toString();
-    const bool localImport = m_method == "draft_attachment_import" || m_method == "google_draft_source";
+    const bool localImport = m_method == "draft_attachment_import" || m_method == "google_draft_source"
+        || m_method == "google_draft_authoring" || m_method == "google_draft_copy";
     if (mode != "live" && !(localImport && mode == "synthetic")) {
         reject("profile_mode_mismatch", "Google operations require a live profile."); return;
     }

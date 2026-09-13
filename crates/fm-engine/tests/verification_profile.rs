@@ -108,6 +108,7 @@ fn ordinary_binary_has_no_verification_option_and_does_not_create_a_profile() {
         "--verification-google",
         "--verification-google-send",
         "--verification-google-drafts",
+        "--verification-google-draft-actions",
     ] {
         let profile = directory.path().join(option.trim_start_matches('-'));
         let log = profile.with_extension("log");
@@ -149,6 +150,35 @@ fn isolated_binary_requires_both_explicit_fixture_mode_and_live_profile_before_c
         (
             "drafts-missing-live",
             vec!["--verification-google", "--verification-google-drafts"],
+        ),
+        (
+            "actions-missing-mode",
+            vec!["--live-profile", "--verification-google-draft-actions"],
+        ),
+        (
+            "actions-missing-live",
+            vec![
+                "--verification-google",
+                "--verification-google-draft-actions",
+            ],
+        ),
+        (
+            "actions-and-readonly-conflict",
+            vec![
+                "--live-profile",
+                "--verification-google",
+                "--verification-google-drafts",
+                "--verification-google-draft-actions",
+            ],
+        ),
+        (
+            "actions-and-send-conflict",
+            vec![
+                "--live-profile",
+                "--verification-google",
+                "--verification-google-send",
+                "--verification-google-draft-actions",
+            ],
         ),
         (
             "drafts-and-send-conflict",

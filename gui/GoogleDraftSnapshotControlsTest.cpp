@@ -29,7 +29,7 @@ QJsonObject imported(qint64 sourceRevision = 3) {
         {"to_recipients", QJsonArray{QJsonObject{{"name", "Exact To"}, {"email", "to@example.test"}}}},
         {"cc_recipients", QJsonArray{QJsonObject{{"name", "Exact Cc"}, {"email", "cc@example.test"}}}},
         {"bcc_recipients", QJsonArray{QJsonObject{{"name", "Exact Bcc"}, {"email", "bcc@example.test"}}}},
-        {"google", QJsonValue::Null}, {"google_send", QJsonValue::Null},
+        {"google", QJsonValue::Null}, {"google_send", QJsonValue::Null}, {"google_delete", QJsonValue::Null},
         {"remote_source", QJsonObject{{"provider_draft_id", "rd0000"}, {"source_revision", sourceRevision},
             {"source_state", "available"}, {"preview_state", "partial"}, {"sha256", QString(64,'a')},
             {"seen_generation",2},{"last_observed_at",1700000000},{"latest_scan_generation",2},

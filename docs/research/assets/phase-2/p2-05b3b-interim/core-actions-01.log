@@ -1,0 +1,26 @@
+   Compiling reqwest v0.12.28
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+   Compiling fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.12s
+     Running unittests src\lib.rs (target\debug\deps\fm_core-fbf5e23cd42bc787.exe)
+
+running 5 tests
+
+thread 'google_draft_inventory::actions::tests::adoption_preserves_source_no_upload_and_uses_same_target_for_first_edit_and_send' panicked at crates\fm-core\src\google_draft_inventory\actions\tests.rs:87:48:
+called `Result::unwrap()` on an `Err` value: CoreError { code: "draft_source_unsupported", message: "The complete source cannot be represented by this operation", details: Object {"account": String("google-2b0dcdd40016096b852d9d5b79de2ad570249dc8e4d4ebe4fa4ab81e2aa9af35"), "adopt": Object {"allowed": Bool(false), "reasons": Array [String("html")], "requires_remote_check": Bool(true)}, "copy": Object {"allowed": Bool(true), "losses": Array [String("html"), String("primary_from"), String("reply_thread"), String("separate_autosync")], "reasons": Array []}, "delete": Object {"allowed": Bool(true), "reasons": Array [], "requires_remote_check": Bool(true)}, "draft_id": String("google-draft-50fa1fe47c1a08213a35a805d9a74a47addeb20a2c17d2590ba5361443baec02"), "primary_from": Object {"email": String("author@example.test"), "name": String("author@example.test"), "revision": Number(0)}, "provider_draft_id": String("remote"), "source_revision": Number(1), "source_sha256": String("323c080f85c28ce1836a30dcbda182b984f0ad481da6d9e2f0dd7a064c3b744b")} }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test google_draft_inventory::actions::tests::adoption_preserves_source_no_upload_and_uses_same_target_for_first_edit_and_send ... FAILED
+test google_draft_inventory::actions::tests::copy_conversion_preserves_all_text_routes_and_files_and_refuses_unsupported_adoption ... ok
+test google_draft_inventory::actions::tests::fresh_divergence_is_retained_and_cannot_adopt_or_delete ... ok
+test google_draft_inventory::actions::tests::delete_prepared_resume_claim_unknown_restart_and_source_evidence_never_infer_deletion ... ok
+test google_draft_inventory::actions::migration_tests::schema15_upgrade_keeps_source_versions_authored_bytes_and_mixed_receipts ... ok
+
+failures:
+
+failures:
+    google_draft_inventory::actions::tests::adoption_preserves_source_no_upload_and_uses_same_target_for_first_edit_and_send
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 212 filtered out; finished in 0.41s
+
+error: test failed, to rerun pass `-p fm-core --lib`

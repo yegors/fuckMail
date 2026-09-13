@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{collections::BTreeSet, path::PathBuf};
 
+pub mod actions;
 mod preparation;
 pub use preparation::{export_google_draft_source, prepare_google_draft_import};
 #[cfg(test)]
@@ -426,7 +427,7 @@ impl Store {
         Ok(())
     }
     fn known_draft_owner(&self, account: &str, remote: &str) -> Result<(Option<String>, bool)> {
-        let mut stmt=self.db.prepare("SELECT draft_id FROM drafts WHERE account=?1 AND origin='local' AND json_extract(google_json,'$.baseline.draft_id')=?2 UNION SELECT json_extract(json,'$.draft_id') FROM capture_operations WHERE account=?1 AND execution_kind='google' AND json_extract(json,'$.target')=?2 UNION SELECT json_extract(json,'$.draft_id') FROM capture_operations WHERE account=?1 AND execution_kind='google' AND json_extract(json,'$.ack.draft_id')=?2 UNION SELECT json_extract(json,'$.draft_id') FROM capture_operations WHERE account=?1 AND execution_kind='google' AND json_extract(json,'$.kind')='send' AND json_extract(json,'$.provider_draft_id')=?2 LIMIT 2")?;
+        let mut stmt=self.db.prepare("SELECT draft_id FROM drafts WHERE account=?1 AND origin='local' AND json_extract(google_json,'$.baseline.draft_id')=?2 UNION SELECT draft_id FROM drafts WHERE account=?1 AND origin='local' AND json_extract(google_json,'$.adoption.target.provider_draft_id')=?2 UNION SELECT json_extract(json,'$.draft_id') FROM capture_operations WHERE account=?1 AND execution_kind='google' AND COALESCE(json_extract(json,'$.kind'),'draft')='draft' AND json_extract(json,'$.target')=?2 UNION SELECT json_extract(json,'$.draft_id') FROM capture_operations WHERE account=?1 AND execution_kind='google' AND json_extract(json,'$.ack.draft_id')=?2 UNION SELECT json_extract(json,'$.draft_id') FROM capture_operations WHERE account=?1 AND execution_kind='google' AND json_extract(json,'$.kind')='send' AND json_extract(json,'$.provider_draft_id')=?2 LIMIT 2")?;
         let rows = stmt
             .query_map(params![account, remote], |r| r.get::<_, String>(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -469,8 +470,46 @@ impl Store {
             return self.google_draft_inventory_status(&plan.scope.account);
         }
         let account = &plan.scope.account;
-        let mut source = proof.source;
-        let (owner, ambiguous) = self.known_draft_owner(account, &plan.item.draft_id)?;
+        let tx = self.db.unchecked_transaction()?;
+        self.publish_draft_source(
+            account,
+            &plan.item.draft_id,
+            proof.source,
+            proof.preview,
+            proof.parts,
+            &mut state,
+        )?;
+        let page = state.pending.as_mut().ok_or_else(stale)?;
+        let item = page
+            .items
+            .iter_mut()
+            .find(|i| i.id.draft_id == plan.item.draft_id)
+            .ok_or_else(stale)?;
+        item.done = true;
+        if page.items.iter().all(|i| i.done) {
+            state.token = page.next.clone();
+            state.pending = None;
+            state.complete = state.token.is_none();
+            if state.complete {
+                state.completed_at = Some(now()?);
+            }
+        }
+        state.revision += 1;
+        self.save_inventory(account, &state)?;
+        tx.commit()?;
+        self.google_draft_inventory_status(account)
+    }
+
+    fn publish_draft_source(
+        &self,
+        account: &str,
+        remote: &str,
+        mut source: Source,
+        preview: Option<Preview>,
+        parts: Vec<Part>,
+        state: &mut Inventory,
+    ) -> Result<()> {
+        let (owner, ambiguous) = self.known_draft_owner(account, remote)?;
         if ambiguous {
             source.issues.push("ambiguous_local_target".into());
         }
@@ -488,7 +527,7 @@ impl Store {
             .take(16)
             .map(|(id, _)| id)
             .collect();
-        let old:Option<(String,Option<String>,String,i64)>=self.db.query_row("SELECT draft_id,linked_local_draft_id,metadata_json,seen_generation FROM google_draft_sources WHERE account=?1 AND provider_draft_id=?2 AND is_current=1",params![account,plan.item.draft_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?;
+        let old:Option<(String,Option<String>,String,i64)>=self.db.query_row("SELECT draft_id,linked_local_draft_id,metadata_json,seen_generation FROM google_draft_sources WHERE account=?1 AND provider_draft_id=?2 AND is_current=1",params![account,remote],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?))).optional()?;
         let draft_id = old
             .as_ref()
             .map(|r| r.0.clone())
@@ -496,7 +535,7 @@ impl Store {
             .unwrap_or_else(|| {
                 format!(
                     "google-draft-{}",
-                    hash(format!("{account}\0{}", plan.item.draft_id).as_bytes())
+                    hash(format!("{account}\0{remote}").as_bytes())
                 )
             });
         let linked = owner
@@ -530,7 +569,7 @@ impl Store {
                     .as_ref()
                     .is_some_and(|s| s.preview_state != "complete"),
             );
-        let tx = self.db.unchecked_transaction()?;
+        let tx = &self.db;
         if !tx.query_row(
             "SELECT EXISTS(SELECT 1 FROM drafts WHERE account=?1 AND draft_id=?2)",
             params![account, draft_id],
@@ -540,34 +579,22 @@ impl Store {
             tx.execute("INSERT INTO drafts(account,draft_id,mode,routing_json,body,revision,origin,created_at,updated_at) VALUES(?1,?2,'new',?3,'',1,'google_snapshot',?4,?4)",params![account,draft_id,serde_json::to_string(&empty)?,now()?/1000])?;
         }
         if changed {
-            for part in &proof.parts {
+            for part in &parts {
                 tx.execute("INSERT OR IGNORE INTO attachments(account,id,message_id,name,mime_type,size,state,blob_hash) VALUES(?1,?2,NULL,?3,?4,?5,'available',?6)",params![account,part.id,part.name,part.mime_type,part.size,part.sha256])?;
             }
             let revision:i64=tx.query_row("SELECT COALESCE(MAX(source_revision),0)+1 FROM google_draft_sources WHERE account=?1",[account],|r|r.get(0))?;
             if let Some(link) = &linked {
-                tx.execute("UPDATE google_draft_sources SET linked_local_draft_id=?3 WHERE account=?1 AND provider_draft_id=?2",params![account,plan.item.draft_id,link])?;
+                tx.execute("UPDATE google_draft_sources SET linked_local_draft_id=?3 WHERE account=?1 AND provider_draft_id=?2",params![account,remote,link])?;
             }
-            tx.execute("UPDATE google_draft_sources SET is_current=0 WHERE account=?1 AND provider_draft_id=?2 AND is_current=1",params![account,plan.item.draft_id])?;
-            tx.execute("INSERT INTO google_draft_sources(account,source_revision,provider_draft_id,draft_id,linked_local_draft_id,is_current,seen_generation,observed_at,last_observed_at,metadata_json) VALUES(?1,?2,?3,?4,?5,1,?6,?7,?7,?8)",params![account,revision,plan.item.draft_id,draft_id,linked,state.generation,now()?,raw])?;
-            if let Some(preview) = proof.preview {
+            tx.execute("UPDATE google_draft_sources SET is_current=0 WHERE account=?1 AND provider_draft_id=?2 AND is_current=1",params![account,remote])?;
+            tx.execute("INSERT INTO google_draft_sources(account,source_revision,provider_draft_id,draft_id,linked_local_draft_id,is_current,seen_generation,observed_at,last_observed_at,metadata_json) VALUES(?1,?2,?3,?4,?5,1,?6,?7,?7,?8)",params![account,revision,remote,draft_id,linked,state.generation,now()?,raw])?;
+            if let Some(preview) = preview {
                 tx.execute("UPDATE drafts SET routing_json=?3,body=?4,body_html=?5,from_name=?6,attachments_json=?7,revision=revision+1,updated_at=?8 WHERE account=?1 AND draft_id=?2 AND origin='google_snapshot'",params![account,draft_id,serde_json::to_string(&preview.routing)?,preview.body,preview.html,preview.from_name,serde_json::to_string(&source.attachment_ids)?,now()?/1000])?;
             }
         } else {
-            tx.execute("UPDATE google_draft_sources SET seen_generation=?3,last_observed_at=?4 WHERE account=?1 AND provider_draft_id=?2 AND is_current=1",params![account,plan.item.draft_id,state.generation,now()?])?;
+            tx.execute("UPDATE google_draft_sources SET seen_generation=?3,last_observed_at=?4 WHERE account=?1 AND provider_draft_id=?2 AND is_current=1",params![account,remote,state.generation,now()?])?;
         }
-        item.done = true;
-        if page.items.iter().all(|i| i.done) {
-            state.token = page.next.clone();
-            state.pending = None;
-            state.complete = state.token.is_none();
-            if state.complete {
-                state.completed_at = Some(now()?);
-            }
-        }
-        state.revision += 1;
-        self.save_inventory(account, &state)?;
-        tx.commit()?;
-        self.google_draft_inventory_status(account)
+        Ok(())
     }
 
     pub(crate) fn remote_draft_sources(
@@ -618,11 +645,12 @@ impl Store {
         let state = self.inventory(account)?;
         let limit = page_number(p, "limit", 30, 1, 100)?;
         let offset = page_number(p, "offset", 0, 0, 10_000_000)?;
+        let deletion_history = self.google_delete_history(account, id, limit, offset)?;
         let total:i64=self.db.query_row("SELECT COUNT(*) FROM google_draft_sources WHERE account=?1 AND (draft_id=?2 OR linked_local_draft_id=?2)",params![account,id],|r|r.get(0))?;
         let mut stmt=self.db.prepare("SELECT source_revision,observed_at,linked_local_draft_id,metadata_json,is_current,seen_generation,last_observed_at FROM google_draft_sources WHERE account=?1 AND (draft_id=?2 OR linked_local_draft_id=?2) ORDER BY source_revision DESC LIMIT ?3 OFFSET ?4")?;
         let mut rows = stmt.query(params![account, id, limit, offset])?;
         let mut out = Vec::new();
-        let mut bytes = 0;
+        let mut bytes = serde_json::to_vec(&deletion_history)?.len() + 1024;
         while let Some(row) = rows.next()? {
             let mut value = source_value(
                 row.get(0)?,
@@ -640,9 +668,11 @@ impl Store {
             out.push(value);
         }
         let next = offset + out.len() as i64;
-        Ok(
-            json!({"account":account,"draft_id":id,"sources":out,"total":total,"next_offset":if next<total {Some(next)} else {None}}),
-        )
+        let mut reply = json!({"account":account,"draft_id":id,"sources":out,"total":total,"next_offset":if next<total {Some(next)} else {None}});
+        for (key, value) in deletion_history.as_object().ok_or_else(invalid)? {
+            reply[key] = value.clone();
+        }
+        Ok(reply)
     }
     pub fn google_draft_source_begin(
         &self,

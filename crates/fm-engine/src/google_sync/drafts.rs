@@ -351,6 +351,7 @@ pub(super) async fn observe(
                 Ok::<_, CoreError>(GoogleDraftRemote {
                     draft_id: draft.id,
                     message_id: draft.message.id,
+                    thread_id: draft.message.thread_id,
                     raw,
                 })
             })
@@ -418,6 +419,7 @@ fn provider_id(status: &Value) -> Option<&str> {
     status["operation"]["ack"]["draft_id"]
         .as_str()
         .or_else(|| status["baseline"]["draft_id"].as_str())
+        .or_else(|| status["effective_target"]["provider_draft_id"].as_str())
 }
 
 pub(super) async fn prepare<T, F>(ctx: &SyncContext, memory: &Memory, operation: F) -> Result<T>
@@ -533,7 +535,7 @@ fn text<'a>(value: &'a Value, key: &str) -> Result<&'a str> {
         .filter(|s| !s.is_empty() && s.len() <= 256 && !s.chars().any(char::is_control))
         .ok_or_else(|| failure("invalid_request", "Choose an exact draft/request identity"))
 }
-fn provider(error: GoogleError) -> CoreError {
+pub(super) fn provider(error: GoogleError) -> CoreError {
     let code = match &error {
         GoogleError::ReauthorizationRequired => "google_reauthorization_required",
         GoogleError::PermissionDenied => "google_permission_denied",

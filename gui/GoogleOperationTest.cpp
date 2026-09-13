@@ -141,7 +141,8 @@ void localSourceProfileModes() {
     }
 }
 void exactDraftRecoveryMethods() {
-    for (const auto &method : {QString("google_draft_reconcile"), QString("google_draft_resolve")}) {
+    for (const auto &method : {QString("google_draft_reconcile"), QString("google_draft_resolve"), QString("google_draft_authoring"),
+        QString("google_draft_copy"), QString("google_draft_adopt"), QString("google_draft_delete"), QString("google_draft_delete_reconcile")}) {
         Engine engine; engine.expectedMethod = method;
         engine.expectedParams = {{"draft_id", "draft-fixture"}};
         if (method == "google_draft_resolve") engine.expectedParams = {{"draft_id", "draft-fixture"}, {"expected_revision", 3},
@@ -152,7 +153,7 @@ void exactDraftRecoveryMethods() {
         engine.complete(); await([&] { return done.calls == 1; }, "draft recovery completed once");
         require(done.ok, "draft recovery accepted direct status");
     }
-    for (const auto &method : {QString("google_draft_send"), QString("google_draft_delete"), QString("google_draft_resolve_extra")}) {
+    for (const auto &method : {QString("google_draft_send"), QString("google_draft_delete_extra"), QString("google_draft_resolve_extra")}) {
         Engine engine; Completion done; GoogleOperation operation("fixture-account", "fixture-request", nullptr);
         operation.start(engine.profile, QCoreApplication::applicationPid(), method, {}, done.callback());
         require(done.calls == 1 && !done.ok && done.value["code"] == "invalid_request" && engine.connections == 0,

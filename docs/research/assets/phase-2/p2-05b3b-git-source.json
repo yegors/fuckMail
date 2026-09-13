@@ -1,0 +1,21 @@
+{
+  "scope": "Verified worktree source to staged Git source binding, before the checkpoint commit",
+  "archive": "p2-05b3b-interim/source-checkpoint.json",
+  "source_count": 331,
+  "result": "passed",
+  "line_ending_only_differences": [
+    {
+      "path": "crates/fm-core/src/migration-015-google-draft-inventory.sql",
+      "observed_sha256": "5b461229d01ced35d59629133137db4faab748d617f0b6612d97d099aafb3d8c",
+      "staged_sha256": "b502688701e88cd4c99c01cc63f4c2442ce869acb15bbb40252374f77c562a9a",
+      "difference": "CRLF/LF only under .gitattributes"
+    },
+    {
+      "path": "crates/fm-core/src/migration-016-google-draft-actions.sql",
+      "observed_sha256": "ca6d00e13d8d9635b95985afe62dcc081571694b67822e647be0fbcff6d97a0b",
+      "staged_sha256": "85e4952c31719028da44a38b4770f24b9eafa0fba999209232d3e93dcc6f97d8",
+      "difference": "CRLF/LF only under .gitattributes"
+    }
+  ],
+  "runtime_content_changes": []
+}

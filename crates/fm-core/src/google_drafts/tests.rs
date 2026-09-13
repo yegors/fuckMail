@@ -72,6 +72,7 @@ fn observe(
 ) -> Value {
     let plan = store.google_draft_observe_begin(scope, id).unwrap();
     let raw = remote.map(|(draft, message, raw)| GoogleDraftRemote {
+        thread_id: "provider-thread".into(),
         draft_id: draft.into(),
         message_id: message.into(),
         raw: raw.into(),
@@ -645,6 +646,7 @@ fn generation_and_revision_fences_do_not_publish_stale_preparation_or_raw() {
     let proof = prepare_google_draft_observation(
         plan,
         Some(GoogleDraftRemote {
+            thread_id: "provider-thread".into(),
             draft_id: "draft".into(),
             message_id: "member".into(),
             raw: bytes.clone(),

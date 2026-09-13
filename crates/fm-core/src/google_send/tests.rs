@@ -134,6 +134,7 @@ fn observe(
     let proof = prepare_google_draft_observation(
         p,
         Some(GoogleDraftRemote {
+            thread_id: "provider-thread".into(),
             draft_id: "remote-draft".into(),
             message_id: member.into(),
             raw: raw.to_vec(),

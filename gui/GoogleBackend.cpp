@@ -28,9 +28,15 @@ void MailBackend::googleOperation(const QString &method, const QString &account,
         QJsonObject error{{"code", code}, {"message", message}};
         if (method == "google_send")
             error["details"] = QJsonObject{{"send_invocation_finished_before_dispatch", true}};
+        if (method == "google_draft_delete")
+            error["details"] = QJsonObject{{"draft_delete_invocation_finished_before_dispatch", true}};
+        if (method == "google_draft_copy" || method == "google_draft_adopt")
+            error["details"] = QJsonObject{{"draft_authoring_invocation_finished_without_commit", true}};
         callback(error, false);
     };
-    if (!m_connected || m_shutdown || (m_syntheticProfile && method != "draft_attachment_import" && method != "google_draft_source")) {
+    const bool localContent = method == "draft_attachment_import" || method == "google_draft_source"
+        || method == "google_draft_authoring" || method == "google_draft_copy";
+    if (!m_connected || m_shutdown || (m_syntheticProfile && !localContent)) {
         refuseBeforeRequest("cancelled", "Reconnect to continue Google work."); return;
     }
     if (m_googleOperations.size() >= 4) {
@@ -60,7 +66,8 @@ void MailBackend::cancelGoogleOperations(bool notify) {
 void MailBackend::cancelGoogleProviderOperations(const QString &account) {
     const auto operations = m_googleOperations;
     for (auto operation : operations)
-        if (operation->account() == account && operation->method() != "draft_attachment_import" && operation->method() != "google_draft_source") operation->cancel();
+        if (operation->account() == account && operation->method() != "draft_attachment_import" && operation->method() != "google_draft_source"
+            && operation->method() != "google_draft_authoring" && operation->method() != "google_draft_copy") operation->cancel();
 }
 
 void MailBackend::pollGoogleSync() {

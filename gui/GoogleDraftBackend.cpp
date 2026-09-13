@@ -4,7 +4,7 @@
 
 namespace {
 bool validStatus(const QJsonObject &status, const QString &account, const QString &draft) {
-    static const QStringList states{"local", "prepared", "in_flight", "acceptance_unknown", "acknowledged", "synced", "conflict", "failed"};
+    static const QStringList states{"local", "adopted", "prepared", "in_flight", "acceptance_unknown", "acknowledged", "synced", "conflict", "failed"};
     return !account.isEmpty() && !draft.isEmpty() && status["account"].toString() == account
         && status["draft_id"].toString() == draft && status["revision"].isDouble()
         && status["revision"].toInteger(-1) >= 0 && status["local_revision"].isDouble()
@@ -26,6 +26,7 @@ QString preparationReason(const QString &code) {
 
 QVariantMap MailBackend::mergedDraftProjection(const QJsonObject &result) const {
     auto next = result.toVariantMap();
+    mergeDraftDeletionProjection(next, result);
     if (result["read_only"].toBool() || result["origin"].toString() == "google_snapshot") {
         next["google"] = QVariant{}; next["google_send"] = QVariant{};
         return next;
@@ -57,7 +58,8 @@ bool MailBackend::mergeGoogleDraftStatus(const QJsonObject &status, const QStrin
 bool MailBackend::googleDraftRecoveryReady() const {
     return !draftReadOnly() && !m_syntheticProfile && m_connected && !m_shutdown && accountCapability(m_account, "mail_delivery")
         && !m_draft.value("draft_id").toString().isEmpty() && m_draft.value("revision").toLongLong() > 0
-        && !m_draft.value("discarded").toBool() && !googleSendBlocksDraftSync();
+        && !m_draft.value("discarded").toBool() && !googleSendBlocksDraftSync()
+        && !m_draft.value("google").toMap().value("deletion").toMap().value("blocks_target").toBool();
 }
 
 QVariantMap MailBackend::googleDraft() const {
@@ -74,12 +76,13 @@ QVariantMap MailBackend::googleDraft() const {
     const auto target = operation["provider_draft_id"].toString();
     const bool observedUnknownTarget = !target.isEmpty() && observed["draft_id"].toString() == target;
     const bool knownRemote = !target.isEmpty() || !operation["ack"].toObject()["draft_id"].toString().isEmpty()
-        || !baseline["draft_id"].toString().isEmpty();
+        || !baseline["draft_id"].toString().isEmpty() || !status["effective_target"].toObject()["provider_draft_id"].toString().isEmpty();
     const auto preparationFailure = status["preparation_failure"].toObject();
     const bool mismatch = !baseline["observed_sha256"].toString().isEmpty() && !baseline["upload_sha256"].toString().isEmpty()
         && baseline["observed_sha256"] != baseline["upload_sha256"];
     QString text;
     if (state == "local") text = "Saved on this machine.";
+    else if (state == "adopted") text = "Editing the retained Google draft. Adoption alone has not uploaded anything; saved edits use normal draft sync.";
     else if (state == "prepared") text = "Google draft upload queued.";
     else if (state == "in_flight") text = "Uploading draft to Google…";
     else if (state == "acceptance_unknown") text = "Google draft result is unknown. Check Google before continuing.";

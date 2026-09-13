@@ -31,12 +31,17 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
     });
     connect(this, &MailBackend::accountChanged, this, [this] {
         resetDraftSourcesContext();
+        resetDraftAuthoringContext();
         emit googleDraftInventoryChanged(); emit draftSourcesChanged();
+        emit draftAuthoringChanged(); emit draftDeletionChanged();
     });
     connect(this, &MailBackend::draftChanged, this, [this] {
         resetDraftSourcesContext(); emit draftSourcesChanged();
+        resetDraftAuthoringContext(); emit draftAuthoringChanged(); emit draftDeletionChanged();
     });
     connect(this, &MailBackend::googleSyncChanged, this, &MailBackend::googleDraftInventoryChanged);
+    connect(this, &MailBackend::googleSyncChanged, this, &MailBackend::draftAuthoringChanged);
+    connect(this, &MailBackend::googleSyncChanged, this, &MailBackend::draftDeletionChanged);
     m_calendarDate = todayDate(); m_timelineDate = todayDate();
     m_clockTimer.setInterval(30000);
     connect(&m_clockTimer, &QTimer::timeout, this, [this] { emit eventsChanged(); });

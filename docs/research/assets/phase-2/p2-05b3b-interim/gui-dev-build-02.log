@@ -1,0 +1,9 @@
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --build build/dev --parallel 8
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.45s
+[0/55] Build the shared Rust engine and CLI
+[2/55] Automatic MOC and UIC for target fuckmail-gui
+[3/54] Running AUTOMOC file extraction for target fuckmail-gui
+[4/7] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiGoogleDraftActionsSelfTest.cpp.obj
+[5/7] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\main.cpp.obj
+[6/7] Linking CXX executable fuckmail-gui.exe
+[7/7] C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev && C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Lib\site-packages\cmake\data\bin\cmake.exe -E copy_if_different C:/Users/Yegor/Projects/Fuckaround/fuckMail/target/debug/fm-engine.exe C:/Users/Yegor/Projects/Fuckaround/fuckMail/target/debug/fm.exe C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev"

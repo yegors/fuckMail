@@ -771,6 +771,85 @@ async fn labels_and_remote_drafts_keep_resource_ids_and_full_raw() {
         )
         .await
         .unwrap(),
-        GmailReply::DeletedDraft
+        GmailReply::DraftDeletion(GmailDeletion {
+            result: DraftDeletionResult::Deleted,
+            ..
+        })
     ));
+}
+
+#[tokio::test]
+async fn deletion_certainty_distinguishes_completion_absence_and_accepted_only() {
+    let (fake, api) = setup();
+    for (status, body, expected) in [
+        (200, b"  {} \r\n".to_vec(), DraftDeletionResult::Deleted),
+        (204, vec![], DraftDeletionResult::Deleted),
+        (202, vec![], DraftDeletionResult::NoDefinitiveResponse),
+        (
+            201,
+            b"{}".to_vec(),
+            DraftDeletionResult::NoDefinitiveResponse,
+        ),
+        (200, vec![], DraftDeletionResult::NoDefinitiveResponse),
+        (
+            200,
+            b"{\"id\":\"other\"}".to_vec(),
+            DraftDeletionResult::NoDefinitiveResponse,
+        ),
+        (404, b"{}".to_vec(), DraftDeletionResult::Absent),
+        (403, b"{}".to_vec(), DraftDeletionResult::Rejected),
+        (429, b"{}".to_vec(), DraftDeletionResult::Rejected),
+        (
+            500,
+            b"{}".to_vec(),
+            DraftDeletionResult::NoDefinitiveResponse,
+        ),
+    ] {
+        fake.replies.lock().unwrap().push_back(Ok(HttpResponse {
+            status,
+            body,
+            retry_after_secs: None,
+            etag: None,
+        }));
+        let GmailReply::DraftDeletion(reply) = api
+            .execute(
+                GmailCall::delete_draft(&account("a"), "a/b").unwrap(),
+                "token",
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("deletion receipt")
+        };
+        assert_eq!(reply.result, expected, "status {status}");
+        let calls = fake.calls.lock().unwrap();
+        let call = calls.last().unwrap();
+        assert_eq!(call.method(), HttpMethod::Delete);
+        assert_eq!(
+            call.url(),
+            "https://gmail.googleapis.com/gmail/v1/users/me/drafts/a%2Fb"
+        );
+        assert!(call.body_bytes().is_empty());
+    }
+    for error in [
+        TransportError::Network,
+        TransportError::Cooldown {
+            retry_after_secs: 7,
+        },
+    ] {
+        fake.fail(error);
+        let GmailReply::DraftDeletion(reply) = api
+            .execute(
+                GmailCall::delete_draft(&account("a"), "d").unwrap(),
+                "token",
+                &CancellationToken::new(),
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("deletion receipt")
+        };
+        assert_eq!(reply.result, DraftDeletionResult::NoDefinitiveResponse);
+    }
 }

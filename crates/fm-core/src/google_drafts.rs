@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 
 pub const MAX_GOOGLE_DRAFT_BYTES: u64 = 35_000_000;
 const MAX_METADATA: usize = 32 * 1024;
-const DUE_SQL: &str = "SELECT draft_id,revision FROM drafts WHERE account=?1 AND discarded=0 AND origin='local' AND COALESCE(json_extract(google_json,'$.submission.blocks_drafts'),0)=0 AND (google_json IS NULL OR (json_extract(google_json,'$.state') IN ('local','synced','prepared','acknowledged') AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR revision>COALESCE(json_extract(google_json,'$.baseline.draft_revision'),0))) OR (json_extract(google_json,'$.state')='failed' AND revision>COALESCE(json_extract(google_json,'$.preparation_failure.draft_revision'),json_extract(google_json,'$.failed_draft_revision')))) AND (revision!=COALESCE(json_extract(google_json,'$.retry.draft_revision'),0) OR COALESCE(json_extract(google_json,'$.retry.until_ms'),0)<=?3) ORDER BY updated_at,draft_id LIMIT ?2";
+const DUE_SQL: &str = "SELECT draft_id,revision FROM drafts WHERE account=?1 AND discarded=0 AND origin='local' AND COALESCE(json_extract(google_json,'$.submission.blocks_drafts'),0)=0 AND COALESCE(json_extract(google_json,'$.deletion.blocks_target'),0)=0 AND (google_json IS NULL OR (json_extract(google_json,'$.state') IN ('local','synced','adopted','prepared','acknowledged') AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR revision>COALESCE(json_extract(google_json,'$.baseline.draft_revision'),json_extract(google_json,'$.adoption.draft_revision'),0))) OR (json_extract(google_json,'$.state')='failed' AND revision>COALESCE(json_extract(google_json,'$.preparation_failure.draft_revision'),json_extract(google_json,'$.failed_draft_revision')))) AND (revision!=COALESCE(json_extract(google_json,'$.retry.draft_revision'),0) OR COALESCE(json_extract(google_json,'$.retry.until_ms'),0)<=?3) ORDER BY updated_at,draft_id LIMIT ?2";
 
 #[derive(Clone)]
 pub struct GoogleDraftScope {
@@ -60,6 +60,8 @@ struct Observation {
     message_id: String,
     sha256: String,
     size: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    thread_id: Option<String>,
 }
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct Baseline {
@@ -69,6 +71,8 @@ struct Baseline {
     upload_sha256: String,
     draft_revision: i64,
     size: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    thread_id: Option<String>,
 }
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct Conflict {
@@ -102,6 +106,12 @@ struct Twin {
     failed_draft_revision: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     submission: Option<crate::google_send::SendGuard>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    adoption: Option<crate::google_draft_actions::Adoption>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    derivation: Option<crate::google_draft_actions::Derivation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    deletion: Option<crate::google_draft_actions::DeletionGuard>,
 }
 impl Default for Twin {
     fn default() -> Self {
@@ -116,8 +126,34 @@ impl Default for Twin {
             retry: None,
             failed_draft_revision: None,
             submission: None,
+            adoption: None,
+            derivation: None,
+            deletion: None,
         }
     }
+}
+fn effective_observation(twin: &Twin) -> Option<Observation> {
+    twin.baseline
+        .as_ref()
+        .map(|b| Observation {
+            draft_id: b.draft_id.clone(),
+            message_id: b.message_id.clone(),
+            sha256: b.observed_sha256.clone(),
+            size: b.size,
+            thread_id: b.thread_id.clone(),
+        })
+        .or_else(|| {
+            twin.adoption.as_ref().map(|a| Observation {
+                draft_id: a.target.provider_draft_id.clone(),
+                message_id: a.target.message_id.clone(),
+                sha256: a.target.sha256.clone(),
+                size: a.target.size,
+                thread_id: Some(a.target.thread_id.clone()),
+            })
+        })
+}
+fn effective_target(twin: &Twin) -> Value {
+    effective_observation(twin).map(|o|json!({"provider_draft_id":o.draft_id,"message_id":o.message_id,"sha256":o.sha256,"size":o.size,"thread_id":o.thread_id})).unwrap_or(Value::Null)
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Operation {
@@ -211,6 +247,7 @@ pub struct GoogleDraftRemote {
     pub draft_id: String,
     pub message_id: String,
     pub raw: Vec<u8>,
+    pub thread_id: String,
 }
 pub struct GoogleDraftObservationPlan {
     blobs: BlobStore,
@@ -219,6 +256,7 @@ pub struct GoogleDraftObservationPlan {
     google_revision: i64,
     operation: Option<Operation>,
     target: String,
+    adopted_message: Option<String>,
 }
 impl GoogleDraftObservationPlan {
     pub fn provider_draft_id(&self) -> Option<&str> {
@@ -229,6 +267,7 @@ pub struct PreparedGoogleDraftObservation {
     plan: GoogleDraftObservationPlan,
     observation: Option<Observation>,
     cancel: CancellationToken,
+    retained_source: Option<crate::google_draft_inventory::PreparedGoogleDraftImport>,
 }
 pub struct GoogleDraftDue {
     pub draft_id: String,
@@ -360,11 +399,16 @@ impl Store {
             return Err(err("invalid_draft", "Discarded draft cannot be uploaded"));
         }
         if !resolving
-            && twin.state == "synced"
-            && twin
-                .baseline
-                .as_ref()
-                .is_some_and(|b| b.draft_revision == revision)
+            && ((twin.state == "synced"
+                && twin
+                    .baseline
+                    .as_ref()
+                    .is_some_and(|b| b.draft_revision == revision))
+                || (twin.state == "adopted"
+                    && twin
+                        .adoption
+                        .as_ref()
+                        .is_some_and(|a| a.draft_revision == revision)))
         {
             return Ok(GoogleDraftIntent::Reply(
                 self.google_draft_status(&scope.account, draft_id)?,
@@ -376,7 +420,7 @@ impl Store {
                 .and_then(|c| c.observed.as_ref())
                 .map(|o| o.draft_id.clone())
         } else {
-            twin.baseline.as_ref().map(|b| b.draft_id.clone())
+            effective_observation(&twin).map(|b| b.draft_id)
         };
         Ok(GoogleDraftIntent::Upload {
             provider_draft_id: target,
@@ -404,12 +448,7 @@ impl Store {
         let expected_remote = if p.get("action").is_some() {
             twin.conflict.as_ref().and_then(|c| c.observed.clone())
         } else {
-            twin.baseline.as_ref().map(|b| Observation {
-                draft_id: b.draft_id.clone(),
-                message_id: b.message_id.clone(),
-                sha256: b.observed_sha256.clone(),
-                size: b.size,
-            })
+            effective_observation(&twin)
         };
         let source = retained.draft()["source_message_id"].as_str();
         let thread = if retained.draft()["mode"] == "reply"
@@ -417,7 +456,7 @@ impl Store {
         {
             self.db.query_row("SELECT remote_thread_id FROM google_message_state WHERE account=?1 AND message_id=?2 AND deleted=0", params![scope.account,source], |r|r.get::<_,String>(0)).optional()?
         } else {
-            None
+            twin.adoption.as_ref().map(|a| a.target.thread_id.clone())
         };
         Ok(GoogleDraftStep::Prepare(GoogleDraftPlan(Box::new(
             GoogleDraftPlanContents {
@@ -613,7 +652,7 @@ impl Store {
             .flatten();
         Ok(
             json!({"account":account,"draft_id":draft_id,"state":twin.state,"revision":twin.revision,"local_revision":local_revision,"operation_is_current":true,"preparation_failure":twin.preparation_failure,"retry":twin.retry,
-            "operation":operation.as_ref().map(operation_status),"fidelity_warning":twin.baseline.as_ref().is_some_and(|b|b.observed_sha256 != b.upload_sha256),"baseline":twin.baseline,"conflict":twin.conflict}),
+            "operation":operation.as_ref().map(operation_status),"fidelity_warning":twin.baseline.as_ref().is_some_and(|b|b.observed_sha256 != b.upload_sha256),"effective_target":effective_target(&twin),"baseline":twin.baseline,"conflict":twin.conflict,"adoption":twin.adoption,"derivation":twin.derivation,"deletion":twin.deletion}),
         )
     }
 
@@ -638,7 +677,7 @@ impl Store {
             ));
         }
         let target = operation.as_ref().and_then(|op|op.ack.as_ref().map(|ack|ack.draft_id.clone()).or_else(||op.target.clone()))
-            .or_else(||twin.baseline.as_ref().map(|b|b.draft_id.clone()))
+            .or_else(||effective_observation(&twin).map(|b|b.draft_id))
             .ok_or_else(||err("reconciliation_unavailable", "No acknowledged Google draft identity is available; unknown creation cannot be retried"))?;
         Ok(GoogleDraftObservationPlan {
             blobs: self.google_blob_store(),
@@ -647,6 +686,7 @@ impl Store {
             google_revision: twin.revision,
             operation,
             target,
+            adopted_message: twin.adoption.as_ref().map(|a| a.target.message_id.clone()),
         })
     }
 
@@ -670,6 +710,9 @@ impl Store {
                 "stale_google_work",
                 "Google draft changed during RAW observation",
             ));
+        }
+        if let Some(source) = proof.retained_source {
+            self.retain_action_source(source)?;
         }
         let mut operation = plan.operation;
         let observation = proof.observation;
@@ -695,7 +738,7 @@ impl Store {
             return self.google_draft_status(&plan.scope.account, &plan.draft_id);
         }
         let conflict = if let Some(op) = operation.as_ref().filter(|op| op.state == "prepared") {
-            if op.expected_remote == observation {
+            if same_observation(op.expected_remote.as_ref(), observation.as_ref()) {
                 return self.google_draft_status(&plan.scope.account, &plan.draft_id);
             }
             Some(Conflict {
@@ -725,6 +768,7 @@ impl Store {
                             upload_sha256: op.upload_sha256.clone(),
                             draft_revision: op.draft_revision,
                             size: row.size,
+                            thread_id: row.thread_id.clone(),
                         });
                         None
                     }
@@ -746,12 +790,30 @@ impl Store {
                 reason: "acceptance_unknown".into(),
                 observed: observation.clone(),
             })
+        } else if baseline.is_none() && twin.adoption.is_some() {
+            if same_observation(effective_observation(&twin).as_ref(), observation.as_ref()) {
+                None
+            } else {
+                Some(Conflict {
+                    reason: if observation.is_none() {
+                        "missing"
+                    } else {
+                        "adopted_remote_changed"
+                    }
+                    .into(),
+                    observed: observation.clone(),
+                })
+            }
         } else {
             match (&baseline, &observation) {
                 (Some(old), Some(row))
                     if old.draft_id == row.draft_id
                         && old.message_id == row.message_id
-                        && old.observed_sha256 == row.sha256 =>
+                        && old.observed_sha256 == row.sha256
+                        && old
+                            .thread_id
+                            .as_ref()
+                            .is_none_or(|t| Some(t) == row.thread_id.as_ref()) =>
                 {
                     None
                 }
@@ -775,6 +837,8 @@ impl Store {
         };
         let state = if conflict.is_some() {
             "conflict"
+        } else if baseline.is_none() && twin.adoption.is_some() {
+            "adopted"
         } else {
             "synced"
         };
@@ -793,6 +857,8 @@ impl Store {
                 op.revision += 1;
             }
             self.persist_google_draft(op, Some(&mut twin), false)?;
+        } else if twin.adoption.is_some() {
+            self.persist_google_twin(&plan.scope.account, &plan.draft_id, &mut twin)?;
         } else {
             return Err(invalid());
         }
@@ -1031,7 +1097,7 @@ impl Store {
         Ok(())
     }
 
-    fn draft_connection(&self, account: &str, generation: i64) -> Result<()> {
+    pub(crate) fn draft_connection(&self, account: &str, generation: i64) -> Result<()> {
         id(account)?;
         if self.profile_kind()? != crate::live_profile::ProfileKind::Live {
             return Err(err(
@@ -1151,6 +1217,79 @@ impl Store {
         twin.revision += 1;
         encode(&twin)
     }
+    pub(crate) fn google_source_twin_raw(
+        &self,
+        adoption: Option<crate::google_draft_actions::Adoption>,
+        derivation: Option<crate::google_draft_actions::Derivation>,
+    ) -> Result<String> {
+        let mut twin = Twin {
+            adoption,
+            derivation,
+            ..Twin::default()
+        };
+        if twin.adoption.is_some() {
+            twin.state = "adopted".into();
+            twin.revision = 1;
+        }
+        encode(&twin)
+    }
+    pub(crate) fn compatible_google_adoption(
+        &self,
+        account: &str,
+        draft: &str,
+        target: &crate::google_draft_actions::ObservedTarget,
+    ) -> Result<bool> {
+        let (_, twin) = self.google_twin(account, draft)?;
+        let discarded: bool = self.db.query_row(
+            "SELECT discarded FROM drafts WHERE account=?1 AND draft_id=?2",
+            params![account, draft],
+            |r| r.get(0),
+        )?;
+        Ok(!discarded
+            && matches!(twin.state.as_str(), "adopted" | "synced" | "local")
+            && effective_observation(&twin).is_some_and(|o| {
+                o.draft_id == target.provider_draft_id
+                    && o.message_id == target.message_id
+                    && o.sha256 == target.sha256
+                    && o.size == target.size
+            }))
+    }
+    pub(crate) fn google_delete_twin_raw(
+        &self,
+        account: &str,
+        draft: &str,
+        deletion: crate::google_draft_actions::DeletionGuard,
+    ) -> Result<String> {
+        let (_, mut twin) = self.google_twin(account, draft)?;
+        twin.deletion = Some(deletion);
+        twin.revision += 1;
+        encode(&twin)
+    }
+    /// A save that changes no authored field must not turn initial adoption into
+    /// an upload. This follows the existing save revision without changing its receipt.
+    pub(crate) fn advance_unchanged_adoption(
+        &self,
+        account: &str,
+        draft: &str,
+        old: i64,
+        next: i64,
+    ) -> Result<()> {
+        let (_, mut twin) = self.google_twin(account, draft)?;
+        if twin.state == "adopted"
+            && twin.baseline.is_none()
+            && twin
+                .adoption
+                .as_ref()
+                .is_some_and(|a| a.draft_revision == old)
+        {
+            twin.adoption.as_mut().unwrap().draft_revision = next;
+            self.db.execute(
+                "UPDATE drafts SET google_json=?3 WHERE account=?1 AND draft_id=?2",
+                params![account, draft, encode(&twin)?],
+            )?;
+        }
+        Ok(())
+    }
 }
 
 pub(crate) fn check_google_operation_kind(
@@ -1229,9 +1368,11 @@ pub fn prepare_google_draft_observation(
 ) -> Result<PreparedGoogleDraftObservation> {
     cancelled(cancel)?;
     let observation = remote
+        .as_ref()
         .map(|remote| {
             provider_id(&remote.draft_id)?;
             provider_id(&remote.message_id)?;
+            provider_id(&remote.thread_id)?;
             if remote.raw.is_empty() || remote.raw.len() as u64 > MAX_GOOGLE_DRAFT_BYTES {
                 return Err(err(
                     "limit_exceeded",
@@ -1240,20 +1381,50 @@ pub fn prepare_google_draft_observation(
             }
             let sha256 = plan.blobs.stage_blob(&remote.raw)?;
             Ok(Observation {
-                draft_id: remote.draft_id,
-                message_id: remote.message_id,
+                draft_id: remote.draft_id.clone(),
+                message_id: remote.message_id.clone(),
+                thread_id: Some(remote.thread_id.clone()),
                 sha256,
                 size: remote.raw.len() as u64,
             })
         })
         .transpose()?;
+    let retained_source = if let Some(message) = &plan.adopted_message {
+        Some(crate::google_draft_actions::prepare_adopted_source(
+            &plan.blobs,
+            &plan.scope,
+            &plan.target,
+            message,
+            remote,
+            cancel,
+        )?)
+    } else {
+        None
+    };
     cancelled(cancel)?;
     Ok(PreparedGoogleDraftObservation {
         plan,
         observation,
         cancel: cancel.clone(),
+        retained_source,
     })
 }
+fn same_observation(expected: Option<&Observation>, actual: Option<&Observation>) -> bool {
+    match (expected, actual) {
+        (None, None) => true,
+        (Some(a), Some(b)) => {
+            a.draft_id == b.draft_id
+                && a.message_id == b.message_id
+                && a.sha256 == b.sha256
+                && a.size == b.size
+                && a.thread_id
+                    .as_ref()
+                    .is_none_or(|t| Some(t) == b.thread_id.as_ref())
+        }
+        _ => false,
+    }
+}
+
 fn operation_status(op: &Operation) -> Value {
     json!({"request_id":op.request_id,"revision":op.revision,"state":op.state,"draft_revision":op.draft_revision,"connection_generation":op.connection_generation,
         "upload_sha256":op.upload_sha256,"size":op.size,"ack":op.ack,"error":op.error,"provider_draft_id":op.target})

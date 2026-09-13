@@ -4,7 +4,7 @@ use crate::google_send::{self, GoogleSendOutcome, GoogleSendStep};
 
 const RAW: &[u8] = b"From: Remote Author <outside@example.test>\r\nTo: Other <other@example.test>\r\nCc: Copy <copy@example.test>\r\nBcc: Secret <secret@example.test>\r\nReply-To: Route <route@example.test>\r\nSubject: Original subject\r\nMessage-ID: <remote-original@example.test>\r\nIn-Reply-To: <parent@example.test>\r\nReferences: <root@example.test> <parent@example.test>\r\nMIME-Version: 1.0\r\nContent-Type: multipart/related; boundary=parts\r\n\r\n--parts\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Original remote text</p><img src=\"cid:picture\">\r\n--parts\r\nContent-Type: image/png; name=picture.png\r\nContent-ID: <picture>\r\nContent-Disposition: inline; filename=picture.png\r\nContent-Transfer-Encoding: base64\r\n\r\nAAEC/w==\r\n--parts--\r\n";
 
-fn setup(path: &std::path::Path) -> (Store, GoogleDraftReadScope, GoogleDraftReadScope) {
+pub(super) fn setup(path: &std::path::Path) -> (Store, GoogleDraftReadScope, GoogleDraftReadScope) {
     let mut store = Store::open_live(path).unwrap();
     let scopes = BTreeSet::from(["https://www.googleapis.com/auth/gmail.modify".into()]);
     let mut bind = |subject, email| {
@@ -27,7 +27,7 @@ fn setup(path: &std::path::Path) -> (Store, GoogleDraftReadScope, GoogleDraftRea
     let b = bind("inventory-b", "second@example.test");
     (store, a, b)
 }
-fn scope(s: &GoogleDraftReadScope) -> GoogleDraftScope {
+pub(super) fn scope(s: &GoogleDraftReadScope) -> GoogleDraftScope {
     GoogleDraftScope {
         account: s.account.clone(),
         connection_generation: s.connection_generation,
@@ -82,7 +82,7 @@ fn available(plan: GoogleDraftImportPlan, raw: &[u8], member: &str) -> PreparedG
     )
     .unwrap()
 }
-fn import(
+pub(super) fn import(
     store: &mut Store,
     s: &GoogleDraftReadScope,
     id: &str,
@@ -121,7 +121,7 @@ fn count(store: &Store, table: &str) -> i64 {
         .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r.get(0))
         .unwrap()
 }
-fn create(store: &mut Store, s: &GoogleDraftReadScope, request: &str) -> String {
+pub(super) fn create(store: &mut Store, s: &GoogleDraftReadScope, request: &str) -> String {
     store
         .handle(
             "draft_create",
@@ -133,7 +133,7 @@ fn create(store: &mut Store, s: &GoogleDraftReadScope, request: &str) -> String 
         .unwrap()
         .into()
 }
-fn freeze_local(
+pub(super) fn freeze_local(
     store: &mut Store,
     s: &GoogleDraftReadScope,
     id: &str,
@@ -600,6 +600,7 @@ fn publication_rechecks_new_exact_owner_and_preserves_pending_and_accepted_send(
         let proof = google_drafts::prepare_google_draft_observation(
             observe,
             Some(google_drafts::GoogleDraftRemote {
+                thread_id: "provider-thread".into(),
                 draft_id: "exact-container".into(),
                 message_id: "synced-member".into(),
                 raw: raw.clone(),

@@ -111,7 +111,7 @@ QVariantList MailBackend::draftSnapshotHeaders() const {
     return rows;
 }
 QString MailBackend::draftSourcesKey() const {
-    if (!draftReadOnly()) return {};
+    if (m_draft.value("remote_source").toMap().value("source_revision").toLongLong() <= 0) return {};
     return m_account + '\n' + m_draft.value("draft_id").toString() + '\n'
         + QString::number(m_draft.value("remote_source").toMap().value("source_revision").toLongLong());
 }
@@ -131,10 +131,11 @@ void MailBackend::resetDraftSourcesContext() {
     m_draftSourcesLoading = false; m_draftSourceExporting = false;
 }
 void MailBackend::loadDraftSources(bool append) {
-    if (!draftReadOnly() || !m_connected || m_shutdown) return;
+    if (draftSourcesKey().isEmpty() || !m_connected || m_shutdown) return;
     resetDraftSourcesContext();
     if (m_draftSourcesLoading) return;
-    const auto next = m_draftSources.value("next_offset");
+    auto next = m_draftSources.value("next_offset");
+    if (!next.isValid() || next.isNull()) next = m_draftSources.value("delete_next_offset");
     if (append && (!next.isValid() || next.isNull())) return;
     const int offset = append ? next.toInt() : 0;
     if (offset < 0) return;
@@ -159,7 +160,7 @@ void MailBackend::loadDraftSources(bool append) {
         });
 }
 void MailBackend::exportDraftSource(qint64 sourceRevision, const QString &attachmentId) {
-    if (!draftReadOnly() || !m_connected || m_shutdown || sourceRevision <= 0
+    if (draftSourcesKey().isEmpty() || !m_connected || m_shutdown || sourceRevision <= 0
         || sourceRevision > m_draft.value("remote_source").toMap().value("source_revision").toLongLong()) return;
     if (sourceRevision == m_draft.value("remote_source").toMap().value("source_revision").toLongLong()
         && m_draft.value("remote_source").toMap().value("source_state").toString() != "available") return;

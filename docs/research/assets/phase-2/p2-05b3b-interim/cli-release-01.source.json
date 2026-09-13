@@ -1,0 +1,21 @@
+{
+  "Cargo.lock": "f9f7cacd924bbbc38c7b56e1a5a5957ae18fd0f98e56a3b1907ae560f9dcddba",
+  "Cargo.toml": "8e789e663090c7b78781a746cf834d09c036b4a3625fc4ef7a981474692c397e",
+  "crates/fm-cli/Cargo.toml": "399536b7abe9a52f873c106010898accce3a714e994ada0e8878f24fd4c9a278",
+  "crates/fm-cli/src/main.rs": "9f0026d56940a5edbdf5cb31fbde88d3f77167381f91bbb648568b1d677c8643",
+  "crates/fm-cli/tests/arguments.rs": "460a6cfbb1f82cd41bd8e7626e04d25e0041b1977d8743d2866bf34f5aed9925",
+  "crates/fm-ipc/Cargo.toml": "9aae4c119d69df38f7dcb5c1792ebcfd9c7d49cec8c8c70304a2a4cb50af7ba4",
+  "crates/fm-ipc/src/lib.rs": "fbc07261ab11ddfc253d75579e97aaf05297a21573ec5e762a76772177158b57",
+  "crates/fm-ipc/src/windows.rs": "e288d97c77da17a7b6c85b19bd053e423bd4e0ae0a244e1939fbb31a0ed98464",
+  "fixtures/composer-qt.html": "b0142fd9d0541a5eab9b8eee6717e461c53a1380b4a534dc624f7cb116650a47",
+  "fixtures/composer-qt.txt": "d86ef7ec29dca3d410b92f29ded26957612ef9f706fe20eb7ddc5d7570944124",
+  "fixtures/messages/html-only.eml": "a1c2bceecd7607cc7d4bca659bb5ae14f21f7842b7f46a892367da031b7f39d5",
+  "fixtures/messages/inline-and-attachment.eml": "a8fad5042fd1b70a9855b3350a672bfffc1f91cc766b72d05d52a8142d7b5e96",
+  "fixtures/messages/malformed-encoding.eml": "2f507afb93baa3f30b099efe51d99c93ea1c8db23cf23dada4ead7c5d4b7672e",
+  "fixtures/messages/multipart-alternative.eml": "d3cf35cee81564276745d1ad9a0857ba64d804874867f3b5308c8716f20a89d7",
+  "fixtures/messages/plain-utf8.eml": "694031c570c14582d4ffe9b9193e1933d064b69fc07b968c0cf90212d25985cd",
+  "fixtures/mime-manifest.json": "6530a797c597719fca55644fe13c9bd785f65a36d212df99d23252c6551d7ec0",
+  "fixtures/README.md": "19b33607fb29abd54ee884522c3a863ffdb4b1694619cf6eeae302e9414edb80",
+  "fixtures/schema-v1.sql": "d41acfb643a3120c178045251224f0be0e2cc0e6a18e285d20d04dd8318bb6c5",
+  "rust-toolchain.toml": "6a3177dca3783745b00765ea571974808dad2644947fc0a8df5927048edf13a5"
+}

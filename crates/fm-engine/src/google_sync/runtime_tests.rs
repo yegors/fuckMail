@@ -46,6 +46,66 @@ struct Contexts {
 struct DraftHttp(AtomicUsize);
 
 #[derive(Default)]
+struct DeleteHttp(AtomicUsize);
+impl HttpTransport for DeleteHttp {
+    fn execute<'a>(&'a self, request: HttpRequest, _: &'a CancellationToken) -> HttpFuture<'a> {
+        Box::pin(async move {
+            assert_eq!(request.method(), HttpMethod::Delete);
+            assert_eq!(
+                request.url(),
+                "https://gmail.googleapis.com/gmail/v1/users/me/drafts/exact%2Ftarget"
+            );
+            assert!(request.body_bytes().is_empty());
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(HttpResponse {
+                status: 204,
+                body: vec![],
+                retry_after_secs: None,
+                etag: None,
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn deletion_admission_is_exact_one_shot_and_cannot_become_create_update_or_send() {
+    let mut h = Contexts::new(1000, 1000, 4);
+    let http = Arc::new(DeleteHttp::default());
+    h.first.http = http.clone();
+    let mime = b"From: author@example.test\r\nTo: one@example.test\r\n\r\nText";
+    for call in [
+        GmailCall::create_draft(&h.first.account, mime, None).unwrap(),
+        GmailCall::update_draft(&h.first.account, "exact/target", mime, None).unwrap(),
+        GmailCall::send_draft(&h.first.account, "exact/target", mime, None).unwrap(),
+        GmailCall::send_message(&h.first.account, mime, None).unwrap(),
+        GmailCall::delete_draft(&h.first.account, "another").unwrap(),
+    ] {
+        let (api, _memory, dispatched) =
+            h.first.gmail_delete_request("exact/target").await.unwrap();
+        let _ = api.execute(call, "managed", &h.first.cancel).await;
+        assert!(!dispatched.load(Ordering::Acquire));
+        assert_eq!(http.0.load(Ordering::SeqCst), 0);
+    }
+    let (api, memory, dispatched) = h.first.gmail_delete_request("exact/target").await.unwrap();
+    let call = || GmailCall::delete_draft(&h.first.account, "exact/target").unwrap();
+    assert!(matches!(
+        api.execute(call(), "managed", &h.first.cancel)
+            .await
+            .unwrap(),
+        GmailReply::DraftDeletion(fm_google::gmail_api::GmailDeletion {
+            result: fm_google::gmail_api::DraftDeletionResult::Deleted,
+            ..
+        })
+    ));
+    assert!(dispatched.load(Ordering::Acquire));
+    let _ = api.execute(call(), "managed", &h.first.cancel).await;
+    assert_eq!(http.0.load(Ordering::SeqCst), 1);
+    drop(api);
+    drop(memory);
+    assert_eq!(h.first.preparation.available_permits(), 1);
+}
+
+#[derive(Default)]
 struct SendHttp(AtomicUsize);
 impl HttpTransport for SendHttp {
     fn execute<'a>(&'a self, request: HttpRequest, _: &'a CancellationToken) -> HttpFuture<'a> {

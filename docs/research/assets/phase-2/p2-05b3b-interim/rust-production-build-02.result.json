@@ -1,0 +1,31 @@
+{
+  "status": "passed",
+  "exit_code": 0,
+  "recorded_at_utc": "2026-09-13T20:54:18.837246+00:00",
+  "elapsed_seconds": 17.859000000171363,
+  "command": [
+    "build",
+    "--release",
+    "--locked",
+    "-p",
+    "fm-engine",
+    "-p",
+    "fm-cli"
+  ],
+  "source_manifest_sha256": "a0c17a50d3f76b2ccf988264b94da4b01026bf527e336ebb35653502616e5b6a",
+  "changed_sources": [],
+  "log_sha256": "2c1d2fe6ed799970c933859d42fd4e05e8ba8983bb284a041d757c408944cc04",
+  "executables": {
+    "engine": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\release\\fm-engine.exe",
+      "sha256": "aca3c164a8abb5a7b94a76bfc420cd2234f94f36ee8cea4bcd9029abe2ac5b59",
+      "size": 18017792
+    },
+    "cli": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\release\\fm.exe",
+      "sha256": "7b2aca311cdab05e99ce32b771ebf6cee90e94ec28a4ccf77fd90864d97eba33",
+      "size": 2212864
+    }
+  },
+  "suites": []
+}

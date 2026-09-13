@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "limits": {
+    "gmail_project_units_per_minute": 1000000,
+    "gmail_account_units_per_minute": 500000,
+    "calendar_project_units_per_minute": 10000,
+    "calendar_account_units_per_minute": 5000
+  },
+  "accounts": [
+    {
+      "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+      "copy": {
+        "provider_draft_id": "ra0001",
+        "source_revision": 2,
+        "source_sha256": "d035e08f29233d5c8128c6ce23c0eecbf29328273c356a79a9dd0b255226f47a",
+        "primary_from": {
+          "email": "personal@example.test",
+          "name": "personal@example.test",
+          "revision": 0
+        },
+        "expected_draft": {
+          "subject": "Remote personal draft 0000 version 1",
+          "body": "Remote cached draft for personal/0000, version 1.\r\nSecond authored line.",
+          "to_recipients": [
+            {
+              "email": "one@example.test",
+              "name": "Reader One"
+            },
+            {
+              "email": "two@example.test",
+              "name": "Reader Two"
+            }
+          ],
+          "cc_recipients": [
+            {
+              "email": "copy@example.test",
+              "name": "Copy"
+            }
+          ],
+          "bcc_recipients": [
+            {
+              "email": "blind@example.test",
+              "name": "Blind"
+            }
+          ],
+          "from": "personal@example.test",
+          "signature_text": "",
+          "body_html": null
+        }
+      },
+      "adopt": {
+        "provider_draft_id": "ra0000",
+        "source_revision": 1,
+        "source_sha256": "47869267ebbfe904f81e3e3e0ac4c0079bab5e9bbac4d780bdbec56719cd7b1a"
+      },
+      "delete": {
+        "provider_draft_id": "ra0005",
+        "source_revision": 6,
+        "source_sha256": "a4a4e9caba0c4be5870ed240281a66bec22d7ddffa7a866040638265646f9aa5"
+      }
+    },
+    {
+      "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+      "copy": {
+        "provider_draft_id": "ra0001",
+        "source_revision": 2,
+        "source_sha256": "282fcb4f5a21a81588a3c542d06cfa4af11d69107bdc4caece69fe25f06681fa",
+        "primary_from": {
+          "email": "workspace@example.test",
+          "name": "workspace@example.test",
+          "revision": 0
+        },
+        "expected_draft": {
+          "subject": "Remote workspace draft 0000 version 1",
+          "body": "Remote cached draft for workspace/0000, version 1.\r\nSecond authored line.",
+          "to_recipients": [
+            {
+              "email": "one@example.test",
+              "name": "Reader One"
+            },
+            {
+              "email": "two@example.test",
+              "name": "Reader Two"
+            }
+          ],
+          "cc_recipients": [
+            {
+              "email": "copy@example.test",
+              "name": "Copy"
+            }
+          ],
+          "bcc_recipients": [
+            {
+              "email": "blind@example.test",
+              "name": "Blind"
+            }
+          ],
+          "from": "workspace@example.test",
+          "signature_text": "",
+          "body_html": null
+        }
+      },
+      "adopt": {
+        "provider_draft_id": "ra0000",
+        "source_revision": 1,
+        "source_sha256": "38a9592b19458656dac5d3beb4d04cc31d0b9157bc1c07d9bf3e3740b5a19857"
+      },
+      "delete": {
+        "provider_draft_id": "ra0005",
+        "source_revision": 6,
+        "source_sha256": "be0b77561d253d94c9c1e8b285c06a1e892a2bdfb6a769fa3c050ca2211eb013"
+      }
+    }
+  ]
+}

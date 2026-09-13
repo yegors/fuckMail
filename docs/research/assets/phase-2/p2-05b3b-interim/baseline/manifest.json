@@ -1,0 +1,19 @@
+{
+  "source_commit": "efe66b6",
+  "executables": [
+    {
+      "name": "fm-engine.exe",
+      "size": 17282560,
+      "sha256": "8a99f867bbbd6bb3673ab2179c9cd94cea47f27be04bd3bfb15533f03ec87ca1"
+    },
+    {
+      "name": "fm.exe",
+      "size": 2122240,
+      "sha256": "b84b3b2271e22eac2942fe5e2ac15caac0a5dff48ef9f2a2e1e1fcd6b862685f"
+    }
+  ],
+  "schema": 15,
+  "fixture": 3,
+  "evidence": "docs/research/assets/phase-2/p2-05b3a-interim/logs-manifest.json",
+  "purpose": "actual old-engine upgrade and refusal"
+}

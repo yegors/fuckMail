@@ -1,0 +1,52 @@
+{
+  "status": "passed",
+  "recorded_at_utc": "2026-09-13T21:06:09.512474+00:00",
+  "scope": "Ordinary Rust workspace; feature-only, native, provider and navigation checks are separate.",
+  "checks": [
+    {
+      "name": "tests",
+      "exit_code": 0,
+      "wall_clock_seconds": 135.45299999974668
+    },
+    {
+      "name": "clippy",
+      "exit_code": 0,
+      "wall_clock_seconds": 3.1570000001229346
+    },
+    {
+      "name": "format",
+      "exit_code": 0,
+      "wall_clock_seconds": 1.016000000294298
+    }
+  ],
+  "logs": {
+    "tests": {
+      "path": "workspace-tests-03.log",
+      "sha256": "3fe2d409d8c187973de38b80fcd13299ad7af106131e63f441081dae82e637d2"
+    },
+    "clippy": {
+      "path": "workspace-clippy-03.log",
+      "sha256": "4ac31aa989b13224c89cdcf9bc0ab8335bccfbd3a6dd89c5f30b10ed63773d8d"
+    },
+    "format": {
+      "path": "workspace-format-03.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "summary": {
+    "passed": 512,
+    "failed": 0,
+    "ignored": 5,
+    "summed_test_suite_seconds": 123.58000000000003,
+    "test_targets": 18,
+    "doc_test_targets": 6,
+    "wall_clock_seconds": 135.45299999974668
+  },
+  "source_check": {
+    "manifest_sha256": "3657d1de8a706051d26c605f81731d46bebe1a5c2053a0be6506a5f3ac5250e8",
+    "changed_sources": [],
+    "changed_rust_sources": [],
+    "rust_sources_checked": 207
+  },
+  "exit_code": 0
+}

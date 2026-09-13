@@ -10,11 +10,19 @@ Rectangle {
     property bool signatureOpen: false
     property bool ccOpen: false
     property bool bccOpen: false
-    readonly property bool popupOpen: sourceHistory.opened || discardDialog.opened || reloadDialog.opened || conflictDialog.opened || googleDraftDialog.opened || attachmentMenu.opened || contextMenu.opened || localAttachmentDialog.visible
+    readonly property bool popupOpen: sourceActions.opened || sourceActionDialog.opened || deleteAbandonDialog.opened || sourceHistory.opened || discardDialog.opened || reloadDialog.opened || conflictDialog.opened || googleDraftDialog.opened || attachmentMenu.opened || contextMenu.opened || localAttachmentDialog.visible
     readonly property string mode: backend.draft.mode || "reply"
     readonly property bool readOnly: backend.draftReadOnly
     property string snapshotContext: backend.account + "/" + backend.activeDraftId + "/" + ((backend.draft.remote_source || {}).source_revision || 0)
-    onSnapshotContextChanged: sourceHistory.close()
+    onSnapshotContextChanged: { sourceHistory.close(); sourceActions.close(); sourceActionDialog.close(); deleteAbandonDialog.close() }
+    function confirmSourceAction(action) {
+        const context = backend.draftSourceActionContext(action)
+        if (!context.request_id) return
+        sourceActions.close()
+        sourceActionDialog.capturedContext = context
+        sourceActionDialog.open()
+    }
+    function inspectDeletion(requestId) { sourceHistory.close(); backend.loadDraftDeletion(requestId) }
     readonly property string draftTitle: readOnly ? "Google draft preview" : ({new:"New message",reply:"Reply",reply_all:"Reply all",forward:"Forward"})[mode] || "Reply"
     readonly property bool hasSelection: bodyEditor.selectionEnd > bodyEditor.selectionStart
     readonly property var attachmentIds: backend.draft.attachment_ids || []
@@ -143,7 +151,28 @@ Rectangle {
             RowLayout {
                 Layout.fillWidth: true; spacing: 8
                 FmButton { objectName: "draftSourceHistoryButton"; text: "Saved sources"; outlined: true; onClicked: { backend.loadDraftSources(); sourceHistory.open() } }
+                FmButton { objectName: "draftSourceActionsButton"; text: "Actions"; outlined: true; onClicked: { backend.loadDraftAuthoring(); sourceActions.open() } }
                 Text { Layout.fillWidth: true; text: "Original MIME, HTML and files are retained. This preview cannot be edited or sent."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            }
+        }
+        ColumnLayout {
+            visible: !root.readOnly && (((backend.draft.remote_source || {}).source_revision || 0) > 0 || (backend.draftAuthoring.original_draft_id || "").length > 0)
+            Layout.fillWidth: true; Layout.bottomMargin: 12; spacing: 5
+            Text { Layout.fillWidth: true; text: "Original Google source retained"; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Flow {
+                Layout.fillWidth: true; spacing: 6
+                FmButton { objectName: "authoredDraftSourceHistory"; text: "Saved sources"; outlined: true; visible: ((backend.draft.remote_source || {}).source_revision || 0) > 0; onClicked: { backend.loadDraftSources(); sourceHistory.open() } }
+                FmButton { objectName: "openOriginalDraftSource"; text: "Open original source"; visible: (backend.draftAuthoring.original_draft_id || "").length > 0; onClicked: backend.openDraft(backend.draftAuthoring.original_draft_id) }
+            }
+        }
+        ColumnLayout {
+            visible: root.readOnly && ((backend.draftAuthoring.status || "").length > 0 || backend.draftAuthoring.retry || (backend.draftAuthoring.result_draft_id || "").length > 0)
+            Layout.fillWidth: true; Layout.bottomMargin: 12; spacing: 5
+            Text { objectName: "draftSourceActionStatus"; Layout.fillWidth: true; text: backend.draftAuthoring.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Flow {
+                Layout.fillWidth: true; spacing: 6
+                FmButton { objectName: "retryDraftSourceAction"; text: "Retry same action"; visible: backend.draftAuthoring.retry || false; enabled: !backend.draftAuthoring.busy; onClicked: backend.retryDraftSourceAction() }
+                FmButton { objectName: "openDraftSourceActionResult"; text: "Open saved draft"; visible: (backend.draftAuthoring.result_draft_id || "").length > 0; onClicked: backend.openDraftSourceActionResult() }
             }
         }
         RowLayout {
@@ -371,6 +400,17 @@ Rectangle {
                 FmButton { text: "Reload saved draft…"; enabled: !backend.draftBusy; onClicked: reloadDialog.open() }
             }
         }
+        ColumnLayout {
+            visible: backend.draftDeletion.visible || false
+            Layout.fillWidth: true; Layout.topMargin: 8; spacing: 6
+            Text { objectName: "draftDeletionStatus"; Layout.fillWidth: true; text: backend.draftDeletion.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.draftDeletion.warning ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Flow {
+                Layout.fillWidth: true; spacing: 6
+                FmButton { objectName: "readDraftDeletion"; text: "Read saved receipt"; enabled: backend.draftDeletion.can_status || false; onClicked: backend.loadDraftDeletion() }
+                FmButton { objectName: "checkDraftDeletion"; text: "Check Google"; enabled: backend.draftDeletion.can_check || false; onClicked: backend.checkDraftDeletion() }
+                FmButton { objectName: "abandonDraftDeletion"; text: "Abandon prepared deletion…"; visible: backend.draftDeletion.can_abandon || false; onClicked: { const context = backend.draftDeletionAbandonContext(); if (context.request_id) { deleteAbandonDialog.capturedContext = context; deleteAbandonDialog.open() } } }
+            }
+        }
         Text {
             Layout.fillWidth: true
             visible: backend.captureStatus.length > 0
@@ -379,6 +419,78 @@ Rectangle {
             wrapMode: Text.WordWrap
             color: Theme.muted
             font { family: Theme.fontFamily; pixelSize: Theme.fontSize(11) }
+        }
+    }
+    Popup {
+        id: sourceActions
+        objectName: "draftSourceActionsPopup"
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(400, parent ? parent.width - 32 : 400)
+        padding: 16; modal: true; focus: true
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
+        contentItem: ColumnLayout {
+            spacing: 6
+            Text { Layout.fillWidth: true; text: backend.draftAuthoring.loading ? "Checking the complete saved source…" : "Actions for this saved Google source"; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            FmButton { objectName: "copyGoogleDraftSource"; Layout.fillWidth: true; text: "Create plain-text copy…"; textAlignment: Text.AlignLeft; enabled: backend.draftAuthoring.copy_allowed || false; onClicked: root.confirmSourceAction("copy") }
+            Text { Layout.fillWidth: true; visible: !backend.draftAuthoring.copy_allowed && (backend.draftAuthoring.copy_reason || "").length > 0; text: backend.draftAuthoring.copy_reason || ""; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            FmButton { objectName: "adoptGoogleDraftSource"; Layout.fillWidth: true; text: "Edit Google draft…"; textAlignment: Text.AlignLeft; enabled: backend.draftAuthoring.adopt_allowed || false; onClicked: root.confirmSourceAction("adopt") }
+            Text { Layout.fillWidth: true; visible: !backend.draftAuthoring.adopt_allowed && (backend.draftAuthoring.adopt_reason || "").length > 0; text: backend.draftAuthoring.adopt_reason || ""; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+            FmButton { objectName: "deleteGoogleDraftSource"; Layout.fillWidth: true; text: "Delete Google draft permanently…"; textAlignment: Text.AlignLeft; foreground: Theme.error; enabled: backend.draftAuthoring.delete_allowed || false; onClicked: root.confirmSourceAction("delete") }
+            Text { Layout.fillWidth: true; visible: !backend.draftAuthoring.delete_allowed && (backend.draftAuthoring.delete_reason || "").length > 0; text: backend.draftAuthoring.delete_reason || ""; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { Layout.fillWidth: true; visible: (backend.draftAuthoring.status || "").length > 0; text: backend.draftAuthoring.status || ""; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+        }
+    }
+    Dialog {
+        id: sourceActionDialog
+        objectName: "draftSourceActionDialog"
+        property var capturedContext: ({})
+        parent: Overlay.overlay; anchors.centerIn: parent; modal: true
+        width: Math.min(500, parent ? parent.width - 32 : 500)
+        title: capturedContext.action === "copy" ? "Create a separate plain-text copy?" : capturedContext.action === "adopt" ? "Edit this Google draft?" : "Delete this Google draft permanently?"
+        header: Label { objectName: "draftSourceActionTitle"; text: sourceActionDialog.title; padding: 12; wrapMode: Text.Wrap; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(15); font.weight: Font.DemiBold }
+        contentItem: ColumnLayout {
+            property bool blocksWorkspaceShortcuts: true
+            spacing: 12
+            Text { Layout.fillWidth: true; text: (sourceActionDialog.capturedContext.subject || "(No subject)") + "\nAccount: " + ((sourceActionDialog.capturedContext.primary_from || {}).email || "") + " · saved source " + (sourceActionDialog.capturedContext.source_revision || ""); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
+            Text {
+                objectName: "draftSourceActionDisclosure"
+                Layout.fillWidth: true
+                text: sourceActionDialog.capturedContext.action === "copy"
+                    ? "Create a separate draft with all validated original To, Cc and Bcc recipients, full extracted text and every verified file.\n\nFrom: " + (sourceActionDialog.capturedContext.original_from || "(not representable)") + "\nCopy From: " + ((sourceActionDialog.capturedContext.primary_from || {}).email || "") + "\n\nHTML presentation is omitted. Inline files become ordinary attachments. Reply-thread linkage is omitted and no signature is added. The copy uses normal automatic draft sync while this account's sync is running. The original source remains unchanged. This does not send mail."
+                    : sourceActionDialog.capturedContext.action === "adopt"
+                    ? "Open one editable draft for this exact Google draft after checking the latest source. The original source and files remain retained. Opening alone does not upload; your first actual edit enters normal draft sync. Another client can change Google between the check and a later update; a detected change requires an explicit conflict decision."
+                    : "Permanently remove this draft from Google after checking this exact observed version. This is separate from local Discard. Original saved sources and the operation receipt remain available here. Another client can change Google between the check and deletion. A lost response stays uncertain and is never retried automatically."
+                textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13)
+            }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                FmButton { objectName: "cancelDraftSourceAction"; text: "Cancel"; onClicked: sourceActionDialog.close() }
+                FmButton { objectName: "confirmDraftSourceAction"; text: sourceActionDialog.capturedContext.action === "copy" ? "Create copy" : sourceActionDialog.capturedContext.action === "adopt" ? "Open editor" : "Delete permanently"; prominent: true; onClicked: { const context = sourceActionDialog.capturedContext; sourceActionDialog.close(); backend.confirmDraftSourceAction(context) } }
+            }
+        }
+    }
+    Dialog {
+        id: deleteAbandonDialog
+        objectName: "draftDeletionAbandonDialog"
+        property var capturedContext: ({})
+        parent: Overlay.overlay; anchors.centerIn: parent; modal: true
+        width: Math.min(480, parent ? parent.width - 32 : 480)
+        title: "Abandon this prepared deletion?"
+        header: Label { text: deleteAbandonDialog.title; padding: 12; wrapMode: Text.Wrap; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(15); font.weight: Font.DemiBold }
+        contentItem: ColumnLayout {
+            property bool blocksWorkspaceShortcuts: true
+            spacing: 12
+            Text { Layout.fillWidth: true; text: "This is available only while the exact saved request is proven not dispatched. The Google draft and retained source stay unchanged."; wrapMode: Text.Wrap; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
+            RowLayout {
+                Layout.fillWidth: true
+                Item { Layout.fillWidth: true }
+                FmButton { text: "Cancel"; onClicked: deleteAbandonDialog.close() }
+                FmButton { objectName: "confirmAbandonDraftDeletion"; text: "Abandon deletion"; onClicked: { const context = deleteAbandonDialog.capturedContext; deleteAbandonDialog.close(); backend.abandonDraftDeletion(context) } }
+            }
         }
     }
     Popup {
@@ -440,10 +552,19 @@ Rectangle {
                             }
                         }
                     }
-                    FmButton { text: "Latest sources"; visible: (backend.draftSources.offset || 0) > 0; enabled: !backend.draftSources.loading; onClicked: backend.loadDraftSources() }
+                    Repeater {
+                        model: backend.draftSources.delete_operations || []
+                        RowLayout {
+                            required property var modelData
+                            Layout.fillWidth: true; spacing: 8
+                            Text { Layout.fillWidth: true; text: "Deletion · source " + modelData.source_revision + " · " + modelData.state; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+                            FmButton { objectName: "inspectDraftDeletion_" + parent.modelData.request_id; text: "Inspect"; onClicked: root.inspectDeletion(parent.modelData.request_id) }
+                        }
+                    }
+                    FmButton { text: "Latest sources and receipts"; visible: (backend.draftSources.offset || 0) > 0; enabled: !backend.draftSources.loading; onClicked: backend.loadDraftSources() }
                     FmButton {
-                        objectName: "moreDraftSources"; text: "Older sources"
-                        visible: backend.draftSources.next_offset !== undefined && backend.draftSources.next_offset !== null
+                        objectName: "moreDraftSources"; text: "Older sources and receipts"
+                        visible: (backend.draftSources.next_offset !== undefined && backend.draftSources.next_offset !== null) || (backend.draftSources.delete_next_offset !== undefined && backend.draftSources.delete_next_offset !== null)
                         enabled: !backend.draftSources.loading
                         onClicked: backend.loadDraftSources(true)
                     }

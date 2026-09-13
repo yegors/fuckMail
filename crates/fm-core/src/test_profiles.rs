@@ -9,6 +9,7 @@ pub(crate) fn restore_schema_twelve(db: &Connection) {
 }
 
 pub(crate) fn restore_schema_fourteen(db: &Connection) {
+    restore_schema_fifteen(db);
     db.execute_batch("DROP TABLE google_draft_sources; DROP TABLE google_draft_inventory; DROP INDEX google_draft_known_target; DROP INDEX google_draft_known_ack; DROP INDEX google_send_known_target; DROP INDEX google_draft_baseline_target; DROP INDEX google_draft_unknown_create; DROP INDEX drafts_count; DROP INDEX google_drafts_due; ALTER TABLE drafts DROP COLUMN origin;").unwrap();
     let old_index = include_str!("migration-014-google-send.sql")
         .split_once("CREATE INDEX google_drafts_due")
@@ -19,6 +20,21 @@ pub(crate) fn restore_schema_fourteen(db: &Connection) {
         .0;
     db.execute_batch(&format!(
         "CREATE INDEX google_drafts_due{old_index}\nPRAGMA user_version=14;"
+    ))
+    .unwrap();
+}
+
+pub(crate) fn restore_schema_fifteen(db: &Connection) {
+    db.execute_batch("DROP INDEX IF EXISTS google_draft_adoption_target; DROP INDEX IF EXISTS google_delete_target; DROP INDEX IF EXISTS google_delete_recovery; DROP INDEX IF EXISTS google_delete_history; DROP INDEX google_drafts_due;").unwrap();
+    let old_index = include_str!("migration-015-google-draft-inventory.sql")
+        .split_once("CREATE INDEX google_drafts_due")
+        .unwrap()
+        .1
+        .split_once("CREATE INDEX google_draft_source_duplicate")
+        .unwrap()
+        .0;
+    db.execute_batch(&format!(
+        "CREATE INDEX google_drafts_due{old_index}\nPRAGMA user_version=15;"
     ))
     .unwrap();
 }

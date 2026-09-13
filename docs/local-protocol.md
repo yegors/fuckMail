@@ -6,6 +6,40 @@ Live account rows add `google.connection_state`, `granted_scopes`, actual `capab
 
 The historical Phase 1 surface below remains supported. Schema 8 adds profile/vault identity and Google account bindings; schema 9 adds connection generations/client references and bounded Gmail/Calendar work, coverage and projection metadata in the same store. Only ordinary new profiles seed the synthetic fixture; explicit live initialization never does. The exact currently tested migration/native scope belongs in the execution record.
 
+## Explicit source actions under D033 (integration in progress)
+
+Core 22/Gmail 11/Mail UI 20/CLI 15/Quality 18 define schema 16. These additions retain protocol 1 and existing fixtures 0/3. They do not make the original imported snapshot editable. Current integrated verification remains separate from this agreed command boundary.
+
+| Method | Exact parameters | Work |
+| --- | --- | --- |
+| `google_draft_authoring` | `draft_id`, positive signed-64-bit `source_revision` | Bounded local full-source assessment; no HTTP |
+| `google_draft_copy` | Above, `request_id`, `from_policy: "primary"`, `content_policy: "plain_text"`, `inline_policy: "attachments"`, `thread_policy: "omit"` | Explicit separate ordinary local draft; matching replay retains its original result |
+| `google_draft_adopt` | `draft_id`, positive `source_revision`, `request_id` | Fresh exact-target source check, then supported linked editing; adoption alone does not upload |
+| `google_draft_delete` | Same source/request triple | Fresh exact-source check and one admitted permanent Google draft deletion |
+| `google_draft_delete_status` | `request_id` | Cached selected deletion receipt |
+| `google_draft_delete_reconcile` | `request_id` | Read-only Google evidence; never retries DELETE |
+| `google_draft_delete_abandon` | `request_id`, positive `expected_revision` | Only proven-undispatched local intent at the exact operation revision |
+
+CLI forms require explicit profile and account:
+
+```sh
+fm --profile PROFILE --account ACCOUNT draft authoring --draft-id SNAPSHOT --source-revision 3 --json
+fm --profile PROFILE --account ACCOUNT draft copy --draft-id SNAPSHOT --source-revision 3 --request-id copy-1 --from-policy primary --content-policy plain_text --inline-policy attachments --thread-policy omit --json
+fm --profile PROFILE --account ACCOUNT google draft-adopt --draft-id SNAPSHOT --source-revision 3 --request-id adopt-1 --json
+fm --profile PROFILE --account ACCOUNT google draft-delete --draft-id SNAPSHOT --source-revision 3 --request-id delete-1 --json
+fm --profile PROFILE --account ACCOUNT google draft-delete-status --request-id delete-1 --json
+fm --profile PROFILE --account ACCOUNT google draft-delete-reconcile --request-id delete-1 --json
+fm --profile PROFILE --account ACCOUNT google draft-delete-abandon --request-id delete-1 --expected-revision 2 --json
+```
+
+All four copy policies are required. Copy retains the full validated recipients/text/subject/file bytes, uses the primary From without a signature, omits HTML presentation and reply-thread linkage, and converts inline files to ordinary attachments. It may sync automatically while account sync is running. Unsupported or incomplete conversion is refused; original RAW/history remains retained. Same-target adoption is narrower: only fully representable plain text, ordinary attachments and supported routing with the existing primary From. Existing authored work cannot be silently overwritten by another adoption.
+
+Draft IDs remain bounded to 256 bytes and request IDs to 128 bytes, nonempty and control-free. Revisions fit positive signed 64-bit integers. Invalid arguments fail before connection/storage. Local assessment/copy/status/abandon need no sync owner; fresh adoption, delete and reconciliation use an explicitly owned account session. A missing target remains absence evidence, never proof of Send or confirmation of an uncertain deletion. Source and deletion receipts remain distinct from upload ACK baselines.
+
+Assessment returns the account/source identity, primary From and separate `copy`, `adopt` and `delete` eligibility with refusal reasons and conversion losses. Copy/adoption return a complete draft projection directly. A compatible existing editor can retain its existing upload provenance; clients verify its linked identity and effective target instead of requiring invented adoption metadata. Deletion results identify their original request, source/container, current operation revision, outcome and optional read evidence. Reconciliation needs current mail-read capability and the same connection generation; preparing/claiming deletion still needs mail-write capability.
+
+Typed error details distinguish a completed authoring invocation that made no authored commit (`draft_authoring_invocation_finished_without_commit`) and a completed deletion invocation that did not dispatch (`draft_delete_invocation_finished_before_dispatch`). Neither proof clears uncertainty from an earlier lost invocation. Deletion can already have a prepared receipt, so the client reads that exact request before offering fresh actions; an unqualified `not_found` is never proof of nonexecution. Unknown deletion retains its source for export and manual recovery into a new draft, while related source actions remain blocked. No check automatically repeats DELETE.
+
 ## Remote Drafts snapshots under D032
 
 Core 21/Gmail 10/Mail UI 19/CLI 14/Quality 17 define the additive schema-15 boundary. Integration and tested scope are recorded in [Phase 2 execution](research/phase-2-execution.md#p2-05b3a-remote-drafts-snapshots-under-d032). The following fields are the agreed consumer boundary, not a whole-packet acceptance claim.

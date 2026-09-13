@@ -131,7 +131,8 @@ void MailBackend::loadActiveDraft() {
         if (!ok || account != m_account || id != m_activeDraft || generation != m_generation
             || result["account"].toString() != account || result["draft_id"].toString() != id) return;
         const bool sendChanged = mergeGoogleSendStatus(result["google_send"].toObject(), account, id);
-        const bool metadataChanged = mergeGoogleDraftStatus(result["google"].toObject(), account, id) || sendChanged;
+        const bool deletionChanged = mergeDraftDeletion(result["google_delete"].toObject(), account, id);
+        const bool metadataChanged = mergeGoogleDraftStatus(result["google"].toObject(), account, id) || sendChanged || deletionChanged;
         if (m_draftDirty || draftBusy() || olderDraftProjection(result)) { if (metadataChanged) emit draftChanged(); return; }
         const auto next = mergedDraftProjection(result);
         if (next != m_draft) {

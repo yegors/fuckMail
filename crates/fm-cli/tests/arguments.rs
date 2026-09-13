@@ -771,6 +771,128 @@ fn remote_draft_sources_reject_invalid_identity_revision_and_paging_before_stora
 }
 
 #[test]
+fn remote_draft_actions_require_exact_scope_source_and_conversion_before_storage() {
+    let root = tempfile::tempdir().unwrap();
+    let absent = root.path().join("not-created");
+    let source = ["--draft-id", "remote-1", "--source-revision", "3"];
+    let policies = [
+        "--from-policy",
+        "primary",
+        "--content-policy",
+        "plain_text",
+        "--inline-policy",
+        "attachments",
+        "--thread-policy",
+        "omit",
+    ];
+    let mut valid = vec![vec!["draft", "authoring"]];
+    valid[0].extend(source);
+    for name in ["draft-adopt", "draft-delete"] {
+        let mut args = vec!["google", name];
+        args.extend(source);
+        args.extend(["--request-id", "request-1"]);
+        valid.push(args);
+    }
+    let mut copy = vec!["draft", "copy"];
+    copy.extend(source);
+    copy.extend(["--request-id", "request-1"]);
+    copy.extend(policies);
+    valid.push(copy.clone());
+    valid.push(vec![
+        "google",
+        "draft-delete-status",
+        "--request-id",
+        "request-1",
+    ]);
+    valid.push(vec![
+        "google",
+        "draft-delete-reconcile",
+        "--request-id",
+        "request-1",
+    ]);
+    valid.push(vec![
+        "google",
+        "draft-delete-abandon",
+        "--request-id",
+        "request-1",
+        "--expected-revision",
+        "2",
+    ]);
+    for args in &valid {
+        for prefix in [
+            vec!["--profile", absent.to_str().unwrap(), "--json"],
+            vec!["--account", "account", "--json"],
+        ] {
+            let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+                .args(prefix)
+                .args(args)
+                .output()
+                .unwrap();
+            assert_eq!(output.status.code(), Some(2), "scope accepted: {args:?}");
+            assert!(!absent.exists(), "missing scope opened storage: {args:?}");
+        }
+    }
+    let mut invalid = Vec::new();
+    let overlong = "x".repeat(257);
+    let overlong_request = "x".repeat(129);
+    for args in &valid {
+        for (field, values) in [
+            (
+                "--draft-id",
+                vec!["", "private\nidentity", overlong.as_str()],
+            ),
+            (
+                "--request-id",
+                vec!["", "private\nrequest", overlong_request.as_str()],
+            ),
+            ("--source-revision", vec!["0", "-1", "9223372036854775808"]),
+            ("--expected-revision", vec!["0", "9223372036854775808"]),
+        ] {
+            if let Some(index) = args.iter().position(|v| *v == field) {
+                for value in values {
+                    let mut changed = args.clone();
+                    changed[index + 1] = value;
+                    invalid.push(changed);
+                }
+            }
+        }
+    }
+    for policy in [
+        "--from-policy",
+        "--content-policy",
+        "--inline-policy",
+        "--thread-policy",
+    ] {
+        let index = copy.iter().position(|v| *v == policy).unwrap();
+        let mut missing = copy.clone();
+        missing.drain(index..index + 2);
+        invalid.push(missing);
+        let mut invented = copy.clone();
+        invented[index + 1] = "guess";
+        invalid.push(invented);
+    }
+    for args in invalid {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args([
+                "--profile",
+                absent.to_str().unwrap(),
+                "--account",
+                "account",
+                "--json",
+            ])
+            .args(&args)
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "invalid action accepted: {args:?}"
+        );
+        assert!(!absent.exists(), "invalid action opened storage: {args:?}");
+    }
+}
+
+#[test]
 fn sender_commands_and_kinds_are_headless_and_reject_invalid_kinds() {
     let root = tempfile::tempdir().unwrap();
     let absent = root.path().join("not-created");

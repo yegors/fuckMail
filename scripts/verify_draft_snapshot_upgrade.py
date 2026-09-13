@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify schema 14 -> 15 and actual old-engine refusal using generated composition.
+"""Verify a recorded draft-schema upgrade and actual old-engine refusal.
 
 Ordinary standalone engine/CLI executables, not a package or live-account test.
 """
@@ -33,14 +33,15 @@ def run(args):
     report.parent.mkdir(parents=True, exist_ok=True)
     # Reserve before launching anything; this report cannot replace an older run.
     with report.open("x", encoding="utf-8") as destination:
-        result = {"result": "failed", "scenario": "schema-14-to-15-draft-provenance", "version": 1,
+        result = {"result": "failed", "scenario": f"schema-{args.old_schema}-to-{args.new_schema}-draft-provenance", "version": 2,
                   "limitations": ["Generated synthetic composition only; live draft/Send receipts have separate Core fixtures.",
                                   "Standalone engine/CLI source evidence; no GUI/package/performance acceptance."], "artifacts": []}
         started = time.monotonic()
         try:
             old = {"fm": args.old_cli.resolve(strict=True), "fm-engine": args.old_engine.resolve(strict=True)}
             new = {"fm": args.new_cli.resolve(strict=True), "fm-engine": args.new_engine.resolve(strict=True)}
-            require(old["fm-engine"] != new["fm-engine"], "Use the distinct preserved schema-14 engine")
+            require((args.old_schema, args.new_schema) in ((14, 15), (15, 16)), "Choose a documented draft-schema upgrade")
+            require(old["fm-engine"] != new["fm-engine"], "Use a distinct preserved old-schema engine")
             result["executables"] = {kind: {key: {"path": str(path), "sha256": sha256(path)} for key, path in files.items()}
                                      for kind, files in (("old", old), ("new", new))}
             sources = source_manifest()
@@ -58,8 +59,8 @@ def run(args):
                     before_engine = check.start_engine(old, "before-engine")
                     before_owner = check.start_owner(old, "before-owner", seconds=300)
                     status = check.call(old, "status", account=None)
-                    require(status["schema_version"] == 14 and status["synthetic"] is True
-                            and status["fixture_revision"] == 3, "Expected preserved schema-14 synthetic foundation")
+                    require(status["schema_version"] == args.old_schema and status["synthetic"] is True
+                            and status["fixture_revision"] == 3, "Expected preserved old-schema synthetic foundation")
                     compatible = check.call(new, "status", account=None)
                     require(compatible == status and check.pid() == before_engine.pid, "New CLI replaced the active compatible old engine")
                     draft = check.call(old, "draft_create", {"mode": "new", "request_id": "upgrade-new"})
@@ -75,12 +76,12 @@ def run(args):
                     current = check.call(old, "draft_get", {"draft_id": draft["draft_id"]})
                     release(before_owner, before_engine)
                     before = durable_snapshot(check.profile)
-                    require(before["schema"] == 14 and before["record_counts"]["capture_operations"] >= 1, "Missing pre-upgrade authored receipt")
+                    require(before["schema"] == args.old_schema and before["record_counts"]["capture_operations"] >= 1, "Missing pre-upgrade authored receipt")
 
                     after_engine = check.start_engine(new, "after-engine")
                     after_owner = check.start_owner(new, "after-owner", seconds=300)
                     upgraded = check.call(new, "status", account=None)
-                    require(upgraded["schema_version"] == 15 and upgraded["fixture_revision"] == 3
+                    require(upgraded["schema_version"] == args.new_schema and upgraded["fixture_revision"] == 3
                             and upgraded["synthetic"] is True, "Migration changed the fixture or wrong schema")
                     recovered = check.call(new, "draft_get", {"draft_id": draft["draft_id"]})
                     require(contains_fields(recovered, current) and recovered["origin"] == "local"
@@ -138,5 +139,7 @@ if __name__ == "__main__":
     parser.add_argument("--old-engine", type=Path, required=True)
     parser.add_argument("--new-cli", type=Path, required=True)
     parser.add_argument("--new-engine", type=Path, required=True)
+    parser.add_argument("--old-schema", type=int, choices=(14, 15), default=14)
+    parser.add_argument("--new-schema", type=int, choices=(15, 16), default=15)
     parser.add_argument("--report", type=Path, required=True)
     raise SystemExit(run(parser.parse_args()))

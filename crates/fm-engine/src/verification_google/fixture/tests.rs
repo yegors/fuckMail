@@ -30,6 +30,164 @@ fn limits() -> Value {
 }
 
 #[tokio::test]
+async fn actions_fixture_keeps_account_targets_sources_and_delete_certainty_distinct() {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    use fm_google::gmail_api::{DraftDeletionResult, GmailDeletion};
+    let directory = tempfile::tempdir().unwrap();
+    let profile = fm_ipc::private_profile(&directory.path().join("profile")).unwrap();
+    claim_empty_profile(&profile).unwrap();
+    let mut store = Store::open_live(&profile).unwrap();
+    let fixture = Fixture::prepare_with_actions(&profile, &mut store, false, false, true).unwrap();
+    let cancel = CancellationToken::new();
+    for index in 0..2 {
+        let account = account(&fixture, index);
+        let api = api(&fixture, index);
+        let token = fixture.accounts[index].token();
+        let GmailReply::Drafts(page) = api
+            .execute(
+                GmailCall::list_drafts(&account, None, 50).unwrap(),
+                &token,
+                &cancel,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("list")
+        };
+        assert_eq!(page.drafts.len(), 6);
+        for source in 0..6 {
+            let id = format!("ra{source:04}");
+            let GmailReply::Draft(draft) = api
+                .execute(
+                    GmailCall::get_draft(&account, &id).unwrap(),
+                    &token,
+                    &cancel,
+                )
+                .await
+                .unwrap()
+            else {
+                panic!("source")
+            };
+            assert_eq!(draft.message.id, format!("ram{source:04}v1"));
+            assert_eq!(
+                URL_SAFE_NO_PAD.decode(draft.message.raw.unwrap()).unwrap(),
+                draft_actions::source(
+                    fixture.accounts[index].key,
+                    source,
+                    1,
+                    fixture.base_unix_secs
+                )
+            );
+        }
+        let mime=format!("From: {}\r\nTo: one@example.test\r\nBcc: blind@example.test\r\nMessage-ID: <action-{index}@example.test>\r\n\r\nNew explicit content",fixture.accounts[index].email);
+        if index == 0 {
+            let GmailReply::Draft(ack) = api
+                .execute(
+                    GmailCall::update_draft(&account, "ra0000", mime.as_bytes(), Some("rat0000"))
+                        .unwrap(),
+                    &token,
+                    &cancel,
+                )
+                .await
+                .unwrap()
+            else {
+                panic!("update")
+            };
+            let GmailReply::Draft(read) = api
+                .execute(
+                    GmailCall::get_draft(&account, "ra0000").unwrap(),
+                    &token,
+                    &cancel,
+                )
+                .await
+                .unwrap()
+            else {
+                panic!("readback")
+            };
+            assert_eq!(ack.id, "ra0000");
+            assert_eq!(ack.message.id, read.message.id);
+            assert_eq!(
+                URL_SAFE_NO_PAD.decode(read.message.raw.unwrap()).unwrap(),
+                mime.as_bytes()
+            );
+        } else {
+            assert!(matches!(
+                api.execute(
+                    GmailCall::send_draft(&account, "ra0000", mime.as_bytes(), Some("rat0000"))
+                        .unwrap(),
+                    &token,
+                    &cancel
+                )
+                .await
+                .unwrap(),
+                GmailReply::Submission(_)
+            ));
+            assert!(matches!(
+                api.execute(
+                    GmailCall::get_draft(&account, "ra0000").unwrap(),
+                    &token,
+                    &cancel
+                )
+                .await,
+                Err(fm_google::GoogleError::NotFound)
+            ));
+        }
+        for (id, result) in [
+            ("ra0004", DraftDeletionResult::NoDefinitiveResponse),
+            ("ra0005", DraftDeletionResult::Deleted),
+        ] {
+            let GmailReply::DraftDeletion(GmailDeletion { result: actual, .. }) = api
+                .execute(
+                    GmailCall::delete_draft(&account, id).unwrap(),
+                    &token,
+                    &cancel,
+                )
+                .await
+                .unwrap()
+            else {
+                panic!("delete")
+            };
+            assert_eq!(actual, result);
+            assert!(matches!(
+                api.execute(GmailCall::get_draft(&account, id).unwrap(), &token, &cancel)
+                    .await,
+                Err(fm_google::GoogleError::NotFound)
+            ));
+        }
+    }
+    fixture.action_version_two.store(true, Ordering::Release);
+    let GmailReply::Draft(changed) = api(&fixture, 0)
+        .execute(
+            GmailCall::get_draft(&account(&fixture, 0), "ra0003").unwrap(),
+            &fixture.accounts[0].token(),
+            &cancel,
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("changed")
+    };
+    assert_eq!(changed.message.id, "ram0003v2");
+    let report = fixture.report(false);
+    assert_eq!(report["errors"], json!([]));
+    assert_eq!(report["remote_drafts_fixture"]["enabled"], false);
+    assert_eq!(
+        report["draft_actions_fixture"]["reads"]
+            .as_array()
+            .unwrap()
+            .len(),
+        14
+    );
+    assert_eq!(report["counters"]["draft_delete_attempts"], 4);
+    assert_eq!(report["counters"]["draft_delete_unknown"], 2);
+    assert_eq!(report["counters"]["draft_deleted"], 2);
+    assert_eq!(
+        report["send_fixture"]["publications"][0]["provider_draft_id"],
+        "ra0000"
+    );
+}
+
+#[tokio::test]
 async fn seeded_remote_drafts_have_separate_read_only_accounts_versions_and_bounded_pages() {
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
     let directory = tempfile::tempdir().unwrap();
@@ -285,14 +443,19 @@ async fn draft_fixture_bounds_retained_data_and_never_supports_send_or_delete() 
         )
         .await
         .is_err());
-    assert!(api
-        .execute(
+    assert!(matches!(
+        api.execute(
             GmailCall::delete_draft(&owner, "vd0001").unwrap(),
             &token,
             &cancel
         )
         .await
-        .is_err());
+        .unwrap(),
+        GmailReply::DraftDeletion(fm_google::gmail_api::GmailDeletion {
+            result: fm_google::gmail_api::DraftDeletionResult::NoDefinitiveResponse,
+            ..
+        })
+    ));
     for endpoint in ["messages/send", "drafts/send"] {
         let request = HttpRequest::new(
             HttpMethod::Post,

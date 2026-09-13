@@ -1,0 +1,17 @@
+{
+  "exit_code": 0,
+  "started_utc": "2026-09-13T20:31:58.163156+00:00",
+  "finished_utc": "2026-09-13T20:32:52.394462+00:00",
+  "elapsed_seconds": 54.2339999997057,
+  "native_selection": null,
+  "includes_rust_build_fixture": false,
+  "reruns_rust_workspace_tests": false,
+  "watchdogs_unchanged": true,
+  "aggregate_watchdog_adjusted_under": null,
+  "aggregate_watchdog_seconds": 150,
+  "primary_watchdog_seconds": 120,
+  "child_watchdog_seconds": 45,
+  "primary_and_child_watchdogs_unchanged": true,
+  "all_assertions_preserved": true,
+  "QT_MESSAGE_PATTERN": null
+}

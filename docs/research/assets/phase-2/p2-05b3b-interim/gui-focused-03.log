@@ -1,0 +1,16 @@
+Internal ctest changing into directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev
+Test project C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev
+    Start  7: gui-google-operation
+1/5 Test  #7: gui-google-operation ..................   Passed    0.38 sec
+    Start  8: gui-google-draft-controls
+2/5 Test  #8: gui-google-draft-controls .............   Passed    2.73 sec
+    Start  9: gui-google-send-controls
+3/5 Test  #9: gui-google-send-controls ..............   Passed    3.24 sec
+    Start 10: gui-google-draft-snapshot-controls
+4/5 Test #10: gui-google-draft-snapshot-controls ....   Passed    2.60 sec
+    Start 11: gui-google-draft-authoring-controls
+5/5 Test #11: gui-google-draft-authoring-controls ...   Passed    2.83 sec
+
+100% tests passed, 0 tests failed out of 5
+
+Total Test time (real) =  11.80 sec

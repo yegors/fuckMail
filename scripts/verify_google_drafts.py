@@ -206,7 +206,7 @@ def run(args):
                                                "first": first, "final": checked, "first_mime": verified, "final_mime": updated})
 
                 with closing(read_database(profile)) as db:
-                    require(db.execute("PRAGMA user_version").fetchone()[0] == 15, "Expected schema 15")
+                    require(db.execute("PRAGMA user_version").fetchone()[0] == 16, "Expected schema 16")
                     rows = db.execute("SELECT account,id,json,blob_hash FROM capture_operations WHERE execution_kind='google'").fetchall()
                     require(len(rows) == 4, "Expected exactly one create and update per generated account")
                     for account, request_id, record, digest in rows:
@@ -248,6 +248,7 @@ def run(args):
                 if fixture_path.is_file():
                     fixture_output.write_bytes(fixture_path.read_bytes())
     except Exception as error:
+        result["result"] = "failed"
         result["error"] = str(error)
     result["elapsed_seconds"] = time.monotonic() - started
     result["outputs_sha256"] = {path.name: sha256(path) for path in [*outputs.values(), fixture_output] if path.is_file()}

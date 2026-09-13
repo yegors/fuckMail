@@ -137,6 +137,10 @@ impl GmailCall {
     pub fn method(&self) -> GmailMethod {
         self.method
     }
+    /// Validated, percent-encoded API target, before authorization is attached.
+    pub fn request_url(&self) -> &str {
+        self.request.url()
+    }
     pub fn with_read_class(mut self, class: WorkClass) -> Result<Self, GoogleError> {
         if !self.work.class.is_read() || !class.is_read() {
             return Err(invalid());
@@ -468,6 +472,19 @@ pub struct GmailSubmission {
     pub result: SubmissionResult,
     pub error: Option<GoogleError>,
 }
+/// An exact draft deletion has its own certainty model. Absence is read evidence,
+/// never an acknowledgement of this particular request.
+#[derive(Debug, PartialEq, Eq)]
+pub enum DraftDeletionResult {
+    Deleted,
+    Absent,
+    Rejected,
+    NoDefinitiveResponse,
+}
+pub struct GmailDeletion {
+    pub result: DraftDeletionResult,
+    pub error: Option<GoogleError>,
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GmailMessageState {
@@ -490,7 +507,7 @@ pub enum GmailReply {
     DraftPageExpired,
     Draft(GmailDraft),
     Message(MessageRef),
-    DeletedDraft,
+    DraftDeletion(GmailDeletion),
     Submission(GmailSubmission),
 }
 impl fmt::Debug for GmailReply {
@@ -526,6 +543,9 @@ impl<T: HttpTransport> GmailApi<T> {
         let response = self.transport.execute(request, cancel).await;
         if call.method.is_send() {
             return Ok(GmailReply::Submission(submission(response)));
+        }
+        if call.method == GmailMethod::DraftDelete {
+            return Ok(GmailReply::DraftDeletion(deletion(response)));
         }
         let response = match response {
             Err(TransportError::Cooldown { retry_after_secs }) => {
@@ -666,12 +686,7 @@ impl<T: HttpTransport> GmailApi<T> {
                 )?;
                 Ok(GmailReply::Draft(value))
             }
-            GmailMethod::DraftDelete => {
-                if !bytes.is_empty() && bytes != b"{}" {
-                    return Err(invalid());
-                }
-                Ok(GmailReply::DeletedDraft)
-            }
+            GmailMethod::DraftDelete => unreachable!(),
             GmailMethod::MessageModify
             | GmailMethod::MessageTrash
             | GmailMethod::MessageRestore => {
@@ -684,6 +699,53 @@ impl<T: HttpTransport> GmailApi<T> {
             }
             GmailMethod::MessageSend | GmailMethod::DraftSend => unreachable!(),
         }
+    }
+}
+
+fn deletion(response: Result<HttpResponse, TransportError>) -> GmailDeletion {
+    let response = match response {
+        Ok(response) => response,
+        Err(error) => {
+            return GmailDeletion {
+                result: DraftDeletionResult::NoDefinitiveResponse,
+                error: Some(match error {
+                    TransportError::Cooldown { retry_after_secs } => GoogleError::RateLimited {
+                        retry_after_secs: Some(retry_after_secs),
+                    },
+                    _ => GoogleError::TransportInterrupted,
+                }),
+            }
+        }
+    };
+    if (200..300).contains(&response.status) {
+        let empty = (response.status == 204 && response.body.is_empty())
+            || (response.status == 200
+                && serde_json::from_slice::<Value>(&response.body)
+                    .ok()
+                    .is_some_and(|v| v.as_object().is_some_and(|v| v.is_empty())));
+        return GmailDeletion {
+            result: if empty {
+                DraftDeletionResult::Deleted
+            } else {
+                DraftDeletionResult::NoDefinitiveResponse
+            },
+            error: (!empty).then_some(GoogleError::InvalidResponse(
+                "invalid Google deletion receipt",
+            )),
+        };
+    }
+    GmailDeletion {
+        result: match response.status {
+            404 => DraftDeletionResult::Absent,
+            400 | 401 | 403 | 413 | 429 => DraftDeletionResult::Rejected,
+            _ => DraftDeletionResult::NoDefinitiveResponse,
+        },
+        error: Some(crate::classify_api_error(
+            response.status,
+            &response.body,
+            response.retry_after_secs,
+            false,
+        )),
     }
 }
 

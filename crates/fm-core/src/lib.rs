@@ -19,6 +19,7 @@ mod composition_tests;
 mod content;
 mod fixture;
 pub mod google_draft_inventory;
+pub use google_draft_inventory::actions as google_draft_actions;
 pub mod google_drafts;
 pub mod google_labels;
 pub mod google_live_mail;
@@ -39,7 +40,7 @@ mod queries;
 mod sender_kind_tests;
 #[cfg(test)]
 mod test_profiles;
-pub const SCHEMA_VERSION: u32 = 15;
+pub const SCHEMA_VERSION: u32 = 16;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -315,10 +316,20 @@ impl Store {
             tx.execute_batch("PRAGMA user_version=15")?;
             tx.commit()?;
         }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 15 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-016-google-draft-actions.sql"))?;
+            tx.execute_batch("PRAGMA user_version=16")?;
+            tx.commit()?;
+        }
         store.validate_profile_identity()?;
         store.recover_captures()?;
         store.recover_google_drafts()?;
         store.recover_google_sends()?;
+        store.recover_google_draft_deletions()?;
         store.calendar_live_recover()?;
         store.mail_changes.reset_calendar_generation();
         Ok(store)
@@ -399,6 +410,8 @@ impl Store {
             "draft_get",
             "google_drafts_status",
             "google_draft_sources",
+            "google_draft_delete_status",
+            "google_draft_delete_abandon",
             "draft_save",
             "draft_capture",
             "calendar",
@@ -458,6 +471,11 @@ impl Store {
                 self.google_draft_inventory_status(account)
             }
             "google_draft_sources" => self.google_draft_source_history(account, &params),
+            "google_draft_delete_status" => {
+                fields(&params, &["request_id"])?;
+                self.google_draft_delete_status(account, string(&params, "request_id")?)
+            }
+            "google_draft_delete_abandon" => self.google_draft_delete_abandon(account, &params),
             "draft_get" => {
                 fields(&params, &["conversation_id", "draft_id"])?;
                 self.composition(account, &params)

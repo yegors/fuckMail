@@ -1,0 +1,31 @@
+   Compiling fm-cli v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.76s
+     Running unittests src\main.rs (target\debug\deps\fm-3085de67cf8e8604.exe)
+
+running 5 tests
+test tests::engine_recovery_proofs_survive_failure_and_cli_json_serialization ... ok
+test tests::cli_errors_keep_only_bounded_affirmative_recovery_proofs ... ok
+test tests::attachment_request_maps_exact_fields_without_opening_relative_or_deleted_sources ... ok
+test tests::remote_draft_actions_keep_read_conversion_adoption_and_deletion_distinct ... ok
+test tests::verified_export_preserves_exact_bytes_and_never_overwrites ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running tests\arguments.rs (target\debug\deps\arguments-57a9a933a5e32ef1.exe)
+
+running 12 tests
+test live_profile_initialization_requires_an_explicit_path ... ok
+test help_and_version_are_headless_and_do_not_start_a_profile ... ok
+test scope_and_bound_errors_are_machine_readable_without_a_live_engine ... ok
+test sender_commands_and_kinds_are_headless_and_reject_invalid_kinds ... ok
+test composition_selectors_reject_ambiguity_before_starting_an_engine ... ok
+test attachment_import_requires_scope_saved_draft_revision_and_stable_identity ... ok
+test label_pagination_and_binding_require_explicit_unambiguous_choices_before_storage ... ok
+test google_draft_preflight_refuses_ambiguous_revisions_and_identities_before_storage ... ok
+test google_send_preflight_requires_exact_identity_and_revision_before_storage ... ok
+test remote_draft_sources_reject_invalid_identity_revision_and_paging_before_storage ... ok
+test google_preflight_does_not_start_storage_for_missing_scope_or_setup ... ok
+test remote_draft_actions_require_exact_scope_source_and_conversion_before_storage ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.63s
+

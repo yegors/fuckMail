@@ -113,7 +113,7 @@ pub(crate) fn recipients(value: &Value) -> Result<Vec<fm_mail::Address>> {
         .collect()
 }
 
-fn validate_routing(routing: &Value) -> Result<()> {
+pub(crate) fn validate_routing(routing: &Value) -> Result<()> {
     subject(&routing["subject"])?;
     let count = ["to_recipients", "cc_recipients", "bcc_recipients"]
         .into_iter()
@@ -212,6 +212,8 @@ impl Store {
         row["attachments"] = json!(attachments);
         row["account"] = json!(account);
         row["read_only"] = json!(row["origin"] == "google_snapshot");
+        row["google_delete"] =
+            self.google_delete_for_draft(account, row["draft_id"].as_str().unwrap())?;
         row["remote_source"] = if row["revision"].as_i64().unwrap_or(0) > 0 {
             self.remote_draft_source(account, row["draft_id"].as_str().unwrap())?
         } else {
@@ -521,6 +523,7 @@ impl Store {
             }
         }
         let was_discarded = draft["discarded"] == true;
+        let original_signature = draft["signature_text"].clone();
         let body = if discard {
             ""
         } else {
@@ -600,12 +603,37 @@ impl Store {
             }
         }
         validate_routing(&routing)?;
+        let unchanged = !discard
+            && draft["body"] == body
+            && draft["body_html"] == html
+            && draft["attachment_ids"] == attachments
+            && [
+                "from",
+                "subject",
+                "to_recipients",
+                "cc_recipients",
+                "bcc_recipients",
+                "reply_to_message_id",
+                "references",
+            ]
+            .iter()
+            .all(|key| draft[*key] == routing[*key])
+            && p.get("signature_text")
+                .is_none_or(|v| original_signature == *v);
         let timestamp = now()?;
         let next = expected
             .checked_add(1)
             .ok_or_else(|| err("limit_exceeded", "Draft revision exhausted"))?;
         self.db.execute("INSERT INTO drafts(account,draft_id,conversation_id,legacy_reply,mode,source_message_id,source_hash,routing_json,body,revision,body_html,attachments_json,discarded,signature_text,from_name,identity_revision,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18) ON CONFLICT(account,draft_id) DO UPDATE SET body=excluded.body,revision=excluded.revision,body_html=excluded.body_html,attachments_json=excluded.attachments_json,discarded=excluded.discarded,signature_text=excluded.signature_text,from_name=excluded.from_name,identity_revision=excluded.identity_revision,routing_json=excluded.routing_json,updated_at=excluded.updated_at",
             params![account,draft["draft_id"].as_str(),draft["conversation_id"].as_str(),draft["legacy_reply"].as_bool().unwrap(),draft["mode"].as_str(),draft["source_message_id"].as_str(),draft["source_hash"].as_str(),serde_json::to_string(&routing)?,body,next,html.as_str(),serde_json::to_string(&attachments)?,discard,draft["signature_text"].as_str(),draft["from_name"].as_str(),draft["identity_revision"].as_i64(),if expected==0 {timestamp} else {draft["created_at"].as_i64().unwrap()},timestamp])?;
+        if unchanged {
+            self.advance_unchanged_adoption(
+                account,
+                draft["draft_id"].as_str().unwrap(),
+                expected,
+                next,
+            )?;
+        }
         self.composition(account, &json!({"draft_id":draft["draft_id"]}))
     }
 

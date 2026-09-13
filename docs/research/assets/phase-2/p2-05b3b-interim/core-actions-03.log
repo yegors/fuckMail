@@ -1,0 +1,36 @@
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.82s
+     Running unittests src\lib.rs (target\debug\deps\fm_core-fbf5e23cd42bc787.exe)
+
+running 10 tests
+test google_draft_inventory::actions::tests::prepared_proofs_are_cancelled_or_fenced_and_unknown_create_candidates_do_not_claim_sources ... ok
+test google_draft_inventory::actions::tests::delete_late_ack_preserves_current_edits_and_kind_collision_does_not_rewrite_receipts ... ok
+test google_draft_inventory::actions::tests::fresh_divergence_is_retained_and_cannot_adopt_or_delete ... ok
+test google_draft_inventory::actions::tests::adopted_observation_retains_actual_thread_and_both_raw_versions_without_replacing_editor ... ok
+test google_draft_inventory::actions::tests::adoption_preserves_source_no_upload_and_uses_same_target_for_first_edit_and_send ... ok
+test google_draft_inventory::actions::tests::copy_conversion_preserves_all_text_routes_and_files_and_refuses_unsupported_adoption ... ok
+test google_draft_inventory::actions::tests::deletion_blocks_provider_work_but_preserves_new_local_text_and_requires_fresh_claim_stamp ... ok
+test google_draft_inventory::actions::tests::delete_prepared_resume_claim_unknown_restart_and_source_evidence_never_infer_deletion ... ok
+test google_draft_inventory::actions::migration_tests::schema15_upgrade_keeps_source_versions_authored_bytes_and_mixed_receipts ... ok
+test google_draft_inventory::actions::tests::full_mime_eligibility_refuses_special_routing_partial_content_and_honors_bounds ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 212 filtered out; finished in 0.80s
+
+     Running tests\coverage.rs (target\debug\deps\coverage-d45801a9ede6c797.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests\mutations.rs (target\debug\deps\mutations-02a89e4e68fb19e7.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests\search.rs (target\debug\deps\search-27805b72a5496663.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+

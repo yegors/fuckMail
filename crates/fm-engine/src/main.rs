@@ -60,6 +60,9 @@ struct Args {
         conflicts_with = "verification_google_send"
     )]
     verification_google_drafts: bool,
+    #[cfg(feature = "verification-google")]
+    #[arg(long, hide = true, requires = "verification_google", conflicts_with_all = ["verification_google_send", "verification_google_drafts"])]
+    verification_google_draft_actions: bool,
 }
 
 enum Work {
@@ -435,6 +438,9 @@ async fn session_inner(
                         | "google_draft_sync"
                         | "google_draft_reconcile"
                         | "google_draft_resolve"
+                        | "google_draft_adopt"
+                        | "google_draft_delete"
+                        | "google_draft_delete_reconcile"
                         | "google_send"
                         | "google_send_reconcile"
                 );
@@ -457,6 +463,10 @@ async fn session_inner(
                     message: "Google sync requires a live profile".into(),
                     details: if request.method == "google_send" {
                         json!({"send_invocation_finished_before_dispatch":true})
+                    } else if request.method == "google_draft_delete" {
+                        json!({"draft_delete_invocation_finished_before_dispatch":true})
+                    } else if request.method == "google_draft_adopt" {
+                        json!({"draft_authoring_invocation_finished_without_commit":true})
                     } else {
                         Value::Null
                     },
@@ -466,6 +476,18 @@ async fn session_inner(
                 Ok(result) => response(&request.id, result),
                 Err(e) => {
                     let mut reply = error(&request.id, &e.code, &e.message);
+                    if request.method == "google_draft_adopt"
+                        && e.details["draft_authoring_invocation_finished_without_commit"] == true
+                    {
+                        reply["error"]["details"] =
+                            json!({"draft_authoring_invocation_finished_without_commit":true});
+                    }
+                    if request.method == "google_draft_delete"
+                        && e.details["draft_delete_invocation_finished_before_dispatch"] == true
+                    {
+                        reply["error"]["details"] =
+                            json!({"draft_delete_invocation_finished_before_dispatch":true});
+                    }
                     if request.method == "google_send" {
                         for field in [
                             "send_invocation_finished_before_dispatch",
@@ -487,16 +509,16 @@ async fn session_inner(
         }
         if local_content::Runtime::handles(&request.method) {
             let Ok(_permit) = foreground_slots.clone().try_acquire_owned() else {
-                session_write(
-                    stream.get_mut(),
-                    &error(
-                        &request.id,
-                        "busy",
-                        "engine work queue is full; retry later",
-                    ),
-                    &engine_cancel,
-                )
-                .await?;
+                let mut reply = error(
+                    &request.id,
+                    "busy",
+                    "engine work queue is full; retry later",
+                );
+                if request.method == "google_draft_copy" {
+                    reply["error"]["details"] =
+                        json!({"draft_authoring_invocation_finished_without_commit":true});
+                }
+                session_write(stream.get_mut(), &reply, &engine_cancel).await?;
                 continue;
             };
             let work = services.content.handle(
@@ -513,7 +535,16 @@ async fn session_inner(
             };
             let reply = match result {
                 Ok(result) => response(&request.id, result),
-                Err(e) => error(&request.id, &e.code, &e.message),
+                Err(e) => {
+                    let mut reply = error(&request.id, &e.code, &e.message);
+                    if request.method == "google_draft_copy"
+                        && e.details["draft_authoring_invocation_finished_without_commit"] == true
+                    {
+                        reply["error"]["details"] =
+                            json!({"draft_authoring_invocation_finished_without_commit":true});
+                    }
+                    reply
+                }
             };
             let reply = if serde_json::to_vec(&reply)?.len() + 1 > fm_ipc::MAX_FRAME {
                 error(
@@ -666,11 +697,12 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let google_fixture = args
         .verification_google
         .then(|| {
-            verification_google::Fixture::prepare_with_drafts(
+            verification_google::Fixture::prepare_with_actions(
                 &profile,
                 &mut store,
                 args.verification_google_send,
                 args.verification_google_drafts,
+                args.verification_google_draft_actions,
             )
         })
         .transpose()?;
@@ -945,7 +977,9 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
             "google_calendar_resume","google_calendar_abandon","google_labels","google_labels_refresh","google_category_bind",
             "google_draft_sync","google_draft_status","google_draft_reconcile","google_draft_resolve",
             "google_send","google_send_status","google_send_reconcile","google_send_abandon",
-            "google_drafts_refresh","google_drafts_status","google_draft_sources","google_draft_source"]}),
+            "google_drafts_refresh","google_drafts_status","google_draft_sources","google_draft_source",
+            "google_draft_authoring","google_draft_copy","google_draft_adopt","google_draft_delete",
+            "google_draft_delete_status","google_draft_delete_reconcile","google_draft_delete_abandon"]}),
     )
 }
 
@@ -1053,6 +1087,13 @@ mod session_tests {
                 "google_drafts_status",
                 "google_draft_sources",
                 "google_draft_source",
+                "google_draft_authoring",
+                "google_draft_copy",
+                "google_draft_adopt",
+                "google_draft_delete",
+                "google_draft_delete_status",
+                "google_draft_delete_reconcile",
+                "google_draft_delete_abandon",
             ] {
                 assert!(methods.contains(&json!(method)), "missing {method}");
             }
@@ -1064,6 +1105,24 @@ mod session_tests {
             assert_eq!(refused["error"]["code"], "capability_unavailable");
             assert_eq!(
                 refused["error"]["details"]["send_invocation_finished_before_dispatch"],
+                true
+            );
+            fm_ipc::write_frame(client.get_mut(), &json!({"version":1,"id":"delete","method":"google_draft_delete","account":"original","params":{"draft_id":"remote","source_revision":1,"request_id":"never-delete"}})).await.unwrap();
+            let refused: Value =
+                serde_json::from_slice(&fm_ipc::read_frame(&mut client).await.unwrap().unwrap())
+                    .unwrap();
+            assert_eq!(refused["error"]["code"], "capability_unavailable");
+            assert_eq!(
+                refused["error"]["details"]["draft_delete_invocation_finished_before_dispatch"],
+                true
+            );
+            fm_ipc::write_frame(client.get_mut(), &json!({"version":1,"id":"adopt","method":"google_draft_adopt","account":"original","params":{"draft_id":"remote","source_revision":1,"request_id":"never-adopt"}})).await.unwrap();
+            let refused: Value =
+                serde_json::from_slice(&fm_ipc::read_frame(&mut client).await.unwrap().unwrap())
+                    .unwrap();
+            assert_eq!(refused["error"]["code"], "capability_unavailable");
+            assert_eq!(
+                refused["error"]["details"]["draft_authoring_invocation_finished_without_commit"],
                 true
             );
             drop(client);

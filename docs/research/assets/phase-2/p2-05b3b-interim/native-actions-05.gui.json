@@ -1,0 +1,123 @@
+{
+    "accounts": [
+        {
+            "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+            "adopt": {
+                "draft_id": "draft-37e303fc3b57bc22eab1125face12520ba1f925dab5e9f98d539f645ca730f90",
+                "request_id": "c925e613-6325-44c1-a9cd-b0d975ce93e9"
+            },
+            "copy": {
+                "draft_id": "draft-540fa8cc024a4358e1789bc718a793e23120ec57098e5a098e594681b9996bd5",
+                "request_id": "ed51121b-b7f6-49cc-b203-5646c9e29e85"
+            },
+            "delete": {
+                "request_id": "27405339-1322-426d-8ab9-709456510f02",
+                "revision": 3,
+                "state": "deleted"
+            },
+            "exports": [
+                {
+                    "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+                    "attachment_id": null,
+                    "draft_id": "google-draft-af287365240b65d31995ae47ee09ca633f131082f23dfc570bbb7d14604b0c45",
+                    "mime_type": "message/rfc822",
+                    "name": "draft-source-2.eml",
+                    "path": "\\\\?\\C:\\Users\\Yegor\\AppData\\Local\\Temp\\fuckmail-draft-actions-f2xiluut\\empty-live-profile\\exports\\685506112b2b55ee99fc77e4c20619d5052b3c0c434e9a7d706f250a7de28c4a\\attachment-draft-source-2-44b77707fee4.eml",
+                    "sha256": "685506112b2b55ee99fc77e4c20619d5052b3c0c434e9a7d706f250a7de28c4a",
+                    "size": 1236,
+                    "source_revision": 2
+                },
+                {
+                    "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+                    "attachment_id": null,
+                    "draft_id": "google-draft-827834e361816a438febe7a21de38c5af97a921ffdf30492d16469468640977c",
+                    "mime_type": "message/rfc822",
+                    "name": "draft-source-1.eml",
+                    "path": "\\\\?\\C:\\Users\\Yegor\\AppData\\Local\\Temp\\fuckmail-draft-actions-f2xiluut\\empty-live-profile\\exports\\53169728574a9f0e82d978995139900e912f19de0689a7e08f2240b784be656f\\attachment-draft-source-1-0dd94baa28b8.eml",
+                    "sha256": "53169728574a9f0e82d978995139900e912f19de0689a7e08f2240b784be656f",
+                    "size": 570,
+                    "source_revision": 1
+                },
+                {
+                    "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+                    "attachment_id": null,
+                    "draft_id": "google-draft-c5056bef0dda4d08402b89a906ea9a6513926ce8a2e76db4969d87916cb9a3fb",
+                    "mime_type": "message/rfc822",
+                    "name": "draft-source-6.eml",
+                    "path": "\\\\?\\C:\\Users\\Yegor\\AppData\\Local\\Temp\\fuckmail-draft-actions-f2xiluut\\empty-live-profile\\exports\\a98a1c895126fd0f450aba393dacfd05fcce7e1f8e32893957ef67970e6ea176\\attachment-draft-source-6-d3b58ff7bf02.eml",
+                    "sha256": "a98a1c895126fd0f450aba393dacfd05fcce7e1f8e32893957ef67970e6ea176",
+                    "size": 570,
+                    "source_revision": 6
+                }
+            ],
+            "limits": {
+                "calendar_account_units_per_minute": 5000,
+                "calendar_project_units_per_minute": 10000,
+                "gmail_account_units_per_minute": 500000,
+                "gmail_project_units_per_minute": 1000000
+            }
+        },
+        {
+            "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+            "adopt": {
+                "draft_id": "draft-e176bf139fac51bb7ea9ef4fb84ca7dc26fd9055cf42755e270ba18f03057750",
+                "request_id": "601bda0e-eb20-4eb5-ab46-1e14a1df7266"
+            },
+            "copy": {
+                "draft_id": "draft-93bc0d3e168ce82a88bc039ecc3a14650582940c2bb64011d4a16637102f646a",
+                "request_id": "db5115c4-70a1-49f9-9daa-2fa0e9e5924a"
+            },
+            "delete": {
+                "request_id": "9aa00645-f822-45d8-bac8-7ee746cbb1cf",
+                "revision": 3,
+                "state": "deleted"
+            },
+            "exports": [
+                {
+                    "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+                    "attachment_id": null,
+                    "draft_id": "google-draft-04023ee7fa2f508f4be68d34efee078bcdc28174da7b6a43df22390e4fb8299d",
+                    "mime_type": "message/rfc822",
+                    "name": "draft-source-2.eml",
+                    "path": "\\\\?\\C:\\Users\\Yegor\\AppData\\Local\\Temp\\fuckmail-draft-actions-f2xiluut\\empty-live-profile\\exports\\f75d5a35384925648036884a03b3517b213757e773bbff7a2fc13b291c360940\\attachment-draft-source-2-44b77707fee4.eml",
+                    "sha256": "f75d5a35384925648036884a03b3517b213757e773bbff7a2fc13b291c360940",
+                    "size": 1249,
+                    "source_revision": 2
+                },
+                {
+                    "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+                    "attachment_id": null,
+                    "draft_id": "google-draft-b07e11400c7c03fe2d2dd786d9c94646b849290bf0b8accdd2cbb571ec6af47f",
+                    "mime_type": "message/rfc822",
+                    "name": "draft-source-1.eml",
+                    "path": "\\\\?\\C:\\Users\\Yegor\\AppData\\Local\\Temp\\fuckmail-draft-actions-f2xiluut\\empty-live-profile\\exports\\c8ad5729e390852036878186a92aeb3015b7d8dfeac12a7578b56bf3c46eb12a\\attachment-draft-source-1-0dd94baa28b8.eml",
+                    "sha256": "c8ad5729e390852036878186a92aeb3015b7d8dfeac12a7578b56bf3c46eb12a",
+                    "size": 574,
+                    "source_revision": 1
+                },
+                {
+                    "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+                    "attachment_id": null,
+                    "draft_id": "google-draft-908db825a25505a1a8be55c2a69979a184cf3f635ea8ac94345cbb0c121117c7",
+                    "mime_type": "message/rfc822",
+                    "name": "draft-source-6.eml",
+                    "path": "\\\\?\\C:\\Users\\Yegor\\AppData\\Local\\Temp\\fuckmail-draft-actions-f2xiluut\\empty-live-profile\\exports\\70a86cb21b941db42318a9023d902b71f8bae5cc5bc65cb9bae6bc509f4903d0\\attachment-draft-source-6-d3b58ff7bf02.eml",
+                    "sha256": "70a86cb21b941db42318a9023d902b71f8bae5cc5bc65cb9bae6bc509f4903d0",
+                    "size": 574,
+                    "source_revision": 6
+                }
+            ],
+            "limits": {
+                "calendar_account_units_per_minute": 5000,
+                "calendar_project_units_per_minute": 10000,
+                "gmail_account_units_per_minute": 500000,
+                "gmail_project_units_per_minute": 1000000
+            }
+        }
+    ],
+    "error": "",
+    "gui_pid": 27044,
+    "result": "passed",
+    "stage": 19,
+    "version": 1
+}

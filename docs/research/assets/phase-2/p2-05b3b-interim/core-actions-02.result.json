@@ -1,0 +1,26 @@
+{
+  "command": [
+    "./.tools/cargo/bin\\cargo.exe",
+    "test",
+    "-p",
+    "fm-core",
+    "--locked",
+    "google_draft_inventory::actions",
+    "--",
+    "--nocapture"
+  ],
+  "scope": "fm-core,fm-google,fm-mail,fm-calendar,fm-ipc",
+  "dependency_test_sources_excluded": [
+    "fm-calendar",
+    "fm-google",
+    "fm-ipc",
+    "fm-mail"
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 9.140000000130385,
+  "source_count": 154,
+  "source_changes": [],
+  "status": "passed",
+  "source_sha256": "9d130578509c02f0bafdd92514e30550135cb92c5aa438cacaffedeb5ad7a8c1",
+  "log_sha256": "1b8b2667e952c0e2b5861dd5779a8bca33a08af0bcd5b7e0f5af39edf89fa902"
+}

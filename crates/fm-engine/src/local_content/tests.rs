@@ -228,6 +228,17 @@ async fn exchange(
 
 #[tokio::test]
 async fn authenticated_import_sessions_drain_preparation_on_client_and_engine_close() {
+    async fn query_released(foreground: &Semaphore) {
+        // The held import owns one seat. A query reply can arrive before its
+        // writer work item drops the other seat; acquire that seat to observe
+        // the actual release before asserting the import's retained ownership.
+        let permit = tokio::time::timeout(Duration::from_secs(3), foreground.acquire())
+            .await
+            .expect("completed query did not release its foreground permit")
+            .unwrap();
+        drop(permit);
+    }
+
     for engine_close in [false, true] {
         let directory = tempfile::tempdir().unwrap();
         let profile = directory.path().join("profile");
@@ -306,6 +317,7 @@ async fn authenticated_import_sessions_drain_preparation_on_client_and_engine_cl
         let reply = exchange(&mut querying, query.clone()).await;
         assert_eq!(reply["ok"], true);
         assert_eq!(reply["result"], original);
+        query_released(&foreground).await;
         let mut importing = Some(importing);
         if engine_close {
             engine.cancel();
@@ -324,6 +336,7 @@ async fn authenticated_import_sessions_drain_preparation_on_client_and_engine_cl
         if !engine_close {
             // Closing this owner cannot cancel another authenticated client's cached query.
             assert_eq!(exchange(&mut querying, query).await["result"], original);
+            query_released(&foreground).await;
         }
         release.send(()).unwrap();
         // Cancellation may make the final socket write return Interrupted; all owned work must drain.

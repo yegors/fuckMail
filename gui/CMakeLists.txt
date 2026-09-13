@@ -12,7 +12,7 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     ConversationListModel.h
     DraftAttachmentBackend.cpp
     GoogleDraftBackend.cpp
-    GoogleDraftSnapshotBackend.cpp
+    GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp
     GoogleSendBackend.cpp
     CalendarOperations.cpp
     ReplyDocument.cpp
@@ -27,6 +27,8 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     GuiCalendarSelfTest.h
     GuiCompositionSelfTest.cpp
     GuiCompositionSelfTest.h
+    GuiGoogleDraftActionsSelfTest.cpp
+    GuiGoogleDraftActionsSelfTest.h
     GuiGoogleDraftSnapshotSelfTest.cpp
     GuiGoogleDraftSnapshotSelfTest.h
     GuiSettingsSelfTest.cpp
@@ -120,7 +122,7 @@ if(BUILD_TESTING)
     add_test(NAME gui-google-operation COMMAND gui-google-operation-test)
     set_tests_properties(gui-google-operation PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_FORCE_STDERR_LOGGING=1")
     add_executable(gui-google-draft-controls-test GoogleDraftControlsTest.cpp GoogleOperationTestFixture.h
-        MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleDraftSnapshotBackend.cpp GoogleSendBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
+        MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp GoogleSendBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
         Phase1Backend.cpp CompositionBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp
         ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h
         ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
@@ -133,7 +135,7 @@ if(BUILD_TESTING)
     add_test(NAME gui-google-draft-controls COMMAND gui-google-draft-controls-test)
     set_tests_properties(gui-google-draft-controls PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
     add_executable(gui-google-send-controls-test GoogleSendControlsTest.cpp GoogleOperationTestFixture.h
-        MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleDraftSnapshotBackend.cpp GoogleSendBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
+        MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp GoogleSendBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
         Phase1Backend.cpp CompositionBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp
         ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h
         ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
@@ -150,7 +152,7 @@ endif()
 if(BUILD_TESTING)
     add_executable(gui-google-draft-snapshot-controls-test GoogleDraftSnapshotControlsTest.cpp GoogleOperationTestFixture.h
         GuiGoogleDraftSnapshotSelfTest.cpp GuiGoogleDraftSnapshotSelfTest.h
-        MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleDraftSnapshotBackend.cpp GoogleSendBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
+        MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp GoogleSendBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
         Phase1Backend.cpp CompositionBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp
         ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h
         ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
@@ -162,4 +164,15 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME gui-google-draft-snapshot-controls COMMAND gui-google-draft-snapshot-controls-test)
     set_tests_properties(gui-google-draft-snapshot-controls PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
+    get_target_property(FM_AUTHORING_TEST_SOURCES gui-google-draft-snapshot-controls-test SOURCES)
+    list(REMOVE_ITEM FM_AUTHORING_TEST_SOURCES GoogleDraftSnapshotControlsTest.cpp)
+    add_executable(gui-google-draft-authoring-controls-test GoogleDraftAuthoringControlsTest.cpp ${FM_AUTHORING_TEST_SOURCES})
+    target_link_libraries(gui-google-draft-authoring-controls-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
+    target_compile_features(gui-google-draft-authoring-controls-test PRIVATE cxx_std_20)
+    target_compile_definitions(gui-google-draft-authoring-controls-test PRIVATE FM_GUI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    if(WIN32)
+        target_link_libraries(gui-google-draft-authoring-controls-test PRIVATE advapi32)
+    endif()
+    add_test(NAME gui-google-draft-authoring-controls COMMAND gui-google-draft-authoring-controls-test)
+    set_tests_properties(gui-google-draft-authoring-controls PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
 endif()

@@ -1,0 +1,27 @@
+{
+  "command": [
+    "./.tools/cargo/bin\\cargo.exe",
+    "clippy",
+    "-p",
+    "fm-core",
+    "--locked",
+    "--all-targets",
+    "--",
+    "-D",
+    "warnings"
+  ],
+  "scope": "fm-core,fm-google,fm-mail,fm-calendar,fm-ipc",
+  "dependency_test_sources_excluded": [
+    "fm-calendar",
+    "fm-google",
+    "fm-ipc",
+    "fm-mail"
+  ],
+  "exit_code": 101,
+  "elapsed_seconds": 10.171999999787658,
+  "source_count": 154,
+  "source_changes": [],
+  "status": "failed",
+  "source_sha256": "321b7115ec90fd8e4da94fa52c1962fa7c907cfbac4213041b2baf2c706eca7d",
+  "log_sha256": "c61169acacf06226a0d0be75113ef12d050b6540425a37a498ac0326f599d22d"
+}

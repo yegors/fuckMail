@@ -180,6 +180,43 @@ enum Google {
         #[arg(long)]
         draft_id: String,
     },
+    /// Adopt a fully supported retained Google draft after a fresh source check.
+    /// Opening the adopted editor alone does not upload it.
+    DraftAdopt {
+        #[arg(long)]
+        draft_id: String,
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        source_revision: i64,
+        #[arg(long)]
+        request_id: String,
+    },
+    /// Permanently delete the exact observed Google draft; retained local sources remain.
+    /// Requires an owned sync session. Unknown results are never automatically retried.
+    DraftDelete {
+        #[arg(long)]
+        draft_id: String,
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        source_revision: i64,
+        #[arg(long)]
+        request_id: String,
+    },
+    /// Inspect one retained deletion receipt without contacting Google.
+    DraftDeleteStatus {
+        #[arg(long)]
+        request_id: String,
+    },
+    /// Check an uncertain deletion without repeating it. Absence alone is not success.
+    DraftDeleteReconcile {
+        #[arg(long)]
+        request_id: String,
+    },
+    /// Abandon only a proven-undispatched deletion at its current receipt revision.
+    DraftDeleteAbandon {
+        #[arg(long)]
+        request_id: String,
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        expected_revision: i64,
+    },
     /// Explicitly replace a known remote conflict with the exact saved local revision.
     /// Another client can still edit between the provider read and replacement.
     DraftReplace {
@@ -377,6 +414,32 @@ enum Preferences {
 
 #[derive(Subcommand)]
 enum Draft {
+    /// Inspect exact retained-source conversion and editing eligibility without Google access.
+    Authoring {
+        #[arg(long)]
+        draft_id: String,
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        source_revision: i64,
+    },
+    /// Create a separate plain-text draft preserving validated recipients and attachment files.
+    /// Uses primary From, omits HTML/inline placement/reply linkage and adds no signature.
+    /// The copy may sync automatically while account sync is running; the original is retained.
+    Copy {
+        #[arg(long)]
+        draft_id: String,
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        source_revision: i64,
+        #[arg(long)]
+        request_id: String,
+        #[arg(long, value_parser = ["primary"])]
+        from_policy: String,
+        #[arg(long, value_parser = ["plain_text"])]
+        content_policy: String,
+        #[arg(long, value_parser = ["attachments"])]
+        inline_policy: String,
+        #[arg(long, value_parser = ["omit"])]
+        thread_policy: String,
+    },
     /// Browse retained Google source versions without contacting Google.
     Sources {
         #[arg(long)]
@@ -519,6 +582,43 @@ impl DraftTarget {
 struct Failure {
     code: String,
     message: String,
+    recovery: RecoveryProofs,
+}
+
+/// Only these affirmative engine proofs cross the CLI error boundary. A missing
+/// or false flag proves nothing; unrelated detail may contain private content.
+#[derive(Debug, Default)]
+struct RecoveryProofs([bool; 4]);
+impl RecoveryProofs {
+    const FIELDS: [&'static str; 4] = [
+        "send_invocation_finished_before_dispatch",
+        "send_request_obsolete_without_dispatch",
+        "draft_authoring_invocation_finished_without_commit",
+        "draft_delete_invocation_finished_before_dispatch",
+    ];
+
+    fn from_details(details: &Value) -> Self {
+        Self(Self::FIELDS.map(|field| details.get(field).and_then(Value::as_bool) == Some(true)))
+    }
+
+    fn details(&self) -> Option<Value> {
+        let fields: serde_json::Map<String, Value> = Self::FIELDS
+            .into_iter()
+            .zip(self.0)
+            .filter(|(_, present)| *present)
+            .map(|(field, _)| (field.into(), Value::Bool(true)))
+            .collect();
+        (!fields.is_empty()).then_some(Value::Object(fields))
+    }
+}
+impl Failure {
+    fn json_reply(&self) -> Value {
+        let mut reply = fm_ipc::error("cli", &self.code, &self.message);
+        if let Some(details) = self.recovery.details() {
+            reply["error"]["details"] = details;
+        }
+        reply
+    }
 }
 impl From<io::Error> for Failure {
     fn from(e: io::Error) -> Self {
@@ -532,6 +632,7 @@ impl From<io::Error> for Failure {
             }
             .into(),
             message: e.to_string(),
+            recovery: RecoveryProofs::default(),
         }
     }
 }
@@ -539,6 +640,7 @@ fn invalid(msg: &str) -> Failure {
     Failure {
         code: "invalid_request".into(),
         message: msg.into(),
+        recovery: RecoveryProofs::default(),
     }
 }
 fn result(reply: Value) -> Result<Value, Failure> {
@@ -554,6 +656,7 @@ fn result(reply: Value) -> Result<Value, Failure> {
                 .as_str()
                 .unwrap_or("engine request failed")
                 .into(),
+            recovery: RecoveryProofs::from_details(&reply["error"]["details"]),
         })
     }
 }
@@ -619,6 +722,37 @@ fn google_composition_request(command: &Command) -> Result<Option<(&'static str,
         Google::DraftReconcile { draft_id } => {
             ("google_draft_reconcile", json!({"draft_id":draft_id}))
         }
+        Google::DraftAdopt {
+            draft_id,
+            source_revision,
+            request_id,
+        } => (
+            "google_draft_adopt",
+            json!({"draft_id":draft_id,"source_revision":source_revision,"request_id":request_id}),
+        ),
+        Google::DraftDelete {
+            draft_id,
+            source_revision,
+            request_id,
+        } => (
+            "google_draft_delete",
+            json!({"draft_id":draft_id,"source_revision":source_revision,"request_id":request_id}),
+        ),
+        Google::DraftDeleteStatus { request_id } => (
+            "google_draft_delete_status",
+            json!({"request_id":request_id}),
+        ),
+        Google::DraftDeleteReconcile { request_id } => (
+            "google_draft_delete_reconcile",
+            json!({"request_id":request_id}),
+        ),
+        Google::DraftDeleteAbandon {
+            request_id,
+            expected_revision,
+        } => (
+            "google_draft_delete_abandon",
+            json!({"request_id":request_id,"expected_revision":expected_revision}),
+        ),
         Google::DraftReplace {
             draft_id,
             expected_revision,
@@ -671,6 +805,33 @@ fn draft_source_request(command: &Command) -> Result<Option<(&'static str, Value
     let (method, params) = match command {
         Command::Draft {
             command:
+                Draft::Authoring {
+                    draft_id,
+                    source_revision,
+                },
+        } => (
+            "google_draft_authoring",
+            json!({"draft_id":draft_id,"source_revision":source_revision}),
+        ),
+        Command::Draft {
+            command:
+                Draft::Copy {
+                    draft_id,
+                    source_revision,
+                    request_id,
+                    from_policy,
+                    content_policy,
+                    inline_policy,
+                    thread_policy,
+                },
+        } => (
+            "google_draft_copy",
+            json!({"draft_id":draft_id,"source_revision":source_revision,"request_id":request_id,
+                "from_policy":from_policy,"content_policy":content_policy,
+                "inline_policy":inline_policy,"thread_policy":thread_policy}),
+        ),
+        Command::Draft {
+            command:
                 Draft::Sources {
                     draft_id,
                     limit,
@@ -697,11 +858,15 @@ fn draft_source_request(command: &Command) -> Result<Option<(&'static str, Value
         }
         _ => return Ok(None),
     };
-    for field in ["draft_id", "attachment_id"] {
+    for (field, limit) in [
+        ("draft_id", 256),
+        ("attachment_id", 256),
+        ("request_id", 128),
+    ] {
         if let Some(value) = params.get(field).and_then(Value::as_str) {
-            if value.is_empty() || value.len() > 256 || value.chars().any(char::is_control) {
+            if value.is_empty() || value.len() > limit || value.chars().any(char::is_control) {
                 return Err(invalid(
-                    "Choose a nonempty bounded draft and attachment identity",
+                    "Choose a nonempty bounded draft, attachment and request identity",
                 ));
             }
         }
@@ -714,6 +879,7 @@ fn copy_export(reply: &Value, output: &Path) -> Result<(), Failure> {
     let source = data["path"].as_str().ok_or_else(|| Failure {
         code: "content_unavailable".into(),
         message: "Retained content is not fully available offline".into(),
+        recovery: RecoveryProofs::default(),
     })?;
     let mut source = std::fs::File::open(source)?;
     let mut file = std::fs::OpenOptions::new()
@@ -781,11 +947,7 @@ async fn main() {
             return;
         }
         if args.json {
-            let _ = writeln!(
-                io::stdout(),
-                "{}",
-                fm_ipc::error("cli", &e.code, &e.message)
-            );
+            let _ = writeln!(io::stdout(), "{}", e.json_reply());
         } else {
             eprintln!("fm: {}: {}", e.code, e.message);
         }
@@ -833,12 +995,15 @@ async fn run(args: &Args) -> Result<(), Failure> {
         Command::ProfileInit
             | Command::Google { .. }
             | Command::Draft {
-                command: Draft::Source { .. } | Draft::Sources { .. }
+                command: Draft::Source { .. }
+                    | Draft::Sources { .. }
+                    | Draft::Authoring { .. }
+                    | Draft::Copy { .. }
             }
     );
     if live_command && args.profile.is_none() {
         return Err(invalid(
-            "profile-init, Google and Google draft source commands require an explicit --profile path",
+            "profile-init, Google and retained Google draft commands require an explicit --profile path",
         ));
     }
     let google_client_path = if let Command::Google {
@@ -905,6 +1070,11 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 Google::DraftSync { .. }
                 | Google::DraftStatus { .. }
                 | Google::DraftReconcile { .. }
+                | Google::DraftAdopt { .. }
+                | Google::DraftDelete { .. }
+                | Google::DraftDeleteStatus { .. }
+                | Google::DraftDeleteReconcile { .. }
+                | Google::DraftDeleteAbandon { .. }
                 | Google::DraftReplace { .. }
                 | Google::Send { .. }
                 | Google::SendStatus { .. }
@@ -1118,6 +1288,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                         return Err(Failure {
                             code: "cancelled".into(),
                             message: "Google sign-in was cancelled".into(),
+                            recovery: RecoveryProofs::default(),
                         })
                     }
                     Some("failed") => {
@@ -1130,6 +1301,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                                 .as_str()
                                 .unwrap_or("Google sign-in failed")
                                 .into(),
+                            recovery: RecoveryProofs::default(),
                         })
                     }
                     _ => {}
@@ -1142,6 +1314,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     return Err(Failure {
                         code: "cancelled".into(),
                         message: "Google sign-in was cancelled".into(),
+                        recovery: RecoveryProofs::default(),
                     });
                 }
             }
@@ -1338,7 +1511,10 @@ async fn run(args: &Args) -> Result<(), Failure> {
             }
         },
         Command::Draft { command } => match command {
-            Draft::Sources { .. } | Draft::Source { .. } => {
+            Draft::Sources { .. }
+            | Draft::Source { .. }
+            | Draft::Authoring { .. }
+            | Draft::Copy { .. } => {
                 let (method, params) = draft_source
                     .as_ref()
                     .expect("Draft source request validated before connection");
@@ -1634,6 +1810,187 @@ fn emit(args: &Args, reply: &Value) -> Result<(), Failure> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn engine_recovery_proofs_survive_failure_and_cli_json_serialization() {
+        for details in [
+            json!({"draft_authoring_invocation_finished_without_commit":true}),
+            json!({"draft_delete_invocation_finished_before_dispatch":true}),
+            json!({"send_invocation_finished_before_dispatch":true}),
+            json!({"send_request_obsolete_without_dispatch":true}),
+            json!({"send_invocation_finished_before_dispatch":true,
+                "send_request_obsolete_without_dispatch":true}),
+        ] {
+            let reply = json!({"version":1,"id":"engine-request","ok":false,
+                "error":{"code":"stale_source_revision","message":"Saved source changed",
+                    "details":details}});
+            let failure = result(reply).unwrap_err();
+            let encoded = serde_json::to_string(&failure.json_reply()).unwrap();
+            let output: Value = serde_json::from_str(&encoded).unwrap();
+            assert_eq!(
+                output,
+                json!({"version":1,"id":"cli","ok":false,
+                "error":{"code":"stale_source_revision","message":"Saved source changed",
+                    "details":details}})
+            );
+        }
+    }
+
+    #[test]
+    fn cli_errors_keep_only_bounded_affirmative_recovery_proofs() {
+        let mut details = json!({
+            "draft_authoring_invocation_finished_without_commit":true,
+            "draft_delete_invocation_finished_before_dispatch":false,
+            "send_invocation_finished_before_dispatch":"true",
+            "send_request_obsolete_without_dispatch":1,
+            "nested":{"send_request_obsolete_without_dispatch":true},
+            "unrelated":"private diagnostic".repeat(32768),
+        });
+        // Large unknown collections are neither traversed nor retained.
+        for index in 0..1024 {
+            details[format!("extra_{index}")] = json!([true, "unrelated"]);
+        }
+        let failure = result(json!({"ok":false,"error":{"code":"refused",
+            "message":"Cannot complete","details":details}}))
+        .unwrap_err();
+        let output = failure.json_reply();
+        assert_eq!(
+            output["error"]["details"],
+            json!({"draft_authoring_invocation_finished_without_commit":true})
+        );
+        assert!(serde_json::to_vec(&output).unwrap().len() < 256);
+
+        for details in [
+            Value::Null,
+            json!(true),
+            json!("true"),
+            json!([]),
+            json!({"send_invocation_finished_before_dispatch":false}),
+            json!({"send_request_obsolete_without_dispatch":{"value":true}}),
+        ] {
+            let failure = result(json!({"ok":false,"error":{"code":"not_found",
+                "message":"No recorded operation","details":details}}))
+            .unwrap_err();
+            assert_eq!(
+                failure.json_reply(),
+                fm_ipc::error("cli", "not_found", "No recorded operation")
+            );
+        }
+        assert_eq!(
+            invalid("bad input").json_reply(),
+            fm_ipc::error("cli", "invalid_request", "bad input")
+        );
+        let failure = Failure::from(io::Error::other("disconnected"));
+        assert_eq!(
+            failure.json_reply(),
+            fm_ipc::error("cli", "io_error", "disconnected")
+        );
+    }
+
+    #[test]
+    fn remote_draft_actions_keep_read_conversion_adoption_and_deletion_distinct() {
+        for (args, method, expected) in [
+            (
+                vec![
+                    "draft",
+                    "authoring",
+                    "--draft-id",
+                    "snapshot",
+                    "--source-revision",
+                    "9",
+                ],
+                "google_draft_authoring",
+                json!({"draft_id":"snapshot","source_revision":9}),
+            ),
+            (
+                vec![
+                    "draft",
+                    "copy",
+                    "--draft-id",
+                    "snapshot",
+                    "--source-revision",
+                    "9",
+                    "--request-id",
+                    "copy-1",
+                    "--from-policy",
+                    "primary",
+                    "--content-policy",
+                    "plain_text",
+                    "--inline-policy",
+                    "attachments",
+                    "--thread-policy",
+                    "omit",
+                ],
+                "google_draft_copy",
+                json!({"draft_id":"snapshot","source_revision":9,
+                    "request_id":"copy-1","from_policy":"primary","content_policy":"plain_text",
+                    "inline_policy":"attachments","thread_policy":"omit"}),
+            ),
+            (
+                vec![
+                    "google",
+                    "draft-adopt",
+                    "--draft-id",
+                    "snapshot",
+                    "--source-revision",
+                    "9",
+                    "--request-id",
+                    "adopt-1",
+                ],
+                "google_draft_adopt",
+                json!({"draft_id":"snapshot","source_revision":9,"request_id":"adopt-1"}),
+            ),
+            (
+                vec![
+                    "google",
+                    "draft-delete",
+                    "--draft-id",
+                    "snapshot",
+                    "--source-revision",
+                    "9",
+                    "--request-id",
+                    "delete-1",
+                ],
+                "google_draft_delete",
+                json!({"draft_id":"snapshot","source_revision":9,"request_id":"delete-1"}),
+            ),
+            (
+                vec!["google", "draft-delete-status", "--request-id", "delete-1"],
+                "google_draft_delete_status",
+                json!({"request_id":"delete-1"}),
+            ),
+            (
+                vec![
+                    "google",
+                    "draft-delete-reconcile",
+                    "--request-id",
+                    "delete-1",
+                ],
+                "google_draft_delete_reconcile",
+                json!({"request_id":"delete-1"}),
+            ),
+            (
+                vec![
+                    "google",
+                    "draft-delete-abandon",
+                    "--request-id",
+                    "delete-1",
+                    "--expected-revision",
+                    "2",
+                ],
+                "google_draft_delete_abandon",
+                json!({"request_id":"delete-1","expected_revision":2}),
+            ),
+        ] {
+            let mut input = vec!["fm", "--profile", "unused", "--account", "account"];
+            input.extend(args);
+            let parsed = Args::try_parse_from(input).unwrap();
+            let local = draft_source_request(&parsed.command).unwrap();
+            let remote = google_composition_request(&parsed.command).unwrap();
+            assert_ne!(local.is_some(), remote.is_some());
+            assert_eq!(local.or(remote).unwrap(), (method, expected));
+        }
+    }
 
     #[test]
     fn verified_export_preserves_exact_bytes_and_never_overwrites() {

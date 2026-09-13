@@ -1,6 +1,7 @@
 //! Explicit Google read sessions share quotas, one Store writer and cancellation.
 pub(crate) mod calendar;
 pub(crate) mod calendar_writes;
+pub(crate) mod draft_actions;
 pub(crate) mod drafts;
 pub(crate) mod labels;
 pub(crate) mod mail;
@@ -192,6 +193,35 @@ impl SyncContext {
         self.gmail_upload_request(method, WorkClass::Submission)
             .await
     }
+    pub(crate) async fn gmail_delete_request(
+        &self,
+        target: &str,
+    ) -> Result<(
+        GmailApi<QuotaTransport>,
+        OwnedSemaphorePermit,
+        Arc<AtomicBool>,
+    )> {
+        let call = GmailCall::delete_draft(&self.account, target).map_err(drafts::provider)?;
+        let quota = self
+            .quota
+            .acquire(call.work(), &self.cancel)
+            .await
+            .map_err(|_| failure("cancelled", "Google draft deletion stopped"))?;
+        let memory = self.prepare_permit().await?;
+        let mut http = self.transport(call.work());
+        http.admitted = true;
+        http.permit = Mutex::new(Some(quota));
+        // Create also costs ten units: bind this admission to the exact encoded
+        // DELETE target instead of treating the quota cost as an operation type.
+        http.exact_delete_url = Some(call.request_url().to_owned());
+        let dispatched = Arc::new(AtomicBool::new(false));
+        http.dispatched = Some(dispatched.clone());
+        Ok((
+            GmailApi::new(self.account.clone(), Arc::new(http)),
+            memory,
+            dispatched,
+        ))
+    }
     async fn gmail_upload_request(
         &self,
         method: fm_google::gmail_api::GmailMethod,
@@ -295,6 +325,7 @@ impl SyncContext {
             permit: Mutex::new(None),
             used: AtomicBool::new(false),
             dispatched: None,
+            exact_delete_url: None,
         }
     }
     #[cfg(test)]
@@ -329,6 +360,7 @@ pub(crate) struct QuotaTransport {
     permit: Mutex<Option<quota::Lease>>,
     used: AtomicBool,
     dispatched: Option<Arc<AtomicBool>>,
+    exact_delete_url: Option<String>,
 }
 impl HttpTransport for QuotaTransport {
     fn execute<'a>(
@@ -348,7 +380,14 @@ impl HttpTransport for QuotaTransport {
                 || (self.work.service == Service::Calendar
                     && request.method() == HttpMethod::Post
                     && request.url() == "https://www.googleapis.com/calendar/v3/freeBusy");
-            let allowed = if self.work.class.is_read() {
+            let allowed = if let Some(target) = &self.exact_delete_url {
+                self.work.service == Service::Gmail
+                    && self.work.class == WorkClass::DraftMutation
+                    && self.work.units == 10
+                    && request.method() == HttpMethod::Delete
+                    && request.url() == target
+                    && request.body_bytes().is_empty()
+            } else if self.work.class.is_read() {
                 read_request
             } else {
                 matches!(
@@ -551,6 +590,11 @@ impl Runtime {
                 | "google_draft_status"
                 | "google_draft_reconcile"
                 | "google_draft_resolve"
+                | "google_draft_adopt"
+                | "google_draft_delete"
+                | "google_draft_delete_status"
+                | "google_draft_delete_reconcile"
+                | "google_draft_delete_abandon"
                 | "google_send"
                 | "google_send_status"
                 | "google_send_reconcile"
@@ -632,6 +676,10 @@ impl Runtime {
                 let error = failure("account_required", "Choose a Google account");
                 if method == "google_send" {
                     send::predispatch_error(error)
+                } else if method == "google_draft_delete" {
+                    draft_actions::predispatch_error(error)
+                } else if method == "google_draft_adopt" {
+                    crate::local_content::authoring_uncommitted(error)
                 } else {
                     error
                 }
@@ -665,7 +713,49 @@ impl Runtime {
                 .await?;
             return Ok(reply);
         }
-        if method.starts_with("google_draft_") {
+        if matches!(
+            method,
+            "google_draft_adopt"
+                | "google_draft_delete"
+                | "google_draft_delete_status"
+                | "google_draft_delete_reconcile"
+                | "google_draft_delete_abandon"
+        ) {
+            draft_actions::validate(method, &params).map_err(|e| {
+                if method == "google_draft_delete" {
+                    draft_actions::predispatch_error(e)
+                } else if method == "google_draft_adopt" {
+                    crate::local_content::authoring_uncommitted(e)
+                } else {
+                    e
+                }
+            })?;
+            if method == "google_draft_delete_status" {
+                let request_id = params["request_id"].as_str().unwrap().to_owned();
+                return self
+                    .core
+                    .call(move |store| store.google_draft_delete_status(&account, &request_id))
+                    .await;
+            }
+            if method == "google_draft_delete_abandon" {
+                return self
+                    .core
+                    .call(move |store| {
+                        if owner_cancel.is_cancelled() {
+                            return Err(failure("cancelled", "Draft deletion recovery stopped"));
+                        }
+                        store.google_draft_delete_abandon(&account, &params)
+                    })
+                    .await;
+            }
+        }
+        if matches!(
+            method,
+            "google_draft_sync"
+                | "google_draft_status"
+                | "google_draft_reconcile"
+                | "google_draft_resolve"
+        ) {
             let writing = matches!(method, "google_draft_sync" | "google_draft_resolve");
             drafts::validate(&params, writing)?;
             if writing && ((method == "google_draft_resolve") != params.get("action").is_some()) {
@@ -763,6 +853,9 @@ impl Runtime {
                 | "google_draft_resolve"
                 | "google_send"
                 | "google_send_reconcile"
+                | "google_draft_adopt"
+                | "google_draft_delete"
+                | "google_draft_delete_reconcile"
         ) {
             let (context, _operation_owner) = self
                 .operation_context(&account, owner_id, owner_cancel.clone())
@@ -770,6 +863,10 @@ impl Runtime {
                 .map_err(|error| {
                     if method == "google_send" {
                         send::predispatch_error(error)
+                    } else if method == "google_draft_delete" {
+                        draft_actions::predispatch_error(error)
+                    } else if method == "google_draft_adopt" {
+                        crate::local_content::authoring_uncommitted(error)
                     } else {
                         error
                     }
@@ -785,6 +882,12 @@ impl Runtime {
             // cancellation and never authorizes a second provider attempt.
             let result = async {
                 match method {
+                    "google_draft_adopt" => draft_actions::adopt(&context, params).await,
+                    "google_draft_delete" => draft_actions::delete(&context, params).await,
+                    "google_draft_delete_reconcile" => {
+                        draft_actions::reconcile(&context, params["request_id"].as_str().unwrap())
+                            .await
+                    }
                     "google_send" => send::execute(&context, params).await,
                     "google_send_reconcile" => {
                         send::reconcile(&context, params["request_id"].as_str().unwrap()).await

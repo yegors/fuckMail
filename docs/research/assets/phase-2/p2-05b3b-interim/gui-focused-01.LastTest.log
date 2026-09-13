@@ -1,0 +1,92 @@
+Start testing: Sep 13 16:21 Eastern Daylight Time
+----------------------------------------------------------
+7/11 Testing: gui-google-operation
+7/11 Test: gui-google-operation
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev/gui-google-operation-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev/gui
+"gui-google-operation" start time: Sep 13 16:21 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+draft allowlist rejects extra endpoints before connection
+<end of output>
+Test time =   0.61 sec
+----------------------------------------------------------
+Test Failed.
+"gui-google-operation" end time: Sep 13 16:21 Eastern Daylight Time
+"gui-google-operation" time elapsed: 00:00:00
+----------------------------------------------------------
+
+8/11 Testing: gui-google-draft-controls
+8/11 Test: gui-google-draft-controls
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev/gui-google-draft-controls-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev/gui
+"gui-google-draft-controls" start time: Sep 13 16:21 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+Native Google draft controls passed: actual QML recovery/confirmation, private held IPC, projection revision floors, authored-text/account isolation, historical receipt isolation, exact captured unknown-update recovery, unknown/cancel readback and visible byte mismatch. Synthetic IPC only; no provider or performance claim.
+<end of output>
+Test time =   2.23 sec
+----------------------------------------------------------
+Test Passed.
+"gui-google-draft-controls" end time: Sep 13 16:21 Eastern Daylight Time
+"gui-google-draft-controls" time elapsed: 00:00:02
+----------------------------------------------------------
+
+9/11 Testing: gui-google-send-controls
+9/11 Test: gui-google-send-controls
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev/gui-google-send-controls-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev/gui
+"gui-google-send-controls" start time: Sep 13 16:21 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+Prepared recovery geometry default checkGoogleSend QRectF(20,594 100x32) available QRectF(20,0 402x704)
+Prepared recovery geometry default resumeGoogleSend QRectF(126,594 155x32) available QRectF(20,0 402x704)
+Prepared recovery geometry default abandonGoogleSend QRectF(20,632 163x32) available QRectF(20,0 402x704)
+Prepared recovery geometry large checkGoogleSend QRectF(20,599 106x32) available QRectF(20,0 402x711)
+Prepared recovery geometry large resumeGoogleSend QRectF(132,599 165x32) available QRectF(20,0 402x711)
+Prepared recovery geometry large abandonGoogleSend QRectF(20,637 174x32) available QRectF(20,0 402x711)
+Native Send controls passed: actual QML handlers, private held save/auxiliary IPC, recipient validation, cancelled save continuation, frozen resume, revision-bound abandon, unknown evidence, historical/current metadata and account/editor isolation. Synthetic IPC only; no provider or performance claim.
+<end of output>
+Test time =   3.85 sec
+----------------------------------------------------------
+Test Passed.
+"gui-google-send-controls" end time: Sep 13 16:21 Eastern Daylight Time
+"gui-google-send-controls" time elapsed: 00:00:03
+----------------------------------------------------------
+
+10/11 Testing: gui-google-draft-snapshot-controls
+10/11 Test: gui-google-draft-snapshot-controls
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev/gui-google-draft-snapshot-controls-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev/gui
+"gui-google-draft-snapshot-controls" start time: Sep 13 16:21 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+same-source older scan metadata cannot erase unseen freshness
+QThreadStorage: entry 3 destroyed before end of thread 0x13af1ead0c0
+QThreadStorage: entry 2 destroyed before end of thread 0x13af1ead0c0
+QThreadStorage: entry 1 destroyed before end of thread 0x13af1ead0c0
+<end of output>
+Test time =   1.93 sec
+----------------------------------------------------------
+Test Failed.
+"gui-google-draft-snapshot-controls" end time: Sep 13 16:21 Eastern Daylight Time
+"gui-google-draft-snapshot-controls" time elapsed: 00:00:01
+----------------------------------------------------------
+
+11/11 Testing: gui-google-draft-authoring-controls
+11/11 Test: gui-google-draft-authoring-controls
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev/gui-google-draft-authoring-controls-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev/gui
+"gui-google-draft-authoring-controls" start time: Sep 13 16:21 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+Native source actions, identity races, proof recovery and deletion evidence passed.
+<end of output>
+Test time =   2.97 sec
+----------------------------------------------------------
+Test Passed.
+"gui-google-draft-authoring-controls" end time: Sep 13 16:21 Eastern Daylight Time
+"gui-google-draft-authoring-controls" time elapsed: 00:00:02
+----------------------------------------------------------
+
+End testing: Sep 13 16:21 Eastern Daylight Time
