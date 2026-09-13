@@ -256,7 +256,7 @@ impl Store {
         let mut request = p.clone();
         request.as_object_mut().unwrap().remove("prepare_only");
         let hash = fingerprint(&request)?;
-        let prior:Option<(String,Option<String>)>=self.db.query_row("SELECT intent_json,result_json FROM calendar_write_operations WHERE account=?1 AND request_id=?2",params![account,request_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+        let prior:Option<(String,Option<String>)>=self.db.query_row("SELECT intent_json,result_json FROM calendar_write_operations WHERE account=?1 AND request_id=?2 AND execution_mode='local'",params![account,request_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
         if let Some((prior, receipt)) = prior {
             let prior: Value = serde_json::from_str(&prior)?;
             if prior["public_fingerprint"] != hash {
@@ -394,7 +394,7 @@ impl Store {
     pub(crate) fn calendar_write_ack(&mut self, account: &str, p: &Value) -> Result<Value> {
         fields(p, &["request_id"])?;
         let request_id = id(string(p, "request_id")?)?;
-        let (raw,prior):(String,Option<String>)=self.db.query_row("SELECT intent_json,result_json FROM calendar_write_operations WHERE account=?1 AND request_id=?2",params![account,request_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?.ok_or_else(||err("not_found","Calendar operation does not exist"))?;
+        let (raw,prior):(String,Option<String>)=self.db.query_row("SELECT intent_json,result_json FROM calendar_write_operations WHERE account=?1 AND request_id=?2 AND execution_mode='local'",params![account,request_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?.ok_or_else(||err("not_found","Calendar operation does not exist"))?;
         let intent: Value = serde_json::from_str(&raw)?;
         if intent.get("public_fingerprint").is_none() {
             return Err(err(

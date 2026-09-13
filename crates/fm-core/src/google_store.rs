@@ -378,35 +378,19 @@ pub(crate) fn publish_message(
         .map_err(storage_error)?;
     }
     db.execute("INSERT INTO google_message_state(account,message_id,remote_thread_id,history_id,provider_labels_json,deleted) VALUES(?1,?2,?3,?4,?5,0) ON CONFLICT(account,message_id) DO UPDATE SET remote_thread_id=excluded.remote_thread_id,history_id=excluded.history_id,provider_labels_json=excluded.provider_labels_json,deleted=0",params![account,mid,staged.remote_thread_id,staged.history_id,serde_json::to_string(&staged.labels).map_err(storage_error)?]).map_err(storage_error)?;
-    let mut mappings = db
-        .prepare(
-            "SELECT category_id,provider_label_id FROM google_category_labels WHERE account=?1",
-        )
-        .map_err(storage_error)?;
-    let mappings = mappings
-        .query_map([account], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-        })
-        .map_err(storage_error)?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(storage_error)?;
-    for (category, label) in mappings {
-        let manual:Option<bool>=db.query_row("SELECT value FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field='category' AND category_id=?3",params![account,mid,category],|r|r.get(0)).optional().map_err(storage_error)?;
-        let assisted:Option<bool>=db.query_row("SELECT value FROM assist_category_intents WHERE account=?1 AND message_id=?2 AND category_id=?3",params![account,mid,category],|r|r.get(0)).optional().map_err(storage_error)?;
-        if is_system_label(&label) {
-            return Err(GoogleError::InvalidResponse(
-                "Category mapping targets a system label",
-            ));
-        }
-        if manual
-            .or(assisted)
-            .unwrap_or(labels.contains(label.as_str()))
-        {
-            db.execute("INSERT OR IGNORE INTO message_categories(account,message_id,category_id) VALUES(?1,?2,?3)",params![account,mid,category]).map_err(storage_error)?;
+    crate::google_live_mutations::project_labels(
+        db,
+        account,
+        &mid,
+        &staged.labels.iter().cloned().collect(),
+    )
+    .map_err(|error| {
+        if error.code == "invalid_google_response" {
+            GoogleError::InvalidResponse("Category mapping targets a system label")
         } else {
-            db.execute("DELETE FROM message_categories WHERE account=?1 AND message_id=?2 AND category_id=?3",params![account,mid,category]).map_err(storage_error)?;
+            storage_error(error)
         }
-    }
+    })?;
     for (index, part) in staged.attachments.iter().enumerate() {
         let aid = local_id(
             "attachment",

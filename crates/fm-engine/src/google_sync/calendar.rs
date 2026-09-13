@@ -5,12 +5,16 @@ use fm_calendar::{
     Access, Window,
 };
 use fm_core::{
-    live_calendar::{CalendarPage, CalendarSyncLease, CalendarSyncMode},
+    live_calendar::{
+        prepare_calendar_catalog_chunk, prepare_calendar_catalog_entry, prepare_calendar_chunk,
+        prepare_calendar_page, CalendarPage, CalendarSyncLease, CalendarSyncMode,
+    },
     CoreError, Result,
 };
 use fm_google::{scheduler::WorkClass, transport::TransportError, GoogleError};
 use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
+use tokio::sync::OwnedSemaphorePermit;
 
 #[derive(Default)]
 pub(crate) struct PassSummary {
@@ -76,23 +80,14 @@ async fn sync_catalog(ctx: &SyncContext) -> Result<u64> {
         loop {
             let progress = progress(ctx, &lease).await?;
             if progress["final_page_staged"] == true {
-                loop {
-                    let l = lease.clone();
-                    if ctx
-                        .core_call(move |s| s.calendar_catalog_finalize_chunk(&l))
-                        .await?
-                        == 0
-                    {
-                        break;
-                    }
-                }
+                finalize_catalog(ctx, &lease).await?;
                 let l = lease.clone();
                 ctx.core_call(move |s| s.calendar_publish_sync(&l)).await?;
                 return Ok(pages);
             }
             let cursor = cursor(&progress)?;
-            let response = ctx
-                .calendar_api(WorkClass::DeltaRead)
+            let (api, memory) = ctx.calendar_request(WorkClass::DeltaRead).await?;
+            let response = api
                 .calendar_list("engine-managed", cursor, &ctx.cancel)
                 .await;
             let response = match response {
@@ -104,7 +99,7 @@ async fn sync_catalog(ctx: &SyncContext) -> Result<u64> {
                 }
                 Err(error) => return Err(api_error(error)),
             };
-            let page = Arc::new(CalendarPage {
+            let page = CalendarPage {
                 input_cursor: cursor.page_token.map(str::to_owned),
                 items: response
                     .items
@@ -113,8 +108,8 @@ async fn sync_catalog(ctx: &SyncContext) -> Result<u64> {
                     .collect(),
                 next_page_token: response.next_page_token,
                 next_sync_token: response.next_sync_token,
-            });
-            match stage(ctx, &lease, page).await {
+            };
+            match stage(ctx, &lease, page, memory).await {
                 Ok(()) => pages += 1,
                 Err(error) if error.code == "stale_page" && replacement == 0 => {
                     expire(ctx, &lease).await?;
@@ -173,8 +168,8 @@ async fn event_turn(
         // Capture the policy before HTTP, so an overlapping fresher observation
         // cannot be overwritten by this older response's accessRole or zone.
         let before = scope(ctx, calendar).await?;
-        let response = ctx
-            .calendar_api(class)
+        let (api, memory) = ctx.calendar_request(class).await?;
+        let response = api
             .events("engine-managed", calendar, cursor, &ctx.cancel)
             .await;
         let response = match response {
@@ -199,22 +194,27 @@ async fn event_turn(
             let calendar = calendar.to_owned();
             let generation = ctx.connection_generation;
             let epoch = integer(&before, "permission_epoch")?;
-            let zone = response.time_zone;
+            let zone = response.time_zone.clone();
+            drop(response);
             ctx.core_call(move |s| {
-                s.calendar_observe_permission(&account, &calendar, generation, epoch, access, &zone)
+                let result = s.calendar_observe_permission(
+                    &account, &calendar, generation, epoch, access, &zone,
+                );
+                drop(memory);
+                result
             })
             .await?;
             expire(ctx, &lease).await?;
             return Ok((0, access != Access::None && access != Access::FreeBusy));
         }
         let final_page = response.next_sync_token.is_some();
-        let page = Arc::new(CalendarPage {
+        let page = CalendarPage {
             input_cursor: cursor.page_token.map(str::to_owned),
             items: response.items,
             next_page_token: response.next_page_token,
             next_sync_token: response.next_sync_token,
-        });
-        match stage(ctx, &lease, page).await {
+        };
+        match stage(ctx, &lease, page, memory).await {
             Ok(()) => {
                 if final_page {
                     publish_events(ctx, &lease).await?;
@@ -236,8 +236,8 @@ async fn event_turn(
 
 async fn refresh_permission_for(ctx: &SyncContext, calendar: &str) -> Result<()> {
     let before = scope(ctx, calendar).await?;
-    let response = ctx
-        .calendar_api(WorkClass::DeltaRead)
+    let (api, memory) = ctx.calendar_request(WorkClass::DeltaRead).await?;
+    let response = api
         .calendar_entry("engine-managed", calendar, &ctx.cancel)
         .await;
     match response {
@@ -245,8 +245,17 @@ async fn refresh_permission_for(ctx: &SyncContext, calendar: &str) -> Result<()>
             let account = ctx.account.as_str().to_owned();
             let generation = ctx.connection_generation;
             let epoch = integer(&before, "permission_epoch")?;
+            let cancel = ctx.cancel.clone();
+            let (entry, memory) = blocking_preparation(memory, move || {
+                prepare_calendar_catalog_entry(entry.source, &cancel)
+            })
+            .await?;
             ctx.core_call(move |s| {
-                s.calendar_observe_catalog_entry(&account, &entry.source, generation, epoch)
+                let result =
+                    s.calendar_observe_prepared_catalog_entry(&account, &entry, generation, epoch);
+                drop(entry);
+                drop(memory);
+                result
             })
             .await?;
             Ok(())
@@ -324,17 +333,52 @@ async fn progress(ctx: &SyncContext, lease: &CalendarSyncLease) -> Result<Value>
 async fn stage(
     ctx: &SyncContext,
     lease: &CalendarSyncLease,
-    page: Arc<CalendarPage>,
+    page: CalendarPage,
+    memory: OwnedSemaphorePermit,
 ) -> Result<()> {
+    let cancel = ctx.cancel.clone();
+    let l = lease.clone();
+    let (page, mut memory) =
+        blocking_preparation(memory, move || prepare_calendar_page(l, page, &cancel)).await?;
+    let page = Arc::new(page);
     let mut next = 0;
+    let mut retries = 0;
     loop {
         let l = lease.clone();
         let p = page.clone();
         let previous = next;
-        next = ctx
-            .core_call(move |s| s.calendar_stage_page_chunk(&l, &p, previous))
+        let (input, returned_memory) = ctx
+            .core_call(move |s| Ok((s.calendar_prepare_chunk(&l, &p, previous)?, memory)))
             .await?;
-        if next >= page.items.len() {
+        let p = page.clone();
+        let cancel = ctx.cancel.clone();
+        let (chunk, returned_memory) = blocking_preparation(returned_memory, move || {
+            prepare_calendar_chunk(&p, input, &cancel)
+        })
+        .await?;
+        let l = lease.clone();
+        let p = page.clone();
+        let (result, returned_memory) = ctx
+            .core_call(move |s| {
+                Ok((
+                    s.calendar_stage_prepared_chunk(&l, &p, &chunk),
+                    returned_memory,
+                ))
+            })
+            .await?;
+        memory = returned_memory;
+        match result {
+            Ok(value) => {
+                next = value;
+                retries = 0;
+            }
+            Err(error) if error.code == "stale_preparation" && retries < 2 => {
+                retries += 1;
+                continue;
+            }
+            Err(error) => return Err(error),
+        }
+        if next >= page.len() {
             break;
         }
         if next <= previous {
@@ -342,8 +386,55 @@ async fn stage(
         }
     }
     let lease = lease.clone();
-    ctx.core_call(move |s| s.calendar_seal_page(&lease, &page))
+    ctx.core_call(move |s| {
+        let result = s.calendar_seal_prepared_page(&lease, &page);
+        drop(page);
+        drop(memory);
+        result
+    })
+    .await
+}
+async fn blocking_preparation<T, F>(
+    memory: OwnedSemaphorePermit,
+    operation: F,
+) -> Result<(T, OwnedSemaphorePermit)>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T> + Send + 'static,
+{
+    tokio::task::spawn_blocking(move || operation().map(|value| (value, memory)))
         .await
+        .map_err(|_| {
+            failure(
+                "calendar_preparation_failed",
+                "Calendar preparation worker stopped",
+            )
+        })?
+}
+async fn finalize_catalog(ctx: &SyncContext, lease: &CalendarSyncLease) -> Result<()> {
+    loop {
+        let memory = ctx.calendar_prepare_permit().await?;
+        let l = lease.clone();
+        let (input, memory) = ctx
+            .core_call(move |s| Ok((s.calendar_catalog_prepare_finalization(&l)?, memory)))
+            .await?;
+        let cancel = ctx.cancel.clone();
+        let (prepared, memory) = blocking_preparation(memory, move || {
+            prepare_calendar_catalog_chunk(input, &cancel)
+        })
+        .await?;
+        let count = ctx
+            .core_call(move |s| {
+                let result = s.calendar_catalog_finalize_prepared(&prepared);
+                drop(prepared);
+                drop(memory);
+                result
+            })
+            .await?;
+        if count == 0 {
+            return Ok(());
+        }
+    }
 }
 async fn publish_events(ctx: &SyncContext, lease: &CalendarSyncLease) -> Result<()> {
     let l = lease.clone();
@@ -399,15 +490,18 @@ pub(crate) async fn refresh_busy(ctx: &SyncContext, window: Window) -> Result<u6
         }
         if !epochs.is_empty() {
             let calendars = epochs.keys().cloned().collect::<Vec<_>>();
-            let snapshot = ctx
-                .calendar_api(WorkClass::UserRead)
+            let (api, memory) = ctx.calendar_request(WorkClass::UserRead).await?;
+            let snapshot = api
                 .free_busy("engine-managed", &calendars, &window, &ctx.cancel)
                 .await
                 .map_err(api_error)?;
             let generation = ctx.connection_generation;
             let observed_at = chrono::Utc::now().timestamp_millis();
             ctx.core_call(move |s| {
-                s.calendar_busy_commit(&snapshot, observed_at, generation, &epochs)
+                let result = s.calendar_busy_commit(&snapshot, observed_at, generation, &epochs);
+                drop(snapshot);
+                drop(memory);
+                result
             })
             .await?;
             fetched += 1;
@@ -471,11 +565,19 @@ fn account_failure(error: &CoreError) -> bool {
     )
 }
 fn api_error(error: ApiError) -> CoreError {
+    let retry_after_secs = match &error {
+        ApiError::Transport(TransportError::Cooldown { retry_after_secs }) => {
+            Some(*retry_after_secs)
+        }
+        ApiError::Provider(GoogleError::RateLimited { retry_after_secs }) => *retry_after_secs,
+        _ => None,
+    };
     let (code, message) = match error {
         ApiError::Provider(GoogleError::ReauthorizationRequired) => {
             ("reauthorization_required", "Reconnect this Google account")
         }
-        ApiError::Provider(GoogleError::RateLimited { .. }) => (
+        ApiError::Provider(GoogleError::RateLimited { .. })
+        | ApiError::Transport(TransportError::Cooldown { .. }) => (
             "google_rate_limited",
             "Google is limiting Calendar requests; synchronization will resume",
         ),
@@ -500,7 +602,11 @@ fn api_error(error: ApiError) -> CoreError {
             "Google returned an unusable Calendar response",
         ),
     };
-    failure(code, message)
+    let mut result = failure(code, message);
+    if let Some(seconds) = retry_after_secs {
+        result.details = serde_json::json!({"retry_after_secs":seconds});
+    }
+    result
 }
 
 #[cfg(test)]

@@ -1,0 +1,16 @@
+    Checking fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+    Checking fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+    Checking fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+error: very complex type used. Consider factoring parts into `type` definitions
+   --> crates\fm-core\src\live_calendar_writes.rs:138:17
+    |
+138 | ...   let row:Option<(String,i64,String,i64,Option<i64>,Option<i64>,Option<String>)>=self.db.query_row("SELECT state,operation_revision,i...
+    |               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#type_complexity
+    = note: `-D clippy::type-complexity` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::type_complexity)]`
+
+error: could not compile `fm-core` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `fm-core` (lib test) due to 1 previous error

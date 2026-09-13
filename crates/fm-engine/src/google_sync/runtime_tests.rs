@@ -49,6 +49,7 @@ impl Contexts {
         config.max_reads_per_account = 2;
         let quota = quota::QuotaGate::new(config).unwrap();
         let preparation = Arc::new(Semaphore::new(1));
+        let calendar_preparation = Arc::new(Semaphore::new(2));
         let http = Arc::new(RawHttp::default());
         let (send, receive) = tokio::sync::mpsc::channel(2);
         let core = CoreBridge::new(send, Arc::new(Semaphore::new(2)));
@@ -61,6 +62,7 @@ impl Contexts {
             tokens: TokenSource::Fixture("synthetic-access".into()),
             quota: quota.clone(),
             preparation: preparation.clone(),
+            calendar_preparation: calendar_preparation.clone(),
         };
         let second = SyncContext {
             account: AccountId::new("synthetic-second").unwrap(),
@@ -71,6 +73,7 @@ impl Contexts {
             tokens: TokenSource::Fixture("synthetic-access".into()),
             quota,
             preparation,
+            calendar_preparation,
         };
         Self {
             first,
@@ -132,6 +135,7 @@ fn transient_retries_remain_recoverable_after_fast_attempts_and_preserve_provide
     for code in [
         "google_transport_interrupted",
         "google_server_unavailable",
+        "google_unavailable",
         "calendar_rate_limited",
     ] {
         let error = failure(code, "synthetic transient failure");
@@ -279,6 +283,147 @@ async fn raw_response_keeps_memory_lease_until_preparation_releases_it() {
     assert_eq!(h.http.0.load(Ordering::SeqCst), 2);
     drop(second_memory);
     assert_eq!(h.first.preparation.available_permits(), 1);
+}
+
+#[tokio::test]
+async fn calendar_page_memory_is_shared_and_quota_waiters_do_not_occupy_it() {
+    let h = Contexts::new(100, 100, 4);
+    let spent = h
+        .first
+        .quota
+        .acquire(
+            Work {
+                account: h.first.account.clone(),
+                service: Service::Calendar,
+                class: WorkClass::BackfillRead,
+                units: 60,
+            },
+            &h.first.cancel,
+        )
+        .await
+        .unwrap();
+    drop(spent);
+    let mut blocked = pin!(h.first.calendar_request(WorkClass::BackfillRead));
+    assert!(matches!(
+        poll_fn(|cx| Poll::Ready(blocked.as_mut().poll(cx))).await,
+        Poll::Pending
+    ));
+    assert_eq!(h.first.calendar_preparation.available_permits(), 2);
+    let (api, first) = tokio::time::timeout(
+        Duration::from_secs(2),
+        h.second.calendar_request(WorkClass::UserRead),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    drop(api);
+    let (api, second) = h
+        .second
+        .calendar_request(WorkClass::UserRead)
+        .await
+        .unwrap();
+    drop(api);
+    assert_eq!(h.first.calendar_preparation.available_permits(), 0);
+    let mut third = pin!(h.second.calendar_request(WorkClass::UserRead));
+    assert!(matches!(
+        poll_fn(|cx| Poll::Ready(third.as_mut().poll(cx))).await,
+        Poll::Pending
+    ));
+    drop(first);
+    let (api, third_memory) = tokio::time::timeout(Duration::from_secs(2), third)
+        .await
+        .unwrap()
+        .unwrap();
+    drop(api);
+    h.first.cancel.cancel();
+    assert!(blocked.await.is_err());
+    drop(second);
+    drop(third_memory);
+    assert_eq!(h.first.calendar_preparation.available_permits(), 2);
+}
+
+#[tokio::test]
+async fn calendar_preparation_cancellation_releases_quota_capacity() {
+    let h = Contexts::new(1000, 1000, 2);
+    let first = h.first.calendar_prepare_permit().await.unwrap();
+    let second = h.second.calendar_prepare_permit().await.unwrap();
+    let mut waiting = pin!(h.first.calendar_request(WorkClass::UserRead));
+    assert!(matches!(
+        poll_fn(|cx| Poll::Ready(waiting.as_mut().poll(cx))).await,
+        Poll::Pending
+    ));
+    h.first.cancel.cancel();
+    assert!(waiting.await.is_err());
+    drop(first);
+    drop(second);
+    let admitted = tokio::time::timeout(
+        Duration::from_secs(2),
+        h.second.calendar_request(WorkClass::UserRead),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    drop(admitted);
+    assert_eq!(h.second.calendar_preparation.available_permits(), 2);
+}
+
+#[tokio::test]
+async fn admitted_transport_is_one_shot_and_mutations_use_only_their_costed_lane() {
+    let h = Contexts::new(1000, 1000, 4);
+    let http = h
+        .first
+        .transport(raw_call(&h.first, WorkClass::UserRead).work());
+    let request = || {
+        HttpRequest::new(
+            HttpMethod::Get,
+            "https://gmail.googleapis.com/gmail/v1/users/me/messages/m?format=raw",
+        )
+        .unwrap()
+    };
+    http.execute(request(), &h.first.cancel).await.unwrap();
+    assert!(matches!(
+        http.execute(request(), &h.first.cancel).await,
+        Err(TransportError::InvalidRequest)
+    ));
+    assert_eq!(h.http.0.load(Ordering::SeqCst), 1);
+    let mut work = Work {
+        account: h.first.account.clone(),
+        service: Service::Calendar,
+        class: WorkClass::CalendarMutation,
+        units: 1,
+    };
+    let patch = HttpRequest::new(
+        HttpMethod::Patch,
+        "https://www.googleapis.com/calendar/v3/calendars/c/events/e",
+    )
+    .unwrap();
+    assert!(!mutation_request_matches(&work, &patch));
+    work.units = 3;
+    assert!(mutation_request_matches(&work, &patch));
+    assert!(!mutation_request_matches(
+        &work,
+        &HttpRequest::new(
+            HttpMethod::Post,
+            "https://www.googleapis.com/calendar/v3/freeBusy"
+        )
+        .unwrap()
+    ));
+    let call = GmailCall::modify_message(&h.first.account, "m", &["STARRED".into()], &[]).unwrap();
+    assert!(matches!(
+        h.first.gmail(call).await,
+        Err(GoogleError::PermissionDenied)
+    ));
+    let call = GmailCall::send_message(
+        &h.first.account,
+        b"From: x@example.test\r\n\r\nHuman text",
+        None,
+    )
+    .unwrap();
+    assert!(matches!(
+        h.first.gmail_mutation(call).await,
+        Err(GoogleError::PermissionDenied)
+    ));
+    assert_eq!(h.http.0.load(Ordering::SeqCst), 1);
 }
 
 struct CachedVault {
@@ -605,4 +750,35 @@ async fn releasing_one_real_runtime_owner_preserves_other_owner_and_final_releas
 #[tokio::test]
 async fn disconnecting_one_real_runtime_owner_preserves_other_owner_until_last_disconnect() {
     two_owner_lifecycle(true).await;
+}
+
+#[tokio::test]
+async fn temporary_calendar_request_owner_survives_gui_exit_and_preserves_normal_cli_owner() {
+    let h = RuntimeHarness::new();
+    let gui = CancellationToken::new();
+    let cli = CancellationToken::new();
+    h.start("gui", gui.clone()).await;
+    h.http.wait_calls(1).await;
+    let (context, operation) = h
+        .runtime
+        .operation_context(&h.account, "cli", cli.clone())
+        .await
+        .unwrap();
+    gui.cancel();
+    h.wait_owner_count(1).await;
+    assert!(!context.cancel.is_cancelled());
+    h.http.responses.add_permits(1);
+    h.http.wait_calls(2).await;
+    // A separate sync start by this CLI remains registered when its temporary
+    // operation ends; the two registrations must not share a removable key.
+    assert_eq!(h.start("cli", cli.clone()).await["started"], false);
+    h.wait_owner_count(2).await;
+    drop(operation);
+    h.wait_owner_count(1).await;
+    assert!(!context.cancel.is_cancelled());
+    assert_eq!(h.release("cli").await["active"], false);
+    h.http.wait_cancelled().await;
+    h.wait_stopped().await;
+    drop(context);
+    h.close().await;
 }

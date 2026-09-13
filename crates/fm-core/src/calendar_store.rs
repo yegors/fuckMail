@@ -270,7 +270,7 @@ impl Store {
             ));
         }
         let fingerprint = fingerprint(&request)?;
-        let old:Option<(String,String,Option<String>)>=self.db.query_row("SELECT fingerprint,intent_json,result_json FROM calendar_write_operations WHERE account=?1 AND request_id=?2",params![target.account,request_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+        let old:Option<(String,String,Option<String>)>=self.db.query_row("SELECT fingerprint,intent_json,result_json FROM calendar_write_operations WHERE account=?1 AND request_id=?2 AND execution_mode='local'",params![target.account,request_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
         if let Some((old, intent, result)) = old {
             if old != fingerprint {
                 return Err(err(
@@ -316,7 +316,7 @@ impl Store {
         crate::id(&target.account)?;
         crate::live_calendar::provider_id(&target.calendar)?;
         crate::live_calendar::provider_id(&target.event)?;
-        let (intent,previous):(String,Option<String>)=self.db.query_row("SELECT intent_json,result_json FROM calendar_write_operations WHERE account=?1 AND request_id=?2",params![target.account,request_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?.ok_or_else(||err("not_found","Calendar write intent does not exist"))?;
+        let (intent,previous):(String,Option<String>)=self.db.query_row("SELECT intent_json,result_json FROM calendar_write_operations WHERE account=?1 AND request_id=?2 AND execution_mode='local'",params![target.account,request_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?.ok_or_else(||err("not_found","Calendar write intent does not exist"))?;
         let intent: Value = serde_json::from_str(&intent)?;
         if intent["write"]["target"] != serde_json::to_value(target)?
             || provider_source["id"] != target.event

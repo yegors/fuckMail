@@ -13,6 +13,76 @@ use std::{
 };
 use tokio::sync::{mpsc, Semaphore};
 
+#[tokio::test]
+async fn admitted_calendar_read_observes_new_cooldown_before_http_and_can_retry() {
+    let directory = tempfile::tempdir().unwrap();
+    let h = Harness::new(directory.path());
+    let (api, memory) = h
+        .context
+        .calendar_request(WorkClass::DeltaRead)
+        .await
+        .unwrap();
+    h.context.quota.cooldown(
+        fm_google::scheduler::CooldownScope::Project(fm_google::scheduler::Service::Calendar),
+        30,
+    );
+    let result = api
+        .calendar_list("engine-managed", SyncCursor::default(), &h.context.cancel)
+        .await;
+    let Err(error) = result else {
+        panic!("cooldown must stop dispatch")
+    };
+    let error = api_error(error);
+    assert_eq!(error.code, "google_rate_limited");
+    let seconds = error.details["retry_after_secs"].as_u64().unwrap();
+    assert!((1..=30).contains(&seconds));
+    assert!(super::super::retry_wait(&error, 0).unwrap() >= Duration::from_secs(seconds));
+    assert!(h.http.requests.lock().unwrap().is_empty());
+    drop(api);
+    drop(memory);
+    h.close();
+}
+
+#[tokio::test]
+async fn aborted_caller_keeps_memory_seat_until_blocking_preparation_finishes() {
+    let directory = tempfile::tempdir().unwrap();
+    let h = Harness::new(directory.path());
+    let memory = h.context.calendar_prepare_permit().await.unwrap();
+    let second = h.context.calendar_prepare_permit().await.unwrap();
+    let (started, running) = tokio::sync::oneshot::channel();
+    let (release, blocked) = std::sync::mpsc::channel();
+    let caller = tokio::spawn(blocking_preparation(memory, move || {
+        let _ = started.send(());
+        blocked.recv_timeout(Duration::from_secs(5)).unwrap();
+        Ok(())
+    }));
+    tokio::time::timeout(Duration::from_secs(2), running)
+        .await
+        .unwrap()
+        .unwrap();
+    caller.abort();
+    assert!(caller.await.unwrap_err().is_cancelled());
+    let still_owned = tokio::time::timeout(
+        Duration::from_millis(40),
+        h.context.calendar_prepare_permit(),
+    )
+    .await
+    .is_err();
+    release.send(()).unwrap();
+    let released =
+        tokio::time::timeout(Duration::from_secs(2), h.context.calendar_prepare_permit())
+            .await
+            .unwrap()
+            .unwrap();
+    assert!(
+        still_owned,
+        "aborted caller released a still-live page seat"
+    );
+    drop(released);
+    drop(second);
+    h.close();
+}
+
 struct Step {
     route: &'static str,
     status: u16,

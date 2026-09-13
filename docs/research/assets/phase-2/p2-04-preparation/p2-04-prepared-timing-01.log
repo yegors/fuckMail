@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.33s
+     Running unittests src\lib.rs (target\debug\deps\fm_core-fbf5e23cd42bc787.exe)
+
+running 1 test
+CALENDAR_PREPARATION_TIMING {"chunk_preparation":{"max_ms":33.0832,"p50_ms":20.7614,"p95_ms":30.4282,"samples":119},"events_per_page":250,"maximum_chunk_input_bytes":985575,"maximum_chunk_items":15,"native_ui_latency_verified":false,"page_preparation":{"max_ms":1078.962,"p50_ms":999.7488,"p95_ms":1078.962,"samples":7},"rounds":7,"serialized_page_bytes":16426391,"writer_consolidation":{"max_ms":36.9004,"p50_ms":12.6248,"p95_ms":26.5253,"samples":511},"writer_input_read":{"max_ms":0.6987,"p50_ms":0.3153,"p95_ms":0.5625,"samples":119},"writer_publication":{"max_ms":3.3658,"p50_ms":1.7197,"p95_ms":3.3658,"samples":7},"writer_seal":{"max_ms":23.759800000000002,"p50_ms":2.6370999999999998,"p95_ms":23.759800000000002,"samples":7},"writer_stage_sql":{"max_ms":56.8742,"p50_ms":41.5161,"p95_ms":52.9193,"samples":119}}
+test live_calendar::tests::prepared_large_page_writer_timing ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 144 filtered out; finished in 21.39s
+

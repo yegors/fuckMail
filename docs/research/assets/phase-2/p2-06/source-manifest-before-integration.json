@@ -1,0 +1,79 @@
+{
+  "captured_utc": "2026-09-13T08:09:01.9877295Z",
+  "scope": "P2-06 first live Calendar write slice; synthetic HTTP only. This is a post-run working-tree source snapshot, not an immutable as-compiled checkout. Shared root-owned files may receive later integration changes.",
+  "contracts": "D023 / Core16 / Calendar14 / schema10 / live fixture0 / synthetic fixture3 / protocol1",
+  "focused_core_passes": 8,
+  "focused_new_core_groups": 7,
+  "focused_engine_passes": 7,
+  "calendar_regression_core_passes": 47,
+  "calendar_regression_core_ignored": 1,
+  "calendar_regression_engine_passes": 17,
+  "source_snapshot": [
+    {
+      "path": "crates/fm-core/src/live_calendar_writes.rs",
+      "sha256": "2fb884ba7c285ea9f83f4c3769e82ef71db6036c3864515ae62fdeccc01b9adc"
+    },
+    {
+      "path": "crates/fm-core/src/live_calendar_writes_tests.rs",
+      "sha256": "9e9ea6b9d0ae690473e427f89824f894d769d8a56189f864aa7c293663a4ea8f"
+    },
+    {
+      "path": "crates/fm-core/src/migration-010-calendar-writes.sql",
+      "sha256": "05addf0fb6081156ff66b2c317674d1291517d83252ab2de65552b5a5ffab197"
+    },
+    {
+      "path": "crates/fm-core/src/calendar_store.rs",
+      "sha256": "c4e5155599c143ba164aa6d5cf16a4f0b7b74559978ce6c5ae22ae2188559923"
+    },
+    {
+      "path": "crates/fm-core/src/phase1_calendar.rs",
+      "sha256": "e9a4ff00ae3bbd0a3d34a5bdde8ebdf24b82492b189559c78be569093c299f01"
+    },
+    {
+      "path": "crates/fm-core/src/phase1_calendar_tests.rs",
+      "sha256": "41a1723f8b8a62568990208f86967c34bcff7eb3c4dfe57f8441b5ce0cfedc61"
+    },
+    {
+      "path": "crates/fm-engine/src/google_sync/calendar_writes.rs",
+      "sha256": "5701146db37ee23df6ddb07bf2582c44b2310c3878768ce983287e6f39d608e0"
+    },
+    {
+      "path": "crates/fm-engine/src/google_sync/calendar_writes_tests.rs",
+      "sha256": "8331515e93aa4d042b496b670e15ed04aaf794b5444eee7e97346d90c7038b10"
+    },
+    {
+      "path": "crates/fm-engine/src/google_sync.rs",
+      "sha256": "58749b8557f535a3108090ed72c7b404ffd6dabba53a036fff816b31d11b4f3a"
+    },
+    {
+      "path": "crates/fm-engine/src/main.rs",
+      "sha256": "ffab79aab9f176df137446ca70f0963e0a5324b334618137e2d3b7e76fac3300"
+    },
+    {
+      "path": "crates/fm-core/src/lib.rs",
+      "sha256": "f7c5b970bcaba086134e1275f840627c600094ffffecef679aa8f208d2022697"
+    }
+  ],
+  "logs": [
+    {
+      "path": "p2-06-calendar-writes-01.log",
+      "sha256": "0eb3a2a53110aa6a260cd58577d346a1858b571d02812506277c8f99d6d49a76"
+    },
+    {
+      "path": "p2-06-calendar-writes-02.log",
+      "sha256": "e43b1b96a891fb5abd458cd0496ea3c6927187d2b6f0818ccd9d1fd087ad1313"
+    },
+    {
+      "path": "p2-06-calendar-writes-03.log",
+      "sha256": "c96f21ce6f3db21018defe318d211c5b9122ffc7fba1fce8e32fd1e8e2134d07"
+    },
+    {
+      "path": "p2-06-calendar-regressions-01.log",
+      "sha256": "ac86afac665326c04ecdac534e58e737408d35f2d09963e74aa0d491fae0f949"
+    },
+    {
+      "path": "p2-06-calendar-writes-clippy-01.log",
+      "sha256": "1ba1dad55725e851e9fd39194a3b1d0fbc36219e6f928c4e1e5843e2db980048"
+    }
+  ]
+}

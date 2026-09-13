@@ -1,0 +1,17 @@
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+   Compiling fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+error[E0277]: `EventResource` doesn't implement `Debug`
+   --> crates\fm-engine\src\google_sync\calendar_writes_tests.rs:245:10
+    |
+245 |         .unwrap_err();
+    |          ^^^^^^^^^^ `EventResource` cannot be formatted using `{:?}` because it doesn't implement `Debug`
+    |
+    = help: the trait `Debug` is not implemented for `EventResource`
+note: required by a bound in `Result::<T, E>::unwrap_err`
+   --> /rustc/6b00bc3880198600130e1cf62b8f8a93494488cc\library\core\src\result.rs:1226:5
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `fm-engine` (bin "fm-engine" test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

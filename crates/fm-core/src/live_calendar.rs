@@ -1,10 +1,18 @@
 //! Durable Calendar pages in the existing Core store. No provider or browser calls.
-use crate::calendar_store::{calendar_error, fingerprint, parse_access};
+use crate::calendar_store::{fingerprint, parse_access};
 use crate::{err, Result, Store};
 use fm_calendar::google_api::{BusySnapshot, CalendarBusy};
 use fm_calendar::{Access, Event, EventTime};
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
+#[path = "live_calendar_preparation.rs"]
+mod preparation;
+pub use preparation::{
+    prepare_calendar_catalog_chunk, prepare_calendar_catalog_entry, prepare_calendar_chunk,
+    prepare_calendar_page, CalendarCatalogChunkInput, CalendarChunkInput,
+    PreparedCalendarCatalogChunk, PreparedCalendarCatalogEntry, PreparedCalendarChunk,
+    PreparedCalendarPage,
+};
 
 pub const CALENDAR_STAGE_CHUNK: usize = 32;
 const CHUNK_BYTES: usize = 1024 * 1024;
@@ -41,6 +49,7 @@ pub struct CalendarSyncLease {
     pub calendar: String,
     pub connection_generation: i64,
 }
+#[derive(Clone)]
 pub struct CalendarPage {
     pub input_cursor: Option<String>,
     pub items: Vec<Value>,
@@ -256,184 +265,31 @@ impl Store {
             json!({"run":lease.run,"kind":run.kind,"mode":run.mode,"state":run.state,"query_fingerprint":run.query,"sync_token":input,"next_page_token":run.next,"final_page_staged":run.final_token.is_some(),"errors":run.errors,"identity_complete":run.identity_complete}),
         )
     }
-    /// Replaying an already durable chunk is idempotent. No cursor is advanced here.
-    /// Caller yields the writer between calls; each chunk is at most 32 items / 1 MiB,
-    /// except one individually bounded response item that must be retained intact.
+    /// Compatibility entry point for synchronous fixtures. Native workers use
+    /// opaque preparation outside the writer and the prepared APIs below.
     pub fn calendar_stage_page_chunk(
         &mut self,
         lease: &CalendarSyncLease,
         page: &CalendarPage,
         start: usize,
     ) -> Result<usize> {
-        let run = self.calendar_run(lease)?;
-        self.check_calendar_run(lease, &run)?;
-        validate_page(page)?;
-        let manifest = fingerprint(&json!([
-            page.items,
-            page.next_page_token,
-            page.next_sync_token
-        ]))?;
-        let page_id = fingerprint(&json!([lease.run, page.input_cursor]))?;
-        let previous: Option<(String, i64)> = self
-            .db
-            .query_row(
-                "SELECT manifest,sealed FROM calendar_sync_pages WHERE run=?1 AND page_id=?2",
-                params![lease.run, page_id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .optional()?;
-        if let Some((old, sealed)) = previous {
-            if old != manifest {
-                return Err(err("stale_page", "Calendar page changed during replay"));
-            }
-            if sealed != 0 {
-                return Ok(page.items.len());
-            }
-        }
-        if run.final_token.is_some() || page.input_cursor != run.next || start > page.items.len() {
-            return Err(err(
-                "stale_page",
-                "Unexpected Calendar page or item position",
-            ));
-        }
-        let zone = if run.kind == "events" {
-            self.db.query_row(
-                "SELECT time_zone FROM calendar_sync_state WHERE account=?1 AND calendar_id=?2",
-                params![lease.account, lease.calendar],
-                |r| r.get::<_, String>(0),
-            )?
-        } else {
-            String::new()
-        };
-        let mut prepared = Vec::new();
-        let mut bytes = 0;
-        for (ordinal, source) in page
-            .items
-            .iter()
-            .enumerate()
-            .skip(start)
-            .take(CALENDAR_STAGE_CHUNK)
-        {
-            let raw = serde_json::to_string(source)?;
-            if !prepared.is_empty() && bytes + raw.len() > CHUNK_BYTES {
-                break;
-            }
-            bytes += raw.len();
-            let hash = fingerprint(source)?;
-            let id = source["id"]
-                .as_str()
-                .filter(|v| provider_id(v).is_ok())
-                .map(str::to_owned);
-            let event = if run.kind == "events" {
-                id.as_ref()
-                    .and_then(|id| self.prepare_calendar_event(lease, id, source, &zone).ok())
-            } else {
-                None
-            };
-            let error = if id.is_none() {
-                Some("invalid_identity")
-            } else if run.kind == "events" && event.is_none() {
-                Some("invalid_event")
-            } else if run.kind == "catalog" && !valid_catalog(source) {
-                Some("invalid_calendar")
-            } else {
-                None
-            };
-            prepared.push((ordinal, id, raw, hash, error, event));
-        }
-        let tx = self.db.unchecked_transaction()?;
-        tx.execute("INSERT OR IGNORE INTO calendar_sync_pages(run,page_id,input_cursor,item_count,manifest,next_page_token,next_sync_token) VALUES(?1,?2,?3,?4,?5,?6,?7)",params![lease.run,page_id,page.input_cursor.as_deref().unwrap_or(""),page.items.len() as i64,manifest,page.next_page_token,page.next_sync_token])?;
-        for (ordinal, id, raw, hash, error, event) in &prepared {
-            let old:Option<String>=tx.query_row("SELECT fingerprint FROM calendar_sync_items WHERE run=?1 AND page_id=?2 AND ordinal=?3",params![lease.run,page_id,*ordinal as i64],|r|r.get(0)).optional()?;
-            if let Some(old) = old {
-                if old != *hash {
-                    return Err(err("stale_page", "Calendar item changed during replay"));
-                }
-                continue;
-            }
-            let duplicate = if let Some(id) = id {
-                tx.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM calendar_sync_items WHERE run=?1 AND event_id=?2)",
-                    params![lease.run, id],
-                    |r| r.get::<_, bool>(0),
-                )?
-            } else {
-                false
-            };
-            let error = error.or(if duplicate {
-                Some("duplicate_identity")
-            } else {
-                None
-            });
-            tx.execute("INSERT INTO calendar_sync_items(run,page_id,ordinal,event_id,json,fingerprint,error_code) VALUES(?1,?2,?3,?4,?5,?6,?7)",params![lease.run,page_id,*ordinal as i64,id,raw,hash,error])?;
-            if let (Some(id), Some(event), None) = (id, event, error) {
-                stage_event(&tx, lease, &run, id, raw, event)?;
-            }
-            if run.kind == "catalog" && id.is_some() {
-                restrict_catalog_entry(&tx, lease, run.projection, &serde_json::from_str(raw)?)?;
-            }
-            if error.is_some() {
-                tx.execute("UPDATE calendar_sync_runs SET errors=errors+1,identity_complete=MIN(identity_complete,?2) WHERE id=?1",params![lease.run,i64::from(id.is_some())])?;
-            }
-        }
-        tx.commit()?;
-        Ok(start + prepared.len())
+        let cancel = fm_google::transport::CancellationToken::new();
+        let prepared = prepare_calendar_page(lease.clone(), page.clone(), &cancel)?;
+        let input = self.calendar_prepare_chunk(lease, &prepared, start)?;
+        let chunk = prepare_calendar_chunk(&prepared, input, &cancel)?;
+        self.calendar_stage_prepared_chunk(lease, &prepared, &chunk)
     }
     pub fn calendar_seal_page(
         &mut self,
         lease: &CalendarSyncLease,
         page: &CalendarPage,
     ) -> Result<()> {
-        let run = self.calendar_run(lease)?;
-        self.check_calendar_run(lease, &run)?;
-        validate_page(page)?;
-        let page_id = fingerprint(&json!([lease.run, page.input_cursor]))?;
-        let manifest = fingerprint(&json!([
-            page.items,
-            page.next_page_token,
-            page.next_sync_token
-        ]))?;
-        let tx = self.db.unchecked_transaction()?;
-        let (stored,sealed,count):(String,i64,i64)=tx.query_row("SELECT manifest,sealed,item_count FROM calendar_sync_pages WHERE run=?1 AND page_id=?2",params![lease.run,page_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?.ok_or_else(||err("page_incomplete","Calendar page is not staged"))?;
-        if stored != manifest {
-            return Err(err("stale_page", "Calendar page changed before sealing"));
-        }
-        if sealed != 0 {
-            return Ok(());
-        }
-        if page.input_cursor != run.next || run.final_token.is_some() {
-            return Err(err("stale_page", "Calendar continuation changed"));
-        }
-        let actual: i64 = tx.query_row(
-            "SELECT COUNT(*) FROM calendar_sync_items WHERE run=?1 AND page_id=?2",
-            params![lease.run, page_id],
-            |r| r.get(0),
+        let prepared = prepare_calendar_page(
+            lease.clone(),
+            page.clone(),
+            &fm_google::transport::CancellationToken::new(),
         )?;
-        if actual != count {
-            return Err(err(
-                "page_incomplete",
-                "All Calendar page items must be durable before its cursor",
-            ));
-        }
-        if let Some(next) = &page.next_page_token {
-            if tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM calendar_sync_pages WHERE run=?1 AND input_cursor=?2)",
-                params![lease.run, next],
-                |r| r.get::<_, bool>(0),
-            )? {
-                return Err(err("stale_page", "Calendar cursor cycle"));
-            }
-        }
-        tx.execute(
-            "UPDATE calendar_sync_pages SET sealed=1 WHERE run=?1 AND page_id=?2",
-            params![lease.run, page_id],
-        )?;
-        tx.execute(
-            "UPDATE calendar_sync_runs SET next_page_token=?2,final_sync_token=?3 WHERE id=?1",
-            params![lease.run, page.next_page_token, page.next_sync_token],
-        )?;
-        tx.commit()?;
-        Ok(())
+        self.calendar_seal_prepared_page(lease, &prepared)
     }
     pub fn calendar_publish_sync(&mut self, lease: &CalendarSyncLease) -> Result<Value> {
         let run = self.calendar_run(lease)?;
@@ -498,13 +354,19 @@ impl Store {
                 "Seal and publish or expire the run first",
             ));
         }
-        let mut q=self.db.prepare("SELECT s.event_id FROM calendar_sources s WHERE s.account=?1 AND s.calendar_id=?2 AND (s.pending_generation=?3 OR (s.source_generation=?3 AND ?4='expired')) ORDER BY s.event_id LIMIT 32")?;
-        let ids = q
-            .query_map(
-                params![lease.account, lease.calendar, lease.run, run.state],
-                |r| r.get::<_, String>(0),
-            )?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let mut q=self.db.prepare("SELECT s.event_id,length(CAST(s.json AS BLOB))+COALESCE(length(CAST(s.pending_json AS BLOB)),0)+COALESCE(length(CAST(e.observed_json AS BLOB)),0)+COALESCE(length(CAST(e.pending_observed_json AS BLOB)),0) FROM calendar_sources s LEFT JOIN calendar_event_state e ON e.account=s.account AND e.calendar_id=s.calendar_id AND e.event_id=s.event_id WHERE s.account=?1 AND s.calendar_id=?2 AND (s.pending_generation=?3 OR (s.source_generation=?3 AND ?4='expired')) ORDER BY s.event_id LIMIT 32")?;
+        let mut query = q.query(params![lease.account, lease.calendar, lease.run, run.state])?;
+        let mut ids = Vec::new();
+        let mut bytes = 0;
+        while let Some(row) = query.next()? {
+            let size: usize = row.get(1)?;
+            if !ids.is_empty() && bytes + size > CHUNK_BYTES {
+                break;
+            }
+            ids.push(row.get::<_, String>(0)?);
+            bytes += size;
+        }
+        drop(query);
         drop(q);
         let tx = self.db.unchecked_transaction()?;
         for id in &ids {
@@ -528,29 +390,10 @@ impl Store {
         Ok(ids.len())
     }
     pub fn calendar_catalog_finalize_chunk(&mut self, lease: &CalendarSyncLease) -> Result<usize> {
-        let run = self.calendar_run(lease)?;
-        self.check_calendar_run(lease, &run)?;
-        if run.kind != "catalog" || run.final_token.is_none() {
-            return Err(err("page_incomplete", "Catalog final page is not sealed"));
-        }
-        let mut q=self.db.prepare("SELECT page_id,ordinal,json FROM calendar_sync_items WHERE run=?1 AND error_code IS NULL AND catalog_applied=0 ORDER BY page_id,ordinal LIMIT 32")?;
-        let rows = q
-            .query_map(params![lease.run], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, i64>(1)?,
-                    r.get::<_, String>(2)?,
-                ))
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        drop(q);
-        let tx = self.db.unchecked_transaction()?;
-        for (page_id, ordinal, raw) in &rows {
-            publish_catalog_entry(&tx, lease, run.projection, &serde_json::from_str(raw)?)?;
-            tx.execute("UPDATE calendar_sync_items SET catalog_applied=1 WHERE run=?1 AND page_id=?2 AND ordinal=?3",params![lease.run,page_id,ordinal])?;
-        }
-        tx.commit()?;
-        Ok(rows.len())
+        let input = self.calendar_catalog_prepare_finalization(lease)?;
+        let prepared =
+            prepare_calendar_catalog_chunk(input, &fm_google::transport::CancellationToken::new())?;
+        self.calendar_catalog_finalize_prepared(&prepared)
     }
     pub fn calendar_busy_commit(
         &mut self,
@@ -682,40 +525,17 @@ impl Store {
         connection_generation: i64,
         expected_permission_epoch: i64,
     ) -> Result<i64> {
-        if !valid_catalog(source) || serde_json::to_vec(source)?.len() > 2 * 1024 * 1024 {
-            return Err(err(
-                "invalid_response",
-                "Calendar metadata is invalid or exceeds bounds",
-            ));
-        }
-        let calendar = source["id"].as_str().unwrap();
-        let checkpoint = self.calendar_checkpoint(account, calendar)?;
-        let zone = source["timeZone"]
-            .as_str()
-            .or(checkpoint["time_zone"].as_str())
-            .unwrap();
-        let epoch = self.calendar_observe_permission(
+        let prepared = prepare_calendar_catalog_entry(
+            source.clone(),
+            &fm_google::transport::CancellationToken::new(),
+        )?;
+        self.calendar_observe_prepared_catalog_entry(
             account,
-            calendar,
+            &prepared,
             connection_generation,
             expected_permission_epoch,
-            parse_access(role(source))?,
-            zone,
-        )?;
-        // The permission fence above is durable first. A crash before this
-        // metadata refresh leaves conservative old display metadata, not grants.
-        self.db.execute(
-            "UPDATE calendar_catalog SET json=?3,deleted=?4 WHERE account=?1 AND calendar_id=?2",
-            params![
-                account,
-                calendar,
-                serde_json::to_string(source)?,
-                source["deleted"] == true
-            ],
-        )?;
-        Ok(epoch)
+        )
     }
-
     pub fn calendar_observe_permission(
         &mut self,
         account: &str,
@@ -767,63 +587,18 @@ impl Store {
         tx.commit()?;
         Ok(epoch)
     }
-    fn prepare_calendar_event(
-        &self,
-        lease: &CalendarSyncLease,
-        id: &str,
-        observed: &Value,
-        zone: &str,
-    ) -> Result<Event> {
-        let mut source = observed.clone();
-        if source["status"] == "cancelled" {
-            let old:Option<String>=self.db.query_row("SELECT COALESCE(CASE WHEN pending_generation=?4 THEN pending_json END,json) FROM calendar_sources WHERE account=?1 AND calendar_id=?2 AND event_id=?3",params![lease.account,lease.calendar,id,lease.run],|r|r.get(0)).optional()?;
-            if let Some(old) = old {
-                source = serde_json::from_str(&old)?;
-                for (k, v) in observed
-                    .as_object()
-                    .ok_or_else(|| err("invalid_event", "Calendar source must be an object"))?
-                {
-                    source[k] = v.clone();
-                }
-            }
-        }
-        fm_calendar::normalize(&lease.account, &lease.calendar, zone, &source)
-            .map_err(calendar_error)
-    }
 }
 
-fn validate_page(page: &CalendarPage) -> Result<()> {
-    if page.items.len() > 250
-        || page.next_page_token.is_some() == page.next_sync_token.is_some()
-        || serde_json::to_vec(&page.items)?.len() > 16 * 1024 * 1024
-    {
-        return Err(err(
-            "invalid_request",
-            "Calendar page exceeds bounds or has ambiguous continuation",
-        ));
-    }
-    for value in [
-        &page.input_cursor,
-        &page.next_page_token,
-        &page.next_sync_token,
-    ]
-    .into_iter()
-    .flatten()
-    {
-        token(value)?;
-    }
-    Ok(())
-}
 fn stage_event(
     tx: &rusqlite::Transaction<'_>,
     lease: &CalendarSyncLease,
     run: &Run,
     id: &str,
     observed: &str,
-    event: &Event,
+    event: &preparation::PreparedEvent,
 ) -> Result<()> {
     let existing:Option<i64>=tx.query_row("SELECT source_generation FROM calendar_sources WHERE account=?1 AND calendar_id=?2 AND event_id=?3",params![lease.account,lease.calendar,id],|r|r.get(0)).optional()?;
-    let raw = serde_json::to_string(&event.source)?;
+    let raw = event.source.as_ref();
     let full: i64 = if run.mode == "full" {
         lease.run
     } else {
@@ -842,7 +617,9 @@ fn stage_event(
         tx.execute("INSERT INTO calendar_event_state(account,calendar_id,event_id,visible,observed_json,pending_visible,pending_observed_json,pending_seen_full_generation) SELECT account,calendar_id,event_id,1,json,1,?4,?5 FROM calendar_sources WHERE account=?1 AND calendar_id=?2 AND event_id=?3 ON CONFLICT(account,calendar_id,event_id) DO UPDATE SET pending_visible=1,pending_observed_json=excluded.pending_observed_json,pending_seen_full_generation=excluded.pending_seen_full_generation",params![lease.account,lease.calendar,id,observed,full])?;
         1
     };
-    index_event(tx, event, slot, lease.run)
+    event
+        .index
+        .write(tx, (&lease.account, &lease.calendar, id), slot, lease.run)
 }
 pub(crate) fn index_event(
     db: &rusqlite::Connection,
@@ -850,16 +627,12 @@ pub(crate) fn index_event(
     slot: i64,
     generation: i64,
 ) -> Result<()> {
-    let bounds = |time: &Option<EventTime>| match time {
-        Some(EventTime::Date { date }) => (None, Some(date.to_string())),
-        Some(EventTime::Zoned { instant, .. }) => (Some(instant.timestamp_millis()), None),
-        None => (None, None),
-    };
-    let (start_ms, start_date) = bounds(&event.start);
-    let (end_ms, end_date) = bounds(&event.end);
-    let (original_ms, original_date) = bounds(&event.original_start);
-    db.execute("INSERT INTO calendar_event_index VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14) ON CONFLICT(account,calendar_id,event_id,slot) DO UPDATE SET generation=excluded.generation,start_ms=excluded.start_ms,end_ms=excluded.end_ms,start_date=excluded.start_date,end_date=excluded.end_date,series_id=excluded.series_id,original_ms=excluded.original_ms,original_date=excluded.original_date,recurring=excluded.recurring,cancelled=excluded.cancelled",params![event.key.account,event.key.calendar,event.key.event,slot,generation,start_ms,end_ms,start_date,end_date,event.series_id,original_ms,original_date,!event.recurrence.is_empty(),event.cancelled])?;
-    Ok(())
+    preparation::EventIndex::from_event(event).write(
+        db,
+        (&event.key.account, &event.key.calendar, &event.key.event),
+        slot,
+        generation,
+    )
 }
 fn valid_catalog(source: &Value) -> bool {
     source.is_object()
@@ -895,14 +668,12 @@ fn rank(role: &str) -> u8 {
         _ => 0,
     }
 }
-fn restrict_catalog_entry(
+fn restrict_catalog_role(
     tx: &rusqlite::Transaction<'_>,
     lease: &CalendarSyncLease,
-    _projection: i64,
-    source: &Value,
+    id: &str,
+    new_role: &str,
 ) -> Result<()> {
-    let id = source["id"].as_str().unwrap();
-    let new_role = role(source);
     let old: Option<String> = tx
         .query_row(
             "SELECT access FROM calendar_sync_state WHERE account=?1 AND calendar_id=?2",
@@ -915,14 +686,15 @@ fn restrict_catalog_entry(
     }
     Ok(())
 }
-fn publish_catalog_entry(
+fn publish_catalog_prepared(
     tx: &rusqlite::Transaction<'_>,
     lease: &CalendarSyncLease,
     projection: i64,
-    source: &Value,
+    source: &preparation::CatalogFields,
+    raw: &str,
 ) -> Result<()> {
-    let id = source["id"].as_str().unwrap();
-    let mut new_role = role(source);
+    let id = &source.id;
+    let mut new_role = source.role;
     let existing: Option<(String, String, i64)> = tx
         .query_row(
             "SELECT access,time_zone,permission_observation FROM calendar_sync_state WHERE account=?1 AND calendar_id=?2",
@@ -930,8 +702,9 @@ fn publish_catalog_entry(
             |r| Ok((r.get(0)?, r.get(1)?,r.get(2)?)),
         )
         .optional()?;
-    let mut zone = source["timeZone"]
-        .as_str()
+    let mut zone = source
+        .zone
+        .as_deref()
         .or(existing.as_ref().map(|v| v.1.as_str()));
     if let Some((old, old_zone, observed)) = &existing {
         if *observed > projection {
@@ -945,7 +718,7 @@ fn publish_catalog_entry(
     if let Some(zone) = zone {
         tx.execute("INSERT INTO calendar_sync_state(account,calendar_id,query_fingerprint,time_zone,access,sync_token,revision) VALUES(?1,?2,?3,?4,?5,NULL,0) ON CONFLICT(account,calendar_id) DO UPDATE SET sync_token=CASE WHEN calendar_sync_state.access<>excluded.access OR calendar_sync_state.time_zone<>excluded.time_zone THEN NULL ELSE calendar_sync_state.sync_token END,retained_errors=CASE WHEN calendar_sync_state.access<>excluded.access OR calendar_sync_state.time_zone<>excluded.time_zone THEN MAX(calendar_sync_state.retained_errors,1) ELSE calendar_sync_state.retained_errors END,time_zone=excluded.time_zone,access=excluded.access,permission_epoch=calendar_sync_state.permission_epoch+CASE WHEN calendar_sync_state.access<>excluded.access OR calendar_sync_state.time_zone<>excluded.time_zone THEN 1 ELSE 0 END,revision=calendar_sync_state.revision+CASE WHEN calendar_sync_state.access<>excluded.access OR calendar_sync_state.time_zone<>excluded.time_zone THEN 1 ELSE 0 END",params![lease.account,id,fm_calendar::google_api::EVENT_SYNC_FINGERPRINT,zone,new_role])?;
     }
-    tx.execute("INSERT INTO calendar_catalog VALUES(?1,?2,?3,?4,?5) ON CONFLICT(account,calendar_id) DO UPDATE SET json=excluded.json,deleted=excluded.deleted,observed_epoch=excluded.observed_epoch",params![lease.account,id,serde_json::to_string(source)?,source["deleted"]==true,lease.run])?;
+    tx.execute("INSERT INTO calendar_catalog VALUES(?1,?2,?3,?4,?5) ON CONFLICT(account,calendar_id) DO UPDATE SET json=excluded.json,deleted=excluded.deleted,observed_epoch=excluded.observed_epoch",params![lease.account,id,raw,source.deleted,lease.run])?;
     tx.execute("UPDATE calendar_publication SET revision=revision+1", [])?;
     Ok(())
 }

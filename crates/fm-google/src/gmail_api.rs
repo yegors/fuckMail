@@ -23,6 +23,7 @@ pub enum GmailMethod {
     MessagesList,
     HistoryList,
     MessageRaw,
+    MessageState,
     LabelsList,
     MessageModify,
     MessageTrash,
@@ -44,7 +45,7 @@ impl GmailMethod {
             Self::MessagesList | Self::MessageModify | Self::MessageRestore | Self::DraftsList => 5,
             Self::DraftCreate | Self::DraftDelete => 10,
             Self::DraftUpdate => 15,
-            Self::MessageRaw | Self::MessageTrash | Self::DraftGet => 20,
+            Self::MessageRaw | Self::MessageState | Self::MessageTrash | Self::DraftGet => 20,
             Self::MessageSend | Self::DraftSend => 100,
         }
     }
@@ -224,6 +225,24 @@ impl GmailCall {
             &[],
             None,
         )
+    }
+    /// Read only the versioned label projection; no MIME/body transfer is needed.
+    /// Use a partial response on the full resource because `minimal` documents
+    /// only ID/labels and does not guarantee the history/thread fence fields.
+    pub fn message_state(account: &AccountId, id: &str) -> Result<Self, GoogleError> {
+        let mut call = Self::new(
+            account,
+            GmailMethod::MessageState,
+            HttpMethod::Get,
+            &["messages", id],
+            &[
+                ("format", "full"),
+                ("fields", "id,threadId,labelIds,historyId"),
+            ],
+            None,
+        )?;
+        call.expected_id = Some(id.into());
+        Ok(call)
     }
     /// One explicit existing message. Never uses threads.modify, which could capture a new arrival.
     pub fn modify_message(
@@ -449,11 +468,21 @@ pub struct GmailSubmission {
     pub result: SubmissionResult,
     pub error: Option<GoogleError>,
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GmailMessageState {
+    pub id: String,
+    pub thread_id: String,
+    pub history_id: String,
+    #[serde(default)]
+    pub label_ids: Vec<String>,
+}
 pub enum GmailReply {
     Profile(GmailProfile),
     Messages(ListPage),
     History(HistoryPage),
     Raw(RawOutcome),
+    MessageState(Option<GmailMessageState>),
     Labels(GmailLabels),
     Drafts(GmailDraftPage),
     Draft(GmailDraft),
@@ -496,6 +525,11 @@ impl<T: HttpTransport> GmailApi<T> {
             return Ok(GmailReply::Submission(submission(response)));
         }
         let response = match response {
+            Err(TransportError::Cooldown { retry_after_secs }) => {
+                return Err(GoogleError::RateLimited {
+                    retry_after_secs: Some(retry_after_secs),
+                })
+            }
             Err(TransportError::ResponseTooLarge) if call.method == GmailMethod::MessageRaw => {
                 return Ok(GmailReply::Raw(RawOutcome::TooLarge))
             }
@@ -509,6 +543,9 @@ impl<T: HttpTransport> GmailApi<T> {
         };
         if response.status == 404 && call.method == GmailMethod::MessageRaw {
             return Ok(GmailReply::Raw(RawOutcome::Missing));
+        }
+        if response.status == 404 && call.method == GmailMethod::MessageState {
+            return Ok(GmailReply::MessageState(None));
         }
         if !(200..300).contains(&response.status) {
             return Err(crate::classify_api_error(
@@ -561,6 +598,21 @@ impl<T: HttpTransport> GmailApi<T> {
                 bytes,
                 call.expected_id.as_deref().unwrap(),
             ))),
+            GmailMethod::MessageState => {
+                let value: GmailMessageState = decode_json(bytes, MAX_JSON)?;
+                checked(&value.id, 256)?;
+                checked(&value.thread_id, 256)?;
+                history_id(&value.history_id)?;
+                if Some(value.id.as_str()) != call.expected_id.as_deref()
+                    || value.label_ids.len() > 10_000
+                {
+                    return Err(invalid());
+                }
+                for label in &value.label_ids {
+                    checked(label, 256)?;
+                }
+                Ok(GmailReply::MessageState(Some(value)))
+            }
             GmailMethod::LabelsList => {
                 let value: GmailLabels = decode_json(bytes, MAX_JSON)?;
                 if value.labels.len() > 10_000 {

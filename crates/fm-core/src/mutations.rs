@@ -1,4 +1,4 @@
-//! Atomic, explicitly requested local changes. Provider delivery is a later layer.
+//! Atomic, explicitly requested local changes and live delivery intent.
 use crate::{err, fields, id, string, CoreError, Result, Store};
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
@@ -23,6 +23,13 @@ impl Store {
                 "present",
                 "expected_revision",
                 "request_id",
+            ],
+            "mail_filing" => &[
+                "id",
+                "message_ids",
+                "expected_revision",
+                "request_id",
+                "action",
             ],
             "draft_save" => &[
                 "conversation_id",
@@ -115,9 +122,9 @@ impl Store {
                     )
                 })?
         };
-        let result = match method {
+        let mut result = match method {
             "draft_create" => self.create_composition(account, p)?,
-            "flag" | "set_category" => {
+            "flag" | "set_category" | "mail_filing" => {
                 let conversation = string(p, "id")?;
                 let current: i64 = tx
                     .query_row(
@@ -158,7 +165,7 @@ impl Store {
                             }
                         }
                     }
-                } else {
+                } else if method == "set_category" {
                     let category = string(p, "category_id")?;
                     let present = p["present"]
                         .as_bool()
@@ -182,6 +189,26 @@ impl Store {
                             params![account, message],
                         )?;
                         record_manual_intent(&tx, account, message, "category", category, present)?;
+                    }
+                } else {
+                    if self.profile_kind()? != crate::live_profile::ProfileKind::Live {
+                        return Err(err(
+                            "capability_unavailable",
+                            "Provider filing requires a live account",
+                        ));
+                    }
+                    let action = string(p, "action")?;
+                    let (label, present) = match action {
+                        "archive" => ("INBOX", false),
+                        "trash" => ("TRASH", true),
+                        "restore" => ("TRASH", false),
+                        _ => {
+                            return Err(err("invalid_request", "Choose archive, trash or restore"))
+                        }
+                    };
+                    for message in &targets {
+                        tx.execute("UPDATE messages SET inbox=CASE WHEN ?3='INBOX' THEN ?4 ELSE inbox END,trashed=CASE WHEN ?3='TRASH' THEN ?4 ELSE trashed END,revision=revision+1 WHERE account=?1 AND id=?2",params![account,message,label,present])?;
+                        record_manual_intent(&tx, account, message, "label", label, present)?;
                     }
                 }
                 tx.execute(
@@ -218,9 +245,15 @@ impl Store {
             }
             _ => unreachable!(),
         };
+        if matches!(method, "flag" | "set_category" | "mail_filing")
+            && self.profile_kind()? == crate::live_profile::ProfileKind::Live
+        {
+            result["delivery"] = json!({"state":"pending","request_id":request_id});
+        }
         tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
         tx.execute("INSERT INTO operations(account,request_id,fingerprint,result_json) VALUES(?1,?2,?3,?4)",
             params![account, request_id, fingerprint, serde_json::to_string(&result)?])?;
+        crate::google_live_mutations::enqueue(&tx, account, request_id, method, p)?;
         tx.commit()?;
         if let Some(before) = flag_projection_stamp {
             self.refresh_committed_flag_projections(account, string(p, "id")?, before);
@@ -428,10 +461,9 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
             }
         }
     }
-    if view
-        .get("folder")
-        .is_some_and(|v| !["inbox", "sent", "all", "drafts"].contains(&v.as_str().unwrap_or("")))
-    {
+    if view.get("folder").is_some_and(|v| {
+        !["inbox", "sent", "all", "trash", "drafts"].contains(&v.as_str().unwrap_or(""))
+    }) {
         return Err(err("invalid_request", "Unknown view folder"));
     }
     if view

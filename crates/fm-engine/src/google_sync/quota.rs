@@ -23,11 +23,44 @@ pub(super) struct Lease {
     gate: Arc<QuotaGate>,
     id: WorkId,
 }
+impl Lease {
+    /// Charge at actual HTTP dispatch, after any memory/token wait. The existing
+    /// reservation already owns both budget and concurrency; never acquire twice.
+    pub(super) fn dispatch(&self, cancel: &CancellationToken) -> Result<(), TransportError> {
+        if cancel.is_cancelled() {
+            return Err(TransportError::Cancelled);
+        }
+        let mut state = self.gate.state.lock().unwrap();
+        if cancel.is_cancelled() {
+            return Err(TransportError::Cancelled);
+        }
+        let State {
+            scheduler,
+            admitted,
+        } = &mut *state;
+        let permit = admitted
+            .get(&self.id)
+            .ok_or(TransportError::InvalidRequest)?;
+        let now = self.gate.now();
+        let result = if let Some(delay) = scheduler.dispatch_cooldown_ms(permit, now) {
+            Err(TransportError::Cooldown {
+                retry_after_secs: delay.div_ceil(1000),
+            })
+        } else if scheduler.dispatch(permit, now) {
+            Ok(())
+        } else {
+            Err(TransportError::InvalidRequest)
+        };
+        drop(state);
+        self.gate.changed.notify_waiters();
+        result
+    }
+}
 impl Drop for Lease {
     fn drop(&mut self) {
         let mut state = self.gate.state.lock().unwrap();
         if let Some(permit) = state.admitted.remove(&self.id) {
-            state.scheduler.finish(permit);
+            state.scheduler.finish_at(permit, self.gate.now());
         } else {
             state.scheduler.cancel_queued(self.id);
         }
@@ -143,6 +176,85 @@ mod tests {
             class: WorkClass::UserRead,
             units: 1,
         }
+    }
+    #[tokio::test]
+    async fn lease_dispatch_is_one_shot_and_cancellation_releases_concurrency() {
+        let gate = gate();
+        let cancel = CancellationToken::new();
+        let held = gate.acquire(work(), &cancel).await.unwrap();
+        held.dispatch(&cancel).unwrap();
+        gate.cooldown(CooldownScope::Project(Service::Gmail), 30);
+        assert!(matches!(
+            held.dispatch(&cancel),
+            Err(TransportError::InvalidRequest)
+        ));
+        assert_eq!(gate.state.lock().unwrap().scheduler.in_flight(), 1);
+        cancel.cancel();
+        assert!(matches!(
+            held.dispatch(&cancel),
+            Err(TransportError::Cancelled)
+        ));
+        drop(held);
+        let state = gate.state.lock().unwrap();
+        assert_eq!(state.scheduler.in_flight(), 0);
+        assert!(state.admitted.is_empty());
+    }
+    #[tokio::test]
+    async fn newly_learned_cooldown_is_recoverable_and_keeps_lease_until_drop() {
+        let gate = gate();
+        let cancel = CancellationToken::new();
+        let held = gate.acquire(work(), &cancel).await.unwrap();
+        {
+            let mut state = gate.state.lock().unwrap();
+            assert!(state.scheduler.next(61_000).is_none());
+            state
+                .scheduler
+                .cooldown(CooldownScope::Project(Service::Gmail), 62_001)
+                .unwrap();
+        }
+        assert_eq!(
+            held.dispatch(&cancel),
+            Err(TransportError::Cooldown {
+                retry_after_secs: 2
+            })
+        );
+        assert_eq!(gate.state.lock().unwrap().scheduler.in_flight(), 1);
+        drop(held);
+        let state = gate.state.lock().unwrap();
+        assert_eq!(state.scheduler.in_flight(), 0);
+        assert!(state.admitted.is_empty());
+    }
+    #[tokio::test]
+    async fn lease_hook_keeps_delayed_reservation_until_actual_dispatch() {
+        let budget = ServiceBudget::from_confirmed_limits(100, 100).unwrap();
+        let gate = QuotaGate::new(SchedulerConfig::new(budget, budget)).unwrap();
+        let cancel = CancellationToken::new();
+        let mut request = work();
+        request.units = 80;
+        let held = gate.acquire(request, &cancel).await.unwrap();
+        let other = AccountId::new("other").unwrap();
+        {
+            let mut state = gate.state.lock().unwrap();
+            state.scheduler.register_account(other.clone()).unwrap();
+            state
+                .scheduler
+                .enqueue(Work {
+                    account: other,
+                    ..work()
+                })
+                .unwrap();
+            // Advance the deterministic scheduler clock rather than sleeping;
+            // Lease dispatch cannot move that clock backwards.
+            assert!(state.scheduler.next(61_000).is_none());
+            assert_eq!(state.scheduler.next_wake_ms(61_000), None);
+        }
+        held.dispatch(&cancel).unwrap();
+        drop(held);
+        let mut state = gate.state.lock().unwrap();
+        assert_eq!(state.scheduler.in_flight(), 0);
+        assert_eq!(state.scheduler.next_wake_ms(61_000), Some(121_000));
+        assert!(state.scheduler.next(120_999).is_none());
+        assert!(state.scheduler.next(121_000).is_some());
     }
     #[tokio::test]
     async fn aborted_waiter_and_lease_release_admission() {

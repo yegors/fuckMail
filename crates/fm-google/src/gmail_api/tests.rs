@@ -88,6 +88,13 @@ fn endpoint_inventory_has_documented_costs_and_fixed_mutation_classes() {
             WorkClass::UserRead,
         ),
         (
+            GmailCall::message_state(&a, "m").unwrap(),
+            HttpMethod::Get,
+            "/messages/m",
+            20,
+            WorkClass::UserRead,
+        ),
+        (
             GmailCall::modify_message(&a, "m", &["STARRED".into()], &["UNREAD".into()]).unwrap(),
             HttpMethod::Post,
             "/messages/m/modify",
@@ -171,6 +178,78 @@ fn endpoint_inventory_has_documented_costs_and_fixed_mutation_classes() {
             assert!(call.with_read_class(WorkClass::BackfillRead).is_err());
         }
     }
+}
+
+#[tokio::test]
+async fn versioned_label_read_excludes_bodies_and_validates_identity_and_history() {
+    let (fake, api) = setup();
+    let a = account("a");
+    fake.respond(
+        200,
+        json!({"id":"m","threadId":"t","historyId":"123","labelIds":["UNREAD"]}),
+    );
+    let reply = api
+        .execute(
+            GmailCall::message_state(&a, "m").unwrap(),
+            "token",
+            &CancellationToken::new(),
+        )
+        .await
+        .unwrap();
+    let GmailReply::MessageState(Some(state)) = reply else {
+        panic!("Expected versioned labels")
+    };
+    assert_eq!(
+        (
+            state.id.as_str(),
+            state.thread_id.as_str(),
+            state.history_id.as_str()
+        ),
+        ("m", "t", "123")
+    );
+    {
+        let request = fake.calls.lock().unwrap();
+        let url = Url::parse(request[0].url()).unwrap();
+        let query: std::collections::HashMap<_, _> = url.query_pairs().collect();
+        assert_eq!(query["format"], "full");
+        assert_eq!(query["fields"], "id,threadId,labelIds,historyId");
+    }
+    for body in [
+        json!({"id":"other","threadId":"t","historyId":"123"}),
+        json!({"id":"m","threadId":"t"}),
+        json!({"id":"m","threadId":"t","historyId":"not-history"}),
+        json!({"id":"m","threadId":"","historyId":"123"}),
+    ] {
+        fake.respond(200, body);
+        assert!(api
+            .execute(
+                GmailCall::message_state(&a, "m").unwrap(),
+                "token",
+                &CancellationToken::new()
+            )
+            .await
+            .is_err());
+    }
+    fake.respond(404, json!({}));
+    assert!(matches!(
+        api.execute(
+            GmailCall::message_state(&a, "m").unwrap(),
+            "token",
+            &CancellationToken::new()
+        )
+        .await
+        .unwrap(),
+        GmailReply::MessageState(None)
+    ));
+    fake.respond(403, json!({}));
+    assert!(api
+        .execute(
+            GmailCall::message_state(&a, "m").unwrap(),
+            "token",
+            &CancellationToken::new()
+        )
+        .await
+        .is_err());
 }
 
 #[test]
@@ -432,6 +511,28 @@ async fn draft_container_identity_survives_message_replacement_and_frozen_send()
         mime
     );
     assert!(calls[1].headers().get("if-match").is_none());
+}
+
+#[tokio::test]
+async fn local_cooldown_preserves_retry_delay_without_replaying_reads_or_state_writes() {
+    let (fake, api) = setup();
+    let a = account("a");
+    for call in [
+        GmailCall::profile(&a).unwrap(),
+        GmailCall::modify_message(&a, "message", &["STARRED".into()], &[]).unwrap(),
+    ] {
+        fake.fail(TransportError::Cooldown {
+            retry_after_secs: 23,
+        });
+        assert!(matches!(
+            api.execute(call, "token", &CancellationToken::new()).await,
+            Err(GoogleError::RateLimited {
+                retry_after_secs: Some(23)
+            })
+        ));
+    }
+    assert_eq!(fake.calls.lock().unwrap().len(), 2);
+    assert!(fake.replies.lock().unwrap().is_empty());
 }
 
 #[tokio::test]

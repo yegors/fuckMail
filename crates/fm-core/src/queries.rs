@@ -769,7 +769,7 @@ impl Store {
             return Err(err("invalid_request", "Unknown search field"));
         }
         let folder = optional_string(p, "folder", "inbox")?;
-        if !["all", "inbox", "sent"].contains(&folder) {
+        if !["all", "inbox", "sent", "trash"].contains(&folder) {
             return Err(err("invalid_request", "Unknown folder"));
         }
         let category = optional_string(p, "category", "")?;
@@ -1260,9 +1260,10 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
     // sender/body columns in the old query's scan even for unfiltered listings.
     let mut predicate = "m.account=?1".to_owned();
     match p["folder"].as_str().unwrap_or("inbox") {
-        "inbox" => predicate.push_str(" AND m.inbox=1"),
-        "sent" => predicate.push_str(" AND m.sent=1"),
-        _ => {}
+        "inbox" => predicate.push_str(" AND m.inbox=1 AND m.trashed=0"),
+        "sent" => predicate.push_str(" AND m.sent=1 AND m.trashed=0"),
+        "trash" => predicate.push_str(" AND m.trashed=1"),
+        _ => predicate.push_str(" AND m.trashed=0"),
     }
     if p["category"].as_str().is_some_and(|s| !s.is_empty()) {
         predicate.push_str(" AND m.id IN (SELECT message_id FROM message_categories WHERE account=?1 AND category_id=?3)");
@@ -1313,6 +1314,50 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
 #[cfg(test)]
 mod projection_tests {
     use super::*;
+    #[test]
+    fn trash_folder_is_explicit_and_restoration_does_not_invent_inbox_membership() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(temp.path()).unwrap();
+        let cid = "windscribe-thread-001";
+        store
+            .db
+            .execute(
+                "UPDATE messages SET trashed=1 WHERE account='windscribe' AND conversation_id=?1",
+                [cid],
+            )
+            .unwrap();
+        for folder in ["inbox", "sent", "all", "trash"] {
+            let page = store
+                .conversations("windscribe", &json!({"folder":folder,"limit":100}))
+                .unwrap();
+            let present = page["conversations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|row| row["id"] == cid);
+            assert_eq!(
+                present,
+                folder == "trash",
+                "Unexpected membership in {folder}"
+            );
+        }
+        store.db.execute("UPDATE messages SET trashed=0,inbox=0 WHERE account='windscribe' AND conversation_id=?1",[cid]).unwrap();
+        for folder in ["inbox", "all", "trash"] {
+            let page = store
+                .conversations("windscribe", &json!({"folder":folder,"limit":100}))
+                .unwrap();
+            let present = page["conversations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|row| row["id"] == cid);
+            assert_eq!(
+                present,
+                folder == "all",
+                "Restoration changed {folder} unexpectedly"
+            );
+        }
+    }
     #[test]
     fn first_page_navigation_reuses_mail_without_source_reads_and_refreshes_cursor_revision() {
         use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
@@ -1683,7 +1728,7 @@ mod projection_tests {
         correct(&store);
         // REPLACE has an unhooked deletion; the inventory check must rebuild the
         // former conversation as well as the replacement's new identity.
-        store.db.execute("INSERT OR REPLACE INTO messages SELECT NULL,account,id,'windscribe-thread-001',remote_id,sender_name,sender_email,recipient,subject,body,sent_at,0,0,inbox,sent,source_hash,revision FROM messages WHERE id='cache-one'",[]).unwrap();
+        store.db.execute("INSERT OR REPLACE INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision,trashed) SELECT account,id,'windscribe-thread-001',remote_id,sender_name,sender_email,recipient,subject,body,sent_at,0,0,inbox,sent,source_hash,revision,trashed FROM messages WHERE id='cache-one'",[]).unwrap();
         correct(&store);
         store
             .db

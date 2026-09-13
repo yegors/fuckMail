@@ -1,0 +1,106 @@
+{
+  "recorded_at_utc": "2026-09-13T08:43:17.7050026Z",
+  "scope": "Scoped and integrated synthetic state, quota, lifecycle and CLI checks plus full Windows Debug native acceptance. Prior failures retained. Runtime/performance/packages/real accounts retain their recorded separate scope.",
+  "logs": [
+    {
+      "file": "p2-05a-cli-01.log",
+      "bytes": 1101,
+      "sha256": "052c717087cc8afacb6ec895fd03c1ed6280902fdc05d30726a51fe830fb7c2f"
+    },
+    {
+      "file": "p2-05a-cli-02.log",
+      "bytes": 1013,
+      "sha256": "2729b3533dea5b6d527100cd3f03be8b43a514c9e01f626557d78125fbf3c699"
+    },
+    {
+      "file": "p2-05a-core-mail-mutations-01.log",
+      "bytes": 2246,
+      "sha256": "2510e3ca5ca9a0a2cc1fb61549c6f18edc5aa6d7e91247410ec6b7e5acc0a4d3"
+    },
+    {
+      "file": "p2-05a-core-mail-mutations-02.log",
+      "bytes": 2527,
+      "sha256": "922fcf71b2cf4787e95da264d0a3f473fab36fd55868683bab26d4a9edf42f0a"
+    },
+    {
+      "file": "p2-05a-engine-mail-mutations-01.log",
+      "bytes": 816,
+      "sha256": "9e8aae0f210ec569e2c68cf107f5f03c4669378d19349f93d7d03a5e82cfa398"
+    },
+    {
+      "file": "p2-05a-engine-mail-mutations-02.log",
+      "bytes": 1190,
+      "sha256": "a35a8415ad46e78f0031a9b5c25d90bfc32c6e9cdc44817fb0f2006dbd8a636c"
+    },
+    {
+      "file": "p2-05a-engine-mail-mutations-03.log",
+      "bytes": 1387,
+      "sha256": "aef511fde206e52d8bb00b73c647aaf3dca3f5c9f7b40296ac0b3899ca0bf698"
+    },
+    {
+      "file": "p2-05a-engine-mail-mutations-04.log",
+      "bytes": 1395,
+      "sha256": "73dcb907ee8d0076ae3716240a054d2f01f8783d05a450099f4e4631fde361a5"
+    },
+    {
+      "file": "p2-05a-full-dev-01.LastTest.log",
+      "bytes": 64931,
+      "sha256": "94c18ac932ab686556fa7ecd71e7a3b0db2797d7a73adcb982aab5794ce8488f"
+    },
+    {
+      "file": "p2-05a-full-dev-01.log",
+      "bytes": 4170,
+      "sha256": "f1749d1c45d0a87a9fb2ef1af176979db6cf4075c6461ef671aabf009bb72b08"
+    },
+    {
+      "file": "p2-05a-integrated-01.log",
+      "bytes": 1698041,
+      "sha256": "dac90e99d1d076b2ca996b33511b903e753f040b728709e7f6cea8268de618ab"
+    },
+    {
+      "file": "p2-05a-integrated-02.log",
+      "bytes": 1098,
+      "sha256": "030acade8790d1901c96169dd366d455900b238cee5d2e2c53431c55a812af66"
+    },
+    {
+      "file": "p2-05a-integrated-03.log",
+      "bytes": 34011,
+      "sha256": "96c7ff832b8e904dd3809434049733dd6e573857f71725490ac62f3270f21858"
+    },
+    {
+      "file": "p2-05a-integrated-clippy-01.log",
+      "bytes": 537,
+      "sha256": "e4b387a1f062c5b102958f4359c25b95409f02ce23773583036cfcc26815130f"
+    },
+    {
+      "file": "p2-05a-integrated-format-01.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "p2-05a-integrated-format-02.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "p2-05a-integrated-format-03.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "p2-05a-mail-mutations-clippy-01.log",
+      "bytes": 1137,
+      "sha256": "bbdee3be353f1c75f8d7428c8ad3593d26da0607e157886da79a357e9c28857e"
+    },
+    {
+      "file": "p2-05a-mail-mutations-clippy-02.log",
+      "bytes": 257,
+      "sha256": "b7afa8a87bdc5f8f526ed337510a2180ddf5096b49bd622f1a403f2d80ee3eef"
+    },
+    {
+      "file": "p2-05a-native-build-01.log",
+      "bytes": 3532,
+      "sha256": "bf77baa31c9447b87dcfcbe72b67f97fbc9fab8bde158209577ae83dad0a89fa"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+   Compiling fm-ipc v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-ipc)
+   Compiling fm-cli v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.72s
+     Running unittests src\main.rs (target\debug\deps\fm-3085de67cf8e8604.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\arguments.rs (target\debug\deps\arguments-57a9a933a5e32ef1.exe)
+
+running 6 tests
+test live_profile_initialization_requires_an_explicit_path ... ok
+test help_and_version_are_headless_and_do_not_start_a_profile ... ok
+test scope_and_bound_errors_are_machine_readable_without_a_live_engine ... ok
+test sender_commands_and_kinds_are_headless_and_reject_invalid_kinds ... ok
+test composition_selectors_reject_ambiguity_before_starting_an_engine ... ok
+test google_preflight_does_not_start_storage_for_missing_scope_or_setup ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s
+

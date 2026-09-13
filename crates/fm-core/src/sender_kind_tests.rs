@@ -447,9 +447,16 @@ fn schema6_migration_keeps_old_profiles_receipts_and_sources_unclassified() {
             } else {
                 ""
             };
+            // Compare the exact historical columns. Schema 10 adds a derived
+            // Trash projection, which is checked separately below.
+            let columns = if *table == "messages" {
+                "rowid,account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision"
+            } else {
+                "*"
+            };
             let mut stmt = db
                 .prepare(&format!(
-                    "SELECT * FROM {table}{where_clause} ORDER BY rowid"
+                    "SELECT {columns} FROM {table}{where_clause} ORDER BY rowid"
                 ))
                 .unwrap();
             let count = stmt.column_count();
@@ -468,7 +475,26 @@ fn schema6_migration_keeps_old_profiles_receipts_and_sources_unclassified() {
     drop(old);
     let mut store = Store::open(dir.path()).unwrap();
     assert_eq!(store.fixture_revision().unwrap(), 2);
-    assert_eq!(snapshot(&store.db), before);
+    let after = snapshot(&store.db);
+    for (index, (actual, expected)) in after.iter().zip(&before).enumerate() {
+        assert_eq!(
+            actual.len(),
+            expected.len(),
+            "historical table {index} row count"
+        );
+        for (row, (actual, expected)) in actual.iter().zip(expected).enumerate() {
+            assert_eq!(actual, expected, "historical table {index}, row {row}");
+        }
+    }
+    assert_eq!(
+        store
+            .db
+            .query_row("SELECT COUNT(*) FROM messages WHERE trashed!=0", [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .unwrap(),
+        0
+    );
     assert_eq!(
         store
             .db

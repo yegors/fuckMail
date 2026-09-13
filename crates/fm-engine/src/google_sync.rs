@@ -1,6 +1,8 @@
 //! Explicit Google read sessions share quotas, one Store writer and cancellation.
 pub(crate) mod calendar;
+pub(crate) mod calendar_writes;
 pub(crate) mod mail;
+pub(crate) mod mail_mutations;
 mod quota;
 #[cfg(test)]
 mod runtime_tests;
@@ -17,7 +19,13 @@ use fm_google::{
     AccountId, GoogleError,
 };
 use serde_json::{json, Value};
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
+    time::Duration,
+};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 #[derive(Clone)]
@@ -46,6 +54,7 @@ pub(crate) struct SyncContext {
     tokens: TokenSource,
     quota: Arc<quota::QuotaGate>,
     preparation: Arc<Semaphore>,
+    calendar_preparation: Arc<Semaphore>,
 }
 impl SyncContext {
     pub(crate) async fn core_call<T, F>(&self, operation: F) -> Result<T>
@@ -77,11 +86,31 @@ impl SyncContext {
         &self,
         call: GmailCall,
     ) -> std::result::Result<GmailReply, GoogleError> {
-        if call.work().account != self.account {
+        if call.work().account != self.account || !call.work().class.is_read() {
             return Err(GoogleError::PermissionDenied);
         }
         let http = Arc::new(self.transport(call.work()));
         // Transport replaces this non-secret placeholder only after quota admission.
+        GmailApi::new(self.account.clone(), http)
+            .execute(call, "engine-managed", &self.cancel)
+            .await
+    }
+    pub(crate) async fn gmail_mutation(
+        &self,
+        call: GmailCall,
+    ) -> std::result::Result<GmailReply, GoogleError> {
+        use fm_google::gmail_api::GmailMethod;
+        if call.work().account != self.account
+            || !matches!(
+                call.method(),
+                GmailMethod::MessageModify
+                    | GmailMethod::MessageTrash
+                    | GmailMethod::MessageRestore
+            )
+        {
+            return Err(GoogleError::PermissionDenied);
+        }
+        let http = Arc::new(self.transport(call.work()));
         GmailApi::new(self.account.clone(), http)
             .execute(call, "engine-managed", &self.cancel)
             .await
@@ -96,7 +125,7 @@ impl SyncContext {
         {
             return Err(GoogleError::PermissionDenied);
         }
-        let _quota = self
+        let quota = self
             .quota
             .acquire(work.clone(), &self.cancel)
             .await
@@ -107,27 +136,80 @@ impl SyncContext {
             .map_err(|_| GoogleError::TransportInterrupted)?;
         let mut http = self.transport(work);
         http.admitted = true;
+        http.permit = Mutex::new(Some(quota));
         let reply = GmailApi::new(self.account.clone(), Arc::new(http))
             .execute(call, "engine-managed", &self.cancel)
             .await?;
         Ok((reply, memory))
     }
-    pub(crate) fn calendar_api(&self, class: WorkClass) -> GoogleCalendarApi<QuotaTransport> {
-        GoogleCalendarApi::new(
-            self.account.clone(),
-            Arc::new(self.transport(Work {
-                account: self.account.clone(),
-                service: Service::Calendar,
-                class,
-                units: 1,
-            })),
-        )
+    pub(crate) async fn calendar_request(
+        &self,
+        class: WorkClass,
+    ) -> Result<(GoogleCalendarApi<QuotaTransport>, OwnedSemaphorePermit)> {
+        if !class.is_read() {
+            return Err(failure(
+                "invalid_request",
+                "Calendar acquisition requires a read operation",
+            ));
+        }
+        let work = Work {
+            account: self.account.clone(),
+            service: Service::Calendar,
+            class,
+            units: 1,
+        };
+        // Quota waiters carry identifiers only. A quota-paused account cannot
+        // occupy a decoded-page slot needed by another account's current view.
+        let quota = self
+            .quota
+            .acquire(work.clone(), &self.cancel)
+            .await
+            .map_err(|_| failure("cancelled", "Calendar acquisition stopped"))?;
+        let memory = self.calendar_prepare_permit().await?;
+        let mut http = self.transport(work);
+        http.admitted = true;
+        http.permit = Mutex::new(Some(quota));
+        Ok((
+            GoogleCalendarApi::new(self.account.clone(), Arc::new(http)),
+            memory,
+        ))
+    }
+    pub(crate) async fn calendar_prepare_permit(&self) -> Result<OwnedSemaphorePermit> {
+        tokio::select! {
+            _=self.cancel.cancelled()=>Err(failure("cancelled","Calendar preparation stopped")),
+            permit=self.calendar_preparation.clone().acquire_owned()=>permit.map_err(|_|failure("cancelled","Calendar preparation stopped")),
+        }
+    }
+    pub(crate) async fn calendar_mutation_request(
+        &self,
+        units: u32,
+    ) -> Result<GoogleCalendarApi<QuotaTransport>> {
+        if !matches!(units, 1 | 3) {
+            return Err(failure("invalid_request", "Invalid Calendar mutation cost"));
+        }
+        let work = Work {
+            account: self.account.clone(),
+            service: Service::Calendar,
+            class: WorkClass::CalendarMutation,
+            units,
+        };
+        let quota = self
+            .quota
+            .acquire(work.clone(), &self.cancel)
+            .await
+            .map_err(|_| failure("cancelled", "Calendar operation stopped"))?;
+        let mut http = self.transport(work);
+        http.admitted = true;
+        http.permit = Mutex::new(Some(quota));
+        Ok(GoogleCalendarApi::new(self.account.clone(), Arc::new(http)))
     }
     fn transport(&self, work: Work) -> QuotaTransport {
         QuotaTransport {
             context: self.clone(),
             work,
             admitted: false,
+            permit: Mutex::new(None),
+            used: AtomicBool::new(false),
         }
     }
     #[cfg(test)]
@@ -149,6 +231,7 @@ impl SyncContext {
             cancel,
             quota: quota::QuotaGate::new(SchedulerConfig::new(budget, budget)).unwrap(),
             preparation: Arc::new(Semaphore::new(1)),
+            calendar_preparation: Arc::new(Semaphore::new(2)),
         }
     }
 }
@@ -157,6 +240,8 @@ pub(crate) struct QuotaTransport {
     context: SyncContext,
     work: Work,
     admitted: bool,
+    permit: Mutex<Option<quota::Lease>>,
+    used: AtomicBool,
 }
 impl HttpTransport for QuotaTransport {
     fn execute<'a>(
@@ -165,23 +250,35 @@ impl HttpTransport for QuotaTransport {
         cancel: &'a CancellationToken,
     ) -> HttpFuture<'a> {
         Box::pin(async move {
-            // Read workers cannot submit writes through their quota facade.
+            if self.used.swap(true, Ordering::AcqRel) {
+                return Err(TransportError::InvalidRequest);
+            }
+            let admitted = self.permit.lock().unwrap().take();
+            // Typed mutation workers have a separate one-shot lane. Read workers
+            // cannot borrow that lane, and submission/draft endpoints are absent.
             let read_request = request.method() == HttpMethod::Get
                 || (self.work.service == Service::Calendar
                     && request.method() == HttpMethod::Post
                     && request.url() == "https://www.googleapis.com/calendar/v3/freeBusy");
-            if !self.work.class.is_read() || !read_request {
+            let allowed = if self.work.class.is_read() {
+                read_request
+            } else {
+                matches!(
+                    (self.work.service, self.work.class),
+                    (Service::Gmail, WorkClass::StateMutation)
+                        | (Service::Calendar, WorkClass::CalendarMutation)
+                ) && mutation_request_matches(&self.work, &request)
+            };
+            if !allowed {
                 return Err(TransportError::InvalidRequest);
             }
-            let _permit = if self.admitted {
-                None
+            let permit = if self.admitted {
+                admitted.ok_or(TransportError::InvalidRequest)?
             } else {
-                Some(
-                    self.context
-                        .quota
-                        .acquire(self.work.clone(), cancel)
-                        .await?,
-                )
+                self.context
+                    .quota
+                    .acquire(self.work.clone(), cancel)
+                    .await?
             };
             let token = self
                 .context
@@ -190,6 +287,7 @@ impl HttpTransport for QuotaTransport {
                 .await
                 .map_err(|_| TransportError::Cancelled)?;
             let request = request.header("authorization", &format!("Bearer {token}"))?;
+            permit.dispatch(cancel)?;
             let response = self.context.http.execute(request, cancel).await;
             if let Ok(reply) = &response {
                 if let GoogleError::RateLimited { retry_after_secs } = fm_google::classify_api_error(
@@ -213,6 +311,44 @@ impl HttpTransport for QuotaTransport {
             }
             response
         })
+    }
+}
+
+fn mutation_request_matches(work: &Work, request: &HttpRequest) -> bool {
+    let path = request.url().split('?').next().unwrap_or("");
+    match work.service {
+        Service::Gmail => {
+            let Some(tail) =
+                path.strip_prefix("https://gmail.googleapis.com/gmail/v1/users/me/messages/")
+            else {
+                return false;
+            };
+            let parts: Vec<_> = tail.split('/').collect();
+            request.method() == HttpMethod::Post
+                && parts.len() == 2
+                && !parts[0].is_empty()
+                && matches!(
+                    (parts[1], work.units),
+                    ("modify" | "untrash", 5) | ("trash", 20)
+                )
+        }
+        Service::Calendar => {
+            let Some(tail) = path.strip_prefix("https://www.googleapis.com/calendar/v3/calendars/")
+            else {
+                return false;
+            };
+            let parts: Vec<_> = tail.split('/').collect();
+            if parts.len() < 2 || parts[0].is_empty() || parts[1] != "events" {
+                return false;
+            }
+            match (request.method(), work.units, parts.len()) {
+                (HttpMethod::Post, 1, 2) => true,
+                (HttpMethod::Patch, 3, 3)
+                | (HttpMethod::Put, 1, 3)
+                | (HttpMethod::Delete, 1, 3) => !parts[2].is_empty(),
+                _ => false,
+            }
+        }
     }
 }
 
@@ -262,6 +398,15 @@ struct Job {
     task: tokio::task::JoinHandle<()>,
     progress: Arc<std::sync::Mutex<Value>>,
 }
+struct OperationOwner {
+    owners: Arc<Mutex<std::collections::BTreeMap<String, CancellationToken>>>,
+    key: String,
+}
+impl Drop for OperationOwner {
+    fn drop(&mut self) {
+        self.owners.lock().unwrap().remove(&self.key);
+    }
+}
 struct RuntimeState {
     quota: Option<(Value, Arc<quota::QuotaGate>)>,
     jobs: std::collections::BTreeMap<String, Job>,
@@ -272,6 +417,7 @@ pub(crate) struct Runtime {
     auth: Arc<google_auth::Runtime>,
     cancel: CancellationToken,
     preparation: Arc<Semaphore>,
+    calendar_preparation: Arc<Semaphore>,
     state: tokio::sync::Mutex<RuntimeState>,
 }
 impl Runtime {
@@ -285,6 +431,7 @@ impl Runtime {
             auth,
             cancel,
             preparation: Arc::new(Semaphore::new(1)),
+            calendar_preparation: Arc::new(Semaphore::new(2)),
             state: tokio::sync::Mutex::new(RuntimeState {
                 quota: None,
                 jobs: Default::default(),
@@ -300,7 +447,54 @@ impl Runtime {
                 | "google_sync_release"
                 | "google_sync_status"
                 | "google_sync_busy"
+                | "google_calendar_write"
+                | "google_calendar_reconcile"
+                | "google_calendar_operation"
         )
+    }
+    async fn operation_context(
+        &self,
+        account: &str,
+        owner_id: &str,
+        owner_cancel: CancellationToken,
+    ) -> Result<(SyncContext, OperationOwner)> {
+        if owner_cancel.is_cancelled() || self.cancel.is_cancelled() {
+            return Err(failure("cancelled", "Google operation stopped"));
+        }
+        let state = self.state.lock().await;
+        if owner_cancel.is_cancelled() || self.cancel.is_cancelled() {
+            return Err(failure("cancelled", "Google operation stopped"));
+        }
+        let job = state
+            .jobs
+            .get(account)
+            .filter(|job| !job.task.is_finished())
+            .ok_or_else(|| {
+                failure(
+                    "sync_not_running",
+                    "Start this account's sync session first",
+                )
+            })?;
+        let mut owners = job.owners.lock().unwrap();
+        if job.cancel.is_cancelled() || state.stopping {
+            return Err(failure(
+                "sync_not_running",
+                "Start this account's sync session first",
+            ));
+        }
+        owners.retain(|_, cancel| !cancel.is_cancelled());
+        if owners.len() >= 128 {
+            return Err(failure("busy", "Too many Google operation owners"));
+        }
+        let key = format!("operation:{owner_id}:{}", fm_ipc::random_token());
+        owners.insert(key.clone(), owner_cancel);
+        Ok((
+            job.context.clone(),
+            OperationOwner {
+                owners: job.owners.clone(),
+                key,
+            },
+        ))
     }
     pub(crate) async fn handle(
         &self,
@@ -325,6 +519,51 @@ impl Runtime {
             .filter(|id| !id.is_empty())
             .ok_or_else(|| failure("account_required", "Choose a Google account"))?
             .to_owned();
+        if method == "google_calendar_operation" {
+            operation_params(&params)?;
+            let request_id = params["request_id"]
+                .as_str()
+                .filter(|s| !s.is_empty() && s.len() <= 256)
+                .ok_or_else(|| failure("invalid_request", "Choose a Calendar operation"))?
+                .to_owned();
+            return self
+                .core
+                .call(move |store| store.calendar_live_status(&account, &request_id))
+                .await;
+        }
+        if matches!(
+            method,
+            "google_calendar_write" | "google_calendar_reconcile"
+        ) {
+            let (context, _operation_owner) = self
+                .operation_context(&account, owner_id, owner_cancel.clone())
+                .await?;
+            let cancel = context.cancel.child_token();
+            let relay_cancel = cancel.clone();
+            let relay = tokio::spawn(async move {
+                tokio::select! {_=owner_cancel.cancelled()=>relay_cancel.cancel(),_=relay_cancel.cancelled()=>{}}
+            });
+            let context = SyncContext { cancel, ..context };
+            // Account generation is checked by Core before dispatch. The request
+            // owns this explicit operation; accepted outcome recording survives
+            // cancellation and never authorizes a second provider attempt.
+            let result = async {
+                if method == "google_calendar_write" {
+                    calendar_writes::execute(&context, params).await
+                } else {
+                    operation_params(&params)?;
+                    let request_id = params["request_id"]
+                        .as_str()
+                        .filter(|s| !s.is_empty() && s.len() <= 256)
+                        .ok_or_else(|| failure("invalid_request", "Choose a Calendar operation"))?;
+                    calendar_writes::reconcile(&context, request_id).await
+                }
+            }
+            .await;
+            context.cancel.cancel();
+            relay.abort();
+            return result;
+        }
         if method == "google_sync_release" {
             if params.as_object().is_none_or(|p| !p.is_empty()) {
                 return Err(failure(
@@ -505,6 +744,7 @@ impl Runtime {
             tokens: TokenSource::Native(self.auth.clone()),
             quota,
             preparation: self.preparation.clone(),
+            calendar_preparation: self.calendar_preparation.clone(),
         };
         let progress = Arc::new(std::sync::Mutex::new(
             json!({"mail":if has_mail {"starting"} else {"not_granted"},"calendar":if has_calendar {"starting"} else {"not_granted"},"mail_steps":0,"calendar_pages":0}),
@@ -524,6 +764,7 @@ impl Runtime {
             let mut workers = tokio::task::JoinSet::new();
             if has_mail {
                 workers.spawn(mail_loop(context.clone(), task_progress.clone()));
+                workers.spawn(mail_mutation_loop(context.clone(), task_progress.clone()));
             }
             if has_calendar {
                 workers.spawn(calendar_loop(context.clone(), task_progress.clone()));
@@ -589,7 +830,8 @@ async fn pause(cancel: &CancellationToken, delay: Duration) -> bool {
 fn retry_wait(error: &CoreError, attempt: u32) -> Option<Duration> {
     if !(error.code.contains("rate_limited")
         || error.code.contains("transport")
-        || error.code.contains("server_unavailable"))
+        || error.code.contains("server_unavailable")
+        || error.code == "google_unavailable")
     {
         return None;
     }
@@ -651,6 +893,50 @@ async fn mail_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
         }
     }
     progress_state(&progress, "mail", "stopped", None);
+}
+fn operation_params(params: &Value) -> Result<()> {
+    if params
+        .as_object()
+        .is_none_or(|p| p.len() != 1 || !p.contains_key("request_id"))
+    {
+        return Err(failure("invalid_request", "Choose a Calendar operation"));
+    }
+    Ok(())
+}
+async fn mail_mutation_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
+    let mut worker = mail_mutations::MailMutationWorker::new(ctx.account.clone());
+    let mut failures = 0;
+    while !ctx.cancel.is_cancelled() {
+        // Persisted retry deadlines use wall time so a restart does not reset
+        // them relative to the preceding process's uptime.
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis()
+            .min(u128::from(u64::MAX)) as u64;
+        let delay = match worker.step(&ctx, now).await {
+            Ok(step) => {
+                failures = 0;
+                progress_state(&progress, "mail_mutations", "running", None);
+                match step {
+                    mail::Step::Progress => Duration::from_millis(1),
+                    mail::Step::Idle(delay) => delay,
+                }
+            }
+            Err(error) => {
+                progress_state(&progress, "mail_mutations", "paused", Some(&error.code));
+                let Some(delay) = retry_wait(&error, failures) else {
+                    return;
+                };
+                failures = failures.saturating_add(1).min(6);
+                delay
+            }
+        };
+        if !pause(&ctx.cancel, delay).await {
+            break;
+        }
+    }
+    progress_state(&progress, "mail_mutations", "stopped", None);
 }
 async fn calendar_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
     let mut refresh = std::time::Instant::now() - Duration::from_secs(60);

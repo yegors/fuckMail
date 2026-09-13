@@ -10,6 +10,11 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         vec!["google", "sync-stop"],
         vec!["google", "sync"],
         vec!["google", "sync", "--gmail-project-units-per-minute", "0"],
+        vec!["google", "calendar-write", "--params-file", "absent.json"],
+        vec!["google", "calendar-reconcile", "request"],
+        vec!["google", "calendar-operation", "request"],
+        vec!["mail", "delivery"],
+        vec!["mail", "filing", "thread", "--action", "delete"],
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_fm"))
             .args(["--profile", absent.to_str().unwrap()])
@@ -19,7 +24,15 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         assert!(!output.status.success());
         assert!(!absent.exists());
     }
-    for command in ["connect", "sync", "sync-status", "sync-stop"] {
+    for command in [
+        "connect",
+        "sync",
+        "sync-status",
+        "sync-stop",
+        "calendar-write",
+        "calendar-reconcile",
+        "calendar-operation",
+    ] {
         let output = Command::new(env!("CARGO_BIN_EXE_fm"))
             .args([
                 "--profile",
@@ -33,6 +46,24 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         assert!(output.status.success());
         assert!(!absent.exists());
     }
+    let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+        .args([
+            "--profile",
+            absent.to_str().unwrap(),
+            "--account",
+            "example",
+            "google",
+            "calendar-write",
+            "--params-file",
+            root.path().join("missing.json").to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(
+        !absent.exists(),
+        "missing Calendar input must fail before storage starts"
+    );
 }
 
 #[test]

@@ -320,20 +320,20 @@ fn public_operation_history_prioritizes_pending_and_pages_through_all_records() 
                 json!({"code":"permission_denied","message":"Calendar access changed"});
         }
         tx.execute(
-            "INSERT INTO calendar_write_operations VALUES('personal',?1,?1,?2,NULL)",
+            "INSERT INTO calendar_write_operations(account,request_id,fingerprint,intent_json,result_json) VALUES('personal',?1,?1,?2,NULL)",
             params![format!("pending-{index}"), intent.to_string()],
         )
         .unwrap();
     }
     for index in 0..65 {
         tx.execute(
-            "INSERT INTO calendar_write_operations VALUES('personal',?1,?1,?2,'{}')",
+            "INSERT INTO calendar_write_operations(account,request_id,fingerprint,intent_json,result_json) VALUES('personal',?1,?1,?2,'{}')",
             params![format!("saved-{index}"), raw],
         )
         .unwrap();
     }
     tx.execute(
-        "INSERT INTO calendar_write_operations VALUES('personal','internal','internal','{}',NULL)",
+        "INSERT INTO calendar_write_operations(account,request_id,fingerprint,intent_json,result_json) VALUES('personal','internal','internal','{}',NULL)",
         [],
     )
     .unwrap();

@@ -887,3 +887,331 @@ fn large_retained_history_uses_window_candidates_and_live_zone_is_explicit() {
     store.preferences_save(&json!({"request_id":"clear-zone","expected_revision":p["revision"],"preferences":{"calendar_display_time_zone":null}})).unwrap();
     assert_eq!(view(&store)["coverage"]["state"], "display_zone_required");
 }
+
+#[test]
+fn prepared_page_digest_matches_existing_receipts_and_chunks_are_bound_to_the_profile() {
+    let (_dir, mut store, account) = setup();
+    let lease = store
+        .calendar_sync_begin(&account, CAL, CalendarSyncMode::Full)
+        .unwrap();
+    let mut source = event("unicode", "Line\nquote\" and 東京");
+    source["z-unknown"] = json!({"b":null,"a":[1,true,"\\"]});
+    let original = page(vec![source], "token\"unicode東京");
+    let old_manifest = fingerprint(&json!([
+        original.items,
+        original.next_page_token,
+        original.next_sync_token
+    ]))
+    .unwrap();
+    let cancel = fm_google::transport::CancellationToken::new();
+    let prepared = prepare_calendar_page(lease.clone(), original, &cancel).unwrap();
+    assert_eq!(prepared.manifest, old_manifest);
+    let input = store.calendar_prepare_chunk(&lease, &prepared, 0).unwrap();
+    let chunk = prepare_calendar_chunk(&prepared, input, &cancel).unwrap();
+    let (_other_dir, mut other, other_account) = setup();
+    let other_lease = other
+        .calendar_sync_begin(&other_account, CAL, CalendarSyncMode::Full)
+        .unwrap();
+    assert_eq!(other_lease.run, lease.run);
+    assert_eq!(
+        other
+            .calendar_stage_prepared_chunk(&other_lease, &prepared, &chunk)
+            .unwrap_err()
+            .code,
+        "stale_preparation"
+    );
+    assert_eq!(
+        store
+            .calendar_stage_prepared_chunk(&lease, &prepared, &chunk)
+            .unwrap(),
+        1
+    );
+    store
+        .calendar_seal_prepared_page(&lease, &prepared)
+        .unwrap();
+    store.calendar_publish_sync(&lease).unwrap();
+    assert_eq!(view(&store)["total"], 1);
+}
+
+#[test]
+fn asynchronous_preparation_rechecks_policy_and_keeps_sparse_cancellation_source() {
+    let (_dir, mut store, account) = setup();
+    let mut retained = event("cancelled", "Keep exact historical fields");
+    retained["unknown"] = json!({"preserved":true});
+    publish_events(
+        &mut store,
+        &account,
+        vec![retained],
+        CalendarSyncMode::Full,
+        "t1",
+    );
+    let lease = store
+        .calendar_sync_begin(&account, CAL, CalendarSyncMode::Delta)
+        .unwrap();
+    let cancel = fm_google::transport::CancellationToken::new();
+    let prepared = prepare_calendar_page(
+        lease.clone(),
+        page(vec![json!({"id":"cancelled","status":"cancelled"})], "t2"),
+        &cancel,
+    )
+    .unwrap();
+    let input = store.calendar_prepare_chunk(&lease, &prepared, 0).unwrap();
+    assert!(input.input_bytes() > prepared.serialized_bytes());
+    let chunk = prepare_calendar_chunk(&prepared, input, &cancel).unwrap();
+    let epoch = store.calendar_checkpoint(&account, CAL).unwrap()["permission_epoch"]
+        .as_i64()
+        .unwrap();
+    store
+        .calendar_observe_permission(
+            &account,
+            CAL,
+            1,
+            epoch,
+            Access::Owner,
+            "America/Los_Angeles",
+        )
+        .unwrap();
+    assert_eq!(
+        store
+            .calendar_stage_prepared_chunk(&lease, &prepared, &chunk)
+            .unwrap_err()
+            .code,
+        "stale_preparation"
+    );
+    let input = store.calendar_prepare_chunk(&lease, &prepared, 0).unwrap();
+    let chunk = prepare_calendar_chunk(&prepared, input, &cancel).unwrap();
+    store
+        .calendar_stage_prepared_chunk(&lease, &prepared, &chunk)
+        .unwrap();
+    store
+        .calendar_seal_prepared_page(&lease, &prepared)
+        .unwrap();
+    store.calendar_publish_sync(&lease).unwrap();
+    let raw:String=store.db.query_row("SELECT json FROM calendar_visible_sources WHERE account=?1 AND calendar_id=?2 AND event_id='cancelled'",params![account,CAL],|r|r.get(0)).unwrap();
+    let raw: Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(raw["unknown"]["preserved"], true);
+    assert_eq!(raw["status"], "cancelled");
+    assert_eq!(raw["summary"], "Keep exact historical fields");
+}
+
+#[test]
+fn prepared_chunks_enforce_input_bytes_and_cancel_without_receipts() {
+    let (_dir, mut store, account) = setup();
+    let lease = store
+        .calendar_sync_begin(&account, CAL, CalendarSyncMode::Full)
+        .unwrap();
+    let cancel = fm_google::transport::CancellationToken::new();
+    let sources = (0..40)
+        .map(|i| {
+            let mut row = event(&format!("item-{i}"), "Bounded");
+            row["description"] = "x".repeat(40 * 1024).into();
+            row
+        })
+        .collect();
+    let prepared =
+        prepare_calendar_page(lease.clone(), page(sources, "complete"), &cancel).unwrap();
+    let input = store.calendar_prepare_chunk(&lease, &prepared, 0).unwrap();
+    assert!(input.input_bytes() <= CHUNK_BYTES);
+    assert!(input.item_count() < CALENDAR_STAGE_CHUNK);
+    cancel.cancel();
+    assert_eq!(
+        prepare_calendar_chunk(&prepared, input, &cancel)
+            .err()
+            .unwrap()
+            .code,
+        "cancelled"
+    );
+    assert_eq!(
+        store
+            .db
+            .query_row(
+                "SELECT COUNT(*) FROM calendar_sync_items WHERE run=?1",
+                [lease.run],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        prepare_calendar_page(lease, page(vec![], "cancelled"), &cancel)
+            .err()
+            .unwrap()
+            .code,
+        "cancelled"
+    );
+}
+
+#[test]
+fn oversized_prior_and_merged_cancellations_preserve_source_and_checkpoint() {
+    for (prior_mib, incoming_mib, refuses_before_copy) in [(33, 0, true), (20, 14, false)] {
+        let (_dir, mut store, account) = setup();
+        let previous = publish_events(
+            &mut store,
+            &account,
+            vec![event("large-cancellation", "Retained historical event")],
+            CalendarSyncMode::Full,
+            "prior-token",
+        );
+        while store.calendar_finalize_chunk(&previous).unwrap() > 0 {}
+        // Historical releases did not bound merged sparse sources. Seed that
+        // valid retained shape directly, without admitting an oversized page.
+        let mut historical = event("large-cancellation", "Retained historical event");
+        historical["old_unknown_field"] = "x".repeat(prior_mib * 1024 * 1024).into();
+        let historical = historical.to_string();
+        store.db.execute("UPDATE calendar_sources SET json=?3 WHERE account=?1 AND calendar_id=?2 AND event_id='large-cancellation'",params![account,CAL,historical]).unwrap();
+        let lease = store
+            .calendar_sync_begin(&account, CAL, CalendarSyncMode::Delta)
+            .unwrap();
+        let mut cancellation = json!({"id":"large-cancellation","status":"cancelled"});
+        cancellation["new_unknown_field"] = "y".repeat(incoming_mib * 1024 * 1024).into();
+        let cancel = fm_google::transport::CancellationToken::new();
+        let prepared = prepare_calendar_page(
+            lease.clone(),
+            page(vec![cancellation], "uncommitted-token"),
+            &cancel,
+        )
+        .unwrap();
+        let input = store.calendar_prepare_chunk(&lease, &prepared, 0);
+        let error = if refuses_before_copy {
+            input.err().expect("oversized prior source was copied")
+        } else {
+            let input = input.unwrap();
+            assert_eq!(input.item_count(), 1);
+            assert!(input.input_bytes() > CHUNK_BYTES);
+            prepare_calendar_chunk(&prepared, input, &cancel)
+                .err()
+                .expect("oversized merged source was normalized")
+        };
+        assert_eq!(error.code, "calendar_preparation_limit");
+        let retained: String = store.db.query_row("SELECT json FROM calendar_visible_sources WHERE account=?1 AND calendar_id=?2 AND event_id='large-cancellation'",params![account,CAL],|r|r.get(0)).unwrap();
+        assert!(
+            retained == historical,
+            "retained source changed on resource refusal"
+        );
+        assert_eq!(
+            store.calendar_checkpoint(&account, CAL).unwrap()["sync_token"],
+            "prior-token"
+        );
+        assert_eq!(
+            store
+                .db
+                .query_row(
+                    "SELECT COUNT(*) FROM calendar_sync_items WHERE run=?1",
+                    [lease.run],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            store
+                .db
+                .query_row(
+                    "SELECT COUNT(*) FROM calendar_sync_pages WHERE run=?1",
+                    [lease.run],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+            0
+        );
+    }
+}
+
+#[test]
+#[ignore = "Explicit large synthetic Calendar preparation/writer timing experiment"]
+fn prepared_large_page_writer_timing() {
+    use std::time::Instant;
+    let (_dir, mut store, account) = setup();
+    let cancel = fm_google::transport::CancellationToken::new();
+    let mut page_prepare = Vec::new();
+    let mut chunk_prepare = Vec::new();
+    let mut writer = Vec::new();
+    let mut input_reads = Vec::new();
+    let mut seals = Vec::new();
+    let mut publications = Vec::new();
+    let mut consolidation = Vec::new();
+    let mut max_bytes = 0;
+    let mut max_items = 0;
+    let mut source_bytes = 0;
+    for round in 0..7 {
+        let lease = store
+            .calendar_sync_begin(
+                &account,
+                CAL,
+                if round == 0 {
+                    CalendarSyncMode::Full
+                } else {
+                    CalendarSyncMode::Delta
+                },
+            )
+            .unwrap();
+        let sources = (0..250)
+            .map(|i| {
+                let mut row = event(&format!("large-{i}"), "Synthetic timing event");
+                row["description"] = format!("{round}{}", "x".repeat(64 * 1024)).into();
+                row
+            })
+            .collect();
+        let started = Instant::now();
+        let prepared = prepare_calendar_page(
+            lease.clone(),
+            page(sources, &format!("round-{round}")),
+            &cancel,
+        )
+        .unwrap();
+        page_prepare.push(started.elapsed().as_secs_f64() * 1000.0);
+        source_bytes = prepared.serialized_bytes();
+        assert!(source_bytes <= preparation::CALENDAR_PAGE_BYTES);
+        let mut next = 0;
+        loop {
+            let started = Instant::now();
+            let input = store
+                .calendar_prepare_chunk(&lease, &prepared, next)
+                .unwrap();
+            input_reads.push(started.elapsed().as_secs_f64() * 1000.0);
+            max_bytes = max_bytes.max(input.input_bytes());
+            max_items = max_items.max(input.item_count());
+            assert!(input.input_bytes() <= CHUNK_BYTES);
+            assert!(input.item_count() <= CALENDAR_STAGE_CHUNK);
+            let started = Instant::now();
+            let chunk = prepare_calendar_chunk(&prepared, input, &cancel).unwrap();
+            chunk_prepare.push(started.elapsed().as_secs_f64() * 1000.0);
+            let started = Instant::now();
+            next = store
+                .calendar_stage_prepared_chunk(&lease, &prepared, &chunk)
+                .unwrap();
+            writer.push(started.elapsed().as_secs_f64() * 1000.0);
+            if next == prepared.len() {
+                break;
+            }
+        }
+        let started = Instant::now();
+        store
+            .calendar_seal_prepared_page(&lease, &prepared)
+            .unwrap();
+        seals.push(started.elapsed().as_secs_f64() * 1000.0);
+        let started = Instant::now();
+        store.calendar_publish_sync(&lease).unwrap();
+        publications.push(started.elapsed().as_secs_f64() * 1000.0);
+        loop {
+            let started = Instant::now();
+            let count = store.calendar_finalize_chunk(&lease).unwrap();
+            consolidation.push(started.elapsed().as_secs_f64() * 1000.0);
+            if count == 0 {
+                break;
+            }
+        }
+        assert_eq!(store.db.query_row("SELECT COUNT(*) FROM calendar_visible_sources WHERE account=?1 AND calendar_id=?2",params![account,CAL],|r|r.get::<_,i64>(0)).unwrap(),250);
+        assert_eq!(store.db.query_row("SELECT COUNT(*) FROM calendar_visible_sources WHERE account=?1 AND calendar_id=?2 AND substr(json_extract(json,'$.description'),1,1)=?3 AND length(json_extract(json,'$.description'))=65537",params![account,CAL,round.to_string()],|r|r.get::<_,i64>(0)).unwrap(),250);
+    }
+    fn metric(values: &[f64]) -> Value {
+        let mut sorted = values.to_vec();
+        sorted.sort_by(f64::total_cmp);
+        json!({"samples":sorted.len(),"p50_ms":sorted[sorted.len()/2],"p95_ms":sorted[((sorted.len()as f64*0.95).ceil()as usize-1).min(sorted.len()-1)],"max_ms":sorted.last().unwrap()})
+    }
+    assert!(writer.len() >= 100);
+    println!(
+        "CALENDAR_PREPARATION_TIMING {}",
+        json!({"rounds":7,"events_per_page":250,"serialized_page_bytes":source_bytes,"maximum_chunk_input_bytes":max_bytes,"maximum_chunk_items":max_items,"page_preparation":metric(&page_prepare),"chunk_preparation":metric(&chunk_prepare),"writer_input_read":metric(&input_reads),"writer_stage_sql":metric(&writer),"writer_seal":metric(&seals),"writer_publication":metric(&publications),"writer_consolidation":metric(&consolidation),"native_ui_latency_verified":false})
+    );
+}

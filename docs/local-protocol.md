@@ -1,10 +1,31 @@
 # Local protocol — protocol 1, Phase 2 additive boundary
 
-P2-00 adds explicit empty live-profile initialization with `fm --profile <absolute-path> profile-init`. This starts the same engine with `--live-profile`, reports `status` and releases the CLI session. It requires an explicit path and refuses a synthetic profile, including an already-running demo engine. Ordinary later GUI/CLI opens use the persisted kind. `hello.mode` and `status.profile_kind` are `synthetic` or `live`; `status.synthetic` agrees. Current schema 9 under D022 preserves existing fixture revisions; new synthetic profiles remain fixture 3 and live profiles use fixture 0 with no fixture date. Status capabilities remain false for unwired provider workflows. This command creates no Google account and performs no network request.
+P2-00 adds explicit empty live-profile initialization with `fm --profile <absolute-path> profile-init`. This starts the same engine with `--live-profile`, reports `status` and releases the CLI session. It requires an explicit path and refuses a synthetic profile, including an already-running demo engine. Ordinary later GUI/CLI opens use the persisted kind. `hello.mode` and `status.profile_kind` are `synthetic` or `live`; `status.synthetic` agrees. Current schema 10 under D023 preserves existing fixture revisions; new synthetic profiles remain fixture 3 and live profiles use fixture 0 with no fixture date. Status capabilities remain false for unwired provider workflows. This command creates no Google account and performs no network request.
 
-Live account rows add `google.connection_state`, `granted_scopes`, actual `capabilities` and `sync` state. A scope grant alone never enables a workflow. Core accepts stable Google-subject bindings only from the internal verified OAuth path; there is no IPC method accepting a caller-supplied Google subject. Tokens and vault namespaces are absent from responses. Simulated `draft_capture` and `calendar_write_ack` are refused in live profiles. This first packet also refuses live mail flags/categories and calendar writes until their remote journals are integrated. See [Phase 2 execution](research/phase-2-execution.md) for the current tested scope.
+Live account rows add `google.connection_state`, `granted_scopes`, actual `capabilities` and `sync` state. A scope grant alone never enables a workflow. Core accepts stable Google-subject bindings only from the internal verified OAuth path; there is no IPC method accepting a caller-supplied Google subject. Tokens and vault namespaces are absent from responses. Simulated `draft_capture`, `calendar_write_ack` and local `calendar_write` are refused in live profiles. D023 adds the separate live state/Calendar operation paths below; GUI capability integration remains a separate gate. See [Phase 2 execution](research/phase-2-execution.md) for the current tested scope.
 
 The historical Phase 1 surface below remains supported. Schema 8 adds profile/vault identity and Google account bindings; schema 9 adds connection generations/client references and bounded Gmail/Calendar work, coverage and projection metadata in the same store. Only ordinary new profiles seed the synthetic fixture; explicit live initialization never does. The exact currently tested migration/native scope belongs in the execution record.
+
+## Live state operations under D023
+
+The schema-10 integration adds the following protocol-1 methods. They use the existing store/journals and have scoped synthetic-provider, argument and native regression evidence under D023. Actual live GUI/CLI workflows remain unverified; see the execution record for the precise tested boundary.
+
+| Method | Account / parameters | Result |
+| --- | --- | --- |
+| `flag`, `set_category` | Existing explicit conversation `id`, `message_ids`, `expected_revision`, `request_id` and field values | Existing local reader receipt plus live `delivery: {state: pending, request_id}`; provider confirmation is separate |
+| `mail_filing` | Same member/revision/request snapshot, `action: archive\|trash\|restore` | Durable local receipt and pending delivery; never targets later arrivals |
+| `google_mail_mutation_status` | Required account, empty parameters | Delivery counts plus at most 20 pending and 20 failure entries with state/error/retry time |
+| `google_calendar_write` | Required account; `request_id`, `kind: create\|edit\|delete\|rsvp`, `calendar_id`; existing-event operations require `event_id` and `expected_etag`; create/edit use `fields`, RSVP uses `response` | Frozen operation identity, state and revision; replay of a dispatched/uncertain operation returns status without another mutation |
+| `google_calendar_reconcile` | Required account, `request_id` | Fresh provider readback of an uncertain attempt; never resubmits |
+| `google_calendar_operation` | Required account, `request_id` | Bounded retained local outcome without provider access |
+
+Live mail authoring may remain pending offline; an explicitly running account sync session drains that journal. Existing Gmail categories require actual provider-label mappings; unmapped commands fail without losing local data. `conversations.folder` accepts `trash`; Inbox/Sent/All eligibility excludes trashed members. `view_save` preserves the selected Trash folder. Restoration removes Trash and does not add Inbox.
+
+Calendar execution/reconciliation requires an already active account sync session and owns a temporary request lifetime independent of the client that started sync. Only writable default nonrecurring organizer copies without attendees support this first CRUD slice; self-RSVP requires a writable authenticated attendee copy. Changing attendees/Meet details, recurrence or timed/all-day kind remains unsupported in this slice. Only provided `fields` change; omitted provider fields are preserved. Provider notification policy is frozen as `all`, and no automated fixture sends invitations. Future full recurrence/invitation support remains required by Phase 2.
+
+Ready operations are known not dispatched and may be revalidated by another explicit execution of the same immutable request. A scheduler cooldown that proves no HTTP was sent returns only that exact claim to ready with retained delay evidence. Dispatched uncertainty still requires read reconciliation and never causes automatic replay.
+
+CLI consumers are `mail filing`, `mail delivery`, `mail list --folder trash`, `google calendar-write`, `google calendar-reconcile` and `google calendar-operation`. Existing synthetic `calendar-write`/`calendar-ack` remain distinct. Engine/client cancellation must finish admitted Calendar outcome recording; it never authorizes replay or starts a background service.
 
 ## Explicit Google authorization
 

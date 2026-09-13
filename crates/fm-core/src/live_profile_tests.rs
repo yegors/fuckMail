@@ -155,19 +155,34 @@ fn empty_live_profile_reopens_without_seed_or_simulated_operations() {
         );
     }
     assert!(!dir.path().join("blobs").exists());
-    for method in [
-        "draft_capture",
-        "calendar_write_ack",
-        "calendar_write",
-        "flag",
-        "set_category",
-    ] {
+    for method in ["draft_capture", "calendar_write_ack", "calendar_write"] {
         assert_eq!(
             store
                 .handle(method, Some("unbound"), json!({}))
                 .unwrap_err()
                 .code,
             "capability_unavailable"
+        );
+    }
+    // Live state commands now exist, but an empty profile cannot author work
+    // against an invented account or accidentally create a fixture account.
+    for method in ["flag", "set_category", "mail_filing"] {
+        assert_eq!(
+            store
+                .handle(method, Some("unbound"), json!({}))
+                .unwrap_err()
+                .code,
+            "not_found"
+        );
+    }
+    for table in ["accounts", "operations", "google_mail_mutations"] {
+        assert_eq!(
+            store
+                .db
+                .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
         );
     }
     drop(store);

@@ -32,6 +32,11 @@ impl HttpMethod {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TransportError {
     InvalidRequest,
+    /// Local admission refused dispatch after a newly learned provider cooldown.
+    /// No HTTP request was submitted for this attempt.
+    Cooldown {
+        retry_after_secs: u64,
+    },
     Initialization,
     Cancelled,
     Timeout,

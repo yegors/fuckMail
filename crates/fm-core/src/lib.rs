@@ -19,8 +19,10 @@ mod composition_tests;
 mod content;
 mod fixture;
 pub mod google_live_mail;
+pub mod google_live_mutations;
 pub mod google_store;
 pub mod live_calendar;
+pub mod live_calendar_writes;
 pub mod live_profile;
 mod mutations;
 mod phase1_calendar;
@@ -32,7 +34,7 @@ mod queries;
 mod sender_kind_tests;
 #[cfg(test)]
 mod test_profiles;
-pub const SCHEMA_VERSION: u32 = 9;
+pub const SCHEMA_VERSION: u32 = 10;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -253,8 +255,19 @@ impl Store {
             tx.execute_batch("PRAGMA user_version=9")?;
             tx.commit()?;
         }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 9 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-010-mail.sql"))?;
+            tx.execute_batch(include_str!("migration-010-calendar-writes.sql"))?;
+            tx.execute_batch("PRAGMA user_version=10")?;
+            tx.commit()?;
+        }
         store.validate_profile_identity()?;
         store.recover_captures()?;
+        store.calendar_live_recover()?;
         store.mail_changes.reset_calendar_generation();
         Ok(store)
     }
@@ -276,7 +289,7 @@ impl Store {
         if self.profile_kind()? == live_profile::ProfileKind::Live
             && matches!(
                 method,
-                "draft_capture" | "calendar_write_ack" | "calendar_write" | "flag" | "set_category"
+                "draft_capture" | "calendar_write_ack" | "calendar_write"
             )
         {
             return Err(err(
@@ -308,6 +321,8 @@ impl Store {
             "attachment",
             "categories",
             "set_category",
+            "mail_filing",
+            "google_mail_mutation_status",
             "view_get",
             "view_save",
             "account_update",
@@ -367,8 +382,12 @@ impl Store {
                 fields(&params, &[])?;
                 self.view(account)
             }
-            "flag" | "set_category" | "draft_create" | "draft_save" | "draft_discard"
-            | "view_save" => self.mutate(method, account, &params),
+            "google_mail_mutation_status" => {
+                fields(&params, &[])?;
+                self.google_mail_mutation_status(account)
+            }
+            "flag" | "set_category" | "mail_filing" | "draft_create" | "draft_save"
+            | "draft_discard" | "view_save" => self.mutate(method, account, &params),
             _ => unreachable!(),
         }
     }

@@ -1,7 +1,7 @@
 //! Deterministic quota admission. The owning worker supplies monotonic time and
 //! executes each permit once; cancellation, persistence and retries stay explicit.
 use crate::{read_retry_delay, AccountId, GoogleError};
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -134,6 +134,9 @@ pub enum CooldownScope {
 struct Window {
     charges: VecDeque<(u64, u32)>,
     used: u64,
+    // Admitted work may still be awaiting memory or token refresh. Its budget
+    // cannot expire until the request actually dispatches (or is cancelled).
+    reserved: u64,
 }
 impl Window {
     fn prune(&mut self, now: u64) {
@@ -147,7 +150,16 @@ impl Window {
     }
     fn allows(&mut self, now: u64, units: u32, limit: u32) -> bool {
         self.prune(now);
-        self.used + u64::from(units) <= u64::from(limit)
+        self.used + self.reserved + u64::from(units) <= u64::from(limit)
+    }
+    fn reserve(&mut self, units: u32) {
+        self.reserved += u64::from(units);
+    }
+    fn dispatch(&mut self, now: u64, units: u32) {
+        debug_assert!(self.reserved >= u64::from(units));
+        self.reserved -= u64::from(units);
+        self.prune(now);
+        self.charge(now, units);
     }
     fn charge(&mut self, now: u64, units: u32) {
         self.used += u64::from(units);
@@ -158,19 +170,24 @@ impl Window {
             self.charges.push_back((now, units));
         }
     }
-    fn ready_at(&mut self, now: u64, units: u32, limit: u32) -> u64 {
+    fn ready_at(&mut self, now: u64, units: u32, limit: u32) -> Option<u64> {
         self.prune(now);
-        let mut used = self.used;
+        // Reservations have no timer. Their owner's dispatch/drop will wake
+        // the queue; pretending they expire would both overspend and busy-poll.
+        if self.reserved + u64::from(units) > u64::from(limit) {
+            return None;
+        }
+        let mut used = self.used + self.reserved;
         if used + u64::from(units) <= u64::from(limit) {
-            return now;
+            return Some(now);
         }
         for (at, charge) in &self.charges {
             used -= u64::from(*charge);
             if used + u64::from(units) <= u64::from(limit) {
-                return at.saturating_add(60_000);
+                return Some(at.saturating_add(60_000));
             }
         }
-        now
+        None
     }
 }
 #[derive(Default)]
@@ -180,18 +197,18 @@ struct BudgetState {
     cooldown_until: u64,
 }
 impl BudgetState {
-    fn ready_at(&mut self, now: u64, work: &Work, limit: u32) -> u64 {
+    fn ready_at(&mut self, now: u64, work: &Work, limit: u32) -> Option<u64> {
         let mut ready = self
             .total
-            .ready_at(now, work.units, limit)
+            .ready_at(now, work.units, limit)?
             .max(self.cooldown_until);
         if work.class.background() {
             ready = ready.max(
                 self.backfill
-                    .ready_at(now, work.units, backfill_limit(limit)),
+                    .ready_at(now, work.units, backfill_limit(limit))?,
             );
         }
-        ready
+        Some(ready)
     }
     fn allows(&mut self, now: u64, work: &Work, limit: u32) -> bool {
         now >= self.cooldown_until
@@ -199,10 +216,16 @@ impl BudgetState {
             && (!work.class.background()
                 || self.backfill.allows(now, work.units, backfill_limit(limit)))
     }
-    fn charge(&mut self, now: u64, work: &Work) {
-        self.total.charge(now, work.units);
+    fn reserve(&mut self, work: &Work) {
+        self.total.reserve(work.units);
         if work.class.background() {
-            self.backfill.charge(now, work.units);
+            self.backfill.reserve(work.units);
+        }
+    }
+    fn dispatch(&mut self, now: u64, work: &Work) {
+        self.total.dispatch(now, work.units);
+        if work.class.background() {
+            self.backfill.dispatch(now, work.units);
         }
     }
 }
@@ -224,6 +247,7 @@ pub struct Scheduler {
     lanes: BTreeMap<LaneKey, Lane>,
     projects: BTreeMap<Service, BudgetState>,
     active: BTreeMap<WorkId, Work>,
+    dispatched: BTreeSet<WorkId>,
     last_lane: Option<LaneKey>,
     next_id: u64,
     queued: usize,
@@ -255,6 +279,7 @@ impl Scheduler {
             ]
             .into(),
             active: BTreeMap::new(),
+            dispatched: BTreeSet::new(),
             last_lane: None,
             next_id: 1,
             queued: 0,
@@ -369,11 +394,8 @@ impl Scheduler {
                     lane.urgent.pop_front();
                     self.urgent_streak = self.urgent_streak.saturating_add(1);
                 }
-                lane.budget.charge(self.now, &work);
-                self.projects
-                    .get_mut(&work.service)
-                    .unwrap()
-                    .charge(self.now, &work);
+                lane.budget.reserve(&work);
+                self.projects.get_mut(&work.service).unwrap().reserve(&work);
                 self.queued -= 1;
                 self.last_lane = Some(key.clone());
                 self.active.insert(id, work.clone());
@@ -435,10 +457,81 @@ impl Scheduler {
             .budget
             .allows(self.now, work, limit.account_units_per_minute)
     }
-    /// Release concurrency on success, error or cancellation. Quota charges
-    /// remain: a lost response does not prove that Google received no request.
+    /// Convert this exact permit's non-expiring reservation to a rolling-window
+    /// charge immediately before HTTP. This never admits a second concurrency
+    /// lease and succeeds only once for a live permit owned by this scheduler.
+    /// A cooldown learned while waiting also refuses dispatch; the owner must
+    /// still finish the permit to release its reservation and concurrency.
+    pub fn dispatch(&mut self, permit: &Permit, now_ms: u64) -> bool {
+        if permit.owner != self.owner
+            || !self.active.contains_key(&permit.id)
+            || self.dispatched.contains(&permit.id)
+        {
+            return false;
+        }
+        self.now = self.now.max(now_ms);
+        if self.dispatch_cooldown_ms(permit, self.now).is_some() {
+            return false;
+        }
+        self.charge_reserved(permit.id);
+        true
+    }
+    /// Remaining cooldown for a valid, still-undispatched permit. Invalid or
+    /// reused permits must never be mistaken for recoverable throttling.
+    pub fn dispatch_cooldown_ms(&mut self, permit: &Permit, now_ms: u64) -> Option<u64> {
+        if permit.owner != self.owner || self.dispatched.contains(&permit.id) {
+            return None;
+        }
+        let work = self.active.get(&permit.id)?;
+        self.now = self.now.max(now_ms);
+        let until = self
+            .projects
+            .get(&work.service)
+            .unwrap()
+            .cooldown_until
+            .max(
+                self.lanes
+                    .get(&(work.account.clone(), work.service))
+                    .unwrap()
+                    .budget
+                    .cooldown_until,
+            );
+        (until > self.now).then(|| until - self.now)
+    }
+    fn charge_reserved(&mut self, id: WorkId) {
+        let work = self.active.get(&id).unwrap().clone();
+        self.lanes
+            .get_mut(&(work.account.clone(), work.service))
+            .unwrap()
+            .budget
+            .dispatch(self.now, &work);
+        self.projects
+            .get_mut(&work.service)
+            .unwrap()
+            .dispatch(self.now, &work);
+        self.dispatched.insert(id);
+    }
+    /// Release concurrency at a supplied current monotonic time. An undispatched
+    /// cancellation is conservatively charged then; an actual HTTP charge is
+    /// retained at its original dispatch time, never extended by a slow response.
+    pub fn finish_at(&mut self, permit: Permit, now_ms: u64) -> bool {
+        if permit.owner != self.owner || !self.active.contains_key(&permit.id) {
+            return false;
+        }
+        self.now = self.now.max(now_ms);
+        if !self.dispatched.contains(&permit.id) {
+            // Cancellation conservatively charges even during a cooldown;
+            // it must not strand a non-expiring reservation after releasing.
+            self.charge_reserved(permit.id);
+        }
+        self.dispatched.remove(&permit.id);
+        self.active.remove(&permit.id).is_some()
+    }
+    /// Compatibility for synchronous deterministic consumers: complete at the
+    /// latest time supplied to this scheduler. Async HTTP owners must dispatch
+    /// immediately before the request and call finish_at on completion/drop.
     pub fn finish(&mut self, permit: Permit) -> bool {
-        permit.owner == self.owner && self.active.remove(&permit.id).is_some()
+        self.finish_at(permit, self.now)
     }
     pub fn cooldown(&mut self, scope: CooldownScope, until_ms: u64) -> Result<(), SchedulerError> {
         let state = match scope {
@@ -482,13 +575,13 @@ impl Scheduler {
                     self.now,
                     &work,
                     limit.project_units_per_minute,
-                );
+                )?;
                 let account = self
                     .lanes
                     .get_mut(&(work.account.clone(), work.service))
                     .unwrap()
                     .budget
-                    .ready_at(self.now, &work, limit.account_units_per_minute);
+                    .ready_at(self.now, &work, limit.account_units_per_minute)?;
                 let ready = project.max(account);
                 (ready > self.now).then_some(ready)
             })
@@ -535,6 +628,100 @@ mod tests {
             scheduler.register_account(account(id)).unwrap();
         }
         scheduler
+    }
+    #[test]
+    fn delayed_dispatch_keeps_reservation_then_starts_the_actual_rolling_minute() {
+        let mut scheduler = scheduler(100, 100);
+        scheduler
+            .enqueue(work("a", Service::Gmail, WorkClass::UserRead, 80))
+            .unwrap();
+        let held = scheduler.next(0).unwrap();
+        scheduler
+            .enqueue(work("b", Service::Gmail, WorkClass::UserRead, 30))
+            .unwrap();
+        assert!(scheduler.next(61_000).is_none());
+        assert_eq!(scheduler.next_wake_ms(61_000), None);
+        assert_eq!(scheduler.in_flight(), 1);
+        assert!(scheduler.dispatch(&held, 61_000));
+        assert!(!scheduler.dispatch(&held, 61_000));
+        scheduler
+            .cooldown(CooldownScope::Account(account("a"), Service::Gmail), 62_000)
+            .unwrap();
+        assert_eq!(scheduler.dispatch_cooldown_ms(&held, 61_000), None);
+        assert_eq!(scheduler.next_wake_ms(61_000), Some(121_000));
+        assert!(scheduler.finish_at(held, 61_001));
+        assert!(scheduler.next(120_999).is_none());
+        let next = scheduler.next(121_000).unwrap();
+        assert_eq!(next.work.account, account("b"));
+    }
+    #[test]
+    fn slow_response_does_not_extend_the_dispatch_charge() {
+        let mut scheduler = scheduler(100, 100);
+        scheduler
+            .enqueue(work("a", Service::Gmail, WorkClass::UserRead, 100))
+            .unwrap();
+        let held = scheduler.next(0).unwrap();
+        assert!(scheduler.dispatch(&held, 1_000));
+        scheduler
+            .enqueue(work("b", Service::Gmail, WorkClass::UserRead, 100))
+            .unwrap();
+        assert!(scheduler.finish_at(held, 100_000));
+        assert!(scheduler.next(100_000).is_some());
+    }
+    #[test]
+    fn cancelled_reservation_charges_once_and_frees_concurrency_during_cooldown() {
+        for scope in [
+            CooldownScope::Project(Service::Gmail),
+            CooldownScope::Account(account("a"), Service::Gmail),
+        ] {
+            let mut scheduler = scheduler(100, 100);
+            scheduler
+                .enqueue(work("a", Service::Gmail, WorkClass::UserRead, 100))
+                .unwrap();
+            let held = scheduler.next(0).unwrap();
+            scheduler.cooldown(scope, 100_000).unwrap();
+            assert_eq!(scheduler.dispatch_cooldown_ms(&held, 90_000), Some(10_000));
+            assert!(!scheduler.dispatch(&held, 90_000));
+            assert!(scheduler.finish_at(held, 90_000));
+            assert_eq!(scheduler.in_flight(), 0);
+            scheduler
+                .enqueue(work("b", Service::Gmail, WorkClass::UserRead, 1))
+                .unwrap();
+            scheduler
+                .enqueue(work("a", Service::Calendar, WorkClass::UserRead, 100))
+                .unwrap();
+            let calendar = scheduler.next(90_000).unwrap();
+            assert_eq!(calendar.work.service, Service::Calendar);
+            assert!(scheduler.finish_at(calendar, 90_000));
+            assert!(scheduler.next(149_999).is_none());
+            assert_eq!(scheduler.next_wake_ms(149_999), Some(150_000));
+            assert!(scheduler.next(150_000).is_some());
+        }
+    }
+    #[test]
+    fn delayed_backfill_still_reserves_foreground_budget_and_concurrency() {
+        let mut scheduler = scheduler(100, 100);
+        for id in ["a", "b", "c", "d"] {
+            scheduler
+                .enqueue(work(id, Service::Gmail, WorkClass::BackfillRead, 25))
+                .unwrap();
+        }
+        let background: Vec<_> = (0..3).map(|_| scheduler.next(0).unwrap()).collect();
+        assert!(scheduler.next(61_000).is_none());
+        assert_eq!(scheduler.next_wake_ms(61_000), None);
+        scheduler
+            .enqueue(work("d", Service::Gmail, WorkClass::StateMutation, 25))
+            .unwrap();
+        let foreground = scheduler.next(61_000).unwrap();
+        assert_eq!(foreground.work.class, WorkClass::StateMutation);
+        assert!(scheduler.dispatch(&foreground, 61_000));
+        assert!(scheduler.finish_at(foreground, 61_000));
+        for held in background {
+            assert!(scheduler.dispatch(&held, 61_000));
+            assert!(scheduler.finish_at(held, 61_000));
+        }
+        assert!(scheduler.next(120_999).is_none());
+        assert!(scheduler.next(121_000).is_some());
     }
     #[test]
     fn rolling_units_account_project_and_services_are_distinct() {

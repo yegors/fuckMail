@@ -1,0 +1,12 @@
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+error[E0425]: cannot find function `await_sync_reply` in this scope
+   --> crates\fm-engine\src\main.rs:300:34
+    |
+300 |                 let Some(result)=await_sync_reply(work,&mut stream,&owner_cancel,finish_on_close).await? else {return Ok(());};
+    |                                  ^^^^^^^^^^^^^^^^ not found in this scope
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `fm-engine` (bin "fm-engine") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `fm-engine` (bin "fm-engine" test) due to 1 previous error

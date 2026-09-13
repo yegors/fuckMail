@@ -143,16 +143,37 @@ enum Google {
     SyncStatus,
     /// Stop this account's acquisition and retain all downloaded and unsent work.
     SyncStop,
+    /// Execute one explicit conditional Calendar operation from JSON; requires an active sync session.
+    CalendarWrite {
+        #[arg(long)]
+        params_file: PathBuf,
+    },
+    /// Read back an uncertain Calendar operation without submitting it again.
+    CalendarReconcile { request_id: String },
+    /// Inspect one retained Calendar outcome without provider access.
+    CalendarOperation { request_id: String },
 }
 
 #[derive(Subcommand)]
 enum Mail {
+    /// Archive, move to Trash or restore the currently loaded conversation members.
+    Filing {
+        id: String,
+        #[arg(long,value_parser=["archive","trash","restore"])]
+        action: String,
+        #[arg(long)]
+        expected_revision: Option<u64>,
+        #[arg(long)]
+        request_id: Option<String>,
+    },
+    /// Inspect pending, uncertain and failed Google state changes without provider access.
+    Delivery,
     List {
         #[arg(long)]
         query: Option<String>,
         #[arg(long,default_value="all",value_parser=["all","sender","subject","body"])]
         field: String,
-        #[arg(long,default_value="inbox",value_parser=["inbox","sent","all"])]
+        #[arg(long,default_value="inbox",value_parser=["inbox","sent","all","trash"])]
         folder: String,
         #[arg(long)]
         category: Option<String>,
@@ -539,6 +560,19 @@ async fn run(args: &Args) -> Result<(), Failure> {
     } else {
         None
     };
+    let google_calendar_request = if let Command::Google {
+        command: Google::CalendarWrite { params_file },
+    } = &args.command
+    {
+        let value: Value = serde_json::from_slice(&read_input(params_file, 512 * 1024)?)
+            .map_err(|_| invalid("Calendar write must be JSON"))?;
+        if !value.is_object() {
+            return Err(invalid("Calendar write must be a JSON object"));
+        }
+        Some(value)
+    } else {
+        None
+    };
     let mut client = if live_command {
         Client::connect_live(&profile, engine.as_deref()).await?
     } else {
@@ -557,6 +591,39 @@ async fn run(args: &Args) -> Result<(), Failure> {
         Command::Google {
             command: Google::SyncStop,
         } => client.call("google_sync_stop", scope, json!({})).await?,
+        Command::Google {
+            command: Google::CalendarWrite { .. },
+        } => {
+            client
+                .call(
+                    "google_calendar_write",
+                    scope,
+                    google_calendar_request.unwrap(),
+                )
+                .await?
+        }
+        Command::Google {
+            command: Google::CalendarReconcile { request_id },
+        } => {
+            client
+                .call(
+                    "google_calendar_reconcile",
+                    scope,
+                    json!({"request_id":request_id}),
+                )
+                .await?
+        }
+        Command::Google {
+            command: Google::CalendarOperation { request_id },
+        } => {
+            client
+                .call(
+                    "google_calendar_operation",
+                    scope,
+                    json!({"request_id":request_id}),
+                )
+                .await?
+        }
         Command::Google {
             command:
                 Google::Sync {
@@ -843,6 +910,20 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     params["starred"] = json!(starred);
                 }
                 client.call("flag", scope, params).await?
+            }
+            Mail::Delivery => {
+                client
+                    .call("google_mail_mutation_status", scope, json!({}))
+                    .await?
+            }
+            Mail::Filing {
+                id,
+                action,
+                expected_revision,
+                request_id,
+            } => {
+                let snapshot = result(client.call("conversation", scope, json!({"id":id})).await?)?;
+                client.call("mail_filing",scope,json!({"id":id,"action":action,"message_ids":snapshot["message_ids"],"expected_revision":expected_revision.map(Value::from).unwrap_or(snapshot["revision"].clone()),"request_id":request_id.clone().unwrap_or_else(fm_ipc::random_token)})).await?
             }
             Mail::Category {
                 id,
