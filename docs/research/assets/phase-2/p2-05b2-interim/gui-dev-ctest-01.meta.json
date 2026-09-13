@@ -1,0 +1,10 @@
+{
+  "exit_code": 8,
+  "started_utc": "2026-09-13T16:33:24.330077+00:00",
+  "finished_utc": "2026-09-13T16:37:05.475195+00:00",
+  "elapsed_seconds": 221.15599999995902,
+  "native_selection": "^gui-",
+  "includes_rust_build_fixture": true,
+  "reruns_rust_workspace_tests": false,
+  "watchdogs_unchanged": true
+}

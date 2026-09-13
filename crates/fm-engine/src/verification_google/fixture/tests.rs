@@ -6,11 +6,14 @@ use fm_google::{
 };
 
 fn setup() -> (tempfile::TempDir, Store, Fixture) {
+    setup_mode(false)
+}
+fn setup_mode(send_enabled: bool) -> (tempfile::TempDir, Store, Fixture) {
     let directory = tempfile::tempdir().unwrap();
     let profile = fm_ipc::private_profile(&directory.path().join("profile")).unwrap();
     claim_empty_profile(&profile).unwrap();
     let mut store = Store::open_live(&profile).unwrap();
-    let fixture = Fixture::prepare(&profile, &mut store).unwrap();
+    let fixture = Fixture::prepare(&profile, &mut store, send_enabled).unwrap();
     (directory, store, fixture)
 }
 fn api(fixture: &Fixture, index: usize) -> GmailApi<FixtureHttp> {
@@ -235,6 +238,219 @@ fn empty_claim_and_bootstrap_never_adopt_existing_data_or_seed_mail() {
     assert_eq!(fixture.report(false)["status"], "ready");
     assert_eq!(fixture.report(false)["counters"]["http_started"], 0);
     assert_eq!(fixture.report(false)["counters"]["vault_loads"], 0);
+}
+
+#[tokio::test]
+async fn explicit_send_fixture_preserves_frozen_bytes_consumes_only_target_and_exposes_sent_evidence(
+) {
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+    let (_directory, _store, fixture) = setup_mode(true);
+    let cancel = CancellationToken::new();
+    for index in 0..2 {
+        let owner = account(&fixture, index);
+        let token = fixture.accounts[index].token();
+        let api = api(&fixture, index);
+        let draft_raw = b"From: personal@example.test\r\n\r\nOld saved content";
+        for _ in 0..2 {
+            api.execute(
+                GmailCall::create_draft(&owner, draft_raw, None).unwrap(),
+                &token,
+                &cancel,
+            )
+            .await
+            .unwrap();
+        }
+        for (number, target) in [(1, Some("vd0001")), (2, None)] {
+            let rfc_id = format!("explicit-{index}-{number}@example.test");
+            let raw = format!("From: {}\r\nTo: recipient@example.test\r\nBcc: private@example.test\r\nSubject: Explicit generated send\r\nMessage-ID: <{rfc_id}>\r\n\r\nExact submitted version {index}/{number}\r\n",fixture.accounts[index].email);
+            let call = match target {
+                Some(id) => {
+                    GmailCall::send_draft(&owner, id, raw.as_bytes(), Some("frozen-thread"))
+                        .unwrap()
+                }
+                None => GmailCall::send_message(&owner, raw.as_bytes(), None).unwrap(),
+            };
+            let GmailReply::Submission(submission) =
+                api.execute(call, &token, &cancel).await.unwrap()
+            else {
+                panic!("submission reply")
+            };
+            assert!(matches!(
+                submission.result,
+                fm_google::send::SubmissionResult::Accepted { .. }
+            ));
+            let query = format!("in:sent rfc822msgid:{rfc_id}");
+            let GmailReply::Messages(matches) = api
+                .execute(
+                    GmailCall::list_messages(&owner, None, Some(&query), false, 10).unwrap(),
+                    &token,
+                    &cancel,
+                )
+                .await
+                .unwrap()
+            else {
+                panic!("Sent search")
+            };
+            assert_eq!(matches.messages.len(), 1);
+            let id = &matches.messages[0].id;
+            assert_eq!(id, &format!("vms{number:04}"));
+            let GmailReply::Raw(RawOutcome::Available(read)) = api
+                .execute(GmailCall::raw_message(&owner, id).unwrap(), &token, &cancel)
+                .await
+                .unwrap()
+            else {
+                panic!("Sent RAW")
+            };
+            assert_eq!(
+                URL_SAFE_NO_PAD.decode(&read.message.raw).unwrap(),
+                raw.as_bytes()
+            );
+            let GmailReply::MessageState(Some(read)) = api
+                .execute(
+                    GmailCall::message_state(&owner, id).unwrap(),
+                    &token,
+                    &cancel,
+                )
+                .await
+                .unwrap()
+            else {
+                panic!("Sent metadata")
+            };
+            assert_eq!(read.id, *id);
+            assert_eq!(read.label_ids, vec!["SENT"]);
+            assert_eq!(read.thread_id, matches.messages[0].thread_id);
+            assert_eq!(read.history_id, (100 + number).to_string());
+        }
+        assert!(api
+            .execute(
+                GmailCall::get_draft(&owner, "vd0001").unwrap(),
+                &token,
+                &cancel
+            )
+            .await
+            .is_err());
+        let GmailReply::Draft(retained) = api
+            .execute(
+                GmailCall::get_draft(&owner, "vd0002").unwrap(),
+                &token,
+                &cancel,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("unrelated draft")
+        };
+        assert_eq!(
+            URL_SAFE_NO_PAD
+                .decode(retained.message.raw.unwrap())
+                .unwrap(),
+            draft_raw
+        );
+        let GmailReply::Draft(created) = api
+            .execute(
+                GmailCall::create_draft(&owner, draft_raw, None).unwrap(),
+                &token,
+                &cancel,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("new unrelated draft")
+        };
+        assert_eq!(created.id, "vd0003");
+        let GmailReply::History(history) = api
+            .execute(
+                GmailCall::history(&owner, "100", None, 100).unwrap(),
+                &token,
+                &cancel,
+            )
+            .await
+            .unwrap()
+        else {
+            panic!("Sent history")
+        };
+        assert_eq!(history.history_id, "102");
+        let report = fixture.report(false);
+        let publications = report["send_fixture"]["publications"].as_array().unwrap();
+        assert_eq!(publications.last().unwrap()["account"], owner.as_str());
+        assert_eq!(publications.last().unwrap()["kind"], "message_send");
+    }
+    let report = fixture.report(false);
+    assert_eq!(report["counters"]["send_completed"], 4);
+    assert_eq!(
+        report["send_fixture"]["publications"]
+            .as_array()
+            .unwrap()
+            .len(),
+        4
+    );
+    assert!(report["errors"].as_array().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn explicit_send_fixture_has_a_separate_opt_in_and_per_account_retention_bound() {
+    let (_directory, _store, disabled) = setup();
+    let cancel = CancellationToken::new();
+    let raw=b"From: personal@example.test\r\nTo: recipient@example.test\r\nMessage-ID: <bounded@example.test>\r\n\r\nGenerated only";
+    let _ = api(&disabled, 0)
+        .execute(
+            GmailCall::send_message(&account(&disabled, 0), raw, None).unwrap(),
+            &disabled.accounts[0].token(),
+            &cancel,
+        )
+        .await;
+    assert_eq!(disabled.report(false)["counters"]["send_completed"], 0);
+    assert_eq!(disabled.report(false)["counters"]["http_rejected"], 1);
+    let (_directory, _store, fixture) = setup_mode(true);
+    let owner = account(&fixture, 0);
+    let token = fixture.accounts[0].token();
+    let api = api(&fixture, 0);
+    for _ in 0..16 {
+        api.execute(
+            GmailCall::send_message(&owner, raw, None).unwrap(),
+            &token,
+            &cancel,
+        )
+        .await
+        .unwrap();
+    }
+    // The adapter deliberately maps transport uncertainty into a submission
+    // result, so inspect the fixture counter rather than expecting an Err.
+    let _ = api
+        .execute(
+            GmailCall::send_message(&owner, raw, None).unwrap(),
+            &token,
+            &cancel,
+        )
+        .await;
+    assert_eq!(fixture.report(false)["counters"]["send_completed"], 16);
+    assert_eq!(
+        fixture.report(false)["send_fixture"]["publications"]
+            .as_array()
+            .unwrap()
+            .len(),
+        16
+    );
+    let GmailReply::Messages(matches) = api
+        .execute(
+            GmailCall::list_messages(
+                &owner,
+                None,
+                Some("in:sent rfc822msgid:bounded@example.test"),
+                false,
+                10,
+            )
+            .unwrap(),
+            &token,
+            &cancel,
+        )
+        .await
+        .unwrap()
+    else {
+        panic!("bounded Sent")
+    };
+    assert_eq!(matches.messages.len(), 10);
+    assert!(matches.next_page_token.is_some());
 }
 
 #[tokio::test]

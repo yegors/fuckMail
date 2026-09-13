@@ -83,7 +83,10 @@ fn live_capabilities_distinguish_cached_work_grants_and_active_delivery() {
                 caps["calendar_write"],
                 calendar_write && state == ConnectionState::Connected
             );
-            assert_eq!(caps["send"], false);
+            assert_eq!(
+                caps["send"],
+                mail_write && state == ConnectionState::Connected
+            );
             assert_eq!(
                 store.handle("drafts", Some(&account), json!({})).unwrap()["drafts"],
                 draft
@@ -411,7 +414,8 @@ fn empty_live_profile_reopens_without_seed_or_simulated_operations() {
     for key in ["mail", "drafts", "calendar_read"] {
         assert_eq!(status["capabilities"][key], true, "{key}");
     }
-    for key in ["phase1", "capture_history", "calendar_write_local", "send"] {
+    assert_eq!(status["capabilities"]["send"], true);
+    for key in ["phase1", "capture_history", "calendar_write_local"] {
         assert_eq!(status["capabilities"][key], false, "{key}");
     }
     let calendar = store

@@ -212,9 +212,9 @@ Rectangle {
                 prominent: true
                 leftPadding: 16; rightPadding: 16
                 font.pixelSize: Theme.fontSize(13)
-                enabled: backend.syntheticProfile && !backend.draftLocked && !backend.attachmentImport.pending && (document.plainText.trim().length > 0 || root.attachmentIds.length > 0)
-                tip: backend.syntheticProfile ? "Record an outgoing MIME copy on this machine; no email is delivered" : "Sending is not available in this build. Your draft is saved locally."
-                onClicked: backend.captureDraft()
+                enabled: backend.syntheticProfile ? !backend.draftLocked && !backend.attachmentImport.pending && (document.plainText.trim().length > 0 || root.attachmentIds.length > 0) : backend.googleSend.can_send || false
+                tip: backend.syntheticProfile ? "Record an outgoing MIME copy on this machine; no email is delivered" : "Save and submit this version through Google. Sending newer edits after an accepted version creates another email."
+                onClicked: { if (backend.syntheticProfile) backend.captureDraft(); else backend.sendGoogleDraft() }
             }
             FmButton { objectName: "draftAttachButton"; text: "Attach"; iconName: "attachment"; outlined: true; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pixelSize: Theme.fontSize(13); tip: "Attach a local file or a retained conversation file"; enabled: backend.connected && !backend.draftBusy && !backend.attachmentImportBusy; onClicked: attachmentMenu.popup() }
             FmButton { objectName: "draftDiscardButton"; text: "Discard"; leftPadding: 12; rightPadding: 12; font.pixelSize: Theme.fontSize(13); enabled: !backend.draftLocked && !backend.attachmentImport.pending; onClicked: discardDialog.open() }
@@ -233,6 +233,20 @@ Rectangle {
             Layout.fillWidth: true; spacing: 8
             Text { objectName: "draftAttachmentStatus"; Layout.fillWidth: true; text: backend.attachmentImport.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.attachmentImport.retry ? Theme.warn : text.indexOf("Not attached") === 0 ? Theme.error : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
             FmButton { objectName: "retryDraftAttachment"; visible: backend.attachmentImport.retry || false; text: "Retry attachment"; outlined: true; enabled: backend.connected && !backend.attachmentImportBusy && !backend.draftBusy; onClicked: { backend.clearError(); backend.retryDraftAttachment() } }
+        }
+        ColumnLayout {
+            visible: backend.googleSend.visible || false
+            Layout.fillWidth: true; Layout.topMargin: visible ? 8 : 0; spacing: 6
+            Text { objectName: "googleSendStatus"; Layout.fillWidth: true; text: backend.googleSend.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.googleSend.warning ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { visible: (backend.googleSend.request_id || "").length > 0; text: "Request " + (backend.googleSend.request_id || ""); textFormat: Text.PlainText; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11); Layout.fillWidth: true; wrapMode: Text.Wrap }
+            Flow {
+                Layout.fillWidth: true; spacing: 6
+                FmButton { objectName: "checkGoogleSend"; text: backend.googleSend.check_label || "Check status"; outlined: true; visible: backend.googleSend.can_check || false; onClicked: backend.checkGoogleSend() }
+                FmButton { objectName: "showCurrentGoogleSend"; text: "View current send"; visible: backend.googleSend.can_select_current || false; onClicked: backend.showCurrentGoogleSend() }
+                FmButton { objectName: "resumeGoogleSend"; text: backend.googleSend.resume_label || "Send prepared version"; visible: backend.googleSend.can_resume || false; onClicked: backend.resumeGoogleSend() }
+                FmButton { objectName: "abandonGoogleSend"; text: "Abandon prepared send"; visible: backend.googleSend.can_abandon || false; onClicked: backend.abandonGoogleSend() }
+                FmButton { objectName: "cancelGoogleSend"; text: "Cancel"; visible: backend.googleSend.can_cancel || false; onClicked: backend.cancelGoogleSend() }
+            }
         }
         ColumnLayout {
             visible: backend.googleDraft.visible || false

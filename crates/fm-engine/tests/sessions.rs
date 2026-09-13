@@ -55,7 +55,9 @@ async fn live_profile_stays_empty_through_shared_clients_and_owner_restart() {
     let status = ok(owner.call("status", None, json!({})).await.unwrap());
     assert_eq!(status["profile_kind"], "live");
     assert_eq!(status["fixture_revision"], 0);
-    assert_eq!(status["capabilities"]["send"], false);
+    // This advertises the live interface. The empty account list below still
+    // proves initialization grants no account a submission capability.
+    assert_eq!(status["capabilities"]["send"], true);
     let mut observer = client(&profile).await;
     assert_eq!(
         ok(observer.call("accounts", None, json!({})).await.unwrap())["accounts"],

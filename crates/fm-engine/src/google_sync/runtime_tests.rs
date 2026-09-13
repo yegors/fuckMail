@@ -44,6 +44,127 @@ struct Contexts {
 
 #[derive(Default)]
 struct DraftHttp(AtomicUsize);
+
+#[derive(Default)]
+struct SendHttp(AtomicUsize);
+impl HttpTransport for SendHttp {
+    fn execute<'a>(&'a self, request: HttpRequest, _: &'a CancellationToken) -> HttpFuture<'a> {
+        Box::pin(async move {
+            assert_eq!(request.method(), HttpMethod::Post);
+            assert_eq!(
+                request.url(),
+                "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+            );
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(HttpResponse {
+                status: 200,
+                body: br#"{"id":"accepted-message","threadId":"accepted-thread"}"#.to_vec(),
+                retry_after_secs: None,
+                etag: None,
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn explicit_send_costs_100_once_and_quota_wait_never_takes_mime_memory() {
+    let mut h = Contexts::new(250, 250, 4); // Exactly 200 usable units, not 250.
+    let http = Arc::new(SendHttp::default());
+    h.first.http = http.clone();
+    for _ in 0..2 {
+        let (api, memory, dispatched) = tokio::time::timeout(
+            Duration::from_secs(2),
+            h.first.gmail_send_request(GmailMethod::MessageSend),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let call = || {
+            GmailCall::send_message(
+                &h.first.account,
+                b"From: author@example.test\r\nTo: recipient@example.test\r\n\r\nExplicit text",
+                None,
+            )
+            .unwrap()
+        };
+        let reply = api
+            .execute(call(), "managed", &h.first.cancel)
+            .await
+            .unwrap();
+        assert!(matches!(
+            reply,
+            GmailReply::Submission(fm_google::gmail_api::GmailSubmission {
+                result: fm_google::send::SubmissionResult::Accepted { .. },
+                ..
+            })
+        ));
+        assert!(dispatched.load(Ordering::Acquire));
+        // Send's typed response preserves uncertainty even when a one-shot
+        // transport refuses reuse; it must never issue a second HTTP request.
+        let again = api
+            .execute(call(), "managed", &h.first.cancel)
+            .await
+            .unwrap();
+        assert!(matches!(
+            again,
+            GmailReply::Submission(fm_google::gmail_api::GmailSubmission {
+                result: fm_google::send::SubmissionResult::NoDefinitiveResponse,
+                ..
+            })
+        ));
+        drop(api);
+        drop(memory);
+    }
+    assert_eq!(http.0.load(Ordering::SeqCst), 2);
+    let mut next = pin!(h.first.gmail_send_request(GmailMethod::DraftSend));
+    assert!(matches!(
+        poll_fn(|cx| Poll::Ready(next.as_mut().poll(cx))).await,
+        Poll::Pending
+    ));
+    assert_eq!(h.first.preparation.available_permits(), 1);
+    h.first.cancel.cancel();
+    assert!(next.await.is_err());
+}
+
+#[tokio::test]
+async fn send_allowlist_requires_explicit_submission_class_exact_post_path_and_100_units() {
+    let h = Contexts::new(1000, 1000, 4);
+    assert!(h
+        .first
+        .gmail_send_request(GmailMethod::DraftCreate)
+        .await
+        .is_err());
+    assert!(h
+        .first
+        .gmail_send_request(GmailMethod::MessageModify)
+        .await
+        .is_err());
+    let work = Work {
+        account: h.first.account.clone(),
+        service: Service::Gmail,
+        class: WorkClass::Submission,
+        units: 100,
+    };
+    for path in ["messages/send", "drafts/send"] {
+        let url = format!("https://gmail.googleapis.com/gmail/v1/users/me/{path}");
+        let request = HttpRequest::new(HttpMethod::Post, &url).unwrap();
+        assert!(mutation_request_matches(&work, &request));
+        let mut wrong = work.clone();
+        wrong.units = 10;
+        assert!(!mutation_request_matches(&wrong, &request));
+        wrong = work.clone();
+        wrong.class = WorkClass::DraftMutation;
+        assert!(!mutation_request_matches(&wrong, &request));
+        assert!(!mutation_request_matches(
+            &work,
+            &HttpRequest::new(HttpMethod::Put, &url).unwrap()
+        ));
+        assert!(!mutation_request_matches(
+            &work,
+            &HttpRequest::new(HttpMethod::Post, &format!("{url}?extra=1")).unwrap()
+        ));
+    }
+}
 impl HttpTransport for DraftHttp {
     fn execute<'a>(&'a self, request: HttpRequest, _: &'a CancellationToken) -> HttpFuture<'a> {
         Box::pin(async move {
@@ -900,6 +1021,32 @@ async fn two_owner_lifecycle(disconnect: bool) {
         0,
         "sync with a fresh grant neither reconnects nor changes credentials"
     );
+    h.close().await;
+}
+
+#[tokio::test]
+async fn explicit_send_requires_owner_but_local_status_does_not_and_refusal_is_typed() {
+    let h = RuntimeHarness::new();
+    let error=h.runtime.handle("sender",CancellationToken::new(),"google_send",Some(&h.account),json!({"draft_id":"authored","expected_revision":1,"expected_google_revision":0,"request_id":"unowned"})).await.unwrap_err();
+    assert_eq!(error.code, "sync_not_running");
+    assert_eq!(
+        error.details["send_invocation_finished_before_dispatch"],
+        true
+    );
+    let status = h
+        .runtime
+        .handle(
+            "observer",
+            CancellationToken::new(),
+            "google_send_status",
+            Some(&h.account),
+            json!({"request_id":"unowned"}),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(status.code, "not_found");
+    assert!(status.details["send_invocation_finished_before_dispatch"].is_null());
+    assert_eq!(h.http.calls.load(Ordering::SeqCst), 0);
     h.close().await;
 }
 

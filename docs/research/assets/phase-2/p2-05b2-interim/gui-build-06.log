@@ -1,0 +1,12 @@
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --build build/p2-05b2-gui-dev --target fuckmail-gui gui-google-send-controls-test gui-google-draft-controls-test gui-google-operation-test --parallel 8
+[1/61] Copying fuckmail-gui qml sources into build dir
+[2/61] Automatic MOC and UIC for target gui-google-operation-test
+[3/59] Automatic MOC and UIC for target gui-google-draft-controls-test
+[4/57] Running qmlimportscanner for fuckmail-gui
+[5/57] Automatic MOC and UIC for target fuckmail-gui
+[6/56] Running rcc for resource fuckmail-gui_raw_qml_0
+[7/56] Running AUTOMOC file extraction for target fuckmail-gui
+[8/11] Generating .rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp, .rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp.aotstats
+[9/11] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.qt\rcc\qrc_fuckmail-gui_raw_qml_0.cpp.obj
+[10/11] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_ReplyComposer_qml.cpp.obj
+[11/11] Linking CXX executable fuckmail-gui.exe

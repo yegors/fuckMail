@@ -52,6 +52,7 @@ void MailBackend::writeToSender(const QString &email, const QString &name) {
 void MailBackend::beginDraftWithRecipient(const QString &mode, const QString &email, const QString &name) {
     if (!m_connected || m_account.isEmpty()) return;
     if (mode != "new" && mode != "reply" && mode != "reply_all" && mode != "forward") return;
+    cancelPendingGoogleSend("Send cancelled by draft navigation.");
     if (m_draftDirty || draftBusy()) {
         const auto account = m_account;
         m_afterDraftSave = [this, account, mode, email, name] { if (account == m_account) beginDraftWithRecipient(mode, email, name); };
@@ -95,6 +96,7 @@ void MailBackend::beginDraftWithRecipient(const QString &mode, const QString &em
 
 void MailBackend::openDraft(const QString &draftId, bool restoreView) {
     if (draftId.isEmpty() || !m_connected) return;
+    cancelPendingGoogleSend("Send cancelled by draft navigation.");
     if (m_draftDirty || draftBusy()) { m_afterDraftSave = [this, draftId, restoreView] { openDraft(draftId, restoreView); }; saveDraft(); return; }
     m_resolvingDraft = true; m_draftStatus = "Opening draft…"; emit draftChanged();
     const auto account = m_account;
@@ -116,7 +118,8 @@ void MailBackend::loadActiveDraft() {
     request("draft_get", account, {{"draft_id", id}}, [this, account, id, generation](auto result, bool ok) {
         if (!ok || account != m_account || id != m_activeDraft || generation != m_generation
             || result["account"].toString() != account || result["draft_id"].toString() != id) return;
-        const bool metadataChanged = mergeGoogleDraftStatus(result["google"].toObject(), account, id);
+        const bool sendChanged = mergeGoogleSendStatus(result["google_send"].toObject(), account, id);
+        const bool metadataChanged = mergeGoogleDraftStatus(result["google"].toObject(), account, id) || sendChanged;
         if (m_draftDirty || draftBusy() || olderDraftProjection(result)) { if (metadataChanged) emit draftChanged(); return; }
         const auto next = mergedDraftProjection(result);
         if (next != m_draft) {

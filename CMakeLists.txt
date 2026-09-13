@@ -100,7 +100,10 @@ if(BUILD_TESTING)
     set_tests_properties(gui-live-empty PROPERTIES TIMEOUT 45
         ENVIRONMENT "${FM_GUI_TEST_ENV}")
     add_test(NAME gui-integration COMMAND "$<TARGET_FILE:fuckmail-gui>" --self-test)
-    set_tests_properties(gui-integration PROPERTIES TIMEOUT 150
+    # Includes the bounded main walkthrough plus five fresh GUI restarts and
+    # their independent CLI readback. Match the existing package-test allowance;
+    # individual operation and input-to-paint budgets are unchanged.
+    set_tests_properties(gui-integration PROPERTIES TIMEOUT 180
         ENVIRONMENT "${FM_GUI_TEST_ENV};FM_GUI_TEST_TRACE=1")
     add_test(NAME gui-attachments COMMAND "$<TARGET_FILE:fuckmail-gui>" --self-test --self-test-attachments)
     set_tests_properties(gui-attachments PROPERTIES TIMEOUT 90

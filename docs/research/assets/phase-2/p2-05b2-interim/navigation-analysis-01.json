@@ -1,0 +1,645 @@
+{
+  "version": 1,
+  "kind": "interim_navigation_analysis",
+  "recorded_at_utc": "2026-09-13T17:26:34.473715+00:00",
+  "inputs": {
+    "accepted_b1": {
+      "gui": {
+        "path": "build/verification/p2-05b1/navigation-release-01.gui.json",
+        "sha256": "af49117348ddaed0c78bcf5803e4139c0905e0f8f313a1cc5b2888c909eda844"
+      },
+      "result": {
+        "path": "build/verification/p2-05b1/navigation-release-01.json",
+        "sha256": "d81a8e42f79c583af25a999494f60db69dc3204bff161e310bcc2b9e92bddb05"
+      },
+      "sources": {
+        "path": "build/verification/p2-05b1/navigation-release-01.source.json",
+        "sha256": "8810e5d6171e23d5dc1cae0ffad42b1177c1b4855180f7f63f0af52365725d83"
+      }
+    },
+    "failed_b2": {
+      "gui": {
+        "path": "build/verification/p2-05b2/navigation-release-01.gui.json",
+        "sha256": "5512a1eef30389c648815dfbfc816e7ccf88e7b55c2257d2464b2f18a19e7049"
+      },
+      "result": {
+        "path": "build/verification/p2-05b2/navigation-release-01.json",
+        "sha256": "0ad8de52698eff435da0b031d60d1fdfd569026285a903768e1f67a1247db0b1"
+      },
+      "sources": {
+        "path": "build/verification/p2-05b2/navigation-release-01.source.json",
+        "sha256": "c3e599ea89219b14c7afaba96c4612156db9de09b30f9e659a11e18192baa572"
+      }
+    }
+  },
+  "scoped_captured_source_sha256": {
+    "accepted_b1": {
+      "gui/ReplyComposer.qml": "043fe51015a1a92a280382d87c6389f75667015426e148b6ab9a0ea8e9175f8e",
+      "gui/GoogleSendBackend.cpp": null,
+      "gui/GoogleDraftBackend.cpp": "e5e3be3e122e4b6bec2b8beebccd37219a5573e6af7f93b6b45be8e882e279fa",
+      "gui/MailBackend.cpp": "5a54c00b89a43d10caa86c33c780ba1b6f45e0ea44ca44261d8fec0a7f025f81",
+      "gui/MailBackend.h": "04cbac8367a99987829063c671442fc26ef71e91d40ce19de95ec31e822f7ee1",
+      "gui/GuiInteractionBenchmark.cpp": "e567c5a30b7034087c999d2ef85263294eaa754093588066f917402894a51454"
+    },
+    "failed_b2": {
+      "gui/ReplyComposer.qml": "6d420b13994752ec9e816da1f635fb0bac136a4176ecedddf83fb574f7cbfe47",
+      "gui/GoogleSendBackend.cpp": "9e5e65568b796341a058481f2819368f14310e7c2ba65f2fc04c4a0330f6aed1",
+      "gui/GoogleDraftBackend.cpp": "668aed4a14c82262c3485ffc4ea07550b8fa2bab57b5c8cd6c00d79220041ca0",
+      "gui/MailBackend.cpp": "d6611721eb1298dcce039b1893ba3cc3bee6a6ac18480e16b73b2bc3490fff4f",
+      "gui/MailBackend.h": "0a599ac6b48ab4b378232290a7b25338b849e67699bb3979b1e61fdd09784bdf",
+      "gui/GuiInteractionBenchmark.cpp": "e567c5a30b7034087c999d2ef85263294eaa754093588066f917402894a51454"
+    }
+  },
+  "current_scoped_sources_match_failed_capture": true,
+  "quantile_columns": [
+    "p50",
+    "p95",
+    "p99"
+  ],
+  "derived_frame_quantile_rule": "Nearest rank over retained frames with nonnegative reference timestamp; report class quantiles copied verbatim.",
+  "runs": {
+    "accepted_b1": {
+      "captured_result": "passed",
+      "budget_passed": true,
+      "recorded_p95_budget_ms": 100,
+      "source_manifest_entries": 267,
+      "captured_executable_sha256": {
+        "gui": "27e425277e27bba82485407b02040c5b7d3a6a9c14b4de42b42862a379d3890e",
+        "cli": "b93adbe494fd853a606136ff1c7ed4a6e1f0c5a7ef1ae5e657a9b225cc5760b1",
+        "engine": "f286e42f14c95d724cf8cebcdc48d1fcf64244cee66883ca7d571e4ef5f3c68f"
+      },
+      "elapsed_fields": {
+        "elapsed_seconds": 44.264999999664724
+      },
+      "window": {
+        "window_width": 1440,
+        "window_height": 900,
+        "device_pixel_ratio": 1.25,
+        "renderer_api": 4
+      },
+      "frame_counts": {
+        "renders": 2590,
+        "swaps": 2590,
+        "synchronizations": 2590
+      },
+      "classes": [
+        {
+          "class": "mailbox_click",
+          "observations": 100,
+          "input_to_paint_ms": [
+            67.9315,
+            78.5675,
+            119.7749
+          ],
+          "input_to_model_ms": [
+            63.1096,
+            74.4731,
+            113.1705
+          ],
+          "model_to_paint_ms": [
+            4.6876,
+            6.6857,
+            8.8343
+          ],
+          "model_to_visible_ms": [
+            0.47,
+            0.6269,
+            1.0102
+          ],
+          "model_invalidations": 0,
+          "visibility_waits": 0,
+          "arm_event_count_distribution": {
+            "1": 100
+          },
+          "dropped_arm_events": 0,
+          "dropped_frame_events": 0,
+          "frame_reasons": {
+            "awaiting_model": 180,
+            "accepted": 100,
+            "generation_mismatch": 90
+          },
+          "mouse_dispatch_records": 100,
+          "backend_dispatch_snapshots": 200,
+          "backend_true_counts": {
+            "draft_dirty": 0,
+            "draft_busy": 0,
+            "deferred_save": 0,
+            "saving_draft": 0,
+            "last_request_dirty": 0,
+            "last_request_busy": 0
+          },
+          "gui_callback_after_swap_ms": [
+            2.7851,
+            19.3835,
+            22.0348
+          ],
+          "render_after_sync_ms": [
+            0.5486,
+            0.9634,
+            1.4316
+          ],
+          "swap_after_render_ms": [
+            0.0997,
+            0.1515,
+            0.2506
+          ],
+          "account_selection_request_delta_distribution": {
+            "1": 100
+          }
+        },
+        {
+          "class": "mailbox_tab",
+          "observations": 100,
+          "input_to_paint_ms": [
+            68.5818,
+            77.5055,
+            87.6041
+          ],
+          "input_to_model_ms": [
+            63.7883,
+            71.2401,
+            82.0879
+          ],
+          "model_to_paint_ms": [
+            4.6198,
+            6.5184,
+            8.9655
+          ],
+          "model_to_visible_ms": [
+            0.4748,
+            0.6286,
+            0.8466
+          ],
+          "model_invalidations": 0,
+          "visibility_waits": 0,
+          "arm_event_count_distribution": {
+            "1": 100
+          },
+          "dropped_arm_events": 0,
+          "dropped_frame_events": 0,
+          "frame_reasons": {
+            "awaiting_model": 167,
+            "accepted": 100,
+            "generation_mismatch": 79
+          },
+          "mouse_dispatch_records": 0,
+          "backend_dispatch_snapshots": 0,
+          "backend_true_counts": {
+            "draft_dirty": 0,
+            "draft_busy": 0,
+            "deferred_save": 0,
+            "saving_draft": 0,
+            "last_request_dirty": 0,
+            "last_request_busy": 0
+          },
+          "gui_callback_after_swap_ms": [
+            2.2639,
+            19.3032,
+            23.8194
+          ],
+          "render_after_sync_ms": [
+            0.5341,
+            0.9121,
+            1.0245
+          ],
+          "swap_after_render_ms": [
+            0.1012,
+            0.1374,
+            0.1879
+          ]
+        },
+        {
+          "class": "mailbox_shift_tab",
+          "observations": 100,
+          "input_to_paint_ms": [
+            68.7939,
+            76.7026,
+            99.4358
+          ],
+          "input_to_model_ms": [
+            64.1798,
+            71.6476,
+            94.9987
+          ],
+          "model_to_paint_ms": [
+            4.5956,
+            6.19,
+            6.7073
+          ],
+          "model_to_visible_ms": [
+            0.4752,
+            0.5867,
+            0.7007
+          ],
+          "model_invalidations": 0,
+          "visibility_waits": 0,
+          "arm_event_count_distribution": {
+            "1": 100
+          },
+          "dropped_arm_events": 0,
+          "dropped_frame_events": 0,
+          "frame_reasons": {
+            "awaiting_model": 174,
+            "generation_mismatch": 79,
+            "accepted": 100
+          },
+          "mouse_dispatch_records": 0,
+          "backend_dispatch_snapshots": 0,
+          "backend_true_counts": {
+            "draft_dirty": 0,
+            "draft_busy": 0,
+            "deferred_save": 0,
+            "saving_draft": 0,
+            "last_request_dirty": 0,
+            "last_request_busy": 0
+          },
+          "gui_callback_after_swap_ms": [
+            1.988,
+            19.2268,
+            21.8827
+          ],
+          "render_after_sync_ms": [
+            0.5131,
+            0.8702,
+            1.0144
+          ],
+          "swap_after_render_ms": [
+            0.0999,
+            0.1355,
+            0.1803
+          ]
+        },
+        {
+          "class": "conversation_click",
+          "observations": 100,
+          "input_to_paint_ms": [
+            24.7169,
+            38.1486,
+            63.5561
+          ],
+          "input_to_model_ms": [
+            20.4145,
+            33.2352,
+            43.5854
+          ],
+          "model_to_paint_ms": [
+            3.9603,
+            5.2534,
+            32.9894
+          ],
+          "model_to_visible_ms": [
+            0.4446,
+            0.5521,
+            0.6554
+          ],
+          "model_invalidations": 0,
+          "visibility_waits": 0,
+          "arm_event_count_distribution": {
+            "1": 99,
+            "3": 1
+          },
+          "dropped_arm_events": 0,
+          "dropped_frame_events": 0,
+          "frame_reasons": {
+            "awaiting_model": 86,
+            "generation_mismatch": 96,
+            "accepted": 100,
+            "snapshot_changed": 1
+          },
+          "mouse_dispatch_records": 100,
+          "backend_dispatch_snapshots": 200,
+          "backend_true_counts": {
+            "draft_dirty": 0,
+            "draft_busy": 0,
+            "deferred_save": 0,
+            "saving_draft": 0,
+            "last_request_dirty": 0,
+            "last_request_busy": 0
+          },
+          "gui_callback_after_swap_ms": [
+            3.0985,
+            19.4781,
+            21.365
+          ],
+          "render_after_sync_ms": [
+            0.5106,
+            0.8803,
+            1.1549
+          ],
+          "swap_after_render_ms": [
+            0.0782,
+            0.1469,
+            0.2607
+          ]
+        }
+      ],
+      "first_mailbox_click_position": {
+        "scene_position": {
+          "x": 329.34375,
+          "y": 28
+        },
+        "global_position": {
+          "x": 1145,
+          "y": 418
+        }
+      }
+    },
+    "failed_b2": {
+      "captured_result": "failed",
+      "budget_passed": false,
+      "recorded_p95_budget_ms": 100,
+      "source_manifest_entries": 275,
+      "captured_executable_sha256": {
+        "gui": "21ab2993d423148cada5eb742c0726ef084573c0720c9e90fa8b8a80fa1e3bf5",
+        "cli": "bbb649d448b2d240b4852ffb64fe1b4f9317116f579c547106c0a57886194c67",
+        "engine": "bc71d8fb4ab84377840e6b96dc6e7d47accd1a43ec160293f24a4d4cd2d0cdf6"
+      },
+      "elapsed_fields": {
+        "elapsed_seconds": 59.95299999974668
+      },
+      "window": {
+        "window_width": 1440,
+        "window_height": 900,
+        "device_pixel_ratio": 1.25,
+        "renderer_api": 4
+      },
+      "frame_counts": {
+        "renders": 1189,
+        "swaps": 1189,
+        "synchronizations": 1189
+      },
+      "classes": [
+        {
+          "class": "mailbox_click",
+          "observations": 100,
+          "input_to_paint_ms": [
+            91.7148,
+            158.3543,
+            256.7695
+          ],
+          "input_to_model_ms": [
+            84.123,
+            151.5888,
+            217.1982
+          ],
+          "model_to_paint_ms": [
+            7.23,
+            18.4955,
+            75.7867
+          ],
+          "model_to_visible_ms": [
+            0.6218,
+            0.8564,
+            1.5956
+          ],
+          "model_invalidations": 0,
+          "visibility_waits": 0,
+          "arm_event_count_distribution": {
+            "1": 100
+          },
+          "dropped_arm_events": 0,
+          "dropped_frame_events": 0,
+          "frame_reasons": {
+            "awaiting_model": 82,
+            "accepted": 100,
+            "generation_mismatch": 28
+          },
+          "mouse_dispatch_records": 100,
+          "backend_dispatch_snapshots": 200,
+          "backend_true_counts": {
+            "draft_dirty": 0,
+            "draft_busy": 0,
+            "deferred_save": 0,
+            "saving_draft": 0,
+            "last_request_dirty": 0,
+            "last_request_busy": 0
+          },
+          "gui_callback_after_swap_ms": [
+            3.5534,
+            40.3634,
+            50.8549
+          ],
+          "render_after_sync_ms": [
+            0.9646,
+            1.7139,
+            2.3063
+          ],
+          "swap_after_render_ms": [
+            0.1494,
+            0.5272,
+            0.9404
+          ],
+          "account_selection_request_delta_distribution": {
+            "1": 100
+          }
+        },
+        {
+          "class": "mailbox_tab",
+          "observations": 100,
+          "input_to_paint_ms": [
+            85.9792,
+            136.6387,
+            237.5546
+          ],
+          "input_to_model_ms": [
+            78.9347,
+            130.1181,
+            186.4638
+          ],
+          "model_to_paint_ms": [
+            7.0261,
+            11.1132,
+            51.0908
+          ],
+          "model_to_visible_ms": [
+            0.6084,
+            0.9953,
+            1.3494
+          ],
+          "model_invalidations": 0,
+          "visibility_waits": 0,
+          "arm_event_count_distribution": {
+            "1": 100
+          },
+          "dropped_arm_events": 0,
+          "dropped_frame_events": 0,
+          "frame_reasons": {
+            "awaiting_model": 76,
+            "accepted": 100,
+            "generation_mismatch": 20
+          },
+          "mouse_dispatch_records": 0,
+          "backend_dispatch_snapshots": 0,
+          "backend_true_counts": {
+            "draft_dirty": 0,
+            "draft_busy": 0,
+            "deferred_save": 0,
+            "saving_draft": 0,
+            "last_request_dirty": 0,
+            "last_request_busy": 0
+          },
+          "gui_callback_after_swap_ms": [
+            2.7346,
+            37.789,
+            45.7327
+          ],
+          "render_after_sync_ms": [
+            0.9456,
+            1.5927,
+            2.8155
+          ],
+          "swap_after_render_ms": [
+            0.1474,
+            0.4772,
+            0.836
+          ]
+        },
+        {
+          "class": "mailbox_shift_tab",
+          "observations": 100,
+          "input_to_paint_ms": [
+            86.6781,
+            177.9872,
+            302.0571
+          ],
+          "input_to_model_ms": [
+            77.7102,
+            162.9289,
+            294.4353
+          ],
+          "model_to_paint_ms": [
+            7.128,
+            16.0158,
+            72.9347
+          ],
+          "model_to_visible_ms": [
+            0.6206,
+            0.818,
+            2.0808
+          ],
+          "model_invalidations": 0,
+          "visibility_waits": 0,
+          "arm_event_count_distribution": {
+            "1": 100
+          },
+          "dropped_arm_events": 0,
+          "dropped_frame_events": 0,
+          "frame_reasons": {
+            "accepted": 100,
+            "awaiting_model": 78,
+            "generation_mismatch": 14
+          },
+          "mouse_dispatch_records": 0,
+          "backend_dispatch_snapshots": 0,
+          "backend_true_counts": {
+            "draft_dirty": 0,
+            "draft_busy": 0,
+            "deferred_save": 0,
+            "saving_draft": 0,
+            "last_request_dirty": 0,
+            "last_request_busy": 0
+          },
+          "gui_callback_after_swap_ms": [
+            2.5531,
+            20.9859,
+            48.0963
+          ],
+          "render_after_sync_ms": [
+            0.9504,
+            1.6287,
+            3.8542
+          ],
+          "swap_after_render_ms": [
+            0.1523,
+            0.5281,
+            0.6636
+          ]
+        },
+        {
+          "class": "conversation_click",
+          "observations": 100,
+          "input_to_paint_ms": [
+            33.6315,
+            86.3356,
+            146.1245
+          ],
+          "input_to_model_ms": [
+            25.7011,
+            52.7809,
+            121.1339
+          ],
+          "model_to_paint_ms": [
+            6.6147,
+            39.2036,
+            112.1389
+          ],
+          "model_to_visible_ms": [
+            0.5955,
+            0.9019,
+            1.6446
+          ],
+          "model_invalidations": 0,
+          "visibility_waits": 0,
+          "arm_event_count_distribution": {
+            "1": 98,
+            "2": 2
+          },
+          "dropped_arm_events": 0,
+          "dropped_frame_events": 0,
+          "frame_reasons": {
+            "awaiting_model": 50,
+            "accepted": 100,
+            "generation_mismatch": 18,
+            "snapshot_changed": 1
+          },
+          "mouse_dispatch_records": 100,
+          "backend_dispatch_snapshots": 200,
+          "backend_true_counts": {
+            "draft_dirty": 0,
+            "draft_busy": 0,
+            "deferred_save": 0,
+            "saving_draft": 0,
+            "last_request_dirty": 0,
+            "last_request_busy": 0
+          },
+          "gui_callback_after_swap_ms": [
+            2.8439,
+            20.0349,
+            27.1283
+          ],
+          "render_after_sync_ms": [
+            0.9252,
+            1.4971,
+            1.7465
+          ],
+          "swap_after_render_ms": [
+            0.1515,
+            0.4168,
+            0.648
+          ]
+        }
+      ],
+      "first_mailbox_click_position": {
+        "scene_position": {
+          "x": 329.34375,
+          "y": 28
+        },
+        "global_position": {
+          "x": 4985,
+          "y": 418
+        }
+      }
+    }
+  },
+  "findings": [
+    "The failed B2 run retains all 400 correct observations; the100ms mailbox p95 gate remains failed.",
+    "Most mailbox regression is before model readiness. Model-to-visible validation remains below 1ms at p95.",
+    "All 300 mailbox samples in each run have one arm event, zero model invalidations and zero visibility waits. Conversation samples include additional arms as recorded; no claim of zero re-arming across every route.",
+    "Recorded mouse-dispatch backend snapshots contain no dirty, busy, deferred-save or saving-draft state. Keyboard routes without these snapshots are not inferred from missing data.",
+    "Same local tab coordinates have different recorded global coordinates. Foreground, occlusion, display identity, refresh rate and power state were not captured.",
+    "Frame cadence and GUI callback/render timing changed. Background, display and host scheduling are hypotheses only; no cause was demonstrated.",
+    "The new Send controls read backend.googleSend 13 times through separate QML bindings and can recompute while hidden. The ordinary empty-send path has no HTTP, file hashing or immutable author preparation. Its measured cost is unavailable."
+  ],
+  "unapplied_candidate": "A single readonly QML Send-status projection could avoid repeated QVariantMap construction. No performance correction is applied or claimed.",
+  "next_measurement_limits": "Founder chose Keep working; measure later. No rerun, benchmark/oracle/budget change, GPU/power/focus adjustment or private process listing is part of this analysis."
+}

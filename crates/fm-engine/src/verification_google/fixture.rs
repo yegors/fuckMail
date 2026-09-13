@@ -105,6 +105,8 @@ pub(super) struct Counters {
     pub(super) draft_created: u64,
     pub(super) draft_updated: u64,
     pub(super) draft_read: u64,
+    pub(super) send_completed: u64,
+    pub(super) sent_read: u64,
     pub(super) vault_loads: u64,
     pub(super) vault_stores: u64,
 }
@@ -113,6 +115,7 @@ impl Counters {
         json!({"http_started":self.http_started,"http_completed":self.http_completed,"http_cancelled":self.http_cancelled,"http_rejected":self.http_rejected,
             "raw_started":self.raw_started,"raw_completed":self.raw_completed,"raw_cancelled":self.raw_cancelled,"raw_active":self.raw_active,"raw_held_active":self.raw_held_active,
             "modify_completed":self.modify_completed,"draft_created":self.draft_created,"draft_updated":self.draft_updated,"draft_read":self.draft_read,
+            "send_completed":self.send_completed,"sent_read":self.sent_read,
             "vault_loads":self.vault_loads,"vault_stores":self.vault_stores})
     }
 }
@@ -124,6 +127,7 @@ pub(super) struct Evidence {
     receipts: HashSet<(String, String)>,
     item_count: usize,
     pub(super) draft_publications: Vec<Value>,
+    pub(super) send_publications: Vec<Value>,
 }
 impl Evidence {
     pub(super) fn error(&mut self, code: &'static str) {
@@ -190,9 +194,14 @@ pub(crate) struct Fixture {
     http: Arc<FixtureHttp>,
     vault: Arc<FixtureVault>,
     hold_raw: Arc<AtomicBool>,
+    send_enabled: bool,
 }
 impl Fixture {
-    pub(crate) fn prepare(profile: &Path, store: &mut Store) -> fm_core::Result<Self> {
+    pub(crate) fn prepare(
+        profile: &Path,
+        store: &mut Store,
+        send_enabled: bool,
+    ) -> fm_core::Result<Self> {
         if store.profile_kind()? != ProfileKind::Live
             || !store.handle("accounts", None, json!({}))?["accounts"]
                 .as_array()
@@ -245,6 +254,7 @@ impl Fixture {
             base_unix_secs,
             evidence.clone(),
             hold_raw.clone(),
+            send_enabled,
         ));
         let vault = Arc::new(FixtureVault::new(
             accounts.clone(),
@@ -260,6 +270,7 @@ impl Fixture {
             http,
             vault,
             hold_raw,
+            send_enabled,
         };
         fixture.persist_blocking(false)?;
         Ok(fixture)
@@ -317,6 +328,7 @@ impl Fixture {
             "counters":evidence.counters.value(),"publication_count":evidence.publications.len(),"published_item_count":evidence.item_count,
             "publications":if final_report{evidence.publications.clone()}else{vec![]},"errors":evidence.errors,
             "draft_fixture":{"max_drafts_per_account":16,"max_mime_bytes":2097152,"max_publications":128,"publications":evidence.draft_publications},
+            "send_fixture":{"enabled":self.send_enabled,"max_sends_per_account":16,"max_mime_bytes":2097152,"publications":evidence.send_publications},
             "stop_reason":if final_report{Some("owning_sessions_or_engine_shutdown")}else{None}})
     }
     fn persist_blocking(&self, final_report: bool) -> io::Result<()> {

@@ -1,0 +1,17 @@
+{
+  "kind": "development-gui-only",
+  "build_dir": "build/p2-05b2-gui-dev",
+  "host": "Windows-10-10.0.26200-SP0",
+  "source_inventory": "gui-source-04.json",
+  "build_passed": true,
+  "focused_tests_passed": true,
+  "ctest_exit_code": 0,
+  "binaries": {
+    "build/p2-05b2-gui-dev/fuckmail-gui.exe": "47a173fbdb3bc769da49ded6e4899f93651f52fff650d56019d676f952525dbe",
+    "build/p2-05b2-gui-dev/gui-google-draft-controls-test.exe": "e71b2b2310600d0d2192900f8f4b29ab3a47444b7ae2951bde4b6688c094bd6b",
+    "build/p2-05b2-gui-dev/gui-google-operation-test.exe": "527ff6ffaa37a4d276bb01b52c6dd2ea95b942ec94f6ad409c46689b69c07599",
+    "build/p2-05b2-gui-dev/gui-google-send-controls-test.exe": "da858e2294737731feb332e7eb167dd7d20541dd1edf6f83cd39c49ef6422fe3"
+  },
+  "elapsed_seconds": 11.962825059890747,
+  "source_unchanged": true
+}

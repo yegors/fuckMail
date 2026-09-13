@@ -8,6 +8,7 @@ pub(crate) mod mail_mutations;
 mod quota;
 #[cfg(test)]
 mod runtime_tests;
+pub(crate) mod send;
 
 use crate::{core_tasks::CoreBridge, google_auth};
 use fm_calendar::google_api::GoogleCalendarApi;
@@ -167,10 +168,40 @@ impl SyncContext {
                 "Only draft create/update is admitted",
             ));
         }
+        self.gmail_upload_request(method, WorkClass::DraftMutation)
+            .await
+    }
+    pub(crate) async fn gmail_send_request(
+        &self,
+        method: fm_google::gmail_api::GmailMethod,
+    ) -> Result<(
+        GmailApi<QuotaTransport>,
+        OwnedSemaphorePermit,
+        Arc<AtomicBool>,
+    )> {
+        use fm_google::gmail_api::GmailMethod;
+        if !matches!(method, GmailMethod::MessageSend | GmailMethod::DraftSend) {
+            return Err(failure(
+                "invalid_request",
+                "Only explicit message/draft submission is admitted",
+            ));
+        }
+        self.gmail_upload_request(method, WorkClass::Submission)
+            .await
+    }
+    async fn gmail_upload_request(
+        &self,
+        method: fm_google::gmail_api::GmailMethod,
+        class: WorkClass,
+    ) -> Result<(
+        GmailApi<QuotaTransport>,
+        OwnedSemaphorePermit,
+        Arc<AtomicBool>,
+    )> {
         let work = Work {
             account: self.account.clone(),
             service: Service::Gmail,
-            class: WorkClass::DraftMutation,
+            class,
             units: method.quota_units(),
         };
         // Queued work retains identifiers only. Admission precedes frozen MIME
@@ -307,8 +338,8 @@ impl HttpTransport for QuotaTransport {
             }
             let admitted = self.permit.lock().unwrap().take();
             // Typed mutation workers have a separate one-shot lane. Read workers
-            // cannot borrow that lane. Only exact state/Calendar/draft writes
-            // are allowed; draft/message submission remains unavailable.
+            // cannot borrow that lane. Explicit submission has its own exact
+            // typed allowlist and never borrows a draft-write quota lease.
             let read_request = request.method() == HttpMethod::Get
                 || (self.work.service == Service::Calendar
                     && request.method() == HttpMethod::Post
@@ -320,6 +351,7 @@ impl HttpTransport for QuotaTransport {
                     (self.work.service, self.work.class),
                     (Service::Gmail, WorkClass::StateMutation)
                         | (Service::Gmail, WorkClass::DraftMutation)
+                        | (Service::Gmail, WorkClass::Submission)
                         | (Service::Calendar, WorkClass::CalendarMutation)
                 ) && mutation_request_matches(&self.work, &request)
             };
@@ -375,6 +407,15 @@ fn mutation_request_matches(work: &Work, request: &HttpRequest) -> bool {
     let path = request.url().split('?').next().unwrap_or("");
     match work.service {
         Service::Gmail => {
+            if work.class == WorkClass::Submission {
+                return request.method() == HttpMethod::Post
+                    && work.units == 100
+                    && matches!(
+                        request.url(),
+                        "https://gmail.googleapis.com/gmail/v1/users/me/messages/send"
+                            | "https://gmail.googleapis.com/gmail/v1/users/me/drafts/send"
+                    );
+            }
             if work.class == WorkClass::DraftMutation {
                 let root = "https://gmail.googleapis.com/gmail/v1/users/me/drafts";
                 return match (request.method(), work.units) {
@@ -505,6 +546,10 @@ impl Runtime {
                 | "google_draft_status"
                 | "google_draft_reconcile"
                 | "google_draft_resolve"
+                | "google_send"
+                | "google_send_status"
+                | "google_send_reconcile"
+                | "google_send_abandon"
         )
     }
     async fn operation_context(
@@ -578,7 +623,14 @@ impl Runtime {
         }
         let account = account
             .filter(|id| !id.is_empty())
-            .ok_or_else(|| failure("account_required", "Choose a Google account"))?
+            .ok_or_else(|| {
+                let error = failure("account_required", "Choose a Google account");
+                if method == "google_send" {
+                    send::predispatch_error(error)
+                } else {
+                    error
+                }
+            })?
             .to_owned();
         if method.starts_with("google_draft_") {
             let writing = matches!(method, "google_draft_sync" | "google_draft_resolve");
@@ -594,6 +646,33 @@ impl Runtime {
                 return self
                     .core
                     .call(move |store| store.google_draft_status(&account, &draft_id))
+                    .await;
+            }
+        }
+        if method == "google_send" || method.starts_with("google_send_") {
+            send::validate(method, &params).map_err(|error| {
+                if method == "google_send" {
+                    send::predispatch_error(error)
+                } else {
+                    error
+                }
+            })?;
+            if method == "google_send_status" {
+                let request_id = params["request_id"].as_str().unwrap().to_owned();
+                return self
+                    .core
+                    .call(move |store| store.google_send_status(&account, &request_id))
+                    .await;
+            }
+            if method == "google_send_abandon" {
+                return self
+                    .core
+                    .call(move |store| {
+                        if owner_cancel.is_cancelled() {
+                            return Err(failure("cancelled", "Google send recovery stopped"));
+                        }
+                        store.google_send_abandon(&account, &params)
+                    })
                     .await;
             }
         }
@@ -649,10 +728,19 @@ impl Runtime {
                 | "google_draft_sync"
                 | "google_draft_reconcile"
                 | "google_draft_resolve"
+                | "google_send"
+                | "google_send_reconcile"
         ) {
             let (context, _operation_owner) = self
                 .operation_context(&account, owner_id, owner_cancel.clone())
-                .await?;
+                .await
+                .map_err(|error| {
+                    if method == "google_send" {
+                        send::predispatch_error(error)
+                    } else {
+                        error
+                    }
+                })?;
             let cancel = context.cancel.child_token();
             let relay_cancel = cancel.clone();
             let relay = tokio::spawn(async move {
@@ -664,6 +752,10 @@ impl Runtime {
             // cancellation and never authorizes a second provider attempt.
             let result = async {
                 match method {
+                    "google_send" => send::execute(&context, params).await,
+                    "google_send_reconcile" => {
+                        send::reconcile(&context, params["request_id"].as_str().unwrap()).await
+                    }
                     "google_draft_sync" | "google_draft_resolve" => {
                         drafts::execute(&context, params).await
                     }

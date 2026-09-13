@@ -71,6 +71,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QVariantMap attachmentImport READ attachmentImport NOTIFY draftChanged)
     Q_PROPERTY(bool attachmentImportBusy READ attachmentImportBusy NOTIFY draftChanged)
     Q_PROPERTY(QVariantMap googleDraft READ googleDraft NOTIFY draftChanged)
+    Q_PROPERTY(QVariantMap googleSend READ googleSend NOTIFY draftChanged)
     Q_PROPERTY(QVariantList calendarSources READ calendarSources NOTIFY eventsChanged)
     Q_PROPERTY(QString calendarView READ calendarView NOTIFY eventsChanged)
     Q_PROPERTY(QString calendarDate READ calendarDate NOTIFY eventsChanged)
@@ -203,6 +204,13 @@ public:
     Q_INVOKABLE QVariantMap googleDraftReplacementContext();
     Q_INVOKABLE void replaceGoogleDraft(const QVariantMap &context);
     Q_INVOKABLE void cancelGoogleDraftOperation();
+    QVariantMap googleSend() const;
+    Q_INVOKABLE void sendGoogleDraft();
+    Q_INVOKABLE void checkGoogleSend();
+    Q_INVOKABLE void showCurrentGoogleSend();
+    Q_INVOKABLE void resumeGoogleSend();
+    Q_INVOKABLE void abandonGoogleSend();
+    Q_INVOKABLE void cancelGoogleSend();
     Q_INVOKABLE void setDraftSignature(const QString &signature);
     Q_INVOKABLE void discardDraft();
     Q_INVOKABLE void captureDraft();
@@ -270,6 +278,7 @@ private:
     friend class GuiSettingsSelfTest;
     friend class GuiCompositionSelfTest;
     friend class GoogleDraftControlsTest;
+    friend class GoogleSendControlsTest;
     using Callback = std::function<void(const QJsonObject &, bool)>;
     struct Pending {
         Callback callback; qint64 started;
@@ -325,6 +334,22 @@ private:
     bool mergeGoogleDraftStatus(const QJsonObject &status, const QString &account, const QString &draftId);
     void startGoogleDraftOperation(const QString &method, const QJsonObject &params);
     bool googleDraftRecoveryReady() const;
+    bool googleSendBlocksDraftSync() const;
+    bool mergeGoogleSendStatus(const QJsonObject &status, const QString &account, const QString &draftId);
+    void mergeGoogleSendProjection(QVariantMap &next, const QJsonObject &result) const;
+    QString googleSendKey() const;
+    QJsonObject googleSendAuthorSnapshot() const;
+    void cancelPendingGoogleSend(const QString &reason = {});
+    void finishGoogleSendSave(bool ok);
+    void startGoogleSendOperation(const QString &method, const QJsonObject &params);
+    void refreshGoogleSendMetadata(const QString &account, const QString &draftId);
+    struct SendUi {
+        QJsonObject selected, current, request;
+        QString method, feedback;
+        bool active = false, uncertain = false, notFound = false;
+    };
+    QHash<QString, SendUi> m_googleSendUi;
+    QJsonObject m_googleSendPending;
     QJsonObject m_googleDraftReplacement;
     QString m_googleDraftOperationAccount, m_googleDraftOperationId, m_googleDraftOperationMethod;
     QString m_googleDraftFeedbackAccount, m_googleDraftFeedbackId, m_googleDraftFeedback;

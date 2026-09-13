@@ -1,0 +1,59 @@
+{
+  "checks": [
+    {
+      "exit_code": 101,
+      "scope": "initial focused Send",
+      "log": "engine-send-01.log",
+      "failed": 5,
+      "test_seconds": 1.45,
+      "passed": 7,
+      "sha256": "3a90cdbb56b80dd187eaa9a44d7197bf84d0b338a698b053a1acaf85336d7334"
+    },
+    {
+      "exit_code": 0,
+      "scope": "final focused Send",
+      "log": "engine-send-02.log",
+      "failed": 0,
+      "test_seconds": 1.52,
+      "passed": 12,
+      "sha256": "c631363568d598d6d2b38b8e5f7e657fdebb4cd403017288c6e7c42e118c0485"
+    },
+    {
+      "exit_code": 0,
+      "scope": "ordinary engine bin unit/regression",
+      "log": "engine-regression-01.log",
+      "failed": 0,
+      "test_seconds": 46.5,
+      "passed": 121,
+      "sha256": "4757cc51970d5116cdc7701bb555df2d0428e2d10e29334aa58c4251ebdf8244"
+    },
+    {
+      "exit_code": 0,
+      "scope": "isolated verification-google Release fixture tests",
+      "log": "engine-feature-fixture-01.log",
+      "failed": 0,
+      "test_seconds": 1.52,
+      "passed": 9,
+      "sha256": "9173198e906095a7c1f48c98e2fdc1c5bb1ce4a2a7dc62fa144d9e2a21e9f79b"
+    },
+    {
+      "seconds": 14.21,
+      "log": "engine-clippy-01.log",
+      "scope": "engine all-target strict lint with verification-google feature",
+      "exit_code": 0,
+      "sha256": "caed800d1f31f8984e3286234d85b55d3a447b894a4e0c917c53e8c22d860f97"
+    }
+  ],
+  "scope": "P2-05B2 engine scoped checks; no live HTTP, native GUI, paired CLI, full workspace or performance claim",
+  "source_manifest_sha256": "e55d8f0def74d58e443ebb6b7b7fc56dbc70c1c1e70446ef7718b4f7b0335922",
+  "preserved_failure": "Typed rejection reason was not a stable error code; corrected to typed category. Three MIME substring oracles replaced with independent decoded-text assertions; recipientless setup added required body.",
+  "version": 1,
+  "feature_binary": {
+    "path": "target/verification-google/release/fm-engine.exe",
+    "sha256": "90936e229573100b10297f857a164c1c6f54452daf3534276f64c288e253f3ce",
+    "bytes": 14971392
+  },
+  "source_files": 166,
+  "source_manifest": "engine-checkpoint-01.source.json",
+  "head": "09eadfa0f1dfb19d822f5bce078b5d3984c744e2"
+}

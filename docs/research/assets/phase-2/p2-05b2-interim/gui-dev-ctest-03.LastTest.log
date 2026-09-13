@@ -1,0 +1,695 @@
+Start testing: Sep 13 12:57 Eastern Daylight Time
+----------------------------------------------------------
+1/16 Testing: rust-test-build
+1/16 Test: rust-test-build
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/.tools/cargo/bin/cargo.exe" "test" "--workspace" "--locked" "--no-run" "--target-dir" "C:/Users/Yegor/Projects/Fuckaround/fuckMail/target"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail
+"rust-test-build" start time: Sep 13 12:57 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.44s
+  Executable unittests src\lib.rs (target\debug\deps\fm_assist-b1136fd18666e022.exe)
+  Executable unittests src\lib.rs (target\debug\deps\fm_calendar-a238c8090b1a78b1.exe)
+  Executable tests\calendar.rs (target\debug\deps\calendar-4a112ced0909e720.exe)
+  Executable tests\limited_access.rs (target\debug\deps\limited_access-6b5c5ec2c2945542.exe)
+  Executable unittests src\main.rs (target\debug\deps\fm-bc85e1f47b26e4a3.exe)
+  Executable tests\arguments.rs (target\debug\deps\arguments-6e869f4c6ae32d5e.exe)
+  Executable unittests src\lib.rs (target\debug\deps\fm_core-c16a4300718408a8.exe)
+  Executable tests\coverage.rs (target\debug\deps\coverage-afac95ef97a8b3a6.exe)
+  Executable tests\mutations.rs (target\debug\deps\mutations-f648c4abe8f26b34.exe)
+  Executable tests\search.rs (target\debug\deps\search-e64d2f2a2861dd23.exe)
+  Executable unittests src\main.rs (target\debug\deps\fm_engine-3a2ea17661e1de87.exe)
+  Executable tests\sessions.rs (target\debug\deps\sessions-e8feea43ad5a8afa.exe)
+  Executable tests\verification_profile.rs (target\debug\deps\verification_profile-fe647fe5df0088b4.exe)
+  Executable unittests src\lib.rs (target\debug\deps\fm_google-2a69ce3ca8eb9fe0.exe)
+  Executable tests\feasibility.rs (target\debug\deps\feasibility-595524b5e1c7c724.exe)
+  Executable unittests src\lib.rs (target\debug\deps\fm_ipc-62aad3fa7bef9bf0.exe)
+  Executable unittests src\lib.rs (target\debug\deps\fm_mail-f8cdd7ddf24e3529.exe)
+  Executable tests\roundtrip.rs (target\debug\deps\roundtrip-4bca662b54205c7c.exe)
+<end of output>
+Test time =   0.54 sec
+----------------------------------------------------------
+Test Passed.
+"rust-test-build" end time: Sep 13 12:57 Eastern Daylight Time
+"rust-test-build" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/16 Testing: gui-smoke
+3/16 Test: gui-smoke
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/fuckmail-gui.exe" "--smoke"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+"gui-smoke" start time: Sep 13 12:57 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   9.51 sec
+----------------------------------------------------------
+Test Passed.
+"gui-smoke" end time: Sep 13 12:57 Eastern Daylight Time
+"gui-smoke" time elapsed: 00:00:09
+----------------------------------------------------------
+
+4/16 Testing: gui-live-empty
+4/16 Test: gui-live-empty
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/fuckmail-gui.exe" "--self-test-live-empty"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+"gui-live-empty" start time: Sep 13 12:57 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+[pid=71572 t=     0.000] Native empty live profile verified through preference save and repeated idle polls: no accounts, conversations or calendar events; fixture revision 0
+<end of output>
+Test time =   6.92 sec
+----------------------------------------------------------
+Test Passed.
+"gui-live-empty" end time: Sep 13 12:57 Eastern Daylight Time
+"gui-live-empty" time elapsed: 00:00:06
+----------------------------------------------------------
+
+5/16 Testing: gui-integration
+5/16 Test: gui-integration
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/fuckmail-gui.exe" "--self-test"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+"gui-integration" start time: Sep 13 12:57 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+[pid=58464 t=     0.000] GUI engine launch attempt 1
+[pid=58464 t=     0.124] GUI self-test stage 0
+[pid=58464 t=     1.087] GUI engine launch attempt 2
+[pid=58464 t=     5.799] GUI self-test stage 20
+[pid=58464 t=     6.486] GUI self-test stage 21
+[pid=58464 t=     7.021] GUI self-test stage 1
+[pid=58464 t=     7.157] GUI self-test stage 2
+[pid=58464 t=     7.307] GUI self-test stage 27
+[pid=58464 t=     7.486] GUI self-test stage 22
+[pid=58464 t=     7.579] GUI self-test stage 23
+[pid=58464 t=     7.714] GUI self-test stage 24
+[pid=58464 t=     7.999] GUI self-test stage 25
+[pid=58464 t=     8.126] GUI self-test stage 26
+[pid=58464 t=     8.879] GUI self-test stage 3
+[pid=58464 t=     9.036] GUI self-test stage 4
+[pid=58464 t=     9.113] GUI self-test stage 5
+[pid=58464 t=     9.882] GUI self-test stage 6
+[pid=58464 t=    10.357] GUI self-test stage 7
+[pid=58464 t=    11.587] GUI self-test stage 8
+[pid=58464 t=    12.417] GUI self-test stage 9
+[pid=58464 t=    12.998] GUI self-test stage 30
+[pid=58464 t=    13.599] GUI self-test stage 31
+[pid=58464 t=    13.894] GUI self-test stage 32
+[pid=58464 t=    13.981] GUI self-test stage 33
+[pid=58464 t=    14.075] GUI self-test stage 34
+[pid=58464 t=    14.169] GUI self-test stage 35
+[pid=58464 t=    14.263] GUI self-test stage 36
+[pid=58464 t=    14.404] GUI self-test stage 37
+[pid=58464 t=    14.497] GUI self-test stage 38
+[pid=58464 t=    14.580] GUI self-test stage 39
+[pid=58464 t=    14.697] GUI self-test stage 40
+[pid=58464 t=    14.790] GUI self-test stage 41
+[pid=58464 t=    14.887] GUI self-test stage 42
+[pid=58464 t=    15.024] GUI self-test stage 48
+[pid=58464 t=    15.161] GUI self-test stage 90
+[pid=58464 t=    15.218] GUI self-test stage 91
+[pid=58464 t=    15.397] GUI self-test stage 92
+[pid=58464 t=    15.670] GUI self-test stage 93
+[pid=58464 t=    15.955] GUI self-test stage 49
+[pid=58464 t=    16.079] GUI self-test stage 94
+[pid=58464 t=    16.122] Native Sent/local-capture/Inspect passed: original conversation, operation identity, MIME bytes and non-delivery status verified by CLI.
+[pid=58464 t=    16.262] GUI self-test stage 95
+[pid=58464 t=    16.409] GUI self-test stage 96
+[pid=58464 t=    16.554] GUI self-test stage 97
+[pid=58464 t=    16.681] GUI self-test stage 98
+[pid=58464 t=    16.826] GUI self-test stage 99
+[pid=58464 t=    16.922] GUI self-test stage 100
+[pid=58464 t=    17.016] GUI self-test stage 101
+[pid=58464 t=    17.094] GUI self-test stage 102
+[pid=58464 t=    17.226] GUI self-test stage 103
+[pid=58464 t=    17.322] GUI self-test stage 104
+[pid=58464 t=    17.494] GUI self-test stage 105
+[pid=58464 t=    17.579] GUI self-test stage 106
+[pid=58464 t=    17.744] GUI self-test stage 107
+[pid=58464 t=    17.882] GUI self-test stage 108
+[pid=58464 t=    18.006] GUI self-test stage 109
+[pid=58464 t=    18.129] GUI self-test stage 110
+[pid=58464 t=    18.303] GUI self-test stage 111
+[pid=58464 t=    18.442] GUI self-test stage 112
+[pid=58464 t=    18.443] Native Discard confirmation passed: opening/Cancel preserved the exact draft; confirmation cleared only its authored fields, preserving source messages, another draft and capture history.
+[pid=58464 t=    18.531] GUI self-test stage 50
+[pid=58464 t=    18.736] GUI self-test stage 51
+[pid=58464 t=    18.874] GUI self-test stage 52
+[pid=58464 t=    18.966] GUI self-test stage 53
+[pid=58464 t=    19.055] GUI self-test stage 54
+[pid=58464 t=    19.181] GUI self-test stage 55
+[pid=58464 t=    19.280] GUI self-test stage 56
+[pid=58464 t=    19.431] GUI self-test stage 57
+[pid=58464 t=    19.519] GUI self-test stage 58
+[pid=58464 t=    20.129] GUI self-test stage 59
+[pid=58464 t=    20.556] GUI self-test stage 70
+[pid=58464 t=    20.647] GUI self-test stage 71
+[pid=58464 t=    20.739] GUI self-test stage 72
+[pid=58464 t=    20.833] GUI self-test stage 73
+[pid=58464 t=    21.001] GUI self-test stage 74
+[pid=58464 t=    21.907] GUI engine launch attempt 1
+[pid=58464 t=    22.005] GUI self-test stage 75
+[pid=58464 t=    22.099] GUI self-test stage 76
+[pid=58464 t=    22.194] GUI self-test stage 77
+[pid=58464 t=    22.319] GUI self-test stage 78
+[pid=58464 t=    22.445] GUI self-test stage 79
+[pid=58464 t=    22.537] GUI self-test stage 80
+[pid=58464 t=    22.629] Native Settings stage 0
+[pid=58464 t=    22.959] Native Settings stage 1
+[pid=58464 t=    23.567] Native Settings stage 2
+[pid=58464 t=    24.411] Settings programmatic viewport setup: list= QVariant(double, 240) reader= QVariant(double, 160) editorFocus= true active= "replyComposer" stored list/reader= QVariant(double, 240) QVariant(double, 160)
+[pid=58464 t=    24.532] Native Settings stage 3
+[pid=58464 t=    24.639] Native Settings stage 4
+[pid=58464 t=    24.734] Native Settings stage 5
+[pid=58464 t=    24.875] Native Settings stage 6
+[pid=58464 t=    25.000] Native Settings stage 7
+[pid=58464 t=    25.362] Native Settings stage 8
+[pid=58464 t=    25.611] Native Settings stage 9
+[pid=58464 t=    25.794] Native Settings stage 10
+[pid=58464 t=    25.937] Native Settings stage 11
+[pid=58464 t=    26.317] Native Settings stage 12
+[pid=58464 t=    26.764] Native Settings stage 13
+[pid=58464 t=    27.359] Native Settings stage 14
+[pid=58464 t=    29.085] Native Settings stage 15
+[pid=58464 t=    29.516] Native Settings stage 16
+[pid=58464 t=    30.354] Native Settings stage 17
+[pid=58464 t=    30.554] Native Settings stage 18
+[pid=58464 t=    31.730] Native Settings stage 19
+[pid=58464 t=    31.945] Native Settings stage 20
+[pid=58464 t=    33.587] Native Settings stage 21
+[pid=58464 t=    34.013] Native Settings stage 22
+[pid=58464 t=    34.137] Native Settings stage 30
+[pid=58464 t=    34.230] Native Settings stage 31
+[pid=58464 t=    34.723] Native Settings stage 32
+[pid=58464 t=    36.873] Native Settings stage 33
+[pid=58464 t=    37.907] Native Settings stage 34
+[pid=58464 t=    39.084] Native Settings stage 35
+[pid=58464 t=    39.781] Native Settings stage 36
+[pid=58464 t=    39.944] Native Settings stage 37
+[pid=58464 t=    40.036] Native Settings stage 38
+[pid=58464 t=    40.127] Native Settings stage 39
+[pid=58464 t=    40.312] Native Settings stage 23
+[pid=58464 t=    40.458] Native Settings stage 24
+[pid=58464 t=    40.581] Native Settings passed: all three palettes and text sizes, saved startup/placement/duration, validation retention, account metadata, unchanged authored draft, independent calendar preferences and Mail viewport/focus restoration (programmatic viewport setup; physical wheel input unverified).
+[pid=58464 t=    40.681] GUI self-test stage 81
+[pid=58464 t=    40.775] Native mail search stage 0 case 0
+[pid=58464 t=    41.125] Native mail search stage 80 case 0
+[pid=58464 t=    41.220] Native mail search stage 81 case 0
+[pid=58464 t=    41.612] Native mail search stage 82 case 0
+[pid=58464 t=    41.613] Native request ordering passed: real explicit queries preceded unsent automatic reads, retained manual-read/write barriers and delivered polling after four bypasses; stored preferences unchanged.
+[pid=58464 t=    41.706] Native mail search stage 90 case 0
+[pid=58464 t=    41.962] Native mail search stage 91 case 0
+[pid=58464 t=    42.299] Native mail search stage 92 case 0
+[pid=58464 t=    42.415] Native mail search stage 93 case 0
+[pid=58464 t=    42.607] Native mail delegate retained through actual read-on-open: identical item, current row fields and nonzero viewport 240
+[pid=58464 t=    42.691] Native mail search stage 94 case 0
+[pid=58464 t=    42.875] Native mail search stage 95 case 0
+[pid=58464 t=    42.968] Native mail search stage 96 case 0
+[pid=58464 t=    43.291] Native mail search stage 97 case 0
+[pid=58464 t=    43.291] Native deferred reader click passed: a real pending flag receipt preserved the clicked row through a real filtered-page exclusion; exact reader body, account, review state and serial write barrier retained.
+[pid=58464 t=    43.591] Native mail search stage 98 case 0
+[pid=58464 t=    43.702] Native mail search stage 99 case 0
+[pid=58464 t=    43.712] DelegateModel::cancel: index out range 22 0
+[pid=58464 t=    43.787] Native mail search stage 100 case 0
+[pid=58464 t=    44.301] Native mail search stage 99 case 0
+[pid=58464 t=    44.418] Native mail search stage 100 case 0
+[pid=58464 t=    44.853] Native mail search stage 99 case 0
+[pid=58464 t=    44.942] Native mail search stage 100 case 0
+[pid=58464 t=    45.413] Native mail search stage 99 case 0
+[pid=58464 t=    45.420] DelegateModel::cancel: index out range 16 0
+[pid=58464 t=    45.725] Native mail search stage 100 case 0
+[pid=58464 t=    45.942] Native mail search stage 99 case 0
+[pid=58464 t=    46.014] Native mail search stage 100 case 0
+[pid=58464 t=    46.425] Native mail search stage 99 case 0
+[pid=58464 t=    46.524] Native mail search stage 100 case 0
+[pid=58464 t=    47.021] Native mail search stage 101 case 0
+[pid=58464 t=    47.021] Native compact account keys passed: three Tab and three Shift+Tab events at 1000x650 retained the complete selected tab and matching account reader; original window size and account restored.
+[pid=58464 t=    47.164] Native mail search stage 1 case 0
+[pid=58464 t=    47.236] Native mail search stage 2 case 0
+[pid=58464 t=    47.287] DelegateModel::cancel: index out range 23 1
+[pid=58464 t=    47.429] Native mail search stage 3 case 0
+[pid=58464 t=    47.875] Native mail search stage 1 case 1
+[pid=58464 t=    47.985] Native mail search stage 2 case 1
+[pid=58464 t=    48.075] Native mail search stage 3 case 1
+[pid=58464 t=    48.532] Native mail search stage 1 case 2
+[pid=58464 t=    48.628] Native mail search stage 2 case 2
+[pid=58464 t=    48.732] Native mail search stage 3 case 2
+[pid=58464 t=    49.098] Native mail search stage 1 case 3
+[pid=58464 t=    49.191] Native mail search stage 2 case 3
+[pid=58464 t=    49.782] Native mail search stage 3 case 3
+[pid=58464 t=    50.154] Native mail search stage 4 case 4
+[pid=58464 t=    50.491] Native mail search stage 10 case 4
+[pid=58464 t=    50.622] Native mail search stage 11 case 4
+[pid=58464 t=    50.722] Native mail search stage 12 case 4
+[pid=58464 t=    50.782] DelegateModel::cancel: index out range 24 1
+[pid=58464 t=    50.825] Native mail search stage 13 case 4
+[pid=58464 t=    50.899] Native mail search stage 14 case 4
+[pid=58464 t=    50.992] Native mail search stage 15 case 4
+[pid=58464 t=    51.083] Native mail search stage 16 case 4
+[pid=58464 t=    51.178] Native mail search stage 17 case 4
+[pid=58464 t=    51.363] Native mail search stage 18 case 4
+[pid=58464 t=    51.715] Native mail search stage 19 case 4
+[pid=58464 t=    51.838] Native mail search stage 20 case 4
+[pid=58464 t=    52.199] DelegateModel::cancel: index out range 23 1
+[pid=58464 t=    52.375] Native mail search stage 21 case 4
+[pid=58464 t=    52.993] Native mail filters passed valid/date/UTF-8 error/correction/clear controls. Real response "528" from generation 82 was held across a native account switch; forty superseding real queries were admitted; obsolete queued query "529" never reached transport and final query "568" returned the expected member.
+[pid=58464 t=    53.110] Native mail search stage 22 case 4
+[pid=58464 t=    53.242] Native mail search stage 23 case 4
+[pid=58464 t=    54.017] Native mail search stage 24 case 4
+[pid=58464 t=    54.081] Native mail search stage 25 case 4
+[pid=58464 t=    54.323] Native mail search stage 26 case 4
+[pid=58464 t=    54.646] Native mail search stage 27 case 4
+[pid=58464 t=    54.740] Native mail search stage 28 case 4
+[pid=58464 t=    54.871] Native mail search stage 29 case 4
+[pid=58464 t=    55.006] Native mail search stage 30 case 4
+[pid=58464 t=    55.277] Native mail search stage 31 case 4
+[pid=58464 t=    55.376] Native mail search stage 32 case 4
+[pid=58464 t=    55.636] Native mail search stage 33 case 4
+[pid=58464 t=    55.774] Native mail search stage 34 case 4
+[pid=58464 t=    55.986] Native mail search stage 35 case 4
+[pid=58464 t=    56.426] Native mail search stage 36 case 4
+[pid=58464 t=    56.564] Native mail search stage 37 case 4
+[pid=58464 t=    56.705] Native mail search stage 38 case 4
+[pid=58464 t=    56.827] Native mail search stage 39 case 4
+[pid=58464 t=    56.981] Native mail search stage 40 case 4
+[pid=58464 t=    57.677] Native mail search stage 41 case 4
+[pid=58464 t=    58.927] Native mail search stage 42 case 4
+[pid=58464 t=    59.739] Native snapshot arrival passed: real Done receipt targets the two original members; provider arrival remains unread/unstarred; exact GUI/CLI counts, selected reader and Unicode draft retained. Counts: {"conversation_count":111,"done_conversation_count":82,"held_conversation_count":10,"message_count":146,"starred_count":25,"unread_conversation_count":20,"unread_count":20}
+[pid=58464 t=    59.739] Idle native polling passed: separate CLI hold/unhold converged in the actual list and reader without GUI query, refresh or navigation; original counts, unread arrival and authored draft restored.
+[pid=58464 t=    59.739] Native mail delegate retained through independent CLI hold/unhold: identical item, current row fields and unchanged viewport.
+[pid=58464 t=    59.739] Native account tab retained across two actual account payload changes: unchanged item/geometry, native press survived refresh, original-center release opened the exact mailbox and normal return retained the origin draft.
+[pid=58464 t=    59.925] Native mail search stage 5 case 4
+[pid=58464 t=    60.430] Native mail search stage 6 case 4
+[pid=58464 t=    60.824] Native mail search stage 60 case 4
+[pid=58464 t=    61.035] Native mail search stage 61 case 4
+[pid=58464 t=    61.116] Native mail search stage 62 case 4
+[pid=58464 t=    61.295] Native mail search stage 63 case 4
+[pid=58464 t=    61.733] Native mail search stage 64 case 4
+[pid=58464 t=    62.213] Native mail search stage 65 case 4
+[pid=58464 t=    62.428] Native mail search stage 66 case 4
+[pid=58464 t=    62.519] Native mail search stage 67 case 4
+[pid=58464 t=    62.612] Native mail search stage 68 case 4
+[pid=58464 t=    62.734] Native mail search stage 69 case 4
+[pid=58464 t=    62.860] Native mail search stage 70 case 4
+[pid=58464 t=    62.958] Native mail search stage 71 case 4
+[pid=58464 t=    63.183] Native mail search stage 72 case 4
+[pid=58464 t=    63.366] Native mail search stage 73 case 4
+[pid=58464 t=    63.586] Native mail search stage 74 case 4
+[pid=58464 t=    63.678] Native mail search stage 75 case 4
+[pid=58464 t=    63.864] Native mail search stage 76 case 4
+[pid=58464 t=    63.958] Native mail search stage 77 case 4
+[pid=58464 t=    64.253] Native mail search stage 78 case 4
+[pid=58464 t=    64.454] Native mail search stage 79 case 4
+[pid=58464 t=    64.454] Native Update2 mail passed: complete CLI group counts, collapse retention, source-backed People/Automated toggles, account-scoped sender hover without review, explicit Open, exact Filter and durable Write recipient.
+[pid=58464 t=    64.588] Native mail search stage 5 case 4
+[pid=58464 t=    65.184] Native mail search stage 6 case 4
+[pid=58464 t=    65.271] GUI self-test stage 82
+[pid=58464 t=    65.372] Native composition stage 0 mode "new"
+[pid=58464 t=    65.712] Native composition stage 1 mode "new"
+[pid=58464 t=    65.850] Native composition stage 2 mode "new"
+[pid=58464 t=    66.132] Native composition stage 42 mode "new"
+[pid=58464 t=    66.302] Native composition stage 43 mode "new"
+[pid=58464 t=    66.397] Native composition stage 44 mode "new"
+[pid=58464 t=    66.503] Native composition stage 45 mode "new"
+[pid=58464 t=    66.985] Incomplete native recipient retained exact input and saved revision; correcting the same field created its chip.
+[pid=58464 t=    67.054] Native composition stage 3 mode "new"
+[pid=58464 t=    67.147] Native composition stage 4 mode "new"
+[pid=58464 t=    67.240] Native composition stage 5 mode "new"
+[pid=58464 t=    67.337] Native composition stage 6 mode "new"
+[pid=58464 t=    67.899] Native composition stage 7 mode "new"
+[pid=58464 t=    68.011] Native composition stage 8 mode "new"
+[pid=58464 t=    68.085] Native composition stage 40 mode "new"
+[pid=58464 t=    68.178] Native composition stage 41 mode "new"
+[pid=58464 t=    68.271] Native composition stage 9 mode "new"
+[pid=58464 t=    68.362] DelegateModel::cancel: index out range 24 4
+[pid=58464 t=    68.430] Native composition stage 10 mode "new"
+[pid=58464 t=    68.475] Native composition stage 11 mode "new"
+[pid=58464 t=    68.648] Native composition stage 12 mode "new"
+[pid=58464 t=    69.251] Native composition stage 13 mode "new"
+[pid=58464 t=    69.594] Native composition stage 14 mode "new"
+[pid=58464 t=    69.694] Native composition stage 15 mode "new"
+[pid=58464 t=    76.105] Native composition stage 16 mode "new"
+[pid=58464 t=    76.390] Native composition stage 20 mode "reply_all"
+[pid=58464 t=    76.536] Native composition stage 21 mode "reply_all"
+[pid=58464 t=    76.727] Native composition stage 6 mode "reply_all"
+[pid=58464 t=    77.192] Native composition stage 7 mode "reply_all"
+[pid=58464 t=    77.301] Native composition stage 8 mode "reply_all"
+[pid=58464 t=    77.378] Native composition stage 40 mode "reply_all"
+[pid=58464 t=    77.470] Native composition stage 41 mode "reply_all"
+[pid=58464 t=    77.572] Native composition stage 22 mode "reply_all"
+[pid=58464 t=    77.657] Native composition stage 20 mode "forward"
+[pid=58464 t=    77.752] Native composition stage 21 mode "forward"
+[pid=58464 t=    77.870] Native composition stage 6 mode "forward"
+[pid=58464 t=    78.407] Native composition stage 7 mode "forward"
+[pid=58464 t=    78.537] Native composition stage 8 mode "forward"
+[pid=58464 t=    78.603] Native composition stage 40 mode "forward"
+[pid=58464 t=    78.695] Native composition stage 41 mode "forward"
+[pid=58464 t=    78.788] Native composition stage 22 mode "forward"
+[pid=58464 t=    78.881] Native composition stage 20 mode "reply"
+[pid=58464 t=    79.014] Native composition stage 21 mode "reply"
+[pid=58464 t=    79.167] Native composition stage 6 mode "reply"
+[pid=58464 t=    79.628] Native composition stage 7 mode "reply"
+[pid=58464 t=    79.722] Native composition stage 8 mode "reply"
+[pid=58464 t=    79.828] Native composition stage 40 mode "reply"
+[pid=58464 t=    79.907] Native composition stage 41 mode "reply"
+[pid=58464 t=    80.015] Native composition stage 22 mode "reply"
+[pid=58464 t=    80.109] Native composition stage 50 mode "source-conflict"
+[pid=58464 t=    80.239] Native composition stage 51 mode "source-conflict"
+[pid=58464 t=    80.861] Native composition stage 52 mode "source-conflict"
+[pid=58464 t=    81.595] Native composition stage 53 mode "source-conflict"
+[pid=58464 t=    81.867] Native composition stage 54 mode "source-conflict"
+[pid=58464 t=    81.973] Native composition stage 55 mode "source-conflict"
+[pid=58464 t=    82.066] Native composition stage 56 mode "source-conflict"
+[pid=58464 t=    82.161] Native composition stage 57 mode "source-conflict"
+[pid=58464 t=    82.254] Native composition stage 58 mode "source-conflict"
+[pid=58464 t=    82.348] Native composition stage 59 mode "source-conflict"
+[pid=58464 t=    82.348] Native frozen-source conflict passed: virtual member A/revision 0, independent first save of B/revision 1, stale authoring, actual Save my version confirmation refused, all local fields and both source/revision identities unchanged; explicit Reload cleanup selected B.
+[pid=58464 t=    82.461] Native composition stage 23 mode "source-conflict"
+[pid=58464 t=    82.675] Native composition stage 24 mode "source-conflict"
+[pid=58464 t=    83.497] Native composition passed: new/reply/reply-all/forward, recipient chips/subject/rich text, Drafts/account restoration, fresh GUI auto-restoration, four exact local MIME captures and unchanged received flags.
+[pid=58464 t=    83.589] GUI self-test stage 43
+[pid=58464 t=    84.546] Native calendar form stage 0
+[pid=58464 t=    84.961] Native calendar form stage 0
+[pid=58464 t=    85.383] Native calendar form stage 1
+[pid=58464 t=    85.458] Native calendar form stage 1
+[pid=58464 t=    85.537] Native calendar form stage 1
+[pid=58464 t=    85.640] Native calendar form stage 1
+[pid=58464 t=    85.766] Native calendar form stage 2
+[pid=58464 t=    86.058] Native calendar form stage 2
+[pid=58464 t=    86.345] Native calendar form stage 3
+[pid=58464 t=    86.621] Native calendar form stage 3
+[pid=58464 t=    86.869] Native calendar form stage 3
+[pid=58464 t=    87.131] Native calendar form stage 3
+[pid=58464 t=    87.559] Native calendar form stage 3
+[pid=58464 t=    87.988] Native calendar form stage 4
+[pid=58464 t=    88.346] Native calendar form stage 4
+[pid=58464 t=    88.439] Native calendar form stage 4
+[pid=58464 t=    88.545] Native calendar form stage 4
+[pid=58464 t=    88.638] Native calendar form stage 5
+[pid=58464 t=    88.720] Native calendar form stage 5
+[pid=58464 t=    88.818] Native calendar form stage 5
+[pid=58464 t=    88.911] Native calendar form stage 50
+[pid=58464 t=    89.592] Native calendar form stage 51
+[pid=58464 t=    90.051] Native calendar form stage 51
+[pid=58464 t=    90.724] Native calendar form stage 52
+[pid=58464 t=    90.783] Native calendar form stage 6
+[pid=58464 t=    91.082] Native calendar form stage 6
+[pid=58464 t=    91.379] Native calendar form stage 6
+[pid=58464 t=    91.679] Native calendar form stage 6
+[pid=58464 t=    91.728] Native calendar form stage 6
+[pid=58464 t=    92.054] Native calendar form stage 6
+[pid=58464 t=    92.533] Native calendar form stage 6
+[pid=58464 t=    92.632] Native calendar form stage 7
+[pid=58464 t=    93.029] Native calendar form stage 7
+[pid=58464 t=    93.072] Native calendar form stage 8
+[pid=58464 t=    93.395] Native calendar form stage 8
+[pid=58464 t=    93.427] Native calendar form stage 8
+[pid=58464 t=    93.862] Native calendar form stage 8
+[pid=58464 t=    94.879] Native calendar form stage 9
+[pid=58464 t=    95.168] Native calendar form stage 9
+[pid=58464 t=    95.469] Native calendar form stage 9
+[pid=58464 t=    95.500] Native calendar form stage 9
+[pid=58464 t=    96.043] Native calendar form stage 9
+[pid=58464 t=    96.923] Native calendar form stage 9
+[pid=58464 t=    97.580] Native calendar form stage 9
+[pid=58464 t=    98.308] Native calendar form stage 9
+[pid=58464 t=    98.878] Native calendar form stage 9
+[pid=58464 t=    99.640] Native calendar form stage 9
+[pid=58464 t=    99.711] Native calendar form stage 9
+[pid=58464 t=   100.535] Native calendar form stage 9
+[pid=58464 t=   100.659] Native calendar form stage 10
+[pid=58464 t=   101.751] Native calendar form stage 11
+[pid=58464 t=   101.774] Native calendar form stage 11
+[pid=58464 t=   102.037] Native calendar form stage 11
+[pid=58464 t=   102.057] Native calendar form stage 11
+[pid=58464 t=   102.373] Native calendar form stage 11
+[pid=58464 t=   102.423] Native calendar form stage 11
+[pid=58464 t=   102.520] Native calendar form stage 11
+[pid=58464 t=   102.969] Native calendar form stage 12
+[pid=58464 t=   103.091] Native calendar form stage 12
+[pid=58464 t=   103.211] Native calendar form stage 12
+[pid=58464 t=   103.469] Native calendar form stage 13
+[pid=58464 t=   103.599] Native calendar form stage 13
+[pid=58464 t=   103.920] Native calendar form stage 13
+[pid=58464 t=   104.458] Native calendar form stage 14
+[pid=58464 t=   104.616] Native calendar form stage 14
+[pid=58464 t=   105.033] Native calendar form stage 15
+[pid=58464 t=   105.341] Native calendar form stage 15
+[pid=58464 t=   105.472] Native calendar form stage 17
+[pid=58464 t=   105.518] Native calendar form stage 17
+[pid=58464 t=   105.611] Native calendar form stage 17
+[pid=58464 t=   105.715] Native calendar form stage 17
+[pid=58464 t=   105.801] Native calendar form stage 18
+[pid=58464 t=   105.892] Native calendar form stage 18
+[pid=58464 t=   105.992] Native calendar form stage 18
+[pid=58464 t=   106.079] Native calendar form stage 19
+[pid=58464 t=   107.312] Native calendar form stage 16
+[pid=58464 t=   107.818] Native calendar form stage 16
+[pid=58464 t=   107.961] Native calendar form stage 16
+[pid=58464 t=   108.253] Native calendar form stage 16
+[pid=58464 t=   108.338] Native calendar form stage 16
+[pid=58464 t=   108.338] Native timeline passed: Previous/Next/Today preserve the independent Calendar date; Header details/editor retain exact permitted source below the strip; 45-minute create default leaves existing edit duration intact; starting state restored.
+[pid=58464 t=   108.432] GUI self-test stage 46
+[pid=58464 t=   108.583] GUI self-test stage 47
+[pid=58464 t=   108.712] GUI self-test stage 60
+[pid=58464 t=   108.835] GUI self-test stage 61
+[pid=58464 t=   109.048] GUI self-test stage 62
+[pid=58464 t=   109.382] GUI self-test stage 63
+[pid=58464 t=   110.185] GUI self-test passed: native mail/reply/calendar controls, independent CLI readback, retained validation errors, and stale-close recovery with continued polling and merged view persistence.
+[pid=58464 t=   116.157] GUI process restart preserved exact edited calendar identity, ETag, all authored fields and accepted self RSVP; visible GUI projection and independent CLI agree without duplicates.
+[pid=58464 t=   116.275] GUI process restart preserved native Settings preferences and account metadata without changing the saved draft snapshot.
+[pid=58464 t=   116.580] Independent final CLI verified all four native composition drafts, exact retained MIME hashes/content, one-attempt capture identities and unchanged source flags after process restart.
+[pid=58464 t=   141.737] Four fresh GUI processes verified Mail, Calendar and both last-workspace choices; appearance persisted and shutdown saved the resulting workspace.
+[pid=58464 t=   141.737] GUI process restart passed: exact authored fields and capture journal identities/attempt count preserved.
+[pid=58464 t=   142.501] "There are still \"1\" items in the process of being created at engine destruction."
+<end of output>
+Test time = 145.07 sec
+----------------------------------------------------------
+Test Passed.
+"gui-integration" end time: Sep 13 12:59 Eastern Daylight Time
+"gui-integration" time elapsed: 00:02:25
+----------------------------------------------------------
+
+6/16 Testing: gui-attachments
+6/16 Test: gui-attachments
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/fuckmail-gui.exe" "--self-test" "--self-test-attachments"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+"gui-attachments" start time: Sep 13 12:59 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+[pid=6032 t=     0.000] GUI engine launch attempt 1
+[pid=6032 t=     0.107] Native composition stage 0 mode "new"
+[pid=6032 t=     1.085] GUI engine launch attempt 2
+[pid=6032 t=     5.803] Native composition stage 70 mode "new"
+[pid=6032 t=     5.985] Native composition stage 71 mode "new"
+[pid=6032 t=     6.082] Native composition stage 72 mode "new"
+[pid=6032 t=     6.656] Native composition stage 73 mode "new"
+[pid=6032 t=     6.752] Native composition stage 74 mode "new"
+[pid=6032 t=     6.842] Native composition stage 75 mode "new"
+[pid=6032 t=     6.935] Native composition stage 93 mode "new"
+[pid=6032 t=     7.027] Native composition stage 76 mode "new"
+[pid=6032 t=     7.217] Native composition stage 77 mode "new"
+[pid=6032 t=     7.303] Native composition stage 78 mode "new"
+[pid=6032 t=     7.394] Native composition stage 79 mode "new"
+[pid=6032 t=     7.395] Actual cached draft projection revision 4 delivered after import/replay/save revision 6 left the clean native draft unchanged.
+[pid=6032 t=     7.581] Native composition stage 80 mode "new"
+[pid=6032 t=     7.690] Native composition stage 81 mode "new"
+[pid=6032 t=     7.779] DelegateModel::cancel: index out range 17 0
+[pid=6032 t=     7.868] Native composition stage 82 mode "new"
+[pid=6032 t=     8.706] Native composition stage 83 mode "new"
+[pid=6032 t=     8.806] Native composition stage 84 mode "new"
+[pid=6032 t=     9.364] Native composition stage 85 mode "new"
+[pid=6032 t=     9.459] Native composition stage 86 mode "new"
+[pid=6032 t=     9.561] Native composition stage 87 mode "new"
+[pid=6032 t=    10.009] Native composition stage 95 mode "new"
+[pid=6032 t=    10.134] Native composition stage 96 mode "new"
+[pid=6032 t=    10.300] Native composition stage 97 mode "new"
+[pid=6032 t=    10.486] Native composition stage 98 mode "new"
+[pid=6032 t=    10.600] Native composition stage 99 mode "new"
+[pid=6032 t=    10.688] Native composition stage 88 mode "new"
+[pid=6032 t=    11.248] Native composition stage 89 mode "new"
+[pid=6032 t=    11.340] Native composition stage 90 mode "new"
+[pid=6032 t=    11.434] Native composition stage 91 mode "new"
+[pid=6032 t=    11.520] Native composition stage 92 mode "new"
+[pid=6032 t=    11.732] Native composition stage 100 mode "new"
+[pid=6032 t=    12.460] Native composition stage 101 mode "new"
+[pid=6032 t=    12.619] Native composition stage 102 mode "new"
+[pid=6032 t=    12.663] Native composition stage 103 mode "new"
+[pid=6032 t=    12.936] Native composition stage 104 mode "new"
+[pid=6032 t=    13.030] Native composition stage 23 mode "new"
+[pid=6032 t=    13.131] Native composition stage 24 mode "new"
+[pid=6032 t=    13.309] Native attachment handlers passed: flush, chips/removal, cached queries during held auxiliary response, provider-pause cancellation isolation, late cached-read/text/account retention, exact retry after source deletion, discarded-reply revival and synthetic capture. Physical OS picker and live provider pause unverified.
+[pid=6032 t=    14.082] Independent CLI after actual GUI/engine close verified three draft identities including the reopened legacy reply, exact binary bytes, one synthetic capture receipt and authored text. No real send/upload or physical picker claim.
+<end of output>
+Test time =  17.55 sec
+----------------------------------------------------------
+Test Passed.
+"gui-attachments" end time: Sep 13 13:00 Eastern Daylight Time
+"gui-attachments" time elapsed: 00:00:17
+----------------------------------------------------------
+
+7/16 Testing: gui-startup-recovery
+7/16 Test: gui-startup-recovery
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/.tools/cargo/bin/cargo.exe" "test" "-p" "fm-engine" "--test" "sessions" "--locked" "--target-dir" "C:/Users/Yegor/Projects/Fuckaround/fuckMail/target" "gui_startup_recovers_after_writer_closes" "--" "--ignored" "--exact" "--nocapture"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail
+"gui-startup-recovery" start time: Sep 13 13:00 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.38s
+     Running tests\sessions.rs (target\debug\deps\sessions-e8feea43ad5a8afa.exe)
+
+running 1 test
+[pid=99240 t=     0.000] GUI engine launch attempt 1
+[pid=99240 t=     1.091] GUI engine launch attempt 2
+test gui_startup_recovers_after_writer_closes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 9.85s
+
+<end of output>
+Test time =  10.36 sec
+----------------------------------------------------------
+Test Passed.
+"gui-startup-recovery" end time: Sep 13 13:00 Eastern Daylight Time
+"gui-startup-recovery" time elapsed: 00:00:10
+----------------------------------------------------------
+
+8/16 Testing: gui-ipc-trust
+8/16 Test: gui-ipc-trust
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-ipc-trust-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+"gui-ipc-trust" start time: Sep 13 13:00 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.07 sec
+----------------------------------------------------------
+Test Passed.
+"gui-ipc-trust" end time: Sep 13 13:00 Eastern Daylight Time
+"gui-ipc-trust" time elapsed: 00:00:00
+----------------------------------------------------------
+
+9/16 Testing: gui-composer-probe
+9/16 Test: gui-composer-probe
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-composer-probe.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+"gui-composer-probe" start time: Sep 13 13:00 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.05 sec
+----------------------------------------------------------
+Test Passed.
+"gui-composer-probe" end time: Sep 13 13:00 Eastern Daylight Time
+"gui-composer-probe" time elapsed: 00:00:00
+----------------------------------------------------------
+
+10/16 Testing: gui-reply-document
+10/16 Test: gui-reply-document
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-reply-document-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+"gui-reply-document" start time: Sep 13 13:00 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.20 sec
+----------------------------------------------------------
+Test Passed.
+"gui-reply-document" end time: Sep 13 13:00 Eastern Daylight Time
+"gui-reply-document" time elapsed: 00:00:00
+----------------------------------------------------------
+
+11/16 Testing: gui-calendar-layout
+11/16 Test: gui-calendar-layout
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-calendar-layout-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+"gui-calendar-layout" start time: Sep 13 13:00 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.04 sec
+----------------------------------------------------------
+Test Passed.
+"gui-calendar-layout" end time: Sep 13 13:00 Eastern Daylight Time
+"gui-calendar-layout" time elapsed: 00:00:00
+----------------------------------------------------------
+
+12/16 Testing: gui-conversation-list-model
+12/16 Test: gui-conversation-list-model
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-conversation-list-model-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+"gui-conversation-list-model" start time: Sep 13 13:00 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+<end of output>
+Test time =   0.04 sec
+----------------------------------------------------------
+Test Passed.
+"gui-conversation-list-model" end time: Sep 13 13:00 Eastern Daylight Time
+"gui-conversation-list-model" time elapsed: 00:00:00
+----------------------------------------------------------
+
+13/16 Testing: gui-calendar-controls
+13/16 Test: gui-calendar-controls
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-calendar-controls-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+"gui-calendar-controls" start time: Sep 13 13:00 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+[pid=2664 t=     0.000] Calendar and label controls passed: partial live patches, frozen scope, recovery, sync/capability gates, delete placement, RSVP projection, cached-only labels, offline local binding, explicit remap and synthetic compatibility.
+<end of output>
+Test time =   2.39 sec
+----------------------------------------------------------
+Test Passed.
+"gui-calendar-controls" end time: Sep 13 13:00 Eastern Daylight Time
+"gui-calendar-controls" time elapsed: 00:00:02
+----------------------------------------------------------
+
+14/16 Testing: gui-google-operation
+14/16 Test: gui-google-operation
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-google-operation-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+"gui-google-operation" start time: Sep 13 13:00 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+[pid=72356 t=     0.000] Google operation IPC checks passed: private discovery/peer identity, independent cached query, cancellation, response bounds/order/types, one-shot callbacks and callback destruction. Synthetic local IPC only; no app latency or provider claim.
+<end of output>
+Test time =   0.37 sec
+----------------------------------------------------------
+Test Passed.
+"gui-google-operation" end time: Sep 13 13:00 Eastern Daylight Time
+"gui-google-operation" time elapsed: 00:00:00
+----------------------------------------------------------
+
+15/16 Testing: gui-google-draft-controls
+15/16 Test: gui-google-draft-controls
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-google-draft-controls-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+"gui-google-draft-controls" start time: Sep 13 13:00 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+[pid=54948 t=     0.000] Native Google draft controls passed: actual QML recovery/confirmation, private held IPC, projection revision floors, authored-text/account isolation, historical receipt isolation, exact captured unknown-update recovery, unknown/cancel readback and visible byte mismatch. Synthetic IPC only; no provider or performance claim.
+<end of output>
+Test time =   1.63 sec
+----------------------------------------------------------
+Test Passed.
+"gui-google-draft-controls" end time: Sep 13 13:00 Eastern Daylight Time
+"gui-google-draft-controls" time elapsed: 00:00:01
+----------------------------------------------------------
+
+16/16 Testing: gui-google-send-controls
+16/16 Test: gui-google-send-controls
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-google-send-controls-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+"gui-google-send-controls" start time: Sep 13 13:00 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+[pid=3860 t=     0.000] Native Send controls passed: actual QML handlers, private held save/auxiliary IPC, recipient validation, cancelled save continuation, frozen resume, revision-bound abandon, unknown evidence, historical/current metadata and account/editor isolation. Synthetic IPC only; no provider or performance claim.
+<end of output>
+Test time =   2.22 sec
+----------------------------------------------------------
+Test Passed.
+"gui-google-send-controls" end time: Sep 13 13:00 Eastern Daylight Time
+"gui-google-send-controls" time elapsed: 00:00:02
+----------------------------------------------------------
+
+End testing: Sep 13 13:00 Eastern Daylight Time

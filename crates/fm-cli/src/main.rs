@@ -192,6 +192,35 @@ enum Google {
         #[arg(long)]
         request_id: String,
     },
+    /// Explicitly submit one exact saved revision through an active Google session.
+    /// Unknown outcomes never trigger another automatic submission.
+    Send {
+        #[arg(long)]
+        draft_id: String,
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        expected_revision: i64,
+        #[arg(long, value_parser=clap::value_parser!(i64).range(0..))]
+        expected_google_revision: i64,
+        #[arg(long)]
+        request_id: String,
+    },
+    /// Inspect one retained submission outcome without contacting Google.
+    SendStatus {
+        #[arg(long)]
+        request_id: String,
+    },
+    /// Inspect bounded Sent evidence without submitting the message again.
+    SendReconcile {
+        #[arg(long)]
+        request_id: String,
+    },
+    /// Abandon only a proven-undispatched prepared submission at its current revision.
+    SendAbandon {
+        #[arg(long)]
+        request_id: String,
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        expected_revision: i64,
+    },
     /// Browse cached account labels; pagination is bound to the catalog revision.
     Labels {
         #[arg(long,default_value_t=100,value_parser=clap::value_parser!(u32).range(1..=100))]
@@ -353,7 +382,7 @@ enum Draft {
         #[arg(long, default_value_t = 0)]
         offset: u64,
     },
-    /// Create local human composition; no network send is available.
+    /// Create local human composition; Google submission is a separate explicit action.
     Create {
         #[arg(long, default_value="new", value_parser=["new","reply","reply_all","forward"])]
         mode: String,
@@ -547,7 +576,7 @@ fn attachment_import_params(command: &Command) -> Result<Option<Value>, Failure>
     })))
 }
 
-fn google_draft_request(command: &Command) -> Result<Option<(&'static str, Value)>, Failure> {
+fn google_composition_request(command: &Command) -> Result<Option<(&'static str, Value)>, Failure> {
     let Command::Google { command } = command else {
         return Ok(None);
     };
@@ -574,6 +603,29 @@ fn google_draft_request(command: &Command) -> Result<Option<(&'static str, Value
             json!({"draft_id":draft_id,"expected_revision":expected_revision,
                 "expected_google_revision":expected_google_revision,"request_id":request_id,
                 "action":"replace_local"}),
+        ),
+        Google::Send {
+            draft_id,
+            expected_revision,
+            expected_google_revision,
+            request_id,
+        } => (
+            "google_send",
+            json!({"draft_id":draft_id,"expected_revision":expected_revision,
+                "expected_google_revision":expected_google_revision,"request_id":request_id}),
+        ),
+        Google::SendStatus { request_id } => {
+            ("google_send_status", json!({"request_id":request_id}))
+        }
+        Google::SendReconcile { request_id } => {
+            ("google_send_reconcile", json!({"request_id":request_id}))
+        }
+        Google::SendAbandon {
+            request_id,
+            expected_revision,
+        } => (
+            "google_send_abandon",
+            json!({"request_id":request_id,"expected_revision":expected_revision}),
         ),
         _ => return Ok(None),
     };
@@ -723,7 +775,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
         None
     };
     let attachment_import = attachment_import_params(&args.command)?;
-    let google_draft = google_draft_request(&args.command)?;
+    let google_composition = google_composition_request(&args.command)?;
     let mut client = if live_command {
         Client::connect_live(&profile, engine.as_deref()).await?
     } else {
@@ -747,11 +799,15 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 Google::DraftSync { .. }
                 | Google::DraftStatus { .. }
                 | Google::DraftReconcile { .. }
-                | Google::DraftReplace { .. },
+                | Google::DraftReplace { .. }
+                | Google::Send { .. }
+                | Google::SendStatus { .. }
+                | Google::SendReconcile { .. }
+                | Google::SendAbandon { .. },
         } => {
-            let (method, params) = google_draft
+            let (method, params) = google_composition
                 .as_ref()
-                .expect("draft request validated before connection");
+                .expect("Google composition request validated before connection");
             client.call(method, scope, params.clone()).await?
         }
         Command::Google {

@@ -19,7 +19,7 @@ use std::{
 };
 use tokio::sync::OwnedSemaphorePermit;
 
-type Memory = Arc<OwnedSemaphorePermit>;
+pub(super) type Memory = Arc<OwnedSemaphorePermit>;
 
 pub(crate) async fn step(ctx: &SyncContext) -> Result<Step> {
     let account = ctx.account.as_str().to_owned();
@@ -282,7 +282,11 @@ pub(crate) async fn reconcile(ctx: &SyncContext, draft_id: &str) -> Result<Value
     observe(ctx, &scope, draft_id).await
 }
 
-async fn observe(ctx: &SyncContext, scope: &GoogleDraftScope, draft_id: &str) -> Result<Value> {
+pub(super) async fn observe(
+    ctx: &SyncContext,
+    scope: &GoogleDraftScope,
+    draft_id: &str,
+) -> Result<Value> {
     let observe_scope = scope.clone();
     let id = draft_id.to_owned();
     let (plan, local_revision, google_revision) = ctx
@@ -382,7 +386,7 @@ async fn observe(ctx: &SyncContext, scope: &GoogleDraftScope, draft_id: &str) ->
     .await
 }
 
-async fn verified_scope(ctx: &SyncContext) -> Result<GoogleDraftScope> {
+pub(super) async fn verified_scope(ctx: &SyncContext) -> Result<GoogleDraftScope> {
     let profile = match ctx
         .gmail(GmailCall::profile(&ctx.account).map_err(provider)?)
         .await
@@ -416,7 +420,7 @@ fn provider_id(status: &Value) -> Option<&str> {
         .or_else(|| status["baseline"]["draft_id"].as_str())
 }
 
-async fn prepare<T, F>(ctx: &SyncContext, memory: &Memory, operation: F) -> Result<T>
+pub(super) async fn prepare<T, F>(ctx: &SyncContext, memory: &Memory, operation: F) -> Result<T>
 where
     T: Send + 'static,
     F: FnOnce(CancellationToken) -> Result<T> + Send + 'static,
@@ -434,7 +438,7 @@ where
     .map_err(|_| failure("content_unavailable", "Google draft preparation failed"))?
 }
 
-async fn memory_core<T, F>(ctx: &SyncContext, memory: &Memory, operation: F) -> Result<T>
+pub(super) async fn memory_core<T, F>(ctx: &SyncContext, memory: &Memory, operation: F) -> Result<T>
 where
     T: Send + 'static,
     F: FnOnce(&mut fm_core::Store) -> Result<T> + Send + 'static,

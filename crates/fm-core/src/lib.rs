@@ -22,6 +22,7 @@ pub mod google_drafts;
 pub mod google_labels;
 pub mod google_live_mail;
 pub mod google_live_mutations;
+pub mod google_send;
 pub mod google_store;
 pub mod live_calendar;
 pub mod live_calendar_writes;
@@ -37,7 +38,7 @@ mod queries;
 mod sender_kind_tests;
 #[cfg(test)]
 mod test_profiles;
-pub const SCHEMA_VERSION: u32 = 13;
+pub const SCHEMA_VERSION: u32 = 14;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -295,9 +296,19 @@ impl Store {
             tx.execute_batch("PRAGMA user_version=13")?;
             tx.commit()?;
         }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 13 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-014-google-send.sql"))?;
+            tx.execute_batch("PRAGMA user_version=14")?;
+            tx.commit()?;
+        }
         store.validate_profile_identity()?;
         store.recover_captures()?;
         store.recover_google_drafts()?;
+        store.recover_google_sends()?;
         store.calendar_live_recover()?;
         store.mail_changes.reset_calendar_generation();
         Ok(store)
@@ -355,7 +366,7 @@ impl Store {
             // These describe callable local interfaces. Account grants and
             // connectivity independently gate provider delivery and writes.
             return Ok(
-                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"calendar_generation":self.mail_changes.calendar_generation(),"synthetic":synthetic,"profile_kind":if synthetic {"synthetic"} else {"live"},"fixture_today":if synthetic {Some(FIXTURE_TODAY)} else {None},"capabilities":{"mail":true,"drafts":true,"calendar_read":true,"phase1":synthetic,"typed_filters":true,"preferences":true,"capture_history":synthetic,"calendar_write_local":synthetic,"send":false,"models":false,"google_auth":!synthetic,"google_sync":!synthetic}}),
+                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"calendar_generation":self.mail_changes.calendar_generation(),"synthetic":synthetic,"profile_kind":if synthetic {"synthetic"} else {"live"},"fixture_today":if synthetic {Some(FIXTURE_TODAY)} else {None},"capabilities":{"mail":true,"drafts":true,"calendar_read":true,"phase1":synthetic,"typed_filters":true,"preferences":true,"capture_history":synthetic,"calendar_write_local":synthetic,"send":!synthetic,"models":false,"google_auth":!synthetic,"google_sync":!synthetic}}),
             );
         }
         match method {

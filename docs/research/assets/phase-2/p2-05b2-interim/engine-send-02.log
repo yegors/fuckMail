@@ -1,0 +1,32 @@
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.84s
+     Running unittests src\main.rs (target\debug\deps\fm_engine-3a2ea17661e1de87.exe)
+
+running 12 tests
+test google_sync::send::tests::claimed_unavailable_mime_is_known_unsent_and_only_revision_bound_abandon_clears_it ... ok
+test google_sync::send::tests::concurrent_request_and_late_cancelled_ack_keep_exact_receipt_and_newer_local_text ... ok
+test google_sync::send::tests::direct_submission_retains_exact_recipients_body_ack_and_immutable_replay ... ok
+test google_sync::send::tests::explicit_same_request_resume_racing_memory_wait_dispatches_once ... ok
+test google_sync::send::tests::known_rejection_and_malformed_acceptance_have_distinct_durable_states ... ok
+test google_sync::send::tests::known_twin_sends_frozen_latest_mime_and_consumed_twin_never_reappears ... ok
+test google_sync::send::tests::lost_ack_restart_and_sent_match_never_replay_or_promote_unknown ... ok
+test google_sync::send::tests::prepared_restart_resume_keeps_original_mime_despite_newer_authored_revision ... ok
+test google_sync::send::tests::quota_wait_retains_identifiers_only_and_cached_queries_progress_before_cancel ... ok
+test google_sync::send::tests::read_only_grant_and_disconnected_context_cannot_submit ... ok
+test google_sync::send::tests::recipientless_and_wrong_primary_from_fail_before_any_submission ... ok
+test google_sync::send::tests::reconciliation_bounds_first_page_and_reads_distinct_ack_without_raw_or_resend ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 109 filtered out; finished in 1.52s
+
+     Running tests\sessions.rs (target\debug\deps\sessions-e8feea43ad5a8afa.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests\verification_profile.rs (target\debug\deps\verification_profile-fe647fe5df0088b4.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+

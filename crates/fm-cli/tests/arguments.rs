@@ -16,6 +16,28 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         vec!["google", "calendar-resume", "request"],
         vec!["google", "draft-status", "--draft-id", "draft-1"],
         vec!["google", "draft-reconcile", "--draft-id", "draft-1"],
+        vec!["google", "send-status", "--request-id", "send-1"],
+        vec!["google", "send-reconcile", "--request-id", "send-1"],
+        vec![
+            "google",
+            "send-abandon",
+            "--request-id",
+            "send-1",
+            "--expected-revision",
+            "1",
+        ],
+        vec![
+            "google",
+            "send",
+            "--draft-id",
+            "draft-1",
+            "--expected-revision",
+            "1",
+            "--expected-google-revision",
+            "0",
+            "--request-id",
+            "send-1",
+        ],
         vec![
             "google",
             "draft-sync",
@@ -72,6 +94,10 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         "draft-status",
         "draft-reconcile",
         "draft-replace",
+        "send",
+        "send-status",
+        "send-reconcile",
+        "send-abandon",
         "labels",
         "labels-refresh",
         "category-bind",
@@ -107,6 +133,104 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         !absent.exists(),
         "missing Calendar input must fail before storage starts"
     );
+}
+
+#[test]
+fn google_send_preflight_requires_exact_identity_and_revision_before_storage() {
+    let root = tempfile::tempdir().unwrap();
+    let absent = root.path().join("not-created");
+    let valid = vec![
+        "send",
+        "--draft-id",
+        "draft-1",
+        "--expected-revision",
+        "1",
+        "--expected-google-revision",
+        "0",
+        "--request-id",
+        "send-1",
+    ];
+    let long_id = "x".repeat(257);
+    let long_request = "x".repeat(129);
+    let mut invalid = vec![
+        vec!["send-status", "--request-id", ""],
+        vec!["send-reconcile", "--request-id", "send\nother"],
+        vec!["send-status", "--request-id", &long_request],
+        vec![
+            "send-abandon",
+            "--request-id",
+            "send-1",
+            "--expected-revision",
+            "0",
+        ],
+        vec!["send-abandon", "--request-id", "send-1"],
+        vec![
+            "send-reconcile",
+            "--request-id",
+            "send-1",
+            "--expected-revision",
+            "1",
+        ],
+    ];
+    for (index, value) in [
+        (2, ""),
+        (2, "draft\nother"),
+        (2, long_id.as_str()),
+        (4, "0"),
+        (4, "9223372036854775808"),
+        (6, "-1"),
+        (6, "9223372036854775808"),
+        (8, ""),
+        (8, long_request.as_str()),
+    ] {
+        let mut tail = valid.clone();
+        tail[index] = value;
+        invalid.push(tail);
+    }
+    for flag in [
+        "--draft-id",
+        "--expected-revision",
+        "--expected-google-revision",
+        "--request-id",
+    ] {
+        let mut tail = valid.clone();
+        let index = tail.iter().position(|arg| *arg == flag).unwrap();
+        tail.drain(index..index + 2);
+        invalid.push(tail);
+    }
+    for tail in invalid {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args([
+                "--profile",
+                absent.to_str().unwrap(),
+                "--account",
+                "account",
+                "google",
+            ])
+            .args(&tail)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{tail:?}");
+        assert!(
+            !absent.exists(),
+            "invalid submission must not start storage"
+        );
+    }
+    // A new Google twin has revision zero. Reach the explicit-profile guard,
+    // proving Clap accepted zero rather than rejecting this valid revision.
+    let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+        .args(["--json", "--account", "account", "google"])
+        .args(valid)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let reply: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(reply["error"]["code"], "invalid_request");
+    assert!(reply["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("--profile"));
+    assert!(!absent.exists());
 }
 
 #[test]

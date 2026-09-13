@@ -222,6 +222,7 @@ void MailBackend::setDraftSignature(const QString &signature) {
     emit draftChanged(); m_draftTimer.start();
 }
 void MailBackend::reloadDraft() {
+    cancelPendingGoogleSend("Send cancelled before reloading the draft.");
     if (draftBusy() || attachmentImportPending() || m_draft.isEmpty()) return;
     m_draftTimer.stop(); m_resolvingDraft = true;
     m_draftStatus = "Loading the saved draft…"; emit draftChanged();
@@ -259,11 +260,13 @@ void MailBackend::saveMyDraftVersion() {
         }
         m_draft["revision"] = result["revision"].toVariant();
         mergeGoogleDraftStatus(result["google"].toObject(), account, result["draft_id"].toString());
+        mergeGoogleSendStatus(result["google_send"].toObject(), account, result["draft_id"].toString());
         m_draftConflict = false; m_draftDirty = true; m_draftStatus = "Saving your version…"; emit draftChanged();
         saveDraft();
     });
 }
 void MailBackend::discardDraft() {
+    cancelPendingGoogleSend("Send cancelled before discarding the draft.");
     if (attachmentImportPending()) return;
     if (m_draft.isEmpty() || draftBusy()) return;
     m_draftTimer.stop(); m_discarding = true; emit draftChanged();

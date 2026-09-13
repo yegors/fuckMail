@@ -1,0 +1,86 @@
+{
+  "build/dev/fm-engine.exe": {
+    "size": 30866944,
+    "sha256": "cb85a8dfe4fafd234b0b4662cd0d20cbbd8f89195cb71561f36f9730bb010279"
+  },
+  "build/dev/fm.exe": {
+    "size": 4033024,
+    "sha256": "94b4e39da4b1c103afea9789df07bae88efa6430e02ae9a2f022ca534fd32b06"
+  },
+  "build/dev/fuckmail-gui.exe": {
+    "size": 10956288,
+    "sha256": "c0feaed616d8ae56f5a3c4b940f3b9ee0f96cebfdbf63aa3502d2492087a7d5c"
+  },
+  "build/dev/gui-calendar-controls-test.exe": {
+    "size": 417792,
+    "sha256": "b95643aacd7185e58fc1a1331ed0d943c0ad2d03ff043108329de3696fb27d12"
+  },
+  "build/dev/gui-calendar-layout-test.exe": {
+    "size": 227328,
+    "sha256": "22eceabf2deff1c54b2409bbdb010777fbcca1261db280b25eeb1223a93a5f99"
+  },
+  "build/dev/gui-composer-probe.exe": {
+    "size": 92672,
+    "sha256": "5e40d3f96887d89bb922b4d4bf014dd2ac261c0ac054f1b75bc639cdfbf80bd3"
+  },
+  "build/dev/gui-conversation-list-model-test.exe": {
+    "size": 489984,
+    "sha256": "2814571ccac9c2e587e3f6c773b2683bf0c790e3ab988cdd00b17293ae8c5a32"
+  },
+  "build/dev/gui-google-draft-controls-test.exe": {
+    "size": 2625536,
+    "sha256": "6c4a01a1e359daace0a2604809dc711d0d56e6198680f0f6e85effecb6cf808e"
+  },
+  "build/dev/gui-google-operation-test.exe": {
+    "size": 248320,
+    "sha256": "4db84667da19c15de7933785aab56121e5bd55cfaf4fc81f10043aae52c4dba3"
+  },
+  "build/dev/gui-google-send-controls-test.exe": {
+    "size": 2664448,
+    "sha256": "249193c5e63032c771d919ae10ebaa711dc88e28ed39850ede6f3549dcb19ac8"
+  },
+  "build/dev/gui-ipc-trust-test.exe": {
+    "size": 110080,
+    "sha256": "def0a94955a417a79c0800018513f52e92aaf8c3d850d7abe9c9d61d6ed86c08"
+  },
+  "build/dev/gui-reply-document-test.exe": {
+    "size": 212992,
+    "sha256": "aaed3e0f08f97cbe0181f809a742d94fc8407187058aac56baad79f3c5657664"
+  },
+  "target/debug/deps/sessions-2239c75e63845bf7.exe": {
+    "size": 8472576,
+    "sha256": "b345e638e26fc7276f9c796c535764ebad80ce61d37bddab8954494b8761d1b6"
+  },
+  "target/debug/deps/sessions-2c60128f5928b6bd.exe": {
+    "size": 7996928,
+    "sha256": "03f9cf969eaff6bdeb2e1667dc68d475d7086ef3b9744a3310988c38657106f2"
+  },
+  "target/debug/deps/sessions-668f5202008eb372.exe": {
+    "size": 7608832,
+    "sha256": "d6ad818661c00e17fcdeb48634584632a7948c4eecec0f6ef25dcdb4fdaeab23"
+  },
+  "target/debug/deps/sessions-a63a9359cf60e762.exe": {
+    "size": 8435712,
+    "sha256": "8a8f9aedb0ac17634426742694fa4f0cca98022afd6c7af059c5242d840f66a6"
+  },
+  "target/debug/deps/sessions-e884e73169c03277.exe": {
+    "size": 8814592,
+    "sha256": "f7b7efce27066919bc4ad0088c21f49fca3062d79f989c4909aa3c1eb7c9b7d0"
+  },
+  "target/debug/deps/sessions-e8feea43ad5a8afa.exe": {
+    "size": 8814592,
+    "sha256": "8c0ee22fce27bb6b0603b0af2864a2366f1bd5d6acd01c19ee94f98f0bf7232d"
+  },
+  "target/debug/deps/sessions-f3c63303ebc9a2fd.exe": {
+    "size": 8459264,
+    "sha256": "00ff8a8daadf5baa0874d5cd04083438650b95a7ce8505f14bc97efc5de2d963"
+  },
+  "target/debug/fm-engine.exe": {
+    "size": 30866944,
+    "sha256": "cb85a8dfe4fafd234b0b4662cd0d20cbbd8f89195cb71561f36f9730bb010279"
+  },
+  "target/debug/fm.exe": {
+    "size": 4033024,
+    "sha256": "94b4e39da4b1c103afea9789df07bae88efa6430e02ae9a2f022ca534fd32b06"
+  }
+}

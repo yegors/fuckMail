@@ -47,6 +47,10 @@ struct Args {
         conflicts_with = "verification_fixture"
     )]
     verification_google: bool,
+    /// Permit bounded generated submissions only in the isolated provider fixture.
+    #[cfg(feature = "verification-google")]
+    #[arg(long, hide = true, requires = "verification_google")]
+    verification_google_send: bool,
 }
 
 enum Work {
@@ -422,6 +426,8 @@ async fn session_inner(
                         | "google_draft_sync"
                         | "google_draft_reconcile"
                         | "google_draft_resolve"
+                        | "google_send"
+                        | "google_send_reconcile"
                 );
                 let work = provider.sync.handle(
                     &owner_id,
@@ -440,12 +446,32 @@ async fn session_inner(
                 Err(fm_core::CoreError {
                     code: "capability_unavailable".into(),
                     message: "Google sync requires a live profile".into(),
-                    details: Value::Null,
+                    details: if request.method == "google_send" {
+                        json!({"send_invocation_finished_before_dispatch":true})
+                    } else {
+                        Value::Null
+                    },
                 })
             };
             let reply = match result {
                 Ok(result) => response(&request.id, result),
-                Err(e) => error(&request.id, &e.code, &e.message),
+                Err(e) => {
+                    let mut reply = error(&request.id, &e.code, &e.message);
+                    if request.method == "google_send" {
+                        for field in [
+                            "send_invocation_finished_before_dispatch",
+                            "send_request_obsolete_without_dispatch",
+                        ] {
+                            if e.details[field] == true {
+                                if !reply["error"]["details"].is_object() {
+                                    reply["error"]["details"] = json!({});
+                                }
+                                reply["error"]["details"][field] = Value::Bool(true);
+                            }
+                        }
+                    }
+                    reply
+                }
             };
             session_write(stream.get_mut(), &reply, &engine_cancel).await?;
             continue;
@@ -630,7 +656,13 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "verification-google")]
     let google_fixture = args
         .verification_google
-        .then(|| verification_google::Fixture::prepare(&profile, &mut store))
+        .then(|| {
+            verification_google::Fixture::prepare(
+                &profile,
+                &mut store,
+                args.verification_google_send,
+            )
+        })
         .transpose()?;
     #[cfg(not(feature = "verification-google"))]
     let provider_namespace = (store.profile_kind()? == fm_core::live_profile::ProfileKind::Live)
@@ -901,7 +933,8 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
             "google_sync_start","google_sync_stop","google_sync_release","google_sync_status","google_sync_busy",
             "mail_filing","google_mail_mutation_status","google_calendar_write","google_calendar_reconcile","google_calendar_operation",
             "google_calendar_resume","google_calendar_abandon","google_labels","google_labels_refresh","google_category_bind",
-            "google_draft_sync","google_draft_status","google_draft_reconcile","google_draft_resolve"]}),
+            "google_draft_sync","google_draft_status","google_draft_reconcile","google_draft_resolve",
+            "google_send","google_send_status","google_send_reconcile","google_send_abandon"]}),
     )
 }
 
@@ -1001,10 +1034,23 @@ mod session_tests {
                 "calendar_combined",
                 "calendar_write",
                 "calendar_operations",
+                "google_send",
+                "google_send_status",
+                "google_send_reconcile",
+                "google_send_abandon",
             ] {
                 assert!(methods.contains(&json!(method)), "missing {method}");
             }
             assert!(!methods.contains(&json!("verification_fixture")));
+            fm_ipc::write_frame(client.get_mut(), &json!({"version":1,"id":"send","method":"google_send","account":"original","params":{"draft_id":"local","expected_revision":1,"expected_google_revision":0,"request_id":"never-provider"}})).await.unwrap();
+            let refused: Value =
+                serde_json::from_slice(&fm_ipc::read_frame(&mut client).await.unwrap().unwrap())
+                    .unwrap();
+            assert_eq!(refused["error"]["code"], "capability_unavailable");
+            assert_eq!(
+                refused["error"]["details"]["send_invocation_finished_before_dispatch"],
+                true
+            );
             drop(client);
             tokio::time::timeout(Duration::from_secs(2), task)
                 .await

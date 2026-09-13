@@ -104,21 +104,23 @@ fn marked_profile_is_refused_by_an_actual_ordinary_startup_without_store_mutatio
 #[test]
 fn ordinary_binary_has_no_verification_option_and_does_not_create_a_profile() {
     let directory = tempfile::tempdir().unwrap();
-    let profile = directory.path().join("never-created");
-    let log = directory.path().join("unknown-option.log");
-    let mut child = spawn(&profile, &["--live-profile", "--verification-google"], &log);
-    let status = child.wait_bounded(Duration::from_secs(5));
-    assert_eq!(
-        status.code(),
-        Some(2),
-        "default binary unexpectedly recognized the feature option"
-    );
-    let output = fs::read_to_string(log).unwrap();
-    assert!(
-        output.contains("unexpected argument") && output.contains("--verification-google"),
-        "{output}"
-    );
-    assert!(!profile.exists());
+    for option in ["--verification-google", "--verification-google-send"] {
+        let profile = directory.path().join(option.trim_start_matches('-'));
+        let log = profile.with_extension("log");
+        let mut child = spawn(&profile, &["--live-profile", option], &log);
+        let status = child.wait_bounded(Duration::from_secs(5));
+        assert_eq!(
+            status.code(),
+            Some(2),
+            "default binary unexpectedly recognized the feature option"
+        );
+        let output = fs::read_to_string(log).unwrap();
+        assert!(
+            output.contains("unexpected argument") && output.contains(option),
+            "{output}"
+        );
+        assert!(!profile.exists());
+    }
 }
 
 #[cfg(feature = "verification-google")]
@@ -128,6 +130,14 @@ fn isolated_binary_requires_both_explicit_fixture_mode_and_live_profile_before_c
     for (name, args) in [
         ("missing-mode", vec!["--live-profile"]),
         ("missing-live", vec!["--verification-google"]),
+        (
+            "send-missing-mode",
+            vec!["--live-profile", "--verification-google-send"],
+        ),
+        (
+            "send-missing-live",
+            vec!["--verification-google", "--verification-google-send"],
+        ),
     ] {
         let profile = directory.path().join(name);
         let log = directory.path().join(format!("{name}.log"));

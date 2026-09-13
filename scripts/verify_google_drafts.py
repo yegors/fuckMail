@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Exercise ordinary CLI Google drafts against the isolated in-memory engine.
 
-Generated accounts and content only. No real provider, send, GUI or restart claim.
+Generated accounts and content only. Optional --send exercises isolated explicit
+submissions. No real provider, real delivery, GUI or restart claim.
 """
 import argparse
 from contextlib import ExitStack, closing
@@ -69,10 +70,10 @@ def run(args):
             "Never overwrite an earlier attempt")
     programs = {name: getattr(args, name).resolve(strict=True) for name in ("engine", "cli")}
     sources = source_manifest()
-    result = {"result": "failed", "scenario": "isolated-google-drafts-cli", "version": 1,
+    result = {"result": "failed", "scenario": "isolated-google-send-cli" if args.send else "isolated-google-drafts-cli", "version": 2,
               "executables": {name: {"path": str(path), "sha256": sha256(path)} for name, path in programs.items()},
               "sources": sources, "limits": LIMITS, "accounts": [], "commands": [],
-              "limitations": ["Generated in-memory provider; no live account, credential or send.",
+              "limitations": ["Generated in-memory provider; no live account, credential or real send.",
                               "CLI integration; no GUI, navigation, package or restart acceptance.",
                               "Provider echoes RAW; real-provider transformations remain unverified."]}
     children = []
@@ -87,7 +88,10 @@ def run(args):
             streams = {name: logs.enter_context(path.open("wb")) for name, path in outputs.items()}
             env = os.environ.copy()
             env["FM_ENGINE_PATH"] = str(programs["engine"])
-            engine = subprocess.Popen([str(programs["engine"]), "--profile", str(profile), "--live-profile", "--verification-google"],
+            engine_command = [str(programs["engine"]), "--profile", str(profile), "--live-profile", "--verification-google"]
+            if args.send:
+                engine_command.append("--verification-google-send")
+            engine = subprocess.Popen(engine_command,
                                       cwd=scratch, env=env, stdin=subprocess.DEVNULL, stdout=streams["engine"], stderr=subprocess.STDOUT)
             children.append(engine)
 
@@ -101,12 +105,20 @@ def run(args):
                     time.sleep(0.1)
                 raise RuntimeError("Timed out: " + label)
 
-            def cli(tail, account=None):
+            def cli(tail, account=None, expected_error=None):
                 command = [str(programs["cli"]), "--profile", str(profile), "--engine", str(programs["engine"]), "--json"]
                 if account:
                     command += ["--account", account["id"]]
                 reply = subprocess.run(command + tail, cwd=scratch, env=env, stdin=subprocess.DEVNULL,
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8", timeout=45)
+                if expected_error:
+                    data = json.loads(reply.stdout)
+                    require(reply.returncode == 1 and data.get("ok") is False
+                            and data.get("error", {}).get("code") == expected_error,
+                            "Expected explicit CLI refusal " + expected_error)
+                    result["commands"].append({"command": tail[:2], "account": account["key"] if account else None,
+                                               "expected_error": expected_error})
+                    return data["error"]
                 require(reply.returncode == 0, "CLI failed: " + " ".join(tail[:2]) + ": " + reply.stderr[-600:])
                 data = json.loads(reply.stdout)
                 require(data.get("ok") is True, "CLI operation did not succeed")
@@ -119,6 +131,7 @@ def run(args):
                 initial = read_json(fixture_path)
                 require(initial["transport"] == "in_memory_only" and initial["native_vault"] is False,
                         "Expected isolated provider and synthetic vault")
+                require(initial["send_fixture"]["enabled"] == args.send, "Wrong explicit send fixture mode")
                 require(initial["status"] == "ready" and initial["counters"]["http_started"] == 0,
                         "Provider work started before ownership")
                 # Watch keeps only the engine alive while local drafts are prepared.
@@ -193,7 +206,7 @@ def run(args):
                                                "first": first, "final": checked, "first_mime": verified, "final_mime": updated})
 
                 with closing(read_database(profile)) as db:
-                    require(db.execute("PRAGMA user_version").fetchone()[0] == 13, "Expected schema 13")
+                    require(db.execute("PRAGMA user_version").fetchone()[0] == 14, "Expected schema 14")
                     rows = db.execute("SELECT account,id,json,blob_hash FROM capture_operations WHERE execution_kind='google'").fetchall()
                     require(len(rows) == 4, "Expected exactly one create and update per generated account")
                     for account, request_id, record, digest in rows:
@@ -202,14 +215,24 @@ def run(args):
                                 "Independent operation identity/hash differs")
                         require(record["state"] == "synced", "Independent operation journal is unfinished")
                     result["independent_google_operations"] = len(rows)
+                if args.send:
+                    from verify_google_send import exercise_sends
+                    exercise_sends(cli, wait_for, synced, profile, scratch, expected, result, verify_mime,
+                                   (filename, attachment_bytes))
                 for owner in owners + [watch]:
                     owner.terminate()
                     owner.wait(timeout=10)
                 require(engine.wait(timeout=10) == 0 and not (profile / "engine.json").exists(), "Final-owner exit did not stop the engine")
                 fixture = read_json(fixture_path)
                 require(fixture["status"] == "complete" and not fixture["errors"], "Fixture ended with errors")
-                require(fixture["counters"]["draft_created"] == 2 and fixture["counters"]["draft_updated"] == 2,
+                require(fixture["counters"]["draft_created"] == 2
+                        and fixture["counters"]["draft_updated"] == (3 if args.send else 2),
                         "Provider saw duplicate or missing draft writes")
+                if args.send:
+                    from verify_google_send import verify_send_publications
+                    verify_send_publications(fixture, result)
+                else:
+                    require(fixture["counters"]["send_completed"] == 0, "Draft-only fixture submitted mail")
                 require(fixture["counters"]["vault_stores"] == 0 and fixture["native_vault"] is False, "Unexpected credential write")
                 publications = fixture["draft_fixture"]["publications"]
                 for item in result["accounts"]:
@@ -238,4 +261,5 @@ if __name__ == "__main__":
     parser.add_argument("--cli", type=Path, required=True)
     parser.add_argument("--engine", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--send", action="store_true", help="Enable bounded generated submissions in the isolated provider")
     raise SystemExit(run(parser.parse_args()))

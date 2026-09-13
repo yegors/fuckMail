@@ -1,0 +1,18 @@
+{
+  "kind": "development-gui-only",
+  "build_dir": "build/p2-05b2-gui-dev",
+  "host": "Windows-10-10.0.26200-SP0",
+  "source_inventory": "gui-source-06.json",
+  "build_passed": true,
+  "focused_tests_passed": true,
+  "ctest_exit_code": 0,
+  "binaries": {
+    "build/p2-05b2-gui-dev/fuckmail-gui.exe": "f3bab25e1038b8fc013ff354734f2f5c9a53d1fcab9364bcb34fcef189687d98",
+    "build/p2-05b2-gui-dev/gui-google-draft-controls-test.exe": "e71b2b2310600d0d2192900f8f4b29ab3a47444b7ae2951bde4b6688c094bd6b",
+    "build/p2-05b2-gui-dev/gui-google-operation-test.exe": "527ff6ffaa37a4d276bb01b52c6dd2ea95b942ec94f6ad409c46689b69c07599",
+    "build/p2-05b2-gui-dev/gui-google-send-controls-test.exe": "1af9e1fd05e1c43f6fc047f4671a746dc022d702a56003c065db761c714e17d4"
+  },
+  "elapsed_seconds": 10.219000000040978,
+  "source_unchanged": true,
+  "selection": "Google Send, draft and operation controls"
+}

@@ -216,6 +216,11 @@ impl Store {
         } else {
             Value::Null
         };
+        row["google_send"] = if row["revision"].as_i64().unwrap_or(0) > 0 {
+            self.google_send_for_draft(account, row["draft_id"].as_str().unwrap())?
+        } else {
+            Value::Null
+        };
         row["to"] = row["to_recipients"]
             .as_array()
             .and_then(|v| v.first())

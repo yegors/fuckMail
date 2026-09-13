@@ -1,0 +1,23 @@
+   Compiling tokio-rustls v0.26.5
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+   Compiling fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.77s
+     Running unittests src\lib.rs (target\debug\deps\fm_core-fbf5e23cd42bc787.exe)
+
+running 10 tests
+test google_send::tests::strict_missing_recipients_bad_primary_and_cancel_never_publish_dispatchable_work ... ok
+test google_send::tests::local_and_connection_races_refuse_preparation_but_keep_exact_late_acceptance ... ok
+test google_send::tests::competing_same_request_preparations_and_claims_keep_one_winner ... ok
+test google_send::tests::restart_mixed_journal_and_execution_collisions_remain_separate ... ok
+test google_send::tests::read_evidence_never_promotes_unknown_and_is_bounded_revision_and_generation_fenced ... ok
+test google_send::tests::synced_target_uses_frozen_mime_and_remote_divergence_prevents_claim ... ok
+test google_send::tests::schema13_migration_preserves_absent_draft_kind_json_and_old_engine_refuses14 ... ok
+test google_send::tests::prepared_resume_and_abandon_are_exact_and_never_apply_to_unknown ... ok
+test google_send::tests::strict_frozen_mime_attachment_acceptance_and_newer_explicit_send_preserve_work ... ok
+test google_send::tests::b1_and_send_preparation_race_cannot_bypass_each_other_or_unknown_draft ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 187 filtered out; finished in 0.50s
+

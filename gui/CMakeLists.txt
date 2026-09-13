@@ -12,6 +12,7 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     ConversationListModel.h
     DraftAttachmentBackend.cpp
     GoogleDraftBackend.cpp
+    GoogleSendBackend.cpp
     CalendarOperations.cpp
     ReplyDocument.cpp
     ReplyDocument.h
@@ -116,7 +117,7 @@ if(BUILD_TESTING)
     add_test(NAME gui-google-operation COMMAND gui-google-operation-test)
     set_tests_properties(gui-google-operation PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_FORCE_STDERR_LOGGING=1")
     add_executable(gui-google-draft-controls-test GoogleDraftControlsTest.cpp GoogleOperationTestFixture.h
-        MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
+        MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleSendBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
         Phase1Backend.cpp CompositionBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp
         ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h
         ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
@@ -128,4 +129,17 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME gui-google-draft-controls COMMAND gui-google-draft-controls-test)
     set_tests_properties(gui-google-draft-controls PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
+    add_executable(gui-google-send-controls-test GoogleSendControlsTest.cpp GoogleOperationTestFixture.h
+        MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleSendBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
+        Phase1Backend.cpp CompositionBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp
+        ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h
+        ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
+    target_link_libraries(gui-google-send-controls-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
+    target_compile_features(gui-google-send-controls-test PRIVATE cxx_std_20)
+    target_compile_definitions(gui-google-send-controls-test PRIVATE FM_GUI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    if(WIN32)
+        target_link_libraries(gui-google-send-controls-test PRIVATE advapi32)
+    endif()
+    add_test(NAME gui-google-send-controls COMMAND gui-google-send-controls-test)
+    set_tests_properties(gui-google-send-controls PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
 endif()

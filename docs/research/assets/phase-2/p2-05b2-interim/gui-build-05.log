@@ -1,0 +1,11 @@
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --build build/p2-05b2-gui-dev --target gui-google-send-controls-test --parallel 8
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- GUI-only developer compilation: engine, packaging and integration tests are excluded
+-- Configuring done (2.0s)
+-- Generating done (0.6s)
+-- Build files have been written to: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b2-gui-dev
+[0/1] Re-running CMake...
+[1/4] Automatic MOC and UIC for target gui-google-send-controls-test
+[2/3] Building CXX object gui\CMakeFiles\gui-google-send-controls-test.dir\GoogleSendControlsTest.cpp.obj
+[3/3] Linking CXX executable gui-google-send-controls-test.exe

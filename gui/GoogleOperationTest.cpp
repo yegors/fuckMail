@@ -144,6 +144,23 @@ void exactDraftRecoveryMethods() {
             "draft allowlist rejects extra endpoints before connection");
     }
 }
+void exactSendMethods() {
+    for (const auto &method : {QString("google_send"), QString("google_send_reconcile"), QString("google_send_abandon")}) {
+        Engine engine; engine.expectedMethod = method;
+        engine.expectedParams = {{"request_id", "fixture-request"}};
+        if (method == "google_send") engine.expectedParams = {{"draft_id", "draft-fixture"}, {"expected_revision", 3},
+            {"expected_google_revision", 0}, {"request_id", "fixture-request"}};
+        if (method == "google_send_abandon") engine.expectedParams["expected_revision"] = 4;
+        Completion done; GoogleOperation operation("fixture-account", "fixture-request", nullptr);
+        operation.start(engine.profile, QCoreApplication::applicationPid(), method, engine.expectedParams, done.callback());
+        await([&] { return engine.operations == 1; }, "exact Send operation method dispatched");
+        engine.complete(); await([&] { return done.calls == 1; }, "Send operation completes once");
+        require(done.ok, "exact Send method accepts direct status");
+    }
+    Engine engine; Completion done; GoogleOperation operation("fixture-account", "fixture-request", nullptr);
+    operation.start(engine.profile, QCoreApplication::applicationPid(), "google_send_retry_any", {}, done.callback());
+    require(done.calls == 1 && !done.ok && engine.connections == 0, "Send methods do not enable wildcard retries");
+}
 }
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
@@ -153,6 +170,7 @@ int main(int argc, char **argv) {
     callbackMayDestroyOperation();
     localImportProfileModes();
     exactDraftRecoveryMethods();
+    exactSendMethods();
     qInfo() << "Google operation IPC checks passed: private discovery/peer identity, independent cached query, cancellation, response bounds/order/types, one-shot callbacks and callback destruction. Synthetic local IPC only; no app latency or provider claim.";
     return 0;
 }

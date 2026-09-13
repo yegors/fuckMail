@@ -1,0 +1,6 @@
+{
+  "result": "failed",
+  "error": "Native navigation exceeded the unchanged 100 ms p95 budget; correctness/overlap results are retained",
+  "elapsed_seconds": 59.95299999974668,
+  "gui_exit_code": 9
+}

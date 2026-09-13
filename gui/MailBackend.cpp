@@ -25,6 +25,10 @@ QString uuid() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 
 MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool fixtureClock, bool liveProfile)
     : QObject(parent), m_accountModel(this), m_conversationModel(this), m_profile(std::move(profile)), m_engine(std::move(engine)), m_fixtureClock(fixtureClock), m_liveProfileRequested(liveProfile), m_syntheticProfile(!liveProfile) {
+    connect(this, &MailBackend::draftChanged, this, [this] {
+        if (!m_googleSendPending.isEmpty() && m_googleSendPending["authored"].toObject() != googleSendAuthorSnapshot())
+            cancelPendingGoogleSend("The draft changed before sending. Review it and press Send again.");
+    });
     m_calendarDate = todayDate(); m_timelineDate = todayDate();
     m_clockTimer.setInterval(30000);
     connect(&m_clockTimer, &QTimer::timeout, this, [this] { emit eventsChanged(); });
@@ -325,6 +329,7 @@ void MailBackend::selectAccount(const QString &id) {
     m_lastAccountSelectionDirty = m_draftDirty;
     m_lastAccountSelectionBusy = draftBusy();
     if (id == m_account) return;
+    cancelPendingGoogleSend("Send cancelled by mailbox navigation. Press Send again after reviewing the draft.");
     if (m_draftDirty || draftBusy()) { m_afterDraftSave = [this, id] { selectAccount(id); }; saveDraft(); return; }
     clearSenderCard();
     m_queryActivity.start();
@@ -495,6 +500,7 @@ void MailBackend::selectConversation(const QString &id) {
     selectConversationInternal(id, false);
 }
 void MailBackend::selectConversationInternal(const QString &id, bool review, QVariantMap clickedRow, int clickedIndex) {
+    if (id != m_selected || !m_activeDraft.isEmpty()) cancelPendingGoogleSend("Send cancelled by draft navigation.");
     // Capture the visible navigation intent before waiting for durable work.
     // A preceding read can move this row outside the filtered/page result while
     // its write is pending. Looking it up only after that wait loses the pin.
@@ -540,7 +546,8 @@ void MailBackend::loadConversation(bool loadDraft, bool reviewOnLoad) {
     if (loadDraft) request("draft_get", account, {{"conversation_id", id}}, [this, id, account, generation](auto result, bool ok) {
         if (!ok || id != m_selected || account != m_account || generation != m_generation
             || result["account"].toString() != account || result["conversation_id"].toString() != id) return;
-        const bool metadataChanged = mergeGoogleDraftStatus(result["google"].toObject(), account, result["draft_id"].toString());
+        const bool sendChanged = mergeGoogleSendStatus(result["google_send"].toObject(), account, result["draft_id"].toString());
+        const bool metadataChanged = mergeGoogleDraftStatus(result["google"].toObject(), account, result["draft_id"].toString()) || sendChanged;
         if (m_draftDirty || draftBusy() || olderDraftProjection(result)) { if (metadataChanged) emit draftChanged(); return; }
         const auto draft = mergedDraftProjection(result);
         const QString status = draft.value("discarded").toBool() ? "Draft discarded"
@@ -621,20 +628,22 @@ void MailBackend::saveDraft() {
     // The import advances this exact draft's revision. Keep newer edits local
     // until its receipt, without occupying the cached-query connection.
     if (attachmentImportPending()) {
+        finishGoogleSendSave(false);
         if (m_shutdown && m_draftDirty) {
             cancelShutdown(); fail("Resolve the attachment import before closing with unsaved edits.");
         }
         return;
     }
     if (draftBusy()) return;
-    if (!commitRecipientInputs()) return;
+    if (!commitRecipientInputs()) { finishGoogleSendSave(false); return; }
     if (!m_draftDirty) {
+        finishGoogleSendSave(true);
         if (m_afterDraftSave) { auto callback = std::move(m_afterDraftSave); m_afterDraftSave = {}; callback(); }
         if (m_shutdown) finishShutdown();
         return;
     }
-    if (m_draftConflict) { m_draftStatus = "Not saved — another interface saved a newer draft. Choose which version to keep."; cancelShutdown(); emit draftChanged(); return; }
-    if (!m_connected) { m_draftStatus = "Not saved — reconnect to keep this reply"; cancelShutdown(); emit draftChanged(); return; }
+    if (m_draftConflict) { finishGoogleSendSave(false); m_draftStatus = "Not saved — another interface saved a newer draft. Choose which version to keep."; cancelShutdown(); emit draftChanged(); return; }
+    if (!m_connected) { finishGoogleSendSave(false); m_draftStatus = "Not saved — reconnect to keep this reply"; cancelShutdown(); emit draftChanged(); return; }
     auto params = mutation(); const auto selector = draftSelector();
     for (auto it = selector.begin(); it != selector.end(); ++it) params[it.key()] = it.value();
     const auto body = m_draft["body"].toString();
@@ -657,6 +666,7 @@ void MailBackend::saveDraft() {
     request("draft_save", account, params, [this, account, body, html, attachments, signature, headers](auto result, bool ok) {
         m_savingDraft = false;
         if (!ok) {
+            finishGoogleSendSave(false);
             m_draftConflict = result["code"].toString() == "stale_revision";
             m_draftStatus = m_draftConflict ? "Not saved — another interface saved a newer draft. Your version is retained here." : "Not saved — your reply is still in the editor";
             cancelShutdown(); emit draftChanged(); return;
@@ -671,7 +681,9 @@ void MailBackend::saveDraft() {
         for (const auto &key : {"draft_id", "mode", "source_message_id", "updated_at", "reply_all_available", "discarded"})
             if (result.contains(key)) m_draft[key] = result[key].toVariant();
         mergeGoogleDraftStatus(result["google"].toObject(), account, result["draft_id"].toString());
+        mergeGoogleSendStatus(result["google_send"].toObject(), account, result["draft_id"].toString());
         m_draftStatus = m_draftDirty ? "Saving…" : "Saved on this machine"; emit draftChanged();
+        finishGoogleSendSave(true);
         if (m_folder == "drafts") loadDraftRows(false);
         loadAccounts();
         saveDraft();
@@ -836,6 +848,7 @@ void MailBackend::cancelShutdown() {
 }
 void MailBackend::shutdown() {
     if (m_shutdown) return;
+    cancelPendingGoogleSend("Send cancelled before closing.");
     m_shutdown = true; m_resumeSearch = m_searchTimer.isActive(); m_searchTimer.stop(); m_viewTimer.stop();
     // The poll timer still enforces request timeouts while closing; its status
     // query is suppressed by m_shutdown. A failed save keeps the app usable.

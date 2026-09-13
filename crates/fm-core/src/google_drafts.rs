@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 
 pub const MAX_GOOGLE_DRAFT_BYTES: u64 = 35_000_000;
 const MAX_METADATA: usize = 32 * 1024;
-const DUE_SQL: &str = "SELECT draft_id,revision FROM drafts WHERE account=?1 AND discarded=0 AND (google_json IS NULL OR (json_extract(google_json,'$.state') IN ('local','synced','prepared','acknowledged') AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR revision>COALESCE(json_extract(google_json,'$.baseline.draft_revision'),0))) OR (json_extract(google_json,'$.state')='failed' AND revision>COALESCE(json_extract(google_json,'$.preparation_failure.draft_revision'),json_extract(google_json,'$.failed_draft_revision')))) AND (revision!=COALESCE(json_extract(google_json,'$.retry.draft_revision'),0) OR COALESCE(json_extract(google_json,'$.retry.until_ms'),0)<=?3) ORDER BY updated_at,draft_id LIMIT ?2";
+const DUE_SQL: &str = "SELECT draft_id,revision FROM drafts WHERE account=?1 AND discarded=0 AND COALESCE(json_extract(google_json,'$.submission.blocks_drafts'),0)=0 AND (google_json IS NULL OR (json_extract(google_json,'$.state') IN ('local','synced','prepared','acknowledged') AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR revision>COALESCE(json_extract(google_json,'$.baseline.draft_revision'),0))) OR (json_extract(google_json,'$.state')='failed' AND revision>COALESCE(json_extract(google_json,'$.preparation_failure.draft_revision'),json_extract(google_json,'$.failed_draft_revision')))) AND (revision!=COALESCE(json_extract(google_json,'$.retry.draft_revision'),0) OR COALESCE(json_extract(google_json,'$.retry.until_ms'),0)<=?3) ORDER BY updated_at,draft_id LIMIT ?2";
 
 #[derive(Clone)]
 pub struct GoogleDraftScope {
@@ -100,6 +100,8 @@ struct Twin {
     retry: Option<Retry>,
     #[serde(default)]
     failed_draft_revision: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    submission: Option<crate::google_send::SendGuard>,
 }
 impl Default for Twin {
     fn default() -> Self {
@@ -113,11 +115,14 @@ impl Default for Twin {
             preparation_failure: None,
             retry: None,
             failed_draft_revision: None,
+            submission: None,
         }
     }
 }
 #[derive(Clone, Serialize, Deserialize)]
 struct Operation {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    kind: Option<String>,
     version: u32,
     account: String,
     request_id: String,
@@ -296,6 +301,7 @@ impl Store {
                 ));
             }
             return if op.state == "prepared" {
+                self.check_google_send_draft_write(&scope.account, draft_id)?;
                 Ok(GoogleDraftIntent::Upload {
                     provider_draft_id: op.target,
                 })
@@ -303,6 +309,7 @@ impl Store {
                 Ok(GoogleDraftIntent::Reply(self.google_operation_reply(&op)?))
             };
         }
+        self.check_google_send_draft_write(&scope.account, draft_id)?;
         let (current_revision, twin) = self.google_twin(&scope.account, draft_id)?;
         if current_revision != revision {
             return Err(err("stale_revision", "Local draft revision changed"));
@@ -441,6 +448,7 @@ impl Store {
         }
         self.check_retained_draft(&plan.retained)?;
         let draft_id = string(&plan.params, "draft_id")?;
+        self.check_google_send_draft_write(&plan.scope.account, draft_id)?;
         let (_, mut twin) = self.google_twin(&plan.scope.account, draft_id)?;
         if twin.revision != plan.google_revision {
             return Err(err(
@@ -449,6 +457,7 @@ impl Store {
             ));
         }
         let op = Operation {
+            kind: Some("draft".into()),
             version: 1,
             account: plan.scope.account.clone(),
             request_id: request.into(),
@@ -498,6 +507,7 @@ impl Store {
             ));
         }
         same_from(&op.from, &scope.primary_email)?;
+        self.check_google_send_draft_write(&scope.account, &op.draft_id)?;
         let (_, mut twin) = self.google_twin(&scope.account, &op.draft_id)?;
         let discarded: bool = self.db.query_row(
             "SELECT discarded FROM drafts WHERE account=?1 AND draft_id=?2",
@@ -613,6 +623,7 @@ impl Store {
         draft_id: &str,
     ) -> Result<GoogleDraftObservationPlan> {
         self.draft_scope(scope)?;
+        self.check_google_send_draft_observation(&scope.account, draft_id)?;
         let (_, twin) = self.google_twin(&scope.account, draft_id)?;
         let operation = twin
             .operation_id
@@ -652,6 +663,7 @@ impl Store {
             ));
         }
         self.draft_scope(&plan.scope)?;
+        self.check_google_send_draft_observation(&plan.scope.account, &plan.draft_id)?;
         let (_, mut twin) = self.google_twin(&plan.scope.account, &plan.draft_id)?;
         if twin.revision != plan.google_revision {
             return Err(err(
@@ -995,7 +1007,7 @@ impl Store {
 
     pub(crate) fn recover_google_drafts(&mut self) -> Result<()> {
         let rows = {
-            let mut stmt = self.db.prepare("SELECT account,id FROM capture_operations WHERE execution_kind='google' AND json_extract(json,'$.state')='in_flight'")?;
+            let mut stmt = self.db.prepare("SELECT account,id FROM capture_operations WHERE execution_kind='google' AND COALESCE(json_extract(json,'$.kind'),'draft')='draft' AND json_extract(json,'$.state')='in_flight'")?;
             let rows = stmt
                 .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
                 .collect::<std::result::Result<Vec<_>, _>>()?;
@@ -1039,7 +1051,7 @@ impl Store {
         }
         Ok(())
     }
-    fn draft_scope(&self, scope: &GoogleDraftScope) -> Result<()> {
+    pub(crate) fn draft_scope(&self, scope: &GoogleDraftScope) -> Result<()> {
         self.draft_connection(&scope.account, scope.connection_generation)?;
         let from: String = self.db.query_row(
             "SELECT email FROM accounts WHERE id=?1",
@@ -1071,11 +1083,12 @@ impl Store {
         Ok((revision, twin))
     }
     fn google_draft_operation(&self, account: &str, request: &str) -> Result<Option<Operation>> {
-        check_execution_kind(&self.db, account, request, "google")?;
-        let row: Option<(String,String)> = self.db.query_row("SELECT json,blob_hash FROM capture_operations WHERE execution_kind='google' AND account=?1 AND id=?2",params![account,request],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+        check_google_operation_kind(&self.db, account, request, "draft")?;
+        let row: Option<(String,String)> = self.db.query_row("SELECT json,blob_hash FROM capture_operations WHERE execution_kind='google' AND COALESCE(json_extract(json,'$.kind'),'draft')='draft' AND account=?1 AND id=?2",params![account,request],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
         row.map(|(raw, hash)| {
             let op: Operation = decode(&raw)?;
             if op.version != 1
+                || op.kind.as_deref().is_some_and(|kind| kind != "draft")
                 || op.account != account
                 || op.request_id != request
                 || op.upload_sha256 != hash
@@ -1111,7 +1124,7 @@ impl Store {
         let tx = self.db.transaction()?;
         if insert {
             tx.execute("INSERT INTO capture_operations(account,id,json,blob_hash,execution_kind) VALUES(?1,?2,?3,?4,'google')",params![op.account,op.request_id,raw,op.upload_sha256])?;
-        } else if tx.execute("UPDATE capture_operations SET json=?3 WHERE execution_kind='google' AND account=?1 AND id=?2",params![op.account,op.request_id,raw])? != 1 { return Err(invalid()); }
+        } else if tx.execute("UPDATE capture_operations SET json=?3 WHERE execution_kind='google' AND COALESCE(json_extract(json,'$.kind'),'draft')='draft' AND account=?1 AND id=?2",params![op.account,op.request_id,raw])? != 1 { return Err(invalid()); }
         if let Some(twin_raw) = twin_raw {
             if tx.execute(
                 "UPDATE drafts SET google_json=?3 WHERE account=?1 AND draft_id=?2",
@@ -1125,6 +1138,35 @@ impl Store {
         tx.commit()?;
         Ok(())
     }
+
+    pub(crate) fn google_send_twin_raw(
+        &self,
+        account: &str,
+        draft_id: &str,
+        submission: crate::google_send::SendGuard,
+    ) -> Result<String> {
+        let (_, mut twin) = self.google_twin(account, draft_id)?;
+        twin.submission = Some(submission);
+        twin.revision += 1;
+        encode(&twin)
+    }
+}
+
+pub(crate) fn check_google_operation_kind(
+    db: &Connection,
+    account: &str,
+    request: &str,
+    expected: &str,
+) -> Result<()> {
+    check_execution_kind(db, account, request, "google")?;
+    let kind: Option<String> = db.query_row("SELECT COALESCE(json_extract(json,'$.kind'),'draft') FROM capture_operations WHERE account=?1 AND id=?2 AND execution_kind='google'", [account,request], |r|r.get(0)).optional()?;
+    if kind.as_deref().is_some_and(|kind| kind != expected) {
+        return Err(err(
+            "request_id_conflict",
+            "Request ID belongs to another Google operation kind",
+        ));
+    }
+    Ok(())
 }
 
 pub fn prepare_google_draft(
@@ -1246,7 +1288,7 @@ fn provider_id(value: &str) -> Result<()> {
         Ok(())
     }
 }
-fn same_from(a: &str, b: &str) -> Result<()> {
+pub(crate) fn same_from(a: &str, b: &str) -> Result<()> {
     for value in [a, b] {
         fm_mail::validate_address(&fm_mail::Address {
             name: None,

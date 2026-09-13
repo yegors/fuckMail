@@ -25,6 +25,7 @@ const ORIGIN: &str = "https://gmail.googleapis.com/gmail/v1/users/me/";
 const MAX_DRAFT_BYTES: usize = 2 * 1024 * 1024;
 const MAX_DRAFTS: usize = 16;
 const MAX_DRAFT_PUBLICATIONS: usize = 128;
+const MAX_SENDS: usize = 16;
 
 pub(super) struct FixtureVault {
     accounts: Arc<Vec<Account>>,
@@ -150,6 +151,24 @@ struct MailState {
     reviewed_at: [u64; RECENT_MESSAGES],
     drafts: BTreeMap<String, FixtureDraft>,
     draft_message_sequence: u64,
+    draft_sequence: u64,
+    sent: BTreeMap<String, FixtureSent>,
+}
+struct FixtureSent {
+    thread_id: String,
+    raw: Vec<u8>,
+    rfc_message_id: String,
+    history: u64,
+}
+impl FixtureSent {
+    fn value(&self, id: &str, include_raw: bool, base: u64) -> Value {
+        let mut value = json!({"id":id,"threadId":self.thread_id,"labelIds":["SENT"],"historyId":self.history.to_string()});
+        if include_raw {
+            value["raw"] = json!(URL_SAFE_NO_PAD.encode(&self.raw));
+            value["internalDate"] = json!((base * 1000).to_string());
+        }
+        value
+    }
 }
 struct FixtureDraft {
     message_id: String,
@@ -172,6 +191,8 @@ impl Default for MailState {
             reviewed_at: [0; RECENT_MESSAGES],
             drafts: BTreeMap::new(),
             draft_message_sequence: 0,
+            draft_sequence: 0,
+            sent: BTreeMap::new(),
         }
     }
 }
@@ -199,6 +220,7 @@ pub(super) struct FixtureHttp {
     states: Vec<Mutex<MailState>>,
     evidence: Arc<Mutex<Evidence>>,
     hold_raw: Arc<AtomicBool>,
+    send_enabled: bool,
 }
 impl FixtureHttp {
     pub(super) fn new(
@@ -206,6 +228,7 @@ impl FixtureHttp {
         base: u64,
         evidence: Arc<Mutex<Evidence>>,
         hold_raw: Arc<AtomicBool>,
+        send_enabled: bool,
     ) -> Self {
         Self {
             states: accounts
@@ -216,6 +239,7 @@ impl FixtureHttp {
             base,
             evidence,
             hold_raw,
+            send_enabled,
         }
     }
     fn reject(&self, code: &'static str) -> TransportError {
@@ -243,6 +267,27 @@ impl FixtureHttp {
                 "profile" if params.is_empty() => return Ok((account, Route::Profile)),
                 "labels" if params.is_empty() => return Ok((account, Route::Labels)),
                 "messages" => {
+                    if self.send_enabled
+                        && params.get("maxResults") == Some(&"10")
+                        && params.get("includeSpamTrash") == Some(&"false")
+                        && params.len() == 3
+                    {
+                        let query = params
+                            .get("q")
+                            .and_then(|query| decoded_query(query))
+                            .and_then(|query| {
+                                query
+                                    .strip_prefix("in:sent rfc822msgid:")
+                                    .map(str::to_owned)
+                            })
+                            .filter(|id| {
+                                !id.is_empty()
+                                    && id.len() <= 512
+                                    && !id.chars().any(char::is_control)
+                            })
+                            .ok_or_else(|| self.reject("unexpected_synthetic_sent_query"))?;
+                        return Ok((account, Route::SentList(query)));
+                    }
                     if params.get("maxResults") != Some(&"100")
                         || params.get("includeSpamTrash") != Some(&"true")
                         || params.keys().any(|key| {
@@ -266,7 +311,7 @@ impl FixtureHttp {
                         RECENT_MESSAGES
                     } else {
                         RECENT_MESSAGES + BACKFILL_MESSAGES
-                    };
+                    } + self.states[account].lock().unwrap().sent.len();
                     let offset = page_offset(
                         params.get("pageToken").copied(),
                         if recent { "recent-" } else { "inventory-" },
@@ -289,6 +334,29 @@ impl FixtureHttp {
                 _ => {}
             }
             if let Some(id) = path.strip_prefix("messages/") {
+                if self.send_enabled && fixture_sent_id(id) {
+                    if params.len() == 1 && params.get("format") == Some(&"raw") {
+                        return Ok((
+                            account,
+                            Route::SentGet {
+                                id: id.into(),
+                                raw: true,
+                            },
+                        ));
+                    }
+                    if params.len() == 2
+                        && params.get("format") == Some(&"full")
+                        && params.get("fields") == Some(&"id%2CthreadId%2ClabelIds%2ChistoryId")
+                    {
+                        return Ok((
+                            account,
+                            Route::SentGet {
+                                id: id.into(),
+                                raw: false,
+                            },
+                        ));
+                    }
+                }
                 let message = Message::parse(id)
                     .ok_or_else(|| self.reject("unexpected_synthetic_message"))?;
                 if params.len() == 1 && params.get("format") == Some(&"raw") {
@@ -312,6 +380,42 @@ impl FixtureHttp {
             && matches!(request.method(), HttpMethod::Post | HttpMethod::Put)
             && request.body_bytes().len() <= MAX_DRAFT_BYTES.div_ceil(3) * 4 + 1024
         {
+            if self.send_enabled
+                && request.method() == HttpMethod::Post
+                && matches!(path, "messages/send" | "drafts/send")
+            {
+                let body: Value = serde_json::from_slice(request.body_bytes())
+                    .map_err(|_| self.reject("invalid_synthetic_send_body"))?;
+                let object = body
+                    .as_object()
+                    .ok_or_else(|| self.reject("invalid_synthetic_send_body"))?;
+                let (id, message) = if path == "drafts/send" {
+                    if object.len() != 2 || object.keys().any(|key| key != "id" && key != "message")
+                    {
+                        return Err(self.reject("unexpected_synthetic_send_fields"));
+                    }
+                    let id = body["id"]
+                        .as_str()
+                        .filter(|id| fixture_draft_id(id))
+                        .ok_or_else(|| self.reject("invalid_synthetic_send_target"))?;
+                    (Some(id.to_owned()), &body["message"])
+                } else {
+                    (None, &body)
+                };
+                let (raw, thread) = authored_message(message)
+                    .ok_or_else(|| self.reject("invalid_synthetic_send_mime"))?;
+                let rfc_message_id = rfc_message_id(&raw)
+                    .ok_or_else(|| self.reject("invalid_synthetic_send_message_id"))?;
+                return Ok((
+                    account,
+                    Route::Send {
+                        id,
+                        raw,
+                        thread,
+                        rfc_message_id,
+                    },
+                ));
+            }
             let draft_id = if path == "drafts" && request.method() == HttpMethod::Post {
                 Some(None)
             } else {
@@ -392,19 +496,23 @@ impl FixtureHttp {
             200,
             match route {
                 Route::Profile => {
-                    json!({"emailAddress":owner.email,"messagesTotal":RECENT_MESSAGES+BACKFILL_MESSAGES,"threadsTotal":RECENT_MESSAGES/2+BACKFILL_MESSAGES,"historyId":state.history.to_string()})
+                    json!({"emailAddress":owner.email,"messagesTotal":RECENT_MESSAGES+BACKFILL_MESSAGES+state.sent.len(),"threadsTotal":RECENT_MESSAGES/2+BACKFILL_MESSAGES+state.sent.len(),"historyId":state.history.to_string()})
                 }
                 Route::Labels => {
                     json!({"labels":[{"id":"INBOX","name":"INBOX","type":"system"},{"id":"UNREAD","name":"UNREAD","type":"system"}]})
                 }
                 Route::List { recent, offset } => {
-                    let count = if recent {
+                    let base_count = if recent {
                         RECENT_MESSAGES
                     } else {
                         RECENT_MESSAGES + BACKFILL_MESSAGES
                     };
+                    let count = base_count + state.sent.len();
                     let end = (offset + 100).min(count);
-                    json!({"messages":(offset..end).map(|ordinal|{let message=Message::at(ordinal);json!({"id":message.id(),"threadId":message.thread()})}).collect::<Vec<_>>(),"resultSizeEstimate":count,
+                    json!({"messages":(offset..end).map(|ordinal|{
+                        if ordinal < base_count { let message=Message::at(ordinal);json!({"id":message.id(),"threadId":message.thread()}) }
+                        else { let (id,sent)=state.sent.iter().nth(ordinal-base_count).unwrap(); json!({"id":id,"threadId":sent.thread_id}) }
+                    }).collect::<Vec<_>>(),"resultSizeEstimate":count,
                     "nextPageToken":(end<count).then(||format!("{}-{end}", if recent {"recent"} else {"inventory"}))})
                 }
                 Route::History(start) => {
@@ -419,9 +527,13 @@ impl FixtureHttp {
                         .map(|(index, at)| (*at, index))
                         .collect();
                     changes.sort_unstable();
-                    json!({"historyId":state.history.to_string(),"history":changes.into_iter().map(|(at,index)|{
+                    let mut history: Vec<_> = changes.into_iter().map(|(at,index)|{
                     let message=Message{recent:true,index}; json!({"id":at.to_string(),"labelsRemoved":[{"message":{"id":message.id(),"threadId":message.thread()},"labelIds":["UNREAD"]}]})
-                }).collect::<Vec<_>>()})
+                    }).collect();
+                    history.extend(state.sent.iter().filter(|(_,sent)|sent.history>start).map(|(id,sent)|json!({"id":sent.history.to_string(),"messagesAdded":[{"message":{"id":id,"threadId":sent.thread_id,"labelIds":["SENT"]}}]})));
+                    history
+                        .sort_by_key(|item| item["id"].as_str().unwrap().parse::<u64>().unwrap());
+                    json!({"historyId":state.history.to_string(),"history":history})
                 }
                 Route::State(message) => state.state(message),
                 Route::Raw(message) => {
@@ -465,7 +577,10 @@ impl FixtureHttp {
                         evidence.error("synthetic_draft_publication_limit");
                         return Err(TransportError::InvalidRequest);
                     }
-                    let id = id.unwrap_or_else(|| format!("vd{:04}", state.drafts.len() + 1));
+                    let id = id.unwrap_or_else(|| {
+                        state.draft_sequence += 1;
+                        format!("vd{:04}", state.draft_sequence)
+                    });
                     state.draft_message_sequence += 1;
                     let draft = FixtureDraft {
                         message_id: format!("vmd{:04}", state.draft_message_sequence),
@@ -483,6 +598,67 @@ impl FixtureHttp {
                     }
                     state.drafts.insert(id, draft);
                     response
+                }
+                Route::Send {
+                    id,
+                    raw,
+                    thread,
+                    rfc_message_id,
+                } => {
+                    if state.sent.len() >= MAX_SENDS {
+                        return Err(self.reject("synthetic_send_count_limit"));
+                    }
+                    if id.as_ref().is_some_and(|id| !state.drafts.contains_key(id)) {
+                        return Ok((
+                            404,
+                            json!({"error":{"code":404,"message":"Generated draft is absent"}}),
+                        ));
+                    }
+                    let message_id = format!("vms{:04}", state.sent.len() + 1);
+                    let thread_id = thread
+                        .or_else(|| {
+                            id.as_ref()
+                                .and_then(|id| state.drafts.get(id))
+                                .map(|draft| draft.thread_id.clone())
+                        })
+                        .unwrap_or_else(|| format!("vst-{message_id}"));
+                    state.history += 1;
+                    let sent = FixtureSent {
+                        raw,
+                        thread_id,
+                        rfc_message_id,
+                        history: state.history,
+                    };
+                    let response = sent.value(&message_id, false, self.base);
+                    let mut evidence = self.evidence.lock().unwrap();
+                    evidence.counters.send_completed += 1;
+                    evidence.send_publications.push(json!({"account":owner.id,"provider_draft_id":id,"message_id":message_id,
+                        "thread_id":sent.thread_id,"rfc_message_id":sent.rfc_message_id,"size":sent.raw.len(),
+                        "sha256":format!("{:x}",Sha256::digest(&sent.raw)),"kind":if id.is_some(){"draft_send"}else{"message_send"}}));
+                    if let Some(id) = id {
+                        state.drafts.remove(&id);
+                    }
+                    state.sent.insert(message_id, sent);
+                    response
+                }
+                Route::SentList(query) => {
+                    let matches: Vec<_> = state
+                        .sent
+                        .iter()
+                        .filter(|(_, sent)| sent.rfc_message_id == query)
+                        .map(|(id, sent)| json!({"id":id,"threadId":sent.thread_id}))
+                        .collect();
+                    json!({"messages":matches.iter().take(10).collect::<Vec<_>>(),"resultSizeEstimate":matches.len(),"nextPageToken":(matches.len()>10).then_some("sent-truncated")})
+                }
+                Route::SentGet { id, raw } => {
+                    self.evidence.lock().unwrap().counters.sent_read += 1;
+                    let Some(sent) = state.sent.get(&id) else {
+                        return Ok((
+                            404,
+                            json!({"error":{"code":404,"message":"Generated sent message is absent"}}),
+                        ));
+                    };
+                    sent.value(&id, raw, self.base)
                 }
             },
         ))
@@ -506,6 +682,97 @@ enum Route {
         raw: Vec<u8>,
         thread: Option<String>,
     },
+    Send {
+        id: Option<String>,
+        raw: Vec<u8>,
+        thread: Option<String>,
+        rfc_message_id: String,
+    },
+    SentList(String),
+    SentGet {
+        id: String,
+        raw: bool,
+    },
+}
+fn fixture_sent_id(id: &str) -> bool {
+    id.strip_prefix("vms")
+        .is_some_and(|digits| digits.len() == 4 && digits.bytes().all(|byte| byte.is_ascii_digit()))
+}
+fn authored_message(value: &Value) -> Option<(Vec<u8>, Option<String>)> {
+    let message = value.as_object()?;
+    if message.keys().any(|key| key != "raw" && key != "threadId") {
+        return None;
+    }
+    let raw = URL_SAFE_NO_PAD.decode(message.get("raw")?.as_str()?).ok()?;
+    if raw.is_empty() || raw.len() > MAX_DRAFT_BYTES {
+        return None;
+    }
+    let thread = match message.get("threadId") {
+        None => None,
+        Some(Value::String(thread))
+            if !thread.is_empty()
+                && thread.len() <= 256
+                && !thread.chars().any(char::is_control) =>
+        {
+            Some(thread.clone())
+        }
+        _ => return None,
+    };
+    Some((raw, thread))
+}
+fn rfc_message_id(raw: &[u8]) -> Option<String> {
+    let end = raw.windows(4).position(|value| value == b"\r\n\r\n")?;
+    if end > 64 * 1024 {
+        return None;
+    }
+    let headers = std::str::from_utf8(&raw[..end]).ok()?;
+    let mut found: Option<String> = None;
+    let mut in_message_id = false;
+    for line in headers.split("\r\n") {
+        if line.starts_with([' ', '\t']) {
+            if in_message_id {
+                found.as_mut()?.push_str(line.trim());
+            }
+            continue;
+        }
+        let (key, value) = line.split_once(':')?;
+        in_message_id = key.eq_ignore_ascii_case("message-id");
+        if in_message_id {
+            if found.is_some() {
+                return None;
+            }
+            found = Some(value.trim().to_owned());
+        }
+    }
+    let value = found?;
+    let id = value.strip_prefix('<')?.strip_suffix('>')?;
+    if id.is_empty() || id.len() > 512 || id.chars().any(char::is_control) {
+        return None;
+    }
+    Some(id.into())
+}
+fn decoded_query(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'%' => {
+                let digits = std::str::from_utf8(bytes.get(index + 1..index + 3)?).ok()?;
+                decoded.push(u8::from_str_radix(digits, 16).ok()?);
+                index += 3;
+            }
+            b'+' => {
+                decoded.push(b' ');
+                index += 1;
+            }
+            value => {
+                decoded.push(value);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8(decoded).ok()
 }
 fn fixture_draft_id(id: &str) -> bool {
     id.strip_prefix("vd")

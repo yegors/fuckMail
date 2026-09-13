@@ -1,0 +1,73 @@
+{
+  "selection": "^gui-",
+  "QT_MESSAGE_PATTERN": "[pid=%{pid} t=%{time process}] %{message}",
+  "inspected_utc": "2026-09-13T16:42:39.2338061Z",
+  "purpose": "Timestamped diagnostic repetition after unchanged native01 timeout; a pass alone does not establish a correction",
+  "watchdog_seconds": 150,
+  "source_changes": false,
+  "no_preexisting_app_processes": true,
+  "late_process_snapshot": {
+    "observed_utc": "2026-09-13T16:45:25.9908317Z",
+    "processes": [
+      {
+        "pid": 31688,
+        "parent_pid": 76632,
+        "arguments": "--self-test",
+        "name": "fuckmail-gui.exe",
+        "created_utc": "2026-09-13T16:42:58.956222Z"
+      },
+      {
+        "pid": 33232,
+        "parent_pid": 31688,
+        "arguments": "--smoke --fixture-clock --profile C:/Users/Yegor/AppData/Local/Temp/fuckmail-gui-smoke-VqUZTH/profile --engine C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/fm-engine.exe --self-test-startup-workspace calendar",
+        "name": "fuckmail-gui.exe",
+        "created_utc": "2026-09-13T16:45:22.579130Z"
+      },
+      {
+        "pid": 101224,
+        "parent_pid": 33232,
+        "arguments": "--profile C:/Users/Yegor/AppData/Local/Temp/fuckmail-gui-smoke-VqUZTH/profile",
+        "name": "fm-engine.exe",
+        "created_utc": "2026-09-13T16:45:25.695511Z"
+      }
+    ]
+  },
+  "late_startup_requests": [
+    {
+      "patch": {
+        "last_workspace": "calendar",
+        "startup_view": "mail"
+      },
+      "name": "startup-022fbfd7c26b457787dd35aedfb46075.json",
+      "created_utc": "2026-09-13T16:45:07.7604499Z",
+      "sha256": "1e251b503d8894de7874b75e208b31d84b9ebcfd095cb819fb0a61c54dfbc541"
+    },
+    {
+      "patch": {
+        "last_workspace": "mail",
+        "startup_view": "calendar"
+      },
+      "name": "startup-f0362189774d4559a6861c146efb2ee3.json",
+      "created_utc": "2026-09-13T16:45:14.4426365Z",
+      "sha256": "ee4efc29c35cb3075c5b117dc1487b7336fe74a32b96dc398f182af6cf8715e3"
+    },
+    {
+      "patch": {
+        "last_workspace": "calendar",
+        "startup_view": "last"
+      },
+      "name": "startup-cbdd27b8d4624f19bd9112d54d744069.json",
+      "created_utc": "2026-09-13T16:45:22.5330557Z",
+      "sha256": "f2df3514c3e6595a0100840aa8528281155960d4576ea9c626002b21b19ec4fc"
+    }
+  ],
+  "parent_qt_relative_seconds": {
+    "settings_restart_success": 125.925,
+    "composition_restart_success": 126.287,
+    "primary_success": 118.189,
+    "calendar_restart_success": 125.793
+  },
+  "post_run_app_processes": [],
+  "post_run_inspected_utc": "2026-09-13T16:47:41.6875847Z",
+  "finding": "First two final fresh workspace scenarios completed; third last-to-calendar scenario started. No fourth startup patch or final restoration patch exists. Timestamped repeat supports aggregate serial startup cost; it does not prove a shutdown deadlock or a correction."
+}

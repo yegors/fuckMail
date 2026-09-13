@@ -33,6 +33,7 @@ QVariantMap MailBackend::mergedDraftProjection(const QJsonObject &result) const 
     if (sameDraft && validStatus(current, account, id)
         && (!validStatus(incoming, account, id) || olderStatus(incoming, current))) next["google"] = current.toVariantMap();
     else if (result.contains("google") && !validStatus(incoming, account, id)) next["google"] = QVariant{};
+    mergeGoogleSendProjection(next, result);
     return next;
 }
 
@@ -51,7 +52,7 @@ bool MailBackend::mergeGoogleDraftStatus(const QJsonObject &status, const QStrin
 bool MailBackend::googleDraftRecoveryReady() const {
     return !m_syntheticProfile && m_connected && !m_shutdown && accountCapability(m_account, "mail_delivery")
         && !m_draft.value("draft_id").toString().isEmpty() && m_draft.value("revision").toLongLong() > 0
-        && !m_draft.value("discarded").toBool();
+        && !m_draft.value("discarded").toBool() && !googleSendBlocksDraftSync();
 }
 
 QVariantMap MailBackend::googleDraft() const {
@@ -97,6 +98,9 @@ QVariantMap MailBackend::googleDraft() const {
         else text += " Edit and save to retry.";
     }
     if (mismatch) text += " Google bytes differ from the uploaded copy; content fidelity is unverified.";
+    if (googleSendBlocksDraftSync()) text = m_draft.value("google_send").toMap().value("last_accepted_draft_revision").toLongLong() > 0
+        ? "An accepted submission ended Google draft sync for this local draft. Newer edits stay local; sending them creates another email."
+        : "Google draft sync is paused while this submission is pending or unconfirmed.";
     if (busy) text += m_googleDraftOperationMethod == "google_draft_reconcile" ? " Checking Google…" : " Replacing the Google copy…";
     if (m_googleDraftFeedbackAccount == m_account && m_googleDraftFeedbackId == id && !m_googleDraftFeedback.isEmpty()) text += " " + m_googleDraftFeedback;
     const bool ready = visible && googleDraftRecoveryReady() && m_googleDraftOperationId.isEmpty();

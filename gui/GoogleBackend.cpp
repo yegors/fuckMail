@@ -24,11 +24,17 @@ QVariantMap MailBackend::googleSyncState(const QString &account) const {
 }
 
 void MailBackend::googleOperation(const QString &method, const QString &account, const QJsonObject &params, Callback callback) {
+    const auto refuseBeforeRequest = [&](const QString &code, const QString &message) {
+        QJsonObject error{{"code", code}, {"message", message}};
+        if (method == "google_send")
+            error["details"] = QJsonObject{{"send_invocation_finished_before_dispatch", true}};
+        callback(error, false);
+    };
     if (!m_connected || m_shutdown || (m_syntheticProfile && method != "draft_attachment_import")) {
-        callback({{"code", "cancelled"}, {"message", "Reconnect to continue Google work."}}, false); return;
+        refuseBeforeRequest("cancelled", "Reconnect to continue Google work."); return;
     }
     if (m_googleOperations.size() >= 4) {
-        callback({{"code", "busy"}, {"message", "Four Google operations are already running. Wait for one to finish."}}, false); return;
+        refuseBeforeRequest("busy", "Four Google operations are already running. Wait for one to finish."); return;
     }
     auto operation = new GoogleOperation(account, params["request_id"].toString(), this);
     m_googleOperations.insert(operation);

@@ -867,13 +867,13 @@ fn schema12_migration_and_execution_discriminator_preserve_synthetic_receipts() 
         )
         .unwrap();
     let fixture = store.fixture_revision().unwrap();
-    store.db.execute_batch("DROP INDEX google_drafts_due; DROP INDEX capture_execution_kind; ALTER TABLE drafts DROP COLUMN google_json; ALTER TABLE capture_operations DROP COLUMN execution_kind; PRAGMA user_version=12;").unwrap();
+    crate::test_profiles::restore_schema_twelve(&store.db);
     drop(store);
     let mut store = Store::open(dir.path()).unwrap();
     assert_eq!(store.fixture_revision().unwrap(), fixture);
     assert_eq!(
         store.handle("status", None, json!({})).unwrap()["schema_version"],
-        13
+        crate::SCHEMA_VERSION
     );
     assert_eq!(
         store

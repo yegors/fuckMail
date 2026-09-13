@@ -40,10 +40,19 @@ fn source_with_attachment(remote: &str, minute: u8) -> Vec<u8> {
 // Use the same source staging and transactional ingestion as the engine. The
 // test reads local IDs back independently instead of constructing Core IDs.
 pub(crate) fn ingest(store: &mut Store, remote: &str, bytes: Vec<u8>) -> (String, String) {
+    ingest_for_account(store, ACCOUNT, remote, bytes)
+}
+
+pub(crate) fn ingest_for_account(
+    store: &mut Store,
+    account: &str,
+    remote: &str,
+    bytes: Vec<u8>,
+) -> (String, String) {
     let checkpoint = store
-        .google_checkpoint(ACCOUNT)
+        .google_checkpoint(account)
         .unwrap()
-        .unwrap_or_else(|| store.google_begin_full(ACCOUNT, "100").unwrap());
+        .unwrap_or_else(|| store.google_begin_full(account, "100").unwrap());
     let plan = prepare_full_page(
         &checkpoint,
         ListPage {
@@ -74,7 +83,7 @@ pub(crate) fn ingest(store: &mut Store, remote: &str, bytes: Vec<u8>) -> (String
         .db
         .query_row(
             "SELECT conversation_id,id FROM messages WHERE account=?1 AND remote_id=?2",
-            params![ACCOUNT, remote],
+            params![account, remote],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .unwrap()
