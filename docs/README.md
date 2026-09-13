@@ -11,7 +11,8 @@ fuckMail is a personal, opinionated mail/calendar client for large separate acco
 | [Product scope](product-scope.md) | Accepted requirements, intended workflows and exclusions |
 | [Visual design and UX](ui-ux.md) | Working brief for the founder/Claude design collaboration: screen elements, layout, state meanings and review scenarios |
 | [Development plan](development-plan.md) | Full phased route, integration milestones, ownership and decisions to resolve as needed |
-| [Phase 1 execution plan](plans/phase-1.md) | Current prepared packets, shared boundaries, parallel ownership, acceptance and Mac/Windows handoff |
+| [Phase 2 execution plan](plans/phase-2.md) | Current Google mail/Calendar packets, real-account admission, API limits and founder test milestones |
+| [Phase 1 execution plan](plans/phase-1.md) | Completed local client and navigation/rendering packets with scoped acceptance |
 | [Phase 0 execution backlog](plans/phase-0.md) | Completed foundation packets and their original acceptance scope |
 | [Development commands](build-development.md) | Repeatable Mac/Windows bootstrap, build, test, run and packaging |
 | [Local protocol](local-protocol.md) | Implemented synthetic CLI/GUI command boundary and limits |
@@ -30,7 +31,7 @@ fuckMail is a personal, opinionated mail/calendar client for large separate acco
 
 Keep this directory at the product level, including the shared visual/interaction brief in **ui-ux.md**. Put source-dependent findings, comparisons, discovered ideas and experiment reports in a named topic under **research/**; there is no general research.md. Put current behavior, implementation boundaries, dependencies and acceptance gates in the relevant **contracts/** file. Contracts move as we learn; they are not promises that everything has been built.
 
-Use **development-plan.md** for the high-level build sequence and **plans/** for detailed execution packets only as their phase approaches. These refer to contracts and scoped research instead of owning a second copy of behavior or evidence. Phases 0 and 1 have detailed packet files; Phase 0 is completed and Phase 1 implementation is active. Later phases remain deliberately lighter.
+Use **development-plan.md** for the high-level build sequence and **plans/** for detailed execution packets only as their phase approaches. These refer to contracts and scoped research instead of owning a second copy of behavior or evidence. Phases 0 and 1 have completed packet files on available hosts; approaching Phase 2 has a detailed real-Google pilot plan. Later phases remain deliberately lighter.
 
 Use **status.md** as the current progress record and **decisions.md** as history. Root README summarizes status and links here. Avoid duplicating technical specifications in product pages; link to the owning contract.
 

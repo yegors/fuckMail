@@ -1,0 +1,1037 @@
+﻿2026-09-12T23:51:51.0481647Z Current runner version: '2.337.0'
+2026-09-12T23:51:51.0507012Z ##[group]Runner Image Provisioner
+2026-09-12T23:51:51.0507905Z Hosted Compute Agent
+2026-09-12T23:51:51.0508504Z Version: 20260828.587
+2026-09-12T23:51:51.0509238Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+2026-09-12T23:51:51.0510088Z Build Date: 2026-08-28T16:44:25Z
+2026-09-12T23:51:51.0510819Z Worker ID: {2cf65875-d143-4722-a19c-23154698ee3d}
+2026-09-12T23:51:51.0511608Z Azure Region: centralus
+2026-09-12T23:51:51.0512190Z ##[endgroup]
+2026-09-12T23:51:51.0513814Z ##[group]Operating System
+2026-09-12T23:51:51.0514482Z Microsoft Windows Server 2022
+2026-09-12T23:51:51.0515112Z 10.0.20348
+2026-09-12T23:51:51.0515677Z Datacenter
+2026-09-12T23:51:51.0516204Z ##[endgroup]
+2026-09-12T23:51:51.0516767Z ##[group]Runner Image
+2026-09-12T23:51:51.0517416Z Image: windows-2022
+2026-09-12T23:51:51.0518076Z Version: 20260907.297.1
+2026-09-12T23:51:51.0519775Z Included Software: https://github.com/actions/runner-images/blob/win22/20260907.297/images/windows/Windows2022-Readme.md
+2026-09-12T23:51:51.0521616Z Image Release: https://github.com/actions/runner-images/releases/tag/win22%2F20260907.297
+2026-09-12T23:51:51.0522666Z ##[endgroup]
+2026-09-12T23:51:51.0523865Z ##[group]GITHUB_TOKEN Permissions
+2026-09-12T23:51:51.0525861Z Contents: read
+2026-09-12T23:51:51.0526475Z Metadata: read
+2026-09-12T23:51:51.0527076Z ##[endgroup]
+2026-09-12T23:51:51.0529117Z Secret source: Actions
+2026-09-12T23:51:51.0530087Z Cache mode: write
+2026-09-12T23:51:51.0530835Z Prepare workflow directory
+2026-09-12T23:51:51.0910643Z Prepare all required actions
+2026-09-12T23:51:51.0970439Z Getting action download info
+2026-09-12T23:51:51.3701069Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-09-12T23:51:51.4646883Z Download action repository 'actions/setup-python@v5' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+2026-09-12T23:51:51.6021946Z Download action repository 'actions/cache@v4' (SHA:0057852bfaa89a56745cba8c7296529d2fc39830)
+2026-09-12T23:51:51.7192714Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-09-12T23:51:52.0164450Z Complete job name: windows-2022
+2026-09-12T23:51:52.1580326Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-12T23:51:52.1588118Z ##[group]Run actions/checkout@v4
+2026-09-12T23:51:52.1588674Z with:
+2026-09-12T23:51:52.1589119Z   repository: yegors/fuckMail
+2026-09-12T23:51:52.1592333Z   token: ***
+2026-09-12T23:51:52.1592769Z   ssh-strict: true
+2026-09-12T23:51:52.1593157Z   ssh-user: git
+2026-09-12T23:51:52.1593537Z   persist-credentials: true
+2026-09-12T23:51:52.1593979Z   clean: true
+2026-09-12T23:51:52.1594364Z   sparse-checkout-cone-mode: true
+2026-09-12T23:51:52.1594879Z   fetch-depth: 1
+2026-09-12T23:51:52.1595271Z   fetch-tags: false
+2026-09-12T23:51:52.1595657Z   show-progress: true
+2026-09-12T23:51:52.1596068Z   lfs: false
+2026-09-12T23:51:52.1596514Z   submodules: false
+2026-09-12T23:51:52.1596914Z   set-safe-directory: true
+2026-09-12T23:51:52.1597350Z   allow-unsafe-pr-checkout: false
+2026-09-12T23:51:52.1597897Z ##[endgroup]
+2026-09-12T23:51:52.8290281Z Syncing repository: yegors/fuckMail
+2026-09-12T23:51:52.8291982Z ##[group]Getting Git version info
+2026-09-12T23:51:52.8292708Z Working directory is 'D:\a\fuckMail\fuckMail'
+2026-09-12T23:51:52.8293815Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-09-12T23:51:52.8294552Z git version 2.55.0.windows.5
+2026-09-12T23:51:52.8296355Z ##[endgroup]
+2026-09-12T23:51:52.8301552Z Temporarily overriding HOME='D:\a\_temp\bf50e32f-870d-473b-9aa1-2a1475b8c1ad' before making global git config changes
+2026-09-12T23:51:52.8302908Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-12T23:51:52.8306205Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\fuckMail\fuckMail
+2026-09-12T23:51:52.8307990Z Deleting the contents of 'D:\a\fuckMail\fuckMail'
+2026-09-12T23:51:52.8309217Z ##[group]Initializing the repository
+2026-09-12T23:51:52.8310003Z [command]"C:\Program Files\Git\bin\git.exe" init D:\a\fuckMail\fuckMail
+2026-09-12T23:51:53.8184956Z Initialized empty Git repository in D:/a/fuckMail/fuckMail/.git/
+2026-09-12T23:51:53.8188519Z [command]"C:\Program Files\Git\bin\git.exe" remote add origin https://github.com/yegors/fuckMail
+2026-09-12T23:51:53.8191814Z ##[endgroup]
+2026-09-12T23:51:53.8193286Z ##[group]Disabling automatic garbage collection
+2026-09-12T23:51:53.8194748Z [command]"C:\Program Files\Git\bin\git.exe" config --local gc.auto 0
+2026-09-12T23:51:53.8197656Z ##[endgroup]
+2026-09-12T23:51:53.8198977Z ##[group]Setting up auth
+2026-09-12T23:51:53.8200591Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-09-12T23:51:53.8205478Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-09-12T23:51:54.3635247Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-12T23:51:54.3826475Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-09-12T23:51:54.9411461Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-12T23:51:54.9633468Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-09-12T23:51:55.4875918Z [command]"C:\Program Files\Git\bin\git.exe" config --local http.https://github.com/.extraheader "AUTHORIZATION: basic ***"
+2026-09-12T23:51:55.5106839Z ##[endgroup]
+2026-09-12T23:51:55.5116654Z ##[group]Fetching the repository
+2026-09-12T23:51:55.5118844Z [command]"C:\Program Files\Git\bin\git.exe" -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +8e9179b22fa12b2093f918b04d7f654bed3b06b3:refs/remotes/pull/2/merge
+2026-09-12T23:51:58.7402139Z From https://github.com/yegors/fuckMail
+2026-09-12T23:51:58.7403480Z  * [new ref]         8e9179b22fa12b2093f918b04d7f654bed3b06b3 -> pull/2/merge
+2026-09-12T23:51:58.7453701Z ##[endgroup]
+2026-09-12T23:51:58.7477529Z ##[group]Determining the checkout info
+2026-09-12T23:51:58.7478353Z ##[endgroup]
+2026-09-12T23:51:58.7493163Z [command]"C:\Program Files\Git\bin\git.exe" sparse-checkout disable
+2026-09-12T23:51:58.7855850Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all extensions.worktreeConfig
+2026-09-12T23:51:58.8118368Z ##[group]Checking out the ref
+2026-09-12T23:51:58.8119312Z [command]"C:\Program Files\Git\bin\git.exe" checkout --progress --force refs/remotes/pull/2/merge
+2026-09-12T23:51:59.2120347Z Note: switching to 'refs/remotes/pull/2/merge'.
+2026-09-12T23:51:59.2121523Z 
+2026-09-12T23:51:59.2121826Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-09-12T23:51:59.2122414Z changes and commit them, and you can discard any commits you make in this
+2026-09-12T23:51:59.2122929Z state without impacting any branches by switching back to a branch.
+2026-09-12T23:51:59.2123159Z 
+2026-09-12T23:51:59.2123349Z If you want to create a new branch to retain commits you create, you may
+2026-09-12T23:51:59.2123988Z do so (now or later) by using -c with the switch command. Example:
+2026-09-12T23:51:59.2124381Z 
+2026-09-12T23:51:59.2125011Z   git switch -c <new-branch-name>
+2026-09-12T23:51:59.2126322Z 
+2026-09-12T23:51:59.2126501Z Or undo this operation with:
+2026-09-12T23:51:59.2126785Z 
+2026-09-12T23:51:59.2127005Z   git switch -
+2026-09-12T23:51:59.2127175Z 
+2026-09-12T23:51:59.2127531Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-09-12T23:51:59.2127955Z 
+2026-09-12T23:51:59.2128456Z HEAD is now at 8e9179b Merge cb6489b6b77210853dc0759e11cbf486ab638aa3 into 1b2b58f7e8a731b5cee900320ba1a6bb448831bd
+2026-09-12T23:51:59.2280186Z ##[endgroup]
+2026-09-12T23:51:59.2653585Z [command]"C:\Program Files\Git\bin\git.exe" log -1 --format=%H
+2026-09-12T23:51:59.2836958Z 8e9179b22fa12b2093f918b04d7f654bed3b06b3
+2026-09-12T23:51:59.3221604Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-12T23:51:59.3223420Z ##[group]Run actions/setup-python@v5
+2026-09-12T23:51:59.3223729Z with:
+2026-09-12T23:51:59.3223985Z   python-version: 3.11
+2026-09-12T23:51:59.3224258Z   check-latest: false
+2026-09-12T23:51:59.3226263Z   token: ***
+2026-09-12T23:51:59.3226516Z   update-environment: true
+2026-09-12T23:51:59.3226775Z   allow-prereleases: false
+2026-09-12T23:51:59.3227040Z   freethreaded: false
+2026-09-12T23:51:59.3227315Z ##[endgroup]
+2026-09-12T23:51:59.4646128Z ##[group]Installed versions
+2026-09-12T23:51:59.5110415Z (node:3272) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-12T23:51:59.5122202Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-12T23:51:59.5143361Z Successfully set up CPython (3.11.9)
+2026-09-12T23:51:59.5146743Z ##[endgroup]
+2026-09-12T23:51:59.6397198Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-12T23:51:59.6399249Z ##[group]Run actions/cache/restore@v4
+2026-09-12T23:51:59.6399593Z with:
+2026-09-12T23:51:59.6399851Z   path: .tools
+
+2026-09-12T23:51:59.6400286Z   key: native-tools-Windows-X64-791d5027d1b82f8f157efec76e8839858e2a0257f87bbc10bf37ac41273f584f
+2026-09-12T23:51:59.6400763Z   enableCrossOsArchive: false
+2026-09-12T23:51:59.6401030Z   fail-on-cache-miss: false
+2026-09-12T23:51:59.6401309Z   lookup-only: false
+2026-09-12T23:51:59.6401542Z env:
+2026-09-12T23:51:59.6401834Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-12T23:51:59.6402374Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.11.9\x64/lib/pkgconfig
+2026-09-12T23:51:59.6402799Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-12T23:51:59.6403226Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-12T23:51:59.6403629Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-12T23:51:59.6403957Z ##[endgroup]
+2026-09-12T23:51:59.7553248Z (node:3044) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-12T23:51:59.7554431Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-12T23:52:00.0524197Z (node:3044) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-09-12T23:52:00.0526536Z Cache hit for: native-tools-Windows-X64-791d5027d1b82f8f157efec76e8839858e2a0257f87bbc10bf37ac41273f584f
+2026-09-12T23:52:01.1836504Z Received 130023424 of 423890871 (30.7%), 123.8 MBs/sec
+2026-09-12T23:52:02.1914267Z Received 146800640 of 423890871 (34.6%), 69.8 MBs/sec
+2026-09-12T23:52:03.8462622Z Received 268435456 of 423890871 (63.3%), 70.0 MBs/sec
+2026-09-12T23:52:05.5115011Z Received 402653184 of 423890871 (95.0%), 72.0 MBs/sec
+2026-09-12T23:52:05.7374205Z Received 423890871 of 423890871 (100.0%), 72.8 MBs/sec
+2026-09-12T23:52:05.7379227Z Cache Size: ~404 MB (423890871 B)
+2026-09-12T23:52:05.7542549Z [command]"C:\Program Files\Git\usr\bin\tar.exe" -xf D:/a/_temp/a867f1a0-81cd-4550-a3ef-44e19e911b00/cache.tzst -P -C D:/a/fuckMail/fuckMail --force-local --use-compress-program "zstd -d"
+2026-09-12T23:52:21.6207543Z Cache restored successfully
+2026-09-12T23:52:21.6213118Z Cache restored from key: native-tools-Windows-X64-791d5027d1b82f8f157efec76e8839858e2a0257f87bbc10bf37ac41273f584f
+2026-09-12T23:52:22.1767496Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-12T23:52:22.1768765Z ##[group]Run actions/cache/restore@v4
+2026-09-12T23:52:22.1769061Z with:
+2026-09-12T23:52:22.1769296Z   path: target
+2026-09-12T23:52:22.1769874Z   key: rust-build-Windows-X64-55e846e25564ed0f1050ce71faa72dd5df801e366d1921f0097c3f772d618eec-8e9179b22fa12b2093f918b04d7f654bed3b06b3
+2026-09-12T23:52:22.1770642Z   restore-keys: rust-build-Windows-X64-55e846e25564ed0f1050ce71faa72dd5df801e366d1921f0097c3f772d618eec-
+
+2026-09-12T23:52:22.1771164Z   enableCrossOsArchive: false
+2026-09-12T23:52:22.1771522Z   fail-on-cache-miss: false
+2026-09-12T23:52:22.1771788Z   lookup-only: false
+2026-09-12T23:52:22.1772098Z env:
+2026-09-12T23:52:22.1772577Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-12T23:52:22.1773047Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.11.9\x64/lib/pkgconfig
+2026-09-12T23:52:22.1773529Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-12T23:52:22.1774006Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-12T23:52:22.1774409Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-12T23:52:22.1774793Z ##[endgroup]
+2026-09-12T23:52:22.3026482Z (node:3724) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-12T23:52:22.3027458Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-12T23:52:22.4893891Z Cache not found for input keys: rust-build-Windows-X64-55e846e25564ed0f1050ce71faa72dd5df801e366d1921f0097c3f772d618eec-8e9179b22fa12b2093f918b04d7f654bed3b06b3, rust-build-Windows-X64-55e846e25564ed0f1050ce71faa72dd5df801e366d1921f0097c3f772d618eec-
+2026-09-12T23:52:22.5087142Z ##[group]Run ./scripts/dev.ps1 bootstrap
+2026-09-12T23:52:22.5087755Z [36;1m./scripts/dev.ps1 bootstrap[0m
+2026-09-12T23:52:22.5171706Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-09-12T23:52:22.5172120Z env:
+2026-09-12T23:52:22.5172470Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-12T23:52:22.5172968Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.11.9\x64/lib/pkgconfig
+2026-09-12T23:52:22.5173428Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-12T23:52:22.5173872Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-12T23:52:22.5174405Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-12T23:52:22.5174822Z ##[endgroup]
+2026-09-12T23:52:28.0697524Z + C:\Users\runneradmin\.cargo\bin\rustc.EXE --version
+2026-09-12T23:52:28.6088423Z info: syncing channel updates for 1.88.0-x86_64-pc-windows-msvc
+2026-09-12T23:52:29.3696330Z info: latest update on 2025-06-26 for version 1.88.0 (6b00bc388 2025-06-23)
+2026-09-12T23:52:29.3745726Z info: downloading 5 components
+2026-09-12T23:52:37.4664146Z warn: the missing active toolchain `1.88.0-x86_64-pc-windows-msvc` has been auto-installed
+2026-09-12T23:52:37.4665063Z warn: this might cause rustup commands to take longer time to finish than expected
+2026-09-12T23:52:37.4666574Z info: you may opt out with `RUSTUP_AUTO_INSTALL=0` or `rustup set auto-install disable`
+2026-09-12T23:52:38.7957990Z Host: Windows-10-10.0.20348-SP0 AMD64
+2026-09-12T23:52:38.7958878Z Qt kit: D:\a\fuckMail\fuckMail\.tools\Qt\6.11.2\msvc2022_64
+2026-09-12T23:52:38.7959552Z Source: D:\a\fuckMail\fuckMail
+2026-09-12T23:52:38.7960101Z + "C:\Program Files\Git\bin\git.EXE" --version
+2026-09-12T23:52:38.8332525Z git version 2.55.0.windows.5 at C:\Program Files\Git\bin\git.EXE
+2026-09-12T23:52:38.8333605Z + C:\Users\runneradmin\.cargo\bin\rustc.EXE --version
+2026-09-12T23:52:38.9120096Z rustc 1.88.0 (6b00bc388 2025-06-23) at C:\Users\runneradmin\.cargo\bin\rustc.EXE
+2026-09-12T23:52:38.9121156Z + C:\Users\runneradmin\.cargo\bin\cargo.EXE --version
+2026-09-12T23:52:39.9981443Z cargo 1.88.0 (873a06493 2025-05-10) at C:\Users\runneradmin\.cargo\bin\cargo.EXE
+2026-09-12T23:52:39.9994344Z + D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\cmake.EXE --version
+2026-09-12T23:52:40.2260947Z cmake version 3.31.6 at D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\cmake.EXE
+2026-09-12T23:52:40.2261949Z + D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\ninja.EXE --version
+2026-09-12T23:52:40.2331137Z 1.11.1.git.kitware.jobserver-1 at D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\ninja.EXE
+2026-09-12T23:52:40.2332378Z + D:\a\fuckMail\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE --qt-version
+2026-09-12T23:52:40.2662785Z 6.11.2 at D:\a\fuckMail\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE
+2026-09-12T23:52:40.2664330Z Native C++ compiler: C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\cl.exe
+2026-09-12T23:52:40.3200482Z ##[group]Run ./scripts/dev.ps1 test --preset release
+2026-09-12T23:52:40.3201125Z [36;1m./scripts/dev.ps1 test --preset release[0m
+2026-09-12T23:52:40.3225804Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-09-12T23:52:40.3226208Z env:
+2026-09-12T23:52:40.3226522Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-12T23:52:40.3226946Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.11.9\x64/lib/pkgconfig
+2026-09-12T23:52:40.3227419Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-12T23:52:40.3227798Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-12T23:52:40.3228215Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-12T23:52:40.3228544Z ##[endgroup]
+2026-09-12T23:52:42.2617355Z Host: Windows-10-10.0.20348-SP0 AMD64
+2026-09-12T23:52:42.2617983Z Qt kit: D:\a\fuckMail\fuckMail\.tools\Qt\6.11.2\msvc2022_64
+2026-09-12T23:52:42.2618725Z Source: D:\a\fuckMail\fuckMail
+2026-09-12T23:52:42.2619259Z + "C:\Program Files\Git\bin\git.EXE" --version
+2026-09-12T23:52:42.2619846Z git version 2.55.0.windows.5 at C:\Program Files\Git\bin\git.EXE
+2026-09-12T23:52:42.2620474Z + C:\Users\runneradmin\.cargo\bin\rustc.EXE --version
+2026-09-12T23:52:42.2621121Z rustc 1.88.0 (6b00bc388 2025-06-23) at C:\Users\runneradmin\.cargo\bin\rustc.EXE
+2026-09-12T23:52:42.2621758Z + C:\Users\runneradmin\.cargo\bin\cargo.EXE --version
+2026-09-12T23:52:43.2568064Z cargo 1.88.0 (873a06493 2025-05-10) at C:\Users\runneradmin\.cargo\bin\cargo.EXE
+2026-09-12T23:52:43.2568908Z + D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\cmake.EXE --version
+2026-09-12T23:52:43.2569802Z cmake version 3.31.6 at D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\cmake.EXE
+2026-09-12T23:52:43.2570645Z + D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\ninja.EXE --version
+2026-09-12T23:52:43.2571422Z 1.11.1.git.kitware.jobserver-1 at D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\ninja.EXE
+2026-09-12T23:52:43.2572348Z + D:\a\fuckMail\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE --qt-version
+2026-09-12T23:52:43.2573112Z 6.11.2 at D:\a\fuckMail\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE
+2026-09-12T23:52:43.2574060Z Native C++ compiler: C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\cl.exe
+2026-09-12T23:52:43.2575845Z + D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\cmake.exe --preset release
+2026-09-12T23:52:43.2576512Z Preset CMake variables:
+2026-09-12T23:52:43.2576961Z 
+2026-09-12T23:52:43.2577289Z   BUILD_TESTING:BOOL="TRUE"
+2026-09-12T23:52:43.2577738Z   CMAKE_BUILD_TYPE="Release"
+2026-09-12T23:52:43.2578309Z   CMAKE_EXPORT_COMPILE_COMMANDS:BOOL="TRUE"
+2026-09-12T23:52:43.2578927Z   CMAKE_PREFIX_PATH="D:\a\fuckMail\fuckMail\.tools\Qt\6.11.2\msvc2022_64"
+2026-09-12T23:52:43.2579361Z 
+2026-09-12T23:52:48.6785339Z -- The CXX compiler identification is MSVC 19.44.35228.0
+2026-09-12T23:52:48.7128036Z -- Detecting CXX compiler ABI info
+2026-09-12T23:52:50.3072098Z -- Detecting CXX compiler ABI info - done
+2026-09-12T23:52:50.3196712Z -- Check for working CXX compiler: C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe - skipped
+2026-09-12T23:52:50.3200762Z -- Detecting CXX compile features
+2026-09-12T23:52:50.3211726Z -- Detecting CXX compile features - done
+2026-09-12T23:52:50.3527682Z -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+2026-09-12T23:52:50.9772802Z -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Failed
+2026-09-12T23:52:50.9773885Z -- Looking for pthread_create in pthreads
+2026-09-12T23:52:51.1403255Z -- Looking for pthread_create in pthreads - not found
+2026-09-12T23:52:51.1404255Z -- Looking for pthread_create in pthread
+2026-09-12T23:52:51.2451514Z -- Looking for pthread_create in pthread - not found
+2026-09-12T23:52:51.2461531Z -- Found Threads: TRUE
+2026-09-12T23:52:51.2586716Z -- Performing Test HAVE_STDATOMIC
+2026-09-12T23:52:52.1339179Z -- Performing Test HAVE_STDATOMIC - Success
+2026-09-12T23:52:52.1349531Z -- Found WrapAtomic: TRUE
+2026-09-12T23:52:53.0666393Z -- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+2026-09-12T23:52:53.7041534Z -- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+2026-09-12T23:52:54.0706274Z -- Configuring done (11.4s)
+2026-09-12T23:52:54.2647874Z -- Generating done (0.2s)
+2026-09-12T23:52:54.2661453Z -- Build files have been written to: D:/a/fuckMail/fuckMail/build/release
+2026-09-12T23:52:54.2990655Z + D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\cmake.exe --build --preset release --parallel
+2026-09-12T23:52:54.5634077Z     Updating crates.io index
+2026-09-12T23:52:56.8954990Z  Downloading crates ...
+2026-09-12T23:52:57.0775685Z   Downloaded ahash v0.8.12
+2026-09-12T23:52:57.1681845Z   Downloaded precomputed-hash v0.1.1
+2026-09-12T23:52:57.1944174Z   Downloaded rand_core v0.6.4
+2026-09-12T23:52:57.3277121Z   Downloaded zerofrom-derive v0.1.7
+2026-09-12T23:52:57.4354528Z   Downloaded zmij v1.0.23
+2026-09-12T23:52:57.5539564Z   Downloaded yoke v0.8.3
+2026-09-12T23:52:57.5959773Z   Downloaded tendril v0.5.1
+2026-09-12T23:52:57.6573764Z   Downloaded unicode-ident v1.0.24
+2026-09-12T23:52:57.7180570Z   Downloaded regex v1.13.1
+2026-09-12T23:52:57.9306811Z   Downloaded regex-syntax v0.8.11
+2026-09-12T23:52:57.9308816Z   Downloaded icu_normalizer v2.3.0
+2026-09-12T23:52:57.9323833Z   Downloaded zerotrie v0.2.5
+2026-09-12T23:52:57.9684556Z   Downloaded url v2.5.8
+2026-09-12T23:52:57.9685650Z   Downloaded typenum v1.20.1
+2026-09-12T23:52:58.1195634Z   Downloaded zerovec v0.11.8
+2026-09-12T23:52:58.6360031Z   Downloaded syn v2.0.119
+2026-09-12T23:52:58.6362524Z   Downloaded syn v3.0.5
+2026-09-12T23:52:58.9690768Z   Downloaded regex-automata v0.4.18
+2026-09-12T23:52:59.1064888Z   Downloaded mail-parser v0.11.9
+2026-09-12T23:53:01.1929579Z   Downloaded string_cache_codegen v0.6.1
+2026-09-12T23:53:02.2123792Z   Downloaded vcpkg v0.2.15
+2026-09-12T23:53:03.2995326Z   Downloaded smallvec v1.16.1
+2026-09-12T23:53:03.3270057Z   Downloaded string_cache v0.9.0
+2026-09-12T23:53:03.5090363Z   Downloaded zerocopy v0.8.57
+2026-09-12T23:53:03.7108936Z   Downloaded serde_path_to_error v0.1.20
+2026-09-12T23:53:03.8760851Z   Downloaded serde_derive v1.0.229
+2026-09-12T23:53:04.0018716Z   Downloaded serde_core v1.0.229
+2026-09-12T23:53:04.0889029Z   Downloaded socket2 v0.6.5
+2026-09-12T23:53:04.1298667Z   Downloaded sha2 v0.10.9
+2026-09-12T23:53:04.2495380Z   Downloaded shlex v2.0.1
+2026-09-12T23:53:04.2827693Z   Downloaded strsim v0.11.1
+2026-09-12T23:53:08.2814044Z   Downloaded stable_deref_trait v1.2.1
+2026-09-12T23:53:08.2827808Z   Downloaded siphasher v1.0.3
+2026-09-12T23:53:08.2828389Z   Downloaded scopeguard v1.2.0
+2026-09-12T23:53:08.2829010Z   Downloaded chrono-tz v0.10.4
+2026-09-12T23:53:08.2829499Z   Downloaded lettre v0.11.23
+2026-09-12T23:53:08.2829956Z   Downloaded hashbrown v0.17.1
+2026-09-12T23:53:08.2830464Z   Downloaded rusqlite v0.32.1
+2026-09-12T23:53:08.2831044Z   Downloaded nom v8.0.0
+2026-09-12T23:53:08.2831564Z   Downloaded hashbrown v0.14.5
+2026-09-12T23:53:08.2832116Z   Downloaded mio v1.2.3
+2026-09-12T23:53:08.2832704Z   Downloaded memchr v2.8.3
+2026-09-12T23:53:08.2833300Z   Downloaded http v1.5.0
+2026-09-12T23:53:08.2833792Z   Downloaded windows_x86_64_msvc v0.52.6
+2026-09-12T23:53:08.2834317Z   Downloaded html5ever v0.39.0
+2026-09-12T23:53:08.2834758Z   Downloaded hashify v0.2.9
+2026-09-12T23:53:08.2835309Z   Downloaded writeable v0.6.4
+2026-09-12T23:53:08.2835764Z   Downloaded tinystr v0.8.4
+2026-09-12T23:53:08.2836355Z   Downloaded thiserror-impl v1.0.69
+2026-09-12T23:53:08.2836949Z   Downloaded thiserror v2.0.20
+2026-09-12T23:53:08.2837485Z   Downloaded thiserror v1.0.69
+2026-09-12T23:53:08.2838093Z   Downloaded synstructure v0.13.2
+2026-09-12T23:53:08.2838653Z   Downloaded rand v0.8.8
+2026-09-12T23:53:08.2839188Z   Downloaded oauth2 v5.0.0
+2026-09-12T23:53:08.2839737Z   Downloaded indexmap v2.14.2
+2026-09-12T23:53:08.2841410Z   Downloaded idna v1.1.0
+2026-09-12T23:53:08.2842310Z   Downloaded tokio v1.53.1
+2026-09-12T23:53:09.3307000Z   Downloaded icu_properties_data v2.3.0
+2026-09-12T23:53:09.9670398Z   Downloaded icu_properties v2.3.0
+2026-09-12T23:53:09.9851426Z   Downloaded icu_normalizer_data v2.3.0
+2026-09-12T23:53:10.1233828Z   Downloaded icu_collections v2.3.0
+2026-09-12T23:53:10.3664763Z   Downloaded clap_builder v4.6.6
+2026-09-12T23:53:10.7335218Z   Downloaded chrono v0.4.45
+2026-09-12T23:53:11.0735270Z   Downloaded base64 v0.23.1
+2026-09-12T23:53:11.1839980Z   Downloaded winapi v0.3.9
+2026-09-12T23:53:11.3734122Z   Downloaded base64 v0.22.1
+2026-09-12T23:53:11.4701097Z   Downloaded zerovec-derive v0.11.6
+2026-09-12T23:53:11.5586572Z   Downloaded web_atoms v0.2.6
+2026-09-12T23:53:11.5599288Z   Downloaded version_check v0.9.5
+2026-09-12T23:53:11.5600972Z   Downloaded tokio-macros v2.7.2
+2026-09-12T23:53:11.5602975Z   Downloaded libsqlite3-sys v0.30.1
+2026-09-12T23:53:11.7217721Z   Downloaded thiserror-impl v2.0.20
+2026-09-12T23:53:11.7433325Z   Downloaded serde v1.0.229
+2026-09-12T23:53:11.7572434Z   Downloaded log v0.4.34
+2026-09-12T23:53:11.7575787Z   Downloaded serde_json v1.0.151
+2026-09-12T23:53:11.7657964Z   Downloaded icu_locale_core v2.3.0
+2026-09-12T23:53:11.7851150Z   Downloaded find-msvc-tools v0.1.12
+2026-09-12T23:53:12.1204728Z   Downloaded cssparser v0.37.0
+2026-09-12T23:53:12.1381200Z   Downloaded cc v1.4.5
+2026-09-12T23:53:12.2179356Z   Downloaded bytes v1.12.1
+2026-09-12T23:53:12.3678963Z   Downloaded bitflags v2.13.2
+2026-09-12T23:53:12.4568322Z   Downloaded aho-corasick v1.1.5
+2026-09-12T23:53:12.5179857Z   Downloaded zerofrom v0.1.8
+2026-09-12T23:53:12.6452514Z   Downloaded yoke-derive v0.8.2
+2026-09-12T23:53:12.7107038Z   Downloaded windows-targets v0.52.6
+2026-09-12T23:53:12.7501463Z   Downloaded windows-link v0.2.1
+2026-09-12T23:53:12.8142727Z   Downloaded utf8parse v0.2.2
+2026-09-12T23:53:12.8556981Z   Downloaded utf8_iter v1.0.4
+2026-09-12T23:53:12.9578807Z   Downloaded proc-macro2 v1.0.107
+2026-09-12T23:53:12.9846560Z   Downloaded parking_lot v0.12.5
+2026-09-12T23:53:12.9994260Z   Downloaded once_cell v1.21.4
+2026-09-12T23:53:13.0720108Z   Downloaded num-traits v0.2.19
+2026-09-12T23:53:13.1320995Z   Downloaded litemap v0.8.3
+2026-09-12T23:53:13.1322251Z   Downloaded icu_provider v2.3.1
+2026-09-12T23:53:13.1322823Z   Downloaded getrandom v0.2.17
+2026-09-12T23:53:13.1323377Z   Downloaded fastrand v2.5.0
+2026-09-12T23:53:13.1323991Z   Downloaded fallible-iterator v0.3.0
+2026-09-12T23:53:13.1324589Z   Downloaded email_address v0.2.9
+2026-09-12T23:53:13.1325165Z   Downloaded email-encoding v0.4.2
+2026-09-12T23:53:13.1325775Z   Downloaded digest v0.10.7
+2026-09-12T23:53:14.1353063Z   Downloaded clap_derive v4.6.4
+2026-09-12T23:53:14.2537766Z   Downloaded clap v4.6.6
+2026-09-12T23:53:14.8735688Z   Downloaded ammonia v4.1.4
+2026-09-12T23:53:14.9383795Z   Downloaded rand_chacha v0.3.1
+2026-09-12T23:53:14.9385628Z   Downloaded quoted_printable v0.5.2
+2026-09-12T23:53:14.9438697Z   Downloaded quote v1.0.47
+2026-09-12T23:53:14.9440443Z   Downloaded ppv-lite86 v0.2.21
+2026-09-12T23:53:14.9442032Z   Downloaded pkg-config v0.3.34
+2026-09-12T23:53:14.9442770Z   Downloaded pin-project-lite v0.2.17
+2026-09-12T23:53:14.9443457Z   Downloaded phf v0.13.1
+2026-09-12T23:53:14.9444207Z   Downloaded phf v0.12.1
+2026-09-12T23:53:14.9444822Z   Downloaded markup5ever v0.39.0
+2026-09-12T23:53:14.9445451Z   Downloaded maplit v1.0.2
+2026-09-12T23:53:14.9446109Z   Downloaded lock_api v0.4.14
+2026-09-12T23:53:14.9446637Z   Downloaded itoa v1.0.18
+2026-09-12T23:53:14.9447244Z   Downloaded heck v0.5.0
+2026-09-12T23:53:14.9447819Z   Downloaded hashlink v0.9.1
+2026-09-12T23:53:14.9448449Z   Downloaded fs2 v0.4.3
+2026-09-12T23:53:14.9449085Z   Downloaded form_urlencoded v1.2.2
+2026-09-12T23:53:14.9449735Z   Downloaded fallible-streaming-iterator v0.1.9
+2026-09-12T23:53:14.9452042Z   Downloaded equivalent v1.0.2
+2026-09-12T23:53:14.9453429Z   Downloaded dtoa-short v0.3.5
+2026-09-12T23:53:14.9778293Z   Downloaded dtoa v1.0.11
+2026-09-12T23:53:15.3040085Z   Downloaded displaydoc v0.2.7
+2026-09-12T23:53:15.5073390Z   Downloaded crypto-common v0.1.7
+2026-09-12T23:53:15.6068857Z   Downloaded cpufeatures v0.2.17
+2026-09-12T23:53:15.8398252Z   Downloaded colorchoice v1.0.5
+2026-09-12T23:53:15.9291693Z   Downloaded clap_lex v1.1.0
+2026-09-12T23:53:16.1008160Z   Downloaded cfg-if v1.0.4
+2026-09-12T23:53:16.1348890Z   Downloaded block-buffer v0.10.4
+2026-09-12T23:53:16.1353981Z   Downloaded autocfg v1.5.1
+2026-09-12T23:53:16.1354836Z   Downloaded anstyle-wincon v3.0.11
+2026-09-12T23:53:16.1355402Z   Downloaded anstyle-query v1.1.5
+2026-09-12T23:53:16.1356008Z   Downloaded anstyle-parse v1.0.0
+2026-09-12T23:53:16.1357268Z   Downloaded anstyle v1.0.14
+2026-09-12T23:53:16.1357835Z   Downloaded anstream v1.0.0
+2026-09-12T23:53:16.1358411Z   Downloaded potential_utf v0.1.6
+2026-09-12T23:53:16.1360671Z   Downloaded phf_shared v0.13.1
+2026-09-12T23:53:16.1361361Z   Downloaded phf_shared v0.12.1
+2026-09-12T23:53:16.1361960Z   Downloaded phf_generator v0.13.1
+2026-09-12T23:53:16.1362636Z   Downloaded phf_codegen v0.13.1
+2026-09-12T23:53:16.1363214Z   Downloaded windows-sys v0.61.2
+2026-09-12T23:53:16.6715606Z   Downloaded percent-encoding v2.3.2
+2026-09-12T23:53:16.7676854Z   Downloaded windows-sys v0.59.0
+2026-09-12T23:53:21.5130311Z   Downloaded parking_lot_core v0.9.12
+2026-09-12T23:53:21.5717486Z   Downloaded once_cell_polyfill v1.70.2
+2026-09-12T23:53:21.5838630Z   Downloaded new_debug_unreachable v1.0.6
+2026-09-12T23:53:21.5869068Z   Downloaded mime v0.3.17
+2026-09-12T23:53:21.8099148Z   Downloaded is_terminal_polyfill v1.70.2
+2026-09-12T23:53:21.9685965Z   Downloaded idna_adapter v1.2.2
+2026-09-12T23:53:22.0216694Z   Downloaded httpdate v1.0.3
+2026-09-12T23:53:22.0612449Z   Downloaded generic-array v0.14.7
+2026-09-12T23:53:22.2832028Z    Compiling proc-macro2 v1.0.107
+2026-09-12T23:53:22.2863363Z    Compiling unicode-ident v1.0.24
+2026-09-12T23:53:22.6121477Z    Compiling quote v1.0.47
+2026-09-12T23:53:27.3156009Z    Compiling windows-link v0.2.1
+2026-09-12T23:53:27.3156639Z    Compiling cfg-if v1.0.4
+2026-09-12T23:53:27.3157050Z    Compiling smallvec v1.16.1
+2026-09-12T23:53:27.3157453Z    Compiling syn v3.0.5
+2026-09-12T23:53:27.3158211Z    Compiling syn v2.0.119
+2026-09-12T23:53:32.1445932Z    Compiling synstructure v0.13.2
+2026-09-12T23:53:32.6539014Z    Compiling version_check v0.9.5
+2026-09-12T23:53:32.8824239Z    Compiling zerofrom-derive v0.1.7
+2026-09-12T23:53:33.0458766Z    Compiling yoke-derive v0.8.2
+2026-09-12T23:53:38.6412463Z    Compiling stable_deref_trait v1.2.1
+2026-09-12T23:53:38.6413081Z    Compiling zerofrom v0.1.8
+2026-09-12T23:53:38.6413593Z    Compiling serde_core v1.0.229
+2026-09-12T23:53:38.6414098Z    Compiling yoke v0.8.3
+2026-09-12T23:53:38.6414538Z    Compiling zerovec-derive v0.11.6
+2026-09-12T23:53:38.6415036Z    Compiling zerovec v0.11.8
+2026-09-12T23:53:38.6415472Z    Compiling displaydoc v0.2.7
+2026-09-12T23:53:38.6416018Z    Compiling memchr v2.8.3
+2026-09-12T23:53:38.6416412Z    Compiling serde v1.0.229
+2026-09-12T23:53:38.6416855Z    Compiling serde_derive v1.0.229
+2026-09-12T23:53:43.1372731Z    Compiling siphasher v1.0.3
+2026-09-12T23:53:43.1373280Z    Compiling zerocopy v0.8.57
+2026-09-12T23:53:43.1373766Z    Compiling tinystr v0.8.4
+2026-09-12T23:53:43.1374211Z    Compiling litemap v0.8.3
+2026-09-12T23:53:43.1374660Z    Compiling itoa v1.0.18
+2026-09-12T23:53:43.1375164Z    Compiling parking_lot_core v0.9.12
+2026-09-12T23:53:43.1375653Z    Compiling writeable v0.6.4
+2026-09-12T23:53:43.1376148Z    Compiling icu_locale_core v2.3.0
+2026-09-12T23:53:43.1625972Z    Compiling zerotrie v0.2.5
+2026-09-12T23:53:43.5784405Z    Compiling potential_utf v0.1.6
+2026-09-12T23:53:43.7142522Z    Compiling generic-array v0.14.7
+2026-09-12T23:53:43.9225790Z    Compiling utf8_iter v1.0.4
+2026-09-12T23:53:44.0508798Z    Compiling icu_normalizer_data v2.3.0
+2026-09-12T23:53:44.4086961Z    Compiling scopeguard v1.2.0
+2026-09-12T23:53:44.4773419Z    Compiling icu_properties_data v2.3.0
+2026-09-12T23:53:44.6550486Z    Compiling lock_api v0.4.14
+2026-09-12T23:53:44.8920922Z    Compiling phf_shared v0.13.1
+2026-09-12T23:53:45.1595685Z    Compiling icu_collections v2.3.0
+2026-09-12T23:53:45.9277289Z    Compiling icu_provider v2.3.1
+2026-09-12T23:53:46.8782059Z    Compiling fastrand v2.5.0
+2026-09-12T23:53:47.0136564Z    Compiling typenum v1.20.1
+2026-09-12T23:53:47.5127907Z    Compiling phf_generator v0.13.1
+2026-09-12T23:53:47.6985398Z    Compiling parking_lot v0.12.5
+2026-09-12T23:53:48.6007580Z    Compiling windows-sys v0.61.2
+2026-09-12T23:53:48.6788648Z    Compiling autocfg v1.5.1
+2026-09-12T23:53:49.0810148Z    Compiling zmij v1.0.23
+2026-09-12T23:53:49.3319098Z    Compiling num-traits v0.2.19
+2026-09-12T23:53:49.4940711Z    Compiling icu_properties v2.3.0
+2026-09-12T23:53:51.3202018Z    Compiling icu_normalizer v2.3.0
+2026-09-12T23:53:52.1316273Z    Compiling serde_json v1.0.151
+2026-09-12T23:53:52.3195085Z    Compiling idna_adapter v1.2.2
+2026-09-12T23:53:52.5145302Z    Compiling crypto-common v0.1.7
+2026-09-12T23:53:52.6075303Z    Compiling block-buffer v0.10.4
+2026-09-12T23:53:52.7189940Z    Compiling phf_codegen v0.13.1
+2026-09-12T23:53:52.7964626Z    Compiling string_cache_codegen v0.6.1
+2026-09-12T23:53:53.1406958Z    Compiling getrandom v0.2.17
+2026-09-12T23:53:53.2766868Z    Compiling new_debug_unreachable v1.0.6
+2026-09-12T23:53:53.3065876Z    Compiling web_atoms v0.2.6
+2026-09-12T23:53:53.3205120Z    Compiling rand_core v0.6.4
+2026-09-12T23:53:53.5329887Z    Compiling digest v0.10.7
+2026-09-12T23:53:54.7295388Z    Compiling idna v1.1.0
+2026-09-12T23:53:55.9858879Z    Compiling ppv-lite86 v0.2.21
+2026-09-12T23:53:56.4123763Z    Compiling precomputed-hash v0.1.1
+2026-09-12T23:53:56.4658727Z    Compiling cpufeatures v0.2.17
+2026-09-12T23:53:56.5100760Z    Compiling bytes v1.12.1
+2026-09-12T23:53:56.7304390Z    Compiling percent-encoding v2.3.2
+2026-09-12T23:53:56.9437632Z    Compiling log v0.4.34
+2026-09-12T23:53:57.1366177Z    Compiling form_urlencoded v1.2.2
+2026-09-12T23:53:57.3497657Z    Compiling sha2 v0.10.9
+2026-09-12T23:53:57.4073331Z    Compiling string_cache v0.9.0
+2026-09-12T23:53:57.6649699Z    Compiling rand_chacha v0.3.1
+2026-09-12T23:53:58.4697746Z    Compiling chrono v0.4.45
+2026-09-12T23:53:58.9950327Z    Compiling phf v0.13.1
+2026-09-12T23:53:59.1562336Z    Compiling ahash v0.8.12
+2026-09-12T23:53:59.3313921Z    Compiling shlex v2.0.1
+2026-09-12T23:53:59.5025548Z    Compiling find-msvc-tools v0.1.12
+2026-09-12T23:54:04.4532053Z    Compiling windows_x86_64_msvc v0.52.6
+2026-09-12T23:54:04.4532719Z    Compiling cc v1.4.5
+2026-09-12T23:54:04.4533181Z    Compiling rand v0.8.8
+2026-09-12T23:54:04.4533670Z    Compiling url v2.5.8
+2026-09-12T23:54:04.4534124Z    Compiling tendril v0.5.1
+2026-09-12T23:54:04.4534673Z    Compiling phf_shared v0.12.1
+2026-09-12T23:54:04.4535181Z    Compiling aho-corasick v1.1.5
+2026-09-12T23:54:08.5938176Z    Compiling chrono-tz v0.10.4
+2026-09-12T23:54:08.5939033Z    Compiling once_cell_polyfill v1.70.2
+2026-09-12T23:54:08.5941348Z    Compiling dtoa v1.0.11
+2026-09-12T23:54:08.5942181Z    Compiling thiserror v1.0.69
+2026-09-12T23:54:08.5971871Z    Compiling equivalent v1.0.2
+2026-09-12T23:54:08.5990874Z    Compiling utf8parse v0.2.2
+2026-09-12T23:54:08.6126124Z    Compiling once_cell v1.21.4
+2026-09-12T23:54:08.6128287Z    Compiling pkg-config v0.3.34
+2026-09-12T23:54:08.6129395Z    Compiling regex-syntax v0.8.11
+2026-09-12T23:54:08.6130526Z    Compiling thiserror v2.0.20
+2026-09-12T23:54:08.9387414Z    Compiling hashbrown v0.17.1
+2026-09-12T23:54:13.7592877Z    Compiling vcpkg v0.2.15
+2026-09-12T23:54:18.0752904Z    Compiling anstyle v1.0.14
+2026-09-12T23:54:18.0753527Z    Compiling anstyle-wincon v3.0.11
+2026-09-12T23:54:18.0754012Z    Compiling libsqlite3-sys v0.30.1
+2026-09-12T23:54:18.0754510Z    Compiling indexmap v2.14.2
+2026-09-12T23:54:18.0755070Z    Compiling regex-automata v0.4.18
+2026-09-12T23:54:18.0756556Z    Compiling anstyle-parse v1.0.0
+2026-09-12T23:54:18.0757035Z    Compiling dtoa-short v0.3.5
+2026-09-12T23:54:18.0757458Z    Compiling phf v0.12.1
+2026-09-12T23:54:18.0757918Z    Compiling markup5ever v0.39.0
+2026-09-12T23:54:18.0758329Z    Compiling anstyle-query v1.1.5
+2026-09-12T23:54:18.0758734Z    Compiling thiserror-impl v1.0.69
+2026-09-12T23:54:18.0759163Z    Compiling thiserror-impl v2.0.20
+2026-09-12T23:54:18.0759667Z    Compiling is_terminal_polyfill v1.70.2
+2026-09-12T23:54:18.0760209Z    Compiling base64 v0.23.1
+2026-09-12T23:54:18.0760642Z    Compiling winapi v0.3.9
+2026-09-12T23:54:18.0761072Z    Compiling colorchoice v1.0.5
+2026-09-12T23:54:18.0761614Z    Compiling anstream v1.0.0
+2026-09-12T23:54:18.3796213Z    Compiling email-encoding v0.4.2
+2026-09-12T23:54:18.8874151Z    Compiling regex v1.13.1
+2026-09-12T23:54:19.9709882Z    Compiling windows-targets v0.52.6
+2026-09-12T23:54:20.0124656Z    Compiling html5ever v0.39.0
+2026-09-12T23:54:21.5219677Z    Compiling cssparser v0.37.0
+2026-09-12T23:54:22.6828676Z    Compiling hashbrown v0.14.5
+2026-09-12T23:54:28.4676606Z    Compiling hashify v0.2.9
+2026-09-12T23:54:38.9172957Z    Compiling http v1.5.0
+2026-09-12T23:54:42.7420122Z    Compiling socket2 v0.6.5
+2026-09-12T23:54:43.4663624Z    Compiling mio v1.2.3
+2026-09-12T23:54:48.0861159Z    Compiling serde_path_to_error v0.1.20
+2026-09-12T23:54:48.0861647Z    Compiling nom v8.0.0
+2026-09-12T23:54:52.8282602Z    Compiling tokio-macros v2.7.2
+2026-09-12T23:54:52.8283112Z    Compiling mime v0.3.17
+2026-09-12T23:54:52.8283576Z    Compiling httpdate v1.0.3
+2026-09-12T23:54:52.8284061Z    Compiling email_address v0.2.9
+2026-09-12T23:54:52.8284494Z    Compiling base64 v0.22.1
+2026-09-12T23:54:55.9081510Z    Compiling strsim v0.11.1
+2026-09-12T23:54:56.5893193Z    Compiling quoted_printable v0.5.2
+2026-09-12T23:54:56.6595717Z    Compiling maplit v1.0.2
+2026-09-12T23:54:56.9079813Z    Compiling pin-project-lite v0.2.17
+2026-09-12T23:54:56.9682587Z    Compiling heck v0.5.0
+2026-09-12T23:54:56.9732353Z    Compiling clap_lex v1.1.0
+2026-09-12T23:54:57.1760423Z    Compiling clap_derive v4.6.4
+2026-09-12T23:54:57.2948818Z    Compiling clap_builder v4.6.6
+2026-09-12T23:54:59.3139207Z    Compiling tokio v1.53.1
+2026-09-12T23:55:07.8733096Z    Compiling lettre v0.11.23
+2026-09-12T23:55:11.2111196Z    Compiling ammonia v4.1.4
+2026-09-12T23:55:11.6788176Z    Compiling oauth2 v5.0.0
+2026-09-12T23:55:15.9652007Z    Compiling rrule v0.14.0 (D:\a\fuckMail\fuckMail\crates\fm-calendar\vendor\rrule)
+2026-09-12T23:55:20.6898556Z    Compiling mail-parser v0.11.9
+2026-09-12T23:55:20.6899152Z    Compiling hashlink v0.9.1
+2026-09-12T23:55:20.6899612Z    Compiling windows-sys v0.59.0
+2026-09-12T23:55:22.7065284Z    Compiling bitflags v2.13.2
+2026-09-12T23:55:23.0295156Z    Compiling fallible-streaming-iterator v0.1.9
+2026-09-12T23:55:23.1620321Z    Compiling fallible-iterator v0.3.0
+2026-09-12T23:55:27.7940407Z    Compiling rusqlite v0.32.1
+2026-09-12T23:55:27.7940923Z    Compiling fs2 v0.4.3
+2026-09-12T23:55:27.7941515Z    Compiling fm-ipc v0.1.0 (D:\a\fuckMail\fuckMail\crates\fm-ipc)
+2026-09-12T23:55:27.7942235Z    Compiling fm-mail v0.1.0 (D:\a\fuckMail\fuckMail\crates\fm-mail)
+2026-09-12T23:55:27.7942900Z    Compiling fm-calendar v0.1.0 (D:\a\fuckMail\fuckMail\crates\fm-calendar)
+2026-09-12T23:55:27.7943647Z    Compiling fm-google v0.1.0 (D:\a\fuckMail\fuckMail\crates\fm-google)
+2026-09-12T23:55:29.2571398Z    Compiling clap v4.6.6
+2026-09-12T23:55:29.3130716Z    Compiling fm-assist v0.1.0 (D:\a\fuckMail\fuckMail\crates\fm-assist)
+2026-09-12T23:55:29.4963967Z    Compiling fm-cli v0.1.0 (D:\a\fuckMail\fuckMail\crates\fm-cli)
+2026-09-12T23:55:30.7975548Z    Compiling fm-core v0.1.0 (D:\a\fuckMail\fuckMail\crates\fm-core)
+2026-09-12T23:55:51.4977002Z    Compiling fm-engine v0.1.0 (D:\a\fuckMail\fuckMail\crates\fm-engine)
+2026-09-12T23:56:39.9651588Z     Finished `release` profile [optimized] target(s) in 3m 45s
+2026-09-12T23:56:45.8771791Z [0/99] Build the shared Rust engine and CLI
+2026-09-12T23:56:45.8773484Z [23/99] Linking CXX executable gui-calendar-layout-test.exe
+2026-09-12T23:56:45.8774130Z [25/99] Automatic MOC and UIC for target fuckmail-gui
+2026-09-12T23:56:45.8774763Z [26/99] Generating .rcc/qmlcache/fuckmail-gui_qmlcache_loader.cpp
+2026-09-12T23:56:45.8775432Z [27/99] Running rcc for resource fuckmail-gui_raw_qml_0
+2026-09-12T23:56:45.8775954Z [28/99] Running rcc for resource qmake_FuckMail
+2026-09-12T23:56:45.8776506Z [29/99] Running rcc for resource fuckmail-gui_raw_res_0
+2026-09-12T23:56:45.8777136Z [30/99] Running AUTOMOC file extraction for target fuckmail-gui
+2026-09-12T23:56:45.8777711Z [31/99] Running moc --collect-json for target fuckmail-gui
+2026-09-12T23:56:45.8778374Z [32/99] Automatic QML type registration for target fuckmail-gui
+2026-09-12T23:56:45.8779257Z [33/99] Generating .rcc/qmlcache/fuckmail-gui_Theme_qml.cpp, .rcc/qmlcache/fuckmail-gui_Theme_qml.cpp.aotstats
+2026-09-12T23:56:45.8780487Z [34/99] Generating .rcc/qmlcache/fuckmail-gui_FmButton_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmButton_qml.cpp.aotstats
+2026-09-12T23:56:45.8781646Z [35/99] Generating .rcc/qmlcache/fuckmail-gui_FmIcon_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmIcon_qml.cpp.aotstats
+2026-09-12T23:56:45.8782676Z [36/99] Generating .rcc/qmlcache/fuckmail-gui_Main_qml.cpp, .rcc/qmlcache/fuckmail-gui_Main_qml.cpp.aotstats
+2026-09-12T23:56:45.8783903Z [37/99] Generating .rcc/qmlcache/fuckmail-gui_FmToolTip_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmToolTip_qml.cpp.aotstats
+2026-09-12T23:56:45.8785075Z [38/99] Generating .rcc/qmlcache/fuckmail-gui_FmTextField_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmTextField_qml.cpp.aotstats
+2026-09-12T23:56:45.8786216Z [39/99] Generating .rcc/qmlcache/fuckmail-gui_FmComboBox_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmComboBox_qml.cpp.aotstats
+2026-09-12T23:56:45.8787410Z [40/99] Generating .rcc/qmlcache/fuckmail-gui_MailFilters_qml.cpp, .rcc/qmlcache/fuckmail-gui_MailFilters_qml.cpp.aotstats
+2026-09-12T23:56:45.8788690Z [41/99] Generating .rcc/qmlcache/fuckmail-gui_SearchPopup_qml.cpp, .rcc/qmlcache/fuckmail-gui_SearchPopup_qml.cpp.aotstats
+2026-09-12T23:56:45.8789810Z [42/99] Generating .rcc/qmlcache/fuckmail-gui_MailView_qml.cpp, .rcc/qmlcache/fuckmail-gui_MailView_qml.cpp.aotstats
+2026-09-12T23:56:45.8790943Z [43/99] Generating .rcc/qmlcache/fuckmail-gui_FmSegmented_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmSegmented_qml.cpp.aotstats
+2026-09-12T23:56:45.8793468Z [44/99] Generating .rcc/qmlcache/fuckmail-gui_RecipientField_qml.cpp, .rcc/qmlcache/fuckmail-gui_RecipientField_qml.cpp.aotstats
+2026-09-12T23:56:45.8794620Z [45/99] Generating .rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp, .rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp.aotstats
+2026-09-12T23:56:45.8795747Z [46/99] Generating .rcc/qmlcache/fuckmail-gui_SenderCard_qml.cpp, .rcc/qmlcache/fuckmail-gui_SenderCard_qml.cpp.aotstats
+2026-09-12T23:56:45.8796906Z [47/99] Generating .rcc/qmlcache/fuckmail-gui_EventDetails_qml.cpp, .rcc/qmlcache/fuckmail-gui_EventDetails_qml.cpp.aotstats
+2026-09-12T23:56:45.8798058Z [48/99] Generating .rcc/qmlcache/fuckmail-gui_EventEditor_qml.cpp, .rcc/qmlcache/fuckmail-gui_EventEditor_qml.cpp.aotstats
+2026-09-12T23:56:45.8799174Z [49/99] Generating .rcc/qmlcache/fuckmail-gui_CalendarView_qml.cpp, .rcc/qmlcache/fuckmail-gui_CalendarView_qml.cpp.aotstats
+2026-09-12T23:56:45.8800373Z [50/99] Generating .rcc/qmlcache/fuckmail-gui_CalendarEventList_qml.cpp, .rcc/qmlcache/fuckmail-gui_CalendarEventList_qml.cpp.aotstats
+2026-09-12T23:56:45.8801668Z [51/99] Generating .rcc/qmlcache/fuckmail-gui_CalendarOperations_qml.cpp, .rcc/qmlcache/fuckmail-gui_CalendarOperations_qml.cpp.aotstats
+2026-09-12T23:56:45.8802811Z [52/99] Generating .rcc/qmlcache/fuckmail-gui_TodayStrip_qml.cpp, .rcc/qmlcache/fuckmail-gui_TodayStrip_qml.cpp.aotstats
+2026-09-12T23:57:07.3359830Z [53/99] Generating .rcc/qmlcache/fuckmail-gui_SettingsView_qml.cpp, .rcc/qmlcache/fuckmail-gui_SettingsView_qml.cpp.aotstats
+2026-09-12T23:57:07.5121460Z [54/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\fuckmail-gui_autogen\mocs_compilation.cpp.obj
+2026-09-12T23:57:07.6103035Z [55/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\main.cpp.obj
+2026-09-12T23:57:07.7035785Z [56/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\MailBackend.cpp.obj
+2026-09-12T23:57:07.7085785Z [57/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\Phase1Backend.cpp.obj
+2026-09-12T23:57:07.9123948Z [58/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\CalendarOperations.cpp.obj
+2026-09-12T23:57:29.1144305Z [59/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\CompositionBackend.cpp.obj
+2026-09-12T23:57:29.5779116Z [60/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\ReplyDocument.cpp.obj
+2026-09-12T23:57:29.6943647Z [61/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\CalendarLayout.cpp.obj
+2026-09-12T23:57:29.7719819Z [62/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\HatchItem.cpp.obj
+2026-09-12T23:57:29.9724192Z [63/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiCalendarSelfTest.cpp.obj
+2026-09-12T23:57:30.1873597Z [64/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiCompositionSelfTest.cpp.obj
+2026-09-12T23:57:55.3485009Z [65/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiSelfTest.cpp.obj
+2026-09-12T23:57:55.4509636Z [66/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiSettingsSelfTest.cpp.obj
+2026-09-12T23:57:55.4528646Z [67/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiSearchBenchmark.cpp.obj
+2026-09-12T23:57:55.6228107Z [68/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiMailNavigationSelfTest.cpp.obj
+2026-09-12T23:57:55.6236657Z [69/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiInteractionBenchmark.cpp.obj
+2026-09-12T23:57:55.7090553Z [70/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiResizeBenchmark.cpp.obj
+2026-09-12T23:58:07.8171071Z [71/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.qt\rcc\qrc_qmake_FuckMail.cpp.obj
+2026-09-12T23:58:07.8192873Z [72/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\IpcTrust.cpp.obj
+2026-09-12T23:58:07.8327317Z [73/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\fuckmail-gui_qmltyperegistrations.cpp.obj
+2026-09-12T23:58:07.8428126Z [74/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_qmlcache_loader.cpp.obj
+2026-09-12T23:58:08.0454375Z [75/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_Main_qml.cpp.obj
+2026-09-12T23:58:17.8623319Z [76/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_Theme_qml.cpp.obj
+2026-09-12T23:58:17.9375839Z [77/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_FmButton_qml.cpp.obj
+2026-09-12T23:58:18.1529935Z [78/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_FmToolTip_qml.cpp.obj
+2026-09-12T23:58:18.3095342Z [79/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_FmIcon_qml.cpp.obj
+2026-09-12T23:58:18.3568205Z [80/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_FmTextField_qml.cpp.obj
+2026-09-12T23:58:29.0240215Z [81/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_FmComboBox_qml.cpp.obj
+2026-09-12T23:58:29.1804937Z [82/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_MailView_qml.cpp.obj
+2026-09-12T23:58:29.2272794Z [83/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_MailFilters_qml.cpp.obj
+2026-09-12T23:58:29.3514011Z [84/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_SearchPopup_qml.cpp.obj
+2026-09-12T23:58:42.3306421Z [85/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_FmSegmented_qml.cpp.obj
+2026-09-12T23:58:42.9002741Z [86/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_RecipientField_qml.cpp.obj
+2026-09-12T23:58:43.7114860Z [87/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_ReplyComposer_qml.cpp.obj
+2026-09-12T23:58:43.9472031Z [88/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_SenderCard_qml.cpp.obj
+2026-09-12T23:58:43.9629564Z [89/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_CalendarView_qml.cpp.obj
+2026-09-12T23:58:50.9869917Z [90/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_EventDetails_qml.cpp.obj
+2026-09-12T23:58:50.9871307Z [91/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_EventEditor_qml.cpp.obj
+2026-09-12T23:58:51.4750616Z [92/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_CalendarOperations_qml.cpp.obj
+2026-09-12T23:58:53.8224221Z [93/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_CalendarEventList_qml.cpp.obj
+2026-09-12T23:58:55.8797452Z [94/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.qt\rcc\qrc_fuckmail-gui_raw_qml_0.cpp.obj
+2026-09-12T23:58:55.8799090Z [95/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_SettingsView_qml.cpp.obj
+2026-09-12T23:58:55.8800277Z [96/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.qt\rcc\qrc_fuckmail-gui_raw_res_0.cpp.obj
+2026-09-12T23:58:55.8802737Z [97/99] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_TodayStrip_qml.cpp.obj
+2026-09-12T23:58:55.8803648Z [98/99] Linking CXX executable fuckmail-gui.exe
+2026-09-12T23:58:55.8805466Z [99/99] C:\Windows\system32\cmd.exe /C "cd /D D:\a\fuckMail\fuckMail\build\release && D:\a\fuckMail\fuckMail\.tools\bootstrap\Lib\site-packages\cmake\data\bin\cmake.exe -E copy_if_different D:/a/fuckMail/fuckMail/target/release/fm-engine.exe D:/a/fuckMail/fuckMail/target/release/fm.exe D:/a/fuckMail/fuckMail/build/release"
+2026-09-12T23:58:55.9057923Z + D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\ctest.exe --preset release
+2026-09-12T23:58:56.0277150Z Test project D:/a/fuckMail/fuckMail/build/release
+2026-09-12T23:58:56.0309042Z     Start 1: rust-test-build
+2026-09-13T00:05:43.3079384Z 1/9 Test #1: rust-test-build ..................   Passed  407.29 sec
+2026-09-13T00:05:43.3089786Z     Start 2: rust-workspace
+2026-09-13T00:13:50.8089286Z 2/9 Test #2: rust-workspace ...................   Passed  487.53 sec
+2026-09-13T00:13:50.8092042Z     Start 3: gui-smoke
+2026-09-13T00:13:58.4533522Z 3/9 Test #3: gui-smoke ........................   Passed    7.64 sec
+2026-09-13T00:13:58.4537146Z     Start 4: gui-integration
+2026-09-13T00:14:54.7843674Z 4/9 Test #4: gui-integration ..................   Passed   56.33 sec
+2026-09-13T00:14:54.7847593Z     Start 5: gui-startup-recovery
+2026-09-13T00:15:03.3917846Z 5/9 Test #5: gui-startup-recovery .............   Passed    8.61 sec
+2026-09-13T00:15:03.3921596Z     Start 6: gui-ipc-trust
+2026-09-13T00:15:03.4190778Z 6/9 Test #6: gui-ipc-trust ....................   Passed    0.03 sec
+2026-09-13T00:15:03.4193784Z     Start 7: gui-composer-probe
+2026-09-13T00:15:03.4456301Z 7/9 Test #7: gui-composer-probe ...............   Passed    0.03 sec
+2026-09-13T00:15:03.4458941Z     Start 8: gui-reply-document
+2026-09-13T00:15:04.8145463Z 8/9 Test #8: gui-reply-document ...............   Passed    1.37 sec
+2026-09-13T00:15:04.8149101Z     Start 9: gui-calendar-layout
+2026-09-13T00:15:04.8369939Z 9/9 Test #9: gui-calendar-layout ..............   Passed    0.02 sec
+2026-09-13T00:15:04.8389637Z 
+2026-09-13T00:15:04.8390005Z 100% tests passed, 0 tests failed out of 9
+2026-09-13T00:15:04.8392905Z 
+2026-09-13T00:15:04.8393171Z Total Test time (real) = 968.86 sec
+2026-09-13T00:15:04.9233522Z ##[group]Run ./scripts/dev.ps1 package --preset release
+2026-09-13T00:15:04.9234035Z [36;1m./scripts/dev.ps1 package --preset release[0m
+2026-09-13T00:15:04.9263709Z shell: C:\Program Files\PowerShell\7\pwsh.EXE -command ". '{0}'"
+2026-09-13T00:15:04.9264051Z env:
+2026-09-13T00:15:04.9264361Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-13T00:15:04.9264823Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.11.9\x64/lib/pkgconfig
+2026-09-13T00:15:04.9265242Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-13T00:15:04.9265650Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-13T00:15:04.9266029Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-13T00:15:04.9266380Z ##[endgroup]
+2026-09-13T00:15:06.7091951Z Host: Windows-10-10.0.20348-SP0 AMD64
+2026-09-13T00:15:06.7092957Z Qt kit: D:\a\fuckMail\fuckMail\.tools\Qt\6.11.2\msvc2022_64
+2026-09-13T00:15:06.7093908Z Source: D:\a\fuckMail\fuckMail
+2026-09-13T00:15:06.7094563Z + "C:\Program Files\Git\bin\git.EXE" --version
+2026-09-13T00:15:06.7403185Z git version 2.55.0.windows.5 at C:\Program Files\Git\bin\git.EXE
+2026-09-13T00:15:06.7404366Z + C:\Users\runneradmin\.cargo\bin\rustc.EXE --version
+2026-09-13T00:15:06.8046692Z rustc 1.88.0 (6b00bc388 2025-06-23) at C:\Users\runneradmin\.cargo\bin\rustc.EXE
+2026-09-13T00:15:06.8047662Z + C:\Users\runneradmin\.cargo\bin\cargo.EXE --version
+2026-09-13T00:15:06.8612240Z cargo 1.88.0 (873a06493 2025-05-10) at C:\Users\runneradmin\.cargo\bin\cargo.EXE
+2026-09-13T00:15:06.8625881Z + D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\cmake.EXE --version
+2026-09-13T00:15:07.0422492Z cmake version 3.31.6 at D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\cmake.EXE
+2026-09-13T00:15:07.0438604Z + D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\ninja.EXE --version
+2026-09-13T00:15:07.0501743Z 1.11.1.git.kitware.jobserver-1 at D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\ninja.EXE
+2026-09-13T00:15:07.0502796Z + D:\a\fuckMail\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE --qt-version
+2026-09-13T00:15:07.0690869Z 6.11.2 at D:\a\fuckMail\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE
+2026-09-13T00:15:07.0699695Z Native C++ compiler: C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\cl.exe
+2026-09-13T00:15:07.0713334Z + D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\cmake.exe --preset release
+2026-09-13T00:15:07.2052810Z Preset CMake variables:
+2026-09-13T00:15:07.2053358Z 
+2026-09-13T00:15:07.2053625Z   BUILD_TESTING:BOOL="TRUE"
+2026-09-13T00:15:07.2055073Z   CMAKE_BUILD_TYPE="Release"
+2026-09-13T00:15:07.2055640Z   CMAKE_EXPORT_COMPILE_COMMANDS:BOOL="TRUE"
+2026-09-13T00:15:07.2056353Z   CMAKE_PREFIX_PATH="D:\a\fuckMail\fuckMail\.tools\Qt\6.11.2\msvc2022_64"
+2026-09-13T00:15:07.2056898Z 
+2026-09-13T00:15:07.3307261Z -- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+2026-09-13T00:15:07.6228540Z -- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+2026-09-13T00:15:07.9533608Z -- Configuring done (0.7s)
+2026-09-13T00:15:08.1422559Z -- Generating done (0.2s)
+2026-09-13T00:15:08.1434829Z -- Build files have been written to: D:/a/fuckMail/fuckMail/build/release
+2026-09-13T00:15:08.1735230Z + D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\cmake.exe --build --preset release --parallel
+2026-09-13T00:15:08.5743898Z    Compiling fm-engine v0.1.0 (D:\a\fuckMail\fuckMail\crates\fm-engine)
+2026-09-13T00:15:52.4624093Z     Finished `release` profile [optimized] target(s) in 44.12s
+2026-09-13T00:15:52.5979378Z [0/63] Build the shared Rust engine and CLI
+2026-09-13T00:15:52.5980336Z [4/57] Automatic MOC and UIC for target gui-calendar-layout-test
+2026-09-13T00:15:52.5981162Z [6/55] Automatic MOC and UIC for target fuckmail-gui
+2026-09-13T00:15:52.5981861Z [7/54] Running AUTOMOC file extraction for target fuckmail-gui
+2026-09-13T00:15:52.5986747Z [8/8] C:\Windows\system32\cmd.exe /C "cd /D D:\a\fuckMail\fuckMail\build\release && D:\a\fuckMail\fuckMail\.tools\bootstrap\Lib\site-packages\cmake\data\bin\cmake.exe -E copy_if_different D:/a/fuckMail/fuckMail/target/release/fm-engine.exe D:/a/fuckMail/fuckMail/target/release/fm.exe D:/a/fuckMail/fuckMail/build/release"
+2026-09-13T00:15:52.6200730Z + D:\a\fuckMail\fuckMail\.tools\bootstrap\Scripts\cmake.exe --install D:\a\fuckMail\fuckMail\build\release --prefix D:\a\fuckMail\fuckMail\dist\windows-amd64
+2026-09-13T00:15:52.7203640Z -- Install configuration: "Release"
+2026-09-13T00:15:52.7212986Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/bin/fuckmail-gui.exe
+2026-09-13T00:15:52.7263117Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/bin/fm-engine.exe
+2026-09-13T00:15:52.7373002Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/bin/fm.exe
+2026-09-13T00:15:52.7398608Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/bin/licenses/LICENSE-Geist.txt
+2026-09-13T00:15:52.7453637Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/qmldir
+2026-09-13T00:15:52.7459523Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/qtquick2plugin.dll
+2026-09-13T00:15:52.7467504Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQml/qmldir
+2026-09-13T00:15:52.7472349Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQml/qmlplugin.dll
+2026-09-13T00:15:52.7481533Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQml/Models/qmldir
+2026-09-13T00:15:52.7486404Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQml/Models/modelsplugin.dll
+2026-09-13T00:15:52.7493872Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQml/WorkerScript/qmldir
+2026-09-13T00:15:52.7498676Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQml/WorkerScript/workerscriptplugin.dll
+2026-09-13T00:15:52.7506164Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/qmldir
+2026-09-13T00:15:52.7511797Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/qtquickcontrols2plugin.dll
+2026-09-13T00:15:52.7519763Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Fusion/qmldir
+2026-09-13T00:15:52.7528910Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Fusion/qtquickcontrols2fusionstyleplugin.dll
+2026-09-13T00:15:52.7536915Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Imagine/qmldir
+2026-09-13T00:15:52.7545632Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Imagine/qtquickcontrols2imaginestyleplugin.dll
+2026-09-13T00:15:52.7553704Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Material/qmldir
+2026-09-13T00:15:52.7562472Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Material/qtquickcontrols2materialstyleplugin.dll
+2026-09-13T00:15:52.7570468Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Universal/qmldir
+2026-09-13T00:15:52.7579105Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Universal/qtquickcontrols2universalstyleplugin.dll
+2026-09-13T00:15:52.7588749Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/FluentWinUI3/qmldir
+2026-09-13T00:15:52.7596898Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/FluentWinUI3/qtquickcontrols2fluentwinui3styleplugin.dll
+2026-09-13T00:15:52.7647276Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Windows/qmldir
+2026-09-13T00:15:52.7654678Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Windows/qtquickcontrols2windowsstyleplugin.dll
+2026-09-13T00:15:52.7671289Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Basic/qmldir
+2026-09-13T00:15:52.7680967Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Basic/qtquickcontrols2basicstyleplugin.dll
+2026-09-13T00:15:52.7689436Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Templates/qmldir
+2026-09-13T00:15:52.7693823Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Templates/qtquicktemplates2plugin.dll
+2026-09-13T00:15:52.7701583Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/impl/qmldir
+2026-09-13T00:15:52.7707314Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/impl/qtquickcontrols2implplugin.dll
+2026-09-13T00:15:52.7714973Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Fusion/impl/qmldir
+2026-09-13T00:15:52.7721294Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Fusion/impl/qtquickcontrols2fusionstyleimplplugin.dll
+2026-09-13T00:15:52.7728849Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Window/qmldir
+2026-09-13T00:15:52.7733702Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Window/quickwindowplugin.dll
+2026-09-13T00:15:52.7741521Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Imagine/impl/qmldir
+2026-09-13T00:15:52.7747073Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Imagine/impl/qtquickcontrols2imaginestyleimplplugin.dll
+2026-09-13T00:15:52.7755088Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Material/impl/qmldir
+2026-09-13T00:15:52.7761233Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Material/impl/qtquickcontrols2materialstyleimplplugin.dll
+2026-09-13T00:15:52.7771281Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Universal/impl/qmldir
+2026-09-13T00:15:52.7777588Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Universal/impl/qtquickcontrols2universalstyleimplplugin.dll
+2026-09-13T00:15:52.7785704Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/FluentWinUI3/impl/qmldir
+2026-09-13T00:15:52.7792445Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/FluentWinUI3/impl/qtquickcontrols2fluentwinui3styleimplplugin.dll
+2026-09-13T00:15:52.7800281Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Effects/qmldir
+2026-09-13T00:15:52.7805059Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Effects/effectsplugin.dll
+2026-09-13T00:15:52.7814514Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Layouts/qmldir
+2026-09-13T00:15:52.7819740Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Layouts/qquicklayoutsplugin.dll
+2026-09-13T00:15:52.7827458Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Shapes/qmldir
+2026-09-13T00:15:52.7832560Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Shapes/qmlshapesplugin.dll
+2026-09-13T00:15:52.7840359Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/NativeStyle/qmldir
+2026-09-13T00:15:52.7845787Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/NativeStyle/qtquickcontrols2nativestyleplugin.dll
+2026-09-13T00:15:52.7865107Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Windows/impl/qmldir
+2026-09-13T00:15:52.7871395Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Windows/impl/qtquickcontrols2windowsstyleimplplugin.dll
+2026-09-13T00:15:52.7879116Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Basic/impl/qmldir
+2026-09-13T00:15:52.7884493Z -- Installing: D:\a\fuckMail\fuckMail\dist\windows-amd64/qml/QtQuick/Controls/Basic/impl/qtquickcontrols2basicstyleimplplugin.dll
+2026-09-13T00:15:52.7893566Z -- Writing D:/a/fuckMail/fuckMail/dist/windows-amd64/bin/qt.conf
+2026-09-13T00:15:52.7897686Z -- Running Qt deploy tool for D:/a/fuckMail/fuckMail/build/release/fuckmail-gui.exe in working directory 'D:/a/fuckMail/fuckMail/dist/windows-amd64'
+2026-09-13T00:15:52.7907398Z 'D:/a/fuckMail/fuckMail/.tools/Qt/6.11.2/msvc2022_64/bin/windeployqt.exe' 'D:/a/fuckMail/fuckMail/build/release/fuckmail-gui.exe' '--dir' '.' '--libdir' 'bin' '--plugindir' 'plugins' '--qml-deploy-dir' 'qml' '--translationdir' 'translations' '--force' '--include-plugins' 'qoffscreen' '--qtpaths' 'D:/a/fuckMail/fuckMail/.tools/Qt/6.11.2/msvc2022_64/bin/qtpaths6.exe' 'qml/QtQuick/qtquick2plugin.dll' 'qml/QtQml/qmlplugin.dll' 'qml/QtQml/Models/modelsplugin.dll' 'qml/QtQml/WorkerScript/workerscriptplugin.dll' 'qml/QtQuick/Controls/qtquickcontrols2plugin.dll' 'qml/QtQuick/Controls/Fusion/qtquickcontrols2fusionstyleplugin.dll' 'qml/QtQuick/Controls/Imagine/qtquickcontrols2imaginestyleplugin.dll' 'qml/QtQuick/Controls/Material/qtquickcontrols2materialstyleplugin.dll' 'qml/QtQuick/Controls/Universal/qtquickcontrols2universalstyleplugin.dll' 'qml/QtQuick/Controls/FluentWinUI3/qtquickcontrols2fluentwinui3styleplugin.dll' 'qml/QtQuick/Controls/Windows/qtquickcontrols2windowsstyleplugin.dll' 'qml/QtQuick/Controls/Basic/qtquickcontrols2basicstyleplugin.dll' 'qml/QtQuick/Templates/qtquicktemplates2plugin.dll' 'qml/QtQuick/Controls/impl/qtquickcontrols2implplugin.dll' 'qml/QtQuick/Controls/Fusion/impl/qtquickcontrols2fusionstyleimplplugin.dll' 'qml/QtQuick/Window/quickwindowplugin.dll' 'qml/QtQuick/Controls/Imagine/impl/qtquickcontrols2imaginestyleimplplugin.dll' 'qml/QtQuick/Controls/Material/impl/qtquickcontrols2materialstyleimplplugin.dll' 'qml/QtQuick/Controls/Universal/impl/qtquickcontrols2universalstyleimplplugin.dll' 'qml/QtQuick/Controls/FluentWinUI3/impl/qtquickcontrols2fluentwinui3styleimplplugin.dll' 'qml/QtQuick/Effects/effectsplugin.dll' 'qml/QtQuick/Layouts/qquicklayoutsplugin.dll' 'qml/QtQuick/Shapes/qmlshapesplugin.dll' 'qml/QtQuick/NativeStyle/qtquickcontrols2nativestyleplugin.dll' 'qml/QtQuick/Controls/Windows/impl/qtquickcontrols2windowsstyleimplplugin.dll' 'qml/QtQuick/Controls/Basic/impl/qtquickcontrols2basicstyleimplplugin.dll'
+2026-09-13T00:15:53.0952629Z D:\a\fuckMail\fuckMail\build\release\fuckmail-gui.exe 64 bit, release executable [QML]
+2026-09-13T00:15:53.0954293Z Adding in plugin type generic for module: Qt6Gui
+2026-09-13T00:15:53.0955215Z Adding in plugin type iconengines for module: Qt6Gui
+2026-09-13T00:15:53.0956547Z Adding Qt6Svg for qsvgicon.dll from plugin type: iconengines
+2026-09-13T00:15:53.0960850Z Adding in plugin type imageformats for module: Qt6Gui
+2026-09-13T00:15:53.0961505Z Adding in plugin type networkinformation for module: Qt6Network
+2026-09-13T00:15:53.0962066Z Adding in plugin type platforms for module: Qt6Gui
+2026-09-13T00:15:53.0962645Z Adding in plugin type qmltooling for module: Qt6Qml
+2026-09-13T00:15:53.0964886Z Adding in plugin type tls for module: Qt6Network
+2026-09-13T00:15:53.0965548Z Skipping plugin qopensslbackend.dll. Use -force-openssl or specify -openssl-root if you want to use it.
+2026-09-13T00:15:53.0968780Z Performing additional pass of finding Qt plugins due to updated Qt module list: Qt6Core Qt6Gui Qt6Network Qt6OpenGL Qt6Qml Qt6QmlMeta Qt6QmlModels Qt6QmlWorkerScript Qt6Quick Qt6QuickControls2 Qt6QuickControls2Basic Qt6QuickControls2BasicStyleImpl Qt6QuickControls2FluentWinUI3StyleImpl Qt6QuickControls2Fusion Qt6QuickControls2FusionStyleImpl Qt6QuickControls2Imagine Qt6QuickControls2ImagineStyleImpl Qt6QuickControls2Impl Qt6QuickControls2Material Qt6QuickControls2MaterialStyleImpl Qt6QuickControls2Universal Qt6QuickControls2UniversalStyleImpl Qt6QuickControls2WindowsStyleImpl Qt6QuickEffects Qt6QuickLayouts Qt6QuickShapes Qt6QuickTemplates2 Qt6Svg
+2026-09-13T00:15:53.0971297Z Adding in plugin type generic for module: Qt6Gui
+2026-09-13T00:15:53.0971693Z Adding in plugin type iconengines for module: Qt6Gui
+2026-09-13T00:15:53.0972075Z Adding in plugin type imageformats for module: Qt6Gui
+2026-09-13T00:15:53.0972456Z Adding in plugin type networkinformation for module: Qt6Network
+2026-09-13T00:15:53.0972831Z Adding in plugin type platforms for module: Qt6Gui
+2026-09-13T00:15:53.0973214Z Adding in plugin type qmltooling for module: Qt6Qml
+2026-09-13T00:15:53.0973706Z Adding in plugin type tls for module: Qt6Network
+2026-09-13T00:15:53.0974190Z Skipping plugin qopensslbackend.dll. Use -force-openssl or specify -openssl-root if you want to use it.
+2026-09-13T00:15:53.0976242Z Direct dependencies: Qt6Core Qt6Gui Qt6Network Qt6OpenGL Qt6Qml Qt6QmlMeta Qt6QmlModels Qt6QmlWorkerScript Qt6Quick Qt6QuickControls2 Qt6QuickControls2Basic Qt6QuickControls2BasicStyleImpl Qt6QuickControls2FluentWinUI3StyleImpl Qt6QuickControls2Fusion Qt6QuickControls2FusionStyleImpl Qt6QuickControls2Imagine Qt6QuickControls2ImagineStyleImpl Qt6QuickControls2Impl Qt6QuickControls2Material Qt6QuickControls2MaterialStyleImpl Qt6QuickControls2Universal Qt6QuickControls2UniversalStyleImpl Qt6QuickControls2WindowsStyleImpl Qt6QuickEffects Qt6QuickLayouts Qt6QuickShapes Qt6QuickTemplates2
+2026-09-13T00:15:53.0979650Z All dependencies   : Qt6Core Qt6Gui Qt6Network Qt6OpenGL Qt6Qml Qt6QmlMeta Qt6QmlModels Qt6QmlWorkerScript Qt6Quick Qt6QuickControls2 Qt6QuickControls2Basic Qt6QuickControls2BasicStyleImpl Qt6QuickControls2FluentWinUI3StyleImpl Qt6QuickControls2Fusion Qt6QuickControls2FusionStyleImpl Qt6QuickControls2Imagine Qt6QuickControls2ImagineStyleImpl Qt6QuickControls2Impl Qt6QuickControls2Material Qt6QuickControls2MaterialStyleImpl Qt6QuickControls2Universal Qt6QuickControls2UniversalStyleImpl Qt6QuickControls2WindowsStyleImpl Qt6QuickEffects Qt6QuickLayouts Qt6QuickShapes Qt6QuickTemplates2
+2026-09-13T00:15:53.0983080Z To be deployed     : Qt6Core Qt6Gui Qt6Network Qt6OpenGL Qt6Qml Qt6QmlMeta Qt6QmlModels Qt6QmlWorkerScript Qt6Quick Qt6QuickControls2 Qt6QuickControls2Basic Qt6QuickControls2BasicStyleImpl Qt6QuickControls2FluentWinUI3StyleImpl Qt6QuickControls2Fusion Qt6QuickControls2FusionStyleImpl Qt6QuickControls2Imagine Qt6QuickControls2ImagineStyleImpl Qt6QuickControls2Impl Qt6QuickControls2Material Qt6QuickControls2MaterialStyleImpl Qt6QuickControls2Universal Qt6QuickControls2UniversalStyleImpl Qt6QuickControls2WindowsStyleImpl Qt6QuickEffects Qt6QuickLayouts Qt6QuickShapes Qt6QuickTemplates2 Qt6Svg
+2026-09-13T00:15:53.0984963Z Skipping system library C:/Windows/system32/icuuc.dll
+2026-09-13T00:15:53.0985317Z Updating Qt6Core.dll.
+2026-09-13T00:15:53.0985565Z Updating Qt6Gui.dll.
+2026-09-13T00:15:53.0985822Z Updating Qt6Network.dll.
+2026-09-13T00:15:53.0986081Z Updating Qt6OpenGL.dll.
+2026-09-13T00:15:53.0986328Z Updating Qt6Qml.dll.
+2026-09-13T00:15:53.0986610Z Updating Qt6QmlMeta.dll.
+2026-09-13T00:15:53.0986872Z Updating Qt6QmlModels.dll.
+2026-09-13T00:15:53.0987146Z Updating Qt6QmlWorkerScript.dll.
+2026-09-13T00:15:53.0987419Z Updating Qt6Quick.dll.
+2026-09-13T00:15:53.0987810Z Updating Qt6QuickControls2.dll.
+2026-09-13T00:15:53.0988109Z Updating Qt6QuickControls2Basic.dll.
+2026-09-13T00:15:53.0988434Z Updating Qt6QuickControls2BasicStyleImpl.dll.
+2026-09-13T00:15:53.0988801Z Updating Qt6QuickControls2FluentWinUI3StyleImpl.dll.
+2026-09-13T00:15:53.0989191Z Updating Qt6QuickControls2Fusion.dll.
+2026-09-13T00:15:53.0989526Z Updating Qt6QuickControls2FusionStyleImpl.dll.
+2026-09-13T00:15:54.5526342Z Updating Qt6QuickControls2Imagine.dll.
+2026-09-13T00:15:54.5527621Z Updating Qt6QuickControls2ImagineStyleImpl.dll.
+2026-09-13T00:15:54.5528225Z Updating Qt6QuickControls2Impl.dll.
+2026-09-13T00:15:54.5528810Z Updating Qt6QuickControls2Material.dll.
+2026-09-13T00:15:54.5529399Z Updating Qt6QuickControls2MaterialStyleImpl.dll.
+2026-09-13T00:15:54.5529985Z Updating Qt6QuickControls2Universal.dll.
+2026-09-13T00:15:54.5530623Z Updating Qt6QuickControls2UniversalStyleImpl.dll.
+2026-09-13T00:15:54.5531266Z Updating Qt6QuickControls2WindowsStyleImpl.dll.
+2026-09-13T00:15:54.5531849Z Updating Qt6QuickEffects.dll.
+2026-09-13T00:15:54.5532393Z Updating Qt6QuickLayouts.dll.
+2026-09-13T00:15:54.5532917Z Updating Qt6QuickShapes.dll.
+2026-09-13T00:15:54.5533389Z Updating Qt6QuickTemplates2.dll.
+2026-09-13T00:15:54.5533867Z Updating Qt6Svg.dll.
+2026-09-13T00:15:54.5534283Z Updating d3dcompiler_47.dll.
+2026-09-13T00:15:54.5534744Z Updating dxcompiler.dll.
+2026-09-13T00:15:54.5536164Z Updating dxil.dll.
+2026-09-13T00:15:54.5536604Z Updating vc_redist.x64.exe.
+2026-09-13T00:15:54.5537266Z Creating directory D:/a/fuckMail/fuckMail/dist/windows-amd64/plugins/generic.
+2026-09-13T00:15:54.5537933Z Updating qtuiotouchplugin.dll.
+2026-09-13T00:15:54.5538565Z Creating directory D:/a/fuckMail/fuckMail/dist/windows-amd64/plugins/iconengines.
+2026-09-13T00:15:54.5539224Z Updating qsvgicon.dll.
+2026-09-13T00:15:54.5539858Z Creating directory D:/a/fuckMail/fuckMail/dist/windows-amd64/plugins/imageformats.
+2026-09-13T00:15:54.5540512Z Updating qgif.dll.
+2026-09-13T00:15:54.5540911Z Updating qico.dll.
+2026-09-13T00:15:54.5541358Z Updating qjpeg.dll.
+2026-09-13T00:15:54.5541753Z Updating qsvg.dll.
+2026-09-13T00:15:54.5542360Z Creating directory D:/a/fuckMail/fuckMail/dist/windows-amd64/plugins/networkinformation.
+2026-09-13T00:15:54.5543038Z Updating qnetworklistmanager.dll.
+2026-09-13T00:15:54.5543690Z Creating directory D:/a/fuckMail/fuckMail/dist/windows-amd64/plugins/platforms.
+2026-09-13T00:15:54.5544317Z Updating qoffscreen.dll.
+2026-09-13T00:15:54.5545148Z Updating qwindows.dll.
+2026-09-13T00:15:54.5545678Z Creating directory D:/a/fuckMail/fuckMail/dist/windows-amd64/plugins/qmltooling.
+2026-09-13T00:15:54.5546363Z Updating qmldbg_debugger.dll.
+2026-09-13T00:15:54.5546761Z Updating qmldbg_inspector.dll.
+2026-09-13T00:15:54.5547188Z Updating qmldbg_local.dll.
+2026-09-13T00:15:54.5547646Z Updating qmldbg_messages.dll.
+2026-09-13T00:15:54.5548077Z Updating qmldbg_native.dll.
+2026-09-13T00:15:54.5548530Z Updating qmldbg_nativedebugger.dll.
+2026-09-13T00:15:54.5548994Z Updating qmldbg_preview.dll.
+2026-09-13T00:15:54.5549607Z Updating qmldbg_profiler.dll.
+2026-09-13T00:15:54.5550056Z Updating qmldbg_quickeventreplay.dll.
+2026-09-13T00:15:54.5550515Z Updating qmldbg_quickprofiler.dll.
+2026-09-13T00:15:54.5551003Z Updating qmldbg_server.dll.
+2026-09-13T00:15:54.5551421Z Updating qmldbg_tcp.dll.
+2026-09-13T00:15:54.5551984Z Creating directory D:/a/fuckMail/fuckMail/dist/windows-amd64/plugins/tls.
+2026-09-13T00:15:54.5552615Z Updating qcertonlybackend.dll.
+2026-09-13T00:15:54.5553133Z Updating qschannelbackend.dll.
+2026-09-13T00:15:54.5553586Z Creating translations...
+2026-09-13T00:15:54.5554012Z Creating qt_ar.qm...
+2026-09-13T00:15:54.5554461Z Creating qt_bg.qm...
+2026-09-13T00:15:54.5554869Z Creating qt_ca.qm...
+2026-09-13T00:15:54.5555234Z Creating qt_cs.qm...
+2026-09-13T00:15:54.5555609Z Creating qt_da.qm...
+2026-09-13T00:15:54.5556027Z Creating qt_de.qm...
+2026-09-13T00:15:54.5556433Z Creating qt_en.qm...
+2026-09-13T00:15:54.5556780Z Creating qt_es.qm...
+2026-09-13T00:15:54.5557367Z Creating qt_fa.qm...
+2026-09-13T00:15:54.5557740Z Creating qt_fi.qm...
+2026-09-13T00:15:54.5558208Z Creating qt_fr.qm...
+2026-09-13T00:15:54.5558592Z Creating qt_gd.qm...
+2026-09-13T00:15:54.5558964Z Creating qt_he.qm...
+2026-09-13T00:15:54.5559398Z Creating qt_hr.qm...
+2026-09-13T00:15:54.5559778Z Creating qt_hu.qm...
+2026-09-13T00:15:54.5560290Z Creating qt_it.qm...
+2026-09-13T00:15:54.5560784Z Creating qt_ja.qm...
+2026-09-13T00:15:54.5561227Z Creating qt_ka.qm...
+2026-09-13T00:15:54.5562775Z Creating qt_ko.qm...
+2026-09-13T00:15:54.5564827Z Creating qt_lg.qm...
+2026-09-13T00:15:54.5565247Z Creating qt_lv.qm...
+2026-09-13T00:15:54.5565631Z Creating qt_nl.qm...
+2026-09-13T00:15:54.5566078Z Creating qt_nn.qm...
+2026-09-13T00:15:54.5566471Z Creating qt_pl.qm...
+2026-09-13T00:15:54.5566851Z Creating qt_pt_BR.qm...
+2026-09-13T00:15:54.5567247Z Creating qt_ru.qm...
+2026-09-13T00:15:54.5567665Z Creating qt_sk.qm...
+2026-09-13T00:15:54.5568359Z Creating qt_sv.qm...
+2026-09-13T00:15:54.5568764Z Creating qt_tr.qm...
+2026-09-13T00:15:54.5569131Z Creating qt_uk.qm...
+2026-09-13T00:15:54.5569943Z Creating qt_zh_CN.qm...
+2026-09-13T00:15:54.5570858Z Creating qt_zh_TW.qm...
+2026-09-13T00:15:54.5808669Z + "C:\Program Files\Git\bin\git.EXE" rev-parse HEAD
+2026-09-13T00:15:54.6138101Z + "C:\Program Files\Git\bin\git.EXE" status --porcelain
+2026-09-13T00:15:55.2847752Z + C:\Users\runneradmin\.cargo\bin\rustc.EXE --version
+2026-09-13T00:15:55.3433841Z + C:\Users\runneradmin\.cargo\bin\cargo.EXE --version
+2026-09-13T00:15:55.5708238Z + "C:\Users\runneradmin\AppData\Local\Temp\fuckmail-package-check-pappte5_\relocated package\bin\fm.exe" --help
+2026-09-13T00:15:55.5908706Z + "C:\Users\runneradmin\AppData\Local\Temp\fuckmail-package-check-pappte5_\relocated package\bin\fm.exe" --profile C:\Users\runneradmin\AppData\Local\Temp\fuckmail-package-check-pappte5_\cli-profile --account windscribe --json mail list --query Maya --field sender --limit 5
+2026-09-13T00:16:00.5913130Z Verified final-client engine shutdown: cli-profile
+2026-09-13T00:16:00.5917847Z + "C:\Users\runneradmin\AppData\Local\Temp\fuckmail-package-check-pappte5_\relocated package\bin\fuckmail-gui.exe" --smoke --profile C:\Users\runneradmin\AppData\Local\Temp\fuckmail-package-check-pappte5_\gui-profile
+2026-09-13T00:16:05.2542943Z Verified final-client engine shutdown: gui-profile
+2026-09-13T00:16:05.2547355Z + "C:\Users\runneradmin\AppData\Local\Temp\fuckmail-package-check-pappte5_\relocated package\bin\fuckmail-gui.exe" --self-test
+2026-09-13T00:17:00.2265664Z Relocated package passed: SDK-free GUI smoke/self-test, fresh-terminal CLI help/query, final engine shutdown
+2026-09-13T00:17:05.4900806Z Development package: D:\a\fuckMail\fuckMail\dist\fuckmail-windows-amd64.zip
+2026-09-13T00:17:05.5458222Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-13T00:17:05.5459517Z ##[group]Run actions/upload-artifact@v4
+2026-09-13T00:17:05.5459812Z with:
+2026-09-13T00:17:05.5460164Z   name: fuckmail-Windows-X64-8e9179b22fa12b2093f918b04d7f654bed3b06b3
+2026-09-13T00:17:05.5460559Z   path: dist/*.tar.gz
+dist/*.zip
+
+2026-09-13T00:17:05.5460855Z   if-no-files-found: error
+2026-09-13T00:17:05.5461163Z   compression-level: 6
+2026-09-13T00:17:05.5461416Z   overwrite: false
+2026-09-13T00:17:05.5461669Z   include-hidden-files: false
+2026-09-13T00:17:05.5461932Z env:
+2026-09-13T00:17:05.5462262Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-13T00:17:05.5462820Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.11.9\x64/lib/pkgconfig
+2026-09-13T00:17:05.5463255Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-13T00:17:05.5463662Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-13T00:17:05.5464235Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-13T00:17:05.5464686Z ##[endgroup]
+2026-09-13T00:17:05.9508851Z (node:2320) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-13T00:17:05.9512790Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-13T00:17:05.9636350Z With the provided path, there will be 1 file uploaded
+2026-09-13T00:17:05.9712867Z Artifact name is valid!
+2026-09-13T00:17:05.9717571Z Root directory input is valid!
+2026-09-13T00:17:06.2362231Z Beginning upload of artifact content to blob storage
+2026-09-13T00:17:06.6434767Z (node:2320) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-09-13T00:17:07.2283334Z Uploaded bytes 8388608
+2026-09-13T00:17:07.4694779Z Uploaded bytes 16777216
+2026-09-13T00:17:07.5975907Z Uploaded bytes 25165824
+2026-09-13T00:17:07.8324377Z Uploaded bytes 33554432
+2026-09-13T00:17:07.9095799Z Uploaded bytes 41943040
+2026-09-13T00:17:08.1406487Z Uploaded bytes 50331648
+2026-09-13T00:17:08.3282904Z Uploaded bytes 58720256
+2026-09-13T00:17:08.4994446Z Uploaded bytes 64750221
+2026-09-13T00:17:08.5492114Z Finished uploading artifact content to blob storage!
+2026-09-13T00:17:08.5504590Z SHA256 digest of uploaded artifact zip is 55aebed437221cd015c321a07ff637c6dec54d52c143b62c60689d245ce71f1d
+2026-09-13T00:17:08.5507065Z Finalizing artifact upload
+2026-09-13T00:17:08.7842668Z Artifact fuckmail-Windows-X64-8e9179b22fa12b2093f918b04d7f654bed3b06b3.zip successfully finalized. Artifact ID 10308166222
+2026-09-13T00:17:08.7844446Z Artifact fuckmail-Windows-X64-8e9179b22fa12b2093f918b04d7f654bed3b06b3 has been successfully uploaded! Final size is 64750221 bytes. Artifact ID is 10308166222
+2026-09-13T00:17:08.7855600Z Artifact download URL: https://github.com/yegors/fuckMail/actions/runs/34726506199/artifacts/10308166222
+2026-09-13T00:17:08.8215968Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-13T00:17:08.8217218Z ##[group]Run actions/upload-artifact@v4
+2026-09-13T00:17:08.8217518Z with:
+2026-09-13T00:17:08.8217895Z   name: native-logs-Windows-X64-8e9179b22fa12b2093f918b04d7f654bed3b06b3
+2026-09-13T00:17:08.8218532Z   path: build/**/Testing/Temporary/*.log
+build/**/CMakeFiles/CMakeConfigureLog.yaml
+dist/**/build-manifest.json
+aqtinstall.log
+
+2026-09-13T00:17:08.8219084Z   if-no-files-found: ignore
+2026-09-13T00:17:08.8219354Z   compression-level: 6
+2026-09-13T00:17:08.8219606Z   overwrite: false
+2026-09-13T00:17:08.8219889Z   include-hidden-files: false
+2026-09-13T00:17:08.8220156Z env:
+2026-09-13T00:17:08.8220579Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-13T00:17:08.8221035Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.11.9\x64/lib/pkgconfig
+2026-09-13T00:17:08.8221517Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-13T00:17:08.8221934Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-13T00:17:08.8222334Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-13T00:17:08.8222709Z ##[endgroup]
+2026-09-13T00:17:08.9929107Z (node:7008) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-13T00:17:08.9930550Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-13T00:17:09.0807291Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-09-13T00:17:09.0809952Z The least common ancestor is D:\a\fuckMail\fuckMail. This will be the root directory of the artifact
+2026-09-13T00:17:09.0811319Z With the provided path, there will be 3 files uploaded
+2026-09-13T00:17:09.0816838Z Artifact name is valid!
+2026-09-13T00:17:09.0817472Z Root directory input is valid!
+2026-09-13T00:17:09.3552677Z Beginning upload of artifact content to blob storage
+2026-09-13T00:17:09.3842914Z (node:7008) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-09-13T00:17:09.5191509Z Uploaded bytes 13739
+2026-09-13T00:17:09.5620765Z Finished uploading artifact content to blob storage!
+2026-09-13T00:17:09.5621950Z SHA256 digest of uploaded artifact zip is 26eeb1be8da32355c23819897eeb4dce300fcaf38b43e254caba908e9533ec65
+2026-09-13T00:17:09.5622933Z Finalizing artifact upload
+2026-09-13T00:17:09.8001125Z Artifact native-logs-Windows-X64-8e9179b22fa12b2093f918b04d7f654bed3b06b3.zip successfully finalized. Artifact ID 10307874811
+2026-09-13T00:17:09.8002850Z Artifact native-logs-Windows-X64-8e9179b22fa12b2093f918b04d7f654bed3b06b3 has been successfully uploaded! Final size is 13739 bytes. Artifact ID is 10307874811
+2026-09-13T00:17:09.8011869Z Artifact download URL: https://github.com/yegors/fuckMail/actions/runs/34726506199/artifacts/10307874811
+2026-09-13T00:17:09.8810060Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-13T00:17:09.8811287Z ##[group]Run actions/cache/save@v4
+2026-09-13T00:17:09.8811571Z with:
+2026-09-13T00:17:09.8811856Z   path: target
+2026-09-13T00:17:09.8812401Z   key: rust-build-Windows-X64-55e846e25564ed0f1050ce71faa72dd5df801e366d1921f0097c3f772d618eec-8e9179b22fa12b2093f918b04d7f654bed3b06b3
+2026-09-13T00:17:09.8813023Z   enableCrossOsArchive: false
+2026-09-13T00:17:09.8813305Z env:
+2026-09-13T00:17:09.8813638Z   pythonLocation: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-13T00:17:09.8814083Z   PKG_CONFIG_PATH: C:\hostedtoolcache\windows\Python\3.11.9\x64/lib/pkgconfig
+2026-09-13T00:17:09.8814645Z   Python_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-13T00:17:09.8815048Z   Python2_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-13T00:17:09.8815484Z   Python3_ROOT_DIR: C:\hostedtoolcache\windows\Python\3.11.9\x64
+2026-09-13T00:17:09.8815818Z ##[endgroup]
+2026-09-13T00:17:10.0320340Z (node:3136) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-13T00:17:10.0321520Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-13T00:17:10.1220844Z [command]"C:\Program Files\Git\usr\bin\tar.exe" --posix -cf cache.tzst --exclude cache.tzst -P -C D:/a/fuckMail/fuckMail --files-from manifest.txt --force-local --use-compress-program "zstd -T0"
+2026-09-13T00:17:14.6946368Z (node:3136) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-09-13T00:17:15.6862399Z Sent 0 of 175342577 (0.0%), 0.0 MBs/sec
+2026-09-13T00:17:16.4398762Z Sent 175342577 of 175342577 (100.0%), 95.0 MBs/sec
+2026-09-13T00:17:16.5599024Z Cache saved with key: rust-build-Windows-X64-55e846e25564ed0f1050ce71faa72dd5df801e366d1921f0097c3f772d618eec-8e9179b22fa12b2093f918b04d7f654bed3b06b3
+2026-09-13T00:17:16.5920249Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-13T00:17:16.5921418Z Post job cleanup.
+2026-09-13T00:17:16.7605752Z (node:5144) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-13T00:17:16.7607098Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-13T00:17:16.7868282Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-13T00:17:16.7869762Z Post job cleanup.
+2026-09-13T00:17:16.9776361Z [command]"C:\Program Files\Git\bin\git.exe" version
+2026-09-13T00:17:16.9973167Z git version 2.55.0.windows.5
+2026-09-13T00:17:17.0034672Z Temporarily overriding HOME='D:\a\_temp\6237b0f6-2eef-40de-baac-cb1b129e08a0' before making global git config changes
+2026-09-13T00:17:17.0035918Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-13T00:17:17.0044203Z [command]"C:\Program Files\Git\bin\git.exe" config --global --add safe.directory D:\a\fuckMail\fuckMail
+2026-09-13T00:17:17.0274750Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp core\.sshCommand
+2026-09-13T00:17:17.0496839Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :\""
+2026-09-13T00:17:17.5112115Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-13T00:17:17.5287359Z http.https://github.com/.extraheader
+2026-09-13T00:17:17.5323933Z [command]"C:\Program Files\Git\bin\git.exe" config --local --unset-all http.https://github.com/.extraheader
+2026-09-13T00:17:17.5528603Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "sh -c \"git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :\""
+2026-09-13T00:17:17.9637421Z [command]"C:\Program Files\Git\bin\git.exe" config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-13T00:17:17.9843581Z [command]"C:\Program Files\Git\bin\git.exe" submodule foreach --recursive "git config --local --show-origin --name-only --get-regexp remote.origin.url"
+2026-09-13T00:17:18.3861270Z Cleaning up orphan processes
+2026-09-13T00:17:18.4214873Z Terminate orphan process: pid (5532) (vctip)
+2026-09-13T00:17:18.4233338Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/cache/restore@v4, actions/cache/save@v4, actions/checkout@v4, actions/setup-python@v5, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+

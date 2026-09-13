@@ -6,7 +6,9 @@ Human correspondence comes first. Unread means unreviewed; stars mean action lef
 
 ## Current state
 
-**P1-10 Windows navigation/rendering acceptance passes at clean source `25b8b1e`; new-source Mac/Windows/Ubuntu CI is pending publication.** Packaged mailbox switching measures **82–92 ms p95**, down from **251–266 ms** in the baseline; reader clicks measure **78–92 ms p95**. All 900 fresh/large-profile source-identity checks pass. Reader actions align right, enabled/disabled button text is readable, and native resize traces and saved border samples pass in Graphite, Paper and Harbour at 125% scaling. See [final package evidence](docs/research/phase-1-execution.md#p1-10-final-windows-package--25b8b1e). Phase 1 remains incomplete until the new source's CI is recorded; no next phase has begun and Google-first readiness remains 0/9.
+**Phase 1 is complete on available hosts; Phase 2 is planned on `codex/phase-2`.** The [Phase 2 plan](docs/plans/phase-2.md) prepares real personal Gmail and Workspace mail/calendar testing: shared OAuth/vault and quota-aware transport, parallel mail/Calendar sync, human drafts/send, calendar writes/invitations and staged founder use. The founder confirmed existing Google project/admin access and chose OS permissions plus verified disk encryption for the pilot; app-level mail-store encryption is deferred. No Phase 2 runtime or live account is implemented; Google-first readiness remains 0/9.
+
+P1-10 [final CI](docs/research/phase-1-execution.md#p1-10-final-native-ci-and-phase-1-closure) passes **9/9 tests on Mac, Windows and Ubuntu**, with all relocated development packages and six artifacts retained. The generated PR merge, pushed `cb6489b` and merged `main` at `885de67` have the same Git tree. Windows mailbox switching remains **82–92 ms p95**, reader opening **78–92 ms p95**, with all 900 source checks and three-theme resize/visual acceptance passing at runtime `25b8b1e`. Physical input/vault/live-provider/trusted-distribution limits remain explicit.
 
 The [complete Windows release run](docs/research/assets/phase-1/p1-10-windows/reports/p1-10-full-release-03.log) passes **9/9 tests in 158.15 seconds**, including native GUI/CLI/restart workflows and regressions for delayed clicks, compact keyboard navigation and restored drafts. The clean package also passes SDK-free relocation and the full native walkthrough. Physical input, broader scaling and other-host GPU behavior retain their separate unverified scope.
 
@@ -17,8 +19,8 @@ The current Windows [development package](docs/research/assets/phase-1/p1-10-win
 | Google-first feature area | Build status |
 | --- | --- |
 | [Core and complete offline storage](docs/contracts/core-storage.md) | Schema-7 native draft/restart, Core migration and preserved package upgrades pass; whole area Draft |
-| [Gmail / Google Workspace](docs/contracts/gmail.md) | Phase 0 synthetic evidence; whole area Draft |
-| [Mail UI and human composition](docs/contracts/mail-ui.md) | P1-10 Windows navigation/rendering and package workflows pass; new-source CI pending; whole area Draft |
+| [Gmail / Google Workspace](docs/contracts/gmail.md) | Phase 2 personal/Workspace adapter planned; no live account verified; whole area Draft |
+| [Mail UI and human composition](docs/contracts/mail-ui.md) | Phase 1 native/package and Windows navigation/rendering pass; Phase 2 live workflows planned; whole area Draft |
 | [Local search](docs/contracts/search.md) | Native filters/idle convergence and all four development/packaged concurrent budgets pass; whole area Draft |
 | [User-owned triage and categories](docs/contracts/triage.md) | Phase 1 explicit local review/Done/Delay verified; whole area Draft |
 | [Google Calendar](docs/contracts/calendar.md) | P1-09 views/writes, header timeline, duration preference and event/RSVP restart pass; live Google pending; whole area Draft |
@@ -42,7 +44,7 @@ The app operates locally and connects directly to Google; optional models run on
 
 ## Next execution
 
-Record final-source Mac/Windows/Ubuntu CI for the locally committed [P1-10 spike](docs/plans/phase-1.md#p1-10--navigation-and-rendering-spike-before-the-next-phase) before closing Phase 1 or beginning another phase. Windows release/package, navigation, concurrent search and three-theme rendering acceptance pass at `25b8b1e`. New-file import, aliases, live delivery, account/model setup and timed Delay remain deferred. See the [Phase 0 evidence](docs/research/phase-0-execution.md) for the completed baseline.
+Begin **P2-00** in the [Phase 2 plan](docs/plans/phase-2.md): agree the live-data boundary, remaining retention/backup choices and empty real-profile creation, then implement OAuth/vault and bounded HTTP scheduling. Mail and Calendar acquisition proceed together. The first real-account test build precedes full-history completion; sending/invitations and sustained daily use have their own gates. Inspect actual Cloud quotas and disk protection before import. Phase 1's source-specific evidence is preserved.
 
 The [first deliverable](docs/plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) is a runnable synthetic-mail desktop app and small CLI, with repeatable setup/build/test commands and native CI builds for development on the work Mac and home Windows PC. Tools live in the ignored `.tools` directory. The home Windows PC now passes bootstrap/doctor, dev and release tests (8/8 each), relocated package verification and native graphics checks; its schema-4 baseline package is preserved. See [Windows handoff evidence](docs/research/phase-0-execution.md#home-windows-handoff-before-phase-1). Run `scripts/dev.ps1 run` from PowerShell on this PC, or `scripts/dev.sh run` on Mac. Manual input/accessibility and OS keyring qualification remain separate.
 

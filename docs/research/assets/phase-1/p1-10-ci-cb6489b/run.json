@@ -1,0 +1,825 @@
+{
+  "run_id": 34726506199,
+  "source": "cb6489b6b77210853dc0759e11cbf486ab638aa3",
+  "workflow_checkout_source": "8e9179b22fa12b2093f918b04d7f654bed3b06b3",
+  "tree_sha": "c0af1ef5d102050eb8f3cb531faa310fcf859c25",
+  "main_merge_source": "885de67d2d3807f73374ea2975a63fb9476d6e7f",
+  "source_equivalence": "source-equivalence.json",
+  "status": "completed",
+  "conclusion": "success",
+  "url": "https://github.com/yegors/fuckMail/actions/runs/34726506199",
+  "event": "pull_request",
+  "run_attempt": 1,
+  "created_at": "2026-09-12T23:51:46Z",
+  "updated_at": "2026-09-13T00:17:20Z",
+  "observed_at": "2026-09-13T00:19:56Z",
+  "jobs": [
+    {
+      "id": 103641440224,
+      "run_id": 34726506199,
+      "workflow_name": "Native build and fixture tests",
+      "head_branch": "codex/phase-1",
+      "run_url": "https://api.github.com/repos/yegors/fuckMail/actions/runs/34726506199",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOUVpUkM8AAAAYIYLf4A",
+      "head_sha": "cb6489b6b77210853dc0759e11cbf486ab638aa3",
+      "url": "https://api.github.com/repos/yegors/fuckMail/actions/jobs/103641440224",
+      "html_url": "https://github.com/yegors/fuckMail/actions/runs/34726506199/job/103641440224",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-12T23:51:47Z",
+      "started_at": "2026-09-12T23:51:50Z",
+      "completed_at": "2026-09-13T00:17:19Z",
+      "name": "windows-2022",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-09-12T23:51:51Z",
+          "completed_at": "2026-09-12T23:51:52Z"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-09-12T23:51:52Z",
+          "completed_at": "2026-09-12T23:51:59Z"
+        },
+        {
+          "name": "Run actions/setup-python@v5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-09-12T23:51:59Z",
+          "completed_at": "2026-09-12T23:51:59Z"
+        },
+        {
+          "name": "Restore project SDKs and Rust downloads",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-09-12T23:51:59Z",
+          "completed_at": "2026-09-12T23:52:21Z"
+        },
+        {
+          "name": "Restore incremental Rust build",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-09-12T23:52:21Z",
+          "completed_at": "2026-09-12T23:52:22Z"
+        },
+        {
+          "name": "Linux native dependencies",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 6,
+          "started_at": "2026-09-12T23:52:22Z",
+          "completed_at": "2026-09-12T23:52:22Z"
+        },
+        {
+          "name": "Bootstrap (Unix)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 7,
+          "started_at": "2026-09-12T23:52:22Z",
+          "completed_at": "2026-09-12T23:52:22Z"
+        },
+        {
+          "name": "Bootstrap (Windows)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-09-12T23:52:22Z",
+          "completed_at": "2026-09-12T23:52:40Z"
+        },
+        {
+          "name": "Native fixture tests (Unix)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9,
+          "started_at": "2026-09-12T23:52:40Z",
+          "completed_at": "2026-09-12T23:52:40Z"
+        },
+        {
+          "name": "Native fixture tests (Windows)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-09-12T23:52:40Z",
+          "completed_at": "2026-09-13T00:15:04Z"
+        },
+        {
+          "name": "Package and isolated runtime smoke (Unix)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 11,
+          "started_at": "2026-09-13T00:15:04Z",
+          "completed_at": "2026-09-13T00:15:04Z"
+        },
+        {
+          "name": "Package and isolated runtime smoke (Windows)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-09-13T00:15:04Z",
+          "completed_at": "2026-09-13T00:17:05Z"
+        },
+        {
+          "name": "Retain development package",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-09-13T00:17:05Z",
+          "completed_at": "2026-09-13T00:17:08Z"
+        },
+        {
+          "name": "Retain native test and configure logs",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-09-13T00:17:08Z",
+          "completed_at": "2026-09-13T00:17:09Z"
+        },
+        {
+          "name": "Save acquired SDKs and Rust downloads",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 15,
+          "started_at": "2026-09-13T00:17:09Z",
+          "completed_at": "2026-09-13T00:17:09Z"
+        },
+        {
+          "name": "Save compiled Rust work",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16,
+          "started_at": "2026-09-13T00:17:09Z",
+          "completed_at": "2026-09-13T00:17:16Z"
+        },
+        {
+          "name": "Post Run actions/setup-python@v5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 31,
+          "started_at": "2026-09-13T00:17:16Z",
+          "completed_at": "2026-09-13T00:17:16Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 32,
+          "started_at": "2026-09-13T00:17:16Z",
+          "completed_at": "2026-09-13T00:17:18Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 33,
+          "started_at": "2026-09-13T00:17:18Z",
+          "completed_at": "2026-09-13T00:17:18Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/yegors/fuckMail/check-runs/103641440224",
+      "labels": [
+        "windows-2022"
+      ],
+      "runner_id": 1000000032,
+      "runner_name": "GitHub Actions 1000000032",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 103641440305,
+      "run_id": 34726506199,
+      "workflow_name": "Native build and fixture tests",
+      "head_branch": "codex/phase-1",
+      "run_url": "https://api.github.com/repos/yegors/fuckMail/actions/runs/34726506199",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOUVpUkM8AAAAYIYLgMQ",
+      "head_sha": "cb6489b6b77210853dc0759e11cbf486ab638aa3",
+      "url": "https://api.github.com/repos/yegors/fuckMail/actions/jobs/103641440305",
+      "html_url": "https://github.com/yegors/fuckMail/actions/runs/34726506199/job/103641440305",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-12T23:51:47Z",
+      "started_at": "2026-09-12T23:51:57Z",
+      "completed_at": "2026-09-13T00:03:24Z",
+      "name": "macos-15",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-09-12T23:51:58Z",
+          "completed_at": "2026-09-12T23:52:00Z"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-09-12T23:52:00Z",
+          "completed_at": "2026-09-12T23:52:04Z"
+        },
+        {
+          "name": "Run actions/setup-python@v5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-09-12T23:52:04Z",
+          "completed_at": "2026-09-12T23:52:04Z"
+        },
+        {
+          "name": "Restore project SDKs and Rust downloads",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-09-12T23:52:04Z",
+          "completed_at": "2026-09-12T23:52:22Z"
+        },
+        {
+          "name": "Restore incremental Rust build",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-09-12T23:52:22Z",
+          "completed_at": "2026-09-12T23:52:23Z"
+        },
+        {
+          "name": "Linux native dependencies",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 6,
+          "started_at": "2026-09-12T23:52:23Z",
+          "completed_at": "2026-09-12T23:52:23Z"
+        },
+        {
+          "name": "Bootstrap (Unix)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-09-12T23:52:23Z",
+          "completed_at": "2026-09-12T23:52:34Z"
+        },
+        {
+          "name": "Bootstrap (Windows)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-09-12T23:52:34Z",
+          "completed_at": "2026-09-12T23:52:34Z"
+        },
+        {
+          "name": "Native fixture tests (Unix)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-09-12T23:52:34Z",
+          "completed_at": "2026-09-13T00:00:34Z"
+        },
+        {
+          "name": "Native fixture tests (Windows)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10,
+          "started_at": "2026-09-13T00:00:34Z",
+          "completed_at": "2026-09-13T00:00:34Z"
+        },
+        {
+          "name": "Package and isolated runtime smoke (Unix)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-09-13T00:00:34Z",
+          "completed_at": "2026-09-13T00:03:09Z"
+        },
+        {
+          "name": "Package and isolated runtime smoke (Windows)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 12,
+          "started_at": "2026-09-13T00:03:09Z",
+          "completed_at": "2026-09-13T00:03:09Z"
+        },
+        {
+          "name": "Retain development package",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-09-13T00:03:09Z",
+          "completed_at": "2026-09-13T00:03:12Z"
+        },
+        {
+          "name": "Retain native test and configure logs",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-09-13T00:03:12Z",
+          "completed_at": "2026-09-13T00:03:14Z"
+        },
+        {
+          "name": "Save acquired SDKs and Rust downloads",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 15,
+          "started_at": "2026-09-13T00:03:14Z",
+          "completed_at": "2026-09-13T00:03:14Z"
+        },
+        {
+          "name": "Save compiled Rust work",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16,
+          "started_at": "2026-09-13T00:03:14Z",
+          "completed_at": "2026-09-13T00:03:19Z"
+        },
+        {
+          "name": "Post Run actions/setup-python@v5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 31,
+          "started_at": "2026-09-13T00:03:19Z",
+          "completed_at": "2026-09-13T00:03:20Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 32,
+          "started_at": "2026-09-13T00:03:20Z",
+          "completed_at": "2026-09-13T00:03:20Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 33,
+          "started_at": "2026-09-13T00:03:20Z",
+          "completed_at": "2026-09-13T00:03:22Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/yegors/fuckMail/check-runs/103641440305",
+      "labels": [
+        "macos-15"
+      ],
+      "runner_id": 1000000030,
+      "runner_name": "GitHub Actions 1000000030",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    },
+    {
+      "id": 103641440329,
+      "run_id": 34726506199,
+      "workflow_name": "Native build and fixture tests",
+      "head_branch": "codex/phase-1",
+      "run_url": "https://api.github.com/repos/yegors/fuckMail/actions/runs/34726506199",
+      "run_attempt": 1,
+      "node_id": "CR_kwDOUVpUkM8AAAAYIYLgSQ",
+      "head_sha": "cb6489b6b77210853dc0759e11cbf486ab638aa3",
+      "url": "https://api.github.com/repos/yegors/fuckMail/actions/jobs/103641440329",
+      "html_url": "https://github.com/yegors/fuckMail/actions/runs/34726506199/job/103641440329",
+      "status": "completed",
+      "conclusion": "success",
+      "created_at": "2026-09-12T23:51:47Z",
+      "started_at": "2026-09-12T23:52:25Z",
+      "completed_at": "2026-09-13T00:06:10Z",
+      "name": "ubuntu-24.04",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-09-12T23:52:26Z",
+          "completed_at": "2026-09-12T23:52:27Z"
+        },
+        {
+          "name": "Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-09-12T23:52:27Z",
+          "completed_at": "2026-09-12T23:52:30Z"
+        },
+        {
+          "name": "Run actions/setup-python@v5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-09-12T23:52:30Z",
+          "completed_at": "2026-09-12T23:52:31Z"
+        },
+        {
+          "name": "Restore project SDKs and Rust downloads",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-09-12T23:52:31Z",
+          "completed_at": "2026-09-12T23:52:39Z"
+        },
+        {
+          "name": "Restore incremental Rust build",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-09-12T23:52:39Z",
+          "completed_at": "2026-09-12T23:52:40Z"
+        },
+        {
+          "name": "Linux native dependencies",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-09-12T23:52:40Z",
+          "completed_at": "2026-09-12T23:52:54Z"
+        },
+        {
+          "name": "Bootstrap (Unix)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-09-12T23:52:54Z",
+          "completed_at": "2026-09-12T23:53:04Z"
+        },
+        {
+          "name": "Bootstrap (Windows)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8,
+          "started_at": "2026-09-12T23:53:04Z",
+          "completed_at": "2026-09-12T23:53:04Z"
+        },
+        {
+          "name": "Native fixture tests (Unix)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-09-12T23:53:04Z",
+          "completed_at": "2026-09-13T00:04:47Z"
+        },
+        {
+          "name": "Native fixture tests (Windows)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10,
+          "started_at": "2026-09-13T00:04:47Z",
+          "completed_at": "2026-09-13T00:04:47Z"
+        },
+        {
+          "name": "Package and isolated runtime smoke (Unix)",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-09-13T00:04:47Z",
+          "completed_at": "2026-09-13T00:06:00Z"
+        },
+        {
+          "name": "Package and isolated runtime smoke (Windows)",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 12,
+          "started_at": "2026-09-13T00:06:00Z",
+          "completed_at": "2026-09-13T00:06:00Z"
+        },
+        {
+          "name": "Retain development package",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-09-13T00:06:00Z",
+          "completed_at": "2026-09-13T00:06:03Z"
+        },
+        {
+          "name": "Retain native test and configure logs",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-09-13T00:06:03Z",
+          "completed_at": "2026-09-13T00:06:04Z"
+        },
+        {
+          "name": "Save acquired SDKs and Rust downloads",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 15,
+          "started_at": "2026-09-13T00:06:04Z",
+          "completed_at": "2026-09-13T00:06:04Z"
+        },
+        {
+          "name": "Save compiled Rust work",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16,
+          "started_at": "2026-09-13T00:06:04Z",
+          "completed_at": "2026-09-13T00:06:08Z"
+        },
+        {
+          "name": "Post Run actions/setup-python@v5",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 31,
+          "started_at": "2026-09-13T00:06:08Z",
+          "completed_at": "2026-09-13T00:06:08Z"
+        },
+        {
+          "name": "Post Run actions/checkout@v4",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 32,
+          "started_at": "2026-09-13T00:06:08Z",
+          "completed_at": "2026-09-13T00:06:08Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 33,
+          "started_at": "2026-09-13T00:06:08Z",
+          "completed_at": "2026-09-13T00:06:08Z"
+        }
+      ],
+      "check_run_url": "https://api.github.com/repos/yegors/fuckMail/check-runs/103641440329",
+      "labels": [
+        "ubuntu-24.04"
+      ],
+      "runner_id": 1000000031,
+      "runner_name": "GitHub Actions 1000000031",
+      "runner_group_id": 0,
+      "runner_group_name": "GitHub Actions"
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 10308400056,
+      "name": "native-logs-macOS-ARM64-8e9179b22fa12b2093f918b04d7f654bed3b06b3",
+      "size_in_bytes": 15487,
+      "url": "https://api.github.com/repos/yegors/fuckMail/actions/artifacts/10308400056",
+      "archive_download_url": "https://api.github.com/repos/yegors/fuckMail/actions/artifacts/10308400056/zip",
+      "expired": false,
+      "created_at": "2026-09-13T00:03:14Z",
+      "expires_at": "2026-12-11T23:51:46Z",
+      "updated_at": "2026-09-13T00:03:14Z",
+      "digest": "sha256:9d7a1f8443c109f4b5f930b15d3c53ec39b99d465ecc365e9eb88d701f4b1d0d",
+      "workflow_run": {
+        "id": 34726506199,
+        "repository_id": 1364874384,
+        "head_repository_id": 1364874384,
+        "head_branch": "codex/phase-1",
+        "head_sha": "cb6489b6b77210853dc0759e11cbf486ab638aa3"
+      }
+    },
+    {
+      "id": 10308380111,
+      "name": "fuckmail-macOS-ARM64-8e9179b22fa12b2093f918b04d7f654bed3b06b3",
+      "size_in_bytes": 52124720,
+      "url": "https://api.github.com/repos/yegors/fuckMail/actions/artifacts/10308380111",
+      "archive_download_url": "https://api.github.com/repos/yegors/fuckMail/actions/artifacts/10308380111/zip",
+      "expired": false,
+      "created_at": "2026-09-13T00:03:12Z",
+      "expires_at": "2026-12-11T23:51:46Z",
+      "updated_at": "2026-09-13T00:03:12Z",
+      "digest": "sha256:5eef745d57143349cc267bbbf05e0a2e6f7afb99fb265ba1fae7a83d77ef8b15",
+      "workflow_run": {
+        "id": 34726506199,
+        "repository_id": 1364874384,
+        "head_repository_id": 1364874384,
+        "head_branch": "codex/phase-1",
+        "head_sha": "cb6489b6b77210853dc0759e11cbf486ab638aa3"
+      }
+    },
+    {
+      "id": 10308166222,
+      "name": "fuckmail-Windows-X64-8e9179b22fa12b2093f918b04d7f654bed3b06b3",
+      "size_in_bytes": 64750221,
+      "url": "https://api.github.com/repos/yegors/fuckMail/actions/artifacts/10308166222",
+      "archive_download_url": "https://api.github.com/repos/yegors/fuckMail/actions/artifacts/10308166222/zip",
+      "expired": false,
+      "created_at": "2026-09-13T00:17:08Z",
+      "expires_at": "2026-12-11T23:51:46Z",
+      "updated_at": "2026-09-13T00:17:08Z",
+      "digest": "sha256:55aebed437221cd015c321a07ff637c6dec54d52c143b62c60689d245ce71f1d",
+      "workflow_run": {
+        "id": 34726506199,
+        "repository_id": 1364874384,
+        "head_repository_id": 1364874384,
+        "head_branch": "codex/phase-1",
+        "head_sha": "cb6489b6b77210853dc0759e11cbf486ab638aa3"
+      }
+    },
+    {
+      "id": 10307874811,
+      "name": "native-logs-Windows-X64-8e9179b22fa12b2093f918b04d7f654bed3b06b3",
+      "size_in_bytes": 13739,
+      "url": "https://api.github.com/repos/yegors/fuckMail/actions/artifacts/10307874811",
+      "archive_download_url": "https://api.github.com/repos/yegors/fuckMail/actions/artifacts/10307874811/zip",
+      "expired": false,
+      "created_at": "2026-09-13T00:17:09Z",
+      "expires_at": "2026-12-11T23:51:46Z",
+      "updated_at": "2026-09-13T00:17:09Z",
+      "digest": "sha256:26eeb1be8da32355c23819897eeb4dce300fcaf38b43e254caba908e9533ec65",
+      "workflow_run": {
+        "id": 34726506199,
+        "repository_id": 1364874384,
+        "head_repository_id": 1364874384,
+        "head_branch": "codex/phase-1",
+        "head_sha": "cb6489b6b77210853dc0759e11cbf486ab638aa3"
+      }
+    },
+    {
+      "id": 10307604663,
+      "name": "fuckmail-Linux-X64-8e9179b22fa12b2093f918b04d7f654bed3b06b3",
+      "size_in_bytes": 47633721,
+      "url": "https://api.github.com/repos/yegors/fuckMail/actions/artifacts/10307604663",
+      "archive_download_url": "https://api.github.com/repos/yegors/fuckMail/actions/artifacts/10307604663/zip",
+      "expired": false,
+      "created_at": "2026-09-13T00:06:03Z",
+      "expires_at": "2026-12-11T23:51:46Z",
+      "updated_at": "2026-09-13T00:06:03Z",
+      "digest": "sha256:0c119e97b922d22b4f1868b9ce919b1f4b198168637e5599af6f30445e885ed5",
+      "workflow_run": {
+        "id": 34726506199,
+        "repository_id": 1364874384,
+        "head_repository_id": 1364874384,
+        "head_branch": "codex/phase-1",
+        "head_sha": "cb6489b6b77210853dc0759e11cbf486ab638aa3"
+      }
+    },
+    {
+      "id": 10307569821,
+      "name": "native-logs-Linux-X64-8e9179b22fa12b2093f918b04d7f654bed3b06b3",
+      "size_in_bytes": 15191,
+      "url": "https://api.github.com/repos/yegors/fuckMail/actions/artifacts/10307569821",
+      "archive_download_url": "https://api.github.com/repos/yegors/fuckMail/actions/artifacts/10307569821/zip",
+      "expired": false,
+      "created_at": "2026-09-13T00:06:04Z",
+      "expires_at": "2026-12-11T23:51:46Z",
+      "updated_at": "2026-09-13T00:06:04Z",
+      "digest": "sha256:9f3dd351bf65e1389d37e8594004c643d86571bcda082f29f9e402482c716172",
+      "workflow_run": {
+        "id": 34726506199,
+        "repository_id": 1364874384,
+        "head_repository_id": 1364874384,
+        "head_branch": "codex/phase-1",
+        "head_sha": "cb6489b6b77210853dc0759e11cbf486ab638aa3"
+      }
+    }
+  ],
+  "verified_hosts": [
+    {
+      "name": "macos-15",
+      "job_id": 103641440305,
+      "architecture": "ARM64",
+      "tests": {
+        "passed": 9,
+        "total": 9,
+        "elapsed_seconds": 328.03,
+        "gui_integration_seconds": 47.07
+      },
+      "sdk_free_relocated_package": "passed",
+      "native_logs_archive": "macos-native-logs.zip",
+      "last_test_log": "macos-LastTest.log",
+      "build_manifest": "macos-build-manifest.json",
+      "job_log": "macos-job.log",
+      "source_dirty": false
+    },
+    {
+      "name": "ubuntu-24.04",
+      "job_id": 103641440329,
+      "architecture": "X64",
+      "tests": {
+        "passed": 9,
+        "total": 9,
+        "elapsed_seconds": 385.22,
+        "gui_integration_seconds": 43.19
+      },
+      "sdk_free_relocated_package": "passed",
+      "native_logs_archive": "ubuntu-native-logs.zip",
+      "last_test_log": "ubuntu-LastTest.log",
+      "build_manifest": "ubuntu-build-manifest.json",
+      "job_log": "ubuntu-job.log",
+      "source_dirty": false
+    },
+    {
+      "name": "windows-2022",
+      "job_id": 103641440224,
+      "architecture": "X64",
+      "tests": {
+        "passed": 9,
+        "total": 9,
+        "elapsed_seconds": 968.86,
+        "gui_integration_seconds": 56.33
+      },
+      "sdk_free_relocated_package": "passed",
+      "native_logs_archive": "windows-native-logs.zip",
+      "last_test_log": "windows-LastTest.log",
+      "build_manifest": "windows-build-manifest.json",
+      "job_log": "windows-job.log",
+      "source_dirty": false
+    }
+  ],
+  "pending_hosts": [],
+  "retained_files": [
+    {
+      "name": "macos-build-manifest.json",
+      "bytes": 1087,
+      "sha256": "566e0ca48b00f072c372c9be7451dded6d97f91f52e799312ebce774a3e7e319"
+    },
+    {
+      "name": "macos-job.log",
+      "bytes": 100953,
+      "sha256": "a543767ce8e2ca087464100d60dffb8ecd3e302758e484e5057bf8d874b4dd4a"
+    },
+    {
+      "name": "macos-LastTest.log",
+      "bytes": 43208,
+      "sha256": "4f36fbb70c113c5d7d801b12d5d6872dab3d8a27fbcb001b8731dc02ee4c2841"
+    },
+    {
+      "name": "macos-native-logs.zip",
+      "bytes": 15487,
+      "sha256": "9d7a1f8443c109f4b5f930b15d3c53ec39b99d465ecc365e9eb88d701f4b1d0d"
+    },
+    {
+      "name": "source-equivalence.json",
+      "bytes": 1243,
+      "sha256": "dcf975f337584ff4b731f9548161e567acbcd982af38183e136059c4287d7bfb"
+    },
+    {
+      "name": "ubuntu-build-manifest.json",
+      "bytes": 1105,
+      "sha256": "377f7d56bd8673acd13ef3541f31cc60e234f73b544233e18803ff6b07ce246b"
+    },
+    {
+      "name": "ubuntu-job.log",
+      "bytes": 135902,
+      "sha256": "521a5db48613d5de351a2c71ce45998072e6ee49c59d99f1c591eed7b1e1cbaa"
+    },
+    {
+      "name": "ubuntu-LastTest.log",
+      "bytes": 42950,
+      "sha256": "4c40b5a5614a475f12553d4f4c8a278ca29903003b0ec71ceafdcba1fd43174b"
+    },
+    {
+      "name": "ubuntu-native-logs.zip",
+      "bytes": 15191,
+      "sha256": "9f3dd351bf65e1389d37e8594004c643d86571bcda082f29f9e402482c716172"
+    },
+    {
+      "name": "windows-build-manifest.json",
+      "bytes": 1131,
+      "sha256": "9ad1dfd2e2ed30ba05459db590d8bdcdd643eb300c8c3c977bda0d306a96565e"
+    },
+    {
+      "name": "windows-job.log",
+      "bytes": 92170,
+      "sha256": "c2a236491f78de14bbbf0ac728db582d8e2417472b3bcad1cb336bb33a94a0cd"
+    },
+    {
+      "name": "windows-LastTest.log",
+      "bytes": 43314,
+      "sha256": "c82a10f7a6f374b8ee1bcf1aab62f59d6be68034a5e9235fbca662e459f3c582"
+    },
+    {
+      "name": "windows-native-logs.zip",
+      "bytes": 13739,
+      "sha256": "26eeb1be8da32355c23819897eeb4dce300fcaf38b43e254caba908e9533ec65"
+    }
+  ],
+  "scope": "Native release compile, all 9 CTests, synthetic offscreen/software GUI workflow/restart, SDK-free relocated CLI/GUI and final-owner shutdown. Physical input/scanout/GPU, broader scaling, OS vaults, live Google and trusted signing remain unverified. Source equivalence is exact Git tree equality; generated PR merge checkout differs from PR head and final main merge commit identity.",
+  "notes": [
+    "All three jobs complete successfully, including native release tests and relocated package smoke/full self-test. All six package/native-log artifact metadata entries and provider SHA-256 digests are retained.",
+    "All three downloaded native-log archives match their GitHub artifact SHA-256 digests. Exact LastTest logs and clean build manifests were extracted without modifying archive bytes; each LastTest log contains 9 passing tests. Full package archives were not downloaded in this evidence collection.",
+    "macOS deployment prints codesign verification errors for Contents/MacOS/licenses/LICENSE-Geist.txt; subsequent SDK-free runtime checks pass. Trusted signing/notarization remains unverified.",
+    "P1-10 Windows navigation/search/three-theme D3D11 resize evidence remains its separately recorded physical-host package scope. This synthetic CI run does not replace those measurements or qualify physical input/scanout."
+  ],
+  "native_log_archive_digest_verification": [
+    {
+      "host": "macos-15",
+      "artifact_id": 10308400056,
+      "local_file": "macos-native-logs.zip",
+      "sha256": "9d7a1f8443c109f4b5f930b15d3c53ec39b99d465ecc365e9eb88d701f4b1d0d",
+      "matched": true
+    },
+    {
+      "host": "ubuntu-24.04",
+      "artifact_id": 10307569821,
+      "local_file": "ubuntu-native-logs.zip",
+      "sha256": "9f3dd351bf65e1389d37e8594004c643d86571bcda082f29f9e402482c716172",
+      "matched": true
+    },
+    {
+      "host": "windows-2022",
+      "artifact_id": 10307874811,
+      "local_file": "windows-native-logs.zip",
+      "sha256": "26eeb1be8da32355c23819897eeb4dce300fcaf38b43e254caba908e9533ec65",
+      "matched": true
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "checked_at": "2026-09-13T00:11:14Z",
+  "repository": "yegors/fuckMail",
+  "workflow_run_id": 34726506199,
+  "head_commit": "cb6489b6b77210853dc0759e11cbf486ab638aa3",
+  "workflow_checkout_commit": "8e9179b22fa12b2093f918b04d7f654bed3b06b3",
+  "main_merge_commit": "885de67d2d3807f73374ea2975a63fb9476d6e7f",
+  "tree_sha": "c0af1ef5d102050eb8f3cb531faa310fcf859c25",
+  "head_tree_sha": "c0af1ef5d102050eb8f3cb531faa310fcf859c25",
+  "local_head_tree_sha": "c0af1ef5d102050eb8f3cb531faa310fcf859c25",
+  "local_main_merge_tree_sha": "c0af1ef5d102050eb8f3cb531faa310fcf859c25",
+  "tree_equality": true,
+  "evidence": {
+    "remote_git_commit_url": "https://api.github.com/repos/yegors/fuckMail/git/commits/8e9179b22fa12b2093f918b04d7f654bed3b06b3",
+    "workflow_run_url": "https://github.com/yegors/fuckMail/actions/runs/34726506199",
+    "local_command": "git rev-parse 'cb6489b6b77210853dc0759e11cbf486ab638aa3^{tree}' '885de67d2d3807f73374ea2975a63fb9476d6e7f^{tree}'"
+  },
+  "scope": "All three commits contain the exact same Git tree; commit identities differ. CI tests check out the generated pull-request merge commit. This equivalence does not turn synthetic/offscreen CI into physical input, GPU, vault or live-provider evidence."
+}

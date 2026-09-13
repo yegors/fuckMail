@@ -1,6 +1,6 @@
 # Development plan
 
-Updated 2026-09-12 under [D009–D019](decisions.md). **Phase 0 synthetic foundation is complete on available hosts; Phase 1 implementation and acceptance are active. Google-first readiness: 0/9 whole areas verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
+Updated 2026-09-12 under [D009–D020](decisions.md). **Phases 0 and 1 are complete on available hosts; Phase 2 planning is prepared on `codex/phase-2`. Google-first readiness: 0/9 whole areas verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
 
 ## Delivery direction
 
@@ -16,7 +16,7 @@ IMAP, SMTP and external iCalendar URL support start only after the founder has d
 
 ## Phases and evidence
 
-P1-10's [Windows acceptance at `25b8b1e`](research/phase-1-execution.md#p1-10-final-windows-package--25b8b1e) passes release/package, measured navigation, concurrent search and three-theme resize/visual checks. Final-source Mac/Windows/Ubuntu CI remains pending publication before Phase 1 closes or another phase begins. Earlier P1-09 CI passes remain scoped to `791254d`.
+P1-10's [Windows acceptance and final CI](research/phase-1-execution.md#p1-10-final-native-ci-and-phase-1-closure) close Phase 1 on available hosts. The [Phase 2 plan](plans/phase-2.md) now details real Google setup, shared provider scheduling, parallel mail/Calendar acquisition, durable drafts/send and calendar invitations/reminders, followed by staged founder testing. Actual credentials, disk/vault qualification and policy choices retain their pre-import gates.
 
 | Phase | Deliverable | Exit evidence |
 | --- | --- | --- |
@@ -27,7 +27,7 @@ P1-10's [Windows acceptance at `25b8b1e`](research/phase-1-execution.md#p1-10-fi
 | 4 — Later protocol support | IMAP, SMTP and external iCalendar subscriptions | Start only after founder Google GUI/CLI dogfooding; then prove their own interoperability and recovery |
 | Later | Editable CalDAV; possible broad public/open-source launch | Separate decisions |
 
-Phase detail decreases with distance. Completed [Phase 0](plans/phase-0.md) and approaching [Phase 1](plans/phase-1.md) have detailed packets. Refine the next slice from evidence rather than writing every future API in advance. Missing provider access, final design or test hosts blocks only the affected evidence.
+Phase detail decreases with distance. Completed [Phase 0](plans/phase-0.md)/[Phase 1](plans/phase-1.md) and approaching [Phase 2](plans/phase-2.md) have detailed packets. Refine the next slice from evidence rather than writing every future API in advance. Missing provider access, final design or test hosts blocks only the affected evidence.
 
 The [first self-contained package](plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) delivered a small runnable synthetic-mail slice from Phases 0/1, with repeatable development on the founder's Mac and Windows PC. Its bounded walkthrough and native build evidence are part of the now-completed Phase 0 experiments.
 
@@ -45,7 +45,7 @@ Do not implement legacy transports/feeds, an exhaustive CLI grammar, a model ins
 
 ## Phase 1: the redesigned local milestone
 
-The [detailed Phase 1 plan](plans/phase-1.md) is being implemented from the updated HTML and the existing code, with owned packets and acceptance checks. Extend the same engine/GUI/CLI; preserve Phase 0 evidence and store semantics. [Phase 1 evidence](research/phase-1-execution.md) tracks measured progress and remaining gates.
+The [detailed Phase 1 plan](plans/phase-1.md) is completed on available hosts, including the updated design, local workflows and navigation/rendering spike. Preserve the existing engine/GUI/CLI and source-specific [execution evidence](research/phase-1-execution.md); whole-product/physical/live-provider qualification remains separate.
 
 P1-00 freezes the next shared types/fixtures. P1-01 adds typed state, grouped queries/counts/actions and combined calendar scope while P1-02 establishes native visual primitives/settings. P1-03 mail/search and P1-04 calendar/timeline then proceed in parallel. P1-05 finishes durable human replies/local capture while P1-06 exposes bounded nonrecurring create/edit/self-RSVP. P1-07 integrates native visual/input, cross-client, recovery/upgrade and package checks.
 
@@ -55,9 +55,11 @@ No Google credentials or further product decision is needed to begin the first p
 
 ## Phase 2: Google mail and calendar together
 
+D020's [detailed packets](plans/phase-2.md) start from merged `885de67` on `codex/phase-2`. The founder has Cloud/OAuth/admin access and selected OS permissions plus verified disk encryption for the pilot; app-level mail-store encryption is deferred. The branch currently contains planning only.
+
 Implement consumer Gmail and Workspace setup, durable desktop OAuth, recent-first access with resumable full body/attachment retention, history reconciliation, labels/flags, signatures, human reply/forward/send and uncertain-submission recovery. All send/retrieve operations use Google APIs; one shared MIME interpretation serves GUI and CLI.
 
-Develop Google Calendar alongside mail: discovery/permissions, sync, day/week/month/agenda, bottom strip, event edits, recurrence, invitations/RSVP and reminders as their fixtures pass. Recurrence/ICS representations used inside Google are not external-feed support.
+Develop Google Calendar alongside mail: discovery/permissions, sync, day/week/month/agenda, the Mail-only header/footer timeline, event edits, recurrence, invitations/RSVP and reminders as their fixtures pass. Recurrence/ICS representations used inside Google are not external-feed support.
 
 Add CLI commands as their GUI/core workflows become usable. Begin controlled founder use on the available machine when the data/recovery gates are safe; a partial command set is expected initially. Record missing functionality rather than expanding into IMAP/SMTP to satisfy the old plan.
 
@@ -95,7 +97,7 @@ Use one Rust workspace and one Qt application with shared small fixtures when im
 | IDs, revisions, framing, request scope and access policy | Each shared client boundary | Isolated editor/library experiments |
 | D014 actions and count projections | Read-on-open, Done=read+unstar and untimed hold are settled; P1-00 fixes exact typed snapshots/units | Shell primitives and separate calendar presentation |
 | Retention/deletion, encryption, unsent work and recovery | Affected real-data schema/destructive behavior | Disposable synthetic stores |
-| Google project/admin access | Live personal/Workspace gate | Local fixtures and paired client work |
+| Google project/admin configuration | Access reported available; inspect actual scopes, publishing mode, Workspace policy and quotas before live gate | Shared HTTP/vault/provider fixtures |
 | Remaining forms and provider settings | Current combined-calendar/timeline choices are settled; missing local forms are designed in their packet | Flight Progress v2 shell, mail/calendar presentation and local preferences |
 | Best-effort HTML component/resources | Later HTML display | Text-based reading/replies |
 | Local runner quality/locality/cancellation | Enabling that runner/policy | Manual labeling and fake inference |

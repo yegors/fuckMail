@@ -1,8 +1,8 @@
 # Current status
 
-**P1-10 Windows acceptance passes at clean source `25b8b1e`; final-source Mac/Windows/Ubuntu CI is pending publication.** D019's navigation/rendering spike delivers measured mailbox/reader latency, stable sampled resize rules and corrected button contrast/action placement. All 900 packaged navigation observations pass the unchanged 100 ms p95 target with exact source checks; all four concurrent-search classes pass 200 ms. Mail UI 13 / Quality 10 consume unchanged schema7/fixture3/protocol1. See [final package evidence](research/phase-1-execution.md#p1-10-final-windows-package--25b8b1e) and [the spike packet](plans/phase-1.md#p1-10--navigation-and-rendering-spike-before-the-next-phase). Pushed `791254d` closes the earlier P1-09 CI gate; those passes do not cover the new source.
+**Phase 1 is complete on available hosts; Phase 2 planning is prepared on `codex/phase-2` under D020.** The [plan](plans/phase-2.md) covers real personal Gmail and Workspace mail/Calendar through Google APIs, staged account verification, controlled writes and a daily pilot. The founder confirms existing Cloud/OAuth setup and Workspace admin access, and selects OS account permissions plus verified disk encryption; app-level mail-store encryption is deferred. These are setup/policy inputs, not verified live access.
 
-As of 2026-09-12. **P1-10 Windows release03 passes 9/9 tests; the clean `25b8b1e` package passes SDK-free native workflows/restart, navigation, concurrent search and three-theme D3D11 resize/visual checks at 125% scaling. Phase 1 remains incomplete until new-source CI is recorded; no next phase has begun and Google-first readiness remains 0/9.** [Phase 1 evidence](research/phase-1-execution.md) preserves exact results and earlier failures. Runtime `204fa62` remains the completed Phase 0 baseline; no live Google account or model is connected.
+As of 2026-09-12 (Toronto). **P1-10 Windows release/package, all 900 navigation checks, concurrent search and three-theme resize/visual acceptance pass at runtime `25b8b1e`. Final CI passes 9/9 on Mac, Windows and Ubuntu, with relocated packages and logs retained.** [CI/source equivalence](research/phase-1-execution.md#p1-10-final-native-ci-and-phase-1-closure) proves generated PR merge `8e9179b`, pushed `cb6489b` and merged `main` `885de67` have the same tree. Phase 2 branches from that merge; no Phase 2 implementation, real account or model is connected. Runtime remains schema 7/fresh fixture 3/additive protocol 1; whole Google-first readiness remains **0/9**. Phase 0 runtime `204fa62` and earlier failures remain preserved.
 
 ## Established direction
 
@@ -14,7 +14,9 @@ The proposed stack remains Rust engine/CLI, C++20/Qt Quick/QML UI, private local
 
 ## Next work
 
-Record Mac/Windows/Ubuntu CI and relocated package checks for the locally committed P1-10 source after publication. Windows package mailbox click/Tab/Shift+Tab p95 is **81.58–91.62 ms**, reader click p95 **78.32–91.73 ms** across fresh/large profiles, and the most demanding concurrent-search class is **164.58 ms p95**. All three palettes retain a one-physical-pixel sampled divider and nonzero calendar scroll across native resizes; physical dragging/scanout and broader display scaling remain unverified. The latest package is `dist/fuckmail-windows-amd64.zip` from `25b8b1e`.
+Start **P2-00**, then shared OAuth/vault and HTTP/quota packets P2-01/02, followed by Gmail and Calendar acquisition in parallel. Planning contracts are Core 14, Gmail 4, Calendar 12, Platform 11, Mail UI 14, CLI 8 and Quality 11; these revisions do not change the implemented schema/fixture. Verify the actual Cloud scopes/publishing mode/Workspace policy/quotas and native disk/vault protection before import. Confirm remaining inventory-retention and backup/restore choices. [Phase 2 milestones](plans/phase-2.md#builds-the-founder-can-test) separate initial access, explicit canary sends/calendar writes and daily use with full-history progress.
+
+## Recorded Phase 1 foundation
 
 **P1-10 follows the verified P1-09 source:** D018's second September 12 UI update includes General, Graphite/Paper/Harbour, text size/startup and timeline placement plus counted groups, sender-kind filters and exact-address cards. P1-09 boundary: Core 13, CLI 7, Mail UI 12, Calendar 11, Search 5, Triage 6, Platform 10, Quality 9; schema 7/fresh fixture 3/additive protocol 1. P1-10 advances Mail UI to 13 and Quality to 10. [GUI07/native05](research/assets/phase-1/p1-09-windows/p1-09-native-05.log) exits 0 through the updated Settings and mail controls, idle convergence after independent CLI changes, sender-card hover/Open/Filter/Write, all four composition modes, source-conflict refusal, calendar edits/RSVP and restart. Four fresh GUI processes verify Mail, Calendar and both last-workspace choices with saved appearance and resulting workspace.
 
@@ -26,7 +28,7 @@ The [packaged concurrent measurement](research/assets/phase-1/p1-09-windows/p1-0
 
 Earlier release attempts included a Rust relinking failure while a screenshot process held the engine, a subsequent scoped recovery and a later source-conflict correction. Their logs, the separate native shutdown warning and their narrower source coverage remain preserved in the execution record. The final complete release01 and clean package runs now cover the integrated corrections.
 
-The [P1-07 audit](research/phase-1-execution.md#completion-audit-follow-up--p1-07) has passing native arrival/count/selection retention and edited-calendar/RSVP restart evidence. Earlier ingestion startup and measured-budget failures remain visible alongside the passing final runs. The earlier `738601e` Mac/Ubuntu CI passes and Windows aggregate Rust-suite watchdog failure retain their historical scope. Final `791254d` CI verifies the corrected allowance and integrated P1-09 fixes on all three hosts. Phase 1 remains incomplete until P1-10's new-source CI gate passes; its Windows acceptance is now recorded separately.
+The [P1-07 audit](research/phase-1-execution.md#completion-audit-follow-up--p1-07) has passing native arrival/count/selection retention and edited-calendar/RSVP restart evidence. Earlier ingestion startup and measured-budget failures remain visible alongside the passing final runs. The earlier `738601e` Mac/Ubuntu CI passes and Windows aggregate Rust-suite watchdog failure retain their historical scope. Final `791254d` CI verifies the corrected allowance and integrated P1-09 fixes on all three hosts. P1-10's final CI now passes as recorded above, closing Phase 1 on available hosts; its Windows navigation/rendering scope remains separately measured.
 
 Physical mouse/keyboard, clipboard/IME, accessibility and wider display-scaling checks remain explicitly unverified; desktop input automation was paused after Escape. Native programmatic controls, exact CLI readback, actual GUI restart and screenshots establish their recorded scopes only. The initial failed search measurements are retained alongside the passing optimized results.
 
@@ -39,8 +41,8 @@ The home Windows 11 PC is ready for Phase 1 development at planning checkpoint `
 | Required area | State | Verified |
 | --- | --- | --- |
 | [Core/offline storage](contracts/core-storage.md) | Schema-7 native draft/restart, Core migration and preserved package upgrades pass; whole area Draft | No |
-| [Gmail/Workspace](contracts/gmail.md) | Phase 0 synthetic experiment verified; whole area Draft | No |
-| [Mail UI/composition](contracts/mail-ui.md) | P1-10 Windows navigation/rendering and package workflows pass; new-source CI pending; whole area Draft | No |
+| [Gmail/Workspace](contracts/gmail.md) | Phase 2 personal/Workspace adapter planned; no live account verified; whole area Draft | No |
+| [Mail UI/composition](contracts/mail-ui.md) | Phase 1 native/package and Windows navigation/rendering pass; Phase 2 live workflows planned; whole area Draft | No |
 | [Search](contracts/search.md) | Native filters/idle convergence and all four development/packaged concurrent budgets pass; whole area Draft | No |
 | [Triage/categories](contracts/triage.md) | Phase 1 explicit review/Done/Delay verified locally; whole area Draft | No |
 | [Google Calendar](contracts/calendar.md) | P1-09 local views/writes, header timeline, duration preference and edited-event/RSVP restart pass; live Google pending; whole area Draft | No |
@@ -57,8 +59,8 @@ The Google-first release still requires its applicable quality and OS gates. It 
 | Phase | Outcome | State |
 | --- | --- | --- |
 | 0 — Paired foundation | Native builds, small fixtures, storage, private engine/CLI/GUI, text/composer and Google prerequisites | Completed on available hosts; external/physical gates explicit |
-| 1 — Redesigned local client | September 12 native design and paired CLI, shared triage/search/preferences, durable new/reply/reply-all/forward drafts/capture and combined calendar workflows | P1-10 Windows acceptance passes at 25b8b1e; new-source three-host CI/packages pending publication |
-| 2 — Google daily workflows | Gmail/Workspace and Google Calendar, growing CLI with GUI; controlled founder use | Planned |
+| 1 — Redesigned local client | September 12 native design and paired CLI, shared triage/search/preferences, durable new/reply/reply-all/forward drafts/capture and combined calendar workflows | Completed on available hosts; P1-10 Windows measurements and final three-host CI/packages pass |
+| 2 — Google daily workflows | Gmail/Workspace and Google Calendar, growing CLI with GUI; controlled founder use | Plan prepared on codex/phase-2; implementation and live gates not started |
 | 3 — Google completion and dogfooding | Usable Google GUI and CLI, expanded designs, later best-effort HTML/local assistance, recovery/performance and delivery evidence | Planned |
 | 4 — Later protocols | IMAP, SMTP and external iCalendar subscriptions, only after actual Google dogfooding | Deferred; not started |
 | Later | CalDAV and possible public/open-source launch | Separate scope |

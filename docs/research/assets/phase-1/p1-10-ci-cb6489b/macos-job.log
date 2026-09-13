@@ -1,0 +1,1032 @@
+﻿2026-09-12T23:51:58.4716850Z Current runner version: '2.337.0'
+2026-09-12T23:51:58.4733970Z ##[group]Runner Image Provisioner
+2026-09-12T23:51:58.4734540Z Hosted Compute Agent
+2026-09-12T23:51:58.4734950Z Version: 20260828.587
+2026-09-12T23:51:58.4735440Z Commit: abac92662cab4cc7352de4f9f9d2e2419aad9c29
+2026-09-12T23:51:58.4736120Z Build Date: 2026-08-28T16:44:25Z
+2026-09-12T23:51:58.4736660Z Worker ID: {de37c96e-b297-4904-a06f-a9a0705fb7e5}
+2026-09-12T23:51:58.4737140Z Azure Region: westus
+2026-09-12T23:51:58.4737560Z ##[endgroup]
+2026-09-12T23:51:58.4738600Z ##[group]Operating System
+2026-09-12T23:51:58.4739130Z macOS
+2026-09-12T23:51:58.4739470Z 15.7.9
+2026-09-12T23:51:58.4739870Z 24G830
+2026-09-12T23:51:58.4740220Z ##[endgroup]
+2026-09-12T23:51:58.4740710Z ##[group]Runner Image
+2026-09-12T23:51:58.4741180Z Image: macos-15-arm64
+2026-09-12T23:51:58.4741690Z Version: 20260907.0337.1
+2026-09-12T23:51:58.4742660Z Included Software: https://github.com/actions/runner-images/blob/macos-15-arm64/20260907.0337/images/macos/macos-15-arm64-Readme.md
+2026-09-12T23:51:58.4743890Z Image Release: https://github.com/actions/runner-images/releases/tag/macos-15-arm64%2F20260907.0337
+2026-09-12T23:51:58.4744630Z ##[endgroup]
+2026-09-12T23:51:58.4745620Z ##[group]GITHUB_TOKEN Permissions
+2026-09-12T23:51:58.4746820Z Contents: read
+2026-09-12T23:51:58.4747360Z Metadata: read
+2026-09-12T23:51:58.4747800Z ##[endgroup]
+2026-09-12T23:51:58.4749230Z Secret source: Actions
+2026-09-12T23:51:58.4749920Z Cache mode: write
+2026-09-12T23:51:58.4750500Z Prepare workflow directory
+2026-09-12T23:51:58.4984630Z Prepare all required actions
+2026-09-12T23:51:58.5045490Z Getting action download info
+2026-09-12T23:51:58.9391780Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-09-12T23:51:59.4739960Z Download action repository 'actions/setup-python@v5' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+2026-09-12T23:51:59.6373660Z Download action repository 'actions/cache@v4' (SHA:0057852bfaa89a56745cba8c7296529d2fc39830)
+2026-09-12T23:51:59.7550020Z Download action repository 'actions/upload-artifact@v4' (SHA:ea165f8d65b6e75b540449e92b4886f43607fa02)
+2026-09-12T23:52:00.0437680Z Complete job name: macos-15
+2026-09-12T23:52:00.1200920Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-12T23:52:00.1207590Z ##[group]Run actions/checkout@v4
+2026-09-12T23:52:00.1208070Z with:
+2026-09-12T23:52:00.1208400Z   repository: yegors/fuckMail
+2026-09-12T23:52:00.1211060Z   token: ***
+2026-09-12T23:52:00.1211380Z   ssh-strict: true
+2026-09-12T23:52:00.1211690Z   ssh-user: git
+2026-09-12T23:52:00.1212030Z   persist-credentials: true
+2026-09-12T23:52:00.1212380Z   clean: true
+2026-09-12T23:52:00.1212740Z   sparse-checkout-cone-mode: true
+2026-09-12T23:52:00.1213300Z   fetch-depth: 1
+2026-09-12T23:52:00.1213720Z   fetch-tags: false
+2026-09-12T23:52:00.1214090Z   show-progress: true
+2026-09-12T23:52:00.1214420Z   lfs: false
+2026-09-12T23:52:00.1214760Z   submodules: false
+2026-09-12T23:52:00.1215090Z   set-safe-directory: true
+2026-09-12T23:52:00.1215460Z   allow-unsafe-pr-checkout: false
+2026-09-12T23:52:00.1216020Z ##[endgroup]
+2026-09-12T23:52:00.5253550Z Syncing repository: yegors/fuckMail
+2026-09-12T23:52:00.5256440Z ##[group]Getting Git version info
+2026-09-12T23:52:00.5257050Z Working directory is '/Users/runner/work/fuckMail/fuckMail'
+2026-09-12T23:52:00.5257880Z [command]/opt/homebrew/bin/git version
+2026-09-12T23:52:00.5893640Z git version 2.55.0
+2026-09-12T23:52:00.5916660Z ##[endgroup]
+2026-09-12T23:52:00.5933640Z Copying '/Users/runner/.gitconfig' to '/Users/runner/work/_temp/984a3cbf-ad63-495d-a6a5-63f32cb34499/.gitconfig'
+2026-09-12T23:52:00.5942480Z Temporarily overriding HOME='/Users/runner/work/_temp/984a3cbf-ad63-495d-a6a5-63f32cb34499' before making global git config changes
+2026-09-12T23:52:00.5944710Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-12T23:52:00.5945980Z [command]/opt/homebrew/bin/git config --global --add safe.directory /Users/runner/work/fuckMail/fuckMail
+2026-09-12T23:52:00.6092480Z Deleting the contents of '/Users/runner/work/fuckMail/fuckMail'
+2026-09-12T23:52:00.6096320Z ##[group]Initializing the repository
+2026-09-12T23:52:00.6101340Z [command]/opt/homebrew/bin/git init /Users/runner/work/fuckMail/fuckMail
+2026-09-12T23:52:00.6446940Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-09-12T23:52:00.6450980Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-09-12T23:52:00.6451880Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-09-12T23:52:00.6453900Z hint: call:
+2026-09-12T23:52:00.6454740Z hint:
+2026-09-12T23:52:00.6456530Z hint: 	git config --global init.defaultBranch <name>
+2026-09-12T23:52:00.6474920Z hint:
+2026-09-12T23:52:00.6475720Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-09-12T23:52:00.6476640Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-09-12T23:52:00.6477310Z hint:
+2026-09-12T23:52:00.6477710Z hint: 	git branch -m <name>
+2026-09-12T23:52:00.6478230Z hint:
+2026-09-12T23:52:00.6478770Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-09-12T23:52:00.6479760Z Initialized empty Git repository in /Users/runner/work/fuckMail/fuckMail/.git/
+2026-09-12T23:52:00.6481540Z [command]/opt/homebrew/bin/git remote add origin https://github.com/yegors/fuckMail
+2026-09-12T23:52:00.6584500Z ##[endgroup]
+2026-09-12T23:52:00.6587090Z ##[group]Disabling automatic garbage collection
+2026-09-12T23:52:00.6589220Z [command]/opt/homebrew/bin/git config --local gc.auto 0
+2026-09-12T23:52:00.6687190Z ##[endgroup]
+2026-09-12T23:52:00.6689840Z ##[group]Setting up auth
+2026-09-12T23:52:00.6691740Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-09-12T23:52:00.6782890Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-09-12T23:52:00.8105830Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-12T23:52:00.8176990Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-09-12T23:52:00.9223850Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-12T23:52:00.9303350Z [command]/opt/homebrew/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-09-12T23:52:01.0274490Z [command]/opt/homebrew/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-09-12T23:52:01.0347770Z ##[endgroup]
+2026-09-12T23:52:01.0349540Z ##[group]Fetching the repository
+2026-09-12T23:52:01.0353060Z [command]/opt/homebrew/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +8e9179b22fa12b2093f918b04d7f654bed3b06b3:refs/remotes/pull/2/merge
+2026-09-12T23:52:04.0492210Z From https://github.com/yegors/fuckMail
+2026-09-12T23:52:04.0548730Z  * [new ref]         8e9179b22fa12b2093f918b04d7f654bed3b06b3 -> pull/2/merge
+2026-09-12T23:52:04.0598450Z ##[endgroup]
+2026-09-12T23:52:04.0599420Z ##[group]Determining the checkout info
+2026-09-12T23:52:04.0600460Z ##[endgroup]
+2026-09-12T23:52:04.0601130Z [command]/opt/homebrew/bin/git sparse-checkout disable
+2026-09-12T23:52:04.0603080Z [command]/opt/homebrew/bin/git config --local --unset-all extensions.worktreeConfig
+2026-09-12T23:52:04.0678570Z ##[group]Checking out the ref
+2026-09-12T23:52:04.0683730Z [command]/opt/homebrew/bin/git checkout --progress --force refs/remotes/pull/2/merge
+2026-09-12T23:52:04.5724010Z HEAD is now at 8e9179b Merge cb6489b6b77210853dc0759e11cbf486ab638aa3 into 1b2b58f7e8a731b5cee900320ba1a6bb448831bd
+2026-09-12T23:52:04.5914550Z ##[endgroup]
+2026-09-12T23:52:04.6086630Z [command]/opt/homebrew/bin/git log -1 --format=%H
+2026-09-12T23:52:04.6173170Z 8e9179b22fa12b2093f918b04d7f654bed3b06b3
+2026-09-12T23:52:04.6618260Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-12T23:52:04.6622840Z ##[group]Run actions/setup-python@v5
+2026-09-12T23:52:04.6623760Z with:
+2026-09-12T23:52:04.6624440Z   python-version: 3.11
+2026-09-12T23:52:04.6625210Z   check-latest: false
+2026-09-12T23:52:04.6631950Z   token: ***
+2026-09-12T23:52:04.6632700Z   update-environment: true
+2026-09-12T23:52:04.6633890Z   allow-prereleases: false
+2026-09-12T23:52:04.6634690Z   freethreaded: false
+2026-09-12T23:52:04.6635430Z ##[endgroup]
+2026-09-12T23:52:04.8591430Z ##[group]Installed versions
+2026-09-12T23:52:04.9022560Z (node:9930) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-12T23:52:04.9027450Z Successfully set up CPython (3.11.9)
+2026-09-12T23:52:04.9030340Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-12T23:52:04.9034670Z ##[endgroup]
+2026-09-12T23:52:05.1399530Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-12T23:52:05.1403220Z ##[group]Run actions/cache/restore@v4
+2026-09-12T23:52:05.1404080Z with:
+2026-09-12T23:52:05.1404670Z   path: .tools
+
+2026-09-12T23:52:05.1405960Z   key: native-tools-macOS-ARM64-791d5027d1b82f8f157efec76e8839858e2a0257f87bbc10bf37ac41273f584f
+2026-09-12T23:52:05.1407400Z   enableCrossOsArchive: false
+2026-09-12T23:52:05.1408170Z   fail-on-cache-miss: false
+2026-09-12T23:52:05.1408890Z   lookup-only: false
+2026-09-12T23:52:05.1409520Z env:
+2026-09-12T23:52:05.1410320Z   pythonLocation: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-12T23:52:05.1411950Z   PKG_CONFIG_PATH: /Users/runner/hostedtoolcache/Python/3.11.9/arm64/lib/pkgconfig
+2026-09-12T23:52:05.1417660Z   Python_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-12T23:52:05.1420750Z   Python2_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-12T23:52:05.1422040Z   Python3_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-12T23:52:05.1423060Z ##[endgroup]
+2026-09-12T23:52:05.3023920Z (node:9933) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-12T23:52:05.3051440Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-12T23:52:05.5865980Z Cache hit for: native-tools-macOS-ARM64-791d5027d1b82f8f157efec76e8839858e2a0257f87bbc10bf37ac41273f584f
+2026-09-12T23:52:05.5986760Z (node:9933) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-09-12T23:52:06.9075350Z Received 0 of 381234646 (0.0%), 0.0 MBs/sec
+2026-09-12T23:52:07.9054430Z Received 50331648 of 381234646 (13.2%), 23.9 MBs/sec
+2026-09-12T23:52:08.9097050Z Received 134217728 of 381234646 (35.2%), 42.5 MBs/sec
+2026-09-12T23:52:09.9120200Z Received 197132288 of 381234646 (51.7%), 46.8 MBs/sec
+2026-09-12T23:52:10.9132310Z Received 268435456 of 381234646 (70.4%), 51.0 MBs/sec
+2026-09-12T23:52:11.9345990Z Received 327155712 of 381234646 (85.8%), 51.7 MBs/sec
+2026-09-12T23:52:12.6932350Z Received 381234646 of 381234646 (100.0%), 53.5 MBs/sec
+2026-09-12T23:52:12.6969460Z Cache Size: ~364 MB (381234646 B)
+2026-09-12T23:52:12.7056290Z [command]/opt/homebrew/bin/gtar -xf /Users/runner/work/_temp/9d959b88-48d4-46e7-8f2e-fa4fb5aa5ed2/cache.tzst -P -C /Users/runner/work/fuckMail/fuckMail --delay-directory-restore --use-compress-program unzstd
+2026-09-12T23:52:22.4724990Z Cache restored successfully
+2026-09-12T23:52:22.5165950Z Cache restored from key: native-tools-macOS-ARM64-791d5027d1b82f8f157efec76e8839858e2a0257f87bbc10bf37ac41273f584f
+2026-09-12T23:52:23.1452030Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-12T23:52:23.1456010Z ##[group]Run actions/cache/restore@v4
+2026-09-12T23:52:23.1457170Z with:
+2026-09-12T23:52:23.1457470Z   path: target
+2026-09-12T23:52:23.1458160Z   key: rust-build-macOS-ARM64-55e846e25564ed0f1050ce71faa72dd5df801e366d1921f0097c3f772d618eec-8e9179b22fa12b2093f918b04d7f654bed3b06b3
+2026-09-12T23:52:23.1459110Z   restore-keys: rust-build-macOS-ARM64-55e846e25564ed0f1050ce71faa72dd5df801e366d1921f0097c3f772d618eec-
+
+2026-09-12T23:52:23.1459770Z   enableCrossOsArchive: false
+2026-09-12T23:52:23.1460140Z   fail-on-cache-miss: false
+2026-09-12T23:52:23.1460540Z   lookup-only: false
+2026-09-12T23:52:23.1460770Z env:
+2026-09-12T23:52:23.1461350Z   pythonLocation: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-12T23:52:23.1461850Z   PKG_CONFIG_PATH: /Users/runner/hostedtoolcache/Python/3.11.9/arm64/lib/pkgconfig
+2026-09-12T23:52:23.1462470Z   Python_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-12T23:52:23.1463010Z   Python2_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-12T23:52:23.1463490Z   Python3_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-12T23:52:23.1463960Z ##[endgroup]
+2026-09-12T23:52:23.4053230Z (node:10383) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-12T23:52:23.4054980Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-12T23:52:23.6630050Z Cache not found for input keys: rust-build-macOS-ARM64-55e846e25564ed0f1050ce71faa72dd5df801e366d1921f0097c3f772d618eec-8e9179b22fa12b2093f918b04d7f654bed3b06b3, rust-build-macOS-ARM64-55e846e25564ed0f1050ce71faa72dd5df801e366d1921f0097c3f772d618eec-
+2026-09-12T23:52:23.6757870Z ##[group]Run scripts/dev.sh bootstrap
+2026-09-12T23:52:23.6758260Z [36;1mscripts/dev.sh bootstrap[0m
+2026-09-12T23:52:23.6888650Z shell: /bin/bash -e {0}
+2026-09-12T23:52:23.6889510Z env:
+2026-09-12T23:52:23.6890530Z   pythonLocation: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-12T23:52:23.6891760Z   PKG_CONFIG_PATH: /Users/runner/hostedtoolcache/Python/3.11.9/arm64/lib/pkgconfig
+2026-09-12T23:52:23.6893100Z   Python_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-12T23:52:23.6894310Z   Python2_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-12T23:52:23.6895630Z   Python3_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-12T23:52:23.6896890Z ##[endgroup]
+2026-09-12T23:52:24.3976510Z + xcrun --find clang++
+2026-09-12T23:52:25.8300940Z /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang++
+2026-09-12T23:52:25.8534870Z + /Users/runner/.cargo/bin/rustc --version
+2026-09-12T23:52:25.9288300Z info: syncing channel updates for 1.88.0-aarch64-apple-darwin
+2026-09-12T23:52:26.1491320Z info: latest update on 2025-06-26 for version 1.88.0 (6b00bc388 2025-06-23)
+2026-09-12T23:52:26.1499190Z info: downloading 5 components
+2026-09-12T23:52:33.6058410Z Host: macOS-15.7.9-arm64-arm-64bit arm64
+2026-09-12T23:52:33.6059670Z Qt kit: /Users/runner/work/fuckMail/fuckMail/.tools/Qt/6.11.2/macos
+2026-09-12T23:52:33.6072330Z Source: /Users/runner/work/fuckMail/fuckMail
+2026-09-12T23:52:33.6072730Z + /opt/homebrew/bin/git --version
+2026-09-12T23:52:33.6299420Z git version 2.55.0 at /opt/homebrew/bin/git
+2026-09-12T23:52:33.6300150Z + /Users/runner/.cargo/bin/rustc --version
+2026-09-12T23:52:33.6635270Z rustc 1.88.0 (6b00bc388 2025-06-23) at /Users/runner/.cargo/bin/rustc
+2026-09-12T23:52:33.6636560Z + /Users/runner/.cargo/bin/cargo --version
+2026-09-12T23:52:33.7387690Z cargo 1.88.0 (873a06493 2025-05-10) at /Users/runner/.cargo/bin/cargo
+2026-09-12T23:52:33.7388410Z + /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/cmake --version
+2026-09-12T23:52:33.9423880Z cmake version 3.31.6 at /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/cmake
+2026-09-12T23:52:33.9425260Z + /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/ninja --version
+2026-09-12T23:52:33.9507610Z 1.11.1.git.kitware.jobserver-1 at /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/ninja
+2026-09-12T23:52:33.9508570Z + /Users/runner/work/fuckMail/fuckMail/.tools/Qt/6.11.2/macos/bin/qtpaths --qt-version
+2026-09-12T23:52:34.0537400Z 6.11.2 at /Users/runner/work/fuckMail/fuckMail/.tools/Qt/6.11.2/macos/bin/qtpaths
+2026-09-12T23:52:34.0538330Z Native C++ compiler: /usr/bin/c++
+2026-09-12T23:52:34.0540650Z + xcrun --show-sdk-version
+2026-09-12T23:52:34.5500740Z 15.5
+2026-09-12T23:52:34.5667230Z ##[group]Run scripts/dev.sh test --preset release
+2026-09-12T23:52:34.5668030Z [36;1mscripts/dev.sh test --preset release[0m
+2026-09-12T23:52:34.5717960Z shell: /bin/bash -e {0}
+2026-09-12T23:52:34.5718230Z env:
+2026-09-12T23:52:34.5733670Z   pythonLocation: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-12T23:52:34.5734200Z   PKG_CONFIG_PATH: /Users/runner/hostedtoolcache/Python/3.11.9/arm64/lib/pkgconfig
+2026-09-12T23:52:34.5734650Z   Python_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-12T23:52:34.5735070Z   Python2_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-12T23:52:34.5735500Z   Python3_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-12T23:52:34.5735830Z ##[endgroup]
+2026-09-12T23:52:34.8082060Z Host: macOS-15.7.9-arm64-arm-64bit arm64
+2026-09-12T23:52:34.8184430Z Qt kit: /Users/runner/work/fuckMail/fuckMail/.tools/Qt/6.11.2/macos
+2026-09-12T23:52:34.8284340Z Source: /Users/runner/work/fuckMail/fuckMail
+2026-09-12T23:52:34.8385880Z + /opt/homebrew/bin/git --version
+2026-09-12T23:52:34.8486990Z git version 2.55.0 at /opt/homebrew/bin/git
+2026-09-12T23:52:34.8587440Z + /Users/runner/.cargo/bin/rustc --version
+2026-09-12T23:52:34.8688420Z rustc 1.88.0 (6b00bc388 2025-06-23) at /Users/runner/.cargo/bin/rustc
+2026-09-12T23:52:34.8790490Z + /Users/runner/.cargo/bin/cargo --version
+2026-09-12T23:52:34.8993270Z cargo 1.88.0 (873a06493 2025-05-10) at /Users/runner/.cargo/bin/cargo
+2026-09-12T23:52:34.9094890Z + /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/cmake --version
+2026-09-12T23:52:34.9902910Z cmake version 3.31.6 at /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/cmake
+2026-09-12T23:52:35.0004910Z + /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/ninja --version
+2026-09-12T23:52:35.0105480Z 1.11.1.git.kitware.jobserver-1 at /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/ninja
+2026-09-12T23:52:35.0207200Z + /Users/runner/work/fuckMail/fuckMail/.tools/Qt/6.11.2/macos/bin/qtpaths --qt-version
+2026-09-12T23:52:35.0307360Z 6.11.2 at /Users/runner/work/fuckMail/fuckMail/.tools/Qt/6.11.2/macos/bin/qtpaths
+2026-09-12T23:52:35.0408090Z Native C++ compiler: /usr/bin/c++
+2026-09-12T23:52:35.0509480Z + xcrun --show-sdk-version
+2026-09-12T23:52:35.0609950Z 15.5
+2026-09-12T23:52:35.0710440Z + /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/cmake --preset release
+2026-09-12T23:52:36.2686210Z Preset CMake variables:
+2026-09-12T23:52:36.2686660Z 
+2026-09-12T23:52:36.2686880Z   BUILD_TESTING:BOOL="TRUE"
+2026-09-12T23:52:36.2687450Z   CMAKE_BUILD_TYPE="Release"
+2026-09-12T23:52:36.2689120Z   CMAKE_EXPORT_COMPILE_COMMANDS:BOOL="TRUE"
+2026-09-12T23:52:36.2690380Z   CMAKE_PREFIX_PATH="/Users/runner/work/fuckMail/fuckMail/.tools/Qt/6.11.2/macos"
+2026-09-12T23:52:36.2690890Z 
+2026-09-12T23:52:36.2691070Z -- The CXX compiler identification is AppleClang 17.0.0.17000013
+2026-09-12T23:52:36.2965900Z -- Detecting CXX compiler ABI info
+2026-09-12T23:52:36.4557830Z -- Detecting CXX compiler ABI info - done
+2026-09-12T23:52:36.4722590Z -- Check for working CXX compiler: /Applications/Xcode_16.4.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++ - skipped
+2026-09-12T23:52:36.4747090Z -- Detecting CXX compile features
+2026-09-12T23:52:36.4759000Z -- Detecting CXX compile features - done
+2026-09-12T23:52:36.5342030Z -- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+2026-09-12T23:52:36.7041550Z -- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+2026-09-12T23:52:36.7317640Z -- Found Threads: TRUE
+2026-09-12T23:52:36.7584830Z -- Performing Test HAVE_STDATOMIC
+2026-09-12T23:52:37.2675040Z -- Performing Test HAVE_STDATOMIC - Success
+2026-09-12T23:52:37.2680050Z -- Found WrapAtomic: TRUE
+2026-09-12T23:52:37.6943920Z -- Found OpenGL: /Applications/Xcode_16.4.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX15.5.sdk/System/Library/Frameworks/OpenGL.framework
+2026-09-12T23:52:37.6949440Z -- Found WrapOpenGL: TRUE
+2026-09-12T23:52:38.4117190Z -- Configuring done (3.3s)
+2026-09-12T23:52:38.5260680Z -- Generating done (0.1s)
+2026-09-12T23:52:38.5274250Z -- Build files have been written to: /Users/runner/work/fuckMail/fuckMail/build/release
+2026-09-12T23:52:38.5327350Z + /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/cmake --build --preset release --parallel
+2026-09-12T23:52:38.6173460Z [0/99] Build the shared Rust engine and CLI
+2026-09-12T23:52:38.8652670Z     Updating crates.io index
+2026-09-12T23:52:39.6631370Z  Downloading crates ...
+2026-09-12T23:52:39.7209390Z   Downloaded anstyle-query v1.1.5
+2026-09-12T23:52:39.7446470Z   Downloaded zerovec v0.11.8
+2026-09-12T23:52:39.7793350Z   Downloaded yoke v0.8.3
+2026-09-12T23:52:39.8331290Z   Downloaded syn v2.0.119
+2026-09-12T23:52:39.9135480Z   Downloaded regex-automata v0.4.18
+2026-09-12T23:52:39.9848930Z   Downloaded zerovec-derive v0.11.6
+2026-09-12T23:52:40.0577040Z   Downloaded yoke-derive v0.8.2
+2026-09-12T23:52:40.0693670Z   Downloaded zmij v1.0.23
+2026-09-12T23:52:40.0834140Z   Downloaded url v2.5.8
+2026-09-12T23:52:40.0970300Z   Downloaded zerotrie v0.2.5
+2026-09-12T23:52:40.1249570Z   Downloaded icu_properties v2.3.0
+2026-09-12T23:52:40.1366600Z   Downloaded serde v1.0.229
+2026-09-12T23:52:40.1869680Z   Downloaded serde_json v1.0.151
+2026-09-12T23:52:40.2071290Z   Downloaded icu_properties_data v2.3.0
+2026-09-12T23:52:40.2527860Z   Downloaded clap_builder v4.6.6
+2026-09-12T23:52:40.2836130Z   Downloaded idna v1.1.0
+2026-09-12T23:52:40.2937720Z   Downloaded nom v8.0.0
+2026-09-12T23:52:40.3251530Z   Downloaded vcpkg v0.2.15
+2026-09-12T23:52:40.6724600Z   Downloaded typenum v1.20.1
+2026-09-12T23:52:40.6825710Z   Downloaded zerocopy v0.8.57
+2026-09-12T23:52:40.8264240Z   Downloaded regex-syntax v0.8.11
+2026-09-12T23:52:40.8565580Z   Downloaded syn v3.0.5
+2026-09-12T23:52:40.8881810Z   Downloaded mio v1.2.3
+2026-09-12T23:52:40.9585520Z   Downloaded memchr v2.8.3
+2026-09-12T23:52:40.9786660Z   Downloaded chrono v0.4.45
+2026-09-12T23:52:40.9987770Z   Downloaded thiserror-impl v2.0.20
+2026-09-12T23:52:41.0089420Z   Downloaded socket2 v0.6.5
+2026-09-12T23:52:41.0290370Z   Downloaded serde_derive v1.0.229
+2026-09-12T23:52:41.0592380Z   Downloaded rand v0.8.8
+2026-09-12T23:52:41.0793360Z   Downloaded oauth2 v5.0.0
+2026-09-12T23:52:41.1296240Z   Downloaded clap v4.6.6
+2026-09-12T23:52:41.1699590Z   Downloaded web_atoms v0.2.6
+2026-09-12T23:52:41.1792990Z   Downloaded mail-parser v0.11.9
+2026-09-12T23:52:41.4181050Z   Downloaded thiserror v1.0.69
+2026-09-12T23:52:41.4382630Z   Downloaded icu_normalizer v2.3.0
+2026-09-12T23:52:41.4684140Z   Downloaded string_cache v0.9.0
+2026-09-12T23:52:41.4785640Z   Downloaded sha2 v0.10.9
+2026-09-12T23:52:41.5123980Z   Downloaded scopeguard v1.2.0
+2026-09-12T23:52:41.5225860Z   Downloaded chrono-tz v0.10.4
+2026-09-12T23:52:41.5828260Z   Downloaded icu_locale_core v2.3.0
+2026-09-12T23:52:41.6352940Z   Downloaded http v1.5.0
+2026-09-12T23:52:41.6453550Z   Downloaded html5ever v0.39.0
+2026-09-12T23:52:41.6656310Z   Downloaded hashify v0.2.9
+2026-09-12T23:52:41.6768710Z   Downloaded hashbrown v0.14.5
+2026-09-12T23:52:41.7108810Z   Downloaded aho-corasick v1.1.5
+2026-09-12T23:52:41.7828490Z   Downloaded writeable v0.6.4
+2026-09-12T23:52:41.7929950Z   Downloaded tokio-macros v2.7.2
+2026-09-12T23:52:41.8030480Z   Downloaded thiserror v2.0.20
+2026-09-12T23:52:41.8438900Z   Downloaded strsim v0.11.1
+2026-09-12T23:52:41.8540380Z   Downloaded string_cache_codegen v0.6.1
+2026-09-12T23:52:41.8641830Z   Downloaded stable_deref_trait v1.2.1
+2026-09-12T23:52:41.8743540Z   Downloaded libc v0.2.189
+2026-09-12T23:52:42.0973160Z   Downloaded siphasher v1.0.3
+2026-09-12T23:52:42.1073420Z   Downloaded shlex v2.0.1
+2026-09-12T23:52:42.1173790Z   Downloaded num-traits v0.2.19
+2026-09-12T23:52:42.1275430Z   Downloaded httpdate v1.0.3
+2026-09-12T23:52:42.1377250Z   Downloaded cssparser v0.37.0
+2026-09-12T23:52:42.1578370Z   Downloaded anstyle-parse v1.0.0
+2026-09-12T23:52:42.1680340Z   Downloaded anstream v1.0.0
+2026-09-12T23:52:42.1781260Z   Downloaded zerofrom-derive v0.1.7
+2026-09-12T23:52:42.1882520Z   Downloaded utf8parse v0.2.2
+2026-09-12T23:52:42.1984850Z   Downloaded tokio v1.53.1
+2026-09-12T23:52:42.5054010Z   Downloaded tinystr v0.8.4
+2026-09-12T23:52:42.5167950Z   Downloaded synstructure v0.13.2
+2026-09-12T23:52:42.5269320Z   Downloaded smallvec v1.16.1
+2026-09-12T23:52:42.5371380Z   Downloaded rand_core v0.6.4
+2026-09-12T23:52:42.5453900Z   Downloaded quote v1.0.47
+2026-09-12T23:52:42.5569540Z   Downloaded pin-project-lite v0.2.17
+2026-09-12T23:52:42.6083070Z   Downloaded parking_lot_core v0.9.12
+2026-09-12T23:52:42.6184810Z   Downloaded once_cell v1.21.4
+2026-09-12T23:52:42.6286220Z   Downloaded markup5ever v0.39.0
+2026-09-12T23:52:42.6488530Z   Downloaded litemap v0.8.3
+2026-09-12T23:52:42.6641810Z   Downloaded hashlink v0.9.1
+2026-09-12T23:52:42.7156640Z   Downloaded email_address v0.2.9
+2026-09-12T23:52:42.7291760Z   Downloaded dtoa v1.0.11
+2026-09-12T23:52:42.7403500Z   Downloaded displaydoc v0.2.7
+2026-09-12T23:52:42.7404250Z   Downloaded clap_derive v4.6.4
+2026-09-12T23:52:42.8056230Z   Downloaded regex v1.13.1
+2026-09-12T23:52:42.8291000Z   Downloaded ppv-lite86 v0.2.21
+2026-09-12T23:52:42.8405050Z   Downloaded potential_utf v0.1.6
+2026-09-12T23:52:42.8530100Z   Downloaded phf_shared v0.12.1
+2026-09-12T23:52:42.8555350Z   Downloaded phf v0.12.1
+2026-09-12T23:52:42.8689600Z   Downloaded lock_api v0.4.14
+2026-09-12T23:52:42.8787570Z   Downloaded idna_adapter v1.2.2
+2026-09-12T23:52:42.8888740Z   Downloaded heck v0.5.0
+2026-09-12T23:52:42.8978250Z   Downloaded hashbrown v0.17.1
+2026-09-12T23:52:42.8978560Z   Downloaded getrandom v0.2.17
+2026-09-12T23:52:42.8978760Z   Downloaded fs2 v0.4.3
+2026-09-12T23:52:42.8979010Z   Downloaded form_urlencoded v1.2.2
+2026-09-12T23:52:42.9104310Z   Downloaded fastrand v2.5.0
+2026-09-12T23:52:42.9205310Z   Downloaded equivalent v1.0.2
+2026-09-12T23:52:42.9307730Z   Downloaded email-encoding v0.4.2
+2026-09-12T23:52:42.9409670Z   Downloaded colorchoice v1.0.5
+2026-09-12T23:52:42.9511940Z   Downloaded clap_lex v1.1.0
+2026-09-12T23:52:42.9614530Z   Downloaded quoted_printable v0.5.2
+2026-09-12T23:52:42.9717820Z   Downloaded precomputed-hash v0.1.1
+2026-09-12T23:52:42.9819170Z   Downloaded pkg-config v0.3.34
+2026-09-12T23:52:42.9920370Z   Downloaded phf_generator v0.13.1
+2026-09-12T23:52:43.0015510Z   Downloaded phf_codegen v0.13.1
+2026-09-12T23:52:43.0015860Z   Downloaded phf v0.13.1
+2026-09-12T23:52:43.0016090Z   Downloaded percent-encoding v2.3.2
+2026-09-12T23:52:43.0016340Z   Downloaded parking_lot v0.12.5
+2026-09-12T23:52:43.0016580Z   Downloaded new_debug_unreachable v1.0.6
+2026-09-12T23:52:43.0016810Z   Downloaded mime v0.3.17
+2026-09-12T23:52:43.0107060Z   Downloaded maplit v1.0.2
+2026-09-12T23:52:43.0394680Z   Downloaded lettre v0.11.23
+2026-09-12T23:52:43.0820380Z   Downloaded itoa v1.0.18
+2026-09-12T23:52:43.0921500Z   Downloaded indexmap v2.14.2
+2026-09-12T23:52:43.1022220Z   Downloaded icu_normalizer_data v2.3.0
+2026-09-12T23:52:43.1127150Z   Downloaded icu_collections v2.3.0
+2026-09-12T23:52:43.1611430Z   Downloaded iana-time-zone v0.1.65
+2026-09-12T23:52:43.1748900Z   Downloaded find-msvc-tools v0.1.12
+2026-09-12T23:52:43.1876380Z   Downloaded fallible-streaming-iterator v0.1.9
+2026-09-12T23:52:43.2012870Z   Downloaded fallible-iterator v0.3.0
+2026-09-12T23:52:43.2130350Z   Downloaded errno v0.3.14
+2026-09-12T23:52:43.2266600Z   Downloaded digest v0.10.7
+2026-09-12T23:52:43.2417670Z   Downloaded cpufeatures v0.2.17
+2026-09-12T23:52:43.2544590Z   Downloaded core-foundation-sys v0.8.7
+2026-09-12T23:52:43.2651770Z   Downloaded cc v1.4.5
+2026-09-12T23:52:43.2753460Z   Downloaded bytes v1.12.1
+2026-09-12T23:52:43.2855400Z   Downloaded bitflags v2.13.2
+2026-09-12T23:52:43.3057960Z   Downloaded base64 v0.23.1
+2026-09-12T23:52:43.3260220Z   Downloaded base64 v0.22.1
+2026-09-12T23:52:43.3464360Z   Downloaded ammonia v4.1.4
+2026-09-12T23:52:43.3565780Z   Downloaded ahash v0.8.12
+2026-09-12T23:52:43.3867930Z   Downloaded unicode-ident v1.0.24
+2026-09-12T23:52:43.4386250Z   Downloaded thiserror-impl v1.0.69
+2026-09-12T23:52:43.4524350Z   Downloaded signal-hook-registry v1.4.8
+2026-09-12T23:52:43.4630130Z   Downloaded serde_path_to_error v0.1.20
+2026-09-12T23:52:43.4631270Z   Downloaded serde_core v1.0.229
+2026-09-12T23:52:43.4732610Z   Downloaded rusqlite v0.32.1
+2026-09-12T23:52:43.4833630Z   Downloaded rand_chacha v0.3.1
+2026-09-12T23:52:43.4934810Z   Downloaded proc-macro2 v1.0.107
+2026-09-12T23:52:43.5137860Z   Downloaded log v0.4.34
+2026-09-12T23:52:43.5239530Z   Downloaded is_terminal_polyfill v1.70.2
+2026-09-12T23:52:43.5340970Z   Downloaded icu_provider v2.3.1
+2026-09-12T23:52:43.5454540Z   Downloaded cfg-if v1.0.4
+2026-09-12T23:52:43.5657190Z   Downloaded autocfg v1.5.1
+2026-09-12T23:52:43.5759080Z   Downloaded anstyle v1.0.14
+2026-09-12T23:52:43.5961590Z   Downloaded zerofrom v0.1.8
+2026-09-12T23:52:43.6063620Z   Downloaded version_check v0.9.5
+2026-09-12T23:52:43.6164640Z   Downloaded utf8_iter v1.0.4
+2026-09-12T23:52:43.6270110Z   Downloaded tendril v0.5.1
+2026-09-12T23:52:43.6376550Z   Downloaded phf_shared v0.13.1
+2026-09-12T23:52:43.6473780Z   Downloaded generic-array v0.14.7
+2026-09-12T23:52:43.6474340Z   Downloaded dtoa-short v0.3.5
+2026-09-12T23:52:43.6540080Z   Downloaded crypto-common v0.1.7
+2026-09-12T23:52:43.6640950Z   Downloaded block-buffer v0.10.4
+2026-09-12T23:52:43.7045560Z   Downloaded libsqlite3-sys v0.30.1
+2026-09-12T23:52:43.9642580Z    Compiling proc-macro2 v1.0.107
+2026-09-12T23:52:43.9746780Z    Compiling unicode-ident v1.0.24
+2026-09-12T23:52:43.9847940Z    Compiling quote v1.0.47
+2026-09-12T23:52:44.4854260Z    Compiling libc v0.2.189
+2026-09-12T23:52:46.1003680Z    Compiling cfg-if v1.0.4
+2026-09-12T23:52:46.1509710Z    Compiling smallvec v1.16.1
+2026-09-12T23:52:46.5062890Z    Compiling version_check v0.9.5
+2026-09-12T23:52:46.7231880Z    Compiling stable_deref_trait v1.2.1
+2026-09-12T23:52:46.7634250Z    Compiling serde_core v1.0.229
+2026-09-12T23:52:47.4718380Z    Compiling syn v3.0.5
+2026-09-12T23:52:47.6826680Z    Compiling syn v2.0.119
+2026-09-12T23:52:50.7885950Z    Compiling memchr v2.8.3
+2026-09-12T23:52:51.3755480Z    Compiling serde v1.0.229
+2026-09-12T23:52:51.6238210Z    Compiling zerocopy v0.8.57
+2026-09-12T23:52:51.8937720Z    Compiling synstructure v0.13.2
+2026-09-12T23:52:52.3298980Z    Compiling siphasher v1.0.3
+2026-09-12T23:52:52.5055450Z    Compiling itoa v1.0.18
+2026-09-12T23:52:52.6225570Z    Compiling litemap v0.8.3
+2026-09-12T23:52:52.7987470Z    Compiling writeable v0.6.4
+2026-09-12T23:52:53.0439640Z    Compiling zerovec-derive v0.11.6
+2026-09-12T23:52:53.0641380Z    Compiling displaydoc v0.2.7
+2026-09-12T23:52:53.5123370Z    Compiling zerofrom-derive v0.1.7
+2026-09-12T23:52:53.7705620Z    Compiling yoke-derive v0.8.2
+2026-09-12T23:52:54.3383980Z    Compiling serde_derive v1.0.229
+2026-09-12T23:52:54.6767600Z    Compiling zerofrom v0.1.8
+2026-09-12T23:52:54.7344170Z    Compiling parking_lot_core v0.9.12
+2026-09-12T23:52:54.7524830Z    Compiling yoke v0.8.3
+2026-09-12T23:52:54.9425730Z    Compiling zerovec v0.11.8
+2026-09-12T23:52:55.4745270Z    Compiling tinystr v0.8.4
+2026-09-12T23:52:55.6491410Z    Compiling icu_locale_core v2.3.0
+2026-09-12T23:52:57.3478310Z    Compiling potential_utf v0.1.6
+2026-09-12T23:52:57.3681210Z    Compiling zerotrie v0.2.5
+2026-09-12T23:52:57.4382720Z    Compiling generic-array v0.14.7
+2026-09-12T23:52:57.6202570Z    Compiling icu_normalizer_data v2.3.0
+2026-09-12T23:52:57.6706480Z    Compiling utf8_iter v1.0.4
+2026-09-12T23:52:57.7879580Z    Compiling icu_properties_data v2.3.0
+2026-09-12T23:52:57.7995850Z    Compiling scopeguard v1.2.0
+2026-09-12T23:52:57.9328810Z    Compiling lock_api v0.4.14
+2026-09-12T23:52:57.9564430Z    Compiling phf_shared v0.13.1
+2026-09-12T23:52:58.0958830Z    Compiling icu_collections v2.3.0
+2026-09-12T23:52:58.1460910Z    Compiling icu_provider v2.3.1
+2026-09-12T23:52:58.5301330Z    Compiling typenum v1.20.1
+2026-09-12T23:52:58.5516660Z    Compiling fastrand v2.5.0
+2026-09-12T23:52:58.5809650Z    Compiling parking_lot v0.12.5
+2026-09-12T23:52:58.6314280Z    Compiling phf_generator v0.13.1
+2026-09-12T23:52:58.9523910Z    Compiling autocfg v1.5.1
+2026-09-12T23:52:59.1088910Z    Compiling zmij v1.0.23
+2026-09-12T23:52:59.2595210Z    Compiling num-traits v0.2.19
+2026-09-12T23:52:59.3117230Z    Compiling icu_properties v2.3.0
+2026-09-12T23:52:59.4209430Z    Compiling icu_normalizer v2.3.0
+2026-09-12T23:52:59.5746410Z    Compiling serde_json v1.0.151
+2026-09-12T23:52:59.7240220Z    Compiling crypto-common v0.1.7
+2026-09-12T23:52:59.7840440Z    Compiling block-buffer v0.10.4
+2026-09-12T23:53:00.2995690Z    Compiling idna_adapter v1.2.2
+2026-09-12T23:53:00.3398570Z    Compiling phf_codegen v0.13.1
+2026-09-12T23:53:00.3921250Z    Compiling string_cache_codegen v0.6.1
+2026-09-12T23:53:00.5051080Z    Compiling getrandom v0.2.17
+2026-09-12T23:53:00.6163540Z    Compiling core-foundation-sys v0.8.7
+2026-09-12T23:53:00.6416110Z    Compiling new_debug_unreachable v1.0.6
+2026-09-12T23:53:00.6754180Z    Compiling rand_core v0.6.4
+2026-09-12T23:53:00.7478550Z    Compiling web_atoms v0.2.6
+2026-09-12T23:53:00.7923140Z    Compiling iana-time-zone v0.1.65
+2026-09-12T23:53:00.8379530Z    Compiling idna v1.1.0
+2026-09-12T23:53:01.7649900Z    Compiling digest v0.10.7
+2026-09-12T23:53:01.9041690Z    Compiling ppv-lite86 v0.2.21
+2026-09-12T23:53:02.0648640Z    Compiling cpufeatures v0.2.17
+2026-09-12T23:53:02.1093940Z    Compiling bytes v1.12.1
+2026-09-12T23:53:02.1848870Z    Compiling precomputed-hash v0.1.1
+2026-09-12T23:53:02.2201550Z    Compiling log v0.4.34
+2026-09-12T23:53:02.3341330Z    Compiling percent-encoding v2.3.2
+2026-09-12T23:53:02.3760380Z    Compiling string_cache v0.9.0
+2026-09-12T23:53:02.4755520Z    Compiling form_urlencoded v1.2.2
+2026-09-12T23:53:02.5484570Z    Compiling sha2 v0.10.9
+2026-09-12T23:53:02.6044790Z    Compiling rand_chacha v0.3.1
+2026-09-12T23:53:02.7473370Z    Compiling chrono v0.4.45
+2026-09-12T23:53:03.3754640Z    Compiling phf v0.13.1
+2026-09-12T23:53:03.5069110Z    Compiling ahash v0.8.12
+2026-09-12T23:53:03.5270690Z    Compiling find-msvc-tools v0.1.12
+2026-09-12T23:53:03.6805140Z    Compiling shlex v2.0.1
+2026-09-12T23:53:03.7809250Z    Compiling cc v1.4.5
+2026-09-12T23:53:04.4431750Z    Compiling rand v0.8.8
+2026-09-12T23:53:05.2730610Z    Compiling url v2.5.8
+2026-09-12T23:53:05.6268630Z    Compiling tendril v0.5.1
+2026-09-12T23:53:05.9090850Z    Compiling phf_shared v0.12.1
+2026-09-12T23:53:06.0401520Z    Compiling aho-corasick v1.1.5
+2026-09-12T23:53:06.0812630Z    Compiling equivalent v1.0.2
+2026-09-12T23:53:06.1167140Z    Compiling regex-syntax v0.8.11
+2026-09-12T23:53:06.8873440Z    Compiling pkg-config v0.3.34
+2026-09-12T23:53:07.3060750Z    Compiling utf8parse v0.2.2
+2026-09-12T23:53:07.3549250Z    Compiling thiserror v1.0.69
+2026-09-12T23:53:07.5594380Z    Compiling vcpkg v0.2.15
+2026-09-12T23:53:08.0735070Z    Compiling thiserror v2.0.20
+2026-09-12T23:53:08.3897170Z    Compiling dtoa v1.0.11
+2026-09-12T23:53:08.4982700Z    Compiling hashbrown v0.17.1
+2026-09-12T23:53:08.6608080Z    Compiling chrono-tz v0.10.4
+2026-09-12T23:53:08.7967880Z    Compiling once_cell v1.21.4
+2026-09-12T23:53:08.9106540Z    Compiling indexmap v2.14.2
+2026-09-12T23:53:09.0035760Z    Compiling dtoa-short v0.3.5
+2026-09-12T23:53:09.1083750Z    Compiling libsqlite3-sys v0.30.1
+2026-09-12T23:53:09.3489100Z    Compiling anstyle-parse v1.0.0
+2026-09-12T23:53:09.4506750Z    Compiling regex-automata v0.4.18
+2026-09-12T23:53:09.4822820Z    Compiling phf v0.12.1
+2026-09-12T23:53:09.5787990Z    Compiling markup5ever v0.39.0
+2026-09-12T23:53:09.8000700Z    Compiling thiserror-impl v1.0.69
+2026-09-12T23:53:09.9120210Z    Compiling thiserror-impl v2.0.20
+2026-09-12T23:53:10.7140280Z    Compiling errno v0.3.14
+2026-09-12T23:53:10.7840410Z    Compiling is_terminal_polyfill v1.70.2
+2026-09-12T23:53:10.8246240Z    Compiling colorchoice v1.0.5
+2026-09-12T23:53:10.8791100Z    Compiling base64 v0.23.1
+2026-09-12T23:53:10.8984390Z    Compiling anstyle-query v1.1.5
+2026-09-12T23:53:10.9427540Z    Compiling anstyle v1.0.14
+2026-09-12T23:53:11.0989840Z    Compiling email-encoding v0.4.2
+2026-09-12T23:53:11.2251670Z    Compiling anstream v1.0.0
+2026-09-12T23:53:11.3885430Z    Compiling signal-hook-registry v1.4.8
+2026-09-12T23:53:11.5745800Z    Compiling regex v1.13.1
+2026-09-12T23:53:11.6492710Z    Compiling html5ever v0.39.0
+2026-09-12T23:53:12.6156530Z    Compiling hashify v0.2.9
+2026-09-12T23:53:16.9233440Z    Compiling cssparser v0.37.0
+2026-09-12T23:53:17.8912680Z    Compiling hashbrown v0.14.5
+2026-09-12T23:53:18.5180490Z    Compiling http v1.5.0
+2026-09-12T23:53:18.6468880Z    Compiling tokio-macros v2.7.2
+2026-09-12T23:53:19.2389510Z    Compiling serde_path_to_error v0.1.20
+2026-09-12T23:53:19.5686530Z    Compiling nom v8.0.0
+2026-09-12T23:53:19.8798280Z    Compiling socket2 v0.6.5
+2026-09-12T23:53:20.3333950Z    Compiling mio v1.2.3
+2026-09-12T23:53:20.8186500Z    Compiling pin-project-lite v0.2.17
+2026-09-12T23:53:20.8711200Z    Compiling clap_lex v1.1.0
+2026-09-12T23:53:21.0704480Z    Compiling httpdate v1.0.3
+2026-09-12T23:53:21.2532030Z    Compiling email_address v0.2.9
+2026-09-12T23:53:21.5136180Z    Compiling mime v0.3.17
+2026-09-12T23:53:21.9225790Z    Compiling heck v0.5.0
+2026-09-12T23:53:22.0780650Z    Compiling base64 v0.22.1
+2026-09-12T23:53:22.2965010Z    Compiling strsim v0.11.1
+2026-09-12T23:53:22.4044560Z    Compiling maplit v1.0.2
+2026-09-12T23:53:22.4417280Z    Compiling quoted_printable v0.5.2
+2026-09-12T23:53:22.6699120Z    Compiling lettre v0.11.23
+2026-09-12T23:53:22.8330460Z    Compiling clap_builder v4.6.6
+2026-09-12T23:53:24.8011880Z    Compiling ammonia v4.1.4
+2026-09-12T23:53:29.4800500Z    Compiling oauth2 v5.0.0
+2026-09-12T23:53:30.5026410Z    Compiling clap_derive v4.6.4
+2026-09-12T23:53:32.1413480Z    Compiling tokio v1.53.1
+2026-09-12T23:53:32.1708360Z    Compiling hashlink v0.9.1
+2026-09-12T23:53:32.4811740Z    Compiling rrule v0.14.0 (/Users/runner/work/fuckMail/fuckMail/crates/fm-calendar/vendor/rrule)
+2026-09-12T23:53:38.2162450Z    Compiling mail-parser v0.11.9
+2026-09-12T23:53:41.3549800Z    Compiling fallible-streaming-iterator v0.1.9
+2026-09-12T23:53:41.4475690Z    Compiling bitflags v2.13.2
+2026-09-12T23:53:41.6633600Z    Compiling fallible-iterator v0.3.0
+2026-09-12T23:53:41.9187490Z    Compiling fm-mail v0.1.0 (/Users/runner/work/fuckMail/fuckMail/crates/fm-mail)
+2026-09-12T23:53:42.3648830Z    Compiling fm-ipc v0.1.0 (/Users/runner/work/fuckMail/fuckMail/crates/fm-ipc)
+2026-09-12T23:53:42.9046520Z    Compiling fm-calendar v0.1.0 (/Users/runner/work/fuckMail/fuckMail/crates/fm-calendar)
+2026-09-12T23:53:43.3192440Z    Compiling clap v4.6.6
+2026-09-12T23:53:43.3640450Z    Compiling fm-google v0.1.0 (/Users/runner/work/fuckMail/fuckMail/crates/fm-google)
+2026-09-12T23:53:44.0180350Z    Compiling rusqlite v0.32.1
+2026-09-12T23:53:44.5905890Z    Compiling fm-assist v0.1.0 (/Users/runner/work/fuckMail/fuckMail/crates/fm-assist)
+2026-09-12T23:53:45.1708230Z    Compiling fs2 v0.4.3
+2026-09-12T23:53:45.2564710Z    Compiling fm-core v0.1.0 (/Users/runner/work/fuckMail/fuckMail/crates/fm-core)
+2026-09-12T23:53:45.4344430Z    Compiling fm-cli v0.1.0 (/Users/runner/work/fuckMail/fuckMail/crates/fm-cli)
+2026-09-12T23:53:58.4277150Z    Compiling fm-engine v0.1.0 (/Users/runner/work/fuckMail/fuckMail/crates/fm-engine)
+2026-09-12T23:54:20.8715520Z     Finished `release` profile [optimized] target(s) in 1m 42s
+2026-09-12T23:54:20.9580080Z [23/99] Linking CXX executable gui/gui-calendar-layout-test
+2026-09-12T23:54:21.8063500Z [25/99] Automatic MOC and UIC for target fuckmail-gui
+2026-09-12T23:54:21.8999120Z [26/99] Running AUTOMOC file extraction for target fuckmail-gui
+2026-09-12T23:54:21.9341230Z [27/99] Running rcc for resource qmake_FuckMail
+2026-09-12T23:54:21.9386450Z [28/99] Generating .rcc/qmlcache/fuckmail-gui_qmlcache_loader.cpp
+2026-09-12T23:54:21.9409000Z [29/99] Running moc --collect-json for target fuckmail-gui
+2026-09-12T23:54:21.9858580Z [30/99] Running rcc for resource fuckmail-gui_raw_qml_0
+2026-09-12T23:54:21.9935070Z [31/99] Running rcc for resource fuckmail-gui_raw_res_0
+2026-09-12T23:54:22.0404710Z [32/99] Automatic QML type registration for target fuckmail-gui
+2026-09-12T23:54:22.1732600Z [33/99] Generating .rcc/qmlcache/fuckmail-gui_Theme_qml.cpp, .rcc/qmlcache/fuckmail-gui_Theme_qml.cpp.aotstats
+2026-09-12T23:54:22.2026950Z [34/99] Generating .rcc/qmlcache/fuckmail-gui_FmToolTip_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmToolTip_qml.cpp.aotstats
+2026-09-12T23:54:22.2108640Z [35/99] Generating .rcc/qmlcache/fuckmail-gui_FmButton_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmButton_qml.cpp.aotstats
+2026-09-12T23:54:22.2857780Z [36/99] Generating .rcc/qmlcache/fuckmail-gui_FmIcon_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmIcon_qml.cpp.aotstats
+2026-09-12T23:54:22.3270090Z [37/99] Generating .rcc/qmlcache/fuckmail-gui_FmTextField_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmTextField_qml.cpp.aotstats
+2026-09-12T23:54:22.3375630Z [38/99] Generating .rcc/qmlcache/fuckmail-gui_FmComboBox_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmComboBox_qml.cpp.aotstats
+2026-09-12T23:54:22.4477790Z [39/99] Generating .rcc/qmlcache/fuckmail-gui_MailFilters_qml.cpp, .rcc/qmlcache/fuckmail-gui_MailFilters_qml.cpp.aotstats
+2026-09-12T23:54:22.4683160Z [40/99] Generating .rcc/qmlcache/fuckmail-gui_SearchPopup_qml.cpp, .rcc/qmlcache/fuckmail-gui_SearchPopup_qml.cpp.aotstats
+2026-09-12T23:54:22.4785180Z [41/99] Generating .rcc/qmlcache/fuckmail-gui_FmSegmented_qml.cpp, .rcc/qmlcache/fuckmail-gui_FmSegmented_qml.cpp.aotstats
+2026-09-12T23:54:22.5492550Z [42/99] Generating .rcc/qmlcache/fuckmail-gui_RecipientField_qml.cpp, .rcc/qmlcache/fuckmail-gui_RecipientField_qml.cpp.aotstats
+2026-09-12T23:54:22.5890870Z [43/99] Generating .rcc/qmlcache/fuckmail-gui_SenderCard_qml.cpp, .rcc/qmlcache/fuckmail-gui_SenderCard_qml.cpp.aotstats
+2026-09-12T23:54:22.6916750Z [44/99] Generating .rcc/qmlcache/fuckmail-gui_Main_qml.cpp, .rcc/qmlcache/fuckmail-gui_Main_qml.cpp.aotstats
+2026-09-12T23:54:22.7117380Z [45/99] Generating .rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp, .rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp.aotstats
+2026-09-12T23:54:22.7234440Z [46/99] Generating .rcc/qmlcache/fuckmail-gui_EventDetails_qml.cpp, .rcc/qmlcache/fuckmail-gui_EventDetails_qml.cpp.aotstats
+2026-09-12T23:54:22.8260660Z [47/99] Generating .rcc/qmlcache/fuckmail-gui_CalendarEventList_qml.cpp, .rcc/qmlcache/fuckmail-gui_CalendarEventList_qml.cpp.aotstats
+2026-09-12T23:54:22.8362490Z [48/99] Generating .rcc/qmlcache/fuckmail-gui_CalendarOperations_qml.cpp, .rcc/qmlcache/fuckmail-gui_CalendarOperations_qml.cpp.aotstats
+2026-09-12T23:54:22.8764110Z [49/99] Generating .rcc/qmlcache/fuckmail-gui_EventEditor_qml.cpp, .rcc/qmlcache/fuckmail-gui_EventEditor_qml.cpp.aotstats
+2026-09-12T23:54:22.9265780Z [50/99] Generating .rcc/qmlcache/fuckmail-gui_MailView_qml.cpp, .rcc/qmlcache/fuckmail-gui_MailView_qml.cpp.aotstats
+2026-09-12T23:54:22.9568000Z [51/99] Generating .rcc/qmlcache/fuckmail-gui_CalendarView_qml.cpp, .rcc/qmlcache/fuckmail-gui_CalendarView_qml.cpp.aotstats
+2026-09-12T23:54:22.9869150Z [52/99] Generating .rcc/qmlcache/fuckmail-gui_TodayStrip_qml.cpp, .rcc/qmlcache/fuckmail-gui_TodayStrip_qml.cpp.aotstats
+2026-09-12T23:54:23.0020950Z [53/99] Generating .rcc/qmlcache/fuckmail-gui_SettingsView_qml.cpp, .rcc/qmlcache/fuckmail-gui_SettingsView_qml.cpp.aotstats
+2026-09-12T23:54:28.4502160Z [54/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/fuckmail-gui_autogen/mocs_compilation.cpp.o
+2026-09-12T23:54:29.1690250Z [55/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/CompositionBackend.cpp.o
+2026-09-12T23:54:29.9747100Z [56/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/main.cpp.o
+2026-09-12T23:54:30.6227450Z [57/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/Phase1Backend.cpp.o
+2026-09-12T23:54:32.3490020Z [58/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/CalendarOperations.cpp.o
+2026-09-12T23:54:32.7829950Z [59/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/ReplyDocument.cpp.o
+2026-09-12T23:54:33.5291640Z [60/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/CalendarLayout.cpp.o
+2026-09-12T23:54:33.9740380Z [61/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/HatchItem.cpp.o
+2026-09-12T23:54:34.2678770Z [62/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/MailBackend.cpp.o
+2026-09-12T23:54:39.2349040Z [63/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/GuiCalendarSelfTest.cpp.o
+2026-09-12T23:54:40.8789310Z [64/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/GuiSettingsSelfTest.cpp.o
+2026-09-12T23:54:41.8623000Z [65/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/GuiCompositionSelfTest.cpp.o
+2026-09-12T23:54:44.2074910Z [66/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/GuiSelfTest.cpp.o
+2026-09-12T23:54:44.9414630Z [67/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/GuiSearchBenchmark.cpp.o
+2026-09-12T23:54:46.0489630Z [68/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/GuiMailNavigationSelfTest.cpp.o
+2026-09-12T23:54:46.1264670Z [69/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.qt/rcc/qrc_qmake_FuckMail.cpp.o
+2026-09-12T23:54:47.3792350Z [70/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/IpcTrust.cpp.o
+2026-09-12T23:54:47.8440140Z [71/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/GuiInteractionBenchmark.cpp.o
+2026-09-12T23:54:48.1972530Z [72/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/GuiResizeBenchmark.cpp.o
+2026-09-12T23:54:48.7117480Z [73/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/fuckmail-gui_qmltyperegistrations.cpp.o
+2026-09-12T23:54:49.7615660Z [74/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_qmlcache_loader.cpp.o
+2026-09-12T23:54:50.9369360Z [75/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_FmButton_qml.cpp.o
+2026-09-12T23:54:51.1744510Z [76/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_Theme_qml.cpp.o
+2026-09-12T23:54:51.4749190Z [77/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_FmToolTip_qml.cpp.o
+2026-09-12T23:54:51.5051700Z [78/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_Main_qml.cpp.o
+2026-09-12T23:54:52.5818280Z [79/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_FmIcon_qml.cpp.o
+2026-09-12T23:54:53.5787630Z [80/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_FmTextField_qml.cpp.o
+2026-09-12T23:54:54.0421280Z [81/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_FmComboBox_qml.cpp.o
+2026-09-12T23:54:54.6696880Z [82/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_MailFilters_qml.cpp.o
+2026-09-12T23:54:55.4986950Z [83/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_SearchPopup_qml.cpp.o
+2026-09-12T23:54:56.3165510Z [84/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_FmSegmented_qml.cpp.o
+2026-09-12T23:54:57.2550520Z [85/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_RecipientField_qml.cpp.o
+2026-09-12T23:54:58.8565700Z [86/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_MailView_qml.cpp.o
+2026-09-12T23:54:58.9978600Z [87/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_SenderCard_qml.cpp.o
+2026-09-12T23:54:59.3610190Z [88/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp.o
+2026-09-12T23:55:01.4772540Z [89/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_EventDetails_qml.cpp.o
+2026-09-12T23:55:02.5159550Z [90/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_CalendarEventList_qml.cpp.o
+2026-09-12T23:55:02.5421790Z [91/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_CalendarOperations_qml.cpp.o
+2026-09-12T23:55:02.6427570Z [92/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.qt/rcc/qrc_fuckmail-gui_raw_qml_0.cpp.o
+2026-09-12T23:55:03.0481420Z [93/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_CalendarView_qml.cpp.o
+2026-09-12T23:55:03.0985830Z [94/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.qt/rcc/qrc_fuckmail-gui_raw_res_0.cpp.o
+2026-09-12T23:55:03.3323250Z [95/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_EventEditor_qml.cpp.o
+2026-09-12T23:55:04.8832080Z [96/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_TodayStrip_qml.cpp.o
+2026-09-12T23:55:05.6002480Z [97/99] Building CXX object gui/CMakeFiles/fuckmail-gui.dir/.rcc/qmlcache/fuckmail-gui_SettingsView_qml.cpp.o
+2026-09-12T23:55:05.8051390Z [98/99] Linking CXX executable gui/fuckmail-gui.app/Contents/MacOS/fuckmail-gui
+2026-09-12T23:55:05.8436570Z [99/99] cd /Users/runner/work/fuckMail/fuckMail/build/release && /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/lib/python3.11/site-packages/cmake/data/bin/cmake -E copy_if_different /Users/runner/work/fuckMail/fuckMail/target/release/fm-engine /Users/runner/work/fuckMail/fuckMail/target/release/fm /Users/runner/work/fuckMail/fuckMail/build/release/gui/fuckmail-gui.app/Contents/MacOS
+2026-09-12T23:55:05.8569840Z + /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/ctest --preset release
+2026-09-12T23:55:06.0818170Z Test project /Users/runner/work/fuckMail/fuckMail/build/release
+2026-09-12T23:55:06.0848140Z     Start 1: rust-test-build
+2026-09-12T23:58:08.5726760Z 1/9 Test #1: rust-test-build ..................   Passed  182.49 sec
+2026-09-12T23:58:08.5745380Z     Start 2: rust-workspace
+2026-09-12T23:59:37.7947970Z 2/9 Test #2: rust-workspace ...................   Passed   89.22 sec
+2026-09-12T23:59:37.7951010Z     Start 3: gui-smoke
+2026-09-12T23:59:41.7708830Z 3/9 Test #3: gui-smoke ........................   Passed    3.97 sec
+2026-09-12T23:59:41.7712200Z     Start 4: gui-integration
+2026-09-13T00:00:28.8449940Z 4/9 Test #4: gui-integration ..................   Passed   47.07 sec
+2026-09-13T00:00:28.8466340Z     Start 5: gui-startup-recovery
+2026-09-13T00:00:33.2928220Z 5/9 Test #5: gui-startup-recovery .............   Passed    4.45 sec
+2026-09-13T00:00:33.2930330Z     Start 6: gui-ipc-trust
+2026-09-13T00:00:33.3126140Z 6/9 Test #6: gui-ipc-trust ....................   Passed    0.02 sec
+2026-09-13T00:00:33.3126970Z     Start 7: gui-composer-probe
+2026-09-13T00:00:33.3335780Z 7/9 Test #7: gui-composer-probe ...............   Passed    0.02 sec
+2026-09-13T00:00:33.3337620Z     Start 8: gui-reply-document
+2026-09-13T00:00:34.0903920Z 8/9 Test #8: gui-reply-document ...............   Passed    0.76 sec
+2026-09-13T00:00:34.0907360Z     Start 9: gui-calendar-layout
+2026-09-13T00:00:34.1096720Z 9/9 Test #9: gui-calendar-layout ..............   Passed    0.02 sec
+2026-09-13T00:00:34.1102740Z 
+2026-09-13T00:00:34.1103300Z 100% tests passed, 0 tests failed out of 9
+2026-09-13T00:00:34.1108040Z 
+2026-09-13T00:00:34.1108590Z Total Test time (real) = 328.03 sec
+2026-09-13T00:00:34.2037060Z ##[group]Run scripts/dev.sh package --preset release
+2026-09-13T00:00:34.2037450Z [36;1mscripts/dev.sh package --preset release[0m
+2026-09-13T00:00:34.2384560Z shell: /bin/bash -e {0}
+2026-09-13T00:00:34.2385210Z env:
+2026-09-13T00:00:34.2385970Z   pythonLocation: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-13T00:00:34.2387230Z   PKG_CONFIG_PATH: /Users/runner/hostedtoolcache/Python/3.11.9/arm64/lib/pkgconfig
+2026-09-13T00:00:34.2388510Z   Python_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-13T00:00:34.2389600Z   Python2_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-13T00:00:34.2390700Z   Python3_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-13T00:00:34.2391490Z ##[endgroup]
+2026-09-13T00:00:34.5258460Z Host: macOS-15.7.9-arm64-arm-64bit arm64
+2026-09-13T00:00:34.5259060Z Qt kit: /Users/runner/work/fuckMail/fuckMail/.tools/Qt/6.11.2/macos
+2026-09-13T00:00:34.5259710Z Source: /Users/runner/work/fuckMail/fuckMail
+2026-09-13T00:00:34.5260150Z + /opt/homebrew/bin/git --version
+2026-09-13T00:00:34.5513200Z git version 2.55.0 at /opt/homebrew/bin/git
+2026-09-13T00:00:34.5513770Z + /Users/runner/.cargo/bin/rustc --version
+2026-09-13T00:00:34.6148630Z rustc 1.88.0 (6b00bc388 2025-06-23) at /Users/runner/.cargo/bin/rustc
+2026-09-13T00:00:34.6149260Z + /Users/runner/.cargo/bin/cargo --version
+2026-09-13T00:00:34.6601370Z cargo 1.88.0 (873a06493 2025-05-10) at /Users/runner/.cargo/bin/cargo
+2026-09-13T00:00:34.6602720Z + /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/cmake --version
+2026-09-13T00:00:34.8107790Z cmake version 3.31.6 at /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/cmake
+2026-09-13T00:00:34.8166440Z + /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/ninja --version
+2026-09-13T00:00:34.8347370Z 1.11.1.git.kitware.jobserver-1 at /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/ninja
+2026-09-13T00:00:34.8449960Z + /Users/runner/work/fuckMail/fuckMail/.tools/Qt/6.11.2/macos/bin/qtpaths --qt-version
+2026-09-13T00:00:34.8519480Z 6.11.2 at /Users/runner/work/fuckMail/fuckMail/.tools/Qt/6.11.2/macos/bin/qtpaths
+2026-09-13T00:00:34.8548900Z Native C++ compiler: /usr/bin/c++
+2026-09-13T00:00:34.8571050Z + xcrun --show-sdk-version
+2026-09-13T00:00:34.8929570Z 15.5
+2026-09-13T00:00:34.9031070Z + /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/cmake --preset release
+2026-09-13T00:00:35.8537340Z Preset CMake variables:
+2026-09-13T00:00:35.8537860Z 
+2026-09-13T00:00:35.8538180Z   BUILD_TESTING:BOOL="TRUE"
+2026-09-13T00:00:35.8538940Z   CMAKE_BUILD_TYPE="Release"
+2026-09-13T00:00:35.8539590Z   CMAKE_EXPORT_COMPILE_COMMANDS:BOOL="TRUE"
+2026-09-13T00:00:35.8540660Z   CMAKE_PREFIX_PATH="/Users/runner/work/fuckMail/fuckMail/.tools/Qt/6.11.2/macos"
+2026-09-13T00:00:35.8541560Z 
+2026-09-13T00:00:35.8541890Z -- Configuring done (0.9s)
+2026-09-13T00:00:35.9519060Z -- Generating done (0.1s)
+2026-09-13T00:00:35.9536990Z -- Build files have been written to: /Users/runner/work/fuckMail/fuckMail/build/release
+2026-09-13T00:00:35.9582820Z + /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/cmake --build --preset release --parallel
+2026-09-13T00:00:36.4469930Z [0/63] Build the shared Rust engine and CLI
+2026-09-13T00:00:36.6023100Z     Finished `release` profile [optimized] target(s) in 0.09s
+2026-09-13T00:00:36.6123180Z [4/57] Automatic MOC and UIC for target gui-reply-document-test
+2026-09-13T00:00:36.6791600Z [6/55] Automatic MOC and UIC for target fuckmail-gui
+2026-09-13T00:00:36.7049370Z [7/54] Running AUTOMOC file extraction for target fuckmail-gui
+2026-09-13T00:00:36.7411610Z [8/8] cd /Users/runner/work/fuckMail/fuckMail/build/release && /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/lib/python3.11/site-packages/cmake/data/bin/cmake -E copy_if_different /Users/runner/work/fuckMail/fuckMail/target/release/fm-engine /Users/runner/work/fuckMail/fuckMail/target/release/fm /Users/runner/work/fuckMail/fuckMail/build/release/gui/fuckmail-gui.app/Contents/MacOS
+2026-09-13T00:00:36.7423940Z + /Users/runner/work/fuckMail/fuckMail/.tools/bootstrap/bin/cmake --install /Users/runner/work/fuckMail/fuckMail/build/release --prefix /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64
+2026-09-13T00:00:36.8092960Z -- Install configuration: "Release"
+2026-09-13T00:00:36.8094400Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/./fuckmail-gui.app
+2026-09-13T00:00:36.8095900Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/./fuckmail-gui.app/Contents
+2026-09-13T00:00:36.8097760Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/./fuckmail-gui.app/Contents/MacOS
+2026-09-13T00:00:36.8099610Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/./fuckmail-gui.app/Contents/MacOS/fuckmail-gui
+2026-09-13T00:00:36.8234200Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/./fuckmail-gui.app/Contents/MacOS/fm-engine
+2026-09-13T00:00:36.8374170Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/./fuckmail-gui.app/Contents/MacOS/fm
+2026-09-13T00:00:36.8419430Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/./fuckmail-gui.app/Contents/Info.plist
+2026-09-13T00:00:38.1918670Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/MacOS/fm-engine
+2026-09-13T00:00:38.2104880Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/MacOS/fm
+2026-09-13T00:00:38.2165260Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/MacOS/licenses/LICENSE-Geist.txt
+2026-09-13T00:00:38.2176240Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/platforms/libqoffscreen.dylib
+2026-09-13T00:00:38.2263600Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/qmldir
+2026-09-13T00:00:38.2266120Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquick2plugin.dylib
+2026-09-13T00:00:38.2290700Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/libqtquick2plugin.dylib
+2026-09-13T00:00:38.2294920Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQml/qmldir
+2026-09-13T00:00:38.2296500Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqmlplugin.dylib
+2026-09-13T00:00:38.2319020Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQml/libqmlplugin.dylib
+2026-09-13T00:00:38.2323990Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQml/Models/qmldir
+2026-09-13T00:00:38.2328500Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libmodelsplugin.dylib
+2026-09-13T00:00:38.2348540Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQml/Models/libmodelsplugin.dylib
+2026-09-13T00:00:38.2349800Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQml/WorkerScript/qmldir
+2026-09-13T00:00:38.2352840Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libworkerscriptplugin.dylib
+2026-09-13T00:00:38.2369330Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQml/WorkerScript/libworkerscriptplugin.dylib
+2026-09-13T00:00:38.2372260Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/qmldir
+2026-09-13T00:00:38.2374680Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2plugin.dylib
+2026-09-13T00:00:38.2390530Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/libqtquickcontrols2plugin.dylib
+2026-09-13T00:00:38.2396940Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Fusion/qmldir
+2026-09-13T00:00:38.2404230Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2fusionstyleplugin.dylib
+2026-09-13T00:00:38.2427540Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Fusion/libqtquickcontrols2fusionstyleplugin.dylib
+2026-09-13T00:00:38.2430470Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Imagine/qmldir
+2026-09-13T00:00:38.2435150Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2imaginestyleplugin.dylib
+2026-09-13T00:00:38.2456570Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Imagine/libqtquickcontrols2imaginestyleplugin.dylib
+2026-09-13T00:00:38.2461500Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Material/qmldir
+2026-09-13T00:00:38.2470190Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2materialstyleplugin.dylib
+2026-09-13T00:00:38.2492760Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Material/libqtquickcontrols2materialstyleplugin.dylib
+2026-09-13T00:00:38.2496490Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Universal/qmldir
+2026-09-13T00:00:38.2506090Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2universalstyleplugin.dylib
+2026-09-13T00:00:38.2530720Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Universal/libqtquickcontrols2universalstyleplugin.dylib
+2026-09-13T00:00:38.2532420Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/FluentWinUI3/qmldir
+2026-09-13T00:00:38.2542530Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2fluentwinui3styleplugin.dylib
+2026-09-13T00:00:38.2696470Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/FluentWinUI3/libqtquickcontrols2fluentwinui3styleplugin.dylib
+2026-09-13T00:00:38.2716680Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/macOS/qmldir
+2026-09-13T00:00:38.2718460Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2macosstyleplugin.dylib
+2026-09-13T00:00:38.2760090Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/macOS/libqtquickcontrols2macosstyleplugin.dylib
+2026-09-13T00:00:38.2782130Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/iOS/qmldir
+2026-09-13T00:00:38.2784230Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2iosstyleplugin.dylib
+2026-09-13T00:00:38.2892970Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/iOS/libqtquickcontrols2iosstyleplugin.dylib
+2026-09-13T00:00:38.2897330Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Basic/qmldir
+2026-09-13T00:00:38.2911090Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2basicstyleplugin.dylib
+2026-09-13T00:00:38.2938440Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Basic/libqtquickcontrols2basicstyleplugin.dylib
+2026-09-13T00:00:38.2939480Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Templates/qmldir
+2026-09-13T00:00:38.2940380Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquicktemplates2plugin.dylib
+2026-09-13T00:00:38.2967390Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Templates/libqtquicktemplates2plugin.dylib
+2026-09-13T00:00:38.2968910Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/impl/qmldir
+2026-09-13T00:00:38.2969770Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2implplugin.dylib
+2026-09-13T00:00:38.2994280Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/impl/libqtquickcontrols2implplugin.dylib
+2026-09-13T00:00:38.2996090Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Fusion/impl/qmldir
+2026-09-13T00:00:38.2997050Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2fusionstyleimplplugin.dylib
+2026-09-13T00:00:38.3027010Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Fusion/impl/libqtquickcontrols2fusionstyleimplplugin.dylib
+2026-09-13T00:00:38.3029820Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Window/qmldir
+2026-09-13T00:00:38.3030890Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libquickwindowplugin.dylib
+2026-09-13T00:00:38.3051180Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Window/libquickwindowplugin.dylib
+2026-09-13T00:00:38.3060930Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Imagine/impl/qmldir
+2026-09-13T00:00:38.3064770Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2imaginestyleimplplugin.dylib
+2026-09-13T00:00:38.3124140Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Imagine/impl/libqtquickcontrols2imaginestyleimplplugin.dylib
+2026-09-13T00:00:38.3127080Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Material/impl/qmldir
+2026-09-13T00:00:38.3129090Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2materialstyleimplplugin.dylib
+2026-09-13T00:00:38.3152560Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Material/impl/libqtquickcontrols2materialstyleimplplugin.dylib
+2026-09-13T00:00:38.3153710Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Universal/impl/qmldir
+2026-09-13T00:00:38.3155120Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2universalstyleimplplugin.dylib
+2026-09-13T00:00:38.3175060Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Universal/impl/libqtquickcontrols2universalstyleimplplugin.dylib
+2026-09-13T00:00:38.3176190Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/FluentWinUI3/impl/qmldir
+2026-09-13T00:00:38.3177250Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2fluentwinui3styleimplplugin.dylib
+2026-09-13T00:00:38.3197810Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/FluentWinUI3/impl/libqtquickcontrols2fluentwinui3styleimplplugin.dylib
+2026-09-13T00:00:38.3199040Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Effects/qmldir
+2026-09-13T00:00:38.3199820Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libeffectsplugin.dylib
+2026-09-13T00:00:38.3218190Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Effects/libeffectsplugin.dylib
+2026-09-13T00:00:38.3219180Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Layouts/qmldir
+2026-09-13T00:00:38.3220060Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqquicklayoutsplugin.dylib
+2026-09-13T00:00:38.3250010Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Layouts/libqquicklayoutsplugin.dylib
+2026-09-13T00:00:38.3251230Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Shapes/qmldir
+2026-09-13T00:00:38.3252290Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqmlshapesplugin.dylib
+2026-09-13T00:00:38.3282710Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Shapes/libqmlshapesplugin.dylib
+2026-09-13T00:00:38.3284460Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/macOS/impl/qmldir
+2026-09-13T00:00:38.3287890Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2macosstyleimplplugin.dylib
+2026-09-13T00:00:38.3306200Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/macOS/impl/libqtquickcontrols2macosstyleimplplugin.dylib
+2026-09-13T00:00:38.3312400Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/NativeStyle/qmldir
+2026-09-13T00:00:38.3315230Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2nativestyleplugin.dylib
+2026-09-13T00:00:38.3368280Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/NativeStyle/libqtquickcontrols2nativestyleplugin.dylib
+2026-09-13T00:00:38.3373780Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/iOS/impl/qmldir
+2026-09-13T00:00:38.3382700Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2iosstyleimplplugin.dylib
+2026-09-13T00:00:38.3407300Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/iOS/impl/libqtquickcontrols2iosstyleimplplugin.dylib
+2026-09-13T00:00:38.3409290Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Basic/impl/qmldir
+2026-09-13T00:00:38.3413990Z -- Installing: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2basicstyleimplplugin.dylib
+2026-09-13T00:00:38.3437360Z -- Symlinking: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/Resources/qml/QtQuick/Controls/Basic/impl/libqtquickcontrols2basicstyleimplplugin.dylib
+2026-09-13T00:00:38.3441180Z -- Running Qt deploy tool for fuckmail-gui.app in working directory '/Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64'
+2026-09-13T00:02:00.7744800Z ERROR: Codesign signing error:
+2026-09-13T00:02:00.7753560Z '/Users/runner/work/fuckMail/fuckMail/.tools/Qt/6.11.2/macos/bin/macdeployqt' 'fuckmail-gui.app' '-appstore-compliant' '-always-overwrite' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquick2plugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqmlplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libmodelsplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libworkerscriptplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2plugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2fusionstyleplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2imaginestyleplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2materialstyleplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2universalstyleplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2fluentwinui3styleplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2macosstyleplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2iosstyleplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2basicstyleplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquicktemplates2plugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2implplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2fusionstyleimplplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libquickwindowplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2imaginestyleimplplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2materialstyleimplplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2universalstyleimplplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2fluentwinui3styleimplplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libeffectsplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqquicklayoutsplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqmlshapesplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2macosstyleimplplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2nativestyleplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2iosstyleimplplugin.dylib' '-executable=fuckmail-gui.app/Contents/PlugIns/libqtquickcontrols2basicstyleimplplugin.dylib'
+2026-09-13T00:02:00.7855360Z ERROR: "/Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/MacOS/fuckmail-gui: replacing existing signature\n/Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/MacOS/fuckmail-gui: code object is not signed at all\nIn subcomponent: /Users/runner/work/fuckMail/fuckMail/dist/darwin-arm64/fuckmail-gui.app/Contents/MacOS/licenses/LICENSE-Geist.txt\n"
+2026-09-13T00:02:00.9000760Z ERROR: codesign verification error:
+2026-09-13T00:02:00.9002190Z ERROR: "fuckmail-gui.app: code has no resources but signature indicates they must be present\n"
+2026-09-13T00:02:00.9095800Z + git rev-parse HEAD
+2026-09-13T00:02:00.9344510Z + git status --porcelain
+2026-09-13T00:02:01.7827000Z + rustc --version
+2026-09-13T00:02:02.1444850Z + cargo --version
+2026-09-13T00:02:02.5755840Z + "/private/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T/fuckmail-package-check-a5xe2cq6/relocated package/fuckmail-gui.app/Contents/MacOS/fm" --help
+2026-09-13T00:02:02.5883630Z + "/private/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T/fuckmail-package-check-a5xe2cq6/relocated package/fuckmail-gui.app/Contents/MacOS/fm" --profile /private/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T/fuckmail-package-check-a5xe2cq6/cli-profile --account windscribe --json mail list --query Maya --field sender --limit 5
+2026-09-13T00:02:04.4020160Z Verified final-client engine shutdown: cli-profile
+2026-09-13T00:02:04.4021460Z + "/private/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T/fuckmail-package-check-a5xe2cq6/relocated package/fuckmail-gui.app/Contents/MacOS/fuckmail-gui" --smoke --profile /private/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T/fuckmail-package-check-a5xe2cq6/gui-profile
+2026-09-13T00:02:07.0009310Z Verified final-client engine shutdown: gui-profile
+2026-09-13T00:02:07.0011370Z + "/private/var/folders/nj/vtw8zd2j31d1gdrtntc5y4600000gn/T/fuckmail-package-check-a5xe2cq6/relocated package/fuckmail-gui.app/Contents/MacOS/fuckmail-gui" --self-test
+2026-09-13T00:02:12.8430250Z Native Sent/local-capture/Inspect passed: original conversation, operation identity, MIME bytes and non-delivery status verified by CLI.
+2026-09-13T00:02:14.4533920Z Native Discard confirmation passed: opening/Cancel preserved the exact draft; confirmation cleared only its authored fields, preserving source messages, another draft and capture history.
+2026-09-13T00:02:23.1144970Z Native Settings passed: all three palettes and text sizes, saved startup/placement/duration, validation retention, account metadata, unchanged authored draft, independent calendar preferences and Mail viewport/focus restoration (programmatic viewport setup; physical wheel input unverified).
+2026-09-13T00:02:23.5134370Z Native request ordering passed: real explicit queries preceded unsent automatic reads, retained manual-read/write barriers and delivered polling after four bypasses; stored preferences unchanged.
+2026-09-13T00:02:24.1857920Z Native deferred reader click passed: a real pending flag receipt preserved the clicked row through a real filtered-page exclusion; exact reader body, account, review state and serial write barrier retained.
+2026-09-13T00:02:25.3055660Z Native compact account keys passed: three Tab and three Shift+Tab events at 1000x650 retained the complete selected tab and matching account reader; original window size and account restored.
+2026-09-13T00:02:27.7853650Z Native mail filters passed valid/date/UTF-8 error/correction/clear controls. Real response "354" from generation 68 was held across a native account switch; forty superseding real queries were admitted; obsolete queued query "355" never reached transport and final query "394" returned the expected member.
+2026-09-13T00:02:31.4729170Z Native snapshot arrival passed: real Done receipt targets the two original members; provider arrival remains unread/unstarred; exact GUI/CLI counts, selected reader and Unicode draft retained. Counts: {"conversation_count":111,"done_conversation_count":82,"held_conversation_count":10,"message_count":146,"starred_count":25,"unread_conversation_count":20,"unread_count":20}
+2026-09-13T00:02:31.4735410Z Idle native polling passed: separate CLI hold/unhold converged in the actual list and reader without GUI query, refresh or navigation; original counts, unread arrival and authored draft restored.
+2026-09-13T00:02:33.7895280Z Native Update2 mail passed: complete CLI group counts, collapse retention, source-backed People/Automated toggles, account-scoped sender hover without review, explicit Open, exact Filter and durable Write recipient.
+2026-09-13T00:02:34.1132700Z Native composition stage 0 mode "new"
+2026-09-13T00:02:34.1912230Z Native composition stage 1 mode "new"
+2026-09-13T00:02:34.2732130Z Native composition stage 2 mode "new"
+2026-09-13T00:02:34.3511820Z Native composition stage 42 mode "new"
+2026-09-13T00:02:34.4326420Z Native composition stage 43 mode "new"
+2026-09-13T00:02:34.5136130Z Native composition stage 44 mode "new"
+2026-09-13T00:02:34.5926740Z Native composition stage 45 mode "new"
+2026-09-13T00:02:35.0770190Z Incomplete native recipient retained exact input and saved revision; correcting the same field created its chip.
+2026-09-13T00:02:35.1530520Z Native composition stage 3 mode "new"
+2026-09-13T00:02:35.2329910Z Native composition stage 4 mode "new"
+2026-09-13T00:02:35.3129100Z Native composition stage 5 mode "new"
+2026-09-13T00:02:35.3933890Z Native composition stage 6 mode "new"
+2026-09-13T00:02:35.9531620Z Native composition stage 7 mode "new"
+2026-09-13T00:02:36.0336370Z Native composition stage 8 mode "new"
+2026-09-13T00:02:36.1127160Z Native composition stage 40 mode "new"
+2026-09-13T00:02:36.1934600Z Native composition stage 41 mode "new"
+2026-09-13T00:02:36.2726000Z Native composition stage 9 mode "new"
+2026-09-13T00:02:36.3520040Z Native composition stage 10 mode "new"
+2026-09-13T00:02:36.4315820Z Native composition stage 11 mode "new"
+2026-09-13T00:02:36.5126970Z Native composition stage 12 mode "new"
+2026-09-13T00:02:36.5917600Z Native composition stage 13 mode "new"
+2026-09-13T00:02:36.6732110Z Native composition stage 14 mode "new"
+2026-09-13T00:02:36.7531880Z Native composition stage 15 mode "new"
+2026-09-13T00:02:37.7134350Z Native composition stage 16 mode "new"
+2026-09-13T00:02:37.7912660Z Native composition stage 20 mode "reply_all"
+2026-09-13T00:02:37.8727690Z Native composition stage 21 mode "reply_all"
+2026-09-13T00:02:37.9533170Z Native composition stage 6 mode "reply_all"
+2026-09-13T00:02:38.4326640Z Native composition stage 7 mode "reply_all"
+2026-09-13T00:02:38.5130720Z Native composition stage 8 mode "reply_all"
+2026-09-13T00:02:38.5934200Z Native composition stage 40 mode "reply_all"
+2026-09-13T00:02:38.6732380Z Native composition stage 41 mode "reply_all"
+2026-09-13T00:02:38.7532970Z Native composition stage 22 mode "reply_all"
+2026-09-13T00:02:38.8335050Z Native composition stage 20 mode "forward"
+2026-09-13T00:02:38.9128430Z Native composition stage 21 mode "forward"
+2026-09-13T00:02:38.9934720Z Native composition stage 6 mode "forward"
+2026-09-13T00:02:39.5524770Z Native composition stage 7 mode "forward"
+2026-09-13T00:02:39.7134660Z Native composition stage 8 mode "forward"
+2026-09-13T00:02:39.7935930Z Native composition stage 40 mode "forward"
+2026-09-13T00:02:39.8722140Z Native composition stage 41 mode "forward"
+2026-09-13T00:02:39.9533480Z Native composition stage 22 mode "forward"
+2026-09-13T00:02:40.0334570Z Native composition stage 20 mode "reply"
+2026-09-13T00:02:40.1129290Z Native composition stage 21 mode "reply"
+2026-09-13T00:02:40.1933930Z Native composition stage 6 mode "reply"
+2026-09-13T00:02:40.6734140Z Native composition stage 7 mode "reply"
+2026-09-13T00:02:40.7512320Z Native composition stage 8 mode "reply"
+2026-09-13T00:02:40.8335580Z Native composition stage 40 mode "reply"
+2026-09-13T00:02:40.9127550Z Native composition stage 41 mode "reply"
+2026-09-13T00:02:40.9929410Z Native composition stage 22 mode "reply"
+2026-09-13T00:02:41.0726790Z Native composition stage 50 mode "source-conflict"
+2026-09-13T00:02:41.1639390Z Native composition stage 51 mode "source-conflict"
+2026-09-13T00:02:41.3182530Z Native composition stage 52 mode "source-conflict"
+2026-09-13T00:02:41.4734190Z Native composition stage 53 mode "source-conflict"
+2026-09-13T00:02:41.5529450Z Native composition stage 54 mode "source-conflict"
+2026-09-13T00:02:41.7129280Z Native composition stage 55 mode "source-conflict"
+2026-09-13T00:02:41.7925850Z Native composition stage 56 mode "source-conflict"
+2026-09-13T00:02:41.8729860Z Native composition stage 57 mode "source-conflict"
+2026-09-13T00:02:41.9528120Z Native composition stage 58 mode "source-conflict"
+2026-09-13T00:02:42.0331690Z Native composition stage 59 mode "source-conflict"
+2026-09-13T00:02:42.0333760Z Native frozen-source conflict passed: virtual member A/revision 0, independent first save of B/revision 1, stale authoring, actual Save my version confirmation refused, all local fields and both source/revision identities unchanged; explicit Reload cleanup selected B.
+2026-09-13T00:02:42.1124990Z Native composition stage 23 mode "source-conflict"
+2026-09-13T00:02:42.1977440Z Native composition stage 24 mode "source-conflict"
+2026-09-13T00:02:42.2724140Z Native composition passed: new/reply/reply-all/forward, recipient chips/subject/rich text, Drafts/account restoration, fresh GUI auto-restoration, four exact local MIME captures and unchanged received flags.
+2026-09-13T00:02:45.8407780Z Native timeline passed: Previous/Next/Today preserve the independent Calendar date; Header details/editor retain exact permitted source below the strip; 45-minute create default leaves existing edit duration intact; starting state restored.
+2026-09-13T00:02:47.4338410Z GUI self-test passed: native mail/reply/calendar controls, independent CLI readback, retained validation errors, and stale-close recovery with continued polling and merged view persistence.
+2026-09-13T00:02:48.3563070Z GUI process restart preserved exact edited calendar identity, ETag, all authored fields and accepted self RSVP; visible GUI projection and independent CLI agree without duplicates.
+2026-09-13T00:02:48.3822760Z GUI process restart preserved native Settings preferences and account metadata without changing the saved draft snapshot.
+2026-09-13T00:02:48.4596670Z Independent final CLI verified all four native composition drafts, exact retained MIME hashes/content, one-attempt capture identities and unchanged source flags after process restart.
+2026-09-13T00:02:52.2878970Z Four fresh GUI processes verified Mail, Calendar and both last-workspace choices; appearance persisted and shutdown saved the resulting workspace.
+2026-09-13T00:02:52.2880000Z GUI process restart passed: exact authored fields and capture journal identities/attempt count preserved.
+2026-09-13T00:02:53.0934600Z Relocated package passed: SDK-free GUI smoke/self-test, fresh-terminal CLI help/query, final engine shutdown
+2026-09-13T00:03:09.0908070Z Development package: /Users/runner/work/fuckMail/fuckMail/dist/fuckmail-darwin-arm64.tar.gz
+2026-09-13T00:03:09.1221890Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-13T00:03:09.1223060Z ##[group]Run actions/upload-artifact@v4
+2026-09-13T00:03:09.1223380Z with:
+2026-09-13T00:03:09.1223670Z   name: fuckmail-macOS-ARM64-8e9179b22fa12b2093f918b04d7f654bed3b06b3
+2026-09-13T00:03:09.1224060Z   path: dist/*.tar.gz
+dist/*.zip
+
+2026-09-13T00:03:09.1224350Z   if-no-files-found: error
+2026-09-13T00:03:09.1224690Z   compression-level: 6
+2026-09-13T00:03:09.1224940Z   overwrite: false
+2026-09-13T00:03:09.1225190Z   include-hidden-files: false
+2026-09-13T00:03:09.1225440Z env:
+2026-09-13T00:03:09.1225780Z   pythonLocation: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-13T00:03:09.1226360Z   PKG_CONFIG_PATH: /Users/runner/hostedtoolcache/Python/3.11.9/arm64/lib/pkgconfig
+2026-09-13T00:03:09.1226870Z   Python_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-13T00:03:09.1227320Z   Python2_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-13T00:03:09.1227740Z   Python3_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-13T00:03:09.1228060Z ##[endgroup]
+2026-09-13T00:03:09.5553090Z (node:33055) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-13T00:03:09.5554830Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-13T00:03:09.5619430Z With the provided path, there will be 1 file uploaded
+2026-09-13T00:03:09.5626100Z Artifact name is valid!
+2026-09-13T00:03:09.5627440Z Root directory input is valid!
+2026-09-13T00:03:09.9305110Z Beginning upload of artifact content to blob storage
+2026-09-13T00:03:10.2720120Z (node:33055) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-09-13T00:03:11.2806930Z Uploaded bytes 8388608
+2026-09-13T00:03:11.4661510Z Uploaded bytes 16777216
+2026-09-13T00:03:11.7686520Z Uploaded bytes 25165824
+2026-09-13T00:03:11.9365570Z Uploaded bytes 33554432
+2026-09-13T00:03:11.9892680Z Uploaded bytes 41943040
+2026-09-13T00:03:12.2410240Z Uploaded bytes 50331648
+2026-09-13T00:03:12.3539580Z Uploaded bytes 52124720
+2026-09-13T00:03:12.4253920Z Finished uploading artifact content to blob storage!
+2026-09-13T00:03:12.4255270Z SHA256 digest of uploaded artifact zip is 5eef745d57143349cc267bbbf05e0a2e6f7afb99fb265ba1fae7a83d77ef8b15
+2026-09-13T00:03:12.4256760Z Finalizing artifact upload
+2026-09-13T00:03:12.6925010Z Artifact fuckmail-macOS-ARM64-8e9179b22fa12b2093f918b04d7f654bed3b06b3.zip successfully finalized. Artifact ID 10308380111
+2026-09-13T00:03:12.6926180Z Artifact fuckmail-macOS-ARM64-8e9179b22fa12b2093f918b04d7f654bed3b06b3 has been successfully uploaded! Final size is 52124720 bytes. Artifact ID is 10308380111
+2026-09-13T00:03:12.6944200Z Artifact download URL: https://github.com/yegors/fuckMail/actions/runs/34726506199/artifacts/10308380111
+2026-09-13T00:03:12.7138110Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-13T00:03:12.7139200Z ##[group]Run actions/upload-artifact@v4
+2026-09-13T00:03:12.7139540Z with:
+2026-09-13T00:03:12.7139800Z   name: native-logs-macOS-ARM64-8e9179b22fa12b2093f918b04d7f654bed3b06b3
+2026-09-13T00:03:12.7140430Z   path: build/**/Testing/Temporary/*.log
+build/**/CMakeFiles/CMakeConfigureLog.yaml
+dist/**/build-manifest.json
+aqtinstall.log
+
+2026-09-13T00:03:12.7140910Z   if-no-files-found: ignore
+2026-09-13T00:03:12.7141120Z   compression-level: 6
+2026-09-13T00:03:12.7141300Z   overwrite: false
+2026-09-13T00:03:12.7141480Z   include-hidden-files: false
+2026-09-13T00:03:12.7141670Z env:
+2026-09-13T00:03:12.7141960Z   pythonLocation: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-13T00:03:12.7142410Z   PKG_CONFIG_PATH: /Users/runner/hostedtoolcache/Python/3.11.9/arm64/lib/pkgconfig
+2026-09-13T00:03:12.7142860Z   Python_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-13T00:03:12.7143250Z   Python2_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-13T00:03:12.7143610Z   Python3_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-13T00:03:12.7143960Z ##[endgroup]
+2026-09-13T00:03:12.8832640Z (node:33072) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-13T00:03:12.8834300Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-13T00:03:12.9949620Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-09-13T00:03:12.9950970Z The least common ancestor is /Users/runner/work/fuckMail/fuckMail. This will be the root directory of the artifact
+2026-09-13T00:03:12.9951610Z With the provided path, there will be 3 files uploaded
+2026-09-13T00:03:12.9953850Z Artifact name is valid!
+2026-09-13T00:03:12.9954370Z Root directory input is valid!
+2026-09-13T00:03:13.3660750Z Beginning upload of artifact content to blob storage
+2026-09-13T00:03:13.3838690Z (node:33072) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-09-13T00:03:13.7070090Z Uploaded bytes 15487
+2026-09-13T00:03:13.7817050Z Finished uploading artifact content to blob storage!
+2026-09-13T00:03:13.7824110Z SHA256 digest of uploaded artifact zip is 9d7a1f8443c109f4b5f930b15d3c53ec39b99d465ecc365e9eb88d701f4b1d0d
+2026-09-13T00:03:13.7824660Z Finalizing artifact upload
+2026-09-13T00:03:14.0486270Z Artifact native-logs-macOS-ARM64-8e9179b22fa12b2093f918b04d7f654bed3b06b3.zip successfully finalized. Artifact ID 10308400056
+2026-09-13T00:03:14.0487290Z Artifact native-logs-macOS-ARM64-8e9179b22fa12b2093f918b04d7f654bed3b06b3 has been successfully uploaded! Final size is 15487 bytes. Artifact ID is 10308400056
+2026-09-13T00:03:14.0495810Z Artifact download URL: https://github.com/yegors/fuckMail/actions/runs/34726506199/artifacts/10308400056
+2026-09-13T00:03:14.0712570Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-13T00:03:14.0713720Z ##[group]Run actions/cache/save@v4
+2026-09-13T00:03:14.0713940Z with:
+2026-09-13T00:03:14.0714120Z   path: target
+2026-09-13T00:03:14.0714640Z   key: rust-build-macOS-ARM64-55e846e25564ed0f1050ce71faa72dd5df801e366d1921f0097c3f772d618eec-8e9179b22fa12b2093f918b04d7f654bed3b06b3
+2026-09-13T00:03:14.0715200Z   enableCrossOsArchive: false
+2026-09-13T00:03:14.0715420Z env:
+2026-09-13T00:03:14.0715660Z   pythonLocation: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-13T00:03:14.0716120Z   PKG_CONFIG_PATH: /Users/runner/hostedtoolcache/Python/3.11.9/arm64/lib/pkgconfig
+2026-09-13T00:03:14.0716610Z   Python_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-13T00:03:14.0717020Z   Python2_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-13T00:03:14.0717420Z   Python3_ROOT_DIR: /Users/runner/hostedtoolcache/Python/3.11.9/arm64
+2026-09-13T00:03:14.0717730Z ##[endgroup]
+2026-09-13T00:03:14.2039980Z (node:33076) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-13T00:03:14.2041600Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-13T00:03:14.2347860Z [command]/opt/homebrew/bin/gtar --posix -cf cache.tzst --exclude cache.tzst -P -C /Users/runner/work/fuckMail/fuckMail --files-from manifest.txt --delay-directory-restore --use-compress-program zstdmt
+2026-09-13T00:03:16.6451990Z (node:33076) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-09-13T00:03:17.6320700Z Sent 0 of 162707865 (0.0%), 0.0 MBs/sec
+2026-09-13T00:03:18.6326660Z Sent 28490137 of 162707865 (17.5%), 13.6 MBs/sec
+2026-09-13T00:03:19.6331560Z Sent 95599001 of 162707865 (58.8%), 30.4 MBs/sec
+2026-09-13T00:03:19.7982820Z Sent 162707865 of 162707865 (100.0%), 49.0 MBs/sec
+2026-09-13T00:03:19.9216790Z Cache saved with key: rust-build-macOS-ARM64-55e846e25564ed0f1050ce71faa72dd5df801e366d1921f0097c3f772d618eec-8e9179b22fa12b2093f918b04d7f654bed3b06b3
+2026-09-13T00:03:19.9639900Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-13T00:03:19.9643060Z Post job cleanup.
+2026-09-13T00:03:20.2431800Z (node:33322) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-09-13T00:03:20.2432740Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-09-13T00:03:20.2609780Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-09-13T00:03:20.2611320Z Post job cleanup.
+2026-09-13T00:03:20.3879510Z [command]/opt/homebrew/bin/git version
+2026-09-13T00:03:20.4201800Z git version 2.55.0
+2026-09-13T00:03:20.4223280Z Copying '/Users/runner/.gitconfig' to '/Users/runner/work/_temp/4550bbac-da41-45bb-b25c-6f1edc7c446a/.gitconfig'
+2026-09-13T00:03:20.4245830Z Temporarily overriding HOME='/Users/runner/work/_temp/4550bbac-da41-45bb-b25c-6f1edc7c446a' before making global git config changes
+2026-09-13T00:03:20.4248990Z Adding repository directory to the temporary git global config as a safe directory
+2026-09-13T00:03:20.4253350Z [command]/opt/homebrew/bin/git config --global --add safe.directory /Users/runner/work/fuckMail/fuckMail
+2026-09-13T00:03:20.4434070Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-09-13T00:03:20.4503300Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-09-13T00:03:20.6036460Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-09-13T00:03:20.6134900Z http.https://github.com/.extraheader
+2026-09-13T00:03:20.6146790Z [command]/opt/homebrew/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-09-13T00:03:20.6230510Z [command]/opt/homebrew/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-09-13T00:03:20.7389930Z [command]/opt/homebrew/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-09-13T00:03:20.7467970Z [command]/opt/homebrew/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-09-13T00:03:20.8661180Z Cleaning up orphan processes
+2026-09-13T00:03:22.2236640Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/cache/restore@v4, actions/cache/save@v4, actions/checkout@v4, actions/setup-python@v5, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+
