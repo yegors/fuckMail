@@ -131,7 +131,7 @@ pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> 
 
 pub(crate) async fn reconcile(ctx: &SyncContext, request_id: &str) -> Result<Value> {
     let current = status(ctx, request_id).await?;
-    if current["state"] == "accepted" {
+    if matches!(current["state"].as_str(), Some("accepted" | "reconciled")) {
         let memory = Arc::new(ctx.calendar_prepare_permit().await?);
         let op = operation(ctx, request_id, &memory).await?;
         return match op.lease {
@@ -154,6 +154,12 @@ pub(crate) async fn reconcile(ctx: &SyncContext, request_id: &str) -> Result<Val
     if !matches!(op.state.as_str(), "in_flight" | "unknown") {
         return status(ctx, request_id).await;
     }
+    let saved = lease.clone();
+    let generation = ctx.connection_generation;
+    let fence = memory_core(ctx, &memory, move |s| {
+        s.calendar_live_reconcile_begin(&saved, generation)
+    })
+    .await?;
     let source = match api
         .get_event(
             "engine-managed",
@@ -178,10 +184,10 @@ pub(crate) async fn reconcile(ctx: &SyncContext, request_id: &str) -> Result<Val
     let held = memory.clone();
     let (receipt, _held) = ctx
         .core
-        .call(move |s| Ok((s.calendar_live_reconcile_source(&saved, source), held)))
+        .call(move |s| Ok((s.calendar_live_reconcile_read(&saved, &fence, source), held)))
         .await?;
-    // A fresh permission observation changes its epoch; the historical receipt
-    // is still valid, but current sync owns publication under the new authority.
+    // The read has its own current publication fence; the original mutation's
+    // immutable dispatch lease remains unchanged for any late provider reply.
     publish_if_possible(ctx, &lease, receipt?, &memory).await
 }
 
@@ -200,7 +206,9 @@ async fn publish_if_possible(
     receipt: Value,
     memory: &Memory,
 ) -> Result<Value> {
-    if receipt["state"] != "accepted" || ctx.cancel.is_cancelled() {
+    if !matches!(receipt["state"].as_str(), Some("accepted" | "reconciled"))
+        || ctx.cancel.is_cancelled()
+    {
         return Ok(receipt);
     }
     let saved = lease.clone();
@@ -300,8 +308,26 @@ where
     F: FnOnce(&mut fm_core::Store) -> Result<T> + Send + 'static,
 {
     let held = memory.clone();
+    let cancel = ctx.cancel.clone();
+    let account = ctx.account.as_str().to_owned();
+    let generation = ctx.connection_generation;
+    // A cancellation-select against this reply can lose a committed dispatch
+    // lease. Complete the short writer call so its exact attempt is recorded.
     let (result, _held) = ctx
-        .core_call(move |store| Ok((operation(store), held)))
+        .core
+        .call(move |store| {
+            if cancel.is_cancelled() {
+                return Err(failure("cancelled", "Calendar work stopped"));
+            }
+            if !store.google_account_bindings()?.iter().any(|binding| {
+                binding.account == account
+                    && binding.connection_generation == generation
+                    && binding.state == fm_core::live_profile::ConnectionState::Connected
+            }) {
+                return Err(failure("stale_google_work", "Calendar connection changed"));
+            }
+            Ok((operation(store), held))
+        })
         .await?;
     result
 }

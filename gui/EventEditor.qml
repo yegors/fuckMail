@@ -25,6 +25,9 @@ Popup {
     property bool staleRevision: false
     property var latestEvent: ({})
     property var guestAddresses: []
+    property var initialGuestAddresses: []
+    readonly property bool guestsEditable: !live || (!editEvent.event_id ? formReady : editEvent.can_edit_attendees === true)
+    readonly property var protectedGuests: live ? (editEvent.protected_attendees || []) : []
     property real timelineInset: 0
     property bool timelineAtTop: false
     readonly property bool accountReady: backend.connected && (!live || (backend.accounts.length >= 0 && backend.googleSync
@@ -44,10 +47,21 @@ Popup {
     enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 160 } }
     function clockHour(text) { let parts = text.split(":"); return parts.length === 2 ? Number(parts[0]) + Number(parts[1]) / 60 : NaN }
     function allGuests() {
+        const addresses = guestAddresses.concat(attendeeField.text.split(",")).map(function(a) { return a.trim() }).filter(function(a) { return a.length > 0 })
+        // Live validation belongs to the shared boundary. Preserve duplicate or
+        // malformed authored input so a refused edit can be corrected in place.
+        if (live) return addresses
         let seen = {}
-        return guestAddresses.concat(attendeeField.text.split(",")).map(function(a) { return a.trim() }).filter(function(a) { if (!a.length || seen[a.toLowerCase()]) return false; seen[a.toLowerCase()] = true; return true })
+        return addresses.filter(function(a) { if (seen[a.toLowerCase()]) return false; seen[a.toLowerCase()] = true; return true })
     }
-    function commitGuests() { guestAddresses = allGuests(); attendeeField.text = "" }
+    function commitGuests() { if (guestsEditable && !saving && !unknownOutcome) { guestAddresses = allGuests(); attendeeField.text = "" } }
+    function guestSet(addresses) { return JSON.stringify(addresses.map(function(a) { return a.trim().toLowerCase() }).sort()) }
+    function guestEditExplanation() {
+        const reason = editEvent.attendee_edit_reason || ""
+        if (reason === "incomplete_attendees") return "Google has not supplied a complete guest list. Other event fields can still be edited."
+        if (reason === "too_many_attendees") return "This guest list exceeds the supported limit of 50. Other event fields can still be edited."
+        return "This guest list contains details that cannot be safely edited here. Other event fields can still be edited."
+    }
     function setSlot(date, hour) {
         if (saving || unknownOutcome) return
         let duration = Math.max(.25, clockHour(endTime.text) - clockHour(startTime.text))
@@ -75,7 +89,8 @@ Popup {
         locationField.text = editEvent.location || ""
         conferenceField.text = editEvent.conference_url || ""
         notesField.text = editEvent.description || ""
-        guestAddresses = (editEvent.attendees || []).map(function(a) { return a.email }); attendeeField.text = ""
+        guestAddresses = live ? (editEvent.guest_addresses || []).slice() : (editEvent.attendees || []).map(function(a) { return a.email })
+        initialGuestAddresses = guestAddresses.slice(); attendeeField.text = ""
         targetCalendar.currentIndex = Math.max(0, writableSources.findIndex(function(s) { return s.account === editor.editEvent.account && s.calendar_id === editor.editEvent.calendar_id }))
         let source = writableSources[targetCalendar.currentIndex]
         targetAccount = editEvent.account || (source ? source.account : "")
@@ -103,6 +118,10 @@ Popup {
             fields.start = start; fields.end = end; fields.all_day = allDay.checked; fields.time_zone = zoneField.text
         }
         if (!live) { fields.conference_url = conferenceField.text; fields.attendees = allGuests() }
+        else if (guestSet(allGuests()) !== guestSet(initialGuestAddresses)) {
+            if (!guestsEditable) { feedback = "Guest editing is no longer available. Your guest changes remain here; reopen the current event before continuing."; return null }
+            fields.attendees = allGuests()
+        }
         return fields
     }
     function resolveOperation(action) {
@@ -141,7 +160,8 @@ Popup {
         function onEventsChanged() {
             if (editor.opened && editor.live && editor.editEvent.event_id) {
                 let current = backend.events.concat(backend.todayEvents).find(function(e) { return e.account === editor.editEvent.account && e.calendar_id === editor.editEvent.calendar_id && e.event_id === editor.editEvent.event_id })
-                if (current) editor.editEvent = Object.assign({}, editor.editEvent, {can_edit: current.can_edit === true, can_delete: current.can_delete === true})
+                if (current) editor.editEvent = Object.assign({}, editor.editEvent, {can_edit: current.can_edit === true, can_delete: current.can_delete === true,
+                    can_edit_attendees: current.can_edit_attendees === true, attendee_edit_reason: current.attendee_edit_reason})
             }
             if (!editor.opened || !editor.staleRevision || !editor.editEvent.id) return
             let latest = backend.events.concat(backend.todayEvents).find(function(e) { return e.id === editor.editEvent.id && e.can_edit && e.etag !== editor.editEvent.etag })
@@ -183,7 +203,7 @@ Popup {
         }
         Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
         ScrollView {
-            id: formScroll
+            id: formScroll; objectName: "eventFormScroll"
             Layout.fillWidth: true; Layout.fillHeight: true; clip: true; contentWidth: availableWidth; ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             ColumnLayout {
                 width: formScroll.availableWidth; spacing: 0; enabled: !editor.saving && !editor.unknownOutcome && (!editor.live || !editor.editEvent.event_id || editor.editEvent.can_edit === true)
@@ -260,11 +280,14 @@ Popup {
                                     required property string modelData; required property int index
                                     width: Math.min(240, guestName.implicitWidth + 30); height: 24; radius: 12; color: "transparent"; border.color: Theme.controlBorder
                                     Text { id: guestName; x: 9; anchors.verticalCenter: parent.verticalCenter; width: parent.width - 30; text: parent.modelData; color: Theme.text; font.pixelSize: Theme.fontSize(12); elide: Text.ElideRight; textFormat: Text.PlainText }
-                                    FmButton { anchors.right: parent.right; width: 22; height: 24; visible: !editor.live; iconName: "close"; iconSize: 9; leftPadding: 4; rightPadding: 4; tip: "Remove " + parent.modelData; onClicked: { let index = parent.index; editor.guestAddresses = editor.guestAddresses.filter(function(a, i) { return i !== index }) } }
+                                    FmButton { objectName: "eventRemoveGuest-" + parent.index; anchors.right: parent.right; width: 22; height: 24; visible: editor.guestsEditable; iconName: "close"; iconSize: 9; leftPadding: 4; rightPadding: 4; tip: "Remove " + parent.modelData; onClicked: { if (!editor.guestsEditable || editor.saving || editor.unknownOutcome) return; let index = parent.index; editor.guestAddresses = editor.guestAddresses.filter(function(a, i) { return i !== index }) } }
                                 }
                             }
                         }
-                        TextField { id: attendeeField; objectName: "eventAttendees"; Layout.fillWidth: true; implicitHeight: 26; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; readOnly: editor.live; placeholderText: editor.live ? "Guest changes unavailable" : "Add email addresses"; font.pixelSize: Theme.fontSize(13); background: null; leftPadding: 0; onAccepted: if (!editor.live) editor.commitGuests(); onActiveFocusChanged: if (!editor.live && !activeFocus && text.trim().length) editor.commitGuests() }
+                        Text { objectName: "eventProtectedGuests"; visible: editor.protectedGuests.length > 0; text: editor.protectedGuests.map(function(a) { return a.email + (a.self ? " (you)" : " (organizer)") }).join(", ") + " · retained"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; textFormat: Text.PlainText; Layout.fillWidth: true }
+                        Text { visible: editor.live && !editor.guestsEditable; text: (editor.editEvent.attendees || []).map(function(a) { return a.email || "Address unavailable" }).join(", "); color: Theme.muted; font.pixelSize: Theme.fontSize(12); wrapMode: Text.Wrap; textFormat: Text.PlainText; Layout.fillWidth: true }
+                        TextField { id: attendeeField; objectName: "eventAttendees"; Layout.fillWidth: true; implicitHeight: 26; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; readOnly: !editor.guestsEditable; placeholderText: editor.guestsEditable ? "Add email addresses" : "Guest changes unavailable"; font.pixelSize: Theme.fontSize(13); background: null; leftPadding: 0; onAccepted: editor.commitGuests(); onActiveFocusChanged: if (!activeFocus && text.trim().length) editor.commitGuests() }
+                        Text { objectName: "eventGuestEditExplanation"; visible: editor.live && !editor.guestsEditable; text: editor.guestEditExplanation(); color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
                     }
                 }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
@@ -289,7 +312,7 @@ Popup {
             FmButton { objectName: "eventCancelButton"; text: editor.live && editor.saving ? "Cancel request" : editor.unknownOutcome ? "Close" : "Discard"; outlined: true; font.pixelSize: Theme.fontSize(12); enabled: !editor.saving || editor.live; tip: editor.saving ? "Cancel this request and retain your fields" : editor.unknownOutcome ? "The operation remains in calendar activity" : "Discard unsaved event fields"; onClicked: { if (editor.live && editor.saving) backend.cancelGoogleOperation(editor.submittedRequest.account, editor.submittedRequest.request_id); else editor.close() } }
             Item { Layout.fillWidth: true }
         }
-        Text { text: editor.live ? "Google Calendar · guest invitations unavailable" : "Saved on this machine · no invitations sent"; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); Layout.leftMargin: 20; Layout.topMargin: 7; Layout.bottomMargin: 10 }
+        Text { objectName: "eventNotificationExplanation"; text: editor.live ? "Google may notify guests when you save or delete. Notification delivery is not confirmed here." : "Saved on this machine · no invitations sent"; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); wrapMode: Text.Wrap; Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.topMargin: 7; Layout.bottomMargin: 10 }
     }
     Dialog {
         id: deleteConfirmation; objectName: "eventDeleteConfirmation"; parent: Overlay.overlay; anchors.centerIn: parent; modal: true
@@ -298,10 +321,10 @@ Popup {
         title: "Delete event?"; standardButtons: Dialog.Ok | Dialog.Cancel
         background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
         palette.windowText: Theme.text; palette.buttonText: Theme.text
-        onOpened: standardButton(Dialog.Ok).text = "Delete"
+        onOpened: { standardButton(Dialog.Ok).text = "Delete"; standardButton(Dialog.Ok).objectName = "eventConfirmDelete" }
         contentItem: Item {
             implicitHeight: deleteBody.implicitHeight
-            Text { id: deleteBody; width: deleteConfirmation.availableWidth; text: "Remove “" + (editor.editEvent.title || "this event") + "” from Google Calendar?"; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; textFormat: Text.PlainText }
+            Text { id: deleteBody; width: deleteConfirmation.availableWidth; text: "Remove “" + (editor.editEvent.title || "this event") + "” from Google Calendar? Google may notify guests. Notification delivery is not confirmed here."; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; textFormat: Text.PlainText }
         }
         onAccepted: editor.deleteEvent()
     }

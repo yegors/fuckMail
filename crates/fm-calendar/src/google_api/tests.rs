@@ -400,6 +400,43 @@ fn write() -> GoogleWrite {
     }
 }
 #[tokio::test]
+async fn retained_event_label_requires_version_without_changing_legacy_color_requests() {
+    let http = FakeHttp::new(vec![(200, event()), (200, event())]);
+    let api = api(http.clone());
+    let cancel = CancellationToken::new();
+    let mut labeled = write();
+    labeled.body["eventLabelId"] = "fixture-label".into();
+    labeled.body["colorId"] = "3".into();
+    api.apply_write("synthetic-access", &labeled, &cancel)
+        .await
+        .unwrap();
+    let mut legacy = write();
+    legacy.body["colorId"] = "3".into();
+    api.apply_write("synthetic-access", &legacy, &cancel)
+        .await
+        .unwrap();
+    for invalid in [json!(""), json!(null), json!(1)] {
+        labeled.body["eventLabelId"] = invalid;
+        assert!(matches!(
+            api.apply_write("synthetic-access", &labeled, &cancel).await,
+            Err(ApiError::InvalidRequest)
+        ));
+    }
+    let requests = http.requests.lock().unwrap();
+    assert_eq!(requests.len(), 2);
+    let parameters = query(&requests[0]);
+    assert_eq!(parameters["eventLabelVersion"], "1");
+    assert_eq!(parameters["conferenceDataVersion"], "1");
+    assert_eq!(parameters["supportsAttachments"], "true");
+    assert_eq!(parameters["sendUpdates"], "all");
+    assert!(!query(&requests[1]).contains_key("eventLabelVersion"));
+    let body: Value = serde_json::from_slice(requests[0].body_bytes()).unwrap();
+    assert_eq!(body["eventLabelId"], "fixture-label");
+    assert_eq!(body["colorId"], "3");
+    assert!(body.get("conferenceData").is_none());
+    assert!(body.get("attachments").is_none());
+}
+#[tokio::test]
 async fn patch_is_conditional_preserves_provider_fields_and_does_not_retry_conflicts_or_disconnect()
 {
     let mut updated = event();

@@ -1,0 +1,1209 @@
+{
+  "version": 1,
+  "result": "passed",
+  "scenario": "isolated-google-calendar-native",
+  "commands": [
+    {
+      "command": [
+        "google",
+        "sync-status"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "sync-status"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "preferences",
+        "show"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "preferences",
+        "save",
+        "--preferences-file",
+        "C:\\Users\\Yegor\\AppData\\Local\\Temp\\fuckmail-calendar-native-2onfnt88\\calendar-display.json",
+        "--expected-revision",
+        "0",
+        "--request-id",
+        "native-calendar-display-utc"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "preferences",
+        "show"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "sync-status"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation",
+        "gui-delete-1789339966756-186712286"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation",
+        "gui-event-1789339965454-473970532"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation",
+        "gui-event-1789339965882-582099589"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation",
+        "gui-event-1789339966383-202099969"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation",
+        "gui-delete-1789339970068-591244828"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation",
+        "gui-event-1789339968009-861040326"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation",
+        "gui-event-1789339968441-397710855"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation",
+        "gui-event-1789339969695-695744774"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar",
+        "--from",
+        "2026-09-13",
+        "--to",
+        "2026-09-15"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar-operations",
+        "--limit",
+        "2"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar-operations",
+        "--limit",
+        "2",
+        "--cursor",
+        "{\"acknowledged\": true, \"before_id\": 3}"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar",
+        "--from",
+        "2026-09-13",
+        "--to",
+        "2026-09-15"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar-operations",
+        "--limit",
+        "2"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar-operations",
+        "--limit",
+        "2",
+        "--cursor",
+        "{\"acknowledged\": true, \"before_id\": 7}"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    }
+  ],
+  "base_unix_secs": 1789257600,
+  "limits": {
+    "gmail_project_units_per_minute": 1000000,
+    "gmail_account_units_per_minute": 500000,
+    "calendar_project_units_per_minute": 10000,
+    "calendar_account_units_per_minute": 5000
+  },
+  "limitations": [
+    "Generated in-memory provider/vault only; no real events or notification delivery.",
+    "Fresh GUI process, with an existing local Watch owner; no populated isolated-engine restart.",
+    "Functional native handlers and independent CLI/source readback only; no benchmark or package acceptance."
+  ],
+  "executables": {
+    "cli": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\release\\fm.exe",
+      "sha256": "7b2aca311cdab05e99ce32b771ebf6cee90e94ec28a4ccf77fd90864d97eba33"
+    },
+    "engine": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\verification-google\\release\\fm-engine.exe",
+      "sha256": "de006d4b4231cc5379436307444acd8981adff06f138306772a1b9cec303efe1"
+    },
+    "gui": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\p2-08a-gui-release\\fuckmail-gui.exe",
+      "sha256": "9c82800f2583bd4077023d7bbf0009c80f63613f20b2be87244d4985d94b371d"
+    }
+  },
+  "initial_sources": {
+    "visible_sources": 14,
+    "hidden_retained_sources": 0
+  },
+  "display_zone_setup": {
+    "patch": {
+      "calendar_display_time_zone": "UTC"
+    },
+    "receipt": {
+      "preferences": {
+        "calendar_date": null,
+        "calendar_display_time_zone": "UTC",
+        "calendar_end_hour": 22,
+        "calendar_start_hour": 7,
+        "calendar_view": "week",
+        "default_event_duration_minutes": 60,
+        "density": "comfortable",
+        "google_sync_limits": null,
+        "last_workspace": "mail",
+        "selected_calendars": null,
+        "startup_view": "mail",
+        "text_size": "default",
+        "theme": "graphite",
+        "timeline_date": null,
+        "timeline_end_hour": 22,
+        "timeline_position": "footer",
+        "timeline_start_hour": 7,
+        "week_start": "monday"
+      },
+      "revision": 1
+    }
+  },
+  "gui_exit_code": 0,
+  "native_accounts": [
+    {
+      "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+      "add": {
+        "event": {
+          "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+          "account_name": "personal@example.test",
+          "all_day": false,
+          "attendee_edit_reason": null,
+          "attendees": [
+            {
+              "email": "personal@example.test",
+              "organizer": true,
+              "responseStatus": "accepted",
+              "self": true
+            },
+            {
+              "additionalGuests": 1,
+              "comment": "Preserved reply",
+              "displayName": "Alpha guest",
+              "email": "alpha@example.test",
+              "optional": true,
+              "responseStatus": "accepted"
+            },
+            {
+              "displayName": "Beta guest",
+              "email": "beta@example.test",
+              "resource": false,
+              "responseStatus": "tentative"
+            },
+            {
+              "email": "native-added-personal@example.test",
+              "responseStatus": "needsAction"
+            }
+          ],
+          "busy_only": false,
+          "calendar_id": "calendar-personal@example.test",
+          "calendar_name": "Invitations personal",
+          "can_delete": true,
+          "can_edit": true,
+          "can_edit_attendees": true,
+          "can_rsvp": true,
+          "column": 0,
+          "columns": 2,
+          "conference_url": "https://meet.example.test/fixture",
+          "date": "2026-09-13",
+          "day_index": 0,
+          "description": "Preserved generated invitation details",
+          "duration_hours": 0.5,
+          "end": "2026-09-13T01:30:00+00:00",
+          "end_display": "01:30",
+          "etag": "\"ci0000-v2\"",
+          "event_id": "ci0000",
+          "guest_addresses": [
+            "alpha@example.test",
+            "beta@example.test",
+            "native-added-personal@example.test"
+          ],
+          "id": "{\"account\":\"google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343\",\"calendar\":\"calendar-personal@example.test\",\"series\":\"ci0000\",\"original_start\":null}",
+          "location": "Fixture room",
+          "occurrence_key": {
+            "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+            "calendar": "calendar-personal@example.test",
+            "original_start": null,
+            "series": "ci0000"
+          },
+          "organizer": "personal@example.test",
+          "protected_attendees": [
+            {
+              "email": "personal@example.test",
+              "organizer": true,
+              "responseStatus": "accepted",
+              "self": true
+            }
+          ],
+          "read_only": false,
+          "recurring": false,
+          "self_response": "accepted",
+          "start": "2026-09-13T01:00:00+00:00",
+          "start_display": "Sun 13 Sep, 01:00",
+          "start_hour": 1,
+          "time_display": "01:00",
+          "time_zone": "UTC",
+          "title": "Invitation personal 0000"
+        },
+        "outcome": {
+          "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+          "intent_version": 2,
+          "kind": "edit",
+          "local_only": false,
+          "operation_action": "write",
+          "outcome": {
+            "cache_published": true,
+            "evidence_origin": "provider_response",
+            "kind": "accepted",
+            "notification_delivery": "unverified"
+          },
+          "request_id": "gui-event-1789339965454-473970532",
+          "revision": 4,
+          "state": "acknowledged",
+          "target": {
+            "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+            "calendar": "calendar-personal@example.test",
+            "event": "ci0000"
+          }
+        },
+        "request": {
+          "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+          "calendar_id": "calendar-personal@example.test",
+          "event_id": "ci0000",
+          "expected_etag": "\"ci0000-v1\"",
+          "fields": {
+            "attendees": [
+              "alpha@example.test",
+              "beta@example.test",
+              "native-added-personal@example.test"
+            ]
+          },
+          "kind": "edit",
+          "request_id": "gui-event-1789339965454-473970532"
+        }
+      },
+      "create": {
+        "event": {
+          "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+          "account_name": "personal@example.test",
+          "all_day": false,
+          "attendee_edit_reason": null,
+          "attendees": [
+            {
+              "email": "native-created-personal@example.test",
+              "responseStatus": "needsAction"
+            }
+          ],
+          "busy_only": false,
+          "calendar_id": "calendar-personal@example.test",
+          "calendar_name": "Invitations personal",
+          "can_delete": true,
+          "can_edit": true,
+          "can_edit_attendees": true,
+          "can_rsvp": false,
+          "column": 0,
+          "columns": 1,
+          "date": "2026-09-13",
+          "day_index": 0,
+          "description": "Native Calendar guest verification.\nUnicode café 日本語.",
+          "duration_hours": 0.75,
+          "end": "2026-09-13T12:45:00+00:00",
+          "end_display": "12:45",
+          "etag": "\"f9b6795b41994332cb7670e42470a0a0233c06a25bda9657c41cb509595a9ba54-v4\"",
+          "event_id": "f9b6795b41994332cb7670e42470a0a0233c06a25bda9657c41cb509595a9ba54",
+          "guest_addresses": [
+            "native-created-personal@example.test"
+          ],
+          "id": "{\"account\":\"google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343\",\"calendar\":\"calendar-personal@example.test\",\"series\":\"f9b6795b41994332cb7670e42470a0a0233c06a25bda9657c41cb509595a9ba54\",\"original_start\":null}",
+          "location": "Native fixture room",
+          "occurrence_key": {
+            "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+            "calendar": "calendar-personal@example.test",
+            "original_start": null,
+            "series": "f9b6795b41994332cb7670e42470a0a0233c06a25bda9657c41cb509595a9ba54"
+          },
+          "organizer": "personal@example.test",
+          "protected_attendees": [],
+          "read_only": false,
+          "recurring": false,
+          "start": "2026-09-13T12:00:00+00:00",
+          "start_display": "Sun 13 Sep, 12:00",
+          "start_hour": 12,
+          "time_display": "12:00",
+          "time_zone": "UTC",
+          "title": "Native invitation personal"
+        },
+        "outcome": {
+          "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+          "intent_version": 2,
+          "kind": "create",
+          "local_only": false,
+          "operation_action": "write",
+          "outcome": {
+            "cache_published": true,
+            "evidence_origin": "provider_response",
+            "kind": "accepted",
+            "notification_delivery": "unverified"
+          },
+          "request_id": "gui-event-1789339966383-202099969",
+          "revision": 4,
+          "state": "acknowledged",
+          "target": {
+            "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+            "calendar": "calendar-personal@example.test",
+            "event": "f9b6795b41994332cb7670e42470a0a0233c06a25bda9657c41cb509595a9ba54"
+          }
+        },
+        "request": {
+          "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+          "calendar_id": "calendar-personal@example.test",
+          "fields": {
+            "all_day": false,
+            "attendees": [
+              "native-created-personal@example.test"
+            ],
+            "description": "Native Calendar guest verification.\nUnicode café 日本語.",
+            "end": "2026-09-13T12:45:00+00:00",
+            "location": "Native fixture room",
+            "start": "2026-09-13T12:00:00+00:00",
+            "time_zone": "UTC",
+            "title": "Native invitation personal"
+          },
+          "kind": "create",
+          "request_id": "gui-event-1789339966383-202099969"
+        }
+      },
+      "delete": {
+        "outcome": {
+          "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+          "intent_version": 2,
+          "kind": "delete",
+          "local_only": false,
+          "operation_action": "write",
+          "outcome": {
+            "cache_published": true,
+            "evidence_origin": "provider_response",
+            "kind": "deleted",
+            "notification_delivery": "unverified"
+          },
+          "request_id": "gui-delete-1789339966756-186712286",
+          "revision": 4,
+          "state": "acknowledged",
+          "target": {
+            "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+            "calendar": "calendar-personal@example.test",
+            "event": "f9b6795b41994332cb7670e42470a0a0233c06a25bda9657c41cb509595a9ba54"
+          }
+        },
+        "request": {
+          "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+          "calendar_id": "calendar-personal@example.test",
+          "event_id": "f9b6795b41994332cb7670e42470a0a0233c06a25bda9657c41cb509595a9ba54",
+          "expected_etag": "\"f9b6795b41994332cb7670e42470a0a0233c06a25bda9657c41cb509595a9ba54-v4\"",
+          "kind": "delete",
+          "request_id": "gui-delete-1789339966756-186712286"
+        }
+      },
+      "initial_event": {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "account_name": "personal@example.test",
+        "all_day": false,
+        "attendee_edit_reason": null,
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "organizer": true,
+            "responseStatus": "accepted",
+            "self": true
+          },
+          {
+            "additionalGuests": 1,
+            "comment": "Preserved reply",
+            "displayName": "Alpha guest",
+            "email": "alpha@example.test",
+            "optional": true,
+            "responseStatus": "accepted"
+          },
+          {
+            "displayName": "Beta guest",
+            "email": "beta@example.test",
+            "resource": false,
+            "responseStatus": "tentative"
+          }
+        ],
+        "busy_only": false,
+        "calendar_id": "calendar-personal@example.test",
+        "calendar_name": "Invitations personal",
+        "can_delete": true,
+        "can_edit": true,
+        "can_edit_attendees": true,
+        "can_rsvp": true,
+        "column": 0,
+        "columns": 2,
+        "conference_url": "https://meet.example.test/fixture",
+        "date": "2026-09-13",
+        "day_index": 0,
+        "description": "Preserved generated invitation details",
+        "duration_hours": 0.5,
+        "end": "2026-09-13T01:30:00+00:00",
+        "end_display": "01:30",
+        "etag": "\"ci0000-v1\"",
+        "event_id": "ci0000",
+        "guest_addresses": [
+          "alpha@example.test",
+          "beta@example.test"
+        ],
+        "id": "{\"account\":\"google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343\",\"calendar\":\"calendar-personal@example.test\",\"series\":\"ci0000\",\"original_start\":null}",
+        "location": "Fixture room",
+        "occurrence_key": {
+          "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+          "calendar": "calendar-personal@example.test",
+          "original_start": null,
+          "series": "ci0000"
+        },
+        "organizer": "personal@example.test",
+        "protected_attendees": [
+          {
+            "email": "personal@example.test",
+            "organizer": true,
+            "responseStatus": "accepted",
+            "self": true
+          }
+        ],
+        "read_only": false,
+        "recurring": false,
+        "self_response": "accepted",
+        "start": "2026-09-13T01:00:00+00:00",
+        "start_display": "Sun 13 Sep, 01:00",
+        "start_hour": 1,
+        "time_display": "01:00",
+        "time_zone": "UTC",
+        "title": "Invitation personal 0000"
+      },
+      "limits": {
+        "calendar_account_units_per_minute": 5000,
+        "calendar_project_units_per_minute": 10000,
+        "gmail_account_units_per_minute": 500000,
+        "gmail_project_units_per_minute": 1000000
+      },
+      "remove": {
+        "event": {
+          "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+          "account_name": "personal@example.test",
+          "all_day": false,
+          "attendee_edit_reason": null,
+          "attendees": [
+            {
+              "email": "personal@example.test",
+              "organizer": true,
+              "responseStatus": "accepted",
+              "self": true
+            },
+            {
+              "additionalGuests": 1,
+              "comment": "Preserved reply",
+              "displayName": "Alpha guest",
+              "email": "alpha@example.test",
+              "optional": true,
+              "responseStatus": "accepted"
+            },
+            {
+              "displayName": "Beta guest",
+              "email": "beta@example.test",
+              "resource": false,
+              "responseStatus": "tentative"
+            }
+          ],
+          "busy_only": false,
+          "calendar_id": "calendar-personal@example.test",
+          "calendar_name": "Invitations personal",
+          "can_delete": true,
+          "can_edit": true,
+          "can_edit_attendees": true,
+          "can_rsvp": true,
+          "column": 0,
+          "columns": 2,
+          "conference_url": "https://meet.example.test/fixture",
+          "date": "2026-09-13",
+          "day_index": 0,
+          "description": "Preserved generated invitation details",
+          "duration_hours": 0.5,
+          "end": "2026-09-13T01:30:00+00:00",
+          "end_display": "01:30",
+          "etag": "\"ci0000-v3\"",
+          "event_id": "ci0000",
+          "guest_addresses": [
+            "alpha@example.test",
+            "beta@example.test"
+          ],
+          "id": "{\"account\":\"google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343\",\"calendar\":\"calendar-personal@example.test\",\"series\":\"ci0000\",\"original_start\":null}",
+          "location": "Fixture room",
+          "occurrence_key": {
+            "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+            "calendar": "calendar-personal@example.test",
+            "original_start": null,
+            "series": "ci0000"
+          },
+          "organizer": "personal@example.test",
+          "protected_attendees": [
+            {
+              "email": "personal@example.test",
+              "organizer": true,
+              "responseStatus": "accepted",
+              "self": true
+            }
+          ],
+          "read_only": false,
+          "recurring": false,
+          "self_response": "accepted",
+          "start": "2026-09-13T01:00:00+00:00",
+          "start_display": "Sun 13 Sep, 01:00",
+          "start_hour": 1,
+          "time_display": "01:00",
+          "time_zone": "UTC",
+          "title": "Invitation personal 0000"
+        },
+        "outcome": {
+          "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+          "intent_version": 2,
+          "kind": "edit",
+          "local_only": false,
+          "operation_action": "write",
+          "outcome": {
+            "cache_published": true,
+            "evidence_origin": "provider_response",
+            "kind": "accepted",
+            "notification_delivery": "unverified"
+          },
+          "request_id": "gui-event-1789339965882-582099589",
+          "revision": 4,
+          "state": "acknowledged",
+          "target": {
+            "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+            "calendar": "calendar-personal@example.test",
+            "event": "ci0000"
+          }
+        },
+        "request": {
+          "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+          "calendar_id": "calendar-personal@example.test",
+          "event_id": "ci0000",
+          "expected_etag": "\"ci0000-v2\"",
+          "fields": {
+            "attendees": [
+              "alpha@example.test",
+              "beta@example.test"
+            ]
+          },
+          "kind": "edit",
+          "request_id": "gui-event-1789339965882-582099589"
+        }
+      }
+    },
+    {
+      "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+      "add": {
+        "event": {
+          "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+          "account_name": "workspace@example.test",
+          "all_day": false,
+          "attendee_edit_reason": null,
+          "attendees": [
+            {
+              "email": "workspace@example.test",
+              "organizer": true,
+              "responseStatus": "accepted",
+              "self": true
+            },
+            {
+              "additionalGuests": 1,
+              "comment": "Preserved reply",
+              "displayName": "Alpha guest",
+              "email": "alpha@example.test",
+              "optional": true,
+              "responseStatus": "accepted"
+            },
+            {
+              "displayName": "Beta guest",
+              "email": "beta@example.test",
+              "resource": false,
+              "responseStatus": "tentative"
+            },
+            {
+              "email": "native-added-workspace@example.test",
+              "responseStatus": "needsAction"
+            }
+          ],
+          "busy_only": false,
+          "calendar_id": "calendar-workspace@example.test",
+          "calendar_name": "Invitations workspace",
+          "can_delete": true,
+          "can_edit": true,
+          "can_edit_attendees": true,
+          "can_rsvp": true,
+          "column": 1,
+          "columns": 2,
+          "conference_url": "https://meet.example.test/fixture",
+          "date": "2026-09-13",
+          "day_index": 0,
+          "description": "Preserved generated invitation details",
+          "duration_hours": 0.5,
+          "end": "2026-09-13T01:30:00+00:00",
+          "end_display": "01:30",
+          "etag": "\"ci0000-v2\"",
+          "event_id": "ci0000",
+          "guest_addresses": [
+            "alpha@example.test",
+            "beta@example.test",
+            "native-added-workspace@example.test"
+          ],
+          "id": "{\"account\":\"google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd\",\"calendar\":\"calendar-workspace@example.test\",\"series\":\"ci0000\",\"original_start\":null}",
+          "location": "Fixture room",
+          "occurrence_key": {
+            "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+            "calendar": "calendar-workspace@example.test",
+            "original_start": null,
+            "series": "ci0000"
+          },
+          "organizer": "workspace@example.test",
+          "protected_attendees": [
+            {
+              "email": "workspace@example.test",
+              "organizer": true,
+              "responseStatus": "accepted",
+              "self": true
+            }
+          ],
+          "read_only": false,
+          "recurring": false,
+          "self_response": "accepted",
+          "start": "2026-09-13T01:00:00+00:00",
+          "start_display": "Sun 13 Sep, 01:00",
+          "start_hour": 1,
+          "time_display": "01:00",
+          "time_zone": "UTC",
+          "title": "Invitation workspace 0000"
+        },
+        "outcome": {
+          "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+          "intent_version": 2,
+          "kind": "edit",
+          "local_only": false,
+          "operation_action": "write",
+          "outcome": {
+            "cache_published": true,
+            "evidence_origin": "provider_response",
+            "kind": "accepted",
+            "notification_delivery": "unverified"
+          },
+          "request_id": "gui-event-1789339968009-861040326",
+          "revision": 4,
+          "state": "acknowledged",
+          "target": {
+            "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+            "calendar": "calendar-workspace@example.test",
+            "event": "ci0000"
+          }
+        },
+        "request": {
+          "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+          "calendar_id": "calendar-workspace@example.test",
+          "event_id": "ci0000",
+          "expected_etag": "\"ci0000-v1\"",
+          "fields": {
+            "attendees": [
+              "alpha@example.test",
+              "beta@example.test",
+              "native-added-workspace@example.test"
+            ]
+          },
+          "kind": "edit",
+          "request_id": "gui-event-1789339968009-861040326"
+        }
+      },
+      "create": {
+        "event": {
+          "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+          "account_name": "workspace@example.test",
+          "all_day": false,
+          "attendee_edit_reason": null,
+          "attendees": [
+            {
+              "email": "native-created-workspace@example.test",
+              "responseStatus": "needsAction"
+            }
+          ],
+          "busy_only": false,
+          "calendar_id": "calendar-workspace@example.test",
+          "calendar_name": "Invitations workspace",
+          "can_delete": true,
+          "can_edit": true,
+          "can_edit_attendees": true,
+          "can_rsvp": false,
+          "column": 0,
+          "columns": 1,
+          "date": "2026-09-13",
+          "day_index": 0,
+          "description": "Native Calendar guest verification.\nUnicode café 日本語.",
+          "duration_hours": 0.75,
+          "end": "2026-09-13T12:45:00+00:00",
+          "end_display": "12:45",
+          "etag": "\"f7a35b162b0e2359028ffe9029c433c9b1ee01d1960b98f6bcb9f233d671188c9-v4\"",
+          "event_id": "f7a35b162b0e2359028ffe9029c433c9b1ee01d1960b98f6bcb9f233d671188c9",
+          "guest_addresses": [
+            "native-created-workspace@example.test"
+          ],
+          "id": "{\"account\":\"google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd\",\"calendar\":\"calendar-workspace@example.test\",\"series\":\"f7a35b162b0e2359028ffe9029c433c9b1ee01d1960b98f6bcb9f233d671188c9\",\"original_start\":null}",
+          "location": "Native fixture room",
+          "occurrence_key": {
+            "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+            "calendar": "calendar-workspace@example.test",
+            "original_start": null,
+            "series": "f7a35b162b0e2359028ffe9029c433c9b1ee01d1960b98f6bcb9f233d671188c9"
+          },
+          "organizer": "workspace@example.test",
+          "protected_attendees": [],
+          "read_only": false,
+          "recurring": false,
+          "start": "2026-09-13T12:00:00+00:00",
+          "start_display": "Sun 13 Sep, 12:00",
+          "start_hour": 12,
+          "time_display": "12:00",
+          "time_zone": "UTC",
+          "title": "Native invitation workspace"
+        },
+        "outcome": {
+          "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+          "intent_version": 2,
+          "kind": "create",
+          "local_only": false,
+          "operation_action": "write",
+          "outcome": {
+            "cache_published": true,
+            "evidence_origin": "provider_response",
+            "kind": "accepted",
+            "notification_delivery": "unverified"
+          },
+          "request_id": "gui-event-1789339969695-695744774",
+          "revision": 4,
+          "state": "acknowledged",
+          "target": {
+            "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+            "calendar": "calendar-workspace@example.test",
+            "event": "f7a35b162b0e2359028ffe9029c433c9b1ee01d1960b98f6bcb9f233d671188c9"
+          }
+        },
+        "request": {
+          "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+          "calendar_id": "calendar-workspace@example.test",
+          "fields": {
+            "all_day": false,
+            "attendees": [
+              "native-created-workspace@example.test"
+            ],
+            "description": "Native Calendar guest verification.\nUnicode café 日本語.",
+            "end": "2026-09-13T12:45:00+00:00",
+            "location": "Native fixture room",
+            "start": "2026-09-13T12:00:00+00:00",
+            "time_zone": "UTC",
+            "title": "Native invitation workspace"
+          },
+          "kind": "create",
+          "request_id": "gui-event-1789339969695-695744774"
+        }
+      },
+      "delete": {
+        "outcome": {
+          "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+          "intent_version": 2,
+          "kind": "delete",
+          "local_only": false,
+          "operation_action": "write",
+          "outcome": {
+            "cache_published": true,
+            "evidence_origin": "provider_response",
+            "kind": "deleted",
+            "notification_delivery": "unverified"
+          },
+          "request_id": "gui-delete-1789339970068-591244828",
+          "revision": 4,
+          "state": "acknowledged",
+          "target": {
+            "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+            "calendar": "calendar-workspace@example.test",
+            "event": "f7a35b162b0e2359028ffe9029c433c9b1ee01d1960b98f6bcb9f233d671188c9"
+          }
+        },
+        "request": {
+          "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+          "calendar_id": "calendar-workspace@example.test",
+          "event_id": "f7a35b162b0e2359028ffe9029c433c9b1ee01d1960b98f6bcb9f233d671188c9",
+          "expected_etag": "\"f7a35b162b0e2359028ffe9029c433c9b1ee01d1960b98f6bcb9f233d671188c9-v4\"",
+          "kind": "delete",
+          "request_id": "gui-delete-1789339970068-591244828"
+        }
+      },
+      "initial_event": {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "account_name": "workspace@example.test",
+        "all_day": false,
+        "attendee_edit_reason": null,
+        "attendees": [
+          {
+            "email": "workspace@example.test",
+            "organizer": true,
+            "responseStatus": "accepted",
+            "self": true
+          },
+          {
+            "additionalGuests": 1,
+            "comment": "Preserved reply",
+            "displayName": "Alpha guest",
+            "email": "alpha@example.test",
+            "optional": true,
+            "responseStatus": "accepted"
+          },
+          {
+            "displayName": "Beta guest",
+            "email": "beta@example.test",
+            "resource": false,
+            "responseStatus": "tentative"
+          }
+        ],
+        "busy_only": false,
+        "calendar_id": "calendar-workspace@example.test",
+        "calendar_name": "Invitations workspace",
+        "can_delete": true,
+        "can_edit": true,
+        "can_edit_attendees": true,
+        "can_rsvp": true,
+        "column": 1,
+        "columns": 2,
+        "conference_url": "https://meet.example.test/fixture",
+        "date": "2026-09-13",
+        "day_index": 0,
+        "description": "Preserved generated invitation details",
+        "duration_hours": 0.5,
+        "end": "2026-09-13T01:30:00+00:00",
+        "end_display": "01:30",
+        "etag": "\"ci0000-v1\"",
+        "event_id": "ci0000",
+        "guest_addresses": [
+          "alpha@example.test",
+          "beta@example.test"
+        ],
+        "id": "{\"account\":\"google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd\",\"calendar\":\"calendar-workspace@example.test\",\"series\":\"ci0000\",\"original_start\":null}",
+        "location": "Fixture room",
+        "occurrence_key": {
+          "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+          "calendar": "calendar-workspace@example.test",
+          "original_start": null,
+          "series": "ci0000"
+        },
+        "organizer": "workspace@example.test",
+        "protected_attendees": [
+          {
+            "email": "workspace@example.test",
+            "organizer": true,
+            "responseStatus": "accepted",
+            "self": true
+          }
+        ],
+        "read_only": false,
+        "recurring": false,
+        "self_response": "accepted",
+        "start": "2026-09-13T01:00:00+00:00",
+        "start_display": "Sun 13 Sep, 01:00",
+        "start_hour": 1,
+        "time_display": "01:00",
+        "time_zone": "UTC",
+        "title": "Invitation workspace 0000"
+      },
+      "limits": {
+        "calendar_account_units_per_minute": 5000,
+        "calendar_project_units_per_minute": 10000,
+        "gmail_account_units_per_minute": 500000,
+        "gmail_project_units_per_minute": 1000000
+      },
+      "remove": {
+        "event": {
+          "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+          "account_name": "workspace@example.test",
+          "all_day": false,
+          "attendee_edit_reason": null,
+          "attendees": [
+            {
+              "email": "workspace@example.test",
+              "organizer": true,
+              "responseStatus": "accepted",
+              "self": true
+            },
+            {
+              "additionalGuests": 1,
+              "comment": "Preserved reply",
+              "displayName": "Alpha guest",
+              "email": "alpha@example.test",
+              "optional": true,
+              "responseStatus": "accepted"
+            },
+            {
+              "displayName": "Beta guest",
+              "email": "beta@example.test",
+              "resource": false,
+              "responseStatus": "tentative"
+            }
+          ],
+          "busy_only": false,
+          "calendar_id": "calendar-workspace@example.test",
+          "calendar_name": "Invitations workspace",
+          "can_delete": true,
+          "can_edit": true,
+          "can_edit_attendees": true,
+          "can_rsvp": true,
+          "column": 1,
+          "columns": 2,
+          "conference_url": "https://meet.example.test/fixture",
+          "date": "2026-09-13",
+          "day_index": 0,
+          "description": "Preserved generated invitation details",
+          "duration_hours": 0.5,
+          "end": "2026-09-13T01:30:00+00:00",
+          "end_display": "01:30",
+          "etag": "\"ci0000-v3\"",
+          "event_id": "ci0000",
+          "guest_addresses": [
+            "alpha@example.test",
+            "beta@example.test"
+          ],
+          "id": "{\"account\":\"google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd\",\"calendar\":\"calendar-workspace@example.test\",\"series\":\"ci0000\",\"original_start\":null}",
+          "location": "Fixture room",
+          "occurrence_key": {
+            "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+            "calendar": "calendar-workspace@example.test",
+            "original_start": null,
+            "series": "ci0000"
+          },
+          "organizer": "workspace@example.test",
+          "protected_attendees": [
+            {
+              "email": "workspace@example.test",
+              "organizer": true,
+              "responseStatus": "accepted",
+              "self": true
+            }
+          ],
+          "read_only": false,
+          "recurring": false,
+          "self_response": "accepted",
+          "start": "2026-09-13T01:00:00+00:00",
+          "start_display": "Sun 13 Sep, 01:00",
+          "start_hour": 1,
+          "time_display": "01:00",
+          "time_zone": "UTC",
+          "title": "Invitation workspace 0000"
+        },
+        "outcome": {
+          "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+          "intent_version": 2,
+          "kind": "edit",
+          "local_only": false,
+          "operation_action": "write",
+          "outcome": {
+            "cache_published": true,
+            "evidence_origin": "provider_response",
+            "kind": "accepted",
+            "notification_delivery": "unverified"
+          },
+          "request_id": "gui-event-1789339968441-397710855",
+          "revision": 4,
+          "state": "acknowledged",
+          "target": {
+            "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+            "calendar": "calendar-workspace@example.test",
+            "event": "ci0000"
+          }
+        },
+        "request": {
+          "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+          "calendar_id": "calendar-workspace@example.test",
+          "event_id": "ci0000",
+          "expected_etag": "\"ci0000-v2\"",
+          "fields": {
+            "attendees": [
+              "alpha@example.test",
+              "beta@example.test"
+            ]
+          },
+          "kind": "edit",
+          "request_id": "gui-event-1789339968441-397710855"
+        }
+      }
+    }
+  ],
+  "final_sources": {
+    "visible_sources": 14,
+    "hidden_retained_sources": 2
+  },
+  "provider_verification": {
+    "publications": 8,
+    "mutation_attempts": 8,
+    "lost_responses": 0,
+    "acknowledged_responses": 8
+  },
+  "provider_counters": {
+    "calendar_acknowledged": 8,
+    "calendar_lost_responses": 0,
+    "calendar_mutation_attempts": 8,
+    "calendar_mutations": 8,
+    "calendar_reads": 26,
+    "draft_created": 0,
+    "draft_delete_attempts": 0,
+    "draft_delete_unknown": 0,
+    "draft_deleted": 0,
+    "draft_list": 0,
+    "draft_read": 0,
+    "draft_updated": 0,
+    "http_cancelled": 0,
+    "http_completed": 34,
+    "http_rejected": 0,
+    "http_started": 34,
+    "modify_completed": 0,
+    "raw_active": 0,
+    "raw_cancelled": 0,
+    "raw_completed": 0,
+    "raw_held_active": 0,
+    "raw_started": 0,
+    "send_completed": 0,
+    "sent_read": 0,
+    "vault_loads": 34,
+    "vault_stores": 0
+  },
+  "journal_rows": 8,
+  "journal_sha256": "2317e89c1c4bf0cf17c81bd04d7a7cffb828cc5fec49489c536debd957a6687e",
+  "offline_queries_preserved_journal_and_http": true,
+  "final_owner_drained_engine": true,
+  "elapsed_seconds": 9.139999999664724,
+  "outputs_sha256": {
+    "engine": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "watch": "d69ddde1cf28e0b7d92d84dcd1deb8a1b0e106dc5dfb96b563ce6735107f4112",
+    "personal": "267efeaa9bc699e08cf3a29af2e1abe065dc06b513360f3a69c11d1fbd8c3124",
+    "workspace": "95fe2ef4b0c6423d2e67219e76db9a46759dd8d9960b41962ac7a64c79cfee17",
+    "fixture": "ea86fff87d3d8885b89930bebce5b075d1791eedad90b40f256f31e160807741",
+    "sources": "d6961f8c6f3cc2df1d13554c4bad4a94e564bccbda0180817a8f4d0bdc727a7b",
+    "ledger": "45ce4a55839a955a472a0df9b604c5e119ee84154afc687cd51429a49680d93c",
+    "gui": "edd7c90d97f5cc072a385e7c956dd5457a249d26ab743b05511b4f6202cdb2db",
+    "gui_report": "e7e2b8b9da37631e02288600ce40b57db1e418d0717f89d7f54e89b4d09fce60",
+    "expectation": "fbc5cd1eba0fae468caa6933134ef8d760b287437a058c5aefa76e8c122771ab"
+  }
+}

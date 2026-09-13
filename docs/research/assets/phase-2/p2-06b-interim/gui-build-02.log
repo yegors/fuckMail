@@ -1,0 +1,31 @@
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- GUI-only developer compilation: engine, packaging and integration tests are excluded
+-- Configuring done (1.5s)
+-- Generating done (0.6s)
+-- Build files have been written to: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/p2-05b3a-gui-dev
+[0/1] Re-running CMake...
+[1/63] Copying fuckmail-gui qml sources into build dir
+[2/63] Running qmlimportscanner for fuckmail-gui
+[3/63] Automatic MOC and UIC for target fuckmail-gui
+[4/62] Running rcc for resource fuckmail-gui_raw_qml_0
+[5/62] Running AUTOMOC file extraction for target fuckmail-gui
+[6/25] Automatic MOC and UIC for target gui-calendar-controls-test
+[7/24] Generating .rcc/qmlcache/fuckmail-gui_CalendarOperations_qml.cpp, .rcc/qmlcache/fuckmail-gui_CalendarOperations_qml.cpp.aotstats
+[8/24] Generating .rcc/qmlcache/fuckmail-gui_EventDetails_qml.cpp, .rcc/qmlcache/fuckmail-gui_EventDetails_qml.cpp.aotstats
+[9/24] Generating .rcc/qmlcache/fuckmail-gui_EventEditor_qml.cpp, .rcc/qmlcache/fuckmail-gui_EventEditor_qml.cpp.aotstats
+[10/24] Generating .rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp, .rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp.aotstats
+[11/24] Generating .rcc/qmlcache/fuckmail-gui_CalendarView_qml.cpp, .rcc/qmlcache/fuckmail-gui_CalendarView_qml.cpp.aotstats
+[12/24] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.qt\rcc\qrc_fuckmail-gui_raw_qml_0.cpp.obj
+[13/24] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\CalendarOperations.cpp.obj
+[14/24] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_CalendarOperations_qml.cpp.obj
+[15/24] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_EventDetails_qml.cpp.obj
+[16/24] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_EventEditor_qml.cpp.obj
+[17/24] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_CalendarView_qml.cpp.obj
+[18/24] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_ReplyComposer_qml.cpp.obj
+[19/24] Building CXX object gui\CMakeFiles\gui-calendar-controls-test.dir\CalendarControlsTest.cpp.obj
+[20/24] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiGoogleDraftActionsSelfTest.cpp.obj
+[21/24] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiGoogleCalendarSelfTest.cpp.obj
+[22/24] Linking CXX executable gui-calendar-controls-test.exe
+[23/24] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\main.cpp.obj
+[24/24] Linking CXX executable fuckmail-gui.exe

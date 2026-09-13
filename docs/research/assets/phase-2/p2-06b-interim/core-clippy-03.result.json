@@ -1,0 +1,28 @@
+{
+  "command": [
+    "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\cargo\\bin\\cargo.EXE",
+    "clippy",
+    "-p",
+    "fm-core",
+    "--locked",
+    "--all-targets",
+    "--",
+    "-D",
+    "warnings"
+  ],
+  "scope": "fm-core,fm-calendar,fm-google,fm-mail,fm-ipc,fm-assist",
+  "dependency_test_sources_excluded": [
+    "fm-assist",
+    "fm-calendar",
+    "fm-google",
+    "fm-ipc",
+    "fm-mail"
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 3.4219999997876585,
+  "source_count": 159,
+  "source_changes": [],
+  "status": "passed",
+  "source_sha256": "d86ae49f63f77af22abd980281b87cabf9caacef05a284f464a659992893e4c0",
+  "log_sha256": "02a4dbc911d31e714486cdfddeb5d44747a6c8f5daae0cb0ff7a7d588291a67f"
+}

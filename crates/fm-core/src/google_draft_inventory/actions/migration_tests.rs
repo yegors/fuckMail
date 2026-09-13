@@ -116,7 +116,7 @@ fn schema15_upgrade_keeps_source_versions_authored_bytes_and_mixed_receipts() {
             .db
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        16
+        i64::from(crate::SCHEMA_VERSION)
     );
     assert_eq!(preserved_rows(&reopened), rows);
     assert_eq!(retained_blobs(&reopened), blobs);
@@ -180,7 +180,8 @@ fn schema15_upgrade_keeps_source_versions_authored_bytes_and_mixed_receipts() {
     };
     assert_eq!(refusal.code, "schema_mismatch");
     let db = rusqlite::Connection::open(dir.path().join("store.sqlite3")).unwrap();
-    db.pragma_update(None, "user_version", 16).unwrap();
+    db.pragma_update(None, "user_version", crate::SCHEMA_VERSION)
+        .unwrap();
     drop(db);
     let reopened = Store::open_live(dir.path()).unwrap();
     assert_eq!(preserved_rows(&reopened), rows);

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify a recorded draft-schema upgrade and actual old-engine refusal.
+"""Verify a recorded journal-schema upgrade and actual old-engine refusal.
 
 Ordinary standalone engine/CLI executables, not a package or live-account test.
 """
@@ -28,19 +28,58 @@ def source_manifest():
     return result
 
 
+def seed_calendar(check, files):
+    """Generate old-engine Calendar receipts through the ordinary CLI boundary."""
+    fields = {"title": "Preserved meeting — 日本語", "start": "2026-09-12T09:00:00-04:00",
+              "end": "2026-09-12T10:00:00-04:00", "all_day": False,
+              "time_zone": "America/Toronto", "location": "Generated room",
+              "description": "Human meeting notes", "conference_url": "https://example.test/meeting",
+              "attendees": ["you@personal.example", "guest@example.test"]}
+    create = {"request_id": "upgrade-calendar-create", "kind": "create", "calendar_id": "primary",
+              "fields": fields}
+    created = check.call(files, "calendar_write", create, account="personal")
+    require(created["state"] == "fake_acknowledged", "Missing old synthetic Calendar create receipt")
+    edit = {"request_id": "upgrade-calendar-edit", "kind": "edit", "calendar_id": "primary",
+            "event_id": created["target"]["event"], "expected_etag": created["etag"],
+            "fields": {**fields, "title": "Retained edited meeting — 日本語"}}
+    edited = check.call(files, "calendar_write", edit, account="personal")
+    query = {"from": "2026-09-07", "to": "2026-09-14"}
+    initial = check.call(files, "calendar", query, account="personal")
+    source = next(event for event in initial["events"] if event["event_id"] == "cross-account")
+    rsvp = {"request_id": "upgrade-calendar-rsvp", "kind": "rsvp", "calendar_id": "primary",
+            "event_id": source["event_id"], "expected_etag": source["etag"], "response": "accepted"}
+    responded = check.call(files, "calendar_write", rsvp, account="personal")
+    pending = {**create, "request_id": "upgrade-calendar-pending", "prepare_only": True,
+               "fields": {**fields, "title": "Prepared unsent meeting"}}
+    prepared = check.call(files, "calendar_write", pending, account="personal")
+    require(prepared["state"] == "pending", "Missing old pending Calendar receipt")
+    return {"query": query, "projection": check.call(files, "calendar", query, account="personal"),
+            "requests": [create, edit, rsvp, pending], "receipts": [created, edited, responded, prepared]}
+
+
+def verify_calendar(check, files, retained):
+    for request, receipt in zip(retained["requests"], retained["receipts"], strict=True):
+        require(check.call(files, "calendar_write", request, account="personal") == receipt,
+                "Migration changed an immutable/pending Calendar receipt")
+    require(contains_fields(check.call(files, "calendar", retained["query"], account="personal"),
+                            retained["projection"]), "Migration changed the retained Calendar projection")
+
+
 def run(args):
     report = args.report.resolve()
     report.parent.mkdir(parents=True, exist_ok=True)
     # Reserve before launching anything; this report cannot replace an older run.
     with report.open("x", encoding="utf-8") as destination:
-        result = {"result": "failed", "scenario": f"schema-{args.old_schema}-to-{args.new_schema}-draft-provenance", "version": 2,
-                  "limitations": ["Generated synthetic composition only; live draft/Send receipts have separate Core fixtures.",
+        calendar_upgrade = (args.old_schema, args.new_schema) == (16, 17)
+        scenario = "calendar-intents" if calendar_upgrade else "draft-provenance"
+        result = {"result": "failed", "scenario": f"schema-{args.old_schema}-to-{args.new_schema}-{scenario}", "version": 3,
+                  "limitations": ["Generated synthetic composition/Calendar only; live journals have separate Core fixtures.",
                                   "Standalone engine/CLI source evidence; no GUI/package/performance acceptance."], "artifacts": []}
         started = time.monotonic()
         try:
             old = {"fm": args.old_cli.resolve(strict=True), "fm-engine": args.old_engine.resolve(strict=True)}
             new = {"fm": args.new_cli.resolve(strict=True), "fm-engine": args.new_engine.resolve(strict=True)}
-            require((args.old_schema, args.new_schema) in ((14, 15), (15, 16)), "Choose a documented draft-schema upgrade")
+            require((args.old_schema, args.new_schema) in ((14, 15), (15, 16), (16, 17)), "Choose a documented journal-schema upgrade")
             require(old["fm-engine"] != new["fm-engine"], "Use a distinct preserved old-schema engine")
             result["executables"] = {kind: {key: {"path": str(path), "sha256": sha256(path)} for key, path in files.items()}
                                      for kind, files in (("old", old), ("new", new))}
@@ -74,6 +113,7 @@ def run(args):
                                       "request_id": "upgrade-capture", "outcome": "accepted"}
                     captured = check.call(old, "draft_capture", capture_params)
                     current = check.call(old, "draft_get", {"draft_id": draft["draft_id"]})
+                    retained_calendar = seed_calendar(check, old) if calendar_upgrade else None
                     release(before_owner, before_engine)
                     before = durable_snapshot(check.profile)
                     require(before["schema"] == args.old_schema and before["record_counts"]["capture_operations"] >= 1, "Missing pre-upgrade authored receipt")
@@ -89,6 +129,8 @@ def run(args):
                             "Migration altered authored fields or made old draft a remote snapshot")
                     replay = check.call(new, "draft_capture", capture_params)
                     require(replay == captured, "Migration rewrote the exact immutable capture receipt")
+                    if retained_calendar is not None:
+                        verify_calendar(check, new, retained_calendar)
                     release(after_owner, after_engine)
                     after = durable_snapshot(check.profile, before["columns"])
                     require(before["table_digests"] == after["table_digests"], "Old persisted table/column values changed during migration")
@@ -105,12 +147,16 @@ def run(args):
                     require(check.call(new, "draft_get", {"draft_id": draft["draft_id"]}) == recovered,
                             "Fresh new engine failed to reopen preserved draft after refusal")
                     require(check.call(new, "draft_capture", capture_params) == captured, "Fresh engine changed immutable replay")
+                    if retained_calendar is not None:
+                        verify_calendar(check, new, retained_calendar)
                     release(reopened_owner, reopened_engine)
                     result["before"] = before
                     result["after"] = after
                     result["refused"] = refused
                     result["draft_id"] = draft["draft_id"]
                     result["capture_receipt"] = captured
+                    if retained_calendar is not None:
+                        result["calendar"] = retained_calendar
                     require(source_manifest() == sources, "Sources changed during migration verification")
                     for kind, files in (("old", old), ("new", new)):
                         require(all(sha256(path) == result["executables"][kind][key]["sha256"] for key, path in files.items()),
@@ -139,7 +185,7 @@ if __name__ == "__main__":
     parser.add_argument("--old-engine", type=Path, required=True)
     parser.add_argument("--new-cli", type=Path, required=True)
     parser.add_argument("--new-engine", type=Path, required=True)
-    parser.add_argument("--old-schema", type=int, choices=(14, 15), default=14)
-    parser.add_argument("--new-schema", type=int, choices=(15, 16), default=15)
+    parser.add_argument("--old-schema", type=int, choices=(14, 15, 16), default=14)
+    parser.add_argument("--new-schema", type=int, choices=(15, 16, 17), default=15)
     parser.add_argument("--report", type=Path, required=True)
     raise SystemExit(run(parser.parse_args()))

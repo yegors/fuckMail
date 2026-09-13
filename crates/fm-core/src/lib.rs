@@ -27,6 +27,7 @@ pub mod google_live_mutations;
 pub mod google_send;
 pub mod google_store;
 pub mod live_calendar;
+mod live_calendar_invitations;
 pub mod live_calendar_writes;
 pub mod live_profile;
 pub mod local_content;
@@ -40,7 +41,7 @@ mod queries;
 mod sender_kind_tests;
 #[cfg(test)]
 mod test_profiles;
-pub const SCHEMA_VERSION: u32 = 16;
+pub const SCHEMA_VERSION: u32 = 17;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -323,6 +324,15 @@ impl Store {
             let tx = store.db.unchecked_transaction()?;
             tx.execute_batch(include_str!("migration-016-google-draft-actions.sql"))?;
             tx.execute_batch("PRAGMA user_version=16")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 16 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-017-calendar-invitations.sql"))?;
+            tx.execute_batch("PRAGMA user_version=17")?;
             tx.commit()?;
         }
         store.validate_profile_identity()?;

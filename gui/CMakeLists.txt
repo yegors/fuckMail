@@ -29,6 +29,8 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     GuiCompositionSelfTest.h
     GuiGoogleDraftActionsSelfTest.cpp
     GuiGoogleDraftActionsSelfTest.h
+    GuiGoogleCalendarSelfTest.cpp
+    GuiGoogleCalendarSelfTest.h
     GuiGoogleDraftSnapshotSelfTest.cpp
     GuiGoogleDraftSnapshotSelfTest.h
     GuiSettingsSelfTest.cpp

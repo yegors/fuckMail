@@ -389,6 +389,15 @@ impl<T: HttpTransport> GoogleCalendarApi<T> {
             &write.target.event,
         ])?;
         write_parameters(&mut url, policy);
+        // Event labels are distinct from legacy colorId. Google requires the
+        // version alongside an exact retained label ID when editing such events.
+        match write.body.get("eventLabelId") {
+            None => {}
+            Some(Value::String(id)) if !id.is_empty() => {
+                url.query_pairs_mut().append_pair("eventLabelVersion", "1");
+            }
+            Some(_) => return Err(ApiError::InvalidRequest),
+        }
         let request = request(HttpMethod::Patch, &url, access_token, EVENT_BYTES)?
             .header("if-match", &write.if_match)?
             .body(encode_body(&write.body)?, "application/json")?;

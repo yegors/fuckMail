@@ -25,6 +25,7 @@ pub(crate) fn restore_schema_fourteen(db: &Connection) {
 }
 
 pub(crate) fn restore_schema_fifteen(db: &Connection) {
+    restore_schema_sixteen(db);
     db.execute_batch("DROP INDEX IF EXISTS google_draft_adoption_target; DROP INDEX IF EXISTS google_delete_target; DROP INDEX IF EXISTS google_delete_recovery; DROP INDEX IF EXISTS google_delete_history; DROP INDEX google_drafts_due;").unwrap();
     let old_index = include_str!("migration-015-google-draft-inventory.sql")
         .split_once("CREATE INDEX google_drafts_due")
@@ -37,6 +38,10 @@ pub(crate) fn restore_schema_fifteen(db: &Connection) {
         "CREATE INDEX google_drafts_due{old_index}\nPRAGMA user_version=15;"
     ))
     .unwrap();
+}
+
+pub(crate) fn restore_schema_sixteen(db: &Connection) {
+    db.pragma_update(None, "user_version", 16).unwrap();
 }
 
 /// Remove only post-schema-8 structures from a disposable seeded test profile.

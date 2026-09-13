@@ -1,0 +1,1713 @@
+{
+  "version": 1,
+  "scenario": "isolated-remote-google-drafts",
+  "result": "passed",
+  "executables": {
+    "cli": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\release\\fm.exe",
+      "sha256": "7b2aca311cdab05e99ce32b771ebf6cee90e94ec28a4ccf77fd90864d97eba33"
+    },
+    "engine": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\verification-google\\release\\fm-engine.exe",
+      "sha256": "5421cb8516069c56e183398974cb518e31600a7c4466300852208d470a50c1ec"
+    },
+    "gui": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\p2-08a-gui-release\\fuckmail-gui.exe",
+      "sha256": "9c82800f2583bd4077023d7bbf0009c80f63613f20b2be87244d4985d94b371d"
+    }
+  },
+  "limits": {
+    "gmail_project_units_per_minute": 1000000,
+    "gmail_account_units_per_minute": 500000,
+    "calendar_project_units_per_minute": 10000,
+    "calendar_account_units_per_minute": 5000
+  },
+  "commands": [
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "list"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-refresh"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "sync_not_running"
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "list"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-refresh"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "sync_not_running"
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "list"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "list"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "list"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "list"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "list"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "list"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "list"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "list"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-refresh"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-refresh"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "sources"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "save"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "draft_read_only"
+    },
+    {
+      "command": [
+        "draft",
+        "discard"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "draft_read_only"
+    },
+    {
+      "command": [
+        "draft",
+        "attach"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "draft_read_only"
+    },
+    {
+      "command": [
+        "draft",
+        "capture"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "capability_unavailable"
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "sources"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "save"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "draft_read_only"
+    },
+    {
+      "command": [
+        "draft",
+        "discard"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "draft_read_only"
+    },
+    {
+      "command": [
+        "draft",
+        "attach"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "draft_read_only"
+    },
+    {
+      "command": [
+        "draft",
+        "capture"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "capability_unavailable"
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "sync-status"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "sync-status"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-refresh"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "sync_not_running"
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-refresh"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "sync_not_running"
+    }
+  ],
+  "accounts": [
+    {
+      "account": "personal",
+      "initial_status": {
+        "absence_means_sent": false,
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "completed_at": 1789340956480,
+        "connection_generation": 1,
+        "enumeration_complete": true,
+        "estimated_total": 52,
+        "generation": 1,
+        "observed_items": 52,
+        "observed_this_scan": 52,
+        "paused": null,
+        "pending_items": 0,
+        "preview_incomplete": 2,
+        "revision": 55,
+        "source_retained": 51,
+        "source_unavailable": 1,
+        "started_at": 1789340952396
+      },
+      "draft_count": 52
+    },
+    {
+      "account": "workspace",
+      "initial_status": {
+        "absence_means_sent": false,
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "completed_at": 1789340956388,
+        "connection_generation": 1,
+        "enumeration_complete": true,
+        "estimated_total": 52,
+        "generation": 1,
+        "observed_items": 52,
+        "observed_this_scan": 52,
+        "paused": null,
+        "pending_items": 0,
+        "preview_incomplete": 2,
+        "revision": 55,
+        "source_retained": 51,
+        "source_unavailable": 1,
+        "started_at": 1789340952399
+      },
+      "draft_count": 52
+    }
+  ],
+  "limitations": [
+    "Generated source and in-memory transport/vault only; no actual Google account or delivery.",
+    "Functional checks only; no navigation/search/resize performance or package acceptance.",
+    "Fresh GUI/CLI cached reopening retains one explicit local Watch engine owner; no fresh-engine restart claim."
+  ],
+  "independent_retained_sources": 104,
+  "gui_exit_code": 0,
+  "gui_result": {
+    "error": "",
+    "exports": [
+      {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "attachment_id": null,
+        "draft_id": "google-draft-59462d6e34e841fdd05525cd4386675b92235d6a61050821752f570ac2fb0d37",
+        "mime_type": "message/rfc822",
+        "name": "draft-source-53.eml",
+        "path": "\\\\?\\C:\\Users\\Yegor\\AppData\\Local\\Temp\\fuckmail-remote-drafts-gtpx_auz\\empty-live-profile\\exports\\049aa1a918858e5e15f3405009cc0deaabea896601160d6e742c26e5c034a6d7\\attachment-draft-source-53-d7dfa0d4577e.eml",
+        "sha256": "049aa1a918858e5e15f3405009cc0deaabea896601160d6e742c26e5c034a6d7",
+        "size": 1233,
+        "source_revision": 53
+      },
+      {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "attachment_id": "google-draft-part-b998725aed30e767fd5e7bf8d6b29e50a0a513e4fa9defe633e0dc378d9b2abb",
+        "draft_id": "google-draft-59462d6e34e841fdd05525cd4386675b92235d6a61050821752f570ac2fb0d37",
+        "mime_type": "application/octet-stream",
+        "name": "fixture.bin",
+        "path": "\\\\?\\C:\\Users\\Yegor\\AppData\\Local\\Temp\\fuckmail-remote-drafts-gtpx_auz\\empty-live-profile\\exports\\d63f483d9a60ac91f89de4a19d7f9391f2cd00effb06415984e856b1ac323a23\\attachment-fixture-fea6875d3c54.bin",
+        "sha256": "d63f483d9a60ac91f89de4a19d7f9391f2cd00effb06415984e856b1ac323a23",
+        "size": 13,
+        "source_revision": 53
+      },
+      {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "attachment_id": null,
+        "draft_id": "google-draft-077ed5ff5e67cc30987f2c4fa940f1c22997657387a57caee5567a56c95c5625",
+        "mime_type": "message/rfc822",
+        "name": "draft-source-53.eml",
+        "path": "\\\\?\\C:\\Users\\Yegor\\AppData\\Local\\Temp\\fuckmail-remote-drafts-gtpx_auz\\empty-live-profile\\exports\\795d6f1a580970e5a9c02fd72483e300dc2b5ef0fd9f0223eb098a6e25644417\\attachment-draft-source-53-d7dfa0d4577e.eml",
+        "sha256": "795d6f1a580970e5a9c02fd72483e300dc2b5ef0fd9f0223eb098a6e25644417",
+        "size": 1245,
+        "source_revision": 53
+      },
+      {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "attachment_id": "google-draft-part-61e7195a069e5bd62bfc696efe3827ad78900af24fce1edc96a2080ec6073660",
+        "draft_id": "google-draft-077ed5ff5e67cc30987f2c4fa940f1c22997657387a57caee5567a56c95c5625",
+        "mime_type": "application/octet-stream",
+        "name": "fixture.bin",
+        "path": "\\\\?\\C:\\Users\\Yegor\\AppData\\Local\\Temp\\fuckmail-remote-drafts-gtpx_auz\\empty-live-profile\\exports\\02cc565fbe877b37c5bb265792160b1e78b515679c0a09c3d8a53e97809a8617\\attachment-fixture-fea6875d3c54.bin",
+        "sha256": "02cc565fbe877b37c5bb265792160b1e78b515679c0a09c3d8a53e97809a8617",
+        "size": 14,
+        "source_revision": 53
+      }
+    ],
+    "gui_pid": 82840,
+    "observed": [
+      {
+        "draft": {
+          "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+          "attachment_ids": [
+            "google-draft-part-b998725aed30e767fd5e7bf8d6b29e50a0a513e4fa9defe633e0dc378d9b2abb"
+          ],
+          "attachments": [
+            {
+              "id": "google-draft-part-b998725aed30e767fd5e7bf8d6b29e50a0a513e4fa9defe633e0dc378d9b2abb",
+              "mime_type": "application/octet-stream",
+              "name": "fixture.bin",
+              "size": 13,
+              "state": "available"
+            }
+          ],
+          "bcc_recipients": [
+            {
+              "email": "blind@example.test",
+              "name": "Blind"
+            }
+          ],
+          "body": "Remote cached draft for personal/0000, version 2.\r\nSecond authored line.",
+          "body_html": "<p>Remote <strong>personal</strong> draft 0000 version 2.</p><img src=\"cid:remote-image\">",
+          "cc_recipients": [
+            {
+              "email": "copy@example.test",
+              "name": "Copy"
+            }
+          ],
+          "conversation_id": null,
+          "created_at": 1789340952,
+          "discarded": false,
+          "draft_id": "google-draft-59462d6e34e841fdd05525cd4386675b92235d6a61050821752f570ac2fb0d37",
+          "from": "remote@example.test",
+          "from_name": "Remote Author",
+          "google": null,
+          "google_delete": null,
+          "google_send": null,
+          "identity_revision": 0,
+          "legacy_reply": false,
+          "mode": "new",
+          "origin": "google_snapshot",
+          "read_only": true,
+          "references": [
+            "first@example.test",
+            "prior@example.test"
+          ],
+          "remote_source": {
+            "absence_means_sent": false,
+            "attachment_ids": [
+              "google-draft-part-b998725aed30e767fd5e7bf8d6b29e50a0a513e4fa9defe633e0dc378d9b2abb"
+            ],
+            "candidate_request_ids": [],
+            "issues": [],
+            "last_observed_at": 1789340957199,
+            "latest_scan_complete": true,
+            "latest_scan_generation": 2,
+            "linked_local_draft_id": null,
+            "message_id": "rm0000v2",
+            "observed_at": 1789340957199,
+            "possible_unknown_create": false,
+            "preview_state": "complete",
+            "provider_draft_id": "rd0000",
+            "raw_headers": {
+              "bcc": " Blind <blind@example.test>\r\n",
+              "cc": " Copy <copy@example.test>\r\n",
+              "from": " Remote Author <remote@example.test>\r\n",
+              "in_reply_to": " <prior@example.test>\r\n",
+              "message_id": " <remote-personal-0000-v2@example.test>\r\n",
+              "references": " <first@example.test> <prior@example.test>\r\n",
+              "reply_to": "",
+              "subject": " Remote personal draft 0000 version 2\r\n",
+              "to": " Reader One <one@example.test>, Reader Two <two@example.test>\r\n"
+            },
+            "seen_generation": 2,
+            "seen_in_latest_scan": true,
+            "sha256": "049aa1a918858e5e15f3405009cc0deaabea896601160d6e742c26e5c034a6d7",
+            "size": 1233,
+            "source_revision": 53,
+            "source_state": "available",
+            "thread_id": "rt0000"
+          },
+          "reply_all_available": false,
+          "reply_to_message_id": "prior@example.test",
+          "revision": 3,
+          "signature_text": "",
+          "source_hash": null,
+          "source_message_id": null,
+          "source_unavailable": false,
+          "subject": "Remote personal draft 0000 version 2",
+          "to": "one@example.test",
+          "to_recipients": [
+            {
+              "email": "one@example.test",
+              "name": "Reader One"
+            },
+            {
+              "email": "two@example.test",
+              "name": "Reader Two"
+            }
+          ],
+          "updated_at": 1789340957
+        },
+        "provider_sync_owned": false,
+        "read_only_controls_verified": true,
+        "visit": 0
+      },
+      {
+        "draft": {
+          "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+          "attachment_ids": [
+            "google-draft-part-61e7195a069e5bd62bfc696efe3827ad78900af24fce1edc96a2080ec6073660"
+          ],
+          "attachments": [
+            {
+              "id": "google-draft-part-61e7195a069e5bd62bfc696efe3827ad78900af24fce1edc96a2080ec6073660",
+              "mime_type": "application/octet-stream",
+              "name": "fixture.bin",
+              "size": 14,
+              "state": "available"
+            }
+          ],
+          "bcc_recipients": [
+            {
+              "email": "blind@example.test",
+              "name": "Blind"
+            }
+          ],
+          "body": "Remote cached draft for workspace/0000, version 2.\r\nSecond authored line.",
+          "body_html": "<p>Remote <strong>workspace</strong> draft 0000 version 2.</p><img src=\"cid:remote-image\">",
+          "cc_recipients": [
+            {
+              "email": "copy@example.test",
+              "name": "Copy"
+            }
+          ],
+          "conversation_id": null,
+          "created_at": 1789340952,
+          "discarded": false,
+          "draft_id": "google-draft-077ed5ff5e67cc30987f2c4fa940f1c22997657387a57caee5567a56c95c5625",
+          "from": "remote@example.test",
+          "from_name": "Remote Author",
+          "google": null,
+          "google_delete": null,
+          "google_send": null,
+          "identity_revision": 0,
+          "legacy_reply": false,
+          "mode": "new",
+          "origin": "google_snapshot",
+          "read_only": true,
+          "references": [
+            "first@example.test",
+            "prior@example.test"
+          ],
+          "remote_source": {
+            "absence_means_sent": false,
+            "attachment_ids": [
+              "google-draft-part-61e7195a069e5bd62bfc696efe3827ad78900af24fce1edc96a2080ec6073660"
+            ],
+            "candidate_request_ids": [],
+            "issues": [],
+            "last_observed_at": 1789340957179,
+            "latest_scan_complete": true,
+            "latest_scan_generation": 2,
+            "linked_local_draft_id": null,
+            "message_id": "rm0000v2",
+            "observed_at": 1789340957179,
+            "possible_unknown_create": false,
+            "preview_state": "complete",
+            "provider_draft_id": "rd0000",
+            "raw_headers": {
+              "bcc": " Blind <blind@example.test>\r\n",
+              "cc": " Copy <copy@example.test>\r\n",
+              "from": " Remote Author <remote@example.test>\r\n",
+              "in_reply_to": " <prior@example.test>\r\n",
+              "message_id": " <remote-workspace-0000-v2@example.test>\r\n",
+              "references": " <first@example.test> <prior@example.test>\r\n",
+              "reply_to": "",
+              "subject": " Remote workspace draft 0000 version 2\r\n",
+              "to": " Reader One <one@example.test>, Reader Two <two@example.test>\r\n"
+            },
+            "seen_generation": 2,
+            "seen_in_latest_scan": true,
+            "sha256": "795d6f1a580970e5a9c02fd72483e300dc2b5ef0fd9f0223eb098a6e25644417",
+            "size": 1245,
+            "source_revision": 53,
+            "source_state": "available",
+            "thread_id": "rt0000"
+          },
+          "reply_all_available": false,
+          "reply_to_message_id": "prior@example.test",
+          "revision": 3,
+          "signature_text": "",
+          "source_hash": null,
+          "source_message_id": null,
+          "source_unavailable": false,
+          "subject": "Remote workspace draft 0000 version 2",
+          "to": "one@example.test",
+          "to_recipients": [
+            {
+              "email": "one@example.test",
+              "name": "Reader One"
+            },
+            {
+              "email": "two@example.test",
+              "name": "Reader Two"
+            }
+          ],
+          "updated_at": 1789340957
+        },
+        "provider_sync_owned": false,
+        "read_only_controls_verified": true,
+        "visit": 1
+      },
+      {
+        "draft": {
+          "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+          "attachment_ids": [
+            "google-draft-part-b998725aed30e767fd5e7bf8d6b29e50a0a513e4fa9defe633e0dc378d9b2abb"
+          ],
+          "attachments": [
+            {
+              "id": "google-draft-part-b998725aed30e767fd5e7bf8d6b29e50a0a513e4fa9defe633e0dc378d9b2abb",
+              "mime_type": "application/octet-stream",
+              "name": "fixture.bin",
+              "size": 13,
+              "state": "available"
+            }
+          ],
+          "bcc_recipients": [
+            {
+              "email": "blind@example.test",
+              "name": "Blind"
+            }
+          ],
+          "body": "Remote cached draft for personal/0000, version 2.\r\nSecond authored line.",
+          "body_html": "<p>Remote <strong>personal</strong> draft 0000 version 2.</p><img src=\"cid:remote-image\">",
+          "cc_recipients": [
+            {
+              "email": "copy@example.test",
+              "name": "Copy"
+            }
+          ],
+          "conversation_id": null,
+          "created_at": 1789340952,
+          "discarded": false,
+          "draft_id": "google-draft-59462d6e34e841fdd05525cd4386675b92235d6a61050821752f570ac2fb0d37",
+          "from": "remote@example.test",
+          "from_name": "Remote Author",
+          "google": null,
+          "google_delete": null,
+          "google_send": null,
+          "identity_revision": 0,
+          "legacy_reply": false,
+          "mode": "new",
+          "origin": "google_snapshot",
+          "read_only": true,
+          "references": [
+            "first@example.test",
+            "prior@example.test"
+          ],
+          "remote_source": {
+            "absence_means_sent": false,
+            "attachment_ids": [
+              "google-draft-part-b998725aed30e767fd5e7bf8d6b29e50a0a513e4fa9defe633e0dc378d9b2abb"
+            ],
+            "candidate_request_ids": [],
+            "issues": [],
+            "last_observed_at": 1789340957199,
+            "latest_scan_complete": true,
+            "latest_scan_generation": 2,
+            "linked_local_draft_id": null,
+            "message_id": "rm0000v2",
+            "observed_at": 1789340957199,
+            "possible_unknown_create": false,
+            "preview_state": "complete",
+            "provider_draft_id": "rd0000",
+            "raw_headers": {
+              "bcc": " Blind <blind@example.test>\r\n",
+              "cc": " Copy <copy@example.test>\r\n",
+              "from": " Remote Author <remote@example.test>\r\n",
+              "in_reply_to": " <prior@example.test>\r\n",
+              "message_id": " <remote-personal-0000-v2@example.test>\r\n",
+              "references": " <first@example.test> <prior@example.test>\r\n",
+              "reply_to": "",
+              "subject": " Remote personal draft 0000 version 2\r\n",
+              "to": " Reader One <one@example.test>, Reader Two <two@example.test>\r\n"
+            },
+            "seen_generation": 2,
+            "seen_in_latest_scan": true,
+            "sha256": "049aa1a918858e5e15f3405009cc0deaabea896601160d6e742c26e5c034a6d7",
+            "size": 1233,
+            "source_revision": 53,
+            "source_state": "available",
+            "thread_id": "rt0000"
+          },
+          "reply_all_available": false,
+          "reply_to_message_id": "prior@example.test",
+          "revision": 3,
+          "signature_text": "",
+          "source_hash": null,
+          "source_message_id": null,
+          "source_unavailable": false,
+          "subject": "Remote personal draft 0000 version 2",
+          "to": "one@example.test",
+          "to_recipients": [
+            {
+              "email": "one@example.test",
+              "name": "Reader One"
+            },
+            {
+              "email": "two@example.test",
+              "name": "Reader Two"
+            }
+          ],
+          "updated_at": 1789340957
+        },
+        "provider_sync_owned": false,
+        "read_only_controls_verified": true,
+        "visit": 2
+      }
+    ],
+    "passed": true,
+    "scope": "Fresh native cached reopen; explicit local Watch may retain engine. No sync start or provider mutation.",
+    "stage": 5,
+    "version": 1
+  },
+  "offline_provider_counters": {
+    "calendar_acknowledged": 0,
+    "calendar_lost_responses": 0,
+    "calendar_mutation_attempts": 0,
+    "calendar_mutations": 0,
+    "calendar_reads": 0,
+    "draft_created": 0,
+    "draft_delete_attempts": 0,
+    "draft_delete_unknown": 0,
+    "draft_deleted": 0,
+    "draft_list": 8,
+    "draft_read": 208,
+    "draft_updated": 0,
+    "http_cancelled": 1,
+    "http_completed": 475,
+    "http_rejected": 0,
+    "http_started": 476,
+    "modify_completed": 0,
+    "raw_active": 0,
+    "raw_cancelled": 1,
+    "raw_completed": 249,
+    "raw_held_active": 0,
+    "raw_started": 250,
+    "send_completed": 0,
+    "sent_read": 0,
+    "vault_loads": 476,
+    "vault_stores": 0
+  },
+  "provider_counters": {
+    "calendar_acknowledged": 0,
+    "calendar_lost_responses": 0,
+    "calendar_mutation_attempts": 0,
+    "calendar_mutations": 0,
+    "calendar_reads": 0,
+    "draft_created": 0,
+    "draft_delete_attempts": 0,
+    "draft_delete_unknown": 0,
+    "draft_deleted": 0,
+    "draft_list": 8,
+    "draft_read": 208,
+    "draft_updated": 0,
+    "http_cancelled": 1,
+    "http_completed": 475,
+    "http_rejected": 0,
+    "http_started": 476,
+    "modify_completed": 0,
+    "raw_active": 0,
+    "raw_cancelled": 1,
+    "raw_completed": 249,
+    "raw_held_active": 0,
+    "raw_started": 250,
+    "send_completed": 0,
+    "sent_read": 0,
+    "vault_loads": 476,
+    "vault_stores": 0
+  },
+  "elapsed_seconds": 15.546999999787658,
+  "outputs_sha256": {
+    "engine": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "watch": "4d22aa7acdb0fc5cbac722d105d592b17f3f920bb6dbcf78ef9ca5b980dfb32a",
+    "personal": "cec41ab3b4fdac919ae63e39d625d847007f40bb9a9c8a1e9ac37cb5c9eb6b27",
+    "workspace": "819b74efd903ee1450b6e5c67fea1b484aac0ebcb30d7a0133bd8edb02795537",
+    "fixture": "43879ced97623671271f89aec7002357a195a29bd54a191883fd4211cbc2602e",
+    "source": "b83e120df4715992063b3746f7c7ec5142675577e52bfbe54fe333799a9fea45",
+    "gui": "aaf39eb09c6222f8ff34976dda8c007b128b8613ee4b99c7b8c45231419c27f5",
+    "gui_report": "619276e7920606ad163158826e2ccaf76fb696a0c1115fdb0ab8cc8f949b01bd",
+    "expectation": "3a3243e2e3a3c5d4937b548677721dcef77a223ebcfa409d89a94516fda2cffb"
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "font": "Bundled Geist",
+  "logical_width": 390,
+  "source_manifest": "../gui-build-02.sources.json",
+  "version": 1,
+  "captures": [
+    {
+      "result": "Guest chips, protected identity and wrapped notification explanation are contained and readable; long chip labels elide intentionally.",
+      "sha256": "c4f8bf1e4be0da622c4a7fd5aa6d987b92cd5a09d87037a5b45f7b7d4e769767",
+      "path": "guests-graphite-default.png",
+      "size": 33564,
+      "reviewed": true
+    },
+    {
+      "result": "Guest chips, protected identity and wrapped notification explanation are contained and readable; long chip labels elide intentionally.",
+      "sha256": "b6b69eeb166cf1cd4a11e7da91f85382b3c914edc76e215a301efda19c08d57f",
+      "path": "guests-graphite-large.png",
+      "size": 35790,
+      "reviewed": true
+    },
+    {
+      "result": "Guest chips, protected identity and wrapped notification explanation are contained and readable; long chip labels elide intentionally.",
+      "sha256": "563a5401341dd395776ba1b7c7ec23a0be6a65b58d279eac0f78a6dc731c8131",
+      "path": "guests-harbour-default.png",
+      "size": 33863,
+      "reviewed": true
+    },
+    {
+      "result": "Guest chips, protected identity and wrapped notification explanation are contained and readable; long chip labels elide intentionally.",
+      "sha256": "99f76e12776e26bc1c7f9bf13e227bd5eb56041be5da036461ccd9e4c3740137",
+      "path": "guests-harbour-large.png",
+      "size": 36119,
+      "reviewed": true
+    },
+    {
+      "result": "Guest chips, protected identity and wrapped notification explanation are contained and readable; long chip labels elide intentionally.",
+      "sha256": "c5ed8be9f17f4d1a3fdb1a65b529260447342b5882d77306a4848400a5fd6ad9",
+      "path": "guests-paper-default.png",
+      "size": 33574,
+      "reviewed": true
+    },
+    {
+      "result": "Guest chips, protected identity and wrapped notification explanation are contained and readable; long chip labels elide intentionally.",
+      "sha256": "fce66d0df84100bcb94935ba51a0eceff7a134b722fd8c7e8165b4dbf3ad637e",
+      "path": "guests-paper-large.png",
+      "size": 35789,
+      "reviewed": true
+    }
+  ],
+  "png_width": 390,
+  "text_sizes": [
+    "default",
+    "large"
+  ],
+  "renderer": "Qt offscreen/software",
+  "png_height": 720,
+  "scope": "Existing editor scrolled to guest form; native desktop DPI and provider execution are separate.",
+  "test_result": "../gui-controls-02.result.json",
+  "logical_height": 720,
+  "themes": [
+    "graphite",
+    "paper",
+    "harbour"
+  ]
+}

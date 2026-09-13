@@ -106,7 +106,7 @@ Item {
                     FmButton { iconName: "next"; width: 30; height: 30; tip: "Next — Right"; onClicked: backend.moveCalendar(1) }
                 }
             }
-            FmButton { id: moreButton; iconName: "more"; implicitWidth: 28; implicitHeight: 28; tip: "Calendar options and coverage"; onClicked: moreMenu.open() }
+            FmButton { id: moreButton; objectName: "calendarMoreButton"; iconName: "more"; implicitWidth: 28; implicitHeight: 28; tip: "Calendar options and coverage"; onClicked: moreMenu.open() }
         }
         Text { visible: !backend.calendarReady; text: backend.calendarCoverage; Layout.fillWidth: true; Layout.bottomMargin: 8; font.pixelSize: Theme.fontSize(11); color: Theme.subtle; wrapMode: Text.Wrap }
         RowLayout {
@@ -241,9 +241,9 @@ Item {
             }
         }
         ListView {
-            id: agenda; visible: backend.calendarView === "agenda"; Layout.fillWidth: true; Layout.fillHeight: true; Layout.bottomMargin: 16; model: calendar.agendaEvents; clip: true
+            id: agenda; objectName: "calendarAgenda"; visible: backend.calendarView === "agenda"; Layout.fillWidth: true; Layout.fillHeight: true; Layout.bottomMargin: 16; model: calendar.agendaEvents; clip: true
             delegate: ItemDelegate {
-                required property var modelData; width: agenda.width; height: 70; onClicked: calendar.showEvent(modelData, this)
+                required property var modelData; objectName: "calendarAgendaEvent-" + modelData.account + "-" + modelData.event_id; width: agenda.width; height: 70; onClicked: calendar.showEvent(modelData, this)
                 background: Rectangle { color: parent.hovered ? Theme.surface : "transparent"; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, parent.height - 1); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
                 contentItem: RowLayout { spacing: 18
                     Text { text: modelData.start_display; color: Theme.subtle; font.pixelSize: Theme.fontSize(12); Layout.preferredWidth: 200 }
@@ -311,7 +311,7 @@ Item {
         contentItem: ColumnLayout {
             property bool blocksWorkspaceShortcuts: true
             spacing: 4
-            FmButton { text: "Agenda"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { backend.setCalendarView("agenda"); moreMenu.close() } }
+            FmButton { objectName: "calendarAgendaButton"; text: "Agenda"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { backend.setCalendarView("agenda"); moreMenu.close() } }
             FmButton { objectName: "calendarActivityButton"; text: backend.syntheticProfile ? "Local calendar activity" : "Calendar activity"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { moreMenu.close(); operationHistory.open() } }
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
             Text { text: "Combined · " + (backend.preferences.calendar_display_time_zone || "Time zone unavailable") + "\n" + backend.calendarCoverage; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }

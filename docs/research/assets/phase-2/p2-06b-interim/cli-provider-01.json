@@ -1,0 +1,1558 @@
+{
+  "result": "failed",
+  "scenario": "isolated-google-calendar-cli",
+  "version": 1,
+  "base_unix_secs": 1789257600,
+  "window": {
+    "from": "2026-09-13",
+    "to": "2026-09-15"
+  },
+  "executables": {
+    "cli": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\release\\fm.exe",
+      "sha256": "7b2aca311cdab05e99ce32b771ebf6cee90e94ec28a4ccf77fd90864d97eba33"
+    },
+    "engine": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\verification-google\\release\\fm-engine.exe",
+      "sha256": "278306704f85d8f56a2fd2f4074f097086b926b939a7fa93630140eb84e99d02"
+    },
+    "ordinary_engine": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\release\\fm-engine.exe",
+      "sha256": "5f99b3084bf2716b877173e69a7841f9b103ee8467535eb2b647e21326a2124c"
+    }
+  },
+  "commands": [
+    {
+      "command": [
+        "preferences",
+        "show"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "preferences",
+        "save"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar",
+        "--from"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 4,
+      "error": "stale_revision"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 2,
+      "error": "invalid_request"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 2,
+      "error": "invalid_request"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "incomplete_attendees"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "incomplete_attendees"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-reconcile"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    }
+  ],
+  "accounts": [],
+  "limits": {
+    "gmail_project_units_per_minute": 1000000,
+    "gmail_account_units_per_minute": 500000,
+    "calendar_project_units_per_minute": 10000,
+    "calendar_account_units_per_minute": 5000
+  },
+  "expected_provider_publications": [
+    {
+      "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+      "calendar": "calendar-personal@example.test",
+      "event": "ci0000",
+      "method": "PATCH",
+      "if_match": "\"ci0000-v1\"",
+      "query": {
+        "sendUpdates": "all",
+        "conferenceDataVersion": "1",
+        "supportsAttachments": "true",
+        "eventLabelVersion": "1"
+      },
+      "body": {
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "responseStatus": "accepted"
+          },
+          {
+            "email": "alpha@example.test",
+            "displayName": "Alpha guest",
+            "responseStatus": "accepted",
+            "optional": true,
+            "comment": "Preserved reply",
+            "additionalGuests": 1
+          },
+          {
+            "email": "beta@example.test",
+            "displayName": "Beta guest",
+            "responseStatus": "tentative",
+            "resource": false
+          },
+          {
+            "email": "gamma@example.test",
+            "responseStatus": "needsAction"
+          }
+        ],
+        "eventLabelId": "fixture-label"
+      },
+      "before": {
+        "id": "ci0000",
+        "etag": "\"ci0000-v1\"",
+        "status": "confirmed",
+        "eventType": "default",
+        "summary": "Invitation personal 0000",
+        "description": "Preserved generated invitation details",
+        "location": "Fixture room",
+        "start": {
+          "dateTime": "2026-09-13T01:00:00Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2026-09-13T01:30:00Z",
+          "timeZone": "UTC"
+        },
+        "organizer": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "creator": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "organizer": true,
+            "self": true,
+            "responseStatus": "accepted"
+          },
+          {
+            "email": "alpha@example.test",
+            "displayName": "Alpha guest",
+            "responseStatus": "accepted",
+            "optional": true,
+            "comment": "Preserved reply",
+            "additionalGuests": 1
+          },
+          {
+            "email": "beta@example.test",
+            "displayName": "Beta guest",
+            "responseStatus": "tentative",
+            "resource": false
+          }
+        ],
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 15
+            }
+          ]
+        },
+        "extendedProperties": {
+          "private": {
+            "fixture": "retained"
+          },
+          "shared": {
+            "invitation": "v1"
+          }
+        },
+        "eventLabelId": "fixture-label",
+        "colorId": "3",
+        "conferenceData": {
+          "conferenceSolution": {
+            "key": {
+              "type": "hangoutsMeet"
+            },
+            "name": "Google Meet"
+          },
+          "conferenceId": "fixture-meet",
+          "signature": "retained-signature",
+          "entryPoints": [
+            {
+              "entryPointType": "video",
+              "uri": "https://meet.example.test/fixture"
+            }
+          ]
+        },
+        "attachments": [
+          {
+            "fileUrl": "https://drive.example.test/fixture",
+            "title": "Retained attachment",
+            "mimeType": "application/pdf",
+            "fileId": "fixture-file"
+          }
+        ]
+      },
+      "after": {
+        "id": "ci0000",
+        "etag": "\"ci0000-v2\"",
+        "status": "confirmed",
+        "eventType": "default",
+        "summary": "Invitation personal 0000",
+        "description": "Preserved generated invitation details",
+        "location": "Fixture room",
+        "start": {
+          "dateTime": "2026-09-13T01:00:00Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2026-09-13T01:30:00Z",
+          "timeZone": "UTC"
+        },
+        "organizer": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "creator": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "responseStatus": "accepted",
+            "organizer": true,
+            "self": true
+          },
+          {
+            "email": "alpha@example.test",
+            "displayName": "Alpha guest",
+            "responseStatus": "accepted",
+            "optional": true,
+            "comment": "Preserved reply",
+            "additionalGuests": 1
+          },
+          {
+            "email": "beta@example.test",
+            "displayName": "Beta guest",
+            "responseStatus": "tentative",
+            "resource": false
+          },
+          {
+            "email": "gamma@example.test",
+            "responseStatus": "needsAction"
+          }
+        ],
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 15
+            }
+          ]
+        },
+        "extendedProperties": {
+          "private": {
+            "fixture": "retained"
+          },
+          "shared": {
+            "invitation": "v1"
+          }
+        },
+        "eventLabelId": "fixture-label",
+        "colorId": "3",
+        "conferenceData": {
+          "conferenceSolution": {
+            "key": {
+              "type": "hangoutsMeet"
+            },
+            "name": "Google Meet"
+          },
+          "conferenceId": "fixture-meet",
+          "signature": "retained-signature",
+          "entryPoints": [
+            {
+              "entryPointType": "video",
+              "uri": "https://meet.example.test/fixture"
+            }
+          ]
+        },
+        "attachments": [
+          {
+            "fileUrl": "https://drive.example.test/fixture",
+            "title": "Retained attachment",
+            "mimeType": "application/pdf",
+            "fileId": "fixture-file"
+          }
+        ]
+      },
+      "response": "acknowledged",
+      "expected_quota_units": 3
+    },
+    {
+      "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+      "calendar": "calendar-personal@example.test",
+      "event": "ci0000",
+      "method": "PATCH",
+      "if_match": "\"ci0000-v2\"",
+      "query": {
+        "sendUpdates": "all",
+        "conferenceDataVersion": "1",
+        "supportsAttachments": "true",
+        "eventLabelVersion": "1"
+      },
+      "body": {
+        "summary": "Human changed invitation title",
+        "eventLabelId": "fixture-label"
+      },
+      "before": {
+        "id": "ci0000",
+        "etag": "\"ci0000-v2\"",
+        "status": "confirmed",
+        "eventType": "default",
+        "summary": "Invitation personal 0000",
+        "description": "Preserved generated invitation details",
+        "location": "Fixture room",
+        "start": {
+          "dateTime": "2026-09-13T01:00:00Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2026-09-13T01:30:00Z",
+          "timeZone": "UTC"
+        },
+        "organizer": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "creator": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "responseStatus": "accepted",
+            "organizer": true,
+            "self": true
+          },
+          {
+            "email": "alpha@example.test",
+            "displayName": "Alpha guest",
+            "responseStatus": "accepted",
+            "optional": true,
+            "comment": "Preserved reply",
+            "additionalGuests": 1
+          },
+          {
+            "email": "beta@example.test",
+            "displayName": "Beta guest",
+            "responseStatus": "tentative",
+            "resource": false
+          },
+          {
+            "email": "gamma@example.test",
+            "responseStatus": "needsAction"
+          }
+        ],
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 15
+            }
+          ]
+        },
+        "extendedProperties": {
+          "private": {
+            "fixture": "retained"
+          },
+          "shared": {
+            "invitation": "v1"
+          }
+        },
+        "eventLabelId": "fixture-label",
+        "colorId": "3",
+        "conferenceData": {
+          "conferenceSolution": {
+            "key": {
+              "type": "hangoutsMeet"
+            },
+            "name": "Google Meet"
+          },
+          "conferenceId": "fixture-meet",
+          "signature": "retained-signature",
+          "entryPoints": [
+            {
+              "entryPointType": "video",
+              "uri": "https://meet.example.test/fixture"
+            }
+          ]
+        },
+        "attachments": [
+          {
+            "fileUrl": "https://drive.example.test/fixture",
+            "title": "Retained attachment",
+            "mimeType": "application/pdf",
+            "fileId": "fixture-file"
+          }
+        ]
+      },
+      "after": {
+        "id": "ci0000",
+        "etag": "\"ci0000-v3\"",
+        "status": "confirmed",
+        "eventType": "default",
+        "summary": "Human changed invitation title",
+        "description": "Preserved generated invitation details",
+        "location": "Fixture room",
+        "start": {
+          "dateTime": "2026-09-13T01:00:00Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2026-09-13T01:30:00Z",
+          "timeZone": "UTC"
+        },
+        "organizer": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "creator": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "responseStatus": "accepted",
+            "organizer": true,
+            "self": true
+          },
+          {
+            "email": "alpha@example.test",
+            "displayName": "Alpha guest",
+            "responseStatus": "accepted",
+            "optional": true,
+            "comment": "Preserved reply",
+            "additionalGuests": 1
+          },
+          {
+            "email": "beta@example.test",
+            "displayName": "Beta guest",
+            "responseStatus": "tentative",
+            "resource": false
+          },
+          {
+            "email": "gamma@example.test",
+            "responseStatus": "needsAction"
+          }
+        ],
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 15
+            }
+          ]
+        },
+        "extendedProperties": {
+          "private": {
+            "fixture": "retained"
+          },
+          "shared": {
+            "invitation": "v1"
+          }
+        },
+        "eventLabelId": "fixture-label",
+        "colorId": "3",
+        "conferenceData": {
+          "conferenceSolution": {
+            "key": {
+              "type": "hangoutsMeet"
+            },
+            "name": "Google Meet"
+          },
+          "conferenceId": "fixture-meet",
+          "signature": "retained-signature",
+          "entryPoints": [
+            {
+              "entryPointType": "video",
+              "uri": "https://meet.example.test/fixture"
+            }
+          ]
+        },
+        "attachments": [
+          {
+            "fileUrl": "https://drive.example.test/fixture",
+            "title": "Retained attachment",
+            "mimeType": "application/pdf",
+            "fileId": "fixture-file"
+          }
+        ]
+      },
+      "response": "acknowledged",
+      "expected_quota_units": 3
+    },
+    {
+      "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+      "calendar": "calendar-personal@example.test",
+      "event": "ci0000",
+      "method": "PATCH",
+      "if_match": "\"ci0000-v3\"",
+      "query": {
+        "sendUpdates": "all",
+        "conferenceDataVersion": "1",
+        "supportsAttachments": "true",
+        "eventLabelVersion": "1"
+      },
+      "body": {
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "responseStatus": "accepted"
+          },
+          {
+            "email": "beta@example.test",
+            "displayName": "Beta guest",
+            "responseStatus": "tentative",
+            "resource": false
+          },
+          {
+            "email": "gamma@example.test",
+            "responseStatus": "needsAction"
+          }
+        ],
+        "eventLabelId": "fixture-label"
+      },
+      "before": {
+        "id": "ci0000",
+        "etag": "\"ci0000-v3\"",
+        "status": "confirmed",
+        "eventType": "default",
+        "summary": "Human changed invitation title",
+        "description": "Preserved generated invitation details",
+        "location": "Fixture room",
+        "start": {
+          "dateTime": "2026-09-13T01:00:00Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2026-09-13T01:30:00Z",
+          "timeZone": "UTC"
+        },
+        "organizer": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "creator": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "responseStatus": "accepted",
+            "organizer": true,
+            "self": true
+          },
+          {
+            "email": "alpha@example.test",
+            "displayName": "Alpha guest",
+            "responseStatus": "accepted",
+            "optional": true,
+            "comment": "Preserved reply",
+            "additionalGuests": 1
+          },
+          {
+            "email": "beta@example.test",
+            "displayName": "Beta guest",
+            "responseStatus": "tentative",
+            "resource": false
+          },
+          {
+            "email": "gamma@example.test",
+            "responseStatus": "needsAction"
+          }
+        ],
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 15
+            }
+          ]
+        },
+        "extendedProperties": {
+          "private": {
+            "fixture": "retained"
+          },
+          "shared": {
+            "invitation": "v1"
+          }
+        },
+        "eventLabelId": "fixture-label",
+        "colorId": "3",
+        "conferenceData": {
+          "conferenceSolution": {
+            "key": {
+              "type": "hangoutsMeet"
+            },
+            "name": "Google Meet"
+          },
+          "conferenceId": "fixture-meet",
+          "signature": "retained-signature",
+          "entryPoints": [
+            {
+              "entryPointType": "video",
+              "uri": "https://meet.example.test/fixture"
+            }
+          ]
+        },
+        "attachments": [
+          {
+            "fileUrl": "https://drive.example.test/fixture",
+            "title": "Retained attachment",
+            "mimeType": "application/pdf",
+            "fileId": "fixture-file"
+          }
+        ]
+      },
+      "after": {
+        "id": "ci0000",
+        "etag": "\"ci0000-v4\"",
+        "status": "confirmed",
+        "eventType": "default",
+        "summary": "Human changed invitation title",
+        "description": "Preserved generated invitation details",
+        "location": "Fixture room",
+        "start": {
+          "dateTime": "2026-09-13T01:00:00Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2026-09-13T01:30:00Z",
+          "timeZone": "UTC"
+        },
+        "organizer": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "creator": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "responseStatus": "accepted",
+            "organizer": true,
+            "self": true
+          },
+          {
+            "email": "beta@example.test",
+            "displayName": "Beta guest",
+            "responseStatus": "tentative",
+            "resource": false
+          },
+          {
+            "email": "gamma@example.test",
+            "responseStatus": "needsAction"
+          }
+        ],
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 15
+            }
+          ]
+        },
+        "extendedProperties": {
+          "private": {
+            "fixture": "retained"
+          },
+          "shared": {
+            "invitation": "v1"
+          }
+        },
+        "eventLabelId": "fixture-label",
+        "colorId": "3",
+        "conferenceData": {
+          "conferenceSolution": {
+            "key": {
+              "type": "hangoutsMeet"
+            },
+            "name": "Google Meet"
+          },
+          "conferenceId": "fixture-meet",
+          "signature": "retained-signature",
+          "entryPoints": [
+            {
+              "entryPointType": "video",
+              "uri": "https://meet.example.test/fixture"
+            }
+          ]
+        },
+        "attachments": [
+          {
+            "fileUrl": "https://drive.example.test/fixture",
+            "title": "Retained attachment",
+            "mimeType": "application/pdf",
+            "fileId": "fixture-file"
+          }
+        ]
+      },
+      "response": "acknowledged",
+      "expected_quota_units": 3
+    },
+    {
+      "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+      "calendar": "calendar-personal@example.test",
+      "event": "ci0000",
+      "method": "PATCH",
+      "if_match": "\"ci0000-v4\"",
+      "query": {
+        "sendUpdates": "all",
+        "conferenceDataVersion": "1",
+        "supportsAttachments": "true",
+        "eventLabelVersion": "1"
+      },
+      "body": {
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "responseStatus": "accepted"
+          }
+        ],
+        "eventLabelId": "fixture-label"
+      },
+      "before": {
+        "id": "ci0000",
+        "etag": "\"ci0000-v4\"",
+        "status": "confirmed",
+        "eventType": "default",
+        "summary": "Human changed invitation title",
+        "description": "Preserved generated invitation details",
+        "location": "Fixture room",
+        "start": {
+          "dateTime": "2026-09-13T01:00:00Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2026-09-13T01:30:00Z",
+          "timeZone": "UTC"
+        },
+        "organizer": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "creator": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "responseStatus": "accepted",
+            "organizer": true,
+            "self": true
+          },
+          {
+            "email": "beta@example.test",
+            "displayName": "Beta guest",
+            "responseStatus": "tentative",
+            "resource": false
+          },
+          {
+            "email": "gamma@example.test",
+            "responseStatus": "needsAction"
+          }
+        ],
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 15
+            }
+          ]
+        },
+        "extendedProperties": {
+          "private": {
+            "fixture": "retained"
+          },
+          "shared": {
+            "invitation": "v1"
+          }
+        },
+        "eventLabelId": "fixture-label",
+        "colorId": "3",
+        "conferenceData": {
+          "conferenceSolution": {
+            "key": {
+              "type": "hangoutsMeet"
+            },
+            "name": "Google Meet"
+          },
+          "conferenceId": "fixture-meet",
+          "signature": "retained-signature",
+          "entryPoints": [
+            {
+              "entryPointType": "video",
+              "uri": "https://meet.example.test/fixture"
+            }
+          ]
+        },
+        "attachments": [
+          {
+            "fileUrl": "https://drive.example.test/fixture",
+            "title": "Retained attachment",
+            "mimeType": "application/pdf",
+            "fileId": "fixture-file"
+          }
+        ]
+      },
+      "after": {
+        "id": "ci0000",
+        "etag": "\"ci0000-v5\"",
+        "status": "confirmed",
+        "eventType": "default",
+        "summary": "Human changed invitation title",
+        "description": "Preserved generated invitation details",
+        "location": "Fixture room",
+        "start": {
+          "dateTime": "2026-09-13T01:00:00Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2026-09-13T01:30:00Z",
+          "timeZone": "UTC"
+        },
+        "organizer": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "creator": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "responseStatus": "accepted",
+            "organizer": true,
+            "self": true
+          }
+        ],
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 15
+            }
+          ]
+        },
+        "extendedProperties": {
+          "private": {
+            "fixture": "retained"
+          },
+          "shared": {
+            "invitation": "v1"
+          }
+        },
+        "eventLabelId": "fixture-label",
+        "colorId": "3",
+        "conferenceData": {
+          "conferenceSolution": {
+            "key": {
+              "type": "hangoutsMeet"
+            },
+            "name": "Google Meet"
+          },
+          "conferenceId": "fixture-meet",
+          "signature": "retained-signature",
+          "entryPoints": [
+            {
+              "entryPointType": "video",
+              "uri": "https://meet.example.test/fixture"
+            }
+          ]
+        },
+        "attachments": [
+          {
+            "fileUrl": "https://drive.example.test/fixture",
+            "title": "Retained attachment",
+            "mimeType": "application/pdf",
+            "fileId": "fixture-file"
+          }
+        ]
+      },
+      "response": "acknowledged",
+      "expected_quota_units": 3
+    },
+    {
+      "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+      "calendar": "calendar-personal@example.test",
+      "event": "ci0002",
+      "method": "PATCH",
+      "if_match": "\"ci0002-v1\"",
+      "query": {
+        "sendUpdates": "all",
+        "conferenceDataVersion": "1",
+        "supportsAttachments": "true"
+      },
+      "body": {
+        "summary": "Title only preserves unsupported roster ci0002"
+      },
+      "before": {
+        "id": "ci0002",
+        "etag": "\"ci0002-v1\"",
+        "status": "confirmed",
+        "eventType": "default",
+        "summary": "Invitation personal 0002",
+        "description": "Preserved generated invitation details",
+        "location": "Fixture room",
+        "start": {
+          "dateTime": "2026-09-13T03:00:00Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2026-09-13T03:30:00Z",
+          "timeZone": "UTC"
+        },
+        "organizer": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "creator": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "organizer": true,
+            "self": true,
+            "responseStatus": "accepted"
+          },
+          {
+            "email": "alpha@example.test",
+            "displayName": "Alpha guest",
+            "responseStatus": "accepted",
+            "optional": true,
+            "comment": "Preserved reply",
+            "additionalGuests": 1
+          },
+          {
+            "email": "beta@example.test",
+            "displayName": "Beta guest",
+            "responseStatus": "tentative",
+            "resource": false
+          }
+        ],
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 15
+            }
+          ]
+        },
+        "extendedProperties": {
+          "private": {
+            "fixture": "retained"
+          },
+          "shared": {
+            "invitation": "v1"
+          }
+        },
+        "attendeesOmitted": true
+      },
+      "after": {
+        "id": "ci0002",
+        "etag": "\"ci0002-v6\"",
+        "status": "confirmed",
+        "eventType": "default",
+        "summary": "Title only preserves unsupported roster ci0002",
+        "description": "Preserved generated invitation details",
+        "location": "Fixture room",
+        "start": {
+          "dateTime": "2026-09-13T03:00:00Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2026-09-13T03:30:00Z",
+          "timeZone": "UTC"
+        },
+        "organizer": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "creator": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "organizer": true,
+            "self": true,
+            "responseStatus": "accepted"
+          },
+          {
+            "email": "alpha@example.test",
+            "displayName": "Alpha guest",
+            "responseStatus": "accepted",
+            "optional": true,
+            "comment": "Preserved reply",
+            "additionalGuests": 1
+          },
+          {
+            "email": "beta@example.test",
+            "displayName": "Beta guest",
+            "responseStatus": "tentative",
+            "resource": false
+          }
+        ],
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 15
+            }
+          ]
+        },
+        "extendedProperties": {
+          "private": {
+            "fixture": "retained"
+          },
+          "shared": {
+            "invitation": "v1"
+          }
+        },
+        "attendeesOmitted": true
+      },
+      "response": "acknowledged",
+      "expected_quota_units": 3
+    },
+    {
+      "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+      "calendar": "calendar-personal@example.test",
+      "event": "ci0003",
+      "method": "PATCH",
+      "if_match": "\"ci0003-v1\"",
+      "query": {
+        "sendUpdates": "all",
+        "conferenceDataVersion": "1",
+        "supportsAttachments": "true"
+      },
+      "body": {
+        "summary": "Title only preserves unsupported roster ci0003"
+      },
+      "before": {
+        "id": "ci0003",
+        "etag": "\"ci0003-v1\"",
+        "status": "confirmed",
+        "eventType": "default",
+        "summary": "Invitation personal 0003",
+        "description": "Preserved generated invitation details",
+        "location": "Fixture room",
+        "start": {
+          "dateTime": "2026-09-13T04:00:00Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2026-09-13T04:30:00Z",
+          "timeZone": "UTC"
+        },
+        "organizer": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "creator": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "organizer": true,
+            "self": true,
+            "responseStatus": "accepted"
+          },
+          {
+            "email": "alpha@example.test",
+            "displayName": "Alpha guest",
+            "responseStatus": "accepted",
+            "optional": true,
+            "comment": "Preserved reply",
+            "additionalGuests": 1,
+            "asyncOperation": "inProgress"
+          },
+          {
+            "email": "beta@example.test",
+            "displayName": "Beta guest",
+            "responseStatus": "tentative",
+            "resource": false
+          }
+        ],
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 15
+            }
+          ]
+        },
+        "extendedProperties": {
+          "private": {
+            "fixture": "retained"
+          },
+          "shared": {
+            "invitation": "v1"
+          }
+        }
+      },
+      "after": {
+        "id": "ci0003",
+        "etag": "\"ci0003-v7\"",
+        "status": "confirmed",
+        "eventType": "default",
+        "summary": "Title only preserves unsupported roster ci0003",
+        "description": "Preserved generated invitation details",
+        "location": "Fixture room",
+        "start": {
+          "dateTime": "2026-09-13T04:00:00Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2026-09-13T04:30:00Z",
+          "timeZone": "UTC"
+        },
+        "organizer": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "creator": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "organizer": true,
+            "self": true,
+            "responseStatus": "accepted"
+          },
+          {
+            "email": "alpha@example.test",
+            "displayName": "Alpha guest",
+            "responseStatus": "accepted",
+            "optional": true,
+            "comment": "Preserved reply",
+            "additionalGuests": 1,
+            "asyncOperation": "inProgress"
+          },
+          {
+            "email": "beta@example.test",
+            "displayName": "Beta guest",
+            "responseStatus": "tentative",
+            "resource": false
+          }
+        ],
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 15
+            }
+          ]
+        },
+        "extendedProperties": {
+          "private": {
+            "fixture": "retained"
+          },
+          "shared": {
+            "invitation": "v1"
+          }
+        }
+      },
+      "response": "acknowledged",
+      "expected_quota_units": 3
+    },
+    {
+      "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+      "calendar": "calendar-personal@example.test",
+      "event": "ci0001",
+      "method": "PATCH",
+      "if_match": "\"ci0001-v1\"",
+      "query": {
+        "sendUpdates": "all",
+        "conferenceDataVersion": "1",
+        "supportsAttachments": "true"
+      },
+      "body": {
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "responseStatus": "accepted"
+          },
+          {
+            "email": "alpha@example.test",
+            "displayName": "Alpha guest",
+            "responseStatus": "accepted",
+            "optional": true,
+            "comment": "Preserved reply",
+            "additionalGuests": 1
+          },
+          {
+            "email": "beta@example.test",
+            "displayName": "Beta guest",
+            "responseStatus": "tentative",
+            "resource": false
+          },
+          {
+            "email": "gamma@example.test",
+            "responseStatus": "needsAction"
+          }
+        ]
+      },
+      "before": {
+        "id": "ci0001",
+        "etag": "\"ci0001-v1\"",
+        "status": "confirmed",
+        "eventType": "default",
+        "summary": "Invitation personal 0001",
+        "description": "Preserved generated invitation details",
+        "location": "Fixture room",
+        "start": {
+          "dateTime": "2026-09-13T02:00:00Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2026-09-13T02:30:00Z",
+          "timeZone": "UTC"
+        },
+        "organizer": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "creator": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "organizer": true,
+            "self": true,
+            "responseStatus": "accepted"
+          },
+          {
+            "email": "alpha@example.test",
+            "displayName": "Alpha guest",
+            "responseStatus": "accepted",
+            "optional": true,
+            "comment": "Preserved reply",
+            "additionalGuests": 1
+          },
+          {
+            "email": "beta@example.test",
+            "displayName": "Beta guest",
+            "responseStatus": "tentative",
+            "resource": false
+          }
+        ],
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 15
+            }
+          ]
+        },
+        "extendedProperties": {
+          "private": {
+            "fixture": "retained"
+          },
+          "shared": {
+            "invitation": "v1"
+          }
+        }
+      },
+      "after": {
+        "id": "ci0001",
+        "etag": "\"ci0001-v8\"",
+        "status": "confirmed",
+        "eventType": "default",
+        "summary": "Invitation personal 0001",
+        "description": "Preserved generated invitation details",
+        "location": "Fixture room",
+        "start": {
+          "dateTime": "2026-09-13T02:00:00Z",
+          "timeZone": "UTC"
+        },
+        "end": {
+          "dateTime": "2026-09-13T02:30:00Z",
+          "timeZone": "UTC"
+        },
+        "organizer": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "creator": {
+          "email": "personal@example.test",
+          "self": true
+        },
+        "attendees": [
+          {
+            "email": "personal@example.test",
+            "responseStatus": "accepted",
+            "organizer": true,
+            "self": true
+          },
+          {
+            "email": "alpha@example.test",
+            "displayName": "Alpha guest",
+            "responseStatus": "accepted",
+            "optional": true,
+            "comment": "Preserved reply",
+            "additionalGuests": 1
+          },
+          {
+            "email": "beta@example.test",
+            "displayName": "Beta guest",
+            "responseStatus": "tentative",
+            "resource": false
+          },
+          {
+            "email": "gamma@example.test",
+            "responseStatus": "needsAction"
+          }
+        ],
+        "reminders": {
+          "useDefault": false,
+          "overrides": [
+            {
+              "method": "popup",
+              "minutes": 15
+            }
+          ]
+        },
+        "extendedProperties": {
+          "private": {
+            "fixture": "retained"
+          },
+          "shared": {
+            "invitation": "v1"
+          }
+        }
+      },
+      "response": "lost_response",
+      "expected_quota_units": 3
+    }
+  ],
+  "limitations": [
+    "Generated in-memory provider/vault only; no live events or notification delivery.",
+    "Functional CLI/source checks only; no performance, packages or populated-engine restart acceptance.",
+    "Attendee arrays are compared as exact identity sets; all other source/request fields remain exact."
+  ],
+  "independently_verified_initial_sources": 14,
+  "error": "Cached source ('google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343', 'ci0001') differs from the independent ledger",
+  "elapsed_seconds": 1.5309999999590218,
+  "outputs_sha256": {
+    "engine": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "watch": "354b09746768547f12263237a492df072afd069f74da27a71986fa290b6cb550",
+    "personal": "c5da37cf10b32c1d5dda59b749d4e368bf3957d32cb77a38e56fb2c347ba42ba",
+    "workspace": "e6252f8c0829c4b57a35fba8f026cd6510c6477131f8db28820337f19d7118d4",
+    "fixture": "17c5c7d56bed18ba3da6ae13a24522e400d8771174faaf6f67ac599763b5c2c2",
+    "sources": "0a59ce4527ff7f2a33ecf3d2b40ba35edfaf8f152efc951216a14414ae4f81b5",
+    "ledger": "2a15faab2797c51bc1bfbeb19e3828840ec6127abdb02d1838c1f3a3cef34a3a"
+  }
+}

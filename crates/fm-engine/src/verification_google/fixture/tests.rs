@@ -25,7 +25,7 @@ fn api(fixture: &Fixture, index: usize) -> GmailApi<FixtureHttp> {
 fn account(fixture: &Fixture, index: usize) -> AccountId {
     AccountId::new(fixture.accounts[index].id.clone()).unwrap()
 }
-fn limits() -> Value {
+pub(super) fn limits() -> Value {
     json!({"gmail_project_units_per_minute":1_000_000,"gmail_account_units_per_minute":500_000,"calendar_project_units_per_minute":10_000,"calendar_account_units_per_minute":5_000})
 }
 

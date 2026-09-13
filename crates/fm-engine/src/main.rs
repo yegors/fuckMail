@@ -63,6 +63,21 @@ struct Args {
     #[cfg(feature = "verification-google")]
     #[arg(long, hide = true, requires = "verification_google", conflicts_with_all = ["verification_google_send", "verification_google_drafts"])]
     verification_google_draft_actions: bool,
+    #[cfg(feature = "verification-google")]
+    #[arg(long, hide = true, requires_all = ["verification_google", "verification_google_calendar_base"], conflicts_with_all = ["verification_google_send", "verification_google_drafts", "verification_google_draft_actions"])]
+    verification_google_calendar: bool,
+    #[cfg(feature = "verification-google")]
+    #[arg(long, hide = true, requires = "verification_google_calendar", value_parser = calendar_fixture_base)]
+    verification_google_calendar_base: Option<u64>,
+}
+
+#[cfg(feature = "verification-google")]
+fn calendar_fixture_base(value: &str) -> Result<u64, String> {
+    value
+        .parse::<u64>()
+        .ok()
+        .filter(|n| (946_684_800..4_102_444_800).contains(n) && n % 60 == 0)
+        .ok_or_else(|| "Use a UTC minute-aligned timestamp between 2000 and 2100".into())
 }
 
 enum Work {
@@ -697,12 +712,13 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let google_fixture = args
         .verification_google
         .then(|| {
-            verification_google::Fixture::prepare_with_actions(
+            verification_google::Fixture::prepare_with_calendar(
                 &profile,
                 &mut store,
                 args.verification_google_send,
                 args.verification_google_drafts,
                 args.verification_google_draft_actions,
+                args.verification_google_calendar_base,
             )
         })
         .transpose()?;

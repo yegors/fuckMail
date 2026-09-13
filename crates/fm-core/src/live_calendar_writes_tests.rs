@@ -1,8 +1,8 @@
 use super::*;
 use crate::live_calendar::{CalendarPage, CalendarSyncMode};
 use std::collections::BTreeSet;
-const CAL: &str = "human@example.test";
-fn setup() -> (tempfile::TempDir, Store, String) {
+pub(super) const CAL: &str = "human@example.test";
+pub(super) fn setup() -> (tempfile::TempDir, Store, String) {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open_live(dir.path()).unwrap();
     let scopes: BTreeSet<String> = [
@@ -32,10 +32,10 @@ fn setup() -> (tempfile::TempDir, Store, String) {
     publish(&mut store, &account, vec![event()], CalendarSyncMode::Full);
     (dir, store, account)
 }
-fn event() -> Value {
-    json!({"id":"event1","etag":"v1","summary":"Before","description":"Retained description","organizer":{"email":CAL,"self":true},"start":{"dateTime":"2026-09-12T09:00:00Z"},"end":{"dateTime":"2026-09-12T10:00:00Z"},"conferenceData":{"signature":"retained","entryPoints":[{"entryPointType":"video","uri":"https://meet.example.test/room"}]},"attachments":[{"fileUrl":"https://drive.example.test/item"}],"extendedProperties":{"private":{"untouched":"yes"}}})
+pub(super) fn event() -> Value {
+    json!({"id":"event1","etag":"v1","summary":"Before","description":"Retained description","organizer":{"email":CAL,"self":true},"start":{"dateTime":"2026-09-12T09:00:00Z"},"end":{"dateTime":"2026-09-12T10:00:00Z"},"conferenceData":{"conferenceSolution":{"key":{"type":"hangoutsMeet"}},"signature":"retained","entryPoints":[{"entryPointType":"video","uri":"https://meet.example.test/room"}]},"attachments":[{"fileUrl":"https://drive.example.test/item"}],"extendedProperties":{"private":{"untouched":"yes"}}})
 }
-fn publish(store: &mut Store, account: &str, items: Vec<Value>, mode: CalendarSyncMode) {
+pub(super) fn publish(store: &mut Store, account: &str, items: Vec<Value>, mode: CalendarSyncMode) {
     let lease = store.calendar_sync_begin(account, CAL, mode).unwrap();
     let page = CalendarPage {
         input_cursor: None,
@@ -48,10 +48,10 @@ fn publish(store: &mut Store, account: &str, items: Vec<Value>, mode: CalendarSy
     store.calendar_publish_sync(&lease).unwrap();
     while store.calendar_finalize_chunk(&lease).unwrap() > 0 {}
 }
-fn request(kind: &str) -> Value {
+pub(super) fn request(kind: &str) -> Value {
     json!({"request_id":kind,"kind":kind,"calendar_id":CAL,"event_id":"event1","expected_etag":"v1"})
 }
-fn prepare(
+pub(super) fn prepare(
     store: &mut Store,
     account: &str,
     request: Value,
@@ -75,7 +75,10 @@ fn status_projects_small_fields_without_parsing_retained_dispatch_or_accepted_so
     store.db.execute("UPDATE calendar_write_operations SET state='accepted',dispatch_json='deliberately-not-json',outcome_json='deliberately-not-json' WHERE account=?1 AND request_id='edit'",[&account]).unwrap();
     let result = store.calendar_live_status(&account, "edit").unwrap();
     assert_eq!(result["target"], lease.dispatch["target"]);
-    assert_eq!(result["outcome"], json!({"kind":"accepted"}));
+    assert_eq!(
+        result["outcome"],
+        json!({"kind":"accepted","evidence_origin":"provider_response","notification_delivery":"unverified"})
+    );
     assert_eq!(result["kind"], "edit");
     assert!(result.to_string().len() < 512);
     assert!(!result.to_string().contains("PRIVATE"));
@@ -164,7 +167,7 @@ fn live_operation_history_pages_all_states_and_sanitizes_outcomes_without_source
     );
     assert_eq!(
         all[9]["outcome"],
-        json!({"kind":"accepted","cache_published":false})
+        json!({"kind":"accepted","cache_published":false,"evidence_origin":"provider_response","notification_delivery":"unverified"})
     );
     assert_eq!(
         store.calendar_operations("foreign", &json!({})).unwrap()["operations"],
@@ -340,7 +343,17 @@ fn live_action_projection_matches_supported_writes_roles_and_private_sources() {
                 continue;
             }
             let id = row["event_id"].as_str().unwrap();
-            let edit = writable && matches!(id, "ordinary" | "private");
+            let edit = writable
+                && matches!(
+                    id,
+                    "ordinary"
+                        | "private"
+                        | "invitation"
+                        | "partial-self"
+                        | "partial-missing"
+                        | "other-self"
+                        | "duplicate-self"
+                );
             let rsvp = writable && matches!(id, "invitation" | "partial-self");
             assert_eq!(row["can_edit"], edit, "edit role={role:?} id={id}");
             assert_eq!(row["can_delete"], edit, "delete role={role:?} id={id}");
@@ -513,8 +526,9 @@ fn self_rsvp_is_a_minimal_patch_and_reader_cannot_submit() {
         json!({"attendeesOmitted":true,"attendees":[{"email":CAL.to_uppercase(),"responseStatus":"accepted"}]})
     );
     let event = fm_calendar::normalize(&account, CAL, "UTC", &source).unwrap();
-    assert!(initial_event(&event, Access::Reader, "rsvp").is_err());
-    assert!(initial_event(&event, Access::Owner, "edit").is_err());
+    assert!(initial_event(&event, Access::Reader, "rsvp", 2).is_err());
+    assert!(initial_event(&event, Access::Owner, "edit", 2).is_ok());
+    assert!(live_guest_actions(&event, Access::Owner).is_err());
 }
 #[test]
 fn conflict_and_crash_preserve_intent_and_reconcile_without_retry() {
@@ -536,14 +550,14 @@ fn conflict_and_crash_preserve_intent_and_reconcile_without_retry() {
         store
             .calendar_live_reconcile_source(&lease, source)
             .unwrap()["state"],
-        "accepted"
+        "reconciled"
     );
     store
         .calendar_live_record_outcome(&lease, CalendarWriteOutcome::Unknown)
         .unwrap();
     assert_eq!(
         store.calendar_live_status(&account, "edit").unwrap()["state"],
-        "accepted"
+        "reconciled"
     );
     let mut req = request("edit");
     req["request_id"] = "conflict".into();
@@ -608,12 +622,21 @@ fn no_conference_changes_no_recurring_writes_and_no_stale_claims() {
     let (_dir, mut store, account) = setup();
     let original = event();
     let normalized = fm_calendar::normalize(&account, CAL, "UTC", &original).unwrap();
-    assert!(field_patch(&json!({"conference_url":""}), Some(&normalized), "UTC").is_err());
+    assert!(field_patch(
+        &json!({"conference_url":""}),
+        Some(&normalized),
+        "UTC",
+        CAL,
+        2
+    )
+    .is_err());
     assert_eq!(
         field_patch(
             &json!({"title":"Before","conference_url":"https://meet.example.test/room"}),
             Some(&normalized),
-            "UTC"
+            "UTC",
+            CAL,
+            2
         )
         .unwrap(),
         json!({})
@@ -643,7 +666,7 @@ fn no_conference_changes_no_recurring_writes_and_no_stale_claims() {
     let mut recurring = event();
     recurring["recurrence"] = json!(["RRULE:FREQ=DAILY"]);
     let recurring = fm_calendar::normalize(&account, CAL, "UTC", &recurring).unwrap();
-    assert!(initial_event(&recurring, Access::Owner, "edit").is_err());
+    assert!(initial_event(&recurring, Access::Owner, "edit", 2).is_err());
 }
 
 #[test]

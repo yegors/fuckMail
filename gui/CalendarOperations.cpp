@@ -132,12 +132,14 @@ void MailBackend::finishCalendarOperation(const QString &account, const QString 
     }
     result["account"] = account; result["request_id"] = requestId;
     const auto state = result["state"].toString();
-    const bool confirmed = ok && (m_syntheticProfile || state == "accepted" || state == "acknowledged");
+    // A matching read observation completes recovery, but is not a provider ACK.
+    const bool confirmed = ok && (m_syntheticProfile || state == "accepted" || state == "acknowledged" || state == "reconciled");
     QString message;
     if (!ok) message = result["message"].toString("The calendar outcome could not be confirmed. Your change remains available.");
     else if (m_syntheticProfile) message = "Saved locally. No invitations were sent.";
-    else if (state == "acknowledged") message = "Saved to Google Calendar.";
-    else if (state == "accepted") message = "Google confirmed the change. The local calendar is refreshing.";
+    else if (state == "acknowledged") message = "Google accepted the change. Notification delivery is unverified.";
+    else if (state == "accepted") message = "Google accepted the change. The local calendar is refreshing; notification delivery is unverified.";
+    else if (state == "reconciled") message = "The observed Google event matches this change. Its original response and notification delivery remain unconfirmed. This change will not be sent again.";
     else if (state == "ready") message = "The change is ready but has not been sent. Resume sends this same change.";
     else if (state == "prepared") message = "The change is recorded but has not been sent. Resume sends this same change.";
     else if (state == "in_flight") message = "The recorded change is still in progress. Check its status before taking another action.";

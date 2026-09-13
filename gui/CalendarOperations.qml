@@ -9,7 +9,7 @@ Popup {
     readonly property bool live: !backend.syntheticProfile
     property var abandonTarget: ({})
     function accountReady(account) { return backend.connected && (!live || (backend.accounts.length >= 0 && backend.googleSync && backend.accountCapability(account, "calendar_write") && backend.googleSyncState(account).active === true)) }
-    function stateLabel(state) { return ({fake_acknowledged: "Saved locally", pending: "Pending", prepared: "Recorded · not sent", ready: "Ready · not sent", in_flight: "In progress", unknown: "Outcome unconfirmed", accepted: "Confirmed by Google · refreshing", acknowledged: "Saved to Google", conflict: "Event changed on Google", rejected: "Not accepted", abandoned: "Abandoned"})[state] || "Needs attention" }
+    function stateLabel(state) { return ({fake_acknowledged: "Saved locally", pending: "Pending", prepared: "Recorded · not sent", ready: "Ready · not sent", in_flight: "In progress", unknown: "Outcome unconfirmed", accepted: "Accepted by Google · refreshing", acknowledged: "Accepted by Google", reconciled: "Observed change · response unconfirmed", conflict: "Event changed on Google", rejected: "Not accepted", abandoned: "Abandoned"})[state] || "Needs attention" }
     function actionFor(state) { return ["prepared", "ready"].indexOf(state) >= 0 ? "resume" : ["unknown", "accepted"].indexOf(state) >= 0 ? "reconcile" : "check" }
     width: Math.min(640, parent.width - 36); height: Math.min(530, parent.height - 36); padding: 24
     anchors.centerIn: parent; modal: true; focus: true
@@ -25,7 +25,7 @@ Popup {
             FmButton { iconName: "refresh"; implicitWidth: 32; tip: "Refresh activity"; enabled: !backend.calendarOperationsLoading; onClicked: backend.loadCalendarOperations() }
             FmButton { iconName: "close"; implicitWidth: 32; tip: "Close activity"; onClicked: history.close() }
         }
-        Text { text: history.live ? "Pending changes appear first. Resume sends a recorded, unsent change; Check outcome reconciles an uncertain response. Google may notify the organizer when you respond to an invitation." : "Pending operations appear first and can be retried after a restart without creating another event. Load more to reach older activity. No invitations are sent."; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); wrapMode: Text.Wrap; Layout.fillWidth: true }
+        Text { text: history.live ? "Resume sends a recorded, unsent change. Check outcome only reads Google. Google may notify guests or the organizer; notification delivery is unverified." : "Pending operations appear first and can be retried after a restart without creating another event. Load more to reach older activity. No invitations are sent."; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); wrapMode: Text.Wrap; Layout.fillWidth: true }
         ListView {
             id: operationList; objectName: "calendarOperationList"; Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 6; model: backend.calendarOperations
             ScrollBar.vertical: ScrollBar { }
@@ -39,13 +39,14 @@ Popup {
                         Text { text: (modelData.kind === "rsvp" ? "RSVP" : modelData.kind === "create" ? "Create event" : modelData.kind === "delete" ? "Delete event" : "Edit event") + " · " + history.stateLabel(modelData.state); color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; Layout.fillWidth: true }
                         Text { text: modelData.account_name + " / " + modelData.target.calendar; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11); textFormat: Text.PlainText; elide: Text.ElideMiddle; Layout.fillWidth: true }
                         Text { text: modelData.request_id; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(10); textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideMiddle }
+                        Text { objectName: "calendarOperationEvidence-" + operationRow.modelData.request_id; visible: history.live && ["accepted", "acknowledged", "reconciled"].indexOf(modelData.state) >= 0; text: modelData.state === "reconciled" ? "Observed event matches the recorded change. The original response and notification delivery remain unconfirmed; this change will not be sent again." : "Provider response retained. Notification delivery is unverified."; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
                         Text { visible: !!modelData.error; text: modelData.error ? modelData.error.message : ""; color: Theme.error; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
                     }
                     ColumnLayout {
                         spacing: 4
                         FmButton {
                             objectName: "calendarOperationResolve-" + operationRow.modelData.request_id
-                            visible: ["fake_acknowledged", "acknowledged", "abandoned"].indexOf(modelData.state) < 0
+                            visible: ["fake_acknowledged", "acknowledged", "reconciled", "abandoned"].indexOf(modelData.state) < 0
                             text: !history.live ? "Retry" : history.actionFor(modelData.state) === "resume" ? "Resume" : modelData.state === "accepted" ? "Refresh" : history.actionFor(modelData.state) === "reconcile" ? "Check outcome" : "Check status"; outlined: true
                             enabled: !backend.calendarOperationsLoading && backend.connected && (!history.live || history.actionFor(modelData.state) === "check" || history.accountReady(modelData.account))
                             onClicked: { if (history.live) backend.calendarOperationAction(modelData.account, modelData.request_id, history.actionFor(modelData.state), modelData.revision); else backend.retryCalendarOperation(modelData.account, modelData.request_id) }

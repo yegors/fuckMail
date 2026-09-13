@@ -83,7 +83,7 @@ Popup {
             details.saving = false
             if (ok) {
                 details.operationState = ""; details.operationRevision = -1
-                if (details.live) { details.feedback = "Google confirmed your response. Calendar details are refreshing."; details.pendingResponse = ({}) }
+                if (details.live) { details.feedback = result.state === "reconciled" ? "Your response was observed on Google. The original response and notification delivery remain unconfirmed." : "Google accepted your response. Notification delivery is unverified."; details.pendingResponse = ({}) }
                 else { details.feedback = "Response saved locally. No invitation was sent."; details.awaitedEtag = result.etag || ""; let updated = Object.assign({}, details.eventData); if (result.etag) updated.etag = result.etag; updated.self_response = details.pendingResponse.response; details.eventData = updated }
             } else if (details.live) {
                 details.feedback = error
@@ -158,7 +158,7 @@ Popup {
                     }
                 }
             }
-            Text { visible: details.live && !!details.eventData.can_rsvp; text: "Your response is sent to Google. Google may notify the organizer."; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Text { visible: details.live && !!details.eventData.can_rsvp; text: "Your response is sent to Google. Google may notify the organizer; notification delivery is unverified."; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); wrapMode: Text.Wrap; Layout.fillWidth: true }
             RowLayout {
                 visible: details.live && details.hasPendingResponse; Layout.fillWidth: true; spacing: 6
                 FmButton {

@@ -300,7 +300,7 @@ def run(args):
                     cli(["draft", "capture", *common, "--request-id", "refused-capture"], account, {"capability_unavailable", "draft_read_only"})
                     require(cli(["draft", "show", "--draft-id", draft["draft_id"]], account) == draft, "Refused edit changed retained draft")
                 with closing(read_database(profile)) as db:
-                    require(db.execute("PRAGMA user_version").fetchone()[0] == 16, "Wrong live schema")
+                    require(db.execute("PRAGMA user_version").fetchone()[0] == 17, "Wrong live schema")
                     require(db.execute("SELECT count(*) FROM capture_operations").fetchone()[0] == 0, "Import or refused edit fabricated an upload/capture journal")
                     require(db.execute("SELECT count(*) FROM drafts WHERE origin!='google_snapshot' OR conversation_id IS NOT NULL OR source_message_id IS NOT NULL OR google_json IS NOT NULL").fetchone()[0] == 0,
                             "Independent storage has invented authored/twin/received identity")

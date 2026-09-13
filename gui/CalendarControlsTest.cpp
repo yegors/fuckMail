@@ -3,7 +3,9 @@
 #include <QElapsedTimer>
 #include <QEventLoop>
 #include <QFile>
+#include <QDir>
 #include <QGuiApplication>
+#include <QFontDatabase>
 #include <QJSValue>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -140,6 +142,9 @@ static QVariantMap resultFor(const QVariantMap &write, const QString &state, int
 int main(int argc, char **argv) {
     QQuickStyle::setStyle("Basic");
     QGuiApplication app(argc, argv);
+    for (const auto font : {"Geist-Regular.ttf", "Geist-Medium.ttf", "Geist-SemiBold.ttf"})
+        require(QFontDatabase::addApplicationFont(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/fonts/" + font) >= 0, "Load actual bundled UI fonts");
+    app.setFont(QFont("Geist", 10));
     QTemporaryDir copy; require(copy.isValid(), "Temporary QML directory");
     for (const auto name : {"Theme.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "EventEditor.qml", "EventDetails.qml", "CalendarOperations.qml", "GoogleLabelSetup.qml"})
         require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/" + name, copy.filePath(name)), "Copy actual QML control");
@@ -153,6 +158,17 @@ int main(int argc, char **argv) {
     engine.loadData(R"QML(import QtQuick
 import QtQuick.Controls
 ApplicationWindow { width: 1100; height: 850; visible: true
+    font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(14)
+    property alias testTheme: appearance.themeId
+    property alias testTextSize: appearance.textSize
+    QtObject { id: appearance; property string themeId: "graphite"; property string textSize: "default" }
+    Binding { target: Theme; property: "themeId"; value: appearance.themeId }
+    Binding { target: Theme; property: "textSize"; value: appearance.textSize }
+    color: Theme.canvas
+    palette.window: Theme.surface; palette.windowText: Theme.text
+    palette.base: Theme.canvas; palette.text: Theme.text
+    palette.button: Theme.surface; palette.buttonText: Theme.text
+    palette.highlight: Theme.accent; palette.highlightedText: Theme.selectedText
     EventEditor {}
     EventDetails { exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 80 } } }
     CalendarOperations {}
@@ -298,6 +314,86 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     emit backend.googleLabelBindingFinished("alpha", true, {}, {});
     require(labels->property("account") == "beta", "Other-account completion cannot replace current label setup");
     labels->setProperty("visible", false); backend.account = "alpha"; emit backend.accountChanged();
+
+    // Calendar16: the native form authors only the removable address set. The
+    // shared Core boundary validates it and retains all protected/source data.
+    backend.active = true; emit backend.googleSyncChanged();
+    auto roster = original;
+    roster["can_edit_attendees"] = true;
+    roster["guest_addresses"] = QStringList{"alpha@example.test", "beta@example.test"};
+    roster["protected_attendees"] = QVariantList{QVariantMap{{"email", "organizer@example.test"}, {"organizer", true}, {"self", true}}};
+    roster["attendees"] = QVariantList{QVariantMap{{"email", "organizer@example.test"}, {"organizer", true}, {"self", true}},
+        QVariantMap{{"email", "alpha@example.test"}, {"response", "accepted"}}, QVariantMap{{"email", "beta@example.test"}, {"response", "tentative"}}};
+    backend.events = {roster};
+    openEditor(roster);
+    auto attendeeInput = named(root, "eventAttendees");
+    require(!attendeeInput->property("readOnly").toBool(), "Complete organizer roster enables native guest input");
+    require(named(root, "eventProtectedGuests")->property("text").toString().contains("organizer@example.test"), "Protected organizer/self remains separately visible");
+    title->setProperty("text", "Roster-preserving title"); call(save, "clicked"); frozen = backend.lastWrite;
+    require(frozen["fields"].toMap() == QVariantMap{{"title", "Roster-preserving title"}}, "Unchanged supported roster is omitted from title edit");
+    backend.complete(true, resultFor(frozen, "acknowledged")); settle([&] { return !editor->property("visible").toBool(); });
+    openEditor(roster); attendeeInput->setProperty("text", "new@example.test"); call(attendeeInput, "accepted");
+    call(save, "clicked"); frozen = backend.lastWrite;
+    const auto editedGuests = frozen["fields"].toMap()["attendees"].toStringList();
+    require(editedGuests == QStringList{"alpha@example.test", "beta@example.test", "new@example.test"}
+        && frozen["fields"].toMap().size() == 1 && frozen["expected_etag"] == "v1", "Guest-only save has exact removable addresses and frozen version, no copied provider metadata");
+    backend.complete(false, resultFor(frozen, "conflict", 17));
+    require(plain(editor->property("guestAddresses")).toStringList() == editedGuests && editor->property("staleRevision").toBool(), "Stale guest update preserves complete authored guest set");
+    call(editor, "resolveOperation", "abandon"); backend.complete(false, resultFor(frozen, "abandoned", 18));
+    auto newer = roster; newer["etag"] = "v2"; backend.events = {newer}; emit backend.eventsChanged();
+    call(named(root, "eventUseCurrentVersion"), "clicked"); call(save, "clicked");
+    require(backend.lastWrite["expected_etag"] == "v2" && backend.lastWrite["request_id"] != frozen["request_id"]
+        && backend.lastWrite["fields"].toMap()["attendees"].toStringList() == editedGuests, "Explicit current-version review retains guest edits and creates a new fenced request");
+    frozen = backend.lastWrite; backend.complete(true, resultFor(frozen, "reconciled", 19));
+    settle([&] { return !editor->property("visible").toBool(); });
+    openEditor(roster);
+    call(named(root, "eventRemoveGuest-1"), "clicked"); call(named(root, "eventRemoveGuest-0"), "clicked"); call(save, "clicked");
+    frozen = backend.lastWrite;
+    require(frozen["fields"].toMap().contains("attendees") && frozen["fields"].toMap()["attendees"].toList().isEmpty(), "Removing all guest chips supplies explicit empty array, never protected people");
+    backend.complete(true, resultFor(frozen, "acknowledged")); settle([&] { return !editor->property("visible").toBool(); });
+    openEditor(roster); attendeeInput->setProperty("text", "alpha@example.test, invalid mailbox"); call(save, "clicked"); frozen = backend.lastWrite;
+    require(frozen["fields"].toMap()["attendees"].toStringList().size() == 4, "Malformed/duplicate input reaches shared validation without silent deduplication");
+    auto refused = resultFor(frozen, "rejected", 20); refused["code"] = "invalid_request"; backend.complete(false, refused);
+    require(attendeeInput->property("text") == "alpha@example.test, invalid mailbox", "Refusal retains incomplete native guest input");
+    call(editor, "close"); settle([&] { return !editor->property("visible").toBool(); });
+    auto incomplete = roster; incomplete["can_edit_attendees"] = false; incomplete["guest_addresses"] = QStringList{}; incomplete["attendee_edit_reason"] = "incomplete_attendees";
+    openEditor(incomplete); title->setProperty("text", "Allowed title on incomplete roster"); call(save, "clicked"); frozen = backend.lastWrite;
+    require(attendeeInput->property("readOnly").toBool() && !frozen["fields"].toMap().contains("attendees"), "Incomplete roster blocks only roster editing, preserving title-only edits");
+    backend.complete(true, resultFor(frozen, "acknowledged")); settle([&] { return !editor->property("visible").toBool(); });
+    openEditor(roster); attendeeInput->setProperty("text", "retained@example.test");
+    backend.events = {incomplete}; emit backend.eventsChanged(); const int beforeRosterRevoke = backend.writes; call(save, "clicked");
+    require(backend.writes == beforeRosterRevoke && attendeeInput->property("text") == "retained@example.test", "Revoked roster capability cannot silently omit authored guest changes");
+    call(editor, "close"); settle([&] { return !editor->property("visible").toBool(); });
+    call(details, "openAt", invitation, QVariant{}); settle([&] { return details->property("opened").toBool(); });
+    call(named(root, "eventRsvp-accepted"), "clicked"); frozen = backend.lastWrite; backend.complete(true, resultFor(frozen, "reconciled"));
+    require(details->property("feedback").toString().contains("observed") && details->property("feedback").toString().contains("unconfirmed"), "Observed RSVP is never presented as provider acceptance or notification delivery");
+    call(details, "close"); settle([&] { return !details->property("visible").toBool(); });
+    backend.calendarOperations = {QVariantMap{{"request_id", "observed"}, {"account", "alpha"}, {"account_name", "Alpha"}, {"target", QVariantMap{{"calendar", "primary"}}}, {"kind", "edit"}, {"state", "reconciled"}, {"revision", 21}}};
+    emit backend.calendarOperationsChanged(); call(history, "open"); settle([&] { return history->property("opened").toBool(); });
+    require(!named(root, "calendarOperationResolve-observed")->property("visible").toBool()
+        && !named(root, "calendarOperationAbandon-observed")->property("visible").toBool(), "Terminal reconciled operation exposes no resend or abandon action");
+    require(named(root, "calendarOperationEvidence-observed")->property("text").toString().contains("original response"), "Activity retains distinction between observed intent and provider response");
+    call(history, "close"); settle([&] { return !history->property("visible").toBool(); });
+    const QString captureDir = qEnvironmentVariable("FM_CALENDAR_CAPTURE_DIR");
+    if (!captureDir.isEmpty()) {
+        require(QDir().mkpath(captureDir), "Create calendar capture directory");
+        auto window = qobject_cast<QQuickWindow *>(root); window->resize(390, 720);
+        for (const auto theme : {"graphite", "paper", "harbour"}) for (const auto size : {"default", "large"}) {
+            root->setProperty("testTheme", theme); root->setProperty("testTextSize", size); backend.events = {roster}; openEditor(roster);
+            attendeeInput->setProperty("text", "long.guest.address.for.layout@example.test"); call(attendeeInput, "accepted");
+            auto scroll = named(root, "eventFormScroll")->property("contentItem").value<QObject *>();
+            require(scroll, "Native event form scroll");
+            scroll->setProperty("contentY", std::max(0., scroll->property("contentHeight").toDouble() - scroll->property("height").toDouble()));
+            QElapsedTimer paint; paint.start(); while (paint.elapsed() < 120) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            auto notice = qobject_cast<QQuickItem *>(named(root, "eventNotificationExplanation"));
+            const auto noticeRect = notice->mapRectToScene(notice->boundingRect());
+            require(QRectF(0, 0, window->width(), window->height()).contains(noticeRect) && notice->property("truncated").toBool() == false, "Notification notice fits narrow default/large layout");
+            const auto file = QDir(captureDir).filePath(QString("guests-%1-%2.png").arg(theme, size));
+            require(!QFile::exists(file) && window->grabWindow().save(file), "Preserve calendar guest capture without overwrite");
+            call(editor, "close"); settle([&] { return !editor->property("visible").toBool(); });
+        }
+        window->resize(1100, 850);
+    }
 
     backend.syntheticProfile = true; emit backend.modeChanged(); openEditor({});
     title->setProperty("text", "Synthetic event"); named(root, "eventAttendees")->setProperty("text", "guest@example.test"); call(editor, "save"); frozen = backend.lastWrite;

@@ -1,0 +1,129 @@
+{
+  "status": "build_passed",
+  "configuration": "build/dev: Debug, FM_GUI_ONLY=OFF, BUILD_TESTING=TRUE",
+  "host": "Windows-10-10.0.26200-SP0",
+  "source_manifest": "gui-dev-source-01.json",
+  "source_count": 340,
+  "source_unchanged": true,
+  "changed_source_paths": [],
+  "changed_binary_paths": [
+    "build/dev/fm-engine.exe",
+    "build/dev/fuckmail-gui.exe",
+    "build/dev/gui-calendar-controls-test.exe",
+    "build/dev/gui-google-draft-authoring-controls-test.exe",
+    "build/dev/gui-google-draft-controls-test.exe",
+    "build/dev/gui-google-draft-snapshot-controls-test.exe",
+    "build/dev/gui-google-send-controls-test.exe",
+    "target/debug/fm-engine.exe"
+  ],
+  "binaries": {
+    "build/dev/fm-engine.exe": {
+      "size": 32622592,
+      "sha256": "1c98162fb003a22dd7e2a5bbf03bc20f1d2c5dfc4cb48cc6d5aa80913bb3f05b"
+    },
+    "build/dev/fm.exe": {
+      "size": 4172288,
+      "sha256": "bab8a960c651bc1d91a51405e5213d3c0e343c6871aee5102f75aff46a2691c5"
+    },
+    "build/dev/fuckmail-gui.exe": {
+      "size": 12174848,
+      "sha256": "72a7648ee5c5afb69929ed67a0f33907e900d03f8d5c0afae9c539d6c5075f2b"
+    },
+    "build/dev/gui-calendar-controls-test.exe": {
+      "size": 501248,
+      "sha256": "a32c1dc260a4b2ce4d02c2b7a715da33436646236b9ba69182885e4ce3c27ba8"
+    },
+    "build/dev/gui-calendar-layout-test.exe": {
+      "size": 227328,
+      "sha256": "22eceabf2deff1c54b2409bbdb010777fbcca1261db280b25eeb1223a93a5f99"
+    },
+    "build/dev/gui-composer-probe.exe": {
+      "size": 92672,
+      "sha256": "5e40d3f96887d89bb922b4d4bf014dd2ac261c0ac054f1b75bc639cdfbf80bd3"
+    },
+    "build/dev/gui-conversation-list-model-test.exe": {
+      "size": 489984,
+      "sha256": "2814571ccac9c2e587e3f6c773b2683bf0c790e3ab988cdd00b17293ae8c5a32"
+    },
+    "build/dev/gui-google-draft-authoring-controls-test.exe": {
+      "size": 3097088,
+      "sha256": "ce544a63b67a838a3f55d90a963d08b52ffc0a146b091034be55412f12336d7e"
+    },
+    "build/dev/gui-google-draft-controls-test.exe": {
+      "size": 2990592,
+      "sha256": "61cf095e01e09c6f8de1116b4df0b24bd1d1ef872de1ad155de5f19654fd363c"
+    },
+    "build/dev/gui-google-draft-snapshot-controls-test.exe": {
+      "size": 3130368,
+      "sha256": "d201cc7aa800e0d38750ab57ace81b52dac399decf36f2b896df55c70fb56fe1"
+    },
+    "build/dev/gui-google-operation-test.exe": {
+      "size": 257024,
+      "sha256": "4d5bf7247b7e85db1b6abc1df9dc9425fbbcb4eeeab20afdd61c00017db942b5"
+    },
+    "build/dev/gui-google-send-controls-test.exe": {
+      "size": 3061248,
+      "sha256": "570998e1e8ec7f63004ec28c65e7feb3dba1a259bf12724f0b64f8ce0737d577"
+    },
+    "build/dev/gui-ipc-trust-test.exe": {
+      "size": 110080,
+      "sha256": "def0a94955a417a79c0800018513f52e92aaf8c3d850d7abe9c9d61d6ed86c08"
+    },
+    "build/dev/gui-reply-document-test.exe": {
+      "size": 220160,
+      "sha256": "e88ae331739179d2fb28f11171a5d915dfa793ac8621ad6352a7783c9f8346d8"
+    },
+    "target/debug/deps/sessions-2239c75e63845bf7.exe": {
+      "size": 8472576,
+      "sha256": "b345e638e26fc7276f9c796c535764ebad80ce61d37bddab8954494b8761d1b6"
+    },
+    "target/debug/deps/sessions-2c60128f5928b6bd.exe": {
+      "size": 7996928,
+      "sha256": "03f9cf969eaff6bdeb2e1667dc68d475d7086ef3b9744a3310988c38657106f2"
+    },
+    "target/debug/deps/sessions-668f5202008eb372.exe": {
+      "size": 7608832,
+      "sha256": "d6ad818661c00e17fcdeb48634584632a7948c4eecec0f6ef25dcdb4fdaeab23"
+    },
+    "target/debug/deps/sessions-a63a9359cf60e762.exe": {
+      "size": 8435712,
+      "sha256": "8a8f9aedb0ac17634426742694fa4f0cca98022afd6c7af059c5242d840f66a6"
+    },
+    "target/debug/deps/sessions-af28bb105765f6d8.exe": {
+      "size": 8822272,
+      "sha256": "27468eb9d08b7c45ac7c51889ac7e1545a94000401c501cae406bc40d2c779b4"
+    },
+    "target/debug/deps/sessions-e884e73169c03277.exe": {
+      "size": 8814592,
+      "sha256": "f7b7efce27066919bc4ad0088c21f49fca3062d79f989c4909aa3c1eb7c9b7d0"
+    },
+    "target/debug/deps/sessions-e8feea43ad5a8afa.exe": {
+      "size": 8985600,
+      "sha256": "81c9aab7339add08c229b62cdd6ce1726f7bdd903db77f8dbfbdde812cb8ff77"
+    },
+    "target/debug/deps/sessions-f3c63303ebc9a2fd.exe": {
+      "size": 8459264,
+      "sha256": "00ff8a8daadf5baa0874d5cd04083438650b95a7ce8505f14bc97efc5de2d963"
+    },
+    "target/debug/fm-engine.exe": {
+      "size": 32622592,
+      "sha256": "1c98162fb003a22dd7e2a5bbf03bc20f1d2c5dfc4cb48cc6d5aa80913bb3f05b"
+    },
+    "target/debug/fm.exe": {
+      "size": 4172288,
+      "sha256": "bab8a960c651bc1d91a51405e5213d3c0e343c6871aee5102f75aff46a2691c5"
+    }
+  },
+  "wall_elapsed_seconds": 20.780999999959022,
+  "exit_code": 0,
+  "tests_run": false,
+  "source_unchanged_after_build": true,
+  "build_log": "gui-dev-build-01.log",
+  "artifacts_sha256": {
+    "gui-dev-source-01.json": "0af032bbb4a0ff88a04f3400b1760ccd429778d34f0eec0ccb3fca60c02bdb1d",
+    "gui-dev-build-01.binaries-before.json": "3665e05ef52a7e2deeb14318609ae6de0d1661ccdc7c447f6de713229147b053",
+    "gui-dev-build-01.binaries-after.json": "2dfcd0c835513be554d4c76f2f2d3fca1af58382554b16d12cf7a3d00b4d9ba6",
+    "gui-dev-build-01.log": "e5e3205325bb7e780b4947259c96c93a5d77b548e4f2af36dd6646e15e878019",
+    "gui-dev-build-01.meta.json": "11daecd8a13635b03af423dbc74c954b8ae0a609391a5acd3d6395f3e418b6b1"
+  }
+}

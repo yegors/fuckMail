@@ -1,0 +1,37 @@
+   Compiling tokio-rustls v0.26.5
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+   Compiling fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.13s
+     Running unittests src\main.rs (target\debug\deps\fm_engine-bdc9187f3bef88d8.exe)
+
+running 23 tests
+test google_sync::calendar::tests::admitted_calendar_read_observes_new_cooldown_before_http_and_can_retry ... ok
+test google_sync::calendar_writes::tests::cancelled_queued_core_payload_retains_memory_until_writer_discards_it ... ok
+test google_sync::calendar::tests::a_reconnected_account_rejects_the_previous_worker_before_network_or_store_changes ... ok
+test google_sync::calendar_writes::tests::cancellation_during_mutation_cooldown_preserves_unsent_ready_without_holding_memory ... ok
+test google_sync::runtime_tests::calendar_page_memory_is_shared_and_quota_waiters_do_not_occupy_it ... ok
+test google_sync::runtime_tests::calendar_preparation_cancellation_releases_quota_capacity ... ok
+test google_sync::calendar::tests::aborted_caller_keeps_memory_seat_until_blocking_preparation_finishes ... ok
+test google_sync::calendar_writes::tests::cooldown_learned_after_claim_returns_ready_without_provider_dispatch ... ok
+test google_sync::calendar::tests::unusable_calendar_page_does_not_block_other_calendar_and_cancellation_stops_all_reads ... ok
+test google_sync::calendar_writes::tests::cancellation_after_dispatch_still_records_unknown_outcome ... ok
+test google_sync::calendar::tests::expired_catalog_and_event_tokens_replace_only_after_complete_publication ... ok
+test google_sync::calendar::tests::metadata_permission_loss_redacts_and_free_busy_errors_never_become_free_time ... ok
+test google_sync::calendar_writes::tests::conditional_edit_preserves_omitted_fields_and_completed_replay_has_no_http ... ok
+test google_sync::calendar::tests::changed_partial_page_is_expired_and_replaced_without_publishing_mixed_sources ... ok
+test google_sync::calendar_writes::tests::cancellation_after_committed_claim_keeps_lease_until_exact_outcome_is_retained ... ok
+test google_sync::calendar_writes::tests::create_delete_and_self_rsvp_use_exact_scoped_requests ... ok
+test google_sync::calendar::tests::catalog_pagination_calendar_fairness_and_saved_event_cursor_survive_restart ... ok
+test google_sync::calendar_writes::tests::lost_response_reconciles_with_reads_only ... ok
+test google_sync::calendar_writes::tests::precondition_failure_keeps_intent_and_never_automatically_retries ... ok
+test google_sync::runtime_tests::temporary_calendar_request_owner_survives_gui_exit_and_preserves_normal_cli_owner ... ok
+test google_sync::calendar_writes::tests::reconciliation_held_read_cannot_overwrite_newer_permission_membership_or_cache ... ok
+test verification_google::fixture::calendar_tests::calendar_only_owned_runtime_imports_two_accounts_and_preserves_invitation_evidence ... ok
+test google_sync::calendar_writes::tests::four_accounts_share_http_slots_without_nested_mutation_read_deadlock ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 126 filtered out; finished in 1.77s
+

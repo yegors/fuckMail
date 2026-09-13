@@ -19,6 +19,21 @@ pub struct GoogleWrite {
     pub send_updates: &'static str,
     pub notification_owner: &'static str,
 }
+/// An ordinary edit may preserve an existing supported meeting by omission.
+/// Unknown solutions cannot safely be round-tripped or modified by this client.
+pub fn ordinary_conference_supported(source: &Value) -> bool {
+    match source.get("conferenceData") {
+        None | Some(Value::Null) => true,
+        Some(data) => {
+            matches!(
+                data["conferenceSolution"]["key"]["type"].as_str(),
+                Some("eventHangout" | "eventNamedHangout" | "hangoutsMeet" | "addOn")
+            ) && data
+                .get("createRequest")
+                .is_none_or(|request| request["status"]["statusCode"] == "success")
+        }
+    }
+}
 pub fn edit(
     event: &Event,
     access: Access,

@@ -197,7 +197,25 @@ impl Store {
                             row["can_edit"] = (available && edit).into();
                             row["can_delete"] = (available && edit).into();
                             row["can_rsvp"] = (available && rsvp).into();
+                            row["can_edit_attendees"] = false.into();
+                            row["attendee_edit_reason"] = "permission_denied".into();
+                            row["guest_addresses"] = json!([]);
+                            row["protected_attendees"] = json!([]);
                             if row["busy_only"] != true {
+                                match crate::live_calendar_writes::live_guest_actions(event, access)
+                                {
+                                    Ok((guests, protected)) => {
+                                        row["can_edit_attendees"] = available.into();
+                                        row["attendee_edit_reason"] = if available {
+                                            Value::Null
+                                        } else {
+                                            "calendar_not_ready".into()
+                                        };
+                                        row["guest_addresses"] = guests.into();
+                                        row["protected_attendees"] = protected.into();
+                                    }
+                                    Err(error) => row["attendee_edit_reason"] = error.code.into(),
+                                }
                                 if let Ok(person) =
                                     crate::live_calendar_writes::live_self_attendee(event, &actor)
                                 {

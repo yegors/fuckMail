@@ -449,7 +449,7 @@ def run(args):
                         require(cli(["google", "draft-delete-status", "--request-id", receipt["request_id"]], account)["state"] == receipt["state"], "Offline receipt changed")
                 require(read_json(fixture_path)["counters"] == before, "Offline inspection started provider work")
                 with closing(read_database(profile)) as db:
-                    require(db.execute("PRAGMA user_version").fetchone()[0] == 16, "Wrong schema")
+                    require(db.execute("PRAGMA user_version").fetchone()[0] == 17, "Wrong schema")
                     rows = db.execute("SELECT json FROM capture_operations WHERE execution_kind='google' AND json_extract(json,'$.kind')='draft_delete'").fetchall()
                     require(len(rows) == (2 if args.gui else 4), "Missing or fabricated deletion journals")
                 watch.terminate()

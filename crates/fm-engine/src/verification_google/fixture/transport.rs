@@ -1,7 +1,7 @@
 //! Fixed Gmail-shaped responses. There is deliberately no network implementation.
 use super::{
-    draft_actions, remote_drafts, Account, Evidence, BACKFILL_MESSAGES, RAW_DELAY_MS,
-    RECENT_MESSAGES,
+    calendar_invitations::CalendarFixture, draft_actions, remote_drafts, Account, Evidence,
+    BACKFILL_MESSAGES, RAW_DELAY_MS, RECENT_MESSAGES,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use fm_google::{
@@ -226,6 +226,7 @@ pub(super) struct FixtureHttp {
     send_enabled: bool,
     remote_version_two: Option<Arc<AtomicBool>>,
     action_version_two: Option<Arc<AtomicBool>>,
+    calendar: Option<CalendarFixture>,
 }
 impl FixtureHttp {
     pub(super) fn new(
@@ -247,7 +248,15 @@ impl FixtureHttp {
             send_enabled,
             remote_version_two: None,
             action_version_two: None,
+            calendar: None,
         }
+    }
+    pub(super) fn enable_calendar(&mut self) {
+        self.calendar = Some(CalendarFixture::new(
+            self.accounts.clone(),
+            self.base,
+            self.evidence.clone(),
+        ));
     }
     pub(super) fn enable_remote_drafts(&mut self, version_two: Arc<AtomicBool>) {
         self.remote_version_two = Some(version_two);
@@ -939,7 +948,7 @@ fn rfc_message_id(raw: &[u8]) -> Option<String> {
     }
     Some(id.into())
 }
-fn decoded_query(value: &str) -> Option<String> {
+pub(super) fn decoded_query(value: &str) -> Option<String> {
     let bytes = value.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut index = 0;
@@ -1060,6 +1069,11 @@ impl HttpTransport for FixtureHttp {
             if self.evidence.lock().unwrap().counters.http_started > MAX_REQUESTS {
                 active.finish(false);
                 return Err(self.reject("synthetic_request_limit"));
+            }
+            if let Some(calendar) = &self.calendar {
+                let result = calendar.response(&request);
+                active.finish(result.is_ok());
+                return result;
             }
             let (account, route) = match self.resolve(&request) {
                 Ok(value) => value,
