@@ -1,0 +1,10 @@
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.84s
+     Running tests\verification_profile.rs (target\debug\deps\verification_profile-2cf96aa401dc94d3.exe)
+
+running 2 tests
+test ordinary_binary_has_no_verification_option_and_does_not_create_a_profile ... ok
+test marked_profile_is_refused_by_an_actual_ordinary_startup_without_store_mutation ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+

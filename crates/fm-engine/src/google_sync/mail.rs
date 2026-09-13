@@ -307,7 +307,13 @@ impl MailWorker {
         let owned_page = page.clone();
         ctx.core_call(move |store| {
             if !prepared.is_empty() {
-                store.google_live_commit_part(&owned_page, &prepared)?;
+                #[cfg(feature = "verification-google")]
+                let started = crate::verification_google::unix_ms();
+                let receipt = store.google_live_commit_part(&owned_page, &prepared)?;
+                #[cfg(feature = "verification-google")]
+                crate::verification_google::record_publication(&owned_page, &receipt, started);
+                #[cfg(not(feature = "verification-google"))]
+                let _ = receipt;
             }
             if store.google_live_pending(&owned_page, 1)?.is_empty() {
                 store.google_live_finish_page(&owned_page).map(Some)

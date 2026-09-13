@@ -8,12 +8,13 @@ use fm_core::{
 use fm_google::{
     auth::{CredentialVault, StoredToken, TokenCoordinator},
     desktop_auth::{DesktopLogin, GoogleOAuth, OAuthClientConfig},
-    transport::{
-        CancellationToken, HttpFuture, HttpRequest, HttpTransport, ReqwestTransport,
-        TransportLimits,
-    },
-    vault::NativeCredentialVault,
+    transport::{CancellationToken, HttpFuture, HttpRequest, HttpTransport},
     AccountId, GoogleError,
+};
+#[cfg(not(feature = "verification-google"))]
+use fm_google::{
+    transport::{ReqwestTransport, TransportLimits},
+    vault::NativeCredentialVault,
 };
 use serde_json::{json, Value};
 use std::{
@@ -85,6 +86,8 @@ struct State {
     stopping: bool,
 }
 struct Inner {
+    #[cfg(feature = "verification-google")]
+    verification: bool,
     core: CoreBridge,
     http: Arc<SharedHttp>,
     vault: Arc<SharedVault>,
@@ -115,6 +118,7 @@ impl Drop for BeginGuard {
     }
 }
 impl Runtime {
+    #[cfg(not(feature = "verification-google"))]
     pub(crate) fn new(
         core: CoreBridge,
         namespace: String,
@@ -143,6 +147,17 @@ impl Runtime {
     ) -> Arc<Self> {
         Arc::new(Self::with_services(core, http, vault, cancel))
     }
+    #[cfg(feature = "verification-google")]
+    pub(crate) fn for_verification(
+        core: CoreBridge,
+        http: Arc<dyn HttpTransport>,
+        vault: Arc<dyn CredentialVault>,
+        cancel: CancellationToken,
+    ) -> Arc<Self> {
+        let mut runtime = Self::with_services(core, http, vault, cancel);
+        Arc::get_mut(&mut runtime.inner).unwrap().verification = true;
+        Arc::new(runtime)
+    }
     fn with_services(
         core: CoreBridge,
         http: Arc<dyn HttpTransport>,
@@ -151,6 +166,8 @@ impl Runtime {
     ) -> Self {
         Self {
             inner: Arc::new(Inner {
+                #[cfg(feature = "verification-google")]
+                verification: false,
                 core,
                 http: Arc::new(SharedHttp(http)),
                 vault: Arc::new(SharedVault(vault)),
@@ -179,6 +196,13 @@ impl Runtime {
         account: Option<&str>,
         params: Value,
     ) -> Result<Value> {
+        #[cfg(feature = "verification-google")]
+        if self.inner.verification && method == "google_auth_begin" {
+            return Err(error(
+                "verification_refused",
+                "OAuth is unavailable in the isolated provider fixture",
+            ));
+        }
         if owner.is_empty()
             || owner.len() > 256
             || owner_cancel.is_cancelled()

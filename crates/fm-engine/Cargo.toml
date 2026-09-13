@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[features]
+default = []
+verification-google = []
+
 [dependencies]
 fm-core = { path = "../fm-core" }
 fm-ipc = { path = "../fm-ipc" }

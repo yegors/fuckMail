@@ -1,0 +1,19 @@
+   Compiling getrandom v0.4.3
+   Compiling tempfile v3.27.0
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `release` profile [optimized] target(s) in 1m 11s
+     Running unittests src\main.rs (target/verification-google\release\deps\fm_engine-1787f490ab60c509.exe)
+
+running 9 tests
+test verification_google::isolation_tests::verification_option_is_absent_from_default_build_and_requires_explicit_live_profile ... ok
+test verification_google::isolation_tests::isolated_feature_refuses_unmarked_normal_startup_before_profile_creation ... ok
+test verification_google::isolation_tests::marker_refusal_precedes_store_and_applies_to_file_and_directory_markers ... ok
+test verification_google::isolation_tests::ordinary_startup_refuses_marked_profile_without_creating_discovery_or_store ... ok
+test verification_google::fixture::tests::held_raw_cancellation_balances_activity_without_success_or_publication ... ok
+test verification_google::fixture::tests::empty_claim_and_bootstrap_never_adopt_existing_data_or_seed_mail ... ok
+test verification_google::fixture::tests::unknown_tokens_oauth_origins_and_unsupported_writes_fail_without_fallback ... ok
+test verification_google::fixture::tests::actual_gmail_adapter_routes_keep_account_identity_pages_and_review_readback ... ok
+test verification_google::fixture::tests::actual_runtime_uses_cached_tokens_and_traces_only_committed_writer_parts ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 78 filtered out; finished in 0.91s
+

@@ -126,6 +126,7 @@ static QObject *named(QObject *root, const char *name) {
 }
 static void call(QObject *object, const char *method) { require(QMetaObject::invokeMethod(object, method), method); }
 static void call(QObject *object, const char *method, const QVariant &arg) { require(QMetaObject::invokeMethod(object, method, Q_ARG(QVariant, arg)), method); }
+static void call(QObject *object, const char *method, const QVariant &first, const QVariant &second) { require(QMetaObject::invokeMethod(object, method, Q_ARG(QVariant, first), Q_ARG(QVariant, second)), method); }
 static QVariantMap event() {
     return {{"id", "alpha:primary:event"}, {"account", "alpha"}, {"account_name", "Alpha"}, {"calendar_id", "primary"}, {"calendar_name", "Personal"},
         {"event_id", "event"}, {"etag", "v1"}, {"title", "Original title"}, {"start", "2026-09-13T09:00:00-04:00"}, {"end", "2026-09-13T10:00:00-04:00"},
@@ -152,7 +153,9 @@ int main(int argc, char **argv) {
     engine.loadData(R"QML(import QtQuick
 import QtQuick.Controls
 ApplicationWindow { width: 1100; height: 850; visible: true
-    EventEditor {} EventDetails {} CalendarOperations {}
+    EventEditor {}
+    EventDetails { exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 80 } } }
+    CalendarOperations {}
     GoogleLabelSetup { visible: false; width: 560 }
 })QML", QUrl::fromLocalFile(copy.filePath("Harness.qml")));
     require(!engine.rootObjects().isEmpty(), "Actual Calendar QML loads");
@@ -219,9 +222,17 @@ ApplicationWindow { width: 1100; height: 850; visible: true
 
     auto invitation = original; invitation["can_edit"] = false; invitation["can_delete"] = false; invitation["can_rsvp"] = true; invitation["self_response"] = "needsAction";
     invitation["attendees"] = QVariantList{QVariantMap{{"email", "self@example.test"}, {"self", true}}};
-    details->setProperty("eventData", invitation); call(details, "open"); settle([&] { return details->property("opened").toBool(); });
-    call(details, "respond", "accepted"); frozen = backend.lastWrite;
+    call(details, "openAt", invitation, QVariant{}); settle([&] { return details->property("visible").toBool(); });
+    require(!details->property("opened").toBool(), "Exercise the actual 180ms popup enter transition");
+    auto acceptResponse = qobject_cast<QQuickItem *>(named(root, "eventRsvp-accepted"));
+    require(acceptResponse && acceptResponse->isVisible() && acceptResponse->isEnabled(), "RSVP control accepts input during enter transition");
+    call(acceptResponse, "clicked"); frozen = backend.lastWrite;
+    settle([&] { return details->property("opened").toBool(); });
+    require(details->property("saving").toBool() && plain(details->property("pendingResponse")).toMap()["request_id"] == frozen["request_id"], "Finishing enter transition preserves the already submitted RSVP identity");
     require(frozen["kind"] == "rsvp" && frozen["account"] == "alpha" && frozen["response"] == "accepted", "Self RSVP keeps the event scope");
+    auto otherEvent = original; otherEvent["id"] = "beta:primary:other"; otherEvent["account"] = "beta"; otherEvent["event_id"] = "other";
+    call(details, "openAt", otherEvent, QVariant{});
+    require(plain(details->property("eventData")).toMap()["account"] == "alpha" && plain(details->property("pendingResponse")).toMap()["request_id"] == frozen["request_id"], "Saving RSVP cannot retarget to another event");
     unrelated = resultFor(frozen, "acknowledged"); unrelated["request_id"] = "other"; backend.complete(true, unrelated);
     require(details->property("saving").toBool(), "Other completion cannot acknowledge RSVP");
     backend.complete(false, resultFor(frozen, "unknown", 3)); const auto beforeRsvp = backend.writes; call(details, "respond", "declined");
@@ -229,7 +240,20 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     call(details, "resolveResponse", "reconcile"); require(backend.lastAction["request_id"] == frozen["request_id"], "RSVP reconciliation retains original request");
     backend.complete(true, resultFor(frozen, "acknowledged"));
     require(plain(details->property("eventData")).toMap()["etag"] == "v1" && plain(details->property("eventData")).toMap()["self_response"] == "needsAction", "Live acknowledgment waits for provider projection rather than inventing an etag/response");
+    call(details, "respond", "tentative"); frozen = backend.lastWrite;
+    backend.complete(false, resultFor(frozen, "unknown", 11));
+    const auto pendingWrites = backend.writes, pendingActions = backend.actions;
+    call(details, "openAt", otherEvent, QVariant{});
+    require(plain(details->property("eventData")).toMap()["account"] == "alpha" && plain(details->property("pendingResponse")).toMap()["request_id"] == frozen["request_id"], "Visible unconfirmed RSVP retains its displayed event and request");
     call(details, "close");
+    require(details->property("visible").toBool() && !details->property("opened").toBool(), "Exercise a real popup closing transition");
+    call(details, "openAt", otherEvent, QVariant{});
+    require(plain(details->property("eventData")).toMap()["account"] == "alpha" && plain(details->property("pendingResponse")).toMap()["request_id"] == frozen["request_id"], "Closing popup cannot retarget its unconfirmed RSVP");
+    settle([&] { return !details->property("visible").toBool(); });
+    call(details, "openAt", otherEvent, QVariant{}); settle([&] { return details->property("opened").toBool(); });
+    require(plain(details->property("eventData")).toMap()["account"] == "beta" && !details->property("hasPendingResponse").toBool(), "Closed pending popup can reopen a different event");
+    require(backend.writes == pendingWrites && backend.actions == pendingActions, "Closing and reopening neither resends nor abandons the recorded RSVP; recovery remains in Activity");
+    call(details, "close"); settle([&] { return !details->property("visible").toBool(); });
 
     QVariantList rows;
     for (const auto state : {"prepared", "ready", "in_flight", "unknown", "accepted", "acknowledged", "conflict", "rejected", "abandoned"})

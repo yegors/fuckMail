@@ -1,0 +1,195 @@
+{
+  "recorded_at_utc": "2026-09-13T10:58:30.729435+00:00",
+  "files": [
+    {
+      "path": "calendar-enter-03.LastTest.log",
+      "bytes": 1064,
+      "sha256": "64023507e978df68d78177eec76cbd4e015a9c11100c3dbe02ec6a9af19cec0d"
+    },
+    {
+      "path": "calendar-enter-and-gui-03.log",
+      "bytes": 1552,
+      "sha256": "3c8977228c9c5c7345371c466ddb0765bdbcc3336abaf00c2b11162e1596898d"
+    },
+    {
+      "path": "calendar-reopen-02.LastTest.log",
+      "bytes": 1064,
+      "sha256": "4325f8212dd134bb38fc45f59897c0f070e5d753584678ed6bba51e670a2372a"
+    },
+    {
+      "path": "calendar-reopen-and-gui-02.log",
+      "bytes": 2011,
+      "sha256": "3f5bfecefd6e1dda8d084b40a7d651bd2a280bf38c08b3f2f0c73f5823d0dcdb"
+    },
+    {
+      "path": "cli-release-01.log",
+      "bytes": 519,
+      "sha256": "ce79395355654840b6d8f0663133f1312f8ca67e2d55c02d00591aae3c3a601b"
+    },
+    {
+      "path": "default-clippy-01.log",
+      "bytes": 748,
+      "sha256": "18e60e886d4cb35e6093a32d9cf6f832f2f01fb7cf9e873e461bc3160d123792"
+    },
+    {
+      "path": "default-clippy-02.log",
+      "bytes": 167,
+      "sha256": "aa7db83ab1b4f5e5a75242eba9a38b6e7a97547b046fbef1969cfc985dcd719b"
+    },
+    {
+      "path": "default-engine-01.log",
+      "bytes": 10810,
+      "sha256": "28f4f2841fad339e51c4b887df493cbf237c8ed0188e853427208816d00479c5"
+    },
+    {
+      "path": "default-process-01.log",
+      "bytes": 570,
+      "sha256": "aca7be04591501c4c495dc45d9a40da97f6925a917fe611a3f546377a0c74f21"
+    },
+    {
+      "path": "engine-release-01.log",
+      "bytes": 7211,
+      "sha256": "8dded72e00e57c4d40ab9aecb06c9d303abdafb0eec12388a9e779f15560f0e1"
+    },
+    {
+      "path": "feature-clippy-01.log",
+      "bytes": 6259,
+      "sha256": "0ceaf7860cc4a0b0a23337bf0177baabff3fe489382fe65b44888799fc856b74"
+    },
+    {
+      "path": "feature-clippy-02.log",
+      "bytes": 157,
+      "sha256": "8ac9064930760e6e94275e88cc858d7631e2ef82ec7ead572aa6382272d53833"
+    },
+    {
+      "path": "feature-fixture-01.log",
+      "bytes": 1566,
+      "sha256": "2f892e7c13b9129e88b18bc69aa8429f58f58565b14da4bfa6c0267783229b64"
+    },
+    {
+      "path": "feature-process-01.log",
+      "bytes": 1310,
+      "sha256": "5411191709c69fb0a1d52a1690f26fa7c67d9360be617863ddb9a276bb02c21f"
+    },
+    {
+      "path": "feature-process-02.log",
+      "bytes": 699,
+      "sha256": "7c6fcf179037eefcc9e2f222fd607ab3545aa8d55d9efd298b92c6fb42099feb"
+    },
+    {
+      "path": "fmt-02.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "gui-build-01.log",
+      "bytes": 9911,
+      "sha256": "808504360d8487dfe3476d5ea6459b58600d1c43e0d06d1cc4e6141e9404bf6a"
+    },
+    {
+      "path": "navigation-release-01.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "navigation-release-01.fixture.json",
+      "bytes": 39816,
+      "sha256": "436df360eb068422f59fc42f60101cfbb0bf03263a4a6a30d0c17d79d3bbbb44"
+    },
+    {
+      "path": "navigation-release-01.gui.json",
+      "bytes": 3684872,
+      "sha256": "1e34016eebf9387d1e2aea0e93a0dd625408f8a13924b3df910777821b5fc088"
+    },
+    {
+      "path": "navigation-release-01.gui.log",
+      "bytes": 1900,
+      "sha256": "f8a734e3abc6e7fcc3fda3340483ffd09a8fcab354c81e99e70d40f04d4d141e"
+    },
+    {
+      "path": "navigation-release-01.json",
+      "bytes": 5920,
+      "sha256": "daa3766b991b0dfef16db12ea10a10fca9508f5e48a97e714ceb03d2e02ed323"
+    },
+    {
+      "path": "navigation-release-01.log",
+      "bytes": 232,
+      "sha256": "29cc0794b8a1eee3816c782226525624dc2d6e9a943bc36a6caa49140af5662a"
+    },
+    {
+      "path": "navigation-release-01.personal-cli.log",
+      "bytes": 23352,
+      "sha256": "beaa5e93b146e831b6ca8b372aaf2ac089aa8cbced58c54cb54d6b7d3614001e"
+    },
+    {
+      "path": "navigation-release-01.source.json",
+      "bytes": 27723,
+      "sha256": "b79ddf0c3357aab46d00d729df4cffda546d68f6cb5167804b19a2694ccc396b"
+    },
+    {
+      "path": "navigation-release-01.sql-observations.json",
+      "bytes": 327347,
+      "sha256": "8b0e09d44c341ae7202bc97dc13ec7a03e9180f233f4ef361bfe12bf694eab94"
+    },
+    {
+      "path": "navigation-release-01.workspace-cli.log",
+      "bytes": 23918,
+      "sha256": "863dfbdec3ab9956c557237fe5a2a044335a2d4614763e7c4c5da7bc395a60d1"
+    },
+    {
+      "path": "navigation-release-02.engine.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "navigation-release-02.fixture.json",
+      "bytes": 39817,
+      "sha256": "c1fccfea9742157be6addde23474933d30375ca38fab4f0c56101311f2263d1b"
+    },
+    {
+      "path": "navigation-release-02.gui.json",
+      "bytes": 3684869,
+      "sha256": "a05f323065de39cbf6ca8a2de365a528de2915100dbb2348e8cc6054b21f7235"
+    },
+    {
+      "path": "navigation-release-02.gui.log",
+      "bytes": 1900,
+      "sha256": "fb5e1a2b87839dd4d5b8fa25907075df93ad2ca96b82e85eef03eaad91c08e23"
+    },
+    {
+      "path": "navigation-release-02.json",
+      "bytes": 460310,
+      "sha256": "65a7337b38de44952832d3cc4d24174da7773c5c1a5ff945a3e6a44e4001ad1d"
+    },
+    {
+      "path": "navigation-release-02.log",
+      "bytes": 93,
+      "sha256": "e8c955f026189e2ca36e571b045915ea76e90b375e9d24b0152936515b6d88ef"
+    },
+    {
+      "path": "navigation-release-02.personal-cli.log",
+      "bytes": 23352,
+      "sha256": "d98ff0ab5268048309494d3c501b2000d0bc49ad845aba3b00832b7047540ea6"
+    },
+    {
+      "path": "navigation-release-02.source.json",
+      "bytes": 27723,
+      "sha256": "95a9f801c2932d46afd2e09319b92da169248fbff14cf560e987780c78e2ab98"
+    },
+    {
+      "path": "navigation-release-02.sql-observations.json",
+      "bytes": 326811,
+      "sha256": "6e8b7c776aaff667f7cfd3ed9925b688eecea35b2c4987d1ca8a7aa991433cad"
+    },
+    {
+      "path": "navigation-release-02.workspace-cli.log",
+      "bytes": 23918,
+      "sha256": "3860a2285bef0c45ee6cd7ffcd104456cba0cb6385c56527d568019fea23d3b2"
+    },
+    {
+      "path": "source-checkpoint.json",
+      "bytes": 46389,
+      "sha256": "fbeb13f0daf9c00249f6317564044cc27f26584097741c6f732eabaa44fd0fe5"
+    }
+  ]
+}

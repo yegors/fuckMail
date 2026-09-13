@@ -22,6 +22,7 @@ mod core_tasks;
 mod google_auth;
 mod google_sync;
 mod verification_fixture;
+mod verification_google;
 
 #[derive(Parser)]
 #[command(
@@ -36,6 +37,15 @@ struct Args {
     live_profile: bool,
     #[arg(long, hide = true, value_enum)]
     verification_fixture: Option<verification_fixture::Mode>,
+    /// In-memory provider verification, compiled only in an isolated developer build.
+    #[cfg(feature = "verification-google")]
+    #[arg(
+        long,
+        hide = true,
+        requires = "live_profile",
+        conflicts_with = "verification_fixture"
+    )]
+    verification_google: bool,
 }
 
 enum Work {
@@ -511,10 +521,24 @@ async fn main() {
 }
 
 async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(feature = "verification-google")]
+    if !args.verification_google {
+        return Err(
+            "This isolated build requires --verification-google and a new disposable live profile"
+                .into(),
+        );
+    }
     if args.verification_fixture.is_some() && args.profile.is_none() {
         return Err("verification fixtures require an explicit disposable profile".into());
     }
     let profile = fm_ipc::private_profile(&args.profile.unwrap_or(fm_ipc::default_profile()?))?;
+    // This refusal is present in ordinary builds too. A verification profile
+    // must never fall through to real Google services on a later startup.
+    verification_google::refuse_marked_profile(&profile)?;
+    #[cfg(feature = "verification-google")]
+    if args.verification_google {
+        verification_google::claim_empty_profile(&profile)?;
+    }
     if let Some(mode) = args.verification_fixture {
         verification_fixture::preflight(mode, &profile)?;
     }
@@ -537,6 +561,11 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let mut fixture = args
         .verification_fixture
         .map(|mode| verification_fixture::Fixture::prepare(mode, &profile, &mut store))
+        .transpose()?;
+    #[cfg(feature = "verification-google")]
+    let google_fixture = args
+        .verification_google
+        .then(|| verification_google::Fixture::prepare(&profile, &mut store))
         .transpose()?;
     let provider_namespace = (store.profile_kind()? == fm_core::live_profile::ProfileKind::Live)
         .then(|| store.vault_namespace())
@@ -566,6 +595,7 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     ));
     let background_slots = Arc::new(Semaphore::new(verification_fixture::BACKGROUND_LIMIT));
     let engine_cancel = fm_google::transport::CancellationToken::new();
+    #[cfg(not(feature = "verification-google"))]
     let provider = provider_namespace
         .map(|namespace| {
             google_auth::Runtime::new(
@@ -575,6 +605,16 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             )
         })
         .transpose()?;
+    #[cfg(feature = "verification-google")]
+    let provider = Some(
+        google_fixture
+            .as_ref()
+            .ok_or("Verification fixture was not initialized")?
+            .auth(
+                core_tasks::CoreBridge::new(queue.clone(), background_slots.clone()),
+                engine_cancel.clone(),
+            ),
+    );
     let sync = provider.as_ref().map(|auth| {
         google_sync::Runtime::new(
             core_tasks::CoreBridge::new(queue.clone(), background_slots.clone()),
@@ -588,7 +628,17 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let worker_owners = owners.clone();
     let worker_authenticated = authenticated_work.clone();
     let worker_schedule = schedule.clone();
+    #[cfg(feature = "verification-google")]
+    let writer_google_fixture = google_fixture.clone();
+    #[cfg(feature = "verification-google")]
+    let google_reporter = google_fixture
+        .as_ref()
+        .map(|fixture| fixture.start_reporter(engine_cancel.clone()));
     let worker = std::thread::spawn(move || {
+        #[cfg(feature = "verification-google")]
+        let _trace = writer_google_fixture
+            .as_ref()
+            .map(|f| f.install_writer_trace());
         let mut store = store;
         let mut pending = PendingWork::default();
         let mut ingestion = None;
@@ -746,7 +796,16 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     }
     drop(provider);
     drop(queue);
-    let _ = worker.join();
+    let writer_finished = worker.join().is_ok();
+    #[cfg(feature = "verification-google")]
+    if let Some(fixture) = google_fixture {
+        if let Some(reporter) = google_reporter {
+            let _ = reporter.await;
+        }
+        fixture.finish(writer_finished).await?;
+    }
+    #[cfg(not(feature = "verification-google"))]
+    let _ = writer_finished;
     Ok(())
 }
 

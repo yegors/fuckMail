@@ -312,7 +312,7 @@ Item {
             property bool blocksWorkspaceShortcuts: true
             spacing: 4
             FmButton { text: "Agenda"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { backend.setCalendarView("agenda"); moreMenu.close() } }
-            FmButton { objectName: "calendarActivityButton"; text: "Local calendar activity"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { moreMenu.close(); operationHistory.open() } }
+            FmButton { objectName: "calendarActivityButton"; text: backend.syntheticProfile ? "Local calendar activity" : "Calendar activity"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { moreMenu.close(); operationHistory.open() } }
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
             Text { text: "Combined · " + (backend.preferences.calendar_display_time_zone || "Time zone unavailable") + "\n" + backend.calendarCoverage; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
         }

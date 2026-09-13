@@ -204,7 +204,7 @@ ApplicationWindow {
                         FmIcon { anchors.verticalCenter: parent.verticalCenter; name: "refresh"; size: 13; color: Theme.subtle }
                         Text { text: backend.connected ? "Local copy" : "Connecting…"; color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } }
                     }
-                    FmToolTip { visible: statusHover.containsMouse; text: backend.connected ? "Mail and calendar are read from this machine. No live provider sync is configured." : "Connecting to the local engine." }
+                    FmToolTip { visible: statusHover.containsMouse; text: !backend.connected ? "Connecting to the local engine." : backend.syntheticProfile ? "Mail and calendar are read from this machine. No live provider sync is configured." : "Mail and calendar are read from this machine. Manage Google sync in Settings > Accounts." }
                     MouseArea { id: statusHover; anchors.fill: parent; acceptedButtons: Qt.NoButton; hoverEnabled: true }
                 }
                 Rectangle {

@@ -1,0 +1,12 @@
+   Compiling serde_core v1.0.229
+   Compiling syn v3.0.5
+   Compiling serde_json v1.0.151
+   Compiling tokio-macros v2.7.2
+   Compiling serde_derive v1.0.229
+   Compiling clap_derive v4.6.4
+   Compiling tokio v1.53.1
+   Compiling clap v4.6.6
+   Compiling serde v1.0.229
+   Compiling fm-ipc v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-ipc)
+   Compiling fm-cli v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-cli)
+    Finished `release` profile [optimized] target(s) in 20.61s

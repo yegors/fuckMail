@@ -45,9 +45,9 @@ Popup {
         layer.enabled: true; layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.6); shadowBlur: .8; shadowVerticalOffset: 12 }
     }
     enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180 } }
-    onOpened: { feedback = ""; pendingResponse = ({}); awaitedEtag = ""; operationState = ""; operationRevision = -1 }
+    onAboutToShow: { feedback = ""; pendingResponse = ({}); awaitedEtag = ""; operationState = ""; operationRevision = -1 }
     function openAt(event, anchor) {
-        if (saving || hasPendingResponse) return
+        if (saving || (visible && hasPendingResponse)) return
         eventData = event
         if (anchor) { let point = anchor.mapToItem(parent, anchor.width / 2, anchor.height); originX = point.x; originY = point.y }
         open()
