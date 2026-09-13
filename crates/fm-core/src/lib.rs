@@ -18,6 +18,7 @@ mod composition;
 mod composition_tests;
 mod content;
 mod fixture;
+pub mod google_labels;
 pub mod google_live_mail;
 pub mod google_live_mutations;
 pub mod google_store;
@@ -34,7 +35,7 @@ mod queries;
 mod sender_kind_tests;
 #[cfg(test)]
 mod test_profiles;
-pub const SCHEMA_VERSION: u32 = 10;
+pub const SCHEMA_VERSION: u32 = 11;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -265,6 +266,15 @@ impl Store {
             tx.execute_batch("PRAGMA user_version=10")?;
             tx.commit()?;
         }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 10 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-011-labels.sql"))?;
+            tx.execute_batch("PRAGMA user_version=11")?;
+            tx.commit()?;
+        }
         store.validate_profile_identity()?;
         store.recover_captures()?;
         store.calendar_live_recover()?;
@@ -282,8 +292,10 @@ impl Store {
         if method == "status" {
             fields(&params, &[])?;
             let synthetic = self.profile_kind()? == live_profile::ProfileKind::Synthetic;
+            // These describe callable local interfaces. Account grants and
+            // connectivity independently gate provider delivery and writes.
             return Ok(
-                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"calendar_generation":self.mail_changes.calendar_generation(),"synthetic":synthetic,"profile_kind":if synthetic {"synthetic"} else {"live"},"fixture_today":if synthetic {Some(FIXTURE_TODAY)} else {None},"capabilities":{"mail":synthetic,"drafts":synthetic,"calendar_read":synthetic,"phase1":synthetic,"typed_filters":true,"preferences":true,"capture_history":synthetic,"calendar_write_local":synthetic,"send":false,"models":false,"google_auth":!synthetic,"google_sync":!synthetic}}),
+                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"calendar_generation":self.mail_changes.calendar_generation(),"synthetic":synthetic,"profile_kind":if synthetic {"synthetic"} else {"live"},"fixture_today":if synthetic {Some(FIXTURE_TODAY)} else {None},"capabilities":{"mail":true,"drafts":true,"calendar_read":true,"phase1":synthetic,"typed_filters":true,"preferences":true,"capture_history":synthetic,"calendar_write_local":synthetic,"send":false,"models":false,"google_auth":!synthetic,"google_sync":!synthetic}}),
             );
         }
         if self.profile_kind()? == live_profile::ProfileKind::Live
@@ -323,6 +335,8 @@ impl Store {
             "set_category",
             "mail_filing",
             "google_mail_mutation_status",
+            "google_labels",
+            "google_category_bind",
             "view_get",
             "view_save",
             "account_update",
@@ -383,9 +397,18 @@ impl Store {
                 self.view(account)
             }
             "google_mail_mutation_status" => {
-                fields(&params, &[])?;
-                self.google_mail_mutation_status(account)
+                fields(&params, &["request_id"])?;
+                if params.get("request_id").is_some() {
+                    self.google_mail_mutation_request_status(
+                        account,
+                        string(&params, "request_id")?,
+                    )
+                } else {
+                    self.google_mail_mutation_status(account)
+                }
             }
+            "google_labels" => self.google_labels(account, &params),
+            "google_category_bind" => self.google_category_bind(account, &params),
             "flag" | "set_category" | "mail_filing" | "draft_create" | "draft_save"
             | "draft_discard" | "view_save" => self.mutate(method, account, &params),
             _ => unreachable!(),

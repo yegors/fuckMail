@@ -65,16 +65,21 @@ void MailBackend::loadCalendarSources() {
 void MailBackend::calendarWrite(const QVariantMap &values) {
     auto params = QJsonObject::fromVariantMap(values);
     const auto account = params.take("account").toString();
-    if (account.isEmpty()) { emit calendarWriteFinished(false, {}, "Choose a writable calendar account."); return; }
     if (!params.contains("request_id")) params["request_id"] = mutation()["request_id"];
+    const auto requestId = params["request_id"].toString();
     ++m_calendarWrites;
-    request("calendar_write", account, params, [this](auto result, bool ok) {
-        --m_calendarWrites;
-        if (!ok) cancelShutdown();
-        emit calendarWriteFinished(ok, result.toVariantMap(), ok ? QString{} : result["message"].toString("Calendar change could not be saved."));
-        if (ok) { loadCalendar(); loadCalendarSources(); }
-        if (m_shutdown) finishShutdown();
-    });
+    if (account.isEmpty() || !m_connected || m_shutdown) {
+        finishCalendarOperation(account, requestId, {{"code", "calendar_unavailable"}, {"local_preflight", true}, {"operation_action", "write"}, {"message", "Connect to the app and choose a writable calendar account."}}, false); return;
+    }
+    if (!m_syntheticProfile && (!accountCapability(account, "calendar_write") || !googleSyncState(account).value("active").toBool())) {
+        finishCalendarOperation(account, requestId, {{"code", "calendar_sync_required"}, {"local_preflight", true}, {"operation_action", "write"}, {"message", "Start Calendar sync for this Google account before saving. Your fields remain here."}}, false); return;
+    }
+    const auto completed = [this, account, requestId](auto result, bool ok) {
+        result["operation_action"] = "write";
+        finishCalendarOperation(account, requestId, result, ok);
+    };
+    if (m_syntheticProfile) request("calendar_write", account, params, completed);
+    else googleOperation("google_calendar_write", account, params, completed);
 }
 
 void MailBackend::loadPreferences() {

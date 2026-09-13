@@ -165,6 +165,7 @@ impl MailChanges {
                     | "conversations"
                     | "attachments"
                     | "categories"
+                    | "google_category_labels"
                     | "message_categories"
                     | "message_sender_kinds"
             ) || table.starts_with("message_fts")
@@ -1111,8 +1112,13 @@ impl Store {
     pub(crate) fn categories(&self, account: &str) -> Result<Value> {
         let stamp = self.mail_changes.snapshot(&self.db).search;
         self.cached_projection(account, "categories", stamp, || {
-            let mut stmt=self.db.prepare("SELECT c.id,c.name,COUNT(DISTINCT m.conversation_id) FROM categories c LEFT JOIN message_categories mc ON mc.account=c.account AND mc.category_id=c.id LEFT JOIN messages m ON m.account=mc.account AND m.id=mc.message_id WHERE c.account=?1 GROUP BY c.id,c.name ORDER BY c.name")?;
-            Ok(json!({"categories":stmt.query_map([account],|r|Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"conversation_count":r.get::<_,i64>(2)?})))?.collect::<std::result::Result<Vec<_>,_>>()?}))
+            let live = self.profile_kind()? == crate::live_profile::ProfileKind::Live;
+            let mut stmt=self.db.prepare("SELECT c.id,c.name,COUNT(DISTINCT m.conversation_id),g.provider_label_id FROM categories c LEFT JOIN message_categories mc ON mc.account=c.account AND mc.category_id=c.id LEFT JOIN messages m ON m.account=mc.account AND m.id=mc.message_id LEFT JOIN google_category_labels g ON g.account=c.account AND g.category_id=c.id WHERE c.account=?1 GROUP BY c.id,c.name,g.provider_label_id ORDER BY c.name")?;
+            Ok(json!({"categories":stmt.query_map([account],|r| {
+                let mut row=json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"conversation_count":r.get::<_,i64>(2)?});
+                if live { row["provider_label_id"]=json!(r.get::<_,Option<String>>(3)?); }
+                Ok(row)
+            })?.collect::<std::result::Result<Vec<_>,_>>()?}))
         })
     }
     pub(crate) fn view(&self, account: &str) -> Result<Value> {

@@ -368,8 +368,11 @@ impl Store {
             let scopes: BTreeSet<String> = serde_json::from_str(&scopes)?;
             let coverage=self.google_live_coverage(account)?;
             let started:bool=self.db.query_row("SELECT EXISTS(SELECT 1 FROM google_live_lanes WHERE account=?1)",[account],|row|row.get(0))?;
+            let connected=state=="connected";
+            let mail_write=fm_google::auth::ScopeSet::new(&scopes).mail_write();
+            let calendar_write=connected && scopes.contains("https://www.googleapis.com/auth/calendar.events");
             Ok(json!({"connection_state":state,"granted_scopes":scopes,
-                "capabilities":{"mail_read":false,"mail_write":false,"send":false,"calendar_read":false,"calendar_write":false},
+                "capabilities":{"mail_read":true,"drafts":true,"mail_write":mail_write,"mail_delivery":mail_write && connected,"send":false,"calendar_read":true,"calendar_write":calendar_write},
                 "sync":{"state":if !started {"not_started"} else if coverage.offline_complete {"caught_up"} else {"incomplete"},"inventory_complete":coverage.inventory_complete,"delta_current":coverage.delta_current,"offline_complete":coverage.offline_complete,"observed_messages":coverage.observed,"retained_sources":coverage.retained_sources,"indexed_messages":coverage.indexed,"unavailable_messages":coverage.unavailable}}))
         }).transpose()
     }

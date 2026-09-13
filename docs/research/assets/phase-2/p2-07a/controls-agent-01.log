@@ -1,0 +1,16 @@
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-DuXGoY/EventEditor.qml:304:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-DuXGoY/EventEditor.qml:304:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-DuXGoY/GoogleLabelSetup.qml:120:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-DuXGoY/GoogleLabelSetup.qml:120:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-DuXGoY/EventDetails.qml:181:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-DuXGoY/EventDetails.qml:181:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-DuXGoY/CalendarOperations.qml:67:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-DuXGoY/CalendarOperations.qml:67:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+Actual controls run without QML binding errors
+QThreadStorage: entry 3 destroyed before end of thread 0x2879c4dc190
+QThreadStorage: entry 2 destroyed before end of thread 0x2879c4dc190
+QThreadStorage: entry 1 destroyed before end of thread 0x2879c4dc190

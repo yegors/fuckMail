@@ -1,0 +1,76 @@
+{
+  "recorded_at_utc": "2026-09-13T10:00:34.4554547Z",
+  "scope": "Windows Debug native functional acceptance for P2-07A under D024/D025. Schema 11; live fixture 0; synthetic fixture 3; protocol 1. Synthetic data/providers only. No navigation-latency, resize, RSS, package, CI or real-account acceptance.",
+  "base_commit": "7c53412b2ee7c3faae8f95dbf54b614c888931c7",
+  "source_checkpoint": "source-checkpoint-03.json",
+  "source_files_rechecked": 271,
+  "source_mismatches": 0,
+  "changed_since_initial": [
+    "gui/CalendarControlsTest.cpp",
+    "gui/CalendarOperations.qml",
+    "gui/CMakeLists.txt",
+    "gui/EventDetails.qml",
+    "gui/EventEditor.qml",
+    "gui/GoogleLabelSetup.qml"
+  ],
+  "rust_source_unchanged_from_full_dev_01": true,
+  "full_dev_01": {
+    "ctests_passed": 11,
+    "ctests_failed": 1,
+    "total_seconds": 286.0,
+    "rust_workspace_passed": 376,
+    "rust_workspace_ignored": 5,
+    "failed_test": "gui-calendar-controls",
+    "gui_integration_seconds": 140.97
+  },
+  "final_native_03": {
+    "ctests_passed": 11,
+    "ctests_failed": 0,
+    "total_seconds": 179.12,
+    "scope": "All ten GUI/native/lifecycle CTests plus rust-test-build fixture setup; rust-workspace not rerun.",
+    "gui_integration_seconds": 143.11,
+    "gui_watchdog_seconds": 150,
+    "qml_binding_loop_warnings": 0,
+    "qt_shutdown_warning": "There are still 3 items in the process of being created at engine destruction."
+  },
+  "strict_clippy": {
+    "log": "clippy-01.log",
+    "crates": [
+      "fm-core",
+      "fm-google",
+      "fm-engine",
+      "fm-cli"
+    ],
+    "all_targets": true,
+    "warnings_denied": true,
+    "passed": true
+  },
+  "format": {
+    "log": "format-01.log",
+    "passed": true
+  },
+  "failed_attempts_retained": [
+    "full-dev-01.log",
+    "controls-01.log",
+    "controls-02.log",
+    "controls-agent-01.log",
+    "controls-agent-02.log"
+  ],
+  "binaries": [
+    {
+      "path": "build/dev/fm-engine.exe",
+      "bytes": 29233152,
+      "sha256": "a3dcd851c8f23832a5b39f381d0da3a4fa4b98e0ba1db5be2d84d3a7a900d54d"
+    },
+    {
+      "path": "build/dev/fm.exe",
+      "bytes": 3943936,
+      "sha256": "98d7d1bbcc73f28a7984ff2f08abfdf9f0ce6aa211e513016352db6274c5b146"
+    },
+    {
+      "path": "build/dev/fuckmail-gui.exe",
+      "bytes": 10122752,
+      "sha256": "9a400411feb3b7ceb384d88db4d6491f53d3d893f3a38c501ee3f8c95fd2d3c5"
+    }
+  ]
+}

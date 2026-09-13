@@ -73,7 +73,7 @@ impl<'a> GooglePageStore<'a> {
 
 impl Store {
     pub fn google_map_category(
-        &mut self,
+        &self,
         account: &str,
         category: &str,
         provider_label: &str,

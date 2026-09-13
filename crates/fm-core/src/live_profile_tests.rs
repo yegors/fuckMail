@@ -12,6 +12,291 @@ fn scopes() -> BTreeSet<String> {
 }
 
 #[test]
+fn live_capabilities_distinguish_cached_work_grants_and_active_delivery() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open_live(dir.path()).unwrap();
+    let account = store
+        .bind_google_account("capability-owner", "reader@example.test", &scopes(), None)
+        .unwrap();
+    store
+        .handle(
+            "draft_create",
+            Some(&account),
+            json!({"mode":"new","request_id":"retained-local-draft"}),
+        )
+        .unwrap();
+    let draft = store.handle("drafts", Some(&account), json!({})).unwrap()["drafts"].clone();
+    for (grants, mail_write, calendar_write) in [
+        (vec!["openid", "email"], false, false),
+        (
+            vec![
+                "https://www.googleapis.com/auth/gmail.readonly",
+                "https://www.googleapis.com/auth/calendar.readonly",
+            ],
+            false,
+            false,
+        ),
+        (
+            vec!["https://www.googleapis.com/auth/gmail.modify"],
+            true,
+            false,
+        ),
+        (
+            vec![
+                "https://mail.google.com/",
+                "https://www.googleapis.com/auth/calendar.events",
+            ],
+            true,
+            true,
+        ),
+    ] {
+        let grants = grants.into_iter().map(str::to_owned).collect();
+        store
+            .bind_google_account(
+                "capability-owner",
+                "reader@example.test",
+                &grants,
+                Some(&account),
+            )
+            .unwrap();
+        for state in [
+            ConnectionState::Connected,
+            ConnectionState::Disconnected,
+            ConnectionState::ReauthorizationRequired,
+        ] {
+            store.set_google_connection_state(&account, state).unwrap();
+            let status = store.handle("status", None, json!({})).unwrap();
+            for key in ["mail", "drafts", "calendar_read"] {
+                assert_eq!(status["capabilities"][key], true, "{key}");
+            }
+            let accounts = store.handle("accounts", None, json!({})).unwrap();
+            let caps = &accounts["accounts"][0]["google"]["capabilities"];
+            assert_eq!(caps["mail_read"], true);
+            assert_eq!(caps["calendar_read"], true);
+            assert_eq!(caps["drafts"], true);
+            assert_eq!(caps["mail_write"], mail_write);
+            assert_eq!(
+                caps["mail_delivery"],
+                mail_write && state == ConnectionState::Connected
+            );
+            assert_eq!(
+                caps["calendar_write"],
+                calendar_write && state == ConnectionState::Connected
+            );
+            assert_eq!(caps["send"], false);
+            assert_eq!(
+                store.handle("drafts", Some(&account), json!({})).unwrap()["drafts"],
+                draft
+            );
+            assert!(store
+                .handle("conversations", Some(&account), json!({}))
+                .is_ok());
+            assert!(store
+                .handle(
+                    "calendar_combined",
+                    None,
+                    json!({"from":"2026-09-12","to":"2026-09-13"})
+                )
+                .is_ok());
+        }
+    }
+}
+
+#[test]
+fn cached_labels_and_binding_dispatch_share_account_validation_and_exact_receipts() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open_live(dir.path()).unwrap();
+    let account = store
+        .bind_google_account(
+            "label-dispatch-owner",
+            "reader@example.test",
+            &scopes(),
+            None,
+        )
+        .unwrap();
+    assert_eq!(
+        store
+            .handle("google_labels", Some(&account), json!({}))
+            .unwrap()["labels"],
+        json!([])
+    );
+    let prepared = crate::google_labels::prepare_google_labels(
+        serde_json::from_value(
+            json!({"labels":[{"id":"Label_owned","name":"Provider name","type":"user"}]}),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let lease = store
+        .google_labels_begin(&account, 1, 0, &prepared.manifest())
+        .unwrap()
+        .unwrap();
+    let lease = store
+        .google_labels_stage(&lease, prepared.chunk(0).unwrap().unwrap())
+        .unwrap();
+    store.google_labels_publish(&lease, 1000).unwrap();
+    assert_eq!(
+        store
+            .handle("google_labels", Some(&account), json!({"limit":1}))
+            .unwrap()["labels"][0]["id"],
+        "Label_owned"
+    );
+    let request = json!({"request_id":"bind-owned","expected_catalog_revision":1,"category_id":"owned","provider_label_id":"Label_owned","create_name":"My category"});
+    let receipt = store
+        .handle("google_category_bind", Some(&account), request.clone())
+        .unwrap();
+    assert_eq!(receipt["local_only"], true);
+    assert_eq!(
+        store
+            .handle("google_category_bind", Some(&account), request)
+            .unwrap(),
+        receipt
+    );
+    assert_eq!(
+        store
+            .handle(
+                "google_mail_mutation_status",
+                Some(&account),
+                json!({"request_id":"bind-owned"})
+            )
+            .unwrap_err()
+            .code,
+        "not_found"
+    );
+    for method in [
+        "google_labels",
+        "google_category_bind",
+        "google_mail_mutation_status",
+    ] {
+        assert_eq!(
+            store.handle(method, None, json!({})).unwrap_err().code,
+            "account_required"
+        );
+        assert_eq!(
+            store
+                .handle(method, Some("foreign"), json!({}))
+                .unwrap_err()
+                .code,
+            "not_found"
+        );
+        assert_eq!(
+            store
+                .handle(method, Some(&account), json!({"unexpected":true}))
+                .unwrap_err()
+                .code,
+            "invalid_request"
+        );
+    }
+    assert_eq!(
+        store
+            .handle(
+                "google_mail_mutation_status",
+                Some(&account),
+                json!({"request_id":null})
+            )
+            .unwrap_err()
+            .code,
+        "invalid_request"
+    );
+    assert_eq!(
+        store
+            .handle("google_mail_mutation_status", Some(&account), json!({}))
+            .unwrap(),
+        json!({"counts":{},"failures":[],"pending":[]})
+    );
+}
+
+#[test]
+fn schema_ten_to_eleven_preserves_profile_authored_rows_and_receipts() {
+    for live in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = if live {
+            Store::open_live(dir.path())
+        } else {
+            Store::open(dir.path())
+        }
+        .unwrap();
+        let account = if live {
+            store
+                .bind_google_account("migration-eleven", "reader@example.test", &scopes(), None)
+                .unwrap()
+        } else {
+            "personal".into()
+        };
+        let receipt = store
+            .handle(
+                "draft_create",
+                Some(&account),
+                json!({"mode":"new","request_id":"migration-draft"}),
+            )
+            .unwrap();
+        let drafts = store.handle("drafts", Some(&account), json!({})).unwrap()["drafts"].clone();
+        let namespace = store.vault_namespace().unwrap();
+        let sources: i64 = store
+            .db
+            .query_row("SELECT count(*) FROM calendar_sources", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        let receipt_raw:String=store.db.query_row("SELECT result_json FROM operations WHERE account=?1 AND request_id='migration-draft'",[&account],|row|row.get(0)).unwrap();
+        // Schema 11 adds only these two tables. Remove both before lowering the
+        // version so this is the actual prior schema, not a mislabeled new one.
+        store.db.execute_batch("DROP TABLE google_label_catalog_items; DROP TABLE google_label_catalogs; PRAGMA user_version=10;").unwrap();
+        drop(store);
+        let mut reopened = Store::open(dir.path()).unwrap();
+        let status = reopened.handle("status", None, json!({})).unwrap();
+        assert_eq!(status["schema_version"], 11);
+        assert_eq!(status["fixture_revision"], if live { 0 } else { 3 });
+        assert_eq!(reopened.vault_namespace().unwrap(), namespace);
+        assert_eq!(
+            reopened
+                .handle("drafts", Some(&account), json!({}))
+                .unwrap()["drafts"],
+            drafts
+        );
+        assert_eq!(
+            reopened
+                .handle(
+                    "draft_create",
+                    Some(&account),
+                    json!({"mode":"new","request_id":"migration-draft"})
+                )
+                .unwrap(),
+            receipt
+        );
+        assert_eq!(reopened.db.query_row("SELECT result_json FROM operations WHERE account=?1 AND request_id='migration-draft'",[&account],|row|row.get::<_,String>(0)).unwrap(),receipt_raw);
+        assert_eq!(
+            reopened
+                .db
+                .query_row("SELECT count(*) FROM calendar_sources", [], |row| row
+                    .get::<_, i64>(0))
+                .unwrap(),
+            sources
+        );
+        assert_eq!(
+            reopened
+                .db
+                .query_row(
+                    "SELECT count(*) FROM google_label_catalog_items",
+                    [],
+                    |row| row.get::<_, i64>(0)
+                )
+                .unwrap(),
+            0
+        );
+        assert!(reopened
+            .db
+            .prepare("PRAGMA foreign_key_check")
+            .unwrap()
+            .query([])
+            .unwrap()
+            .next()
+            .unwrap()
+            .is_none());
+    }
+}
+
+#[test]
 fn desktop_client_reference_and_connection_generation_publish_atomically() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open_live(dir.path()).unwrap();
@@ -122,7 +407,12 @@ fn empty_live_profile_reopens_without_seed_or_simulated_operations() {
     assert_eq!(status["fixture_revision"], 0);
     assert_eq!(status["synthetic"], false);
     assert_eq!(status["fixture_today"], Value::Null);
-    assert_eq!(status["capabilities"]["send"], false);
+    for key in ["mail", "drafts", "calendar_read"] {
+        assert_eq!(status["capabilities"][key], true, "{key}");
+    }
+    for key in ["phase1", "capture_history", "calendar_write_local", "send"] {
+        assert_eq!(status["capabilities"][key], false, "{key}");
+    }
     let calendar = store
         .handle(
             "calendar_combined",

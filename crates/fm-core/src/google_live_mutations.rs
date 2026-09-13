@@ -169,9 +169,7 @@ fn validate_authoring(db: &Connection, account: &str) -> Result<()> {
     let scopes: BTreeSet<String> = serde_json::from_str(
         &scopes.ok_or_else(|| err("not_found", "Google account is unavailable"))?,
     )?;
-    if !scopes.contains("https://www.googleapis.com/auth/gmail.modify")
-        && !scopes.contains("https://mail.google.com/")
-    {
+    if !fm_google::auth::ScopeSet::new(&scopes).mail_write() {
         return Err(err(
             "capability_unavailable",
             "Google mail modification permission is required",
@@ -415,6 +413,44 @@ impl Store {
         let mut statement=self.db.prepare("SELECT request_id,message_id,state,error_code,retry_at_ms FROM google_mail_mutations WHERE account=?1 AND state IN ('pending','in_flight','reconcile') ORDER BY rowid LIMIT 20")?;
         let pending=statement.query_map([account],|r|Ok(json!({"request_id":r.get::<_,String>(0)?,"message_id":r.get::<_,String>(1)?,"state":r.get::<_,String>(2)?,"error_code":r.get::<_,Option<String>>(3)?,"retry_at_ms":r.get::<_,i64>(4)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;
         Ok(json!({"counts":counts,"failures":failures,"pending":pending}))
+    }
+    /// Exact delivery state is derived from every row in this immutable request,
+    /// never from the separately bounded account pending/failure previews.
+    pub fn google_mail_mutation_request_status(
+        &self,
+        account: &str,
+        request_id: &str,
+    ) -> Result<Value> {
+        crate::id(account)?;
+        crate::id(request_id)?;
+        let mut statement = self.db.prepare(
+            "SELECT state,count(*) FROM google_mail_mutations WHERE account=?1 AND request_id=?2 GROUP BY state",
+        )?;
+        let counts = statement
+            .query_map(params![account, request_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?))
+            })?
+            .collect::<std::result::Result<std::collections::BTreeMap<_, _>, _>>()?;
+        let total: u64 = counts.values().sum();
+        if total == 0 {
+            return Err(err(
+                "not_found",
+                "No mail delivery journal exists for this request",
+            ));
+        }
+        let count = |state: &str| counts.get(state).copied().unwrap_or(0);
+        let state = if count("confirmed") == total {
+            "confirmed"
+        } else if count("in_flight") + count("reconcile") > 0 {
+            "unknown"
+        } else if count("failed") > 0 {
+            "failed"
+        } else if count("pending") > 0 {
+            "pending"
+        } else {
+            "superseded"
+        };
+        Ok(json!({"request_id":request_id,"state":state,"counts":counts,"total":total}))
     }
     fn mutation_connection(&self, account: &str, generation: i64) -> Result<()> {
         if self.profile_kind()? != ProfileKind::Live {

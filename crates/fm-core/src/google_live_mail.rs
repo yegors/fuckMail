@@ -137,16 +137,7 @@ fn active_account(db: &Connection, account: &str) -> Result<(u64, u64)> {
         return Err(stale());
     };
     let scopes: BTreeSet<String> = serde_json::from_str(&scopes)?;
-    if state != "connected"
-        || !scopes.iter().any(|s| {
-            matches!(
-                s.as_str(),
-                "https://www.googleapis.com/auth/gmail.readonly"
-                    | "https://www.googleapis.com/auth/gmail.modify"
-                    | "https://mail.google.com/"
-            )
-        })
-    {
+    if state != "connected" || !fm_google::auth::ScopeSet::new(&scopes).mail_read() {
         return Err(err(
             "google_mail_unavailable",
             "Google mail reading is not authorized",

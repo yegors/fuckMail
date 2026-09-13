@@ -1,0 +1,74 @@
+Host: Windows-10-10.0.26200-SP0 AMD64
+Qt kit: C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64
+Source: C:\Users\Yegor\Projects\Fuckaround\fuckMail
++ "C:\Program Files\Git\cmd\git.EXE" --version
+git version 2.53.0.windows.1 at C:\Program Files\Git\cmd\git.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\rustc.EXE --version
+rustc 1.88.0 (6b00bc388 2025-06-23) at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\rustc.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.EXE --version
+cargo 1.88.0 (873a06493 2025-05-10) at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.EXE --version
+cmake version 3.31.6 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ninja.EXE --version
+1.11.1.git.kitware.jobserver-1 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ninja.EXE
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE --qt-version
+6.11.2 at C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64\bin\qtpaths.EXE
+Native C++ compiler: C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\HostX64\x64\cl.exe
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --preset dev
+Preset CMake variables:
+
+  BUILD_TESTING:BOOL="TRUE"
+  CMAKE_BUILD_TYPE="Debug"
+  CMAKE_EXPORT_COMPILE_COMMANDS:BOOL="TRUE"
+  CMAKE_PREFIX_PATH="C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\Qt\6.11.2\msvc2022_64"
+
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
+-- Configuring done (1.4s)
+-- Generating done (0.4s)
+-- Build files have been written to: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --build --preset dev --parallel
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.14s
+[0/71] Build the shared Rust engine and CLI
+[6/61] Automatic MOC and UIC for target gui-calendar-controls-test
+[8/59] Automatic MOC and UIC for target fuckmail-gui
+[9/58] Running AUTOMOC file extraction for target fuckmail-gui
+[10/10] C:\Windows\system32\cmd.exe /C "cd /D C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev && C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Lib\site-packages\cmake\data\bin\cmake.exe -E copy_if_different C:/Users/Yegor/Projects/Fuckaround/fuckMail/target/debug/fm-engine.exe C:/Users/Yegor/Projects/Fuckaround/fuckMail/target/debug/fm.exe C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev"
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ctest.exe --preset dev
+Test project C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+      Start  1: rust-test-build
+ 1/12 Test  #1: rust-test-build ..................   Passed    8.47 sec
+      Start  2: rust-workspace
+ 2/12 Test  #2: rust-workspace ...................   Passed  109.38 sec
+      Start  3: gui-smoke
+ 3/12 Test  #3: gui-smoke ........................   Passed    8.72 sec
+      Start  4: gui-live-empty
+ 4/12 Test  #4: gui-live-empty ...................   Passed    6.60 sec
+      Start  5: gui-integration
+ 5/12 Test  #5: gui-integration ..................   Passed  140.97 sec
+      Start  6: gui-startup-recovery
+ 6/12 Test  #6: gui-startup-recovery .............   Passed    9.53 sec
+      Start  7: gui-ipc-trust
+ 7/12 Test  #7: gui-ipc-trust ....................   Passed    0.04 sec
+      Start  8: gui-composer-probe
+ 8/12 Test  #8: gui-composer-probe ...............   Passed    0.05 sec
+      Start  9: gui-reply-document
+ 9/12 Test  #9: gui-reply-document ...............   Passed    0.18 sec
+      Start 10: gui-calendar-layout
+10/12 Test #10: gui-calendar-layout ..............   Passed    0.03 sec
+      Start 11: gui-calendar-controls
+11/12 Test #11: gui-calendar-controls ............***Failed    1.81 sec
+
+      Start 12: gui-google-operation
+12/12 Test #12: gui-google-operation .............   Passed    0.19 sec
+
+92% tests passed, 1 tests failed out of 12
+
+Total Test time (real) = 286.00 sec
+
+The following tests FAILED:
+	 11 - gui-calendar-controls (Failed)
+Errors while running CTest
+ERROR: Command '['C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\bootstrap\\Scripts\\ctest.exe', '--preset', 'dev']' returned non-zero exit status 8.

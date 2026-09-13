@@ -64,6 +64,8 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
     connect(&m_socket, &QLocalSocket::disconnected, this, [this] {
         const auto wasConnected = m_connected;
         m_connected = false; m_pollTimer.stop(); emit connectedChanged();
+        cancelGoogleOperations();
+        m_googleSync.clear(); m_googleSyncLimits.clear(); emit googleSyncChanged();
         m_googleAuthAttempt.clear();
         if (m_googleAuthBusy) setGoogleAuth({{"phase", "cancelled"}});
         m_outgoing.clear(); m_inFlight.clear(); m_buffer.clear();
@@ -87,6 +89,7 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
             }
         }
         if (m_pending.size() > 12 || m_shutdown) return;
+        if (!m_syntheticProfile && (!m_queryActivity.isValid() || m_queryActivity.elapsed() >= 500)) { pollGoogleSync(); pollMailDelivery(); }
         request("status", {}, {}, [this](auto result, bool ok) {
             if (!ok) return;
             m_diagnostics = result.toVariantMap(); emit preferencesChanged();
@@ -125,6 +128,7 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
 }
 
 MailBackend::~MailBackend() {
+    cancelGoogleOperations(false);
     // A fatal GUI exit may destroy a still-connected backend. Detach callbacks
     // before member destruction: QLocalSocket::~QLocalSocket can emit signals
     // after the pending-request maps and buffers have already been destroyed.
@@ -187,7 +191,8 @@ void MailBackend::attemptConnection() {
 
 void MailBackend::request(const QString &method, const QString &account, const QJsonObject &params, Callback callback) {
     const bool automaticRead = m_automaticReadScope && (method == "accounts" || method == "preferences_get"
-        || method == "categories" || method == "conversation" || method == "draft_get" || method == "capture_history");
+        || method == "categories" || method == "conversation" || method == "draft_get" || method == "capture_history"
+        || method == "google_sync_status" || method == "google_mail_mutation_status");
     // Synchronous cancellation/error callbacks can issue user work. The caller's
     // polling origin applies only to this read, never to a reentrant request.
     QScopedValueRollback<bool> origin(m_automaticReadScope, false);
@@ -312,7 +317,7 @@ void MailBackend::selectAccount(const QString &id) {
     ++m_generation; const int generation = m_generation;
     m_account = id; m_conversation.clear(); m_draft.clear(); m_activeDraft.clear(); m_recipientInputs.clear(); m_selected.clear(); m_draftStatus.clear(); m_pinnedRow.clear(); m_pinnedIndex = -1;
     m_query.clear(); m_category.clear(); m_filters.clear(); m_querySummary.clear(); m_captureStatus.clear(); m_folder = "inbox"; m_conversations.clear(); m_categories.clear(); m_captures.clear(); m_nextOffset = -1; m_nextCursor.clear(); m_loading = false;
-    emit accountChanged(); emit currentAccountChanged(); emit categoriesChanged(); emit queryChanged(); emit conversationChanged(); emit draftChanged(); emit conversationsChanged(); emit capturesChanged();
+    emit accountChanged(); emit currentAccountChanged(); emit categoriesChanged(); emit queryChanged(); emit conversationChanged(); emit draftChanged(); emit conversationsChanged(); emit capturesChanged(); emit mailDeliveryChanged();
     request("view_get", id, {}, [this, id, generation](auto result, bool ok) {
         if (ok) {
             auto latest = result["view"].toObject().toVariantMap();
@@ -345,7 +350,7 @@ void MailBackend::setQuery(const QString &value) {
     m_query = value; m_pinnedRow.clear(); m_pinnedIndex = -1; ++m_listGeneration; remember("query", value); emit queryChanged(); m_searchTimer.start();
 }
 void MailBackend::setFolder(const QString &value) {
-    if (value != "inbox" && value != "sent" && value != "all" && value != "drafts") return;
+    if (value != "inbox" && value != "sent" && value != "all" && value != "drafts" && value != "trash") return;
     if (m_folder == value) return;
     m_queryActivity.start();
     m_folder = value; m_pinnedRow.clear(); m_pinnedIndex = -1;
@@ -470,7 +475,7 @@ void MailBackend::selectConversationInternal(const QString &id, bool review, QVa
     if (id == m_selected && m_activeDraft.isEmpty()) { if (review) loadConversation(false, true); return; }
     ++m_generation; m_selected = id; m_activeDraft.clear(); m_recipientInputs.clear(); m_conversation.clear(); m_draft.clear(); m_draftStatus.clear();
     remember("selectedDraft", "");
-    remember("selected", id); remember("readerY", 0); emit conversationChanged(); emit draftChanged();
+    remember("selected", id); remember("readerY", 0); emit conversationChanged(); emit draftChanged(); emit mailDeliveryChanged();
     loadConversation(true, review);
 }
 
@@ -481,7 +486,7 @@ void MailBackend::loadConversation(bool loadDraft, bool reviewOnLoad) {
         if (!ok || id != m_selected || account != m_account || generation != m_generation) return;
         const auto data = result.toVariantMap();
         if (m_conversation != data) { m_conversation = data; emit conversationChanged(); }
-        if (reviewOnLoad) {
+        if (reviewOnLoad && accountCapability(account, "mail_write")) {
             const auto members = result["messages"].toArray();
             if (std::any_of(members.cbegin(), members.cend(), [](auto m) { return m.toObject()["unread"].toBool(); }))
                 mutateConversation("flag", {{"read", true}});
@@ -507,6 +512,7 @@ void MailBackend::flag(const QString &name, bool value) {
 }
 void MailBackend::mutateConversation(const QString &method, QJsonObject params) {
     if (m_conversation.isEmpty() || m_mutatingConversation) return;
+    if (!accountCapability(m_account, "mail_write")) { fail("Reconnect Google with Mail access to change this conversation."); return; }
     params["request_id"] = uuid(); params["id"] = m_selected;
     params["message_ids"] = QJsonArray::fromVariantList(m_conversation["message_ids"].toList());
     params["expected_revision"] = m_conversation["revision"].toLongLong();
@@ -515,6 +521,13 @@ void MailBackend::mutateConversation(const QString &method, QJsonObject params) 
     request(method, account, params, [this, id, account, method](auto result, bool ok) {
         m_mutatingConversation = false; emit mutationChanged();
         if (!ok) cancelShutdown();
+        if (ok && !m_syntheticProfile && result["delivery"].isObject()) {
+            const auto key = qMakePair(account, id);
+            m_mailDelivery[key] = result["delivery"].toObject().toVariantMap();
+            m_mailDeliveryOrder.removeAll(key); m_mailDeliveryOrder.append(key);
+            while (m_mailDeliveryOrder.size() > 128) m_mailDelivery.remove(m_mailDeliveryOrder.takeFirst());
+            if (id == m_selected && account == m_account) emit mailDeliveryChanged();
+        }
         if (ok && id == m_selected && account == m_account) {
             m_conversation = result.toVariantMap();
             if (!m_pinnedRow.isEmpty()) {
@@ -546,6 +559,10 @@ void MailBackend::setRead(bool read) { flag("read", read); }
 void MailBackend::setStarred(bool starred) { flag("starred", starred); }
 void MailBackend::setCategoryMembership(const QString &categoryId, bool present) {
     mutateConversation("set_category", {{"category_id", categoryId}, {"present", present}});
+}
+void MailBackend::fileConversation(const QString &action) {
+    if (m_syntheticProfile || (action != "archive" && action != "trash" && action != "restore")) return;
+    mutateConversation("mail_filing", {{"action", action}});
 }
 
 void MailBackend::editDraft(const QString &body) {
@@ -768,6 +785,7 @@ void MailBackend::shutdown() {
         cancelShutdown(); fail("Unsaved changes remain here. Reconnect before closing to save them."); return;
     }
     for (const auto &account : m_viewDirty.values()) saveView(account);
+    cancelGoogleOperations();
     savePreferences(); saveDraft(); finishShutdown();
 }
 void MailBackend::finishShutdown() {

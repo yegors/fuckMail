@@ -13,6 +13,16 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         vec!["google", "calendar-write", "--params-file", "absent.json"],
         vec!["google", "calendar-reconcile", "request"],
         vec!["google", "calendar-operation", "request"],
+        vec!["google", "calendar-resume", "request"],
+        vec![
+            "google",
+            "calendar-abandon",
+            "request",
+            "--expected-revision",
+            "1",
+        ],
+        vec!["google", "labels"],
+        vec!["google", "labels-refresh"],
         vec!["mail", "delivery"],
         vec!["mail", "filing", "thread", "--action", "delete"],
     ] {
@@ -32,6 +42,11 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         "calendar-write",
         "calendar-reconcile",
         "calendar-operation",
+        "calendar-resume",
+        "calendar-abandon",
+        "labels",
+        "labels-refresh",
+        "category-bind",
     ] {
         let output = Command::new(env!("CARGO_BIN_EXE_fm"))
             .args([
@@ -64,6 +79,118 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         !absent.exists(),
         "missing Calendar input must fail before storage starts"
     );
+}
+
+#[test]
+fn label_pagination_and_binding_require_explicit_unambiguous_choices_before_storage() {
+    let root = tempfile::tempdir().unwrap();
+    let absent = root.path().join("not-created");
+    for tail in [
+        vec!["labels", "--after", "Label_1"],
+        vec!["labels", "--limit", "101"],
+        vec![
+            "category-bind",
+            "category",
+            "Label_1",
+            "--expected-catalog-revision",
+            "1",
+            "--request-id",
+            "bind",
+        ],
+        vec![
+            "category-bind",
+            "category",
+            "Label_1",
+            "--expected-catalog-revision",
+            "1",
+            "--request-id",
+            "bind",
+            "--create-name",
+            "Name",
+            "--unmapped",
+        ],
+        vec![
+            "category-bind",
+            "category",
+            "Label_1",
+            "--expected-catalog-revision",
+            "1",
+            "--request-id",
+            "bind",
+            "--unmapped",
+            "--expected-provider-label-id",
+            "Old",
+        ],
+        vec!["calendar-abandon", "request"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args([
+                "--profile",
+                absent.to_str().unwrap(),
+                "--account",
+                "account",
+                "google",
+            ])
+            .args(&tail)
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(2),
+            "{tail:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!absent.exists());
+    }
+    for tail in [
+        vec!["mail", "delivery", "--request-id", "request", "--help"],
+        vec![
+            "google",
+            "category-bind",
+            "category",
+            "Label_1",
+            "--expected-catalog-revision",
+            "1",
+            "--request-id",
+            "bind",
+            "--create-name",
+            "Name",
+            "--help",
+        ],
+        vec![
+            "google",
+            "category-bind",
+            "category",
+            "Label_1",
+            "--expected-catalog-revision",
+            "1",
+            "--request-id",
+            "bind",
+            "--expected-provider-label-id",
+            "Old",
+            "--help",
+        ],
+        vec![
+            "google",
+            "category-bind",
+            "category",
+            "Label_1",
+            "--expected-catalog-revision",
+            "1",
+            "--request-id",
+            "bind",
+            "--unmapped",
+            "--help",
+        ],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args(["--profile", absent.to_str().unwrap()])
+            .args(tail)
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert!(!absent.exists());
+    }
 }
 
 #[test]

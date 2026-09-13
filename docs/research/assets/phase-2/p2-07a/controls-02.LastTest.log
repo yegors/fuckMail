@@ -1,0 +1,50 @@
+Start testing: Sep 13 05:44 Eastern Daylight Time
+----------------------------------------------------------
+11/12 Testing: gui-calendar-controls
+11/12 Test: gui-calendar-controls
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-calendar-controls-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+"gui-calendar-controls" start time: Sep 13 05:44 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-rblocZ/EventEditor.qml:304:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-rblocZ/EventEditor.qml:304:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-rblocZ/GoogleLabelSetup.qml:120:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-rblocZ/GoogleLabelSetup.qml:120:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-rblocZ/EventDetails.qml:181:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-rblocZ/EventDetails.qml:181:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-rblocZ/CalendarOperations.qml:67:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-rblocZ/CalendarOperations.qml:67:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+Actual controls run without QML binding errors
+QThreadStorage: entry 3 destroyed before end of thread 0x206b5318930
+QThreadStorage: entry 2 destroyed before end of thread 0x206b5318930
+QThreadStorage: entry 1 destroyed before end of thread 0x206b5318930
+<end of output>
+Test time =   2.35 sec
+----------------------------------------------------------
+Test Failed.
+"gui-calendar-controls" end time: Sep 13 05:44 Eastern Daylight Time
+"gui-calendar-controls" time elapsed: 00:00:02
+----------------------------------------------------------
+
+12/12 Testing: gui-google-operation
+12/12 Test: gui-google-operation
+Command: "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-google-operation-test.exe"
+Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+"gui-google-operation" start time: Sep 13 05:44 Eastern Daylight Time
+Output:
+----------------------------------------------------------
+Google operation IPC checks passed: private discovery/peer identity, independent cached query, cancellation, response bounds/order/types, one-shot callbacks and callback destruction. Synthetic local IPC only; no app latency or provider claim.
+<end of output>
+Test time =   0.17 sec
+----------------------------------------------------------
+Test Passed.
+"gui-google-operation" end time: Sep 13 05:44 Eastern Daylight Time
+"gui-google-operation" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Sep 13 05:44 Eastern Daylight Time

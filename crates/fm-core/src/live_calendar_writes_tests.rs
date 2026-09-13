@@ -67,6 +67,310 @@ fn prepare(
         .unwrap()
 }
 #[test]
+fn status_projects_small_fields_without_parsing_retained_dispatch_or_accepted_source() {
+    let (_dir, mut store, account) = setup();
+    let mut req = request("edit");
+    req["fields"] = json!({"title":"PRIVATE AUTHORED TITLE"});
+    let lease = prepare(&mut store, &account, req, Some(event()));
+    store.db.execute("UPDATE calendar_write_operations SET state='accepted',dispatch_json='deliberately-not-json',outcome_json='deliberately-not-json' WHERE account=?1 AND request_id='edit'",[&account]).unwrap();
+    let result = store.calendar_live_status(&account, "edit").unwrap();
+    assert_eq!(result["target"], lease.dispatch["target"]);
+    assert_eq!(result["outcome"], json!({"kind":"accepted"}));
+    assert_eq!(result["kind"], "edit");
+    assert!(result.to_string().len() < 512);
+    assert!(!result.to_string().contains("PRIVATE"));
+    assert!(
+        store.calendar_live_operation(&account, "edit").is_err(),
+        "the retained worker source really is unreadable in this projection fixture"
+    );
+    assert_eq!(
+        store
+            .calendar_live_status("foreign", "edit")
+            .unwrap_err()
+            .code,
+        "not_found"
+    );
+}
+
+#[test]
+fn live_operation_history_pages_all_states_and_sanitizes_outcomes_without_sources() {
+    let (_dir, mut store, account) = setup();
+    let states = [
+        "prepared",
+        "ready",
+        "in_flight",
+        "unknown",
+        "conflict",
+        "rejected",
+        "abandoned",
+        "accepted",
+        "ready",
+        "acknowledged",
+        "acknowledged",
+    ];
+    for (index, state) in states.iter().enumerate() {
+        let id = format!("op-{index}");
+        let request = json!({"request_id":id,"kind":"create","calendar_id":CAL,"fields":{"title":"PRIVATE TITLE","start":"2026-09-12","end":"2026-09-13","all_day":true,"time_zone":"UTC"}});
+        store.calendar_live_prepare(&account, &request).unwrap();
+        let outcome = match *state {
+            "ready" => {
+                json!({"kind":"undispatched_cooldown","retry_after_secs":60,"source":"PRIVATE BODY"})
+            }
+            "rejected" => {
+                json!({"kind":"rejected","code":"permission_denied","message":"PRIVATE PROVIDER ERROR"})
+            }
+            "abandoned" => json!({"kind":"rejected","code":"PRIVATE PROVIDER ERROR"}),
+            _ => json!({"kind":"accepted","source":{"description":"PRIVATE BODY"}}),
+        };
+        let receipt =
+            (*state == "acknowledged").then(|| json!({"cache_published":false}).to_string());
+        store.db.execute("UPDATE calendar_write_operations SET state=?3,operation_revision=?4,dispatch_json='deliberately-not-json',outcome_json=?5,result_json=?6 WHERE account=?1 AND request_id=?2",params![account,id,state,index as i64,serde_json::to_string(&outcome).unwrap(),receipt]).unwrap();
+    }
+    store.db.execute("INSERT INTO calendar_write_operations(account,request_id,fingerprint,intent_json) VALUES(?1,'local-only','fixture','{\"public_fingerprint\":\"fixture\"}')",[&account]).unwrap();
+    let mut cursor = Value::Null;
+    let mut all = Vec::new();
+    loop {
+        let page = store
+            .calendar_operations(&account, &json!({"limit":3,"cursor":cursor}))
+            .unwrap();
+        assert!(page["operations"].as_array().unwrap().len() <= 3);
+        assert!(page.to_string().len() < 4096);
+        assert!(!page.to_string().contains("PRIVATE"));
+        all.extend(page["operations"].as_array().unwrap().iter().cloned());
+        cursor = page["continuation"].clone();
+        if cursor.is_null() {
+            break;
+        }
+    }
+    assert_eq!(
+        all.iter()
+            .map(|row| row["request_id"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec![
+            "op-8", "op-7", "op-6", "op-5", "op-4", "op-3", "op-2", "op-1", "op-0", "op-10", "op-9"
+        ]
+    );
+    assert!(all
+        .iter()
+        .all(|row| row["local_only"] == false && row["target"]["account"] == account));
+    assert_eq!(
+        all[0]["outcome"],
+        json!({"kind":"undispatched_cooldown","retry_after_secs":60})
+    );
+    assert_eq!(all[2]["outcome"], json!({"kind":"rejected"}));
+    assert_eq!(
+        all[3]["outcome"],
+        json!({"kind":"rejected","code":"permission_denied"})
+    );
+    assert_eq!(
+        all[9]["outcome"],
+        json!({"kind":"accepted","cache_published":false})
+    );
+    assert_eq!(
+        store.calendar_operations("foreign", &json!({})).unwrap()["operations"],
+        json!([])
+    );
+    for invalid in [
+        json!({"limit":0}),
+        json!({"limit":101}),
+        json!({"cursor":{"acknowledged":false,"before_id":0}}),
+    ] {
+        assert_eq!(
+            store
+                .calendar_operations(&account, &invalid)
+                .unwrap_err()
+                .code,
+            "invalid_request"
+        );
+    }
+}
+
+#[test]
+fn resume_loads_only_bounded_immutable_unsent_request_and_never_changes_state() {
+    let (dir, mut store, account) = setup();
+    let mut request = request("edit");
+    request["fields"] = json!({"title":"Retained edit"});
+    store.calendar_live_prepare(&account, &request).unwrap();
+    assert_eq!(
+        store.calendar_live_request(&account, "edit").unwrap(),
+        request
+    );
+    drop(store);
+    let mut store = Store::open_live(dir.path()).unwrap();
+    assert_eq!(
+        store.calendar_live_request(&account, "edit").unwrap(),
+        request
+    );
+    assert_eq!(
+        store.calendar_live_status(&account, "edit").unwrap()["state"],
+        "prepared"
+    );
+    let epoch = store.calendar_checkpoint(&account, CAL).unwrap()["permission_epoch"]
+        .as_i64()
+        .unwrap();
+    let before = store
+        .calendar_live_stage(&account, "edit", 0, 1, epoch, Some(event()))
+        .unwrap();
+    store.db.execute("UPDATE calendar_write_operations SET dispatch_json='deliberately-not-json' WHERE account=?1 AND request_id='edit'",[&account]).unwrap();
+    assert_eq!(
+        store.calendar_live_request(&account, "edit").unwrap(),
+        request
+    );
+    assert_eq!(
+        store.calendar_live_status(&account, "edit").unwrap(),
+        before
+    );
+    drop(store);
+    let store = Store::open_live(dir.path()).unwrap();
+    assert_eq!(
+        store.calendar_live_request(&account, "edit").unwrap(),
+        request
+    );
+    for state in [
+        "in_flight",
+        "unknown",
+        "accepted",
+        "acknowledged",
+        "conflict",
+        "rejected",
+        "abandoned",
+    ] {
+        store.db.execute("UPDATE calendar_write_operations SET state=?2 WHERE account=?1 AND request_id='edit'",params![account,state]).unwrap();
+        assert_eq!(
+            store
+                .calendar_live_request(&account, "edit")
+                .unwrap_err()
+                .code,
+            "calendar_operation_pending"
+        );
+    }
+    let oversized =
+        json!({"request":{"request_id":"edit","fields":{"description":"x".repeat(262144)}}});
+    store.db.execute("UPDATE calendar_write_operations SET state='ready',intent_json=?2 WHERE account=?1 AND request_id='edit'",params![account,oversized.to_string()]).unwrap();
+    assert_eq!(
+        store
+            .calendar_live_request(&account, "edit")
+            .unwrap_err()
+            .code,
+        "invalid_request"
+    );
+    assert_eq!(
+        store
+            .calendar_live_request("foreign", "edit")
+            .unwrap_err()
+            .code,
+        "not_found"
+    );
+}
+
+#[test]
+fn live_action_projection_matches_supported_writes_roles_and_private_sources() {
+    for role in [
+        Access::Owner,
+        Access::Writer,
+        Access::Reader,
+        Access::WriterWithoutPrivateAccess,
+    ] {
+        let (_dir, mut store, account) = setup();
+        store.preferences_save(&json!({"request_id":"display-zone","expected_revision":0,"preferences":{"calendar_display_time_zone":"UTC"}})).unwrap();
+        let epoch = store.calendar_checkpoint(&account, CAL).unwrap()["permission_epoch"]
+            .as_i64()
+            .unwrap();
+        store
+            .calendar_observe_permission(&account, CAL, 1, epoch, role, "UTC")
+            .unwrap();
+        let mut items = Vec::new();
+        for (id, extra) in [
+            ("ordinary", json!({})),
+            (
+                "invitation",
+                json!({"attendees":[{"self":true,"email":CAL,"responseStatus":"needsAction"}]}),
+            ),
+            (
+                "partial-self",
+                json!({"attendeesOmitted":true,"attendees":[{"self":true,"email":CAL.to_uppercase(),"responseStatus":"tentative"}]}),
+            ),
+            ("partial-missing", json!({"attendeesOmitted":true})),
+            (
+                "other-self",
+                json!({"attendees":[{"self":true,"email":"other@example.test"}]}),
+            ),
+            (
+                "duplicate-self",
+                json!({"attendees":[{"self":true,"email":CAL},{"self":true,"email":CAL}]}),
+            ),
+            ("locked", json!({"locked":true})),
+            ("special", json!({"eventType":"focusTime"})),
+            (
+                "recurring",
+                json!({"recurrence":["RRULE:FREQ=DAILY;COUNT=2"]}),
+            ),
+            ("no-etag", json!({"etag":""})),
+            (
+                "foreign-organizer",
+                json!({"organizer":{"email":"other@example.test","self":false}}),
+            ),
+            (
+                "private",
+                json!({"visibility":"private","summary":"PRIVATE CAPABILITY TITLE"}),
+            ),
+        ] {
+            let mut source = event();
+            source["id"] = id.into();
+            source["summary"] = id.into();
+            for (key, value) in extra.as_object().unwrap() {
+                source[key] = value.clone();
+            }
+            items.push(source);
+        }
+        publish(&mut store, &account, items, CalendarSyncMode::Full);
+        let writable = role != Access::Reader;
+        let sources = store.calendar_sources().unwrap();
+        assert_eq!(sources["calendars"][0]["can_create"], writable);
+        let result = store
+            .calendar_combined(&json!({"from":"2026-09-12","to":"2026-09-14"}))
+            .unwrap();
+        let rows = result["events"].as_array().unwrap();
+        for row in rows {
+            if row["busy_only"] == true {
+                assert_eq!(row["can_edit"], false);
+                assert_eq!(row["can_delete"], false);
+                assert_eq!(row["can_rsvp"], false);
+                assert!(row.get("self_response").is_none());
+                continue;
+            }
+            let id = row["event_id"].as_str().unwrap();
+            let edit = writable && matches!(id, "ordinary" | "private");
+            let rsvp = writable && matches!(id, "invitation" | "partial-self");
+            assert_eq!(row["can_edit"], edit, "edit role={role:?} id={id}");
+            assert_eq!(row["can_delete"], edit, "delete role={role:?} id={id}");
+            assert_eq!(row["can_rsvp"], rsvp, "RSVP role={role:?} id={id}");
+        }
+        if matches!(role, Access::Reader | Access::WriterWithoutPrivateAccess) {
+            assert!(!result.to_string().contains("PRIVATE CAPABILITY TITLE"));
+            assert!(rows.iter().any(|row| row["busy_only"] == true));
+        }
+        assert!(rows
+            .iter()
+            .any(|row| row["event_id"] == "partial-self" && row["self_response"] == "tentative"));
+        store.db.execute("UPDATE calendar_sync_state SET retained_errors=1 WHERE account=?1 AND calendar_id=?2",params![account,CAL]).unwrap();
+        assert_eq!(
+            store.calendar_sources().unwrap()["calendars"][0]["can_create"],
+            false
+        );
+        let incomplete = store
+            .calendar_combined(&json!({"from":"2026-09-12","to":"2026-09-14"}))
+            .unwrap();
+        assert!(incomplete["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|row| row["can_edit"] == false
+                && row["can_delete"] == false
+                && row["can_rsvp"] == false));
+    }
+}
+#[test]
 fn changed_fields_preserve_unedited_provider_data_and_replay_does_not_dispatch() {
     let (_dir, mut store, account) = setup();
     let mut req = request("edit");

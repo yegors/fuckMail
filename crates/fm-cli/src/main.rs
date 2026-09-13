@@ -152,6 +152,40 @@ enum Google {
     CalendarReconcile { request_id: String },
     /// Inspect one retained Calendar outcome without provider access.
     CalendarOperation { request_id: String },
+    /// Resume an operation that has never dispatched; requires an active sync session.
+    CalendarResume { request_id: String },
+    /// Abandon retained local intent; does not undo a Google change or contact Google.
+    CalendarAbandon {
+        request_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+    },
+    /// Browse cached account labels; pagination is bound to the catalog revision.
+    Labels {
+        #[arg(long,default_value_t=100,value_parser=clap::value_parser!(u32).range(1..=100))]
+        limit: u32,
+        #[arg(long, requires = "expected_catalog_revision")]
+        after: Option<String>,
+        #[arg(long)]
+        expected_catalog_revision: Option<u64>,
+    },
+    /// Refresh the label catalog through the currently active owned sync runtime.
+    LabelsRefresh,
+    /// Bind an existing Google label to a local category; never creates provider labels.
+    CategoryBind {
+        category_id: String,
+        provider_label_id: String,
+        #[arg(long)]
+        expected_catalog_revision: u64,
+        #[arg(long)]
+        request_id: String,
+        #[arg(long,conflicts_with_all=["expected_provider_label_id","unmapped"],required_unless_present_any=["expected_provider_label_id","unmapped"])]
+        create_name: Option<String>,
+        #[arg(long,conflicts_with_all=["create_name","unmapped"],required_unless_present_any=["create_name","unmapped"])]
+        expected_provider_label_id: Option<String>,
+        #[arg(long,conflicts_with_all=["create_name","expected_provider_label_id"],required_unless_present_any=["create_name","expected_provider_label_id"])]
+        unmapped: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -167,7 +201,10 @@ enum Mail {
         request_id: Option<String>,
     },
     /// Inspect pending, uncertain and failed Google state changes without provider access.
-    Delivery,
+    Delivery {
+        #[arg(long)]
+        request_id: Option<String>,
+    },
     List {
         #[arg(long)]
         query: Option<String>,
@@ -592,6 +629,78 @@ async fn run(args: &Args) -> Result<(), Failure> {
             command: Google::SyncStop,
         } => client.call("google_sync_stop", scope, json!({})).await?,
         Command::Google {
+            command:
+                Google::Labels {
+                    limit,
+                    after,
+                    expected_catalog_revision,
+                },
+        } => {
+            let mut params = json!({"limit":limit});
+            if let Some(after) = after {
+                params["after"] = json!(after);
+            }
+            if let Some(revision) = expected_catalog_revision {
+                params["expected_catalog_revision"] = json!(revision);
+            }
+            client.call("google_labels", scope, params).await?
+        }
+        Command::Google {
+            command: Google::LabelsRefresh,
+        } => {
+            client
+                .call("google_labels_refresh", scope, json!({}))
+                .await?
+        }
+        Command::Google {
+            command:
+                Google::CategoryBind {
+                    category_id,
+                    provider_label_id,
+                    expected_catalog_revision,
+                    request_id,
+                    create_name,
+                    expected_provider_label_id,
+                    unmapped,
+                },
+        } => {
+            let mut params = json!({"category_id":category_id,"provider_label_id":provider_label_id,"expected_catalog_revision":expected_catalog_revision,"request_id":request_id});
+            if let Some(name) = create_name {
+                params["create_name"] = json!(name);
+            } else if *unmapped {
+                params["expected_provider_label_id"] = Value::Null;
+            } else {
+                params["expected_provider_label_id"] = json!(expected_provider_label_id);
+            }
+            client.call("google_category_bind", scope, params).await?
+        }
+        Command::Google {
+            command: Google::CalendarResume { request_id },
+        } => {
+            client
+                .call(
+                    "google_calendar_resume",
+                    scope,
+                    json!({"request_id":request_id}),
+                )
+                .await?
+        }
+        Command::Google {
+            command:
+                Google::CalendarAbandon {
+                    request_id,
+                    expected_revision,
+                },
+        } => {
+            client
+                .call(
+                    "google_calendar_abandon",
+                    scope,
+                    json!({"request_id":request_id,"expected_revision":expected_revision}),
+                )
+                .await?
+        }
+        Command::Google {
             command: Google::CalendarWrite { .. },
         } => {
             client
@@ -911,9 +1020,13 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 }
                 client.call("flag", scope, params).await?
             }
-            Mail::Delivery => {
+            Mail::Delivery { request_id } => {
+                let params = match request_id {
+                    Some(id) => json!({"request_id":id}),
+                    None => json!({}),
+                };
                 client
-                    .call("google_mail_mutation_status", scope, json!({}))
+                    .call("google_mail_mutation_status", scope, params)
                     .await?
             }
             Mail::Filing {
@@ -1142,6 +1255,12 @@ fn emit(args: &Args, reply: &Value) -> Result<(), Failure> {
     let result = &reply["result"];
     let write = if args.json {
         writeln!(out, "{reply}")
+    } else if result["configured"].is_boolean() && result["accounts"].is_array() {
+        writeln!(
+            out,
+            "{}",
+            serde_json::to_string_pretty(result).unwrap_or_else(|_| "{}".into())
+        )
     } else if let Some(accounts) = result["accounts"].as_array() {
         for a in accounts {
             writeln!(
@@ -1181,6 +1300,20 @@ fn emit(args: &Args, reply: &Value) -> Result<(), Failure> {
                 msg["sender_email"].as_str().unwrap_or(""),
                 msg["sent_at"].as_str().unwrap_or(""),
                 msg["text"].as_str().unwrap_or("")
+            )?;
+        }
+        if let Some(delivery) = result["delivery"].as_object() {
+            writeln!(
+                out,
+                "Google delivery: {} · request {}",
+                delivery
+                    .get("state")
+                    .and_then(Value::as_str)
+                    .unwrap_or("pending"),
+                delivery
+                    .get("request_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
             )?;
         }
         Ok(())

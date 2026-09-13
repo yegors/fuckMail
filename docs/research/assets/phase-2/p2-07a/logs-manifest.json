@@ -1,0 +1,106 @@
+{
+  "recorded_at_utc": "2026-09-13T10:00:34.5243522Z",
+  "scope": "P2-07A local test attempts and final native source/binary evidence; failures retained.",
+  "files": [
+    {
+      "path": "clippy-01.log",
+      "bytes": 837,
+      "sha256": "1c5ad8d2cca293efe56b2a4bb8437283cfc71e4c333cfab3aad7a41fd72a80bc"
+    },
+    {
+      "path": "controls-01.log",
+      "bytes": 2205,
+      "sha256": "66ebc7987b63d97fd31d3cdc6f63cb189015c16419bba961680291525b3bb4c1"
+    },
+    {
+      "path": "controls-02.LastTest.log",
+      "bytes": 3912,
+      "sha256": "f1b245e645d072ec012e9f920156eef8300861895edaf728aaa05dbcf070b229"
+    },
+    {
+      "path": "controls-02.log",
+      "bytes": 3618,
+      "sha256": "819e64ebb4a6dc28e2ecf852264586670b256740e43c8aeb2c9463bd53aae6d6"
+    },
+    {
+      "path": "controls-agent-01.log",
+      "bytes": 2162,
+      "sha256": "8a67c0f286911f6f140ae3d5b8113d14fe705c18ba176cb89097bbc30fa5e6d2"
+    },
+    {
+      "path": "controls-agent-02.log",
+      "bytes": 4066,
+      "sha256": "8137abf701eec27db256565479711f0e3c96b8fbc62e47bc18bf3f3eca70d792"
+    },
+    {
+      "path": "controls-agent-03.log",
+      "bytes": 228,
+      "sha256": "bae539a44f429b841299ec18f3f81340a83b3c9aaef98b918072e22fb73e694c"
+    },
+    {
+      "path": "format-01.log",
+      "bytes": 21,
+      "sha256": "19bdce98a40175991d74dafdf2b4d66b8a09cd16eb5cf1d50bc32cb9526598af"
+    },
+    {
+      "path": "full-dev-01.LastTest.log",
+      "bytes": 69131,
+      "sha256": "b404b10d7cfe7567e0d984073620b8cc0dcca7b9e0f3b6fd0e4326e7002f84c5"
+    },
+    {
+      "path": "full-dev-01.log",
+      "bytes": 4843,
+      "sha256": "f433451d278fa87f74499542f3dcbd222005aeda305900f2d252978858bad5ae"
+    },
+    {
+      "path": "native-03.LastTest.log",
+      "bytes": 26479,
+      "sha256": "9d2a27cb087c6b0acda8362cf28d3240038e51499af8bcfe88e7a2a1ba52410c"
+    },
+    {
+      "path": "native-03.log",
+      "bytes": 1564,
+      "sha256": "4886e2c874ccb3fb6dc9fffa9d4f85ec228b4ec9bde4668a351f8fbf6ff1e55c"
+    },
+    {
+      "path": "native-build-01.log",
+      "bytes": 10965,
+      "sha256": "e4b85029347d1091d06c538458579a27d99ccd97a1513b2a9b2e6e7c7b05b2a9"
+    },
+    {
+      "path": "native-build-02.log",
+      "bytes": 4727,
+      "sha256": "96f171f83a1c0b7ce5a708da7c7e0098d10ea2a5db5aaf1a231c7118e431706e"
+    },
+    {
+      "path": "native-build-03.log",
+      "bytes": 4038,
+      "sha256": "35163d4b2e4b2c7d7de6e32d07a79df9a63c1775f7b31c60296fada615f4b8d7"
+    },
+    {
+      "path": "native-manifest.json",
+      "bytes": 2458,
+      "sha256": "2c2d3dfca059a70254c1cabca98eba4ffec6a30779e62658d18daefb86dfa7ce"
+    },
+    {
+      "path": "rust-01.log",
+      "bytes": 37077,
+      "sha256": "7fe6c8c9f628cde349616877f39afe0f0ffc45297108755d597b06dc0a97a30d"
+    },
+    {
+      "path": "source-checkpoint-02.json",
+      "bytes": 42115,
+      "sha256": "c481984a5f5aa3f814c1fa3276c215751528226fc5fb5eab26a0c2cec9afd586"
+    },
+    {
+      "path": "source-checkpoint-03.json",
+      "bytes": 42127,
+      "sha256": "914f4403373a7504bd8e34ff80760d7cfbb5d0f49d1ce84af0da9b13f289b38d"
+    },
+    {
+      "path": "source-checkpoint.json",
+      "bytes": 41899,
+      "sha256": "2799e8f7073ef68f3c448eef9291f748615f26edce4c7844a0150551d5930385"
+    }
+  ]
+}

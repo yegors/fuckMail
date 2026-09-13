@@ -486,6 +486,16 @@ impl HttpTransport for ParkedMailHttp {
                 request.headers()["authorization"],
                 "Bearer synthetic-cached-access"
             );
+            // Label discovery is a separate owned worker. Keep these lifecycle
+            // barriers tied to mail acquisition, as before the labels lane.
+            if suffix == "labels" {
+                return Ok(HttpResponse {
+                    status: 200,
+                    body: br#"{"labels":[]}"#.to_vec(),
+                    retry_after_secs: None,
+                    etag: None,
+                });
+            }
             let body = if suffix == "profile" {
                 json!({"emailAddress":"reader@example.test","messagesTotal":0,"threadsTotal":0,"historyId":"100"})
             } else if suffix.starts_with("messages?") {
@@ -710,6 +720,32 @@ async fn two_owner_lifecycle(disconnect: bool) {
     let cli = CancellationToken::new();
     assert_eq!(h.start("gui", gui.clone()).await["started"], true);
     h.http.wait_calls(1).await;
+    let owned = h
+        .runtime
+        .handle(
+            "gui",
+            gui.clone(),
+            "google_sync_status",
+            Some(&h.account),
+            json!({}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(owned["accounts"][0]["owned"], true);
+    assert_eq!(owned["limits"]["gmail_project_units_per_minute"], 100_000);
+    let observer = h
+        .runtime
+        .handle(
+            "observer",
+            CancellationToken::new(),
+            "google_sync_status",
+            Some(&h.account),
+            json!({}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(observer["accounts"][0]["owned"], false);
+    assert_eq!(observer["accounts"][0]["active"], true);
     assert_eq!(h.start("cli", cli.clone()).await["started"], false);
     assert_eq!(h.start("cli", cli.clone()).await["started"], false);
     h.wait_owner_count(2).await;
@@ -719,6 +755,18 @@ async fn two_owner_lifecycle(disconnect: bool) {
         assert_eq!(h.release("gui").await["active"], true);
     }
     h.wait_owner_count(1).await;
+    let released = h
+        .runtime
+        .handle(
+            "gui",
+            CancellationToken::new(),
+            "google_sync_status",
+            Some(&h.account),
+            json!({}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(released["accounts"][0]["owned"], false);
     assert_eq!(h.http.cancellations.load(Ordering::SeqCst), 0);
     h.http.responses.add_permits(1);
     // This is actual new worker HTTP after the first owner has left, proving

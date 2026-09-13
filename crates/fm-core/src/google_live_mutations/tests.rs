@@ -124,6 +124,103 @@ fn submit(decision: MailMutationDecision) -> MailMutationAttempt {
 }
 
 #[test]
+fn exact_delivery_status_counts_every_member_outside_bounded_account_previews() {
+    let mut f = Fixture::new();
+    for index in 0..21 {
+        f.command(
+            "flag",
+            &format!("older-{index}"),
+            json!({"read":index%2==0}),
+        )
+        .unwrap();
+    }
+    f.command("flag", "target", json!({"read":true})).unwrap();
+    // Delivery evidence outlives source rows. Populate a larger frozen snapshot
+    // to require exact grouping beyond either account preview's twenty rows.
+    for index in 0..64 {
+        f.store.db.execute("INSERT INTO google_mail_mutations(account,request_id,message_id,remote_id,action,desired_json,state) SELECT account,request_id,?3,remote_id,action,desired_json,'confirmed' FROM google_mail_mutations WHERE account=?1 AND request_id=?2 AND message_id=?4",params![f.account,"target",format!("retained-{index}"),f.message]).unwrap();
+    }
+    let aggregate = f.store.google_mail_mutation_status(&f.account).unwrap();
+    assert_eq!(aggregate.as_object().unwrap().len(), 3);
+    assert_eq!(aggregate["pending"].as_array().unwrap().len(), 20);
+    assert!(!aggregate["pending"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|row| row["request_id"] == "target"));
+    let exact = f
+        .store
+        .google_mail_mutation_request_status(&f.account, "target")
+        .unwrap();
+    assert_eq!(
+        exact,
+        json!({"request_id":"target","state":"pending","counts":{"confirmed":64,"pending":1},"total":65})
+    );
+    assert_eq!(
+        f.store
+            .handle(
+                "google_mail_mutation_status",
+                Some(&f.account),
+                json!({"request_id":"target"})
+            )
+            .unwrap(),
+        exact
+    );
+    for (stored, reported) in [
+        ("in_flight", "unknown"),
+        ("reconcile", "unknown"),
+        ("failed", "failed"),
+        ("superseded", "superseded"),
+        ("confirmed", "confirmed"),
+    ] {
+        f.store.db.execute("UPDATE google_mail_mutations SET state=?3 WHERE account=?1 AND request_id='target' AND message_id=?2",params![f.account,f.message,stored]).unwrap();
+        let exact = f
+            .store
+            .google_mail_mutation_request_status(&f.account, "target")
+            .unwrap();
+        assert_eq!(exact["state"], reported);
+        assert_eq!(exact["total"], 65);
+        assert!(!exact.to_string().contains("retained-"));
+    }
+    let path = f.directory.path().to_owned();
+    drop(f.store);
+    let store = Store::open_live(&path).unwrap();
+    assert_eq!(
+        store
+            .google_mail_mutation_request_status(&f.account, "target")
+            .unwrap()["state"],
+        "confirmed"
+    );
+}
+
+#[test]
+fn exact_delivery_status_refuses_missing_non_mail_and_foreign_requests() {
+    let mut f = Fixture::new();
+    f.command("flag", "mail", json!({"read":true})).unwrap();
+    f.store.db.execute("INSERT INTO operations(account,request_id,fingerprint,result_json) VALUES(?1,'not-mail','synthetic','{}')",[&f.account]).unwrap();
+    for (account, request) in [
+        (&f.account[..], "missing"),
+        (&f.account[..], "not-mail"),
+        ("foreign", "mail"),
+    ] {
+        assert_eq!(
+            f.store
+                .google_mail_mutation_request_status(account, request)
+                .unwrap_err()
+                .code,
+            "not_found"
+        );
+    }
+    assert_eq!(
+        f.store
+            .google_mail_mutation_request_status(&f.account, "")
+            .unwrap_err()
+            .code,
+        "invalid_request"
+    );
+}
+
+#[test]
 fn offline_snapshot_and_exact_receipt_survive_restart_and_new_arrival() {
     let mut f = Fixture::new();
     f.store

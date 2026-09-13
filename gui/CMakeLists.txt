@@ -2,6 +2,9 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     main.cpp
     MailBackend.cpp
     GoogleBackend.cpp
+    GoogleLabels.cpp
+    GoogleOperation.cpp
+    GoogleOperation.h
     MailBackend.h
     Phase1Backend.cpp
     CompositionBackend.cpp
@@ -36,7 +39,7 @@ set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(fuckmail-gui
     URI FuckMail
     VERSION 1.0
-    QML_FILES Main.qml Theme.qml FmButton.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmComboBox.qml MailView.qml MailFilters.qml SearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml TodayStrip.qml
+    QML_FILES Main.qml Theme.qml FmButton.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmComboBox.qml MailView.qml MailFilters.qml SearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleLabelSetup.qml TodayStrip.qml
     RESOURCES fonts/Geist-Regular.ttf fonts/Geist-Medium.ttf fonts/Geist-SemiBold.ttf fonts/LICENSE-Geist.txt
 )
 target_link_libraries(fuckmail-gui PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
@@ -83,4 +86,23 @@ if(BUILD_TESTING)
     target_link_libraries(gui-calendar-layout-test PRIVATE Qt6::Core)
     add_test(NAME gui-calendar-layout COMMAND gui-calendar-layout-test)
     set_tests_properties(gui-calendar-layout PROPERTIES TIMEOUT 10)
+endif()
+if(BUILD_TESTING)
+    add_executable(gui-calendar-controls-test CalendarControlsTest.cpp)
+    set_target_properties(gui-calendar-controls-test PROPERTIES AUTOMOC ON)
+    target_link_libraries(gui-calendar-controls-test PRIVATE Qt6::Quick Qt6::QuickControls2)
+    target_compile_definitions(gui-calendar-controls-test PRIVATE FM_GUI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME gui-calendar-controls COMMAND gui-calendar-controls-test)
+    set(FM_CONTROLS_TEST_ENV "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QT_FORCE_STDERR_LOGGING=1")
+    if(WIN32)
+        list(APPEND FM_CONTROLS_TEST_ENV "QT_QPA_FONTDIR=$ENV{SystemRoot}/Fonts")
+    endif()
+    set_tests_properties(gui-calendar-controls PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
+    add_executable(gui-google-operation-test GoogleOperationTest.cpp GoogleOperation.cpp IpcTrust.cpp)
+    target_link_libraries(gui-google-operation-test PRIVATE Qt6::Core Qt6::Network)
+    if(WIN32)
+        target_link_libraries(gui-google-operation-test PRIVATE advapi32)
+    endif()
+    add_test(NAME gui-google-operation COMMAND gui-google-operation-test)
+    set_tests_properties(gui-google-operation PROPERTIES TIMEOUT 30 ENVIRONMENT "QT_FORCE_STDERR_LOGGING=1")
 endif()

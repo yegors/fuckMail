@@ -62,6 +62,35 @@ pub struct SchedulerConfig {
     pub max_accounts: usize,
 }
 impl SchedulerConfig {
+    /// One shared validation boundary for saved preferences and explicit sync.
+    /// These are confirmed Console values, not published/default quotas.
+    pub fn from_confirmed_json(params: &serde_json::Value) -> Result<Self, SchedulerError> {
+        const FIELDS: [&str; 4] = [
+            "gmail_project_units_per_minute",
+            "gmail_account_units_per_minute",
+            "calendar_project_units_per_minute",
+            "calendar_account_units_per_minute",
+        ];
+        let object = params
+            .as_object()
+            .ok_or(SchedulerError::InvalidConfiguration)?;
+        if object.len() != FIELDS.len() || object.keys().any(|key| !FIELDS.contains(&key.as_str()))
+        {
+            return Err(SchedulerError::InvalidConfiguration);
+        }
+        let mut values = [0_u32; 4];
+        for (index, name) in FIELDS.iter().enumerate() {
+            values[index] = params[name]
+                .as_u64()
+                .filter(|v| (100..=100_000_000).contains(v))
+                .and_then(|v| u32::try_from(v).ok())
+                .ok_or(SchedulerError::InvalidConfiguration)?;
+        }
+        Ok(Self::new(
+            ServiceBudget::from_confirmed_limits(values[0], values[1])?,
+            ServiceBudget::from_confirmed_limits(values[2], values[3])?,
+        ))
+    }
     pub fn new(gmail: ServiceBudget, calendar: ServiceBudget) -> Self {
         Self {
             gmail,
@@ -607,6 +636,49 @@ pub fn retry_delay(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn confirmed_quota_json_has_one_exact_bounded_headroom_contract() {
+        let value = serde_json::json!({
+            "gmail_project_units_per_minute":100_000_000,
+            "gmail_account_units_per_minute":101,
+            "calendar_project_units_per_minute":105,
+            "calendar_account_units_per_minute":100
+        });
+        let parsed = SchedulerConfig::from_confirmed_json(&value).unwrap();
+        assert_eq!(parsed.gmail.project_units_per_minute, 80_000_000);
+        assert_eq!(parsed.gmail.account_units_per_minute, 80);
+        assert_eq!(parsed.calendar.project_units_per_minute, 84);
+        assert_eq!(parsed.calendar.account_units_per_minute, 80);
+        assert!(SchedulerConfig::from_confirmed_json(&serde_json::Value::Null).is_err());
+        let mut missing = value.clone();
+        missing
+            .as_object_mut()
+            .unwrap()
+            .remove("gmail_account_units_per_minute");
+        assert!(SchedulerConfig::from_confirmed_json(&missing).is_err());
+        let mut extra = value.clone();
+        extra["assumed"] = serde_json::json!(true);
+        assert!(SchedulerConfig::from_confirmed_json(&extra).is_err());
+        for rejected in [
+            serde_json::json!(99),
+            serde_json::json!(100_000_001),
+            serde_json::json!(-1),
+            serde_json::json!(100.5),
+            serde_json::json!("100"),
+            serde_json::Value::Null,
+        ] {
+            for field in value.as_object().unwrap().keys() {
+                let mut changed = value.clone();
+                changed[field] = rejected.clone();
+                assert!(
+                    SchedulerConfig::from_confirmed_json(&changed).is_err(),
+                    "{field}: {rejected}"
+                );
+            }
+        }
+    }
+
     fn account(id: &str) -> AccountId {
         AccountId::new(id).unwrap()
     }

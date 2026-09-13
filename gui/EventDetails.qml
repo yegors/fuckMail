@@ -11,6 +11,12 @@ Popup {
     property bool saving: false
     property string feedback: ""
     property var pendingResponse: ({})
+    readonly property bool live: !backend.syntheticProfile
+    property string operationState: ""
+    property double operationRevision: -1
+    readonly property bool hasPendingResponse: !!pendingResponse.request_id && operationState.length > 0
+    readonly property bool accountReady: backend.connected && (!live || (backend.accounts.length >= 0 && backend.googleSync
+        && backend.accountCapability(eventData.account || "", "calendar_write") && backend.googleSyncState(eventData.account || "").active === true))
     property bool timelineSource: false
     property string awaitedEtag: ""
     signal editRequested(var event)
@@ -39,19 +45,26 @@ Popup {
         layer.enabled: true; layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.6); shadowBlur: .8; shadowVerticalOffset: 12 }
     }
     enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180 } }
-    onOpened: { feedback = ""; pendingResponse = ({}); awaitedEtag = "" }
+    onOpened: { feedback = ""; pendingResponse = ({}); awaitedEtag = ""; operationState = ""; operationRevision = -1 }
     function openAt(event, anchor) {
+        if (saving || hasPendingResponse) return
         eventData = event
         if (anchor) { let point = anchor.mapToItem(parent, anchor.width / 2, anchor.height); originX = point.x; originY = point.y }
         open()
     }
     function respond(response) {
-        saving = true; feedback = "Saving your response locally…"
+        if (saving || !accountReady || !eventData.can_rsvp || (live && hasPendingResponse)) return
+        saving = true; feedback = live ? "Saving your response to Google Calendar…" : "Saving your response locally…"
         if (pendingResponse.response !== response || pendingResponse.expected_etag !== eventData.etag)
             pendingResponse = {account: eventData.account, kind: "rsvp", calendar_id: eventData.calendar_id,
                 event_id: eventData.event_id, expected_etag: eventData.etag, response: response,
                 request_id: "gui-rsvp-" + Date.now() + "-" + Math.floor(Math.random() * 1000000000)}
         backend.calendarWrite(pendingResponse)
+    }
+    function resolveResponse(action) {
+        if (saving || !backend.connected || !pendingResponse.request_id) return
+        saving = true; feedback = "Checking the recorded response…"
+        backend.calendarOperationAction(pendingResponse.account, pendingResponse.request_id, action, operationRevision)
     }
     Connections {
         target: backend
@@ -66,10 +79,21 @@ Popup {
         }
         function onConnectedChanged() { if (!backend.connected && details.opened && !details.saving) details.close() }
         function onCalendarWriteFinished(ok, result, error) {
-            if (!details.saving) return
+            if (!details.saving || result.account !== details.pendingResponse.account || result.request_id !== details.pendingResponse.request_id) return
             details.saving = false
-            if (ok) { details.feedback = "Response saved locally. No invitation was sent."; details.awaitedEtag = result.etag || ""; let updated = Object.assign({}, details.eventData); updated.etag = result.etag; updated.self_response = details.pendingResponse.response; details.eventData = updated }
-            else details.feedback = error + " Reopen the event to refresh its details; retry checks this same operation."
+            if (ok) {
+                details.operationState = ""; details.operationRevision = -1
+                if (details.live) { details.feedback = "Google confirmed your response. Calendar details are refreshing."; details.pendingResponse = ({}) }
+                else { details.feedback = "Response saved locally. No invitation was sent."; details.awaitedEtag = result.etag || ""; let updated = Object.assign({}, details.eventData); if (result.etag) updated.etag = result.etag; updated.self_response = details.pendingResponse.response; details.eventData = updated }
+            } else if (details.live) {
+                details.feedback = error
+                if (result.state === "abandoned" || (result.local_preflight === true && result.operation_action === "write") || (result.operation_action === "check" && result.code === "not_found")) {
+                    details.operationState = ""; details.operationRevision = -1; details.pendingResponse = ({})
+                } else {
+                    details.operationState = result.state || details.operationState || "unconfirmed"
+                    if (result.revision !== undefined) details.operationRevision = result.revision
+                }
+            } else details.feedback = error + " Reopen the event to refresh its details; retry checks this same operation."
         }
     }
     contentItem: ScrollView {
@@ -130,18 +154,42 @@ Popup {
                 RowLayout {
                     spacing: 4
                     Repeater { model: [{label: "Accept", value: "accepted"}, {label: "Maybe", value: "tentative"}, {label: "Decline", value: "declined"}]
-                        FmButton { required property var modelData; objectName: "eventRsvp-" + modelData.value; text: modelData.label; outlined: true; selected: details.eventData.self_response === modelData.value; implicitHeight: 26; font.pixelSize: Theme.fontSize(11); enabled: !details.saving && !details.awaitedEtag.length && backend.connected; onClicked: details.respond(modelData.value) }
+                        FmButton { required property var modelData; objectName: "eventRsvp-" + modelData.value; text: modelData.label; outlined: true; selected: details.eventData.self_response === modelData.value; implicitHeight: 26; font.pixelSize: Theme.fontSize(11); enabled: !details.saving && !details.awaitedEtag.length && details.accountReady && (!details.live || !details.hasPendingResponse); onClicked: details.respond(modelData.value) }
                     }
                 }
+            }
+            Text { visible: details.live && !!details.eventData.can_rsvp; text: "Your response is sent to Google. Google may notify the organizer."; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            RowLayout {
+                visible: details.live && details.hasPendingResponse; Layout.fillWidth: true; spacing: 6
+                FmButton {
+                    objectName: "eventRsvpResolve"; text: ["prepared", "ready"].indexOf(details.operationState) >= 0 ? "Resume" : details.operationState === "unknown" ? "Check outcome" : "Check status"; outlined: true
+                    enabled: !details.saving && backend.connected && (["prepared", "ready", "unknown"].indexOf(details.operationState) < 0 || details.accountReady)
+                    onClicked: details.resolveResponse(["prepared", "ready"].indexOf(details.operationState) >= 0 ? "resume" : details.operationState === "unknown" ? "reconcile" : "check")
+                }
+                FmButton { objectName: "eventRsvpAbandon"; text: "Abandon"; visible: details.operationRevision >= 0 && ["prepared", "ready", "unknown", "conflict", "rejected"].indexOf(details.operationState) >= 0; enabled: !details.saving && backend.connected; onClicked: responseAbandonConfirmation.open() }
             }
             Text { visible: details.feedback.length > 0; text: details.feedback; color: Theme.accent; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true; textFormat: Text.PlainText }
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
             RowLayout {
                 Layout.fillWidth: true; spacing: 6
-                FmButton { objectName: "eventEditButton"; visible: !!details.eventData.can_edit; text: "Edit"; prominent: true; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); enabled: !details.saving && !details.awaitedEtag.length && backend.connected; onClicked: { details.editRequested(details.eventData); details.close() } }
+                FmButton { objectName: "eventEditButton"; visible: !!details.eventData.can_edit; text: "Edit"; prominent: true; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); enabled: !details.saving && !details.awaitedEtag.length && details.accountReady && !details.hasPendingResponse; onClicked: { details.editRequested(details.eventData); details.close() } }
                 Item { Layout.fillWidth: true }
-                FmButton { text: "Close"; implicitHeight: 28; font.pixelSize: Theme.fontSize(11); enabled: !details.saving; onClicked: details.close() }
+                FmButton { objectName: "eventDetailsClose"; text: details.live && details.saving ? "Cancel request" : "Close"; implicitHeight: 28; font.pixelSize: Theme.fontSize(11); enabled: !details.saving || details.live; onClicked: { if (details.live && details.saving) backend.cancelGoogleOperation(details.pendingResponse.account, details.pendingResponse.request_id); else details.close() } }
             }
         }
+    }
+    Dialog {
+        id: responseAbandonConfirmation; objectName: "eventRsvpAbandonConfirmation"; parent: Overlay.overlay; anchors.centerIn: parent; modal: true
+        implicitWidth: 304; width: Math.min(implicitWidth, parent.width - 32)
+        implicitHeight: topPadding + bottomPadding + responseBody.implicitHeight + (header ? header.implicitHeight + spacing : 0) + (footer ? footer.implicitHeight + spacing : 0)
+        title: "Abandon recorded response?"; standardButtons: Dialog.Ok | Dialog.Cancel
+        background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
+        palette.windowText: Theme.text; palette.buttonText: Theme.text
+        onOpened: standardButton(Dialog.Ok).text = "Abandon"
+        contentItem: Item {
+            implicitHeight: responseBody.implicitHeight
+            Text { id: responseBody; width: responseAbandonConfirmation.availableWidth; text: "Abandon this recorded response. This does not undo a response already accepted by Google."; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; textFormat: Text.PlainText }
+        }
+        onAccepted: details.resolveResponse("abandon")
     }
 }

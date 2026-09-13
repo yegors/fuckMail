@@ -16,7 +16,7 @@ void MailBackend::loadCalendarOperationsPage(bool append) {
     if (!append) m_calendarOperationCursors.clear();
     if (!m_connected) {
         m_calendarOperationsLoading = false;
-        m_calendarOperationStatus = "Reconnect to inspect local calendar operations.";
+        m_calendarOperationStatus = "Reconnect to inspect calendar activity.";
         emit calendarOperationsChanged(); return;
     }
     m_calendarOperationsLoading = true; emit calendarOperationsChanged();
@@ -61,12 +61,18 @@ void MailBackend::loadCalendarOperationsPage(bool append) {
 void MailBackend::retryCalendarOperation(const QString &account, const QString &requestId) {
     if (m_calendarOperationsLoading || !m_connected) return;
     bool recorded = false;
+    QString state;
     for (const auto &operation : m_calendarOperations) {
         const auto row = operation.toMap();
         if (row["account"].toString() == account && row["request_id"].toString() == requestId
-            && row["state"].toString() != "fake_acknowledged") { recorded = true; break; }
+            && row["state"].toString() != "fake_acknowledged") { recorded = true; state = row["state"].toString(); break; }
     }
     if (!recorded) return;
+    if (!m_syntheticProfile) {
+        calendarOperationAction(account, requestId, state == "prepared" || state == "ready" ? "resume"
+            : state == "unknown" || state == "accepted" ? "reconcile" : "check");
+        return;
+    }
     m_calendarOperationsLoading = true; ++m_calendarWrites;
     m_calendarOperationStatus = "Checking the original local operation…"; emit calendarOperationsChanged();
     request("calendar_write_ack", account, {{"request_id", requestId}}, [this](auto result, bool ok) {
@@ -81,4 +87,71 @@ void MailBackend::retryCalendarOperation(const QString &account, const QString &
         emit calendarOperationsChanged(); loadCalendarOperationsPage(false);
         if (m_shutdown) finishShutdown();
     });
+}
+
+void MailBackend::calendarOperationAction(const QString &account, const QString &requestId, const QString &action, qint64 expectedRevision) {
+    if (m_syntheticProfile) {
+        if (action == "resume" || action == "check" || action == "reconcile") retryCalendarOperation(account, requestId);
+        return;
+    }
+    const QString method = action == "reconcile" ? "google_calendar_reconcile"
+        : action == "resume" ? "google_calendar_resume"
+        : action == "abandon" ? "google_calendar_abandon"
+        : action == "check" ? "google_calendar_operation" : QString{};
+    ++m_calendarWrites;
+    if (method.isEmpty() || account.isEmpty() || requestId.isEmpty() || (action == "abandon" && expectedRevision < 0)) {
+        finishCalendarOperation(account, requestId, {{"code", "invalid_request"}, {"message", "Choose a recorded calendar change."}}, false); return;
+    }
+    if (!m_connected || m_shutdown) {
+        finishCalendarOperation(account, requestId, {{"code", "calendar_unavailable"}, {"message", "Reconnect to inspect the recorded change."}}, false); return;
+    }
+    if ((action == "resume" || action == "reconcile")
+        && (!accountCapability(account, "calendar_write") || !googleSyncState(account).value("active").toBool())) {
+        finishCalendarOperation(account, requestId, {{"code", "calendar_sync_required"}, {"message", "Start Calendar sync for this Google account before continuing its change."}}, false); return;
+    }
+    QJsonObject params{{"request_id", requestId}};
+    if (action == "abandon") params["expected_revision"] = expectedRevision;
+    m_calendarOperationsLoading = true;
+    m_calendarOperationStatus = action == "resume" ? "Resuming the recorded change…"
+        : action == "abandon" ? "Abandoning the recorded change…" : "Checking the recorded change…";
+    emit calendarOperationsChanged();
+    const auto completed = [this, account, requestId, action](auto result, bool ok) {
+        result["operation_action"] = action;
+        finishCalendarOperation(account, requestId, result, ok);
+    };
+    if (action == "reconcile" || action == "resume") googleOperation(method, account, params, completed);
+    else request(method, account, params, completed);
+}
+
+void MailBackend::finishCalendarOperation(const QString &account, const QString &requestId, QJsonObject result, bool ok) {
+    --m_calendarWrites;
+    const auto returnedId = result["request_id"].toString();
+    const auto returnedAccount = result["target"].toObject()["account"].toString();
+    if ((!returnedId.isEmpty() && returnedId != requestId) || (!returnedAccount.isEmpty() && returnedAccount != account)) {
+        ok = false; result = {{"code", "calendar_response_invalid"}, {"message", "The calendar response did not match this recorded change."}};
+    }
+    result["account"] = account; result["request_id"] = requestId;
+    const auto state = result["state"].toString();
+    const bool confirmed = ok && (m_syntheticProfile || state == "accepted" || state == "acknowledged");
+    QString message;
+    if (!ok) message = result["message"].toString("The calendar outcome could not be confirmed. Your change remains available.");
+    else if (m_syntheticProfile) message = "Saved locally. No invitations were sent.";
+    else if (state == "acknowledged") message = "Saved to Google Calendar.";
+    else if (state == "accepted") message = "Google confirmed the change. The local calendar is refreshing.";
+    else if (state == "ready") message = "The change is ready but has not been sent. Resume sends this same change.";
+    else if (state == "prepared") message = "The change is recorded but has not been sent. Resume sends this same change.";
+    else if (state == "in_flight") message = "The recorded change is still in progress. Check its status before taking another action.";
+    else if (state == "unknown") message = "Google's outcome is not confirmed. Check the outcome to reconcile this same change.";
+    else if (state == "conflict") message = "The event changed on Google. Your submitted fields are retained; review the current version.";
+    else if (state == "rejected") message = "Google did not accept this change. Your submitted fields are retained.";
+    else if (state == "abandoned") message = "The recorded change was abandoned. This does not undo a change already accepted by Google.";
+    else message = "The calendar outcome needs review in activity.";
+    if (!confirmed && state != "abandoned" && !(m_shutdown && result["code"].toString() == "cancelled")) cancelShutdown();
+    m_calendarOperationStatus = message;
+    m_calendarOperationsLoading = false;
+    emit calendarWriteFinished(confirmed, result.toVariantMap(), confirmed ? QString{} : message);
+    emit calendarOperationsChanged();
+    if (confirmed) { loadCalendar(); loadCalendarSources(); }
+    if (!m_syntheticProfile) loadCalendarOperationsPage(false);
+    if (m_shutdown) finishShutdown();
 }

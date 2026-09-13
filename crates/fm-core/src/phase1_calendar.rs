@@ -37,7 +37,9 @@ impl Store {
                     "availability" => "Availability",
                     _ => calendar.as_str(),
                 });
-            calendars.push(json!({"account":row.get::<_,String>(0)?,"calendar_id":calendar,"name":name,"account_name":row.get::<_,String>(2)?,"account_email":row.get::<_,String>(3)?,"time_zone":row.get::<_,String>(4)?,"permission":permission,"writable":matches!(permission.as_str(),"owner"|"writer"|"writer_without_private_access"),"revision":row.get::<_,i64>(6)?,"primary":metadata["primary"]==true,"hidden":metadata["hidden"]==true,"provider_selected":metadata["selected"],"color":metadata["backgroundColor"],"coverage":if permission=="none"{"denied"}else if complete{"cached"}else{"incomplete"}}));
+            let writable =
+                crate::live_calendar_writes::live_source_writable(parse_access(&permission)?);
+            calendars.push(json!({"account":row.get::<_,String>(0)?,"calendar_id":calendar,"name":name,"account_name":row.get::<_,String>(2)?,"account_email":row.get::<_,String>(3)?,"time_zone":row.get::<_,String>(4)?,"permission":permission,"writable":writable,"can_create":writable && (!live || complete),"revision":row.get::<_,i64>(6)?,"primary":metadata["primary"]==true,"hidden":metadata["hidden"]==true,"provider_selected":metadata["selected"],"color":metadata["backgroundColor"],"coverage":if permission=="none"{"denied"}else if complete{"cached"}else{"incomplete"}}));
         }
         let truncated = calendars.len() > 100;
         calendars.truncate(100);
@@ -167,6 +169,9 @@ impl Store {
                 row["calendar_name"] = source["name"].clone();
                 let recurring = !row["occurrence_key"]["original_start"].is_null();
                 row["recurring"] = recurring.into();
+                if live {
+                    continue;
+                }
                 row["can_rsvp"] = false.into();
                 if row["busy_only"] != true && !recurring {
                     if let Some(event_id) = row["event_id"].as_str() {
@@ -514,6 +519,9 @@ impl Store {
                 (i64::from(acknowledged), before)
             }
         };
+        if self.profile_kind()? == crate::live_profile::ProfileKind::Live {
+            return self.calendar_live_operations(account, limit, after_acknowledged, before_id);
+        }
         let mut statement=self.db.prepare("SELECT request_id,intent_json,result_json,rowid FROM calendar_write_operations WHERE account=?1 AND json_extract(intent_json,'$.public_fingerprint') IS NOT NULL AND ((result_json IS NOT NULL)>?3 OR ((result_json IS NOT NULL)=?3 AND rowid<?4)) ORDER BY (result_json IS NOT NULL),rowid DESC LIMIT ?2")?;
         let records = statement
             .query_map(

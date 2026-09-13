@@ -12,6 +12,8 @@
 #include <QQueue>
 #include <functional>
 
+class GoogleOperation;
+
 // Phase 1: shared Core/Mail/Calendar boundary, additive protocol 1.
 // Presentation and asynchronous IPC only. No direct database or provider access.
 class MailBackend final : public QObject {
@@ -38,6 +40,11 @@ class MailBackend final : public QObject {
     Q_PROPERTY(bool syntheticProfile READ syntheticProfile NOTIFY connectedChanged)
     Q_PROPERTY(QVariantMap googleAuth READ googleAuth NOTIFY googleAuthChanged)
     Q_PROPERTY(bool googleAuthBusy READ googleAuthBusy NOTIFY googleAuthChanged)
+    Q_PROPERTY(QVariantMap googleSync READ googleSync NOTIFY googleSyncChanged)
+    Q_PROPERTY(QVariantMap googleSyncLimits READ googleSyncLimits NOTIFY googleSyncChanged)
+    Q_PROPERTY(QVariantMap mailDelivery READ mailDelivery NOTIFY mailDeliveryChanged)
+    Q_PROPERTY(QVariantList googleLabels READ googleLabels NOTIFY googleLabelsChanged)
+    Q_PROPERTY(QVariantMap googleLabelState READ googleLabelState NOTIFY googleLabelsChanged)
     Q_PROPERTY(bool loading READ loading NOTIFY loadingChanged)
     Q_PROPERTY(bool mutationInFlight READ mutationInFlight NOTIFY mutationChanged)
     Q_PROPERTY(bool hasMore READ hasMore NOTIFY conversationsChanged)
@@ -99,6 +106,11 @@ public:
     bool syntheticProfile() const { return m_syntheticProfile; }
     QVariantMap googleAuth() const { return m_googleAuth; }
     bool googleAuthBusy() const { return m_googleAuthBusy; }
+    QVariantMap googleSync() const { return m_googleSync; }
+    QVariantMap googleSyncLimits() const { return m_googleSyncLimits; }
+    QVariantMap mailDelivery() const { return m_mailDelivery.value({m_account, m_selected}); }
+    QVariantList googleLabels() const { return m_googleLabels; }
+    QVariantMap googleLabelState() const;
     bool loading() const { return m_loading; }
     bool mutationInFlight() const { return m_mutatingConversation; }
     bool hasMore() const { return m_nextOffset >= 0; }
@@ -150,10 +162,20 @@ public:
     Q_INVOKABLE void connectGoogle(const QString &configFile, const QString &account = {}, bool reauthorize = false);
     Q_INVOKABLE void cancelGoogleAuth();
     Q_INVOKABLE void disconnectGoogle(const QString &account);
+    Q_INVOKABLE bool accountCapability(const QString &account, const QString &name) const;
+    Q_INVOKABLE QVariantMap googleSyncState(const QString &account) const;
+    Q_INVOKABLE void startGoogleSync(const QString &account, const QVariantMap &limits);
+    Q_INVOKABLE void pauseGoogleSync(const QString &account);
+    Q_INVOKABLE void cancelGoogleOperation(const QString &account, const QString &requestId);
+    Q_INVOKABLE void loadGoogleLabels(const QString &account, bool append = false);
+    Q_INVOKABLE void refreshGoogleLabels(const QString &account);
+    Q_INVOKABLE void bindGoogleLabel(const QString &account, const QString &labelId, const QString &categoryId, const QString &createName, const QVariant &expectedProviderLabelId, qint64 expectedCatalogRevision);
+    Q_INVOKABLE void retryGoogleLabelBinding(const QString &account);
     Q_INVOKABLE void setRead(bool read);
     Q_INVOKABLE void setStarred(bool starred);
     Q_INVOKABLE void doneConversation();
     Q_INVOKABLE void setCategoryMembership(const QString &categoryId, bool present);
+    Q_INVOKABLE void fileConversation(const QString &action);
     Q_INVOKABLE void editDraft(const QString &body);
     Q_INVOKABLE void beginDraft(const QString &mode);
     Q_INVOKABLE void openDraft(const QString &draftId, bool restoreView = false);
@@ -186,6 +208,7 @@ public:
     Q_INVOKABLE void loadCalendarOperations();
     Q_INVOKABLE void loadMoreCalendarOperations();
     Q_INVOKABLE void retryCalendarOperation(const QString &account, const QString &requestId);
+    Q_INVOKABLE void calendarOperationAction(const QString &account, const QString &requestId, const QString &action, qint64 expectedRevision = -1);
     Q_INVOKABLE QString calendarDateTime(const QString &date, const QString &time, const QString &zone) const;
     Q_INVOKABLE void saveDraft();
     Q_INVOKABLE void openAttachment(const QString &id);
@@ -199,6 +222,10 @@ public:
 signals:
     void accountsChanged();
     void googleAuthChanged();
+    void googleSyncChanged();
+    void mailDeliveryChanged();
+    void googleLabelsChanged();
+    void googleLabelBindingFinished(const QString &account, bool ok, const QVariantMap &result, const QString &error);
     void currentAccountChanged();
     void categoriesChanged();
     void conversationsChanged();
@@ -232,6 +259,12 @@ private:
         int queryBypasses = 0;
     };
     void request(const QString &method, const QString &account, const QJsonObject &params, Callback callback);
+    void googleOperation(const QString &method, const QString &account, const QJsonObject &params, Callback callback);
+    void cancelGoogleOperations(bool notify = true);
+    void pollGoogleSync();
+    void pollMailDelivery();
+    void submitGoogleLabelBinding(const QString &account);
+    void finishCalendarOperation(const QString &account, const QString &requestId, QJsonObject result, bool ok);
     void attemptConnection();
     void sendNext();
     void pruneSupersededQueries();
@@ -270,6 +303,22 @@ private:
     QString m_folder = "inbox", m_weekStart = "2026-09-07", m_fixtureToday = "2026-09-11";
     QString m_draftStatus;
     QVariantMap m_googleAuth;
+    QVariantMap m_googleSync;
+    QVariantMap m_googleSyncLimits;
+    QSet<GoogleOperation *> m_googleOperations;
+    bool m_googleSyncPolling = false;
+    QSet<QString> m_googleSyncChanging;
+    QHash<QPair<QString, QString>, QVariantMap> m_mailDelivery;
+    QList<QPair<QString, QString>> m_mailDeliveryOrder;
+    bool m_mailDeliveryPolling = false;
+    QVariantList m_googleLabels;
+    QVariantMap m_googleLabelCatalog;
+    QString m_googleLabelsAccount;
+    int m_googleLabelsGeneration = 0;
+    bool m_googleLabelsLoading = false;
+    QSet<QString> m_googleLabelsRefreshing, m_googleLabelsBinding;
+    QHash<QString, QJsonObject> m_googleLabelPendingBindings;
+    QHash<QString, QString> m_googleLabelStatus;
     QString m_googleAuthAttempt;
     bool m_googleAuthBusy = false;
     bool m_googleAuthCancelRequested = false;

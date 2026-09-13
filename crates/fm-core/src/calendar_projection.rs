@@ -37,6 +37,12 @@ impl Store {
                 candidates: 0,
             });
         }
+        let live = self.profile_kind()? == crate::live_profile::ProfileKind::Live;
+        let (actor, write_ready) = if live {
+            self.db.query_row("SELECT a.email,c.full_generation>0 AND c.retained_errors=0 FROM calendar_sync_state c JOIN accounts a ON a.id=c.account WHERE c.account=?1 AND c.calendar_id=?2",params![account,calendar],|row|Ok((row.get::<_,String>(0)?,row.get::<_,bool>(1)?)))?
+        } else {
+            (String::new(), false)
+        };
         let from = window.from.timestamp_millis();
         let to = window.to.timestamp_millis();
         let from_date = window
@@ -183,12 +189,32 @@ impl Store {
                             row["event_id"] = event.key.event.clone().into();
                             row["etag"] = event.etag.clone().into();
                         }
-                        row["can_edit"] = (row["busy_only"] != true
-                            && event.recurrence.is_empty()
-                            && event.series_id.is_none()
-                            && matches!(access.for_event(event), Access::Writer | Access::Owner)
-                            && !event.etag.is_empty())
-                        .into();
+                        if live {
+                            let (edit, rsvp) = crate::live_calendar_writes::live_event_actions(
+                                event, access, &actor,
+                            );
+                            let available = row["busy_only"] != true && write_ready;
+                            row["can_edit"] = (available && edit).into();
+                            row["can_delete"] = (available && edit).into();
+                            row["can_rsvp"] = (available && rsvp).into();
+                            if row["busy_only"] != true {
+                                if let Ok(person) =
+                                    crate::live_calendar_writes::live_self_attendee(event, &actor)
+                                {
+                                    row["self_response"] = person["responseStatus"].clone();
+                                }
+                            }
+                        } else {
+                            row["can_edit"] = (row["busy_only"] != true
+                                && event.recurrence.is_empty()
+                                && event.series_id.is_none()
+                                && matches!(
+                                    access.for_event(event),
+                                    Access::Writer | Access::Owner
+                                )
+                                && !event.etag.is_empty())
+                            .into();
+                        }
                         if output.len() < fm_calendar::MAX_OCCURRENCES as usize {
                             output.push(row);
                         } else {
@@ -268,7 +294,7 @@ impl Store {
             let end = chrono::DateTime::parse_from_rfc3339(interval["end"].as_str().unwrap_or(""))
                 .map_err(|_| err("storage_error", "Invalid busy end"))?;
             if start < window.to && end > window.from {
-                output.push(json!({"id":format!("busy:{}",crate::calendar_store::fingerprint(&json!([account,calendar,start.to_rfc3339(),end.to_rfc3339()]))?),"kind":"free_busy","account":account,"calendar_id":calendar,"title":"Busy","start":start.to_rfc3339(),"end":end.to_rfc3339(),"all_day":false,"busy_only":true,"read_only":true,"can_edit":false,"can_rsvp":false,"observed_at":observed_at}));
+                output.push(json!({"id":format!("busy:{}",crate::calendar_store::fingerprint(&json!([account,calendar,start.to_rfc3339(),end.to_rfc3339()]))?),"kind":"free_busy","account":account,"calendar_id":calendar,"title":"Busy","start":start.to_rfc3339(),"end":end.to_rfc3339(),"all_day":false,"busy_only":true,"read_only":true,"can_edit":false,"can_delete":false,"can_rsvp":false,"observed_at":observed_at}));
             }
             if output.len() >= 1000 {
                 return Ok((output, false));

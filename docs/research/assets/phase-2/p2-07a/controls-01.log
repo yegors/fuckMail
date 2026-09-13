@@ -1,0 +1,30 @@
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ctest.exe --test-dir build/dev -R ^gui-calendar-controls$ --output-on-failure
+Internal ctest changing into directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+Test project C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+    Start 11: gui-calendar-controls
+1/1 Test #11: gui-calendar-controls ............***Failed    1.62 sec
+QFontDatabase: Cannot find font directory C:/Users/Yegor/Projects/Fuckaround/fuckMail/.tools/Qt/6.11.2/msvc2022_64/lib/fonts.
+Note that Qt no longer ships fonts. Deploy some (from https://dejavu-fonts.github.io/ for example) or switch to fontconfig.
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-EbCYcC/EventEditor.qml:294:5: QML Dialog: Binding loop detected for property \"implicitWidth\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:12:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-EbCYcC/EventEditor.qml:294:5: QML Dialog: Binding loop detected for property "implicitWidth":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:12:5
+calendarOperationResolve-prepared
+QThreadStorage: entry 2 destroyed before end of thread 0x23f0933c2d0
+QThreadStorage: entry 1 destroyed before end of thread 0x23f0933c2d0
+
+
+0% tests passed, 1 tests failed out of 1
+
+Total Test time (real) =   1.63 sec
+
+The following tests FAILED:
+	 11 - gui-calendar-controls (Failed)
+Errors while running CTest
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\Users\Yegor\Projects\Fuckaround\fuckMail\scripts\dev.py", line 37, in run
+    result = subprocess.run(args, cwd=str(cwd), env=env, check=True,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Yegor\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\bootstrap\\Scripts\\ctest.exe', '--test-dir', 'build/dev', '-R', '^gui-calendar-controls$', '--output-on-failure']' returned non-zero exit status 8.

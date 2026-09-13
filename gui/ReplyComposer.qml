@@ -202,12 +202,12 @@ Rectangle {
             Layout.fillWidth: true; Layout.topMargin: 12; spacing: 6
             FmButton {
                 objectName: "captureReply"
-                text: "Capture locally"
+                text: backend.syntheticProfile ? "Capture locally" : "Send"
                 prominent: true
                 leftPadding: 16; rightPadding: 16
                 font.pixelSize: Theme.fontSize(13)
-                enabled: !backend.draftLocked && (document.plainText.trim().length > 0 || root.attachmentIds.length > 0)
-                tip: "Record an outgoing MIME copy on this machine; no email is delivered"
+                enabled: backend.syntheticProfile && !backend.draftLocked && (document.plainText.trim().length > 0 || root.attachmentIds.length > 0)
+                tip: backend.syntheticProfile ? "Record an outgoing MIME copy on this machine; no email is delivered" : "Sending is not available in this build. Your draft is saved locally."
                 onClicked: backend.captureDraft()
             }
             FmButton { text: "Attach"; iconName: "attachment"; outlined: true; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pixelSize: Theme.fontSize(13); tip: root.availableAttachments.length ? "Attach a retained file from this conversation" : "No retained files in this conversation"; enabled: root.availableAttachments.length > 0 && !backend.draftBusy; onClicked: attachmentMenu.popup() }

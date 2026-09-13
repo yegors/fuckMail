@@ -43,6 +43,82 @@ type OperationRow = (
     Option<i64>,
     Option<String>,
 );
+// Accepted outcomes may contain a full provider event. Read their small public
+// meaning from state/kind; only the small rejection/cooldown evidence is parsed.
+const PUBLIC_COLUMNS: &str = "request_id,json_extract(intent_json,'$.target.calendar'),json_extract(intent_json,'$.target.event'),json_extract(intent_json,'$.request.kind'),state,operation_revision,CASE WHEN state IN ('ready','rejected','abandoned') THEN json_extract(outcome_json,'$.kind') END,CASE WHEN state IN ('rejected','abandoned') THEN json_extract(outcome_json,'$.code') END,CASE WHEN state IN ('ready','abandoned') THEN json_extract(outcome_json,'$.retry_after_secs') END,CASE WHEN state='acknowledged' THEN json_extract(result_json,'$.cache_published') END";
+struct OperationProjection {
+    request_id: String,
+    calendar: String,
+    event: String,
+    kind: String,
+    state: String,
+    revision: i64,
+    evidence_kind: Option<String>,
+    error_code: Option<String>,
+    retry_after_secs: Option<u64>,
+    cache_published: Option<bool>,
+}
+impl OperationProjection {
+    fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Self {
+            request_id: row.get(0)?,
+            calendar: row.get(1)?,
+            event: row.get(2)?,
+            kind: row.get(3)?,
+            state: row.get(4)?,
+            revision: row.get(5)?,
+            evidence_kind: row.get(6)?,
+            error_code: row.get(7)?,
+            retry_after_secs: row.get(8)?,
+            cache_published: row.get(9)?,
+        })
+    }
+    fn value(self, account: &str) -> Value {
+        let evidence = match self.state.as_str() {
+            "accepted" | "acknowledged" => Some(if self.kind == "delete" {
+                "deleted"
+            } else {
+                "accepted"
+            }),
+            "unknown" => Some("unknown"),
+            "conflict" => Some("conflict"),
+            "rejected" => Some("rejected"),
+            "ready" | "abandoned" => self.evidence_kind.as_deref().filter(|kind| {
+                matches!(
+                    *kind,
+                    "unknown" | "conflict" | "rejected" | "undispatched_cooldown"
+                )
+            }),
+            _ => None,
+        };
+        let mut outcome = evidence
+            .map(|kind| json!({"kind":kind}))
+            .unwrap_or(Value::Null);
+        if evidence == Some("rejected") {
+            if let Some(code) = self.error_code.filter(|code| {
+                matches!(
+                    code.as_str(),
+                    "permission_denied"
+                        | "invalid_request"
+                        | "authentication_required"
+                        | "rate_limited"
+                        | "not_found"
+                )
+            }) {
+                outcome["code"] = code.into();
+            }
+        }
+        if evidence == Some("undispatched_cooldown") {
+            if let Some(seconds) = self.retry_after_secs {
+                outcome["retry_after_secs"] = seconds.into();
+            }
+        }
+        if let Some(published) = self.cache_published {
+            outcome["cache_published"] = published.into();
+        }
+        json!({"request_id":self.request_id,"target":{"account":account,"calendar":self.calendar,"event":self.event},"kind":self.kind,"state":self.state,"revision":self.revision,"local_only":false,"outcome":outcome})
+    }
+}
 
 impl Store {
     pub fn calendar_live_prepare(&mut self, account: &str, request: &Value) -> Result<Value> {
@@ -176,10 +252,78 @@ impl Store {
     }
 
     pub fn calendar_live_status(&self, account: &str, request_id: &str) -> Result<Value> {
-        let op = self.calendar_live_operation(account, request_id)?;
-        Ok(
-            json!({"request_id":request_id,"target":op.intent["target"],"kind":op.intent["request"]["kind"],"state":op.state,"revision":op.version,"local_only":false}),
-        )
+        crate::id(account)?;
+        crate::id(request_id)?;
+        self.db.query_row(
+            &format!("SELECT {PUBLIC_COLUMNS} FROM calendar_write_operations WHERE account=?1 AND request_id=?2 AND execution_mode='live'"),
+            params![account,request_id],
+            OperationProjection::read,
+        ).optional()?.map(|operation|operation.value(account)).ok_or_else(||err("not_found","Live Calendar operation does not exist"))
+    }
+
+    /// Private engine input for an explicit resume. No provider source or frozen
+    /// dispatch is loaded, and only a known-undispatched intent may be resumed.
+    pub fn calendar_live_request(&self, account: &str, request_id: &str) -> Result<Value> {
+        crate::id(account)?;
+        crate::id(request_id)?;
+        let record: Option<(String, Option<String>)> = self.db.query_row(
+            "SELECT state,CASE WHEN state IN ('prepared','ready') AND length(CAST(json_extract(intent_json,'$.request') AS BLOB))<=262144 THEN json_extract(intent_json,'$.request') END FROM calendar_write_operations WHERE account=?1 AND request_id=?2 AND execution_mode='live'",
+            params![account,request_id],|row|Ok((row.get(0)?,row.get(1)?)),
+        ).optional()?;
+        let (state, request) =
+            record.ok_or_else(|| err("not_found", "Live Calendar operation does not exist"))?;
+        if !matches!(state.as_str(), "prepared" | "ready") {
+            return Err(err(
+                "calendar_operation_pending",
+                "Only an undispatched prepared or ready Calendar intent can resume",
+            ));
+        }
+        let request: Value = serde_json::from_str(&request.ok_or_else(|| {
+            err(
+                "invalid_request",
+                "Stored Calendar intent exceeds its size limit",
+            )
+        })?)?;
+        if !request.is_object() || request["request_id"] != request_id {
+            return Err(err(
+                "invalid_request",
+                "Stored Calendar request identity is invalid",
+            ));
+        }
+        Ok(request)
+    }
+
+    pub(crate) fn calendar_live_operations(
+        &self,
+        account: &str,
+        limit: u64,
+        after_acknowledged: i64,
+        before_id: i64,
+    ) -> Result<Value> {
+        crate::id(account)?;
+        let mut statement = self.db.prepare(&format!("SELECT {PUBLIC_COLUMNS},rowid,(result_json IS NOT NULL) FROM calendar_write_operations WHERE account=?1 AND execution_mode='live' AND ((result_json IS NOT NULL)>?3 OR ((result_json IS NOT NULL)=?3 AND rowid<?4)) ORDER BY (result_json IS NOT NULL),rowid DESC LIMIT ?2"))?;
+        let rows = statement
+            .query_map(
+                params![account, limit + 1, after_acknowledged, before_id],
+                |row| {
+                    Ok((
+                        OperationProjection::read(row)?,
+                        row.get::<_, i64>(10)?,
+                        row.get::<_, bool>(11)?,
+                    ))
+                },
+            )?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        let has_more = rows.len() > limit as usize;
+        let mut continuation = Value::Null;
+        let mut operations = Vec::new();
+        for (operation, row_id, acknowledged) in rows.into_iter().take(limit as usize) {
+            if has_more {
+                continuation = json!({"acknowledged":acknowledged,"before_id":row_id});
+            }
+            operations.push(operation.value(account));
+        }
+        Ok(json!({"operations":operations,"continuation":continuation}))
     }
 
     /// Explicitly abandon retained intent; this never claims to undo a request
@@ -278,12 +422,7 @@ impl Store {
                     r.get(0)
                 })?;
         let (body, baseline) = if kind == "create" {
-            if source.is_some()
-                || !matches!(
-                    access,
-                    Access::Writer | Access::Owner | Access::WriterWithoutPrivateAccess
-                )
-            {
+            if source.is_some() || !live_source_writable(access) {
                 return Err(err(
                     "permission_denied",
                     "Calendar does not permit event creation",
@@ -313,23 +452,8 @@ impl Store {
             let body = match kind {
                 "edit" => field_patch(&request["fields"], Some(&event), zone)?,
                 "rsvp" => {
-                    let person = event
-                        .attendees
-                        .iter()
-                        .filter(|p| {
-                            p["self"] == true
-                                && p["email"]
-                                    .as_str()
-                                    .is_some_and(|email| email.eq_ignore_ascii_case(&actor))
-                        })
-                        .collect::<Vec<_>>();
-                    if person.len() != 1 {
-                        return Err(err(
-                            "permission_denied",
-                            "Only the authenticated attendee can respond",
-                        ));
-                    }
-                    json!({"attendeesOmitted":true,"attendees":[{"email":person[0]["email"],"responseStatus":request["response"]}]})
+                    let person = live_self_attendee(&event, &actor)?;
+                    json!({"attendeesOmitted":true,"attendees":[{"email":person["email"],"responseStatus":request["response"]}]})
                 }
                 "delete" => Value::Null,
                 _ => unreachable!(),
@@ -631,6 +755,36 @@ fn bounded_source(source: &Value, target: &EventKey) -> Result<()> {
         ))
     } else {
         Ok(())
+    }
+}
+pub(crate) fn live_source_writable(access: Access) -> bool {
+    matches!(
+        access,
+        Access::Writer | Access::Owner | Access::WriterWithoutPrivateAccess
+    )
+}
+pub(crate) fn live_event_actions(event: &Event, access: Access, actor: &str) -> (bool, bool) {
+    let versioned = etag(&event.etag).is_ok();
+    (
+        versioned && initial_event(event, access, "edit").is_ok(),
+        versioned
+            && initial_event(event, access, "rsvp").is_ok()
+            && live_self_attendee(event, actor).is_ok(),
+    )
+}
+pub(crate) fn live_self_attendee<'a>(event: &'a Event, actor: &str) -> Result<&'a Value> {
+    let mut matches = event.attendees.iter().filter(|person| {
+        person["self"] == true
+            && person["email"]
+                .as_str()
+                .is_some_and(|email| email.eq_ignore_ascii_case(actor))
+    });
+    match (matches.next(), matches.next()) {
+        (Some(person), None) => Ok(person),
+        _ => Err(err(
+            "permission_denied",
+            "Only the authenticated attendee can respond",
+        )),
     }
 }
 fn initial_event(event: &Event, access: Access, kind: &str) -> Result<()> {

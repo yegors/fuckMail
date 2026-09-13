@@ -1,0 +1,40 @@
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ctest.exe --test-dir build/dev -R ^gui-(calendar-controls|google-operation)$ --output-on-failure
+Internal ctest changing into directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+Test project C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+    Start 11: gui-calendar-controls
+1/2 Test #11: gui-calendar-controls ............***Failed    2.35 sec
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-rblocZ/EventEditor.qml:304:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-rblocZ/EventEditor.qml:304:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-rblocZ/GoogleLabelSetup.qml:120:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-rblocZ/GoogleLabelSetup.qml:120:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-rblocZ/EventDetails.qml:181:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-rblocZ/EventDetails.qml:181:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-rblocZ/CalendarOperations.qml:67:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-rblocZ/CalendarOperations.qml:67:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+Actual controls run without QML binding errors
+QThreadStorage: entry 3 destroyed before end of thread 0x206b5318930
+QThreadStorage: entry 2 destroyed before end of thread 0x206b5318930
+QThreadStorage: entry 1 destroyed before end of thread 0x206b5318930
+
+    Start 12: gui-google-operation
+2/2 Test #12: gui-google-operation .............   Passed    0.17 sec
+
+50% tests passed, 1 tests failed out of 2
+
+Total Test time (real) =   2.53 sec
+
+The following tests FAILED:
+	 11 - gui-calendar-controls (Failed)
+Errors while running CTest
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "C:\Users\Yegor\Projects\Fuckaround\fuckMail\scripts\dev.py", line 37, in run
+    result = subprocess.run(args, cwd=str(cwd), env=env, check=True,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\Yegor\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\bootstrap\\Scripts\\ctest.exe', '--test-dir', 'build/dev', '-R', '^gui-(calendar-controls|google-operation)$', '--output-on-failure']' returned non-zero exit status 8.

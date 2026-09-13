@@ -1,6 +1,7 @@
 //! Explicit Google read sessions share quotas, one Store writer and cancellation.
 pub(crate) mod calendar;
 pub(crate) mod calendar_writes;
+pub(crate) mod labels;
 pub(crate) mod mail;
 pub(crate) mod mail_mutations;
 mod quota;
@@ -10,9 +11,12 @@ mod runtime_tests;
 use crate::{core_tasks::CoreBridge, google_auth};
 use fm_calendar::google_api::GoogleCalendarApi;
 use fm_core::{live_profile::ConnectionState, CoreError, Result, Store};
+#[cfg(test)]
+use fm_google::scheduler::ServiceBudget;
 use fm_google::{
+    auth::ScopeSet,
     gmail_api::{GmailApi, GmailCall, GmailReply},
-    scheduler::{CooldownScope, SchedulerConfig, Service, ServiceBudget, Work, WorkClass},
+    scheduler::{CooldownScope, SchedulerConfig, Service, Work, WorkClass},
     transport::{
         CancellationToken, HttpFuture, HttpMethod, HttpRequest, HttpTransport, TransportError,
     },
@@ -121,7 +125,11 @@ impl SyncContext {
     ) -> std::result::Result<(GmailReply, OwnedSemaphorePermit), GoogleError> {
         let work = call.work();
         if work.account != self.account
-            || call.method() != fm_google::gmail_api::GmailMethod::MessageRaw
+            || !matches!(
+                call.method(),
+                fm_google::gmail_api::GmailMethod::MessageRaw
+                    | fm_google::gmail_api::GmailMethod::LabelsList
+            )
         {
             return Err(GoogleError::PermissionDenied);
         }
@@ -361,34 +369,12 @@ fn failure(code: &str, message: &str) -> CoreError {
 }
 
 fn confirmed_limits(params: &Value) -> Result<SchedulerConfig> {
-    let object = params
-        .as_object()
-        .ok_or_else(|| failure("invalid_request", "Sync limits must be an object"))?;
-    const FIELDS: [&str; 4] = [
-        "gmail_project_units_per_minute",
-        "gmail_account_units_per_minute",
-        "calendar_project_units_per_minute",
-        "calendar_account_units_per_minute",
-    ];
-    if object.len() != FIELDS.len() || object.keys().any(|key| !FIELDS.contains(&key.as_str())) {
-        return Err(failure(
+    SchedulerConfig::from_confirmed_json(params).map_err(|_| {
+        failure(
             "invalid_request",
-            "Supply the four actual Google Console quota limits",
-        ));
-    }
-    let mut values = [0_u32; 4];
-    for (index, name) in FIELDS.iter().enumerate() {
-        values[index] = params[name]
-            .as_u64()
-            .filter(|v| (100..=100_000_000).contains(v))
-            .and_then(|v| u32::try_from(v).ok())
-            .ok_or_else(|| failure("invalid_request", "Google quota limits are out of range"))?;
-    }
-    let gmail = ServiceBudget::from_confirmed_limits(values[0], values[1])
-        .map_err(|_| failure("invalid_request", "Gmail limits are invalid"))?;
-    let calendar = ServiceBudget::from_confirmed_limits(values[2], values[3])
-        .map_err(|_| failure("invalid_request", "Calendar limits are invalid"))?;
-    Ok(SchedulerConfig::new(gmail, calendar))
+            "Supply the four actual Google Console quota limits within the supported range",
+        )
+    })
 }
 
 struct Job {
@@ -450,6 +436,9 @@ impl Runtime {
                 | "google_calendar_write"
                 | "google_calendar_reconcile"
                 | "google_calendar_operation"
+                | "google_calendar_resume"
+                | "google_calendar_abandon"
+                | "google_labels_refresh"
         )
     }
     async fn operation_context(
@@ -512,8 +501,14 @@ impl Runtime {
                 ));
             }
             let state = self.state.lock().await;
-            let accounts:Vec<Value>=state.jobs.iter().filter(|(id,_)|account.is_none_or(|a|a==id.as_str())).map(|(id,job)|json!({"account":id,"active":!job.task.is_finished(),"progress":job.progress.lock().unwrap().clone()})).collect();
-            return Ok(json!({"accounts":accounts,"configured":state.quota.is_some()}));
+            let accounts:Vec<Value>=state.jobs.iter().filter(|(id,_)|account.is_none_or(|a|a==id.as_str())).map(|(id,job)| {
+                let active=!job.task.is_finished() && !job.cancel.is_cancelled();
+                let owned=active && job.owners.lock().unwrap().get(owner_id).is_some_and(|cancel|!cancel.is_cancelled());
+                json!({"account":id,"active":active,"owned":owned,"progress":job.progress.lock().unwrap().clone()})
+            }).collect();
+            return Ok(
+                json!({"accounts":accounts,"configured":state.quota.is_some(),"limits":state.quota.as_ref().map(|(limits,_)|limits)}),
+            );
         }
         let account = account
             .filter(|id| !id.is_empty())
@@ -531,9 +526,43 @@ impl Runtime {
                 .call(move |store| store.calendar_live_status(&account, &request_id))
                 .await;
         }
+        if method == "google_calendar_abandon" {
+            if params.as_object().is_none_or(|p| {
+                p.len() != 2
+                    || !p.contains_key("request_id")
+                    || !p.contains_key("expected_revision")
+            }) {
+                return Err(failure(
+                    "invalid_request",
+                    "Choose a Calendar operation and its current revision",
+                ));
+            }
+            let request_id = operation_id(&params)?.to_owned();
+            let expected = params["expected_revision"]
+                .as_i64()
+                .filter(|v| *v >= 0)
+                .ok_or_else(|| {
+                    failure(
+                        "invalid_request",
+                        "Choose the current Calendar operation revision",
+                    )
+                })?;
+            return self
+                .core
+                .call(move |store| {
+                    if owner_cancel.is_cancelled() {
+                        return Err(failure("cancelled", "Calendar operation stopped"));
+                    }
+                    store.calendar_live_cancel(&account, &request_id, expected)
+                })
+                .await;
+        }
         if matches!(
             method,
-            "google_calendar_write" | "google_calendar_reconcile"
+            "google_calendar_write"
+                | "google_calendar_reconcile"
+                | "google_calendar_resume"
+                | "google_labels_refresh"
         ) {
             let (context, _operation_owner) = self
                 .operation_context(&account, owner_id, owner_cancel.clone())
@@ -548,15 +577,32 @@ impl Runtime {
             // owns this explicit operation; accepted outcome recording survives
             // cancellation and never authorizes a second provider attempt.
             let result = async {
-                if method == "google_calendar_write" {
-                    calendar_writes::execute(&context, params).await
-                } else {
-                    operation_params(&params)?;
-                    let request_id = params["request_id"]
-                        .as_str()
-                        .filter(|s| !s.is_empty() && s.len() <= 256)
-                        .ok_or_else(|| failure("invalid_request", "Choose a Calendar operation"))?;
-                    calendar_writes::reconcile(&context, request_id).await
+                match method {
+                    "google_calendar_write" => calendar_writes::execute(&context, params).await,
+                    "google_calendar_resume" => {
+                        operation_params(&params)?;
+                        let request_id = operation_id(&params)?.to_owned();
+                        let account = context.account.as_str().to_owned();
+                        let request = context
+                            .core_call(move |store| {
+                                store.calendar_live_request(&account, &request_id)
+                            })
+                            .await?;
+                        calendar_writes::execute(&context, request).await
+                    }
+                    "google_labels_refresh" => {
+                        if params.as_object().is_none_or(|p| !p.is_empty()) {
+                            return Err(failure(
+                                "invalid_request",
+                                "Label refresh takes no parameters",
+                            ));
+                        }
+                        labels::refresh(&context).await
+                    }
+                    _ => {
+                        operation_params(&params)?;
+                        calendar_writes::reconcile(&context, operation_id(&params)?).await
+                    }
                 }
             }
             .await;
@@ -669,9 +715,9 @@ impl Runtime {
                 "Reconnect this Google account",
             ));
         }
-        let has_mail = binding
-            .scopes
-            .contains("https://www.googleapis.com/auth/gmail.modify");
+        let scopes = ScopeSet::new(&binding.scopes);
+        let has_mail = scopes.mail_read();
+        let has_mail_write = scopes.mail_write();
         let has_calendar = binding
             .scopes
             .contains("https://www.googleapis.com/auth/calendar.calendarlist.readonly")
@@ -747,7 +793,7 @@ impl Runtime {
             calendar_preparation: self.calendar_preparation.clone(),
         };
         let progress = Arc::new(std::sync::Mutex::new(
-            json!({"mail":if has_mail {"starting"} else {"not_granted"},"calendar":if has_calendar {"starting"} else {"not_granted"},"mail_steps":0,"calendar_pages":0}),
+            json!({"mail":if has_mail {"starting"} else {"not_granted"},"mail_mutations":if has_mail_write {"starting"} else {"not_granted"},"labels":if has_mail {"starting"} else {"not_granted"},"calendar":if has_calendar {"starting"} else {"not_granted"},"mail_steps":0,"calendar_pages":0}),
         ));
         let task_progress = progress.clone();
         let owners = Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::from([(
@@ -764,6 +810,9 @@ impl Runtime {
             let mut workers = tokio::task::JoinSet::new();
             if has_mail {
                 workers.spawn(mail_loop(context.clone(), task_progress.clone()));
+                workers.spawn(labels_loop(context.clone(), task_progress.clone()));
+            }
+            if has_mail_write {
                 workers.spawn(mail_mutation_loop(context.clone(), task_progress.clone()));
             }
             if has_calendar {
@@ -902,6 +951,47 @@ fn operation_params(params: &Value) -> Result<()> {
         return Err(failure("invalid_request", "Choose a Calendar operation"));
     }
     Ok(())
+}
+fn operation_id(params: &Value) -> Result<&str> {
+    params["request_id"]
+        .as_str()
+        .filter(|s| !s.is_empty() && s.len() <= 256 && !s.chars().any(char::is_control))
+        .ok_or_else(|| failure("invalid_request", "Choose a Calendar operation"))
+}
+async fn labels_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
+    let mut worker = labels::LabelsWorker::default();
+    let clock = std::time::Instant::now();
+    let mut failures = 0;
+    while !ctx.cancel.is_cancelled() {
+        let now = clock.elapsed().as_millis().min(u64::MAX as u128) as u64;
+        let delay = match worker.step(&ctx, now).await {
+            Ok(mail::Step::Progress) => {
+                failures = 0;
+                progress_state(&progress, "labels", "current", None);
+                Duration::from_millis(1)
+            }
+            Ok(mail::Step::Idle(delay)) => delay,
+            Err(error) => {
+                progress_state(&progress, "labels", "paused", Some(&error.code));
+                let delay = retry_wait(&error, failures).or_else(|| {
+                    matches!(
+                        error.code.as_str(),
+                        "stale_revision" | "invalid_google_response" | "invalid_request"
+                    )
+                    .then_some(Duration::from_millis(labels::REFRESH_INTERVAL_MS))
+                });
+                let Some(delay) = delay else {
+                    return;
+                };
+                failures = failures.saturating_add(1).min(6);
+                delay
+            }
+        };
+        if !pause(&ctx.cancel, delay).await {
+            break;
+        }
+    }
+    progress_state(&progress, "labels", "stopped", None);
 }
 async fn mail_mutation_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
     let mut worker = mail_mutations::MailMutationWorker::new(ctx.account.clone());

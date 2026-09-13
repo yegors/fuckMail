@@ -6,7 +6,9 @@ Human correspondence comes first. Unread means unreviewed; stars mean action lef
 
 ## Current state
 
-**Phase 1 is complete on available hosts; Phase 2 implementation is active on `codex/phase-2` under D021–D023.** The integrated schema-10 Windows development run passes 10/10 CTests, including 353 executed Rust workspace tests and the native GUI/CLI/restart walkthrough. Bounded Calendar preparation, durable mail state delivery and initial conditional Calendar writes have synthetic-provider coverage; a separate 306-test run and strict lint also pass. Live fixture 0, synthetic fixture 3 and protocol 1 remain unchanged. Live UI integration, acquisition/navigation measurements, packages and complete drafts/send/Calendar workflows remain pending. No real account is connected; Google-first readiness remains 0/9. The [execution record](docs/research/phase-2-execution.md#d023-integrated-verification) preserves exact results and remaining gates.
+**Phase 1 is complete on available hosts; Phase 2 implementation is active on `codex/phase-2` under D021–D025.** P2-07A adds native account capabilities, explicit sync ownership and Console limits, cached Google label setup, exact mail-delivery feedback and conditional Calendar recovery. Schema 11 preserves live fixture 0, synthetic fixture 3 and protocol 1. No real account is connected; Google-first readiness remains 0/9. The [execution record](docs/research/phase-2-execution.md#p2-07a-native-google-integration-under-d024d025) preserves exact results and remaining gates.
+
+The current source has 376 passing Rust workspace tests (five ignored) and strict lint. The first full Windows run passed 11/12 CTests; after fixing Calendar/label controls, all ten GUI/lifecycle checks plus their build fixture pass, 11/11 in 179.12 seconds. All 271 source hashes match, with Rust unchanged from its passing run. A Qt shutdown warning remains. Current acquisition/navigation measurements, packages and complete drafts/send/Calendar workflows remain pending; older Phase 1 performance/package passes do not cover this source.
 
 The [Phase 2 plan](docs/plans/phase-2.md) still requires both personal Gmail and Workspace mail/Calendar, real drafts/send, calendar writes/invitations, reminders, recovery and measured responsiveness. The founder reports existing Google project/admin access and chose OS permissions plus verified disk encryption for the pilot. Actual disk/profile/backup admission remains outstanding; app-level mail-store encryption is deferred.
 
@@ -20,12 +22,12 @@ The current Windows [development package](docs/research/assets/phase-1/p1-10-win
 
 | Google-first feature area | Build status |
 | --- | --- |
-| [Core and complete offline storage](docs/contracts/core-storage.md) | Schema-9 migration, bounded publication and Windows native checks pass; packages/complete live coverage pending; whole area Draft |
-| [Gmail / Google Workspace](docs/contracts/gmail.md) | OAuth, HTTP, Core and engine worker fixtures pass; multi-owner/live-write acceptance pending; whole area Draft |
-| [Mail UI and human composition](docs/contracts/mail-ui.md) | Phase 1 native/package and Windows navigation/rendering pass; Phase 2 live workflows planned; whole area Draft |
+| [Core and complete offline storage](docs/contracts/core-storage.md) | Schema-11 migration, bounded publication and Windows native checks pass; packages/complete live coverage pending; whole area Draft |
+| [Gmail / Google Workspace](docs/contracts/gmail.md) | OAuth, acquisition, state delivery and label setup fixtures pass; drafts/send and actual providers pending; whole area Draft |
+| [Mail UI and human composition](docs/contracts/mail-ui.md) | Phase 1 native/package and Windows navigation/rendering pass; Phase 2 capabilities, sync and recovery controls pass scoped native checks; whole area Draft |
 | [Local search](docs/contracts/search.md) | Native filters/idle convergence and all four development/packaged concurrent budgets pass; whole area Draft |
 | [User-owned triage and categories](docs/contracts/triage.md) | Phase 1 explicit local review/Done/Delay verified; whole area Draft |
-| [Google Calendar](docs/contracts/calendar.md) | HTTP, indexed storage and engine worker fixtures pass; shared page bounds, live writes/reminders pending; whole area Draft |
+| [Google Calendar](docs/contracts/calendar.md) | HTTP, bounded preparation, initial conditional writes and native recovery fixtures pass; full recurrence/invitations, reminders and actual providers pending; whole area Draft |
 | [Optional local classification/summaries](docs/contracts/local-ai.md) | Phase 0 synthetic evidence; whole area Draft |
 | [Platform installation and lifecycle](docs/contracts/platform.md) | P1-09 Mac/Windows/Ubuntu native tests and relocated development packages pass; Windows upgrades pass; whole area Draft |
 | [CLI alongside the GUI](docs/contracts/cli.md) | Paired composition/MIME/restart readback verified locally; whole area Draft |
@@ -46,7 +48,7 @@ The app operates locally and connects directly to Google; optional models run on
 
 ## Next execution
 
-Integrate live GUI capabilities, sync ownership, delivery/Calendar status and existing Gmail label setup; then complete remote drafts/send and measure responsiveness during acquisition. Current boundaries are Core 16, Gmail 6, Calendar 14, Platform 11, Mail UI 14, CLI 9 and Quality 11. Settle retention/backup choices and verify actual Cloud quotas and disk protection before real import. The first account test build precedes complete history; sending/invitations, measured performance under acquisition, packages and sustained daily use retain their own [Phase 2 gates](docs/plans/phase-2.md). Phase 1 evidence remains attributed to its original source.
+Measure responsiveness during concurrent mail/Calendar acquisition, then complete remote drafts/send and remaining Calendar workflows. Current boundaries are Core 17, Gmail 7, Calendar 15, Platform 11, Mail UI 15, CLI 10 and Quality 11. Settle retention/backup choices and verify actual Cloud quotas and disk protection before real import. The first account test build precedes complete history; sending/invitations, measured performance under acquisition, packages and sustained daily use retain their own [Phase 2 gates](docs/plans/phase-2.md). Phase 1 evidence remains attributed to its original source.
 
 The [first deliverable](docs/plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) is a runnable synthetic-mail desktop app and small CLI, with repeatable setup/build/test commands and native CI builds for development on the work Mac and home Windows PC. Tools live in the ignored `.tools` directory. The home Windows PC now passes bootstrap/doctor, dev and release tests (8/8 each), relocated package verification and native graphics checks; its schema-4 baseline package is preserved. See [Windows handoff evidence](docs/research/phase-0-execution.md#home-windows-handoff-before-phase-1). Run `scripts/dev.ps1 run` from PowerShell on this PC, or `scripts/dev.sh run` on Mac. Manual input/accessibility and OS keyring qualification remain separate.
 

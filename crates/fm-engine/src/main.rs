@@ -386,7 +386,9 @@ async fn session_inner(
             let result = if let Some(provider) = &providers {
                 let finish_on_close = matches!(
                     request.method.as_str(),
-                    "google_calendar_write" | "google_calendar_reconcile"
+                    "google_calendar_write"
+                        | "google_calendar_reconcile"
+                        | "google_calendar_resume"
                 );
                 let work = provider.sync.handle(
                     &owner_id,
@@ -761,7 +763,8 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
             "calendar_write_ack","calendar_operations","drafts","draft_create","sender_summary",
             "google_auth_begin","google_auth_status","google_auth_cancel","google_disconnect",
             "google_sync_start","google_sync_stop","google_sync_release","google_sync_status","google_sync_busy",
-            "mail_filing","google_mail_mutation_status","google_calendar_write","google_calendar_reconcile","google_calendar_operation"]}),
+            "mail_filing","google_mail_mutation_status","google_calendar_write","google_calendar_reconcile","google_calendar_operation",
+            "google_calendar_resume","google_calendar_abandon","google_labels","google_labels_refresh","google_category_bind"]}),
     )
 }
 

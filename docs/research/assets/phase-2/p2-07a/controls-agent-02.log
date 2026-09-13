@@ -1,0 +1,28 @@
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-yIkrTm/GoogleLabelSetup.qml:120:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-yIkrTm/GoogleLabelSetup.qml:120:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-yIkrTm/CalendarOperations.qml:67:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-yIkrTm/CalendarOperations.qml:67:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-yIkrTm/EventDetails.qml:181:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-yIkrTm/EventDetails.qml:181:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-yIkrTm/EventEditor.qml:307:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-yIkrTm/EventEditor.qml:307:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-yIkrTm/EventEditor.qml:307:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-yIkrTm/EventEditor.qml:307:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-yIkrTm/GoogleLabelSetup.qml:120:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-yIkrTm/GoogleLabelSetup.qml:120:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-yIkrTm/EventDetails.qml:181:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-yIkrTm/EventDetails.qml:181:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+"file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-yIkrTm/CalendarOperations.qml:67:5: QML Dialog: Binding loop detected for property \"implicitHeight\":\nqrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5"
+file:///C:/Users/Yegor/AppData/Local/Temp/gui-calendar-controls-test-yIkrTm/CalendarOperations.qml:67:5: QML Dialog: Binding loop detected for property "implicitHeight":
+qrc:/qt-project.org/imports/QtQuick/Controls/Basic/Dialog.qml:16:5
+Actual controls run without QML binding errors
+QThreadStorage: entry 3 destroyed before end of thread 0x21f58cdb6c0
+QThreadStorage: entry 2 destroyed before end of thread 0x21f58cdb6c0
+QThreadStorage: entry 1 destroyed before end of thread 0x21f58cdb6c0

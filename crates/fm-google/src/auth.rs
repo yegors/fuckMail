@@ -4,7 +4,7 @@ use oauth2::{
     basic::BasicClient, AuthUrl, ClientId, CsrfToken, PkceCodeChallenge, PkceCodeVerifier,
     RedirectUrl, Scope, TokenUrl,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex};
@@ -17,6 +17,55 @@ pub const GOOGLE_SCOPES: [&str; 6] = [
     "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
     "https://www.googleapis.com/auth/calendar.events.freebusy",
 ];
+
+/// Shared interpretation of granted scopes for cached and live mail workflows.
+pub struct ScopeSet<'a>(&'a BTreeSet<String>);
+impl<'a> ScopeSet<'a> {
+    pub fn new(scopes: &'a BTreeSet<String>) -> Self {
+        Self(scopes)
+    }
+    pub fn mail_read(&self) -> bool {
+        self.mail_write()
+            || self
+                .0
+                .contains("https://www.googleapis.com/auth/gmail.readonly")
+    }
+    pub fn mail_write(&self) -> bool {
+        self.0
+            .contains("https://www.googleapis.com/auth/gmail.modify")
+            || self.0.contains("https://mail.google.com/")
+    }
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::*;
+
+    #[test]
+    fn granted_mail_scopes_distinguish_read_access_from_mutation_access() {
+        for (scope, read, write) in [
+            (
+                "https://www.googleapis.com/auth/gmail.readonly",
+                true,
+                false,
+            ),
+            ("https://www.googleapis.com/auth/gmail.modify", true, true),
+            ("https://mail.google.com/", true, true),
+            ("https://www.googleapis.com/auth/gmail.labels", false, false),
+            (
+                "https://www.googleapis.com/auth/calendar.events",
+                false,
+                false,
+            ),
+        ] {
+            let granted = BTreeSet::from([scope.to_owned()]);
+            let scopes = ScopeSet::new(&granted);
+            assert_eq!(scopes.mail_read(), read, "{scope}");
+            assert_eq!(scopes.mail_write(), write, "{scope}");
+        }
+        assert!(!ScopeSet::new(&BTreeSet::new()).mail_read());
+    }
+}
 
 /// Held in the engine only for one system-browser attempt. Deliberately no Debug.
 pub struct DesktopAuthorization {
