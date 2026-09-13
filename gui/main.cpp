@@ -48,6 +48,7 @@ int main(int argc, char **argv) {
     parser.addOption({"engine", "Path to fm-engine.", "executable"});
     parser.addOption({"smoke", "Exit successfully after the real engine supplies a conversation."});
     parser.addOption({"self-test", "Exercise GUI/CLI state against a new disposable profile."});
+    parser.addOption({"self-test-attachments", "Run only native local-attachment integration with --self-test."});
     parser.addOption({"self-test-calendar-restart", "Verify the native calendar after a self-test process restart.", "file"});
     parser.addOption({"self-test-composition-restart", "Verify an independently saved draft after a self-test process restart.", "file"});
     parser.addOption({"self-test-startup-workspace", "Verify the saved initial workspace in a fresh native process.", "mail|calendar"});
@@ -65,6 +66,10 @@ int main(int argc, char **argv) {
     parser.addOption({"benchmark-navigation-output", "Measure native mailbox and conversation input to correct content paint on a disposable fixture profile.", "file"});
     parser.addOption({"benchmark-resize-output", "Measure native resize frames and retain separate rendering captures on a disposable fixture profile.", "file"});
     parser.process(app);
+    if (parser.isSet("self-test-attachments") && (!parser.isSet("self-test") || parser.isSet("profile")
+        || parser.isSet("smoke") || parser.isSet("screenshot") || parser.isSet("live-profile")
+        || parser.isSet("self-test-live-empty") || parser.isSet("benchmark-search-output")
+        || parser.isSet("benchmark-navigation-output") || parser.isSet("benchmark-resize-output"))) parser.showHelp(1);
     if (parser.isSet("live-profile") && (!parser.isSet("profile") || parser.isSet("self-test") || parser.isSet("fixture-clock"))) parser.showHelp(1);
     if (parser.isSet("self-test-live-empty") && (parser.isSet("self-test") || parser.isSet("fixture-clock") || parser.isSet("smoke") || parser.isSet("screenshot"))) parser.showHelp(1);
     if (parser.isSet("self-test-startup-workspace") && (!parser.isSet("smoke") || !parser.isSet("profile") || parser.isSet("self-test")
@@ -249,6 +254,7 @@ int main(int argc, char **argv) {
         if (auto settings = root->findChild<QObject *>("settingsView")) settings->setProperty("page", parser.value("screenshot-settings-page"));
     }
     std::unique_ptr<GuiSelfTest> selfTest;
+    QVariantMap attachmentExpected;
     if (parser.isSet("benchmark-search-output") && !engine.rootObjects().isEmpty()) {
         auto window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
         if (!window) return 7;
@@ -265,8 +271,15 @@ int main(int argc, char **argv) {
         resizeBenchmark = std::make_unique<GuiResizeBenchmark>(backend, window, parser.value("benchmark-resize-output"), &app);
     }
     if (parser.isSet("self-test") && !engine.rootObjects().isEmpty()) {
-        selfTest = std::make_unique<GuiSelfTest>(backend, engine.rootObjects().first(), profile, program, &app);
-        QTimer::singleShot(120000, &app, [] { QCoreApplication::exit(6); });
+        if (parser.isSet("self-test-attachments")) {
+            auto window=qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+            if (!window) return 5;
+            new GuiCompositionSelfTest(backend,window,profile,program,[&](const QVariantMap &expected,const QString &error) {
+                if (!error.isEmpty()) { qCritical().noquote()<<"Native attachment integration failed:"<<error; app.exit(5); return; }
+                attachmentExpected=expected; backend.setProperty("selfTestCompleted",true); backend.shutdown();
+            },&app,true);
+        } else selfTest = std::make_unique<GuiSelfTest>(backend, engine.rootObjects().first(), profile, program, &app);
+        QTimer::singleShot(parser.isSet("self-test-attachments")?80000:120000, &app, [] { QCoreApplication::exit(6); });
     }
     QTimer::singleShot(0, &backend, &MailBackend::start);
     const auto result = app.exec();
@@ -275,6 +288,15 @@ int main(int argc, char **argv) {
     if (resizeBenchmark) resizeBenchmark->stopForShutdown();
     const bool selfTestCompleted = backend.property("selfTestCompleted").toBool();
     const bool restartVerified = result != 0 || !selfTest || !selfTestCompleted || selfTest->verifyRestart();
+    if (result==0 && parser.isSet("self-test-attachments") && selfTestCompleted) {
+        for (int i=0;i<60 && QFile::exists(QDir(profile).filePath("engine.json"));++i) QThread::msleep(50);
+        QString error;
+        if (QFile::exists(QDir(profile).filePath("engine.json"))
+            || !GuiCompositionSelfTest::verifyAttachments(profile,program,attachmentExpected,error)) {
+            qCritical().noquote()<<"Native attachment restart verification failed:"<<error;
+            return 5;
+        }
+    }
     if (smokeProfile) {
         // The engine owns its lifetime; never terminate it with the GUI.
         // Allow final-session checkpointing before removing this disposable profile.

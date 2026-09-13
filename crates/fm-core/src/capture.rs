@@ -23,7 +23,7 @@ enum Outcome {
 }
 
 #[derive(Clone, Serialize, Deserialize)]
-struct CaptureRecord {
+pub(crate) struct CaptureRecord {
     conversation_id: String,
     draft_revision: i64,
     outcome: Outcome,
@@ -105,6 +105,38 @@ impl<'a> CaptureRequest<'a> {
 }
 
 impl Store {
+    pub(crate) fn capture_existing(
+        &self,
+        account: &str,
+        params: &Value,
+    ) -> Result<Option<CaptureRecord>> {
+        let request = CaptureRequest::parse(params)?;
+        let record = load_record(&self.db, account, request.request_id)?;
+        if let Some(record) = &record {
+            let same_draft = match request.draft_id {
+                Some(id) => {
+                    record
+                        .draft_id
+                        .as_deref()
+                        .unwrap_or(&record.conversation_id)
+                        == id
+                }
+                None => {
+                    record.draft_id.is_none() && record.conversation_id == request.conversation_id
+                }
+            };
+            if !same_draft
+                || record.draft_revision != request.expected_revision
+                || record.outcome != request.outcome
+            {
+                return Err(err(
+                    "request_id_conflict",
+                    "Capture request ID already identifies different immutable content",
+                ));
+            }
+        }
+        Ok(record)
+    }
     pub(crate) fn draft_capture(&mut self, account: &str, params: &Value) -> Result<Value> {
         let request = CaptureRequest::parse(params)?;
         let mut transport = LocalCapture {
@@ -225,77 +257,21 @@ impl Store {
                 ));
             }
         }
-        let reply_to_message_id = draft["reply_to_message_id"].as_str().map(str::to_owned);
-        let references: Vec<String> = serde_json::from_value(draft["references"].clone())?;
-        let created_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|_| err("invalid_request", "System clock cannot date a capture"))?
-            .as_secs();
-        let identity = AccountIdentity {
-            account_id: account.to_owned(),
-            from: Address {
-                name: Some(draft["from_name"].as_str().unwrap_or("").to_owned()),
-                email: draft["from"]
-                    .as_str()
-                    .ok_or_else(|| err("invalid_request", "Draft From identity is missing"))?
-                    .to_owned(),
-            },
-            signature_text: draft["signature_text"].as_str().unwrap_or("").to_owned(),
-            signature_html: None,
-        };
-        let operation_digest = format!(
-            "{:x}",
-            Sha256::digest(format!("{account}\0{}", request.request_id).as_bytes())
-        );
         let attachments = self.capture_attachments(account, &draft)?;
-        let composed = fm_mail::build_mail(
-            &ComposeRequest {
-                account_id: account.to_owned(),
-                to: crate::composition::recipients(&draft["to_recipients"])?,
-                cc: crate::composition::recipients(&draft["cc_recipients"])?,
-                bcc: crate::composition::recipients(&draft["bcc_recipients"])?,
-                subject: draft["subject"].as_str().unwrap_or("").to_owned(),
-                body_text: draft["body"].as_str().unwrap_or("").to_owned(),
-                body_html: draft["body_html"].as_str().map(str::to_owned),
-                message_id: format!("<capture-{operation_digest}@fuckmail.invalid>"),
-                reply_to_message_id,
-                references,
-                timestamp_secs: created_at,
-            },
-            &identity,
+        let mut parameters = request.selector();
+        parameters["request_id"] = json!(request.request_id);
+        parameters["expected_revision"] = json!(request.expected_revision);
+        parameters["outcome"] = json!(request.outcome);
+        let proof = prepare_capture_content(
+            &self.google_blob_store(),
+            account,
+            &parameters,
+            None,
+            Some(&draft),
             &attachments,
-        )
-        .map_err(|_| {
-            err(
-                "invalid_draft",
-                "Draft headers or content cannot form a bounded MIME message",
-            )
-        })?;
-        let hash = self.stage_blob(&composed.raw)?;
-        let record = CaptureRecord {
-            conversation_id: draft["conversation_id"].as_str().unwrap_or("").to_owned(),
-            draft_revision: request.expected_revision,
-            outcome: request.outcome,
-            size: composed.raw.len() as u64,
-            created_at,
-            attempts_started: 0,
-            operation: SendOperation::prepared(
-                AccountId::new(account).map_err(capture_error)?,
-                request.request_id.to_owned(),
-                &composed.raw,
-            )
-            .map_err(capture_error)?,
-            draft_id: if draft["legacy_reply"] == true {
-                None
-            } else {
-                draft["draft_id"].as_str().map(str::to_owned)
-            },
-            subject: if draft["legacy_reply"] == true {
-                None
-            } else {
-                draft["subject"].as_str().map(str::to_owned)
-            },
-        };
+        )?;
+        let record = proof.record;
+        let hash = record.operation.mime_sha256.clone();
         let tx = self
             .db
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -420,6 +396,224 @@ impl Store {
                 .map_err(capture_error)?;
         }
         Ok(())
+    }
+}
+
+/// Content proof kept private to Core; no MIME bytes enter the writer queue.
+pub(crate) struct PreparedCapture {
+    record: CaptureRecord,
+    path: std::path::PathBuf,
+}
+
+pub(crate) fn prepare_capture_content(
+    blobs: &crate::content::BlobStore,
+    account: &str,
+    params: &Value,
+    existing: Option<CaptureRecord>,
+    draft: Option<&Value>,
+    attachments: &[StagedAttachment],
+) -> Result<PreparedCapture> {
+    let record = if let Some(record) = existing {
+        record
+    } else {
+        let request = CaptureRequest::parse(params)?;
+        let draft = draft.ok_or_else(|| err("invalid_draft", "Capture draft is missing"))?;
+        if draft["discarded"] == true {
+            return Err(err("invalid_draft", "Discarded draft cannot be captured"));
+        }
+        if draft["source_unavailable"] == true && draft["mode"] != "new" {
+            return Err(err(
+                "content_unavailable",
+                "Original composition routing was unavailable when saved",
+            ));
+        }
+        let created_at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| err("invalid_request", "System clock cannot date a capture"))?
+            .as_secs();
+        let identity = AccountIdentity {
+            account_id: account.into(),
+            from: Address {
+                name: Some(draft["from_name"].as_str().unwrap_or("").into()),
+                email: draft["from"]
+                    .as_str()
+                    .ok_or_else(|| err("invalid_request", "Draft From identity is missing"))?
+                    .into(),
+            },
+            signature_text: draft["signature_text"].as_str().unwrap_or("").into(),
+            signature_html: None,
+        };
+        let digest = format!(
+            "{:x}",
+            Sha256::digest(format!("{account}\0{}", request.request_id).as_bytes())
+        );
+        let composed = fm_mail::build_mail(
+            &ComposeRequest {
+                account_id: account.into(),
+                to: crate::composition::recipients(&draft["to_recipients"])?,
+                cc: crate::composition::recipients(&draft["cc_recipients"])?,
+                bcc: crate::composition::recipients(&draft["bcc_recipients"])?,
+                subject: draft["subject"].as_str().unwrap_or("").into(),
+                body_text: draft["body"].as_str().unwrap_or("").into(),
+                body_html: draft["body_html"].as_str().map(str::to_owned),
+                message_id: format!("<capture-{digest}@fuckmail.invalid>"),
+                reply_to_message_id: draft["reply_to_message_id"].as_str().map(str::to_owned),
+                references: serde_json::from_value(draft["references"].clone())?,
+                timestamp_secs: created_at,
+            },
+            &identity,
+            attachments,
+        )
+        .map_err(|_| {
+            err(
+                "invalid_draft",
+                "Draft headers or content cannot form a bounded MIME message",
+            )
+        })?;
+        blobs.stage_blob(&composed.raw)?;
+        CaptureRecord {
+            conversation_id: draft["conversation_id"].as_str().unwrap_or("").into(),
+            draft_revision: request.expected_revision,
+            outcome: request.outcome,
+            size: composed.raw.len() as u64,
+            created_at,
+            attempts_started: 0,
+            operation: SendOperation::prepared(
+                AccountId::new(account).map_err(capture_error)?,
+                request.request_id.into(),
+                &composed.raw,
+            )
+            .map_err(capture_error)?,
+            draft_id: if draft["legacy_reply"] == true {
+                None
+            } else {
+                draft["draft_id"].as_str().map(str::to_owned)
+            },
+            subject: if draft["legacy_reply"] == true {
+                None
+            } else {
+                draft["subject"].as_str().map(str::to_owned)
+            },
+        }
+    };
+    if serde_json::to_vec(&record)?.len() > MAX_CAPTURE_RECORD_BYTES {
+        return Err(err(
+            "invalid_draft",
+            "Capture journal entry exceeds its bound",
+        ));
+    }
+    // Export verifies the frozen source and the retained copy off the writer.
+    let path = blobs.export_attachment(
+        &record.operation.mime_sha256,
+        record.size,
+        "synthetic-draft-capture.eml",
+    )?;
+    Ok(PreparedCapture { record, path })
+}
+
+impl Store {
+    /// None redirects a same-request race to its already frozen winner.
+    pub(crate) fn finish_prepared_capture(
+        &mut self,
+        account: &str,
+        params: &Value,
+        proof: PreparedCapture,
+    ) -> Result<Option<Value>> {
+        let request = CaptureRequest::parse(params)?;
+        let mut record = if let Some(existing) = self.capture_existing(account, params)? {
+            if existing.operation.mime_sha256 != proof.record.operation.mime_sha256
+                || existing.size != proof.record.size
+            {
+                return Ok(None);
+            }
+            existing
+        } else {
+            let record = proof.record;
+            let serialized = serde_json::to_string(&record)?;
+            let tx = self
+                .db
+                .transaction_with_behavior(TransactionBehavior::Immediate)?;
+            let selected = record
+                .draft_id
+                .as_deref()
+                .unwrap_or(&record.conversation_id);
+            let revision: Option<i64> = tx
+                .query_row(
+                    "SELECT revision FROM drafts WHERE account=?1 AND draft_id=?2",
+                    [account, selected],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if revision != Some(record.draft_revision) {
+                return Err(err(
+                    "stale_revision",
+                    "Draft changed before capture was persisted",
+                ));
+            }
+            tx.execute(
+                "INSERT INTO capture_operations(account,id,json,blob_hash) VALUES(?1,?2,?3,?4)",
+                params![
+                    account,
+                    request.request_id,
+                    serialized,
+                    record.operation.mime_sha256
+                ],
+            )?;
+            tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
+            tx.commit()?;
+            record
+        };
+        if record.operation.state == SendState::InFlight {
+            let next = record.operation.recover();
+            SqliteCaptureJournal { db: &mut self.db }
+                .transition(&record.operation, &next)
+                .map_err(capture_error)?;
+            record.operation = next;
+        }
+        if record.operation.state == SendState::Prepared {
+            let in_flight = SendOperation {
+                state: SendState::InFlight,
+                ..record.operation.clone()
+            };
+            SqliteCaptureJournal { db: &mut self.db }
+                .transition(&record.operation, &in_flight)
+                .map_err(capture_error)?;
+            // Local capture's accepted ID is exactly the verified MIME hash.
+            // The proof replaces rehashing bytes on the SQLite writer.
+            let state = match record.outcome {
+                Outcome::Accepted => SendState::Accepted {
+                    message_id: format!("synthetic-{}", record.operation.mime_sha256),
+                    thread_id: request.draft_id.unwrap_or(request.conversation_id).into(),
+                },
+                Outcome::Unknown => SendState::AcceptanceUnknown,
+            };
+            let completed = SendOperation {
+                state,
+                ..in_flight.clone()
+            };
+            SqliteCaptureJournal { db: &mut self.db }
+                .transition(&in_flight, &completed)
+                .map_err(capture_error)?;
+        }
+        let record = load_record(&self.db, account, request.request_id)?
+            .ok_or_else(|| err("storage_error", "Capture journal entry disappeared"))?;
+        let state = match record.operation.state {
+            SendState::Prepared => "prepared",
+            SendState::InFlight => "in_flight",
+            SendState::Accepted { .. } => "accepted",
+            SendState::Rejected { .. } => "rejected",
+            SendState::AcceptanceUnknown => "acceptance_unknown",
+        };
+        let mut result = json!({"synthetic":true,"network_used":false,"draft_unchanged":true,"account":account,"request_id":request.request_id,
+            "conversation_id":record.conversation_id,"draft_revision":record.draft_revision,"state":state,"sha256":record.operation.mime_sha256,
+            "size":record.size,"path":proof.path.to_str().ok_or_else(||err("content_unavailable","Capture export path cannot be represented"))?,"attempts_started":record.attempts_started,"created_at":record.created_at});
+        if let Some(draft_id) = record.draft_id {
+            result["draft_id"] = json!(draft_id);
+            if record.conversation_id.is_empty() {
+                result["conversation_id"] = Value::Null;
+            }
+        }
+        Ok(Some(result))
     }
 }
 

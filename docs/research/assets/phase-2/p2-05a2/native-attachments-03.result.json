@@ -1,0 +1,12 @@
+{
+  "exit_code": 0,
+  "elapsed_seconds": 9.2402261,
+  "qt_platform": "offscreen",
+  "qt_renderer": "software",
+  "physical_picker_verified": false,
+  "binary_sha256": {
+    "build/ui-refit/fuckmail-gui.exe": "87697b8a8c72c341b969c224534aaa72f94bdf73fb4461a462fa48c072a60cb3",
+    "target/debug/fm.exe": "e05c84b1cf3e172f803c3e8a26a50dbb00736594183e28ba214d69176367e5b7",
+    "target/debug/fm-engine.exe": "10356991e933a78579c24aec6db6e0cb19107191c44890a6c7b9ef36f9ca37f2"
+  }
+}

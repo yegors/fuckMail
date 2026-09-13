@@ -313,6 +313,89 @@ fn composition_selectors_reject_ambiguity_before_starting_an_engine() {
 }
 
 #[test]
+fn attachment_import_requires_scope_saved_draft_revision_and_stable_identity() {
+    let root = tempfile::tempdir().unwrap();
+    let absent = root.path().join("not-created");
+    let valid = vec![
+        "draft",
+        "attach",
+        "--draft-id",
+        "draft-1",
+        "--file",
+        "private-attachment-name.bin",
+        "--expected-revision",
+        "1",
+        "--request-id",
+        "attach-1",
+    ];
+    let mut invalid = Vec::new();
+    for flag in [
+        "--draft-id",
+        "--file",
+        "--expected-revision",
+        "--request-id",
+    ] {
+        let mut tail = valid.clone();
+        let index = tail.iter().position(|arg| *arg == flag).unwrap();
+        tail.drain(index..index + 2);
+        invalid.push(tail);
+    }
+    for revision in ["0", "-1", "9223372036854775808"] {
+        let mut tail = valid.clone();
+        tail[7] = revision;
+        invalid.push(tail);
+    }
+    let mut legacy = valid.clone();
+    legacy.push("legacy-conversation");
+    invalid.push(legacy);
+    for tail in invalid {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args([
+                "--profile",
+                absent.to_str().unwrap(),
+                "--account",
+                "account",
+            ])
+            .args(tail)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(!String::from_utf8_lossy(&output.stderr).contains("private-attachment-name.bin"));
+        assert!(!absent.exists(), "invalid import must not start storage");
+    }
+    let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+        .args(["--profile", absent.to_str().unwrap(), "--json"])
+        .args(valid)
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    let response: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(response["error"]["code"], "invalid_request");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("private-attachment-name.bin"));
+    assert!(!absent.exists());
+    let help = Command::new(env!("CARGO_BIN_EXE_fm"))
+        .args([
+            "--profile",
+            absent.to_str().unwrap(),
+            "draft",
+            "attach",
+            "--help",
+        ])
+        .output()
+        .unwrap();
+    assert!(help.status.success());
+    for flag in [
+        "--draft-id",
+        "--file",
+        "--expected-revision",
+        "--request-id",
+    ] {
+        assert!(String::from_utf8_lossy(&help.stdout).contains(flag));
+    }
+    assert!(!absent.exists());
+}
+
+#[test]
 fn sender_commands_and_kinds_are_headless_and_reject_invalid_kinds() {
     let root = tempfile::tempdir().unwrap();
     let absent = root.path().join("not-created");

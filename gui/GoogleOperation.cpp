@@ -10,7 +10,9 @@ GoogleOperation::GoogleOperation(QString account, QString requestId, QObject *pa
     m_socket.setReadBufferSize(maxFrame + 1);
     m_timer.setSingleShot(true);
     connect(&m_timer, &QTimer::timeout, this, [this] {
-        reject("timeout", "Google work timed out. Check its saved activity before trying again.");
+        reject("timeout", m_method == "draft_attachment_import"
+            ? "Attachment import timed out. Retry the same attachment to check its saved result."
+            : "Google work timed out. Check its saved activity before trying again.");
     });
     connect(&m_socket, &QLocalSocket::connected, this, [this] {
         QString error;
@@ -34,9 +36,10 @@ GoogleOperation::~GoogleOperation() { cancel(false); }
 void GoogleOperation::start(const QString &profile, qint64 enginePid, const QString &method,
                             const QJsonObject &params, Callback callback) {
     if (m_started || m_finished) return;
-    m_started = true; m_callback = std::move(callback);
+    m_started = true; m_method = method; m_callback = std::move(callback);
     if (method != "google_calendar_write" && method != "google_calendar_reconcile"
-        && method != "google_calendar_resume" && method != "google_labels_refresh") {
+        && method != "google_calendar_resume" && method != "google_labels_refresh"
+        && method != "draft_attachment_import") {
         reject("invalid_request", "Unsupported Google operation."); return;
     }
     QString error;
@@ -83,13 +86,15 @@ void GoogleOperation::receive() {
     }
     const auto result = response[ok ? "result" : "error"].toObject();
     if (!ok || m_hello) { finish(result, ok); return; }
-    if (result["mode"].toString() != "live") {
+    const auto mode = result["mode"].toString();
+    const bool localImport = m_method == "draft_attachment_import";
+    if (mode != "live" && !(localImport && mode == "synthetic")) {
         reject("profile_mode_mismatch", "Google operations require a live profile."); return;
     }
     m_hello = true;
     // Quota cooldown can exceed the ordinary local query timeout. The user can
     // cancel at any time; no timeout automatically repeats a provider mutation.
-    m_timer.start(10 * 60 * 1000);
+    m_timer.start(localImport ? 60 * 1000 : 10 * 60 * 1000);
     const auto params = std::exchange(m_params, QJsonObject{});
     write("operation", m_method, params);
 }
@@ -107,5 +112,7 @@ void GoogleOperation::reject(const QString &code, const QString &message) {
 }
 void GoogleOperation::cancel(bool notify) {
     if (!notify) m_callback = {};
-    reject("cancelled", "Google work cancelled. Its saved activity records any provider outcome.");
+    reject("cancelled", m_method == "draft_attachment_import"
+        ? "Attachment import stopped. Retry the same attachment to check its saved result."
+        : "Google work cancelled. Its saved activity records any provider outcome.");
 }

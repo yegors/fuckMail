@@ -222,7 +222,7 @@ void MailBackend::setDraftSignature(const QString &signature) {
     emit draftChanged(); m_draftTimer.start();
 }
 void MailBackend::reloadDraft() {
-    if (draftBusy() || m_draft.isEmpty()) return;
+    if (draftBusy() || attachmentImportPending() || m_draft.isEmpty()) return;
     m_draftTimer.stop(); m_resolvingDraft = true;
     m_draftStatus = "Loading the saved draft…"; emit draftChanged();
     const auto account = m_account, id = draftContext();
@@ -263,6 +263,7 @@ void MailBackend::saveMyDraftVersion() {
     });
 }
 void MailBackend::discardDraft() {
+    if (attachmentImportPending()) return;
     if (m_draft.isEmpty() || draftBusy()) return;
     m_draftTimer.stop(); m_discarding = true; emit draftChanged();
     auto params = draftSelector(); params["request_id"] = mutation()["request_id"]; params["expected_revision"] = m_draft["revision"].toLongLong();
@@ -325,6 +326,7 @@ void MailBackend::inspectCapture(const QString &operationId) {
     });
 }
 void MailBackend::captureDraft() {
+    if (attachmentImportPending()) return;
     if (draftLocked() || m_draft.isEmpty()) return;
     if (m_draftDirty || m_savingDraft) { m_afterDraftSave = [this] { captureDraft(); }; saveDraft(); return; }
     if (m_captureRequest.isEmpty() || m_captureAccount != m_account || m_captureConversation != draftContext()) {

@@ -5,7 +5,8 @@
 #include <QTimer>
 #include <functional>
 
-// One explicit provider operation. Its connection never carries cached queries.
+// One explicit provider operation or local draft attachment import. Its
+// connection never carries cached queries.
 // Closing the connection cancels its engine owner; durable outcomes remain there.
 class GoogleOperation final : public QObject {
 public:
@@ -17,7 +18,9 @@ public:
     void cancel(bool notify = true);
     QString account() const { return m_account; }
     QString requestId() const { return m_requestId; }
+    QString method() const { return m_method; }
 private:
+    friend class GuiCompositionSelfTest;
     void receive();
     void finish(const QJsonObject &result, bool ok);
     void reject(const QString &code, const QString &message);

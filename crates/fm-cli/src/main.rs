@@ -354,6 +354,18 @@ enum Draft {
         #[arg(long)]
         request_id: String,
     },
+    /// Retain a local file and select it on this saved draft. Never sends or uploads.
+    Attach {
+        #[arg(long)]
+        draft_id: String,
+        /// Local file path; matching replay works after the original file is removed.
+        #[arg(long)]
+        file: PathBuf,
+        #[arg(long, value_parser=clap::value_parser!(u64).range(1..=i64::MAX as u64))]
+        expected_revision: u64,
+        #[arg(long)]
+        request_id: String,
+    },
     /// Serialize a saved draft into a local .eml capture. Never uses the network.
     Capture {
         #[command(flatten)]
@@ -475,6 +487,32 @@ fn account(args: &Args) -> Result<&str, Failure> {
     args.account.as_deref().ok_or_else(|| {
         invalid("this command requires --account; use 'fm accounts' to list accounts")
     })
+}
+
+fn attachment_import_params(command: &Command) -> Result<Option<Value>, Failure> {
+    let Command::Draft {
+        command:
+            Draft::Attach {
+                draft_id,
+                file,
+                expected_revision,
+                request_id,
+            },
+    } = command
+    else {
+        return Ok(None);
+    };
+    // Lexical absolute-path resolution does not open or canonicalize the file.
+    // The engine must resolve a matching durable receipt before source access.
+    let path =
+        std::path::absolute(file).map_err(|_| invalid("Attachment path cannot be resolved"))?;
+    let path = path
+        .to_str()
+        .ok_or_else(|| invalid("Attachment path cannot be represented as UTF-8"))?;
+    Ok(Some(json!({
+        "draft_id":draft_id,"expected_revision":expected_revision,
+        "request_id":request_id,"path":path
+    })))
 }
 
 fn open_google_browser(url: &str) -> Result<(), Failure> {
@@ -610,6 +648,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
     } else {
         None
     };
+    let attachment_import = attachment_import_params(&args.command)?;
     let mut client = if live_command {
         Client::connect_live(&profile, engine.as_deref()).await?
     } else {
@@ -1103,6 +1142,15 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 params["request_id"] = json!(request_id);
                 client.call("draft_discard", scope, params).await?
             }
+            Draft::Attach { .. } => {
+                client
+                    .call(
+                        "draft_attachment_import",
+                        scope,
+                        attachment_import.expect("attachment request was prepared before connect"),
+                    )
+                    .await?
+            }
             Draft::Capture {
                 target,
                 expected_revision,
@@ -1327,5 +1375,47 @@ fn emit(args: &Args, reply: &Value) -> Result<(), Failure> {
     match write {
         Err(e) if e.kind() == io::ErrorKind::BrokenPipe => Ok(()),
         other => other.map_err(Failure::from),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attachment_request_maps_exact_fields_without_opening_relative_or_deleted_sources() {
+        let root = tempfile::tempdir().unwrap();
+        let deleted = root.path().join("report with spaces 日本語.bin");
+        std::fs::write(&deleted, b"source is no longer needed for replay").unwrap();
+        std::fs::remove_file(&deleted).unwrap();
+        let relative = PathBuf::from(format!("missing-{}", fm_ipc::random_token()))
+            .join("report with spaces 日本語.bin");
+        let expected_relative = std::env::current_dir().unwrap().join(&relative);
+        for (file, expected) in [(&relative, &expected_relative), (&deleted, &deleted)] {
+            assert!(!file.exists());
+            let args = Args::try_parse_from([
+                "fm",
+                "--account",
+                "chosen-account",
+                "draft",
+                "attach",
+                "--draft-id",
+                "draft-1",
+                "--file",
+                file.to_str().unwrap(),
+                "--expected-revision",
+                "7",
+                "--request-id",
+                "import-1",
+            ])
+            .unwrap();
+            assert_eq!(account(&args).unwrap(), "chosen-account");
+            assert_eq!(
+                attachment_import_params(&args.command).unwrap().unwrap(),
+                json!({"draft_id":"draft-1","expected_revision":7,"request_id":"import-1",
+                    "path":expected.to_str().unwrap()})
+            );
+            assert!(!file.exists());
+        }
     }
 }

@@ -72,6 +72,7 @@ struct Engine {
     QLocalServer server;
     QPointer<QLocalSocket> operationPeer;
     Behavior behavior;
+    QString expectedMethod = "google_calendar_write", profileMode = "live";
     int connections = 0, hellos = 0, operations = 0, queries = 0, operationCloses = 0;
     explicit Engine(Behavior mode = Behavior::Hold) : behavior(mode) {
         require(temporary.isValid(), "temporary operation fixture");
@@ -151,14 +152,14 @@ struct Engine {
                 require(request["params"].toObject()["token"] == "synthetic-operation-token", "private handshake token");
                 peer->setProperty("authenticated", true); ++hellos;
                 peer->write(reply(behavior == Behavior::OutOfOrder ? "operation" : id,
-                    {{"mode", behavior == Behavior::WrongMode ? "synthetic" : "live"}}));
+                    {{"mode", behavior == Behavior::WrongMode ? "synthetic" : profileMode}}));
             } else {
                 require(peer->property("authenticated").toBool(), "authenticate before query or operation");
                 if (method == "status") {
                     ++queries;
                     peer->write(reply(id, {{"cached", true}}));
                 } else {
-                    require(method == "google_calendar_write", "exact allowed operation method");
+                    require(method == expectedMethod, "exact allowed operation method");
                     require(request["account"] == "fixture-account", "operation account identity");
                     require(request["params"].toObject()["request_id"] == "fixture-request", "unchanged durable request identity");
                     ++operations; operationPeer = peer; peer->setProperty("operation", true);
@@ -284,6 +285,22 @@ void callbackMayDestroyOperation() {
     await([&] { return calls == 1; }, "callback may immediately destroy its operation");
     require(!operation && engine.operations == 0, "no access after callback destruction or oversized dispatch");
 }
+void localImportProfileModes() {
+    for (const auto &mode : {QString("synthetic"), QString("live"), QString("unexpected")}) {
+        Engine engine; engine.profileMode=mode; engine.expectedMethod="draft_attachment_import";
+        Completion done; GoogleOperation operation("fixture-account","fixture-request",nullptr);
+        operation.start(engine.profile,QCoreApplication::applicationPid(),"draft_attachment_import",
+            {{"request_id","fixture-request"},{"draft_id","draft-fixture"},{"expected_revision",1},{"path","/fixture/file.bin"}},done.callback());
+        if (mode=="unexpected") {
+            await([&] { return done.calls==1; },"unknown local profile mode refused");
+            require(!done.ok && engine.operations==0,"invalid local profile cannot import");
+        } else {
+            await([&] { return engine.operations==1; },"local import accepts the explicit synthetic/live profile");
+            engine.complete(); await([&] { return done.calls==1; },"local import result delivered");
+            require(done.ok,"local import transport keeps provider-independent profile support");
+        }
+    }
+}
 }
 int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
@@ -291,6 +308,7 @@ int main(int argc, char **argv) {
     cancelClosesOwner();
     refusals();
     callbackMayDestroyOperation();
+    localImportProfileModes();
     qInfo() << "Google operation IPC checks passed: private discovery/peer identity, independent cached query, cancellation, response bounds/order/types, one-shot callbacks and callback destruction. Synthetic local IPC only; no app latency or provider claim.";
     return 0;
 }

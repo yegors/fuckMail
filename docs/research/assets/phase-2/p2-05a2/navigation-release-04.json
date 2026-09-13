@@ -1,0 +1,80 @@
+{
+  "result": "failed",
+  "scenario": "google-navigation",
+  "version": 1,
+  "runtime": "development; not package acceptance",
+  "started_unix_ms": 1789304955072.8938,
+  "host": {
+    "platform": "Windows-10-10.0.26200-SP0",
+    "machine": "AMD64",
+    "python": "3.11.9 (tags/v3.11.9:de54cf5, Apr  2 2024, 10:12:12) [MSC v.1938 64 bit (AMD64)]",
+    "logical_cpus": 16
+  },
+  "theme": "graphite",
+  "simulated_confirmed_limits": {
+    "gmail_project_units_per_minute": 1000000,
+    "gmail_account_units_per_minute": 500000,
+    "calendar_project_units_per_minute": 10000,
+    "calendar_account_units_per_minute": 5000
+  },
+  "outputs": {
+    "gui_report": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-05a2\\navigation-release-04.gui.json",
+    "fixture_report": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-05a2\\navigation-release-04.fixture.json",
+    "publications": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-05a2\\navigation-release-04.sql-observations.json",
+    "source_manifest": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-05a2\\navigation-release-04.source.json",
+    "gui_log": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-05a2\\navigation-release-04.gui.log",
+    "engine_log": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-05a2\\navigation-release-04.engine.log",
+    "personal_cli_log": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-05a2\\navigation-release-04.personal-cli.log",
+    "workspace_cli_log": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-05a2\\navigation-release-04.workspace-cli.log"
+  },
+  "executables": {
+    "gui": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\p2-08a-gui-release\\fuckmail-gui.exe",
+      "sha256": "b02e0f0bba2961a6db2cc73cc77095137c7c0ddfa1e353e77fdc0e6bd3eb8aa4"
+    },
+    "cli": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\release\\fm.exe",
+      "sha256": "e9ea65c224b242468ec74f2ea0ce9d73db455eea96aa1e7e5c0d2bb2638adefa"
+    },
+    "engine": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\verification-google\\release\\fm-engine.exe",
+      "sha256": "da4f99251247d0e9251391c19064f5071b1e055992f6ad5595d22c3b6262c56f"
+    }
+  },
+  "environment": {
+    "QT_QPA_PLATFORM": "windows",
+    "QT_QUICK_BACKEND": null,
+    "PATH": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\Qt\\6.11.2\\msvc2022_64\\bin;C:\\Windows\\System32;C:\\Windows"
+  },
+  "engine_command": [
+    "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\verification-google\\release\\fm-engine.exe",
+    "--profile",
+    "C:\\Users\\Yegor\\AppData\\Local\\Temp\\fuckmail-google-navigation-bsl5xllw\\empty-live-profile",
+    "--live-profile",
+    "--verification-google"
+  ],
+  "gui_command": [
+    "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\p2-08a-gui-release\\fuckmail-gui.exe",
+    "--profile",
+    "C:\\Users\\Yegor\\AppData\\Local\\Temp\\fuckmail-google-navigation-bsl5xllw\\empty-live-profile",
+    "--engine",
+    "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\verification-google\\release\\fm-engine.exe",
+    "--live-profile",
+    "--benchmark-navigation-output",
+    "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-05a2\\navigation-release-04.gui.json"
+  ],
+  "gui_exit_code": 9,
+  "error": "Native navigation did not complete",
+  "elapsed_seconds": 16.155999999959022,
+  "verifier_sha256": "fde684a8dd19e0400a59189ea8bbc43baabbb6853a8f8608c881b43631a59235",
+  "outputs_sha256": {
+    "gui_report": "b91dd8ccf514025d6cb2974b0295c75cd5d0b1a1292795c81be4e5bc9c53a710",
+    "fixture_report": "181099a96a5d31b4cb891366eb41ca82dec22174c0da801929a43387f70ec567",
+    "publications": "13f4b46eaa8ddc3d57fc723f00ec6533b35d11d22884891a5c620ce8e0dfed10",
+    "source_manifest": "16b639688d0326d60014d69938c2e886b2eb836e1f46870e92bac856e01e5386",
+    "gui_log": "8f80883f55eaa9e3f935309e5888a383419776bad042d5fc5a62b23555086804",
+    "engine_log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "personal_cli_log": "d64a244e602ffdde9768b51f3a9a2a871f5c823e47c5aba298744d5c07cc18af",
+    "workspace_cli_log": "fa7394337ad5812589cd8edae1ab02b3b50d1027be1ca89197c6a83adc52f8de"
+  }
+}

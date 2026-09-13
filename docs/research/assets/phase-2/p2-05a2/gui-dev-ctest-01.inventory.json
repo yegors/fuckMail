@@ -1,0 +1,505 @@
+{
+  "backtraceGraph" : 
+  {
+    "commands" : 
+    [
+      "add_test"
+    ],
+    "files" : 
+    [
+      "C:/Users/Yegor/Projects/Fuckaround/fuckMail/CMakeLists.txt",
+      "C:/Users/Yegor/Projects/Fuckaround/fuckMail/gui/CMakeLists.txt"
+    ],
+    "nodes" : 
+    [
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 82,
+        "parent" : 0
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 93,
+        "parent" : 2
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 96,
+        "parent" : 4
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 99,
+        "parent" : 6
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 102,
+        "parent" : 8
+      },
+      {
+        "file" : 0
+      },
+      {
+        "command" : 0,
+        "file" : 0,
+        "line" : 105,
+        "parent" : 10
+      },
+      {
+        "file" : 1
+      },
+      {
+        "command" : 0,
+        "file" : 1,
+        "line" : 69,
+        "parent" : 12
+      },
+      {
+        "file" : 1
+      },
+      {
+        "command" : 0,
+        "file" : 1,
+        "line" : 75,
+        "parent" : 14
+      },
+      {
+        "file" : 1
+      },
+      {
+        "command" : 0,
+        "file" : 1,
+        "line" : 82,
+        "parent" : 16
+      },
+      {
+        "file" : 1
+      },
+      {
+        "command" : 0,
+        "file" : 1,
+        "line" : 88,
+        "parent" : 18
+      },
+      {
+        "file" : 1
+      },
+      {
+        "command" : 0,
+        "file" : 1,
+        "line" : 96,
+        "parent" : 20
+      },
+      {
+        "file" : 1
+      },
+      {
+        "command" : 0,
+        "file" : 1,
+        "line" : 107,
+        "parent" : 22
+      }
+    ]
+  },
+  "kind" : "ctestInfo",
+  "tests" : 
+  [
+    {
+      "backtrace" : 1,
+      "command" : 
+      [
+        "C:/Users/Yegor/Projects/Fuckaround/fuckMail/.tools/cargo/bin/cargo.exe",
+        "test",
+        "--workspace",
+        "--locked",
+        "--no-run",
+        "--target-dir",
+        "C:/Users/Yegor/Projects/Fuckaround/fuckMail/target"
+      ],
+      "name" : "rust-test-build",
+      "properties" : 
+      [
+        {
+          "name" : "FIXTURES_SETUP",
+          "value" : 
+          [
+            "rust_test_binaries"
+          ]
+        },
+        {
+          "name" : "RESOURCE_LOCK",
+          "value" : 
+          [
+            "fm_cargo"
+          ]
+        },
+        {
+          "name" : "TIMEOUT",
+          "value" : 900.0
+        },
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "C:/Users/Yegor/Projects/Fuckaround/fuckMail"
+        }
+      ]
+    },
+    {
+      "backtrace" : 3,
+      "command" : 
+      [
+        "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/fuckmail-gui.exe",
+        "--smoke"
+      ],
+      "name" : "gui-smoke",
+      "properties" : 
+      [
+        {
+          "name" : "ENVIRONMENT",
+          "value" : 
+          [
+            "QT_QPA_PLATFORM=offscreen",
+            "QT_QUICK_BACKEND=software",
+            "QT_FORCE_STDERR_LOGGING=1",
+            "QT_QPA_FONTDIR=C:\\Windows/Fonts"
+          ]
+        },
+        {
+          "name" : "TIMEOUT",
+          "value" : 45.0
+        },
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev"
+        }
+      ]
+    },
+    {
+      "backtrace" : 5,
+      "command" : 
+      [
+        "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/fuckmail-gui.exe",
+        "--self-test-live-empty"
+      ],
+      "name" : "gui-live-empty",
+      "properties" : 
+      [
+        {
+          "name" : "ENVIRONMENT",
+          "value" : 
+          [
+            "QT_QPA_PLATFORM=offscreen",
+            "QT_QUICK_BACKEND=software",
+            "QT_FORCE_STDERR_LOGGING=1",
+            "QT_QPA_FONTDIR=C:\\Windows/Fonts"
+          ]
+        },
+        {
+          "name" : "TIMEOUT",
+          "value" : 45.0
+        },
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev"
+        }
+      ]
+    },
+    {
+      "backtrace" : 7,
+      "command" : 
+      [
+        "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/fuckmail-gui.exe",
+        "--self-test"
+      ],
+      "name" : "gui-integration",
+      "properties" : 
+      [
+        {
+          "name" : "ENVIRONMENT",
+          "value" : 
+          [
+            "QT_QPA_PLATFORM=offscreen",
+            "QT_QUICK_BACKEND=software",
+            "QT_FORCE_STDERR_LOGGING=1",
+            "QT_QPA_FONTDIR=C:\\Windows/Fonts",
+            "FM_GUI_TEST_TRACE=1"
+          ]
+        },
+        {
+          "name" : "TIMEOUT",
+          "value" : 150.0
+        },
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev"
+        }
+      ]
+    },
+    {
+      "backtrace" : 9,
+      "command" : 
+      [
+        "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/fuckmail-gui.exe",
+        "--self-test",
+        "--self-test-attachments"
+      ],
+      "name" : "gui-attachments",
+      "properties" : 
+      [
+        {
+          "name" : "ENVIRONMENT",
+          "value" : 
+          [
+            "QT_QPA_PLATFORM=offscreen",
+            "QT_QUICK_BACKEND=software",
+            "QT_FORCE_STDERR_LOGGING=1",
+            "QT_QPA_FONTDIR=C:\\Windows/Fonts",
+            "FM_GUI_TEST_TRACE=1"
+          ]
+        },
+        {
+          "name" : "TIMEOUT",
+          "value" : 90.0
+        },
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev"
+        }
+      ]
+    },
+    {
+      "backtrace" : 11,
+      "command" : 
+      [
+        "C:/Users/Yegor/Projects/Fuckaround/fuckMail/.tools/cargo/bin/cargo.exe",
+        "test",
+        "-p",
+        "fm-engine",
+        "--test",
+        "sessions",
+        "--locked",
+        "--target-dir",
+        "C:/Users/Yegor/Projects/Fuckaround/fuckMail/target",
+        "gui_startup_recovers_after_writer_closes",
+        "--",
+        "--ignored",
+        "--exact",
+        "--nocapture"
+      ],
+      "name" : "gui-startup-recovery",
+      "properties" : 
+      [
+        {
+          "name" : "DEPENDS",
+          "value" : 
+          [
+            "rust-test-build"
+          ]
+        },
+        {
+          "name" : "ENVIRONMENT",
+          "value" : 
+          [
+            "QT_QPA_PLATFORM=offscreen",
+            "QT_QUICK_BACKEND=software",
+            "QT_FORCE_STDERR_LOGGING=1",
+            "QT_QPA_FONTDIR=C:\\Windows/Fonts",
+            "FM_GUI_TEST_EXECUTABLE=C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/fuckmail-gui.exe"
+          ]
+        },
+        {
+          "name" : "FIXTURES_REQUIRED",
+          "value" : 
+          [
+            "rust_test_binaries"
+          ]
+        },
+        {
+          "name" : "RESOURCE_LOCK",
+          "value" : 
+          [
+            "fm_cargo"
+          ]
+        },
+        {
+          "name" : "TIMEOUT",
+          "value" : 90.0
+        },
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "C:/Users/Yegor/Projects/Fuckaround/fuckMail"
+        }
+      ]
+    },
+    {
+      "backtrace" : 13,
+      "command" : 
+      [
+        "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-ipc-trust-test.exe"
+      ],
+      "name" : "gui-ipc-trust",
+      "properties" : 
+      [
+        {
+          "name" : "TIMEOUT",
+          "value" : 10.0
+        },
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui"
+        }
+      ]
+    },
+    {
+      "backtrace" : 15,
+      "command" : 
+      [
+        "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-composer-probe.exe"
+      ],
+      "name" : "gui-composer-probe",
+      "properties" : 
+      [
+        {
+          "name" : "ENVIRONMENT",
+          "value" : 
+          [
+            "QT_QPA_PLATFORM=offscreen"
+          ]
+        },
+        {
+          "name" : "TIMEOUT",
+          "value" : 10.0
+        },
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui"
+        }
+      ]
+    },
+    {
+      "backtrace" : 17,
+      "command" : 
+      [
+        "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-reply-document-test.exe"
+      ],
+      "name" : "gui-reply-document",
+      "properties" : 
+      [
+        {
+          "name" : "ENVIRONMENT",
+          "value" : 
+          [
+            "QT_QPA_PLATFORM=offscreen"
+          ]
+        },
+        {
+          "name" : "TIMEOUT",
+          "value" : 10.0
+        },
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui"
+        }
+      ]
+    },
+    {
+      "backtrace" : 19,
+      "command" : 
+      [
+        "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-calendar-layout-test.exe"
+      ],
+      "name" : "gui-calendar-layout",
+      "properties" : 
+      [
+        {
+          "name" : "TIMEOUT",
+          "value" : 10.0
+        },
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui"
+        }
+      ]
+    },
+    {
+      "backtrace" : 21,
+      "command" : 
+      [
+        "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-calendar-controls-test.exe"
+      ],
+      "name" : "gui-calendar-controls",
+      "properties" : 
+      [
+        {
+          "name" : "ENVIRONMENT",
+          "value" : 
+          [
+            "QT_QPA_PLATFORM=offscreen",
+            "QT_QUICK_BACKEND=software",
+            "QT_FORCE_STDERR_LOGGING=1",
+            "QT_QPA_FONTDIR=C:\\Windows/Fonts"
+          ]
+        },
+        {
+          "name" : "TIMEOUT",
+          "value" : 30.0
+        },
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui"
+        }
+      ]
+    },
+    {
+      "backtrace" : 23,
+      "command" : 
+      [
+        "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui-google-operation-test.exe"
+      ],
+      "name" : "gui-google-operation",
+      "properties" : 
+      [
+        {
+          "name" : "ENVIRONMENT",
+          "value" : 
+          [
+            "QT_FORCE_STDERR_LOGGING=1"
+          ]
+        },
+        {
+          "name" : "TIMEOUT",
+          "value" : 30.0
+        },
+        {
+          "name" : "WORKING_DIRECTORY",
+          "value" : "C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui"
+        }
+      ]
+    }
+  ],
+  "version" : 
+  {
+    "major" : 1,
+    "minor" : 0
+  }
+}

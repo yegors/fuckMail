@@ -1,0 +1,4 @@
+error: no test target named `verification_google` in `fm-engine` package
+help: available test targets:
+    sessions
+    verification_profile

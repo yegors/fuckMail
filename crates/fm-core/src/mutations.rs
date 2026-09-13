@@ -6,7 +6,12 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 
 impl Store {
-    pub(crate) fn mutate(&self, method: &str, account: &str, p: &Value) -> Result<Value> {
+    pub(crate) fn mutation_receipt(
+        &self,
+        method: &str,
+        account: &str,
+        p: &Value,
+    ) -> Result<Option<Value>> {
         let allowed: &[&str] = match method {
             "flag" => &[
                 "id",
@@ -53,20 +58,15 @@ impl Store {
                 "request_id",
             ],
             "draft_create" => &["mode", "conversation_id", "source_message_id", "request_id"],
+            "draft_attachment_import" => &["draft_id", "expected_revision", "request_id", "path"],
             "view_save" => &["view", "expected_revision", "request_id"],
             _ => return Err(err("unsupported_method", "Unknown mutation")),
         };
         fields(p, allowed)?;
         let request_id = string(p, "request_id")?;
-        let fingerprint = format!(
-            "{:x}",
-            Sha256::digest(serde_json::to_vec(&json!([method, p]))?)
-        );
-        let flag_projection_stamp = (method == "flag").then(|| self.flag_projection_stamp());
-        // The serialized engine owns this connection. Query the same transaction
-        // while constructing the response; record that response before commit.
-        let tx = self.db.unchecked_transaction()?;
-        let previous: Option<(String, String)> = tx
+        let fingerprint = fingerprint(method, p)?;
+        let previous: Option<(String, String)> = self
+            .db
             .query_row(
                 "SELECT fingerprint,result_json FROM operations WHERE account=?1 AND request_id=?2",
                 params![account, request_id],
@@ -107,8 +107,32 @@ impl Store {
                     ));
                 }
             }
-            return Ok(result);
+            return Ok(Some(result));
         }
+        Ok(None)
+    }
+
+    pub(crate) fn mutate(&self, method: &str, account: &str, p: &Value) -> Result<Value> {
+        self.mutate_prepared(method, account, p, None)
+    }
+
+    pub(crate) fn mutate_prepared(
+        &self,
+        method: &str,
+        account: &str,
+        p: &Value,
+        prepared_draft: Option<&Value>,
+    ) -> Result<Value> {
+        // Capture the eligible cache generation before opening the transaction;
+        // uncommitted reads intentionally invalidate reusable projections.
+        let flag_projection_stamp = (method == "flag").then(|| self.flag_projection_stamp());
+        // The serialized writer rechecks replay before every final mutation.
+        let tx = self.db.unchecked_transaction()?;
+        if let Some(reply) = self.mutation_receipt(method, account, p)? {
+            return Ok(reply);
+        }
+        let request_id = string(p, "request_id")?;
+        let fingerprint = fingerprint(method, p)?;
         let expected = if method == "draft_create" {
             0
         } else {
@@ -217,9 +241,13 @@ impl Store {
                 )?;
                 self.conversation(account, conversation)?
             }
-            "draft_save" | "draft_discard" => {
-                self.save_composition(account, p, expected, method == "draft_discard")?
-            }
+            "draft_save" | "draft_discard" => self.save_composition_prepared(
+                account,
+                p,
+                expected,
+                method == "draft_discard",
+                prepared_draft,
+            )?,
             "view_save" => {
                 let view = &p["view"];
                 if !view.is_object() {
@@ -260,6 +288,13 @@ impl Store {
         }
         Ok(result)
     }
+}
+
+pub(crate) fn fingerprint(method: &str, p: &Value) -> Result<String> {
+    Ok(format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&json!([method, p]))?)
+    ))
 }
 
 fn next_revision(current: i64) -> Result<i64> {

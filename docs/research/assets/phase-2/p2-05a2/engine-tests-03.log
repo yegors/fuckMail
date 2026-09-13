@@ -1,0 +1,23 @@
+   Compiling ring v0.17.14
+   Compiling libsqlite3-sys v0.30.1
+   Compiling rusqlite v0.32.1
+   Compiling rustls v0.23.44
+   Compiling rustls-webpki v0.103.15
+   Compiling jsonwebtoken v9.3.1
+   Compiling tokio-rustls v0.26.5
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+   Compiling fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.18s
+     Running unittests src\main.rs (target\debug\deps\fm_engine-a688adde29aa596e.exe)
+
+running 3 tests
+test local_content::tests::cancelled_blocking_workers_keep_both_slots_until_they_really_complete ... ok
+test local_content::tests::actual_import_preparation_leaves_writer_free_and_cancellation_preserves_draft ... ok
+test local_content::tests::authenticated_import_sessions_drain_preparation_on_client_and_engine_close ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 81 filtered out; finished in 6.18s
+

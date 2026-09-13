@@ -14,7 +14,20 @@ QString MailBackend::draftContext() const {
     return m_activeDraft.isEmpty() ? "conversation:" + m_selected : "draft:" + m_activeDraft;
 }
 
+bool MailBackend::olderDraftProjection(const QJsonObject &result) const {
+    // Cached queries and attachment imports have independent connections. A
+    // late read must not move a known draft revision backwards after a receipt.
+    return result["account"].toString() == m_account
+        && !result["draft_id"].toString().isEmpty()
+        && result["draft_id"].toString() == m_draft.value("draft_id").toString()
+        && result["revision"].toInteger() < m_draft.value("revision").toLongLong();
+}
+
 void MailBackend::acceptDraft(const QJsonObject &result, bool restoreView) {
+    if (olderDraftProjection(result)) {
+        m_draftStatus = m_draftDirty ? "Saving…" : "Saved on this machine";
+        emit draftChanged(); return;
+    }
     m_recipientInputs.clear();
     m_activeDraft = result["draft_id"].toString();
     m_selected = result["conversation_id"].toString();
@@ -101,7 +114,7 @@ void MailBackend::loadActiveDraft() {
     const auto account = m_account, id = m_activeDraft;
     const int generation = m_generation;
     request("draft_get", account, {{"draft_id", id}}, [this, account, id, generation](auto result, bool ok) {
-        if (!ok || account != m_account || id != m_activeDraft || generation != m_generation || m_draftDirty || draftBusy()) return;
+        if (!ok || account != m_account || id != m_activeDraft || generation != m_generation || m_draftDirty || draftBusy() || olderDraftProjection(result)) return;
         const auto next = result.toVariantMap();
         if (next != m_draft) {
             m_draft = next; m_draftStatus = result["discarded"].toBool() ? "Draft discarded" : "Saved on this machine";
@@ -143,7 +156,7 @@ void MailBackend::loadDraftPage(const QString &account, int generation, int offs
                 if (!result["drafts"].toArray().isEmpty() && next > offset && rows.size() < desiredCount) {
                     loadDraftPage(account, generation, next, std::move(rows), desiredCount); return;
                 }
-                m_conversations = std::move(rows);
+                if (!publishConversations(std::move(rows))) { m_loading = false; emit loadingChanged(); return; }
                 m_querySummary = {{"filtered_conversation_count", result["total"].toVariant()}};
                 m_nextOffset = next;
                 m_nextCursor.clear(); emit conversationsChanged();

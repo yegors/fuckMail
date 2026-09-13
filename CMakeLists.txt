@@ -13,6 +13,9 @@ string(JSON FM_QT_VERSION GET "${FM_TOOLCHAIN_JSON}" qt)
 find_package(Qt6 ${FM_QT_VERSION} EXACT REQUIRED COMPONENTS Quick QuickControls2 Network)
 qt_standard_project_setup(REQUIRES 6.8)
 include(CTest)
+if(BUILD_TESTING)
+    find_package(Qt6 ${FM_QT_VERSION} EXACT REQUIRED COMPONENTS Test)
+endif()
 option(FM_GUI_ONLY "Compile only the Qt client while editing UI; not an installable app" OFF)
 if(FM_GUI_ONLY)
     add_subdirectory(gui)
@@ -98,6 +101,9 @@ if(BUILD_TESTING)
         ENVIRONMENT "${FM_GUI_TEST_ENV}")
     add_test(NAME gui-integration COMMAND "$<TARGET_FILE:fuckmail-gui>" --self-test)
     set_tests_properties(gui-integration PROPERTIES TIMEOUT 150
+        ENVIRONMENT "${FM_GUI_TEST_ENV};FM_GUI_TEST_TRACE=1")
+    add_test(NAME gui-attachments COMMAND "$<TARGET_FILE:fuckmail-gui>" --self-test --self-test-attachments)
+    set_tests_properties(gui-attachments PROPERTIES TIMEOUT 90
         ENVIRONMENT "${FM_GUI_TEST_ENV};FM_GUI_TEST_TRACE=1")
     add_test(NAME gui-startup-recovery COMMAND "${FM_CARGO}" test -p fm-engine --test sessions
         --locked ${FM_CARGO_PROFILE_ARGS} --target-dir "${CMAKE_SOURCE_DIR}/target"

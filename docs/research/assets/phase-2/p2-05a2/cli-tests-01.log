@@ -1,0 +1,13 @@
+Recorded from the first tool invocation: the shell failed before Cargo started,
+so its redirected log was not created. No test or compilation result exists
+for this attempt. The following is the captured PowerShell diagnostic:
+
+&:
+Line |
+  15 |  & cargo test -p fm-cli --locked *> $taskLog
+     |    ~~~~~
+     | The term 'cargo' is not recognized as a name of a cmdlet, function, script file, or executable program.
+Check the spelling of the name, or if a path was included, verify that the path is correct and try again.
+
+The next attempt invoked the repository-local cargo.exe by absolute path after
+loading the Visual Studio compiler environment; see cli-tests-02.log.

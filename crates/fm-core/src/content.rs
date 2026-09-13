@@ -27,6 +27,10 @@ impl BlobStore {
     pub fn verified_blob(&self, hash: &str, size: u64) -> Result<PathBuf> {
         verified_blob(&self.profile, hash, size)
     }
+
+    pub(crate) fn export_attachment(&self, hash: &str, size: u64, name: &str) -> Result<PathBuf> {
+        export_verified_attachment(&self.profile, hash, size, name)
+    }
 }
 
 impl Store {
@@ -118,39 +122,58 @@ fn verified_blob(profile: &Path, hash: &str, expected_size: u64) -> Result<PathB
 
 impl Store {
     fn export_verified_attachment(&self, hash: &str, size: u64, name: &str) -> Result<PathBuf> {
-        let source = self.verified_blob(hash, size)?;
-        let exports = private_directory(&self.profile, "exports", true)?;
-        let directory = private_directory(&exports, hash, true)?;
-        let destination = directory.join(safe_export_name(name));
+        export_verified_attachment(&self.profile, hash, size, name)
+    }
+}
+
+fn export_verified_attachment(
+    profile: &Path,
+    hash: &str,
+    size: u64,
+    name: &str,
+) -> Result<PathBuf> {
+    let source = verified_blob(profile, hash, size)?;
+    let exports = private_directory(profile, "exports", true)?;
+    let directory = private_directory(&exports, hash, true)?;
+    let destination = directory.join(safe_export_name(name));
+    match fs::symlink_metadata(&destination) {
+        Ok(_) => {
+            verify_file(&destination, hash, size)?;
+            return Ok(destination);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    let (temporary, mut file) = create_stage(&directory)?;
+    let copied = std::io::copy(&mut open_regular(&source)?.take(size + 1), &mut file)?;
+    if copied != size {
+        return Err(unavailable());
+    }
+    file.sync_all()?;
+    drop(file);
+    verify_file(&temporary, hash, size)?;
+    {
+        let _publication = BLOB_PUBLICATION.lock().map_err(|_| unavailable())?;
         match fs::symlink_metadata(&destination) {
-            Ok(_) => {
-                verify_file(&destination, hash, size)?;
-                return Ok(destination);
+            Ok(_) => fs::remove_file(&temporary)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                fs::rename(&temporary, &destination)?;
+                sync_directory(&directory)?;
             }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => return Err(error.into()),
         }
-        let (temporary, mut file) = create_stage(&directory)?;
-        let copied = std::io::copy(&mut open_regular(&source)?.take(size + 1), &mut file)?;
-        if copied != size {
-            return Err(unavailable());
-        }
-        file.sync_all()?;
-        drop(file);
-        verify_file(&temporary, hash, size)?;
-        fs::rename(&temporary, &destination)?;
-        sync_directory(&directory)?;
-        verify_file(&destination, hash, size)?;
-        Ok(destination)
     }
-
+    verify_file(&destination, hash, size)?;
+    Ok(destination)
+}
+impl Store {
     pub(crate) fn attachment(&self, account: &str, attachment_id: &str) -> Result<Value> {
         id(account)?;
         id(attachment_id)?;
         let row = self.db.query_row(
             "SELECT message_id,name,mime_type,size,state,blob_hash FROM attachments WHERE account=?1 AND id=?2",
             [account, attachment_id],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, i64>(3)?, row.get::<_, String>(4)?, row.get::<_, String>(5)?)),
+            |row| Ok((row.get::<_, Option<String>>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, i64>(3)?, row.get::<_, String>(4)?, row.get::<_, String>(5)?)),
         ).optional()?.ok_or_else(|| err("not_found", "Attachment does not exist in this account"))?;
         let (message_id, name, mime_type, size, state, hash) = row;
         let mut result = json!({"account":account,"id":attachment_id,"message_id":message_id,"name":name,"mime_type":mime_type,"size":size,"state":state});
@@ -307,7 +330,7 @@ fn is_reparse_point(_: &fs::Metadata) -> bool {
     false
 }
 
-fn open_regular(path: &Path) -> Result<File> {
+pub(crate) fn open_regular(path: &Path) -> Result<File> {
     reject_non_regular(&fs::symlink_metadata(path)?)?;
     let mut options = OpenOptions::new();
     options.read(true);

@@ -1,0 +1,12 @@
+********* Start testing of ConversationListModelTest *********
+Config: Using QtTest library 6.11.2, Qt 6.11.2 (x86_64-little_endian-llp64 shared (dynamic) debug build; by MSVC 2022), windows 11
+PASS   : ConversationListModelTest::initTestCase()
+QWARN  : ConversationListModelTest::dataOnlyAndNoopPreserveIdentity() Trying to construct an instance of an invalid type, type id: 4097
+PASS   : ConversationListModelTest::dataOnlyAndNoopPreserveIdentity()
+PASS   : ConversationListModelTest::structuralUpdatesPreserveSurvivors()
+PASS   : ConversationListModelTest::predecessorRoleChangesAreObservable()
+PASS   : ConversationListModelTest::pageAppendAndScopeReset()
+PASS   : ConversationListModelTest::invalidIdentityDoesNotPartiallyPublish()
+PASS   : ConversationListModelTest::cleanupTestCase()
+Totals: 7 passed, 0 failed, 0 skipped, 0 blacklisted, 13ms
+********* Finished testing of ConversationListModelTest *********

@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 
 Rectangle {
     id: root
@@ -9,7 +10,7 @@ Rectangle {
     property bool signatureOpen: false
     property bool ccOpen: false
     property bool bccOpen: false
-    readonly property bool popupOpen: discardDialog.opened || reloadDialog.opened || conflictDialog.opened || attachmentMenu.opened || contextMenu.opened
+    readonly property bool popupOpen: discardDialog.opened || reloadDialog.opened || conflictDialog.opened || attachmentMenu.opened || contextMenu.opened || localAttachmentDialog.visible
     readonly property string mode: backend.draft.mode || "reply"
     readonly property string draftTitle: ({new:"New message",reply:"Reply",reply_all:"Reply all",forward:"Forward"})[mode] || "Reply"
     readonly property bool hasSelection: bodyEditor.selectionEnd > bodyEditor.selectionStart
@@ -21,10 +22,15 @@ Rectangle {
         return items
     }
     function focusEditor() { bodyEditor.forceActiveFocus() }
+    function chooseLocalAttachment() {
+        localAttachmentDialog.targetAccount = backend.account
+        localAttachmentDialog.targetDraft = backend.draft.draft_id || ""
+        localAttachmentDialog.open()
+    }
     function attachmentSize(bytes) {
         return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + " MB" : bytes >= 1024 ? Math.ceil(bytes / 1024) + " KB" : bytes + " B"
     }
-    function confirmDiscard() { if (!backend.draftLocked) discardDialog.open() }
+    function confirmDiscard() { if (!backend.draftLocked && !backend.attachmentImport.pending) discardDialog.open() }
     function syncDraft() {
         loading = true
         document.setIdentity(backend.account + "/" + (backend.activeDraftId || backend.selectedId))
@@ -60,7 +66,7 @@ Rectangle {
             Text { visible: root.mode!=="new"; text: root.mode==="forward" ? "original message quoted below" : "in this conversation"; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); Layout.fillWidth: true; elide: Text.ElideRight }
             Item { Layout.fillWidth: true }
             FmButton { objectName: "collapseReply"; text: "Minimise"; font.pixelSize: Theme.fontSize(12); leftPadding: 0; rightPadding: 0; tip: "Keep this draft and hide the editor"; onClicked: { backend.saveDraft(); root.dismissed() } }
-            FmButton { objectName: "discardReply"; text: "Discard"; font.pixelSize: Theme.fontSize(12); leftPadding: 4; rightPadding: 0; enabled: !backend.draftLocked; onClicked: discardDialog.open() }
+            FmButton { objectName: "discardReply"; text: "Discard"; font.pixelSize: Theme.fontSize(12); leftPadding: 4; rightPadding: 0; enabled: !backend.draftLocked && !backend.attachmentImport.pending; onClicked: discardDialog.open() }
         }
         Item { Layout.fillWidth: true; implicitHeight: 1; Rectangle { y: Theme.snapY(parent, 0); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
         RowLayout {
@@ -206,12 +212,12 @@ Rectangle {
                 prominent: true
                 leftPadding: 16; rightPadding: 16
                 font.pixelSize: Theme.fontSize(13)
-                enabled: backend.syntheticProfile && !backend.draftLocked && (document.plainText.trim().length > 0 || root.attachmentIds.length > 0)
+                enabled: backend.syntheticProfile && !backend.draftLocked && !backend.attachmentImport.pending && (document.plainText.trim().length > 0 || root.attachmentIds.length > 0)
                 tip: backend.syntheticProfile ? "Record an outgoing MIME copy on this machine; no email is delivered" : "Sending is not available in this build. Your draft is saved locally."
                 onClicked: backend.captureDraft()
             }
-            FmButton { text: "Attach"; iconName: "attachment"; outlined: true; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pixelSize: Theme.fontSize(13); tip: root.availableAttachments.length ? "Attach a retained file from this conversation" : "No retained files in this conversation"; enabled: root.availableAttachments.length > 0 && !backend.draftBusy; onClicked: attachmentMenu.popup() }
-            FmButton { text: "Discard"; leftPadding: 12; rightPadding: 12; font.pixelSize: Theme.fontSize(13); enabled: !backend.draftLocked; onClicked: discardDialog.open() }
+            FmButton { objectName: "draftAttachButton"; text: "Attach"; iconName: "attachment"; outlined: true; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pixelSize: Theme.fontSize(13); tip: "Attach a local file or a retained conversation file"; enabled: backend.connected && !backend.draftBusy && !backend.attachmentImportBusy; onClicked: attachmentMenu.popup() }
+            FmButton { objectName: "draftDiscardButton"; text: "Discard"; leftPadding: 12; rightPadding: 12; font.pixelSize: Theme.fontSize(13); enabled: !backend.draftLocked && !backend.attachmentImport.pending; onClicked: discardDialog.open() }
             Item { Layout.fillWidth: true }
             Text {
                 text: backend.draftStatus
@@ -221,6 +227,12 @@ Rectangle {
                 wrapMode: Text.WordWrap
                 font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) }
             }
+        }
+        RowLayout {
+            visible: (backend.attachmentImport.status || "").length > 0
+            Layout.fillWidth: true; spacing: 8
+            Text { objectName: "draftAttachmentStatus"; Layout.fillWidth: true; text: backend.attachmentImport.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.attachmentImport.retry ? Theme.warn : text.indexOf("Not attached") === 0 ? Theme.error : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            FmButton { objectName: "retryDraftAttachment"; visible: backend.attachmentImport.retry || false; text: "Retry attachment"; outlined: true; enabled: backend.connected && !backend.attachmentImportBusy && !backend.draftBusy; onClicked: { backend.clearError(); backend.retryDraftAttachment() } }
         }
         RowLayout {
             visible: backend.draftStatus.indexOf("Not saved") >= 0 && !backend.draftConflict
@@ -248,6 +260,9 @@ Rectangle {
     }
     Menu {
         id: attachmentMenu
+        objectName: "draftAttachmentMenu"
+        MenuItem { objectName: "draftAttachLocalFile"; text: "Choose a local file…"; enabled: !backend.attachmentImportBusy; onTriggered: root.chooseLocalAttachment() }
+        MenuSeparator { visible: root.availableAttachments.length > 0 }
         Repeater {
             model: root.availableAttachments
             MenuItem {
@@ -258,6 +273,15 @@ Rectangle {
                 onTriggered: backend.setDraftAttachment(modelData.id, checked)
             }
         }
+    }
+    FileDialog {
+        id: localAttachmentDialog
+        objectName: "draftAttachmentFileDialog"
+        property string targetAccount: ""
+        property string targetDraft: ""
+        title: "Attach a file"
+        fileMode: FileDialog.OpenFile
+        onAccepted: backend.importDraftAttachment(selectedFile, targetAccount, targetDraft)
     }
     Dialog {
         id: discardDialog

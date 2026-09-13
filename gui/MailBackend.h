@@ -1,4 +1,5 @@
 #pragma once
+#include "ConversationListModel.h"
 
 #include <QObject>
 #include <QElapsedTimer>
@@ -10,6 +11,7 @@
 #include <QVariantMap>
 #include <QSet>
 #include <QQueue>
+#include <QUrl>
 #include <functional>
 
 class GoogleOperation;
@@ -19,7 +21,9 @@ class GoogleOperation;
 class MailBackend final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList accounts READ accounts NOTIFY accountsChanged)
+    Q_PROPERTY(QAbstractItemModel *accountModel READ accountModel CONSTANT)
     Q_PROPERTY(QVariantList conversations READ conversations NOTIFY conversationsChanged)
+    Q_PROPERTY(QAbstractItemModel *conversationModel READ conversationModel CONSTANT)
     Q_PROPERTY(QVariantList categories READ categories NOTIFY categoriesChanged)
     Q_PROPERTY(QVariantMap conversation READ conversation NOTIFY conversationChanged)
     Q_PROPERTY(QVariantMap senderCard READ senderCard NOTIFY senderCardChanged)
@@ -64,6 +68,8 @@ class MailBackend final : public QObject {
     Q_PROPERTY(bool draftBusy READ draftBusy NOTIFY draftChanged)
     Q_PROPERTY(bool draftLocked READ draftLocked NOTIFY draftChanged)
     Q_PROPERTY(bool draftConflict READ draftConflict NOTIFY draftChanged)
+    Q_PROPERTY(QVariantMap attachmentImport READ attachmentImport NOTIFY draftChanged)
+    Q_PROPERTY(bool attachmentImportBusy READ attachmentImportBusy NOTIFY draftChanged)
     Q_PROPERTY(QVariantList calendarSources READ calendarSources NOTIFY eventsChanged)
     Q_PROPERTY(QString calendarView READ calendarView NOTIFY eventsChanged)
     Q_PROPERTY(QString calendarDate READ calendarDate NOTIFY eventsChanged)
@@ -85,7 +91,9 @@ public:
     explicit MailBackend(QString profile, QString engine, QObject *parent = nullptr, bool fixtureClock = false, bool liveProfile = false);
     ~MailBackend() override;
     QVariantList accounts() const { return m_accounts; }
+    QAbstractItemModel *accountModel() { return &m_accountModel; }
     QVariantList conversations() const { return m_conversations; }
+    QAbstractItemModel *conversationModel() { return &m_conversationModel; }
     QVariantList categories() const { return m_categories; }
     QVariantMap conversation() const { return m_conversation; }
     QVariantMap senderCard() const { return m_senderCard; }
@@ -185,6 +193,10 @@ public:
     Q_INVOKABLE void setDraftSubject(const QString &subject);
     Q_INVOKABLE void editFormattedDraft(const QString &body, const QString &html);
     Q_INVOKABLE void setDraftAttachment(const QString &id, bool selected);
+    Q_INVOKABLE void importDraftAttachment(const QUrl &file, const QString &account, const QString &draftId);
+    Q_INVOKABLE void retryDraftAttachment();
+    QVariantMap attachmentImport() const;
+    bool attachmentImportBusy() const { return !m_attachmentImportActive.isEmpty(); }
     Q_INVOKABLE void setDraftSignature(const QString &signature);
     Q_INVOKABLE void discardDraft();
     Q_INVOKABLE void captureDraft();
@@ -250,6 +262,7 @@ private:
     friend class GuiMailNavigationSelfTest;
     friend class GuiInteractionBenchmark;
     friend class GuiSettingsSelfTest;
+    friend class GuiCompositionSelfTest;
     using Callback = std::function<void(const QJsonObject &, bool)>;
     struct Pending {
         Callback callback; qint64 started;
@@ -261,6 +274,7 @@ private:
     void request(const QString &method, const QString &account, const QJsonObject &params, Callback callback);
     void googleOperation(const QString &method, const QString &account, const QJsonObject &params, Callback callback);
     void cancelGoogleOperations(bool notify = true);
+    void cancelGoogleProviderOperations(const QString &account);
     void pollGoogleSync();
     void pollMailDelivery();
     void submitGoogleLabelBinding(const QString &account);
@@ -276,7 +290,9 @@ private:
     void refreshState(bool refreshList, bool refreshCalendar, bool automatic = false);
     void selectConversationInternal(const QString &id, bool review, QVariantMap clickedRow = {}, int clickedIndex = -1);
     void loadCategories();
+    bool publishAccounts(QVariantList accounts);
     void loadConversations(bool append = false, bool preserveLoaded = false);
+    bool publishConversations(QVariantList rows);
     void loadConversationPage(const QString &account, int generation, QJsonObject params, QVariantList collected, int desiredCount, int cursorRetries = 0);
     void loadConversation(bool loadDraft, bool reviewOnLoad = false);
     void loadCalendar();
@@ -297,8 +313,19 @@ private:
     void loadDraftPage(const QString &account, int generation, int offset, QVariantList collected, int desiredCount);
     void loadActiveDraft();
     void acceptDraft(const QJsonObject &result, bool restoreView = false);
+    bool olderDraftProjection(const QJsonObject &result) const;
     void beginDraftWithRecipient(const QString &mode, const QString &email, const QString &name);
     bool commitRecipientInputs();
+    QString attachmentImportKey() const;
+    bool attachmentImportPending() const;
+    void startDraftAttachmentImport(const QString &key);
+    QHash<QString, QJsonObject> m_attachmentImports;
+    QHash<QString, QString> m_attachmentImportStatus;
+    QSet<QString> m_attachmentImportRetry;
+    QString m_attachmentImportActive;
+    // Both projections use the same identified-row diff; account rows need only
+    // rowData, with their id as the identity and no predecessor presentation.
+    ConversationListModel m_accountModel, m_conversationModel;
     QString m_profile, m_engine, m_token, m_account, m_query, m_selected, m_error, m_category;
     QString m_folder = "inbox", m_weekStart = "2026-09-07", m_fixtureToday = "2026-09-11";
     QString m_draftStatus;
@@ -366,6 +393,10 @@ private:
     QElapsedTimer m_queryActivity;
     qint64 m_sequence = 0, m_revision = -1, m_enginePid = 0, m_nextLaunch = 0;
     int m_generation = 0, m_listGeneration = 0, m_nextOffset = -1;
+    // Private entry trace for the native benchmark; no public state or control.
+    quint64 m_accountSelectionRequests = 0;
+    QString m_lastAccountSelectionRequest;
+    bool m_lastAccountSelectionDirty = false, m_lastAccountSelectionBusy = false;
     int m_desiredConversationCount = 50;
     int m_launchAttempts = 0, m_launchDelay = 1000;
     bool m_connected = false, m_loading = false;

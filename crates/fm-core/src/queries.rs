@@ -614,7 +614,7 @@ impl Store {
         // Recount attachments even on append deltas: REPLACE/truncate can omit
         // update hooks when mixed with otherwise ordinary message insertion.
         let (attachments, recorded_available): (i64, i64) = self.db.query_row(
-            "SELECT COUNT(*),COALESCE(SUM(state='available'),0) FROM attachments WHERE account=?1",
+            "SELECT COUNT(*),COALESCE(SUM(state='available'),0) FROM attachments WHERE account=?1 AND message_id IS NOT NULL",
             [account],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
@@ -1292,9 +1292,9 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
     }
     if let Some(has) = p["has_attachment"].as_bool() {
         predicate.push_str(if has {
-            " AND m.id IN (SELECT message_id FROM attachments WHERE account=?1)"
+            " AND m.id IN (SELECT message_id FROM attachments WHERE account=?1 AND message_id IS NOT NULL)"
         } else {
-            " AND m.id NOT IN (SELECT message_id FROM attachments WHERE account=?1)"
+            " AND m.id NOT IN (SELECT message_id FROM attachments WHERE account=?1 AND message_id IS NOT NULL)"
         });
     }
     if p["after"].as_str().is_some_and(|s| !s.is_empty()) {

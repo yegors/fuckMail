@@ -62,11 +62,10 @@ Item {
         const groups = ["review", "held", "done"]
         return groups.filter(function(group, index) { return index > previous && index < next && mail.groupCollapsed(group) && mail.groupCount(group) > 0 })
     }
-    function collapsedBefore(index) {
-        const rows = backend.conversations, groups = ["review", "held", "done"]
-        if (index < 0 || index >= rows.length || !rows[index]) return []
-        if (index > 0 && groupOf(rows[index - 1]) === groupOf(rows[index])) return []
-        return collapsedBetween(index > 0 ? groups.indexOf(groupOf(rows[index - 1])) : -1, groups.indexOf(groupOf(rows[index])))
+    function collapsedBefore(index, previous, current) {
+        const groups = ["review", "held", "done"]
+        if (index < 0 || (index > 0 && previous === current)) return []
+        return collapsedBetween(index > 0 ? groups.indexOf(previous) : -1, groups.indexOf(current))
     }
     readonly property var trailingCollapsed: collapsedBetween(backend.conversations.length ? ["review", "held", "done"].indexOf(groupOf(backend.conversations[backend.conversations.length - 1])) : -1, 3)
     component ReaderAction: FmButton {
@@ -385,16 +384,18 @@ Item {
                 ListView {
                     id: list; objectName: "conversationList"
                     Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 6
-                    clip: true; model: backend.conversations; boundsBehavior: Flickable.StopAtBounds
+                    clip: true; model: backend.conversationModel; boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: ScrollBar {}
                     onContentHeightChanged: Qt.callLater(mail.restoreListPosition)
                     onMovementEnded: if (!mail.restoring) backend.remember("listY",contentY)
                     delegate: Item {
                         id: groupedRow
-                        required property var modelData
+                        required property var rowData
+                        required property string previousGroup
+                        readonly property var modelData: rowData
                         required property int index
                         readonly property string group: mail.groupOf(modelData)
-                        readonly property bool firstInGroup: index===0 || mail.groupOf(backend.conversations[index-1])!==group
+                        readonly property bool firstInGroup: index===0 || previousGroup!==group
                         readonly property bool doneRow: group==="done" && !mail.draftsMode
                         readonly property bool collapsed: backend.folder === "inbox" && mail.groupCollapsed(group)
                         readonly property int headingHeight: firstInGroup && !mail.draftsMode ? (index === 0 ? 34 : 44) : 0
@@ -402,7 +403,7 @@ Item {
                         Column {
                             id: collapsedHeaders; width: parent.width
                             Repeater {
-                                model: mail.collapsedBefore(groupedRow.index)
+                                model: mail.collapsedBefore(groupedRow.index, groupedRow.previousGroup, groupedRow.group)
                                 GroupHeader { required property string modelData; group: modelData; width: collapsedHeaders.width }
                             }
                         }

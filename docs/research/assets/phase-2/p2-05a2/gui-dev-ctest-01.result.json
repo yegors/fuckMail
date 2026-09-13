@@ -1,0 +1,10 @@
+{
+  "command": "ctest --preset dev -R '^gui-' --output-on-failure",
+  "exit_code": 0,
+  "elapsed_seconds": 193.8178622,
+  "rust_workspace_rerun": false,
+  "rust_no_run_fixture_included": true,
+  "gui_sha256": "d42ade1b1695e9a27adfd68297a157499531e20ae468189de9abfd35ab75fa7d",
+  "engine_sha256": "c214dad2ee65d1c7ec82a64ac901483fe632ef80d4beee3f6bafe0d4941071d0",
+  "cli_sha256": "e05c84b1cf3e172f803c3e8a26a50dbb00736594183e28ba214d69176367e5b7"
+}

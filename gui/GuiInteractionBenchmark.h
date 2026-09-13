@@ -20,6 +20,7 @@ private:
     bool visibleSnapshot(QJsonObject &snapshot) const;
     QJsonObject diagnostic() const;
     void painted(GuiPaintObserver::Frame frame);
+    void recordFrame(GuiPaintObserver::Frame frame, const QString &reason, const QJsonObject &snapshot = {});
     bool click(QQuickItem *item);
     void finish(const QString &error = {});
     MailBackend &m_backend;
@@ -33,6 +34,8 @@ private:
     QTimer m_startTimer, m_inspectTimer, m_watchdog;
     QJsonArray m_samples[5];
     QJsonObject m_input, m_armedSnapshot;
+    QJsonArray m_armEvents, m_frameEvents;
+    int m_armEventsDropped = 0, m_frameEventsDropped = 0;
     int m_class = 0, m_iteration = 0;
     int m_routeCount = 4;
     quint64 m_generation = 0, m_armedGeneration = 0, m_lastSerial = 0;

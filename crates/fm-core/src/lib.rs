@@ -25,6 +25,7 @@ pub mod google_store;
 pub mod live_calendar;
 pub mod live_calendar_writes;
 pub mod live_profile;
+pub mod local_content;
 mod mutations;
 mod phase1_calendar;
 #[cfg(test)]
@@ -35,7 +36,7 @@ mod queries;
 mod sender_kind_tests;
 #[cfg(test)]
 mod test_profiles;
-pub const SCHEMA_VERSION: u32 = 11;
+pub const SCHEMA_VERSION: u32 = 12;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -275,6 +276,15 @@ impl Store {
             tx.execute_batch("PRAGMA user_version=11")?;
             tx.commit()?;
         }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 11 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-012-attachments.sql"))?;
+            tx.execute_batch("PRAGMA user_version=12")?;
+            tx.commit()?;
+        }
         store.validate_profile_identity()?;
         store.recover_captures()?;
         store.calendar_live_recover()?;
@@ -284,6 +294,45 @@ impl Store {
     pub fn handle(&mut self, method: &str, account: Option<&str>, params: Value) -> Result<Value> {
         if !params.is_object() {
             return Err(err("invalid_request", "Parameters must be an object"));
+        }
+        if self.profile_kind()? == live_profile::ProfileKind::Live
+            && matches!(
+                method,
+                "draft_capture" | "calendar_write_ack" | "calendar_write"
+            )
+        {
+            return Err(err(
+                "capability_unavailable",
+                "This operation is not available for a live account yet",
+            ));
+        }
+        // Direct Rust callers retain a synchronous facade. The engine routes
+        // these methods through the same opaque plan on its blocking workers.
+        if matches!(
+            method,
+            "draft_save" | "draft_capture" | "draft_attachment_import"
+        ) {
+            let account = account.ok_or_else(|| err("account_required", "Choose an account"))?;
+            let mut step = self.local_content_begin(method, account, params)?;
+            for _ in 0..2 {
+                match step {
+                    local_content::LocalContentStep::Reply(reply) => return Ok(reply),
+                    local_content::LocalContentStep::Prepare(plan) => {
+                        let proof = local_content::prepare_local_content(
+                            plan,
+                            &fm_google::transport::CancellationToken::new(),
+                        )?;
+                        step = self.local_content_finish(proof)?;
+                    }
+                }
+            }
+            return match step {
+                local_content::LocalContentStep::Reply(reply) => Ok(reply),
+                _ => Err(err(
+                    "stale_preparation",
+                    "Local content changed during preparation",
+                )),
+            };
         }
         if method == "accounts" {
             fields(&params, &[])?;
@@ -297,17 +346,6 @@ impl Store {
             return Ok(
                 json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"calendar_generation":self.mail_changes.calendar_generation(),"synthetic":synthetic,"profile_kind":if synthetic {"synthetic"} else {"live"},"fixture_today":if synthetic {Some(FIXTURE_TODAY)} else {None},"capabilities":{"mail":true,"drafts":true,"calendar_read":true,"phase1":synthetic,"typed_filters":true,"preferences":true,"capture_history":synthetic,"calendar_write_local":synthetic,"send":false,"models":false,"google_auth":!synthetic,"google_sync":!synthetic}}),
             );
-        }
-        if self.profile_kind()? == live_profile::ProfileKind::Live
-            && matches!(
-                method,
-                "draft_capture" | "calendar_write_ack" | "calendar_write"
-            )
-        {
-            return Err(err(
-                "capability_unavailable",
-                "This operation is not available for a live account yet",
-            ));
         }
         match method {
             "preferences_get" => {

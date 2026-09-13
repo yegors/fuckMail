@@ -24,7 +24,7 @@ QVariantMap MailBackend::googleSyncState(const QString &account) const {
 }
 
 void MailBackend::googleOperation(const QString &method, const QString &account, const QJsonObject &params, Callback callback) {
-    if (!m_connected || m_shutdown || m_syntheticProfile) {
+    if (!m_connected || m_shutdown || (m_syntheticProfile && method != "draft_attachment_import")) {
         callback({{"code", "cancelled"}, {"message", "Reconnect to continue Google work."}}, false); return;
     }
     if (m_googleOperations.size() >= 4) {
@@ -49,6 +49,12 @@ void MailBackend::cancelGoogleOperations(bool notify) {
     const auto operations = m_googleOperations;
     for (auto operation : operations) operation->cancel(notify);
     if (!notify) { m_googleOperations.clear(); for (auto operation : operations) delete operation; }
+}
+
+void MailBackend::cancelGoogleProviderOperations(const QString &account) {
+    const auto operations = m_googleOperations;
+    for (auto operation : operations)
+        if (operation->account() == account && operation->method() != "draft_attachment_import") operation->cancel();
 }
 
 void MailBackend::pollGoogleSync() {
@@ -105,8 +111,7 @@ void MailBackend::pauseGoogleSync(const QString &account) {
     if (!m_connected || m_shutdown || m_syntheticProfile || !googleSyncState(account)["owned"].toBool()
         || m_googleSyncChanging.contains(account)) return;
     m_googleSyncChanging.insert(account); emit googleSyncChanged();
-    const auto operations = m_googleOperations;
-    for (auto operation : operations) if (operation->account() == account) operation->cancel();
+    cancelGoogleProviderOperations(account);
     request("google_sync_release", account, {}, [this, account](auto result, bool ok) {
         m_googleSyncChanging.remove(account); emit googleSyncChanged();
         if (!ok) fail(result["message"].toString("Google sync could not pause."));

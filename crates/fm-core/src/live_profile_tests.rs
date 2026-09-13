@@ -245,7 +245,7 @@ fn schema_ten_to_eleven_preserves_profile_authored_rows_and_receipts() {
         drop(store);
         let mut reopened = Store::open(dir.path()).unwrap();
         let status = reopened.handle("status", None, json!({})).unwrap();
-        assert_eq!(status["schema_version"], 11);
+        assert_eq!(status["schema_version"], crate::SCHEMA_VERSION);
         assert_eq!(status["fixture_revision"], if live { 0 } else { 3 });
         assert_eq!(reopened.vault_namespace().unwrap(), namespace);
         assert_eq!(

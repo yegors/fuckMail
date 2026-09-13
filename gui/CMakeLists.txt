@@ -8,6 +8,9 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     MailBackend.h
     Phase1Backend.cpp
     CompositionBackend.cpp
+    ConversationListModel.cpp
+    ConversationListModel.h
+    DraftAttachmentBackend.cpp
     CalendarOperations.cpp
     ReplyDocument.cpp
     ReplyDocument.h
@@ -86,6 +89,12 @@ if(BUILD_TESTING)
     target_link_libraries(gui-calendar-layout-test PRIVATE Qt6::Core)
     add_test(NAME gui-calendar-layout COMMAND gui-calendar-layout-test)
     set_tests_properties(gui-calendar-layout PROPERTIES TIMEOUT 10)
+endif()
+if(BUILD_TESTING)
+    add_executable(gui-conversation-list-model-test ConversationListModelTest.cpp ConversationListModel.cpp ConversationListModel.h)
+    target_link_libraries(gui-conversation-list-model-test PRIVATE Qt6::Core Qt6::Test)
+    add_test(NAME gui-conversation-list-model COMMAND gui-conversation-list-model-test)
+    set_tests_properties(gui-conversation-list-model PROPERTIES TIMEOUT 15)
 endif()
 if(BUILD_TESTING)
     add_executable(gui-calendar-controls-test CalendarControlsTest.cpp)

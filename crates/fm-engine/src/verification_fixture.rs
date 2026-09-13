@@ -284,9 +284,9 @@ impl Fixture {
                 "interval_ms":INTERVAL_MS,"messages_per_batch":if mode==Mode::Snapshot {1} else {BATCH_SIZE},
                 "seeded_messages":0,"trigger_count":0,"committed_batches":0,"committed_messages":0,
                 "skipped_without_owner":0,"queue_full_retries":0,"batches":[],"errors":[],
-                "scheduler_version":2,"scheduler":{"max_resident_work":32,
-                    "foreground_limit":if mode==Mode::Search {16} else {32},
-                    "background_limit":if mode==Mode::Search {BACKGROUND_LIMIT} else {0},
+                "scheduler_version":2,"scheduler":{"max_resident_work":crate::WORK_LIMIT,
+                    "foreground_limit":crate::WORK_LIMIT-BACKGROUND_LIMIT,
+                    "background_limit":BACKGROUND_LIMIT,
                     "sources_per_step":1,"foreground_burst_limit":4},
                 "abandoned_staged_messages":0,"abandoned_batches":[]}),
         }

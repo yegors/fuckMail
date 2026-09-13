@@ -1,0 +1,5 @@
+{
+  "command": "scripts/dev.ps1 build --preset dev",
+  "exit_code": 0,
+  "elapsed_seconds": 33.8809023
+}

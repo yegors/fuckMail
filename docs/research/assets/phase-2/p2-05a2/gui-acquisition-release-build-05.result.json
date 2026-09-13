@@ -1,0 +1,7 @@
+{
+  "command": "cmake --build build/p2-08a-gui-release --parallel 8",
+  "exit_code": 0,
+  "elapsed_seconds": 25.5034521,
+  "scope": "GUI-only Release with granular native mail model",
+  "gui_sha256": "a0d091b4391e36f20953bc534d1e99573f084adf4b178694f7729942661891b4"
+}

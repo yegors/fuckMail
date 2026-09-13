@@ -24,7 +24,7 @@ QString uuid() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 }
 
 MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool fixtureClock, bool liveProfile)
-    : QObject(parent), m_profile(std::move(profile)), m_engine(std::move(engine)), m_fixtureClock(fixtureClock), m_liveProfileRequested(liveProfile), m_syntheticProfile(!liveProfile) {
+    : QObject(parent), m_accountModel(this), m_conversationModel(this), m_profile(std::move(profile)), m_engine(std::move(engine)), m_fixtureClock(fixtureClock), m_liveProfileRequested(liveProfile), m_syntheticProfile(!liveProfile) {
     m_calendarDate = todayDate(); m_timelineDate = todayDate();
     m_clockTimer.setInterval(30000);
     connect(&m_clockTimer, &QTimer::timeout, this, [this] { emit eventsChanged(); });
@@ -301,12 +301,29 @@ void MailBackend::loadAccounts() {
     request("accounts", {}, {}, [this](auto result, bool ok) {
         if (!ok) return;
         const auto accounts = result["accounts"].toArray().toVariantList();
-        if (accounts != m_accounts) { m_accounts = accounts; emit accountsChanged(); emit currentAccountChanged(); }
+        if (accounts != m_accounts) {
+            if (!publishAccounts(accounts)) return;
+            emit accountsChanged(); emit currentAccountChanged();
+        }
         if (m_account.isEmpty() && !m_accounts.isEmpty()) selectAccount(m_accounts.first().toMap()["id"].toString());
     });
 }
 
+bool MailBackend::publishAccounts(QVariantList accounts) {
+    m_accounts = std::move(accounts);
+    if (m_accountModel.replace(QStringLiteral("account-inventory"), m_accounts)) return true;
+    m_accounts.clear();
+    m_accountModel.replace(QStringLiteral("account-inventory"), {});
+    emit accountsChanged(); emit currentAccountChanged();
+    fail("The local engine returned missing or duplicate account identities.");
+    return false;
+}
+
 void MailBackend::selectAccount(const QString &id) {
+    ++m_accountSelectionRequests;
+    m_lastAccountSelectionRequest = id;
+    m_lastAccountSelectionDirty = m_draftDirty;
+    m_lastAccountSelectionBusy = draftBusy();
     if (id == m_account) return;
     if (m_draftDirty || draftBusy()) { m_afterDraftSave = [this, id] { selectAccount(id); }; saveDraft(); return; }
     clearSenderCard();
@@ -316,7 +333,7 @@ void MailBackend::selectAccount(const QString &id) {
     m_collapsedGroups.clear();
     ++m_generation; const int generation = m_generation;
     m_account = id; m_conversation.clear(); m_draft.clear(); m_activeDraft.clear(); m_recipientInputs.clear(); m_selected.clear(); m_draftStatus.clear(); m_pinnedRow.clear(); m_pinnedIndex = -1;
-    m_query.clear(); m_category.clear(); m_filters.clear(); m_querySummary.clear(); m_captureStatus.clear(); m_folder = "inbox"; m_conversations.clear(); m_categories.clear(); m_captures.clear(); m_nextOffset = -1; m_nextCursor.clear(); m_loading = false;
+    m_query.clear(); m_category.clear(); m_filters.clear(); m_querySummary.clear(); m_captureStatus.clear(); m_folder = "inbox"; publishConversations({}); m_categories.clear(); m_captures.clear(); m_nextOffset = -1; m_nextCursor.clear(); m_loading = false;
     emit accountChanged(); emit currentAccountChanged(); emit categoriesChanged(); emit queryChanged(); emit conversationChanged(); emit draftChanged(); emit conversationsChanged(); emit capturesChanged(); emit mailDeliveryChanged();
     request("view_get", id, {}, [this, id, generation](auto result, bool ok) {
         if (ok) {
@@ -384,6 +401,29 @@ void MailBackend::loadCategories() {
     });
 }
 
+bool MailBackend::publishConversations(QVariantList rows) {
+    // The protocol-facing list remains authoritative. Only the native view uses
+    // a stable model, whose changes must observe the same final row projection.
+    const auto scope = QJsonDocument(QJsonObject{{"account", m_account}, {"folder", m_folder}, {"query", m_query},
+        {"category", m_category}, {"filters", QJsonObject::fromVariantMap(m_filters)},
+        {"collapsed_groups", QJsonArray::fromStringList(m_collapsedGroups)}}).toJson(QJsonDocument::Compact);
+    // These fields already fit one accepted IPC frame. Keep the complete,
+    // deterministic serialization, with bounded room for its wrapper keys.
+    const auto reject = [this](const QString &error) {
+        m_conversations.clear();
+        m_conversationModel.replace({}, {});
+        emit conversationsChanged();
+        fail(error);
+        return false;
+    };
+    if (scope.size() > 2 * maxFrame) return reject("The mail view context is too large to display.");
+    m_conversations = std::move(rows);
+    if (!m_conversationModel.replace(QString::fromUtf8(scope), m_conversations)) {
+        return reject("The local engine returned missing or duplicate mail row identities.");
+    }
+    return true;
+}
+
 void MailBackend::loadConversations(bool append, bool preserveLoaded) {
     if (!m_connected || m_account.isEmpty()) return;
     if (m_folder == "drafts") { loadDraftRows(append, preserveLoaded); return; }
@@ -439,7 +479,10 @@ void MailBackend::loadConversationPage(const QString &account, int generation, Q
                     pinned["display_group"] = m_pinnedRow.value("display_group", m_pinnedRow["group"]); pinned["pinned"] = true;
                     collected.insert(qMin(m_pinnedIndex, int(collected.size())), pinned);
                 }
-                m_conversations = std::move(collected); m_nextOffset = next; m_nextCursor = result["next_cursor"].toString();
+                if (!publishConversations(std::move(collected))) {
+                    m_querySummary = previousSummary; m_loading = false; emit loadingChanged(); return;
+                }
+                m_nextOffset = next; m_nextCursor = result["next_cursor"].toString();
                 if (m_selected.isEmpty() && m_activeDraft.isEmpty() && !m_resolvingDraft && !m_conversations.isEmpty()) selectConversation(m_conversations.first().toMap()["id"].toString());
                 if (previous != m_conversations || previousNext != m_nextOffset || previousSummary != m_querySummary) emit conversationsChanged();
             }
@@ -495,7 +538,7 @@ void MailBackend::loadConversation(bool loadDraft, bool reviewOnLoad) {
     });
     if (loadDraft && !m_activeDraft.isEmpty()) { loadActiveDraft(); return; }
     if (loadDraft) request("draft_get", account, {{"conversation_id", id}}, [this, id, account, generation](auto result, bool ok) {
-        if (!ok || id != m_selected || account != m_account || generation != m_generation || m_draftDirty) return;
+        if (!ok || id != m_selected || account != m_account || generation != m_generation || m_draftDirty || draftBusy() || olderDraftProjection(result)) return;
         const auto draft = result.toVariantMap();
         const QString status = draft.value("discarded").toBool() ? "Draft discarded"
             : draft.value("revision").toInt() > 0 ? "Saved on this machine" : "A reply stays here until you save it";
@@ -571,6 +614,14 @@ void MailBackend::editDraft(const QString &body) {
 }
 void MailBackend::saveDraft() {
     m_draftTimer.stop();
+    // The import advances this exact draft's revision. Keep newer edits local
+    // until its receipt, without occupying the cached-query connection.
+    if (attachmentImportPending()) {
+        if (m_shutdown && m_draftDirty) {
+            cancelShutdown(); fail("Resolve the attachment import before closing with unsaved edits.");
+        }
+        return;
+    }
     if (draftBusy()) return;
     if (!commitRecipientInputs()) return;
     if (!m_draftDirty) {
@@ -612,7 +663,7 @@ void MailBackend::saveDraft() {
         if (m_draft["attachment_ids"] == attachments) m_draft["attachments"] = result["attachments"].toVariant();
         m_draftDirty = !m_recipientInputs.isEmpty() || m_draft["body"].toString() != body || m_draft["body_html"] != html || m_draft["attachment_ids"] != attachments || m_draft["signature_text"].toString() != signature;
         for (auto it = headers.cbegin(); it != headers.cend(); ++it) m_draftDirty = m_draftDirty || m_draft[it.key()] != it.value();
-        for (const auto &key : {"draft_id", "mode", "source_message_id", "updated_at", "reply_all_available"})
+        for (const auto &key : {"draft_id", "mode", "source_message_id", "updated_at", "reply_all_available", "discarded"})
             if (result.contains(key)) m_draft[key] = result[key].toVariant();
         m_draftStatus = m_draftDirty ? "Saving…" : "Saved on this machine"; emit draftChanged();
         if (m_folder == "drafts") loadDraftRows(false);

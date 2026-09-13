@@ -1,4 +1,5 @@
 #include "GuiCompositionSelfTest.h"
+#include "GoogleOperation.h"
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDebug>
@@ -144,8 +145,8 @@ bool verifyMime(const QString &profile,const QJsonObject &draft,const QJsonObjec
 }
 
 GuiCompositionSelfTest::GuiCompositionSelfTest(MailBackend &backend,QQuickWindow *window,QString profile,QString engine,
-    std::function<void(const QVariantMap &,const QString &)> finished,QObject *parent)
-    : QObject(parent),m_backend(backend),m_window(window),m_profile(std::move(profile)),m_engine(std::move(engine)),m_finished(std::move(finished)) {
+    std::function<void(const QVariantMap &,const QString &)> finished,QObject *parent,bool attachmentsOnly)
+    : QObject(parent),m_backend(backend),m_window(window),m_profile(std::move(profile)),m_engine(std::move(engine)),m_finished(std::move(finished)),m_attachmentsOnly(attachmentsOnly) {
     m_timer.setInterval(80); connect(&m_timer,&QTimer::timeout,this,[this] { step(); });
     m_processTimeout.setSingleShot(true); m_processTimeout.setInterval(20000);
     connect(&m_processTimeout,&QTimer::timeout,this,[this] { finish("Composition child/CLI exceeded its bounded wait."); });
@@ -157,6 +158,7 @@ void GuiCompositionSelfTest::finish(const QString &error) {
     if (m_cli.state()!=QProcess::NotRunning) m_cli.kill();
     if (m_child.state()!=QProcess::NotRunning) m_child.kill();
     const QVariantMap expected=QJsonObject{{"account","windscribe"},{"drafts",m_drafts},{"captures",m_captures},
+        {"attachment_drafts",m_attachmentDrafts},{"attachment_files",m_attachmentFiles},{"attachment_capture",m_attachmentCapture},
         {"restart_draft",m_drafts.isEmpty()?QJsonObject{}:m_drafts.first().toObject()},
         {"source_conversation",sourceConversation},{"source_before",m_sourceBefore}}.toVariantMap();
     auto callback=std::move(m_finished); m_finished={}; deleteLater(); callback(expected,error);
@@ -277,7 +279,7 @@ void GuiCompositionSelfTest::step() {
         m_originalFolder=m_backend.folder(); m_originalQuery=m_backend.query(); m_originalCategory=m_backend.category();
         m_originalFocus=m_window->activeFocusItem(); m_originalWorkspace=m_window->property("workspace").toString(); m_originalSettings=m_window->property("settingsOpen").toBool();
         m_window->setProperty("settingsOpen",false); m_window->setProperty("workspace","mail");
-        m_backend.selectAccount("windscribe"); m_backend.setFolder("inbox"); m_backend.setQuery(""); m_backend.setCategory(""); m_backend.applyFilters({}); m_stage=1; break;
+        m_backend.selectAccount("windscribe"); m_backend.setFolder("inbox"); m_backend.setQuery(""); m_backend.setCategory(""); m_backend.applyFilters({}); m_stage=m_attachmentsOnly?70:1; break;
     case 1:
         if (!saved() || !click("newMessageButton")) return; m_stage=2; break;
     case 2:
@@ -500,9 +502,289 @@ void GuiCompositionSelfTest::step() {
         for (auto it=m_originalView.cbegin();it!=m_originalView.cend();++it) m_backend.remember(it.key(),it.value());
         m_window->setProperty("workspace",m_originalWorkspace); m_window->setProperty("settingsOpen",m_originalSettings);
         if (m_originalFocus) m_originalFocus->forceActiveFocus();
-        qInfo()<<"Native composition passed: new/reply/reply-all/forward, recipient chips/subject/rich text, Drafts/account restoration, fresh GUI auto-restoration, four exact local MIME captures and unchanged received flags.";
+        if (m_attachmentsOnly) qInfo()<<"Native attachment handlers passed: flush, chips/removal, cached queries during held auxiliary response, provider-pause cancellation isolation, late cached-read/text/account retention, exact retry after source deletion, discarded-reply revival and synthetic capture. Physical OS picker and live provider pause unverified.";
+        else qInfo()<<"Native composition passed: new/reply/reply-all/forward, recipient chips/subject/rich text, Drafts/account restoration, fresh GUI auto-restoration, four exact local MIME captures and unchanged received flags.";
         finish(); break;
+    case 70:
+        if (!saved() || m_backend.account()!="windscribe" || !click("newMessageButton")) return;
+        m_stage=71; break;
+    case 71:
+        if (!saved() || m_backend.draft()["mode"]!="new" || m_backend.activeDraftId().isEmpty()) return;
+        if (m_attachmentDraft.isEmpty()) {
+            m_attachmentDraft=m_backend.activeDraftId();
+            m_attachmentPath=QDir(m_profile).filePath("native-attachment-"+QUuid::createUuid().toString(QUuid::Id128)+".bin");
+            m_attachmentRetryPath=m_attachmentPath+".retry";
+            m_attachmentBytes=QByteArray::fromHex("4e6174697665206174746163686d656e742000ff0d0a");
+            m_attachmentRetryBytes=QByteArray::fromHex("52657472792065786163742062797465732000800a");
+            for (const auto &pair: {qMakePair(m_attachmentPath,m_attachmentBytes),qMakePair(m_attachmentRetryPath,m_attachmentRetryBytes)}) {
+                QFile file(pair.first);
+                if (!file.open(QIODevice::WriteOnly|QIODevice::NewOnly) || file.write(pair.second)!=pair.second.size()) { finish("Cannot create the owned native attachment fixture."); return; }
+            }
+        }
+        if (!type("draftSubject","Native imported attachments") || !type("replyComposer","Before local import")
+            || !recipient("to_recipients","attachment@example.test")) return;
+        m_stage=72; break;
+    case 72:
+        if (!saved() || !click("draftAttachButton")) return;
+        m_stage=73; break;
+    case 73: {
+        auto menu=m_window->findChild<QObject *>("draftAttachmentMenu");
+        auto choice=m_window->findChild<QObject *>("draftAttachLocalFile");
+        if (!menu || !menu->property("opened").toBool() || !choice || !choice->property("enabled").toBool()) return;
+        QMetaObject::invokeMethod(menu,"close");
+        auto dialog=m_window->findChild<QObject *>("draftAttachmentFileDialog");
+        if (!dialog || !QMetaObject::invokeMethod(dialog,"rejected")) { finish("Native attachment picker cancellation handler is unavailable."); return; }
+        if (m_backend.attachmentImportBusy() || m_backend.activeDraftId()!=m_attachmentDraft) { finish("Cancelling a picker changed the draft or started import."); return; }
+        if (!type("replyComposer","Authored immediately before import")) return;
+        if (!attachmentSelection(m_attachmentPath,"windscribe",m_attachmentDraft)) return;
+        m_stage=74; break;
     }
+    case 74:
+        if (!saved() || m_backend.attachmentImportPending() || m_backend.draft()["attachment_ids"].toList().size()!=1) return;
+        m_firstAttachment=m_backend.draft()["attachment_ids"].toList().first().toString();
+        if (!item("removeDraftAttachment_"+m_firstAttachment)) { finish("Imported file did not become a removable native chip."); return; }
+        m_stage=75; cli({"draft","show","--draft-id",m_attachmentDraft},[this](auto draft) {
+            if (draft["body"]!="Authored immediately before import" || draft["attachment_ids"].toArray().size()!=1
+                || durableFields(draft)!=durableFields(QJsonObject::fromVariantMap(m_backend.draft()))) finish("Import did not flush authored edits before advancing the exact saved draft.");
+        }); break;
+    case 75: {
+        // Capture an actual cached-connection read before the second import.
+        // Delay only its production callback, leaving both real IPC owners free.
+        m_heldDraftGeneration=m_backend.m_generation;
+        m_backend.loadActiveDraft();
+        auto pending=m_backend.m_pending.find(QString::number(m_backend.m_sequence));
+        if (pending==m_backend.m_pending.end() || pending->method!="draft_get") { finish("Cannot hold the real cached draft read before import."); return; }
+        m_heldDraftCallback=std::move(pending->callback);
+        pending->callback=[self=QPointer<GuiCompositionSelfTest>(this)](const QJsonObject &result,bool ok) {
+            if (!self) return;
+            if (!ok) { self->finish("Cached draft read failed before the delayed projection check."); return; }
+            self->m_heldDraftResult=result;
+        };
+        m_stage=93; break;
+    }
+    case 93:
+        if (m_heldDraftResult.isEmpty()) return;
+        if (durableFields(m_heldDraftResult)!=durableFields(QJsonObject::fromVariantMap(m_backend.draft()))) { finish("Held cached draft result was not the exact pre-import projection."); return; }
+        if (!attachmentSelection(m_attachmentRetryPath,"windscribe",m_attachmentDraft,true)) return;
+        m_attachmentIntent=m_backend.m_attachmentImports.value(m_backend.attachmentImportKey());
+        m_stage=76; break;
+    case 76:
+        if (!m_heldAttachment) { finish("Attachment owner disappeared before delayed response check."); return; }
+        if (!m_heldAttachment->m_hello) {
+            if (m_heldAttachment->m_socket.bytesAvailable()>0) m_heldAttachment->receive();
+            return;
+        }
+        if (m_heldAttachment->m_socket.bytesAvailable()==0) return;
+        if (!type("replyComposer","New local text typed while the import receipt is delayed")) return;
+        m_backend.setQuery("Weekly service availability"); m_stage=77; break;
+    case 77:
+        if (m_backend.loading() || m_backend.query()!="Weekly service availability") return;
+        if (m_backend.conversations().size()!=1 || !m_backend.attachmentImportBusy()
+            || m_backend.draft()["body"]!="New local text typed while the import receipt is delayed") {
+            finish("Cached query did not progress independently or delayed import replaced new text."); return;
+        }
+        if (!item("captureReply") || item("captureReply")->isEnabled() || !item("draftDiscardButton") || item("draftDiscardButton")->isEnabled()) {
+            finish("Native capture/discard stayed enabled before the selected attachment outcome was resolved."); return;
+        }
+        // Exercise the production cancellation path used by Pause, without
+        // fabricating a live account or starting any provider work.
+        m_backend.cancelGoogleProviderOperations("windscribe");
+        if (!m_heldAttachment || !m_backend.attachmentImportBusy() || m_heldAttachment->m_socket.state()!=QLocalSocket::ConnectedState) {
+            finish("Pausing provider operations cancelled an unrelated local attachment import."); return;
+        }
+        m_stage=78; cli({"draft","show","--draft-id",m_attachmentDraft},[this](auto draft) {
+            if (draft["attachment_ids"].toArray().size()!=2 || draft["body"]!="Authored immediately before import") { finish("Held auxiliary receipt did not correspond to a committed import and deferred newer editor text."); return; }
+            m_backend.setProperty("selfTestExpectedError",true);
+            m_heldAttachment->m_socket.abort(); m_heldAttachment.clear();
+            if (!QFile::remove(m_attachmentRetryPath)) finish("Cannot remove only the owned retry source fixture.");
+        }); break;
+    case 78:
+        if (m_backend.attachmentImportBusy() || !m_backend.attachmentImport()["retry"].toBool()) return;
+        if (m_backend.m_attachmentImports.value(m_backend.attachmentImportKey())!=m_attachmentIntent
+            || m_backend.draft()["body"]!="New local text typed while the import receipt is delayed"
+            || !m_backend.attachmentImport()["status"].toString().startsWith("Attachment result not confirmed")) { finish("Uncertain import lost its exact request identity/text or incorrectly claimed the file was not attached."); return; }
+        if (!click("retryDraftAttachment")) return;
+        m_stage=79; break;
+    case 79:
+        if (!saved() || m_backend.attachmentImportPending()) return;
+        if (m_backend.draft()["attachment_ids"].toList().size()!=2 || m_backend.draft()["body"]!="New local text typed while the import receipt is delayed") { finish("Exact receipt replay duplicated an attachment or replaced newer body text."); return; }
+        {
+            const auto before=m_backend.draft();
+            if (!m_heldDraftCallback || m_backend.m_draftDirty || m_backend.m_generation!=m_heldDraftGeneration
+                || m_heldDraftResult["revision"].toInteger()>=before["revision"].toLongLong()) { finish("Delayed cached-read regression did not reach the same clean draft with a newer import revision."); return; }
+            auto callback=std::move(m_heldDraftCallback); m_heldDraftCallback={};
+            callback(m_heldDraftResult,true);
+            if (m_backend.draft()!=before || m_backend.draftConflict()) { finish("Delayed cached draft read rolled back a committed attachment or newer saved text."); return; }
+            qInfo()<<"Actual cached draft projection revision"<<m_heldDraftResult["revision"].toInteger()<<"delivered after import/replay/save revision"<<before["revision"].toLongLong()<<"left the clean native draft unchanged.";
+        }
+        m_backend.clearError(); m_backend.setProperty("selfTestExpectedError",false); m_backend.setQuery("");
+        m_stage=80; break;
+    case 80:
+        if (!saved() || !attachmentSelection(m_attachmentPath,"windscribe",m_attachmentDraft,true)) return;
+        m_stage=81; break;
+    case 81:
+        if (!m_heldAttachment) { finish("Late-account import lost its owned connection."); return; }
+        if (!m_heldAttachment->m_hello) { if (m_heldAttachment->m_socket.bytesAvailable()>0) m_heldAttachment->receive(); return; }
+        if (m_heldAttachment->m_socket.bytesAvailable()==0 || !click("accountTab_personal")) return;
+        m_stage=82; break;
+    case 82:
+        if (!saved() || m_backend.account()!="personal" || !click("newMessageButton")) return;
+        m_stage=83; break;
+    case 83:
+        if (!saved() || m_backend.draft()["mode"]!="new" || m_backend.activeDraftId().isEmpty()) return;
+        m_attachmentOtherDraft=m_backend.activeDraftId();
+        if (!type("draftSubject","Other account attachment isolation") || !type("replyComposer","This other draft stays unchanged")) return;
+        m_stage=84; break;
+    case 84:
+        if (!saved()) return;
+        m_attachmentOther=durableFields(QJsonObject::fromVariantMap(m_backend.draft()));
+        releaseAttachment();
+        // The original picker accepted after account navigation uses its old
+        // target; the production handler must refuse to retarget this draft.
+        if (!attachmentSelection(m_attachmentPath,"windscribe",m_attachmentDraft)) return;
+        m_stage=85; break;
+    case 85:
+        if (m_backend.attachmentImportBusy()) return;
+        if (m_backend.account()!="personal" || m_backend.activeDraftId()!=m_attachmentOtherDraft
+            || durableFields(QJsonObject::fromVariantMap(m_backend.draft()))!=m_attachmentOther
+            || plain(item("replyComposer"))!="This other draft stays unchanged") { finish("Late import/picker result retargeted the other account's native draft."); return; }
+        m_stage=86; cli({"draft","show","--draft-id",m_attachmentOtherDraft},[this](auto draft) {
+            if (durableFields(draft)!=m_attachmentOther) { finish("Late import changed the independent other-account stored draft."); return; }
+            m_attachmentDrafts.append(draft);
+        },"personal"); break;
+    case 86:
+        if (!click("accountTab_windscribe")) return;
+        m_stage=87; break;
+    case 87:
+        if (!saved() || m_backend.account()!="windscribe") return;
+        if (m_backend.activeDraftId()!=m_attachmentDraft) { m_backend.openDraft(m_attachmentDraft); return; }
+        if (m_backend.draft()["attachment_ids"].toList().size()!=3) return;
+        m_stage=95; break;
+    case 95: {
+        if (!visibleCenter(item("replyComposer"),m_window)) { if (auto editor=item("replyComposer")) reveal(editor); return; }
+        if (!saved() || !attachmentSelection(m_attachmentPath,"windscribe",m_attachmentDraft,true)) return;
+        const auto before=QJsonObject::fromVariantMap(m_backend.draft());
+        m_frozenStored=cliWhilePaused("windscribe","draft_save",{{"draft_id",m_attachmentDraft},
+            {"expected_revision",before["revision"]},{"request_id","native-attachment-stale-"+QUuid::createUuid().toString(QUuid::Id128)},
+            {"body","Independent CLI attachment conflict"},{"body_html",QJsonValue::Null},
+            {"signature_text",before["signature_text"]},{"attachment_ids",before["attachment_ids"]}});
+        if (m_frozenStored.isEmpty()) return;
+        if (!type("replyComposer","Local text retained on stale attachment import")) { finish("Cannot focus the native editor for stale import authoring."); return; }
+        m_frozenLocal=durableFields(QJsonObject::fromVariantMap(m_backend.draft()));
+        m_backend.setProperty("selfTestExpectedError",true); releaseAttachment(); m_stage=96; break;
+    }
+    case 96:
+        if (m_backend.attachmentImportBusy() || !m_backend.draftConflict()) return;
+        if (m_backend.attachmentImportPending() || durableFields(QJsonObject::fromVariantMap(m_backend.draft()))!=m_frozenLocal
+            || plain(item("replyComposer"))!="Local text retained on stale attachment import") { finish("Stale import changed native text, revision, attachments or frozen draft identity."); return; }
+        m_stage=97; cli({"draft","show","--draft-id",m_attachmentDraft},[this](auto draft) {
+            if (durableFields(draft)!=durableFields(m_frozenStored)) finish("Stale import changed the independently committed CLI version.");
+        }); break;
+    case 97:
+        if (!clickItem(buttonWithText(m_window->contentItem(),"Reload saved draft…"))) return;
+        m_stage=98; break;
+    case 98:
+        if (!withText(m_window->contentItem(),"Reload the saved draft?") || !clickItem(buttonWithText(m_window->contentItem(),"OK"))) return;
+        m_stage=99; break;
+    case 99:
+        if (!saved() || m_backend.draftConflict()) return;
+        if (durableFields(QJsonObject::fromVariantMap(m_backend.draft()))!=durableFields(m_frozenStored)) { finish("Explicit stale-import cleanup did not preserve the saved CLI version."); return; }
+        m_backend.clearError(); m_backend.setProperty("selfTestExpectedError",false);
+        if (!click("removeDraftAttachment_"+m_firstAttachment)) return;
+        m_stage=88; break;
+    case 88:
+        if (!saved() || m_backend.draft()["attachment_ids"].toList().size()!=2 || !click("captureReply")) return;
+        m_stage=89; break;
+    case 89:
+        if (!saved() || !m_backend.captureStatus().contains("accepted")) return;
+        m_stage=90; cli({"draft","history","--draft-id",m_attachmentDraft},[this](auto result) {
+            const auto rows=result["captures"].toArray();
+            if (rows.size()!=1 || rows.first().toObject()["state"]!="accepted" || rows.first().toObject()["provider_delivered"].toBool()) { finish("Native attachment capture was duplicated or claimed provider delivery."); return; }
+            m_captureOperation=rows.first().toObject();
+        }); break;
+    case 90:
+        m_stage=91; cli({"draft","show","--draft-id",m_attachmentDraft},[this](auto draft) {
+            if (durableFields(draft)!=durableFields(QJsonObject::fromVariantMap(m_backend.draft()))) { finish("Native attachment removal or later text differs from saved draft."); return; }
+            m_attachmentDrafts.append(draft);
+            const auto ids=draft["attachment_ids"].toArray();
+            m_attachmentFiles={QJsonObject{{"account","windscribe"},{"id",ids[0]},{"base64",QString::fromLatin1(m_attachmentRetryBytes.toBase64())}},
+                QJsonObject{{"account","windscribe"},{"id",ids[1]},{"base64",QString::fromLatin1(m_attachmentBytes.toBase64())}}};
+        }); break;
+    case 91:
+        m_stage=92; cli({"draft","capture","--draft-id",m_attachmentDraft,"--request-id",m_captureOperation["operation_id"].toString(),"--expected-revision",QString::number(m_captureOperation["draft_revision"].toInteger())},[this](auto receipt) {
+            QString error;
+            if (!verifyMime(m_profile,m_attachmentDrafts.last().toObject(),receipt,error)) { finish(error); return; }
+            QFile file(receipt["path"].toString());
+            if (!file.open(QIODevice::ReadOnly)) { finish("Cannot inspect the exact native attachment MIME export."); return; }
+            auto bytes=file.readAll(); bytes.replace("\r\n","");
+            if (!bytes.contains(m_attachmentBytes.toBase64()) || !bytes.contains(m_attachmentRetryBytes.toBase64())) { finish("Capture did not retain the exact imported binary bytes after source deletion."); return; }
+            m_attachmentCapture={{"draft_id",m_attachmentDraft},{"operation",m_captureOperation},{"receipt",receipt}};
+        }); break;
+    case 92: {
+        // Prepare a separate real discarded legacy reply, then exercise Attach
+        // directly after reopening it, without a typed edit to revive it first.
+        auto draft=cliWhilePaused("sideproject","draft_get",{{"conversation_id","sideproject-thread-003"}});
+        if (draft.isEmpty()) return;
+        draft=cliWhilePaused("sideproject","draft_save",{{"conversation_id","sideproject-thread-003"},{"expected_revision",draft["revision"]},
+            {"source_message_id",draft["source_message_id"]},{"request_id","native-attachment-reopen-save"},{"body","Discarded attachment test reply"}});
+        if (draft.isEmpty()) return;
+        m_frozenStored=cliWhilePaused("sideproject","draft_discard",{{"conversation_id","sideproject-thread-003"},
+            {"expected_revision",draft["revision"]},{"request_id","native-attachment-reopen-discard"}});
+        if (m_frozenStored.isEmpty()) return;
+        m_backend.selectAccount("sideproject"); m_stage=100; break;
+    }
+    case 100:
+        if (!saved() || m_backend.account()!="sideproject") return;
+        m_backend.selectConversationInternal("sideproject-thread-003",false); m_stage=101; break;
+    case 101:
+        if (m_backend.selectedId()!="sideproject-thread-003" || m_backend.draftBusy() || m_backend.loading()
+            || !m_backend.draft()["discarded"].toBool()) return;
+        if (durableFields(QJsonObject::fromVariantMap(m_backend.draft()))!=durableFields(m_frozenStored)) { finish("Reopened legacy reply did not load the exact discarded projection."); return; }
+        if (!click("replyButton")) return;
+        m_stage=102; break;
+    case 102:
+        if (!item("replyComposer") || !attachmentSelection(m_attachmentPath,"sideproject",m_frozenStored["draft_id"].toString())) return;
+        m_stage=103; break;
+    case 103:
+        if (!saved() || m_backend.attachmentImportPending()) return;
+        if (m_backend.draft()["discarded"].toBool() || m_backend.draft()["attachment_ids"].toList().size()!=1
+            || m_backend.draft()["revision"].toLongLong()!=m_frozenStored["revision"].toInteger()+2
+            || m_backend.draft()["source_message_id"].toString()!=m_frozenStored["source_message_id"].toString()
+            || !m_backend.draft()["body"].toString().isEmpty()) { finish("Attach did not save/revive the discarded legacy reply once before importing without changing its source/body."); return; }
+        m_stage=104; cli({"draft","show","--draft-id",m_frozenStored["draft_id"].toString()},[this](auto draft) {
+            if (durableFields(draft)!=durableFields(QJsonObject::fromVariantMap(m_backend.draft()))) { finish("Reopened reply attachment differs from the independently saved draft."); return; }
+            m_attachmentDrafts.append(draft);
+            m_attachmentFiles.append(QJsonObject{{"account","sideproject"},{"id",draft["attachment_ids"].toArray().first()},
+                {"base64",QString::fromLatin1(m_attachmentBytes.toBase64())}});
+        },"sideproject"); break;
+    case 104: m_stage=23; break;
+    }
+}
+
+bool GuiCompositionSelfTest::attachmentSelection(const QString &path,const QString &account,const QString &draft,bool hold) {
+    auto dialog=m_window->findChild<QObject *>("draftAttachmentFileDialog");
+    if (!dialog) { finish("The native composer has no local file-selection handler."); return false; }
+    dialog->setProperty("targetAccount",account); dialog->setProperty("targetDraft",draft);
+    dialog->setProperty("selectedFile",QUrl::fromLocalFile(path));
+    if (!QMetaObject::invokeMethod(dialog,"accepted")) { finish("The native local-file accepted handler was not callable."); return false; }
+    if (hold) {
+        for (auto operation:m_backend.m_googleOperations) {
+            if (operation->m_method!="draft_attachment_import") continue;
+            m_heldAttachment=operation;
+            // Hold real IPC delivery, not a fake Core result. The authenticated
+            // hello is released separately and CLI reads prove the commit.
+            QObject::disconnect(&operation->m_socket,&QLocalSocket::readyRead,operation,&GoogleOperation::receive);
+            break;
+        }
+        if (!m_heldAttachment) { finish("Could not hold the dedicated attachment response after a clean save."); return false; }
+    }
+    return true;
+}
+void GuiCompositionSelfTest::releaseAttachment() {
+    auto operation=m_heldAttachment; m_heldAttachment.clear();
+    if (!operation) return;
+    QObject::connect(&operation->m_socket,&QLocalSocket::readyRead,operation,&GoogleOperation::receive);
+    operation->receive();
 }
 
 bool GuiCompositionSelfTest::verifyRestartProjection(MailBackend &backend,QQuickWindow *window,const QString &expectedPath,QString &error) {
@@ -547,5 +829,36 @@ bool GuiCompositionSelfTest::verifyRetained(const QString &profile,const QString
     }
     if (read({"mail","read",sourceConversation})!=data["source_before"].toObject()) { if (error.isEmpty()) error="Composition restart changed received source or flags."; return false; }
     qInfo()<<"Independent final CLI verified all four native composition drafts, exact retained MIME hashes/content, one-attempt capture identities and unchanged source flags after process restart.";
+    return true;
+}
+
+bool GuiCompositionSelfTest::verifyAttachments(const QString &profile,const QString &engine,const QVariantMap &expected,QString &error) {
+    const auto data=QJsonObject::fromVariantMap(expected);
+    const auto drafts=data["attachment_drafts"].toArray(), files=data["attachment_files"].toArray();
+    if (drafts.size()!=3 || files.size()!=3) { error="Attachment verification requires three exact drafts and three retained binary selections."; return false; }
+    const auto read=[&](const QString &account,const QStringList &arguments) {
+        QProcess process; process.start(cliPath(engine),QStringList{"--profile",profile,"--engine",engine,"--account",account,"--json"}+arguments);
+        if (!process.waitForStarted(5000) || !process.waitForFinished(10000)) { process.kill(); process.waitForFinished(1000); error="Attachment restart CLI timed out."; return QJsonObject{}; }
+        const auto response=QJsonDocument::fromJson(process.readAllStandardOutput()).object();
+        if (process.exitStatus()!=QProcess::NormalExit || process.exitCode()!=0 || !response["ok"].toBool()) { error="Attachment restart CLI failed."; return QJsonObject{}; }
+        return response["result"].toObject();
+    };
+    for (const auto &value:drafts) {
+        const auto draft=value.toObject();
+        const auto actual=read(draft["account"].toString(),{"draft","show","--draft-id",draft["draft_id"].toString()});
+        if (!error.isEmpty() || durableFields(actual)!=durableFields(draft)) { error="Imported attachment draft identity or authored fields changed after engine restart."; return false; }
+    }
+    for (const auto &value:files) {
+        const auto file=value.toObject(); const auto attachment=read(file["account"].toString(),{"attachment",file["id"].toString()});
+        QFile blob(attachment["path"].toString());
+        if (!error.isEmpty() || attachment["state"]!="available" || !blob.open(QIODevice::ReadOnly) || blob.size()>1024
+            || blob.readAll()!=QByteArray::fromBase64(file["base64"].toString().toLatin1())) { error="Restart lost or changed retained imported file bytes."; return false; }
+    }
+    const auto capture=data["attachment_capture"].toObject();
+    const auto history=read("windscribe",{"draft","history","--draft-id",capture["draft_id"].toString()});
+    if (!error.isEmpty() || history["captures"].toArray()!=QJsonArray{capture["operation"]}) { error="Imported-file capture identity or attempt count changed after restart."; return false; }
+    QJsonObject authored; for (const auto &value:drafts) if (value.toObject()["draft_id"]==capture["draft_id"]) authored=value.toObject();
+    if (!verifyMime(profile,authored,capture["receipt"].toObject(),error)) return false;
+    qInfo()<<"Independent CLI after actual GUI/engine close verified three draft identities including the reopened legacy reply, exact binary bytes, one synthetic capture receipt and authored text. No real send/upload or physical picker claim.";
     return true;
 }

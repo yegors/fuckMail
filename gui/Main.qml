@@ -164,9 +164,10 @@ ApplicationWindow {
                         id: accountsRow; anchors.verticalCenter: parent.verticalCenter; spacing: 2
                         Repeater {
                             id: accountRepeater
-                            model: backend.accounts
+                            model: backend.accountModel
                             delegate: FmButton {
-                                required property var modelData
+                                required property var rowData
+                                readonly property var modelData: rowData
                                 id: accountTab
                                 objectName: "accountTab_" + modelData.id
                                 property int reviewCount: modelData.unread_conversation_count || 0

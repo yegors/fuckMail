@@ -1,0 +1,28 @@
+[1/72] Copying fuckmail-gui qml sources into build dir
+[2/72] Running qmlimportscanner for fuckmail-gui
+[3/72] Automatic MOC and UIC for target fuckmail-gui
+[4/72] Running rcc for resource fuckmail-gui_raw_qml_0
+[5/72] Running AUTOMOC file extraction for target fuckmail-gui
+[6/72] Running moc --collect-json for target fuckmail-gui
+[7/28] Generating .rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp, .rcc/qmlcache/fuckmail-gui_ReplyComposer_qml.cpp.aotstats
+[8/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleOperation.cpp.obj
+[9/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleLabels.cpp.obj
+[10/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\CompositionBackend.cpp.obj
+[11/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleBackend.cpp.obj
+[12/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\Phase1Backend.cpp.obj
+[13/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\MailBackend.cpp.obj
+[14/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\fuckmail-gui_autogen\mocs_compilation.cpp.obj
+[15/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\main.cpp.obj
+[16/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\DraftAttachmentBackend.cpp.obj
+[17/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\CalendarOperations.cpp.obj
+[18/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiCalendarSelfTest.cpp.obj
+[19/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiSettingsSelfTest.cpp.obj
+[20/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.qt\rcc\qrc_fuckmail-gui_raw_qml_0.cpp.obj
+[21/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiSelfTest.cpp.obj
+[22/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiSearchBenchmark.cpp.obj
+[23/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiCompositionSelfTest.cpp.obj
+[24/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiResizeBenchmark.cpp.obj
+[25/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiInteractionBenchmark.cpp.obj
+[26/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\.rcc\qmlcache\fuckmail-gui_ReplyComposer_qml.cpp.obj
+[27/28] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiMailNavigationSelfTest.cpp.obj
+[28/28] Linking CXX executable fuckmail-gui.exe

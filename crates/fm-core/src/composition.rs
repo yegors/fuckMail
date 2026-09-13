@@ -125,7 +125,7 @@ impl Store {
         self.composition(account, &json!({"conversation_id":cid}))
     }
 
-    pub(crate) fn composition(&self, account: &str, p: &Value) -> Result<Value> {
+    pub(crate) fn stored_composition(&self, account: &str, p: &Value) -> Result<Option<Value>> {
         let (selected, legacy) = selector(p)?;
         let row:Option<Value>=self.db.query_row(
             "SELECT draft_id,conversation_id,mode,source_message_id,source_hash,routing_json,body,revision,body_html,attachments_json,discarded,signature_text,from_name,identity_revision,created_at,updated_at,legacy_reply FROM drafts WHERE account=?1 AND ((?3 AND legacy_reply=1 AND conversation_id=?2) OR (NOT ?3 AND draft_id=?2))",
@@ -135,7 +135,12 @@ impl Store {
                 "attachments_json":r.get::<_,String>(9)?,"discarded":r.get::<_,bool>(10)?,"signature_text":r.get::<_,String>(11)?,
                 "from_name":r.get::<_,String>(12)?,"identity_revision":r.get::<_,i64>(13)?,"created_at":r.get::<_,i64>(14)?,
                 "updated_at":r.get::<_,i64>(15)?,"legacy_reply":r.get::<_,bool>(16)?}))).optional()?;
-        let mut row = if let Some(row) = row {
+        Ok(row)
+    }
+
+    pub(crate) fn composition(&self, account: &str, p: &Value) -> Result<Value> {
+        let (selected, legacy) = selector(p)?;
+        let row = if let Some(row) = self.stored_composition(account, p)? {
             row
         } else if legacy {
             let (source, hash, routing, _) = self.legacy_routing(account, selected)?;
@@ -147,6 +152,10 @@ impl Store {
         } else {
             return Err(err("not_found", "Draft is outside this account"));
         };
+        self.project_composition(account, row)
+    }
+
+    pub(crate) fn project_composition(&self, account: &str, mut row: Value) -> Result<Value> {
         let routing: Value = serde_json::from_str(row["routing_json"].as_str().unwrap())?;
         for (key, value) in routing
             .as_object()
@@ -178,7 +187,7 @@ impl Store {
         Ok(row)
     }
 
-    fn draft_identity(&self, account: &str) -> Result<(String, String, i64)> {
+    pub(crate) fn draft_identity(&self, account: &str) -> Result<(String, String, i64)> {
         Ok(self.db.query_row("SELECT a.name,m.signature_text,m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id WHERE a.id=?1",
             [account],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?)))?)
     }
@@ -257,96 +266,107 @@ impl Store {
             )
         })?;
         let bytes = self.composition_source_bytes(&hash)?;
-        let parsed = mail_parser::MessageParser::default()
-            .parse(&bytes)
-            .ok_or_else(|| err("content_unavailable", "Reply source cannot be parsed"))?;
         let from: String =
             self.db
                 .query_row("SELECT email FROM accounts WHERE id=?1", [account], |r| {
                     r.get(0)
                 })?;
-        let own = from.to_lowercase();
-        let addresses = |value: Option<&mail_parser::Address<'_>>| -> Vec<Value> {
-            value
-                .map(|v| {
-                    v.iter()
-                        .filter_map(|a| {
-                            a.address()
-                                .map(|email| json!({"name":a.name(),"email":email}))
-                        })
-                        .collect()
-                })
-                .unwrap_or_default()
-        };
-        let mut seen = HashSet::from([own]);
-        let mut unique = |rows: Vec<Value>| -> Vec<Value> {
-            rows.into_iter()
-                .filter(|r| seen.insert(r["email"].as_str().unwrap().to_lowercase()))
-                .collect()
-        };
-        let mut reply = unique(addresses(parsed.reply_to().or_else(|| parsed.from())));
-        if reply.is_empty() {
-            reply = unique(addresses(parsed.to()));
-        }
-        let additional_to = unique(addresses(parsed.to()));
-        let additional_cc = unique(addresses(parsed.cc()));
-        let reply_all_available = !additional_to.is_empty() || !additional_cc.is_empty();
-        let mut to = reply;
-        let cc = if mode == "reply_all" {
-            to.extend(additional_to);
-            additional_cc
-        } else {
-            vec![]
-        };
-        if mode == "forward" {
-            to.clear();
-        }
-        let original_subject = parsed.subject().unwrap_or("(no subject)");
-        let prefix = if mode == "forward" { "Fwd:" } else { "Re:" };
-        let title = if original_subject
-            .to_lowercase()
-            .starts_with(&prefix.to_lowercase())
-        {
-            original_subject.to_owned()
-        } else {
-            format!("{prefix} {original_subject}")
-        };
-        let references: Vec<String> = if mode == "forward" {
-            vec![]
-        } else {
-            parsed
-                .references()
-                .as_text_list()
-                .map(|ids| ids.iter().map(|v| format!("<{v}>")).collect())
-                .unwrap_or_default()
-        };
-        if references.len() > 100 {
-            return Err(err("limit_exceeded", "Reply source exceeds 100 references"));
-        }
-        let routing = json!({"from":from,"subject":title,"to_recipients":to,"cc_recipients":cc,"bcc_recipients":[],
+        routing_from_source(&bytes, &from, mode, &body)
+    }
+}
+
+pub(crate) fn routing_from_source(
+    bytes: &[u8],
+    from: &str,
+    mode: &str,
+    body: &str,
+) -> Result<(Value, String)> {
+    let parsed = mail_parser::MessageParser::default()
+        .parse(bytes)
+        .ok_or_else(|| err("content_unavailable", "Reply source cannot be parsed"))?;
+    let own = from.to_lowercase();
+    let addresses = |value: Option<&mail_parser::Address<'_>>| -> Vec<Value> {
+        value
+            .map(|v| {
+                v.iter()
+                    .filter_map(|a| {
+                        a.address()
+                            .map(|email| json!({"name":a.name(),"email":email}))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let mut seen = HashSet::from([own]);
+    let mut unique = |rows: Vec<Value>| -> Vec<Value> {
+        rows.into_iter()
+            .filter(|r| seen.insert(r["email"].as_str().unwrap().to_lowercase()))
+            .collect()
+    };
+    let mut reply = unique(addresses(parsed.reply_to().or_else(|| parsed.from())));
+    if reply.is_empty() {
+        reply = unique(addresses(parsed.to()));
+    }
+    let additional_to = unique(addresses(parsed.to()));
+    let additional_cc = unique(addresses(parsed.cc()));
+    let reply_all_available = !additional_to.is_empty() || !additional_cc.is_empty();
+    let mut to = reply;
+    let cc = if mode == "reply_all" {
+        to.extend(additional_to);
+        additional_cc
+    } else {
+        vec![]
+    };
+    if mode == "forward" {
+        to.clear();
+    }
+    let original_subject = parsed.subject().unwrap_or("(no subject)");
+    let prefix = if mode == "forward" { "Fwd:" } else { "Re:" };
+    let title = if original_subject
+        .to_lowercase()
+        .starts_with(&prefix.to_lowercase())
+    {
+        original_subject.to_owned()
+    } else {
+        format!("{prefix} {original_subject}")
+    };
+    let references: Vec<String> = if mode == "forward" {
+        vec![]
+    } else {
+        parsed
+            .references()
+            .as_text_list()
+            .map(|ids| ids.iter().map(|v| format!("<{v}>")).collect())
+            .unwrap_or_default()
+    };
+    if references.len() > 100 {
+        return Err(err("limit_exceeded", "Reply source exceeds 100 references"));
+    }
+    let routing = json!({"from":from,"subject":title,"to_recipients":to,"cc_recipients":cc,"bcc_recipients":[],
             "reply_to_message_id":if mode=="forward" {None} else {parsed.message_id().map(|v|format!("<{v}>"))},
             "references":references,"reply_all_available":reply_all_available,"source_unavailable":false});
-        validate_routing(&routing)?;
-        let quoted = if mode == "forward" {
-            let author = addresses(parsed.from())
-                .into_iter()
-                .map(|r| r["email"].as_str().unwrap().to_owned())
-                .collect::<Vec<_>>()
-                .join(", ");
-            let date = parsed.date().map(|d| d.to_rfc3339()).unwrap_or_default();
-            format!("---------- Forwarded message ----------\nFrom: {author}\nDate: {date}\nSubject: {original_subject}\n\n{}",body.lines().map(|line|format!("> {line}")).collect::<Vec<_>>().join("\n"))
-        } else {
-            String::new()
-        };
-        if quoted.len() > MAX_BODY {
-            return Err(err(
-                "limit_exceeded",
-                "Forwarded text exceeds the draft body limit",
-            ));
-        }
-        Ok((routing, quoted))
+    validate_routing(&routing)?;
+    let quoted = if mode == "forward" {
+        let author = addresses(parsed.from())
+            .into_iter()
+            .map(|r| r["email"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let date = parsed.date().map(|d| d.to_rfc3339()).unwrap_or_default();
+        format!("---------- Forwarded message ----------\nFrom: {author}\nDate: {date}\nSubject: {original_subject}\n\n{}",body.lines().map(|line|format!("> {line}")).collect::<Vec<_>>().join("\n"))
+    } else {
+        String::new()
+    };
+    if quoted.len() > MAX_BODY {
+        return Err(err(
+            "limit_exceeded",
+            "Forwarded text exceeds the draft body limit",
+        ));
     }
+    Ok((routing, quoted))
+}
 
+impl Store {
     pub(crate) fn composition_source_bytes(&self, hash: &str) -> Result<Vec<u8>> {
         if !self.blob_present(hash) {
             return Err(err(
@@ -415,20 +435,24 @@ impl Store {
         self.composition(account, &json!({"draft_id":draft_id}))
     }
 
-    pub(crate) fn save_composition(
+    pub(crate) fn save_composition_prepared(
         &self,
         account: &str,
         p: &Value,
         expected: i64,
         discard: bool,
+        prepared: Option<&Value>,
     ) -> Result<Value> {
-        let mut draft = self.composition(account, p)?;
+        let mut draft = match prepared {
+            Some(draft) => draft.clone(),
+            None => self.composition(account, p)?,
+        };
         crate::mutations::check_revision(expected, draft["revision"].as_i64().unwrap())?;
         if let Some(source) = p.get("source_message_id") {
             let source = id(source.as_str().ok_or_else(|| {
                 err("invalid_request", "source_message_id must be an identifier")
             })?)?;
-            if expected == 0 && draft["legacy_reply"] == true {
+            if expected == 0 && draft["legacy_reply"] == true && prepared.is_none() {
                 let cid = draft["conversation_id"].as_str().unwrap();
                 let (mid, hash, routing, _) = self.legacy_routing_at(account, cid, Some(source))?;
                 draft["source_message_id"] = json!(mid);
@@ -477,7 +501,9 @@ impl Store {
                 .cloned()
                 .unwrap_or_else(|| draft["attachment_ids"].clone())
         };
-        self.validate_draft_attachments(account, &attachments)?;
+        if prepared.is_none() {
+            self.validate_draft_attachments(account, &attachments)?;
+        }
         if draft["revision"] == 0 || was_discarded {
             let (name, signature, revision) = self.draft_identity(account)?;
             draft["from_name"] = json!(name);
