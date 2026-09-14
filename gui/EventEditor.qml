@@ -16,6 +16,19 @@ Popup {
     property string submittedFields: ""
     property string targetAccount: ""
     property string targetCalendarId: ""
+    function refreshTargetCalendar() {
+        if (!visible || editEvent.event_id || saving || unknownOutcome) return
+        // A first sync can discover calendars after the user starts typing.
+        // Once chosen, retain the exact target even if it becomes unavailable.
+        if (!targetAccount && !targetCalendarId && writableSources.length) {
+            targetAccount = writableSources[0].account
+            targetCalendarId = writableSources[0].calendar_id
+        }
+        targetCalendar.currentIndex = writableSources.findIndex(function(s) {
+            return s.account === editor.targetAccount && s.calendar_id === editor.targetCalendarId
+        })
+    }
+    onWritableSourcesChanged: Qt.callLater(refreshTargetCalendar)
     property bool unknownOutcome: false
     property string operationState: ""
     property double operationRevision: -1
@@ -106,6 +119,7 @@ Popup {
     Shortcut { sequence: "Ctrl+Return"; enabled: editor.opened && editor.activeFocus && !editor.saving && editor.actionReady && (editor.unknownOutcome || (!editor.staleRevision && editor.formReady)); onActivated: editor.save() }
     Shortcut { sequence: "Meta+Return"; enabled: editor.opened && editor.activeFocus && !editor.saving && editor.actionReady && (editor.unknownOutcome || (!editor.staleRevision && editor.formReady)); onActivated: editor.save() }
     onOpened: {
+        refreshTargetCalendar()
         titleField.forceActiveFocus()
         formScroll.contentItem.contentY = 0
         Qt.callLater(function() { if (editor.opened) { formScroll.contentItem.contentY = 0; if (editor.editEvent.recurring_action === "delete") deleteConfirmation.open() } })
@@ -276,6 +290,7 @@ Popup {
                     FmComboBox {
                         id: targetCalendar; objectName: "eventTargetCalendar"; Layout.fillWidth: true; implicitHeight: 30; visible: !editor.editEvent.event_id
                         model: editor.writableSources.map(function(s) { return s.account_name + " / " + s.name })
+                        displayText: currentIndex < 0 ? "Choose a writable calendar" : currentText
                         onActivated: { let source = editor.writableSources[currentIndex]; if (source) { editor.targetAccount = source.account; editor.targetCalendarId = source.calendar_id } }
                     }
                     Text { visible: !!editor.editEvent.event_id; text: (editor.editEvent.account_name || "") + " / " + (editor.editEvent.calendar_name || editor.editEvent.calendar_id || ""); color: Theme.text; font.pixelSize: Theme.fontSize(12); Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }

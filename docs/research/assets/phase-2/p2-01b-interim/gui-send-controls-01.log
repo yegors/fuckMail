@@ -1,7 +1,0 @@
-Prepared recovery geometry default checkGoogleSend QRectF(20,594 100x32) available QRectF(20,0 402x704)
-Prepared recovery geometry default resumeGoogleSend QRectF(126,594 155x32) available QRectF(20,0 402x704)
-Prepared recovery geometry default abandonGoogleSend QRectF(20,632 163x32) available QRectF(20,0 402x704)
-Prepared recovery geometry large checkGoogleSend QRectF(20,599 106x32) available QRectF(20,0 402x711)
-Prepared recovery geometry large resumeGoogleSend QRectF(132,599 165x32) available QRectF(20,0 402x711)
-Prepared recovery geometry large abandonGoogleSend QRectF(20,637 174x32) available QRectF(20,0 402x711)
-Native Send controls passed: actual QML handlers, private held save/auxiliary IPC, recipient validation, cancelled save continuation, frozen resume, revision-bound abandon, unknown evidence, historical/current metadata and account/editor isolation. Synthetic IPC only; no provider or performance claim.

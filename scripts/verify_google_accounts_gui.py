@@ -54,7 +54,7 @@ def verify_restore_provider_quiet(baseline, final, gui_started_unix_ms, gui_fini
 
 
 def native_expectation(profile, cli):
-    value = {"version": 1, "calendar_date": BASE.date().isoformat(), "client_config_path": str(profile / "verification-google-client.json"),
+    value = {"version": 1, "calendar_date": BASE.date().isoformat(),
              "cli_path": str(cli), "limits": LIMITS, "accounts": []}
     for account in expected_accounts():
         key = account["key"]

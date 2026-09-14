@@ -14,21 +14,24 @@ GoogleOperation::GoogleOperation(QString account, QString requestId, QObject *pa
             ? "Attachment import timed out. Retry the same attachment to check its saved result."
             : "Google work timed out. Check its saved activity before trying again.");
     });
+    // Completion callbacks may destroy this operation, including its socket.
+    // Leave Qt's socket notification stack before invoking any such callback.
     connect(&m_socket, &QLocalSocket::connected, this, [this] {
+        if (m_finished) return;
         QString error;
         if (!verifyEnginePeer(m_socket.socketDescriptor(), m_enginePid, error)) {
             reject("engine_untrusted", error); return;
         }
         const auto token = std::exchange(m_token, QString{});
         write("hello", "hello", {{"token", token}, {"client", "gui-operation"}});
-    });
-    connect(&m_socket, &QLocalSocket::readyRead, this, &GoogleOperation::receive);
+    }, Qt::QueuedConnection);
+    connect(&m_socket, &QLocalSocket::readyRead, this, &GoogleOperation::receive, Qt::QueuedConnection);
     connect(&m_socket, &QLocalSocket::disconnected, this, [this] {
         reject("engine_disconnected", "The local engine disconnected. Check saved activity after reconnecting.");
-    });
+    }, Qt::QueuedConnection);
     connect(&m_socket, &QLocalSocket::errorOccurred, this, [this](auto) {
         reject("engine_disconnected", "The local engine connection failed. Check saved activity after reconnecting.");
-    });
+    }, Qt::QueuedConnection);
 }
 
 GoogleOperation::~GoogleOperation() { cancel(false); }

@@ -127,6 +127,7 @@ Rectangle {
                 model: timeline.blocks
                 Item {
                     id: eventBlock; required property var modelData; required property int index
+                    objectName: "timelineEvent-" + (modelData.event_id || modelData.id)
                     readonly property int lane: timeline.laneAssignments[index] === undefined ? 0 : timeline.laneAssignments[index]
                     visible: lane < timeline.shownLanes
                     x: 24 + modelData.fraction * timeline.trackWidth; y: 28 + lane * 28
@@ -150,6 +151,7 @@ Rectangle {
                     }
                     FmToolTip { visible: eventMouse.containsMouse && !timeline.dragging; text: modelData.title + "\n" + modelData.time_display + " – " + modelData.end_display + "\n" + modelData.account_name + " / " + modelData.calendar_name }
                     Accessible.role: Accessible.Button; Accessible.name: modelData.title + ", " + modelData.start_display
+                    Accessible.onPressAction: timeline.showEvent(modelData, eventBlock)
                 }
             }
             Item {

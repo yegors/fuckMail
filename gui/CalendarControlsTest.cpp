@@ -207,6 +207,25 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     require(QObject::connect(details, SIGNAL(pendingResponseChanged()), &backend, SLOT(captureResponseSignal())), "Observe exact pending response property signal");
     auto title = named(root, "eventTitle"), save = named(root, "eventSaveButton");
     const auto openEditor = [&](QVariantMap value) { editor->setProperty("editEvent", value); call(editor, "openForDate", "2026-09-13"); settle([&] { return editor->property("opened").toBool(); }); };
+    const auto catalog = backend.calendarSources;
+    backend.calendarSources.clear(); emit backend.eventsChanged();
+    openEditor({}); title->setProperty("text", "Typed while first sync discovers calendars");
+    require(!save->property("enabled").toBool(), "An empty catalog cannot authorize creation");
+    backend.calendarSources = catalog; emit backend.eventsChanged();
+    auto target = named(root, "eventTargetCalendar");
+    settle([&] { return save->property("enabled").toBool(); });
+    require(editor->property("targetAccount") == "alpha" && target->property("currentIndex").toInt() == 0
+        && title->property("text") == "Typed while first sync discovers calendars", "Late catalog enables the open form without losing typing");
+    backend.calendarSources = {catalog[1], catalog[0]}; emit backend.eventsChanged();
+    settle([&] { return target->property("currentIndex").toInt() == 1; });
+    require(editor->property("targetAccount") == "alpha", "Catalog reordering preserves the exact chosen target");
+    backend.calendarSources = {catalog[1]}; emit backend.eventsChanged();
+    settle([&] { return target->property("currentIndex").toInt() == -1; });
+    require(!save->property("enabled").toBool() && editor->property("targetAccount") == "alpha"
+        && title->property("text") == "Typed while first sync discovers calendars", "Withdrawal disables creation without silently switching accounts or losing fields");
+    backend.calendarSources = catalog; emit backend.eventsChanged();
+    settle([&] { return save->property("enabled").toBool() && target->property("currentIndex").toInt() == 0; });
+    call(editor, "close"); settle([&] { return !editor->property("visible").toBool(); });
     const auto original = event();
     backend.events = {original};
     openEditor(original);

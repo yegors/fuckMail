@@ -10,7 +10,7 @@ QVariantMap MailBackend::calendarOccurrenceContext(const QString &account, const
         const auto source = entry.toMap();
         if (source.value("account") == account && source.value("calendar_id") == calendar && source.value("writable").toBool())
             return {{"account", account}, {"calendar_id", calendar}, {"lifecycle", lifecycleAccount(account).value("lifecycle")},
-                {"source_revision", source.value("revision")}, {"permission", source.value("permission")}, {"time_zone", source.value("time_zone")}};
+                {"authority_epoch", m_calendarAuthorityEpoch}, {"permission", source.value("permission")}, {"time_zone", source.value("time_zone")}};
     }
     return {};
 }

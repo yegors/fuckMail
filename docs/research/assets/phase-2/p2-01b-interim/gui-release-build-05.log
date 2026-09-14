@@ -1,2 +1,0 @@
-+ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --build build/p2-08a-gui-release --target fuckmail-gui --parallel 8
-ninja: no work to do.

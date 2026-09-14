@@ -1,6 +1,0 @@
-+ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\cmake.exe --build build/p2-08a-gui-release --target fuckmail-gui --parallel 8
-[1/53] Automatic MOC and UIC for target fuckmail-gui
-[2/52] Running AUTOMOC file extraction for target fuckmail-gui
-[3/5] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiGoogleDraftActionsSelfTest.cpp.obj
-[4/5] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\main.cpp.obj
-[5/5] Linking CXX executable fuckmail-gui.exe

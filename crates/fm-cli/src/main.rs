@@ -194,11 +194,17 @@ enum AccountCommand {
 
 #[derive(Subcommand)]
 enum Google {
+    /// Check whether this build is configured for browser Google sign-in.
+    SetupStatus,
     /// Open your browser and keep this CLI session until login finishes or Ctrl-C.
     /// Add --account for an identity-checked reconnect.
     Connect {
+        /// Gmail or Workspace email to prefill in Google's browser sign-in.
         #[arg(long)]
-        client_config: PathBuf,
+        email: Option<String>,
+        /// Developer override; configured builds do not need this file.
+        #[arg(long)]
+        client_config: Option<PathBuf>,
         #[arg(long)]
         reauthorize: bool,
     },
@@ -206,7 +212,10 @@ enum Google {
     /// Retained work and sync do not start automatically.
     Restore {
         #[arg(long)]
-        client_config: PathBuf,
+        email: Option<String>,
+        /// Developer override; configured builds do not need this file.
+        #[arg(long)]
+        client_config: Option<PathBuf>,
         #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
         expected_revision: i64,
         #[arg(long)]
@@ -1221,7 +1230,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             }
             | Command::ProfileInit
             | Command::Google {
-                command: Google::Connect { .. }
+                command: Google::Connect { .. } | Google::SetupStatus
             }
             | Command::Google {
                 command: Google::SyncStatus
@@ -1252,7 +1261,15 @@ async fn run(args: &Args) -> Result<(), Failure> {
         ));
     }
     let google_client_path = if let Command::Google {
-        command: Google::Connect { client_config, .. } | Google::Restore { client_config, .. },
+        command:
+            Google::Connect {
+                client_config: Some(client_config),
+                ..
+            }
+            | Google::Restore {
+                client_config: Some(client_config),
+                ..
+            },
     } = &args.command
     {
         Some(
@@ -1352,6 +1369,13 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 None
             };
             client.call(method, account, params).await?
+        }
+        Command::Google {
+            command: Google::SetupStatus,
+        } => {
+            client
+                .call("google_auth_configuration", None, json!({}))
+                .await?
         }
         Command::Google {
             command: Google::Disconnect,
@@ -1562,28 +1586,34 @@ async fn run(args: &Args) -> Result<(), Failure> {
             client.call("google_sync_release", scope, json!({})).await?
         }
         Command::Google {
-            command: Google::Connect { reauthorize, .. } | Google::Restore { reauthorize, .. },
+            command:
+                Google::Connect {
+                    reauthorize, email, ..
+                }
+                | Google::Restore {
+                    reauthorize, email, ..
+                },
         } => {
-            let path = google_client_path
-                .as_ref()
-                .ok_or_else(|| invalid("Choose an existing desktop client JSON file"))?;
-            let path = path
-                .to_str()
-                .ok_or_else(|| invalid("Desktop client path is not valid Unicode"))?;
-            let (method, params) = match &args.command {
+            let mut params = json!({"reauthorize":reauthorize});
+            if let Some(path) = &google_client_path {
+                params["client_config_path"] = json!(path
+                    .to_str()
+                    .ok_or_else(|| invalid("Desktop client path is not valid Unicode"))?);
+            }
+            if let Some(email) = email {
+                params["email"] = json!(email.trim());
+            }
+            let method = match &args.command {
                 Command::Google {
                     command:
                         Google::Restore {
                             expected_revision, ..
                         },
-                } => (
-                    "google_auth_restore_begin",
-                    json!({"client_config_path":path,"reauthorize":reauthorize,"expected_revision":expected_revision}),
-                ),
-                _ => (
-                    "google_auth_begin",
-                    json!({"client_config_path":path,"reauthorize":reauthorize}),
-                ),
+                } => {
+                    params["expected_revision"] = json!(expected_revision);
+                    "google_auth_restore_begin"
+                }
+                _ => "google_auth_begin",
             };
             let begin = result(client.call(method, scope, params).await?)?;
             let attempt = begin["attempt_id"]

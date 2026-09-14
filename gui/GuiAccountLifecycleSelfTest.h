@@ -32,7 +32,7 @@ private:
     QPointer<QQuickWindow> m_window;
     QTimer m_timer, m_watchdog;
     QElapsedTimer m_elapsed;
-    QString m_report, m_client, m_cli, m_conversation, m_date;
+    QString m_report, m_cli, m_conversation, m_date;
     QJsonArray m_expected, m_results;
     QJsonArray m_stages, m_dispatches, m_clickedSignals;
     QJsonObject m_limits, m_confirmation, m_external, m_buffer, m_unreadBefore, m_disposition;

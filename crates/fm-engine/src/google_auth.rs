@@ -30,6 +30,8 @@ const LOGIN_SECONDS: u64 = 300;
 const RETAINED_ATTEMPTS: usize = 16;
 const CONFIG_BYTES: u64 = 64 * 1024;
 mod account_lifecycle;
+mod client_config;
+use client_config::AppClient;
 
 struct SharedHttp(Arc<dyn HttpTransport>);
 impl HttpTransport for SharedHttp {
@@ -91,6 +93,7 @@ struct State {
     stopping: bool,
 }
 struct Inner {
+    app_client: AppClient,
     #[cfg(feature = "verification-google")]
     verification: bool,
     #[cfg(feature = "verification-google")]
@@ -146,12 +149,9 @@ impl Runtime {
             )
         })?;
         let vault = NativeCredentialVault::new(&namespace).map_err(google_error)?;
-        Ok(Arc::new(Self::with_services(
-            core,
-            Arc::new(http),
-            Arc::new(vault),
-            cancel,
-        )))
+        let mut runtime = Self::with_services(core, Arc::new(http), Arc::new(vault), cancel);
+        Arc::get_mut(&mut runtime.inner).unwrap().app_client = AppClient::installed();
+        Ok(Arc::new(runtime))
     }
     #[cfg(test)]
     pub(crate) fn for_test(
@@ -180,11 +180,13 @@ impl Runtime {
         vault: Arc<dyn CredentialVault>,
         cancel: CancellationToken,
         observer: Arc<dyn VerificationLogin>,
+        client_path: std::path::PathBuf,
     ) -> Arc<Self> {
         let mut runtime = Self::with_services(core, http, vault, cancel);
         let inner = Arc::get_mut(&mut runtime.inner).unwrap();
         inner.verification = true;
         inner.verification_login = Some(observer);
+        inner.app_client = AppClient::configured(client_path);
         Arc::new(runtime)
     }
     fn with_services(
@@ -195,6 +197,7 @@ impl Runtime {
     ) -> Self {
         Self {
             inner: Arc::new(Inner {
+                app_client: AppClient::default(),
                 #[cfg(feature = "verification-google")]
                 verification: false,
                 #[cfg(feature = "verification-google")]
@@ -212,6 +215,7 @@ impl Runtime {
         matches!(
             method,
             "google_auth_begin"
+                | "google_auth_configuration"
                 | "google_auth_restore_begin"
                 | "google_auth_status"
                 | "google_auth_cancel"
@@ -250,6 +254,19 @@ impl Runtime {
             return Err(cancelled());
         }
         match method {
+            "google_auth_configuration" => {
+                fields(&params, &[])?;
+                if account.is_some() {
+                    return Err(error("invalid_request", "Google setup belongs to this app"));
+                }
+                let references = self.client_references().await?;
+                match self.inner.app_client.load(None, &references).await {
+                    Ok(_) => Ok(json!({"available":true})),
+                    Err(failure) => Ok(
+                        json!({"available":false,"error":{"code":failure.code,"message":failure.message}}),
+                    ),
+                }
+            }
             #[cfg(feature = "verification-google")]
             "verification_google_auth_fixture" => {
                 fields(&params, &[])?;
@@ -266,9 +283,14 @@ impl Runtime {
                 fields(
                     &params,
                     if restore {
-                        &["client_config_path", "reauthorize", "expected_revision"]
+                        &[
+                            "client_config_path",
+                            "email",
+                            "reauthorize",
+                            "expected_revision",
+                        ]
                     } else {
-                        &["client_config_path", "reauthorize"]
+                        &["client_config_path", "email", "reauthorize"]
                     },
                 )?;
                 let restore_revision = if restore {
@@ -292,10 +314,25 @@ impl Runtime {
                 } else {
                     None
                 };
-                let path = params["client_config_path"]
-                    .as_str()
-                    .ok_or_else(invalid_config)?
-                    .to_owned();
+                let path = params
+                    .get("client_config_path")
+                    .map(|value| value.as_str().map(str::to_owned).ok_or_else(invalid_config))
+                    .transpose()?;
+                let email = params
+                    .get("email")
+                    .map(|value| {
+                        let email = value
+                            .as_str()
+                            .ok_or_else(|| {
+                                error("invalid_request", "Enter a Google email address")
+                            })?
+                            .trim();
+                        fm_google::auth::validate_login_hint(email).map_err(|_| {
+                            error("invalid_request", "Enter a Google email address")
+                        })?;
+                        Ok::<_, CoreError>(email.to_owned())
+                    })
+                    .transpose()?;
                 let reauthorize = match params.get("reauthorize") {
                     None => false,
                     Some(Value::Bool(value)) => *value,
@@ -306,6 +343,7 @@ impl Runtime {
                     owner_cancel,
                     account.map(str::to_owned),
                     path,
+                    email,
                     reauthorize,
                     restore_revision,
                 )
@@ -376,12 +414,26 @@ impl Runtime {
             )),
         }
     }
+    async fn client_references(&self) -> Result<Vec<GoogleClientReference>> {
+        self.inner
+            .core
+            .call(|store| {
+                store
+                    .google_account_bindings()?
+                    .iter()
+                    .filter_map(|b| store.google_account_client(&b.account).transpose())
+                    .collect()
+            })
+            .await
+    }
+    #[allow(clippy::too_many_arguments)]
     async fn begin(
         &self,
         owner: &str,
         owner_cancel: CancellationToken,
         account: Option<String>,
-        path: String,
+        path: Option<String>,
+        email: Option<String>,
         reauthorize: bool,
         restore_revision: Option<i64>,
     ) -> Result<Value> {
@@ -453,33 +505,18 @@ impl Runtime {
                         .collect::<Result<Vec<_>>>()
                 })
                 .await?;
-            let config = read_config(path.clone()).await?;
-            if references
-                .iter()
-                .flatten()
-                .any(|reference| reference.client_id != config.client_id())
-            {
-                return Err(error(
-                    "client_mismatch",
-                    "Use the desktop OAuth client already connected to this profile",
-                ));
-            }
+            let references = references.into_iter().flatten().collect::<Vec<_>>();
+            let (config, path) = self.inner.app_client.load(path, &references).await?;
             if owner_cancel.is_cancelled() || cancel.is_cancelled() {
                 return Err(cancelled());
             }
-            let login = if reauthorize {
-                DesktopLogin::begin_reauthorization(
-                    config.client_id().to_owned(),
-                    Duration::from_secs(LOGIN_SECONDS),
-                )
-                .await
-            } else {
-                DesktopLogin::begin(
-                    config.client_id().to_owned(),
-                    Duration::from_secs(LOGIN_SECONDS),
-                )
-                .await
-            }
+            let login = DesktopLogin::begin_with_login_hint(
+                config.client_id().to_owned(),
+                Duration::from_secs(LOGIN_SECONDS),
+                reauthorize,
+                email.as_deref(),
+            )
+            .await
             .map_err(google_error)?;
             let client = Arc::new(LoadedClient {
                 oauth: Arc::new(GoogleOAuth::new(config, self.inner.http.clone())),
@@ -887,16 +924,10 @@ impl Runtime {
                 return Ok(client.clone());
             }
         }
-        let config = read_config(reference.config_path.clone()).await?;
-        if config.client_id() != reference.client_id {
-            return Err(error(
-                "client_mismatch",
-                "Desktop OAuth file no longer matches the connected client",
-            ));
-        }
+        let (config, path) = self.inner.app_client.load_saved(reference).await?;
         let client = Arc::new(LoadedClient {
             oauth: Arc::new(GoogleOAuth::new(config, self.inner.http.clone())),
-            path: reference.config_path,
+            path,
         });
         state.client = Some(client.clone());
         Ok(client)
@@ -1013,7 +1044,7 @@ fn error(code: &str, message: &str) -> CoreError {
 fn invalid_config() -> CoreError {
     error(
         "invalid_client_config",
-        "Choose a bounded Google installed-desktop client JSON file at an absolute path",
+        "The Google app registration is unavailable or invalid. Reconfigure this build with a valid installed-desktop client.",
     )
 }
 fn cancelled() -> CoreError {

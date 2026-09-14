@@ -1,9 +1,0 @@
-{
-    "accounts": [
-    ],
-    "error": "Native actions timed out: stage 5 account 0 action 0 draft ; ; ",
-    "gui_pid": 87968,
-    "result": "failed",
-    "stage": 5,
-    "version": 1
-}

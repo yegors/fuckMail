@@ -510,3 +510,45 @@ The final review of D038 finds the already-required Find an event workflow missi
 Search an explicit displayed range of 1–42 civil days and selected calendars, with bounded case-insensitive AND substring matching over permitted title, organizer, attendees, location and description. Exclude busy-only data and deduplicate split-day segments by exact occurrence identity. Return at most 100 rows with coverage and has_more; no all-history or remote-search claim. GUI and CLI share calendar_search; native selection navigates by a fresh matching occurrence and late callbacks cannot publish across changed query/range/visibility/account/lifecycle.
 
 Evidence is focused Core/CLI/native behavior, unchanged provider/privacy semantics, rebuilt runtime and final package/performance checks. Package01 at 513a5af has already passed its SDK-free relocated tests and remains an earlier source-bound observation. No real-account action is added. Preserve earlier failures and the single final evidence report.
+
+
+## 2026-09-14T16:07:43Z — D040: email-first Google sign-in and Phase 2 completion on the Mac
+
+The founder requests finishing Phase 2, prioritizing ordinary Gmail/Workspace account addition: enter an email and open Google OAuth, without selecting a JSON file. Resume from handoff `8155e99`/runtime `618e8a0` on macOS. P2-01C consumes Platform 15/Gmail 13/Mail UI 26/CLI 21/Quality 24; Core 27/Calendar 20/Search 5/schema 20, fixtures 0/3 and protocol 1 stay unchanged. This is authorization to implement and verify the product flow, not an instruction to send mail or invitations automatically.
+
+Use one app-owned desktop OAuth registration, provisioned locally and included beside the engine in configured packages. Keep a developer override and legacy profile compatibility; never commit registration secrets, tokens or account data. Add an email hint to the existing bound loopback/PKCE/state/nonce flow. The verified Google subject remains identity, with the existing same-subject restore/reconnect and client binding. GUI and CLI use the same engine implementation. Sign-in still does not start acquisition; quota/protection/backup admission stays explicit. Missing registration is a clear build setup failure, never a fake or borrowed OAuth client.
+
+Acceptance is the existing signed generated-provider GUI/CLI lifecycle walkthrough updated to enter email; focused setup/hint/relocation/refusal tests; current Rust/native regressions and relocated Mac package checks, followed by the unchanged available performance checks. Preserve the 997-artifact final-run archive and earlier failed/interrupted attempts. Real project configuration, actual personal/Workspace login, full source/attachment coverage, protected backup/restore, sustained authorization and other-host acceptance remain required for Phase 2 closure. The user has been asked for the existing client configuration path or project; do independent work while waiting.
+
+
+## D041 — Prioritize an immediately usable Gmail test build (2026-09-14T16:45:06+00:00)
+
+The founder says to forget performance work and deliver a version they can sign into Gmail and use with their real test mailbox as soon as possible. Stop the broader performance/workspace sweep and prioritize provisioning the existing Google Desktop registration into the already verified Mac package. The user will choose their account and consent in the browser. Preserve all measurements and incomplete runs; their gates are deferred for this feedback request, not passed. This instruction does not authorize automated external mail or invitations. A test-mailbox feedback build is not full Phase 2 closure.
+
+
+## D042 — Provision the supplied Google Desktop registration (2026-09-14T16:52:53+00:00)
+
+The founder supplies their Google Console Desktop OAuth client download and asks whether a callback URL must be registered. Configure that registration locally and include it in the native Mac feedback build under D041. The existing bound loopback listener uses a dynamically selected port and `/oauth2/callback`; Desktop clients require no manually registered web callback. Keep registration contents and all future account tokens outside Git and evidence. This resolves the missing app-registration input; actual user consent/provider behavior remains to be exercised. No performance or broad workspace rerun is requested.
+
+## D043 — Repair and exercise the real test-mailbox UI (2026-09-14T17:35:52Z)
+
+The founder reports successful sign-in, mail sending/receiving and acquisition of a Google-created event, then requests a full UI walkthrough and fixes, starting with unavailable event creation. P2-LiveUI restores the existing Core 27/Gmail 13/Calendar 20/Mail UI 26/Platform 15/CLI 21/Quality 24 boundary; Search 5/schema 20, fixtures 0/3 and protocol 1 remain unchanged unless a subsequent change explicitly requires a revision. D041 still defers performance and the broad workspace sweep.
+
+The user explicitly authorizes test email and Calendar invitations only to the two recipient addresses supplied in this conversation. Keep that allowlist and actual mailbox data in private local working notes, outside Git. Test new, clearly labeled items and preserve unrelated user content. First repair catalog invalidation and late-arriving editor choices without weakening permission, active-sync or exact-target checks. Evidence is focused native regressions and a real UI walkthrough with observed provider outcomes; compile success alone is insufficient. Record sanitized results and remaining limitations in the existing Phase 2 execution report, preserving all earlier evidence. No blanket Phase 2 completion follows from this walkthrough.
+
+
+## D044 — Keep recurring UI authority stable through unchanged permission observations (2026-09-14T17:58:00Z)
+
+The D043 live walkthrough reproduces successful recurrence creation but an unsavable one-occurrence editor: the lookup itself refreshes Google permissions and advances the general Calendar source revision. Comparing that revision invalidates the just-completed lookup. Mail UI 27/Calendar 21/Quality 25 distinguish observed UI authority changes from bookkeeping revisions. Track a local epoch across changes in catalog membership, effective permission, writability/create eligibility or time zone; preserve account lifecycle, exact projected occurrence, scope/action and shared-engine proof/ETag checks. An unchanged permission observation must not invalidate itself, while observed revoke/restore cycles still invalidate older forms and callbacks. No schema, Google scope or engine command changes. Consumers are the native Calendar editor/details, Mail timeline and their focused regressions; Core 27/Gmail 13/Platform 15/CLI 21/Search 5/schema 20, fixtures 0/3 and protocol 1 remain unchanged. Also supply native accessibility activation for timed/all-day/timeline event blocks and names for dropdown options. Evidence requires actual UI read/edit plus the permission-cycle regressions; no performance or full Phase 2 acceptance claim.
+
+
+## D045 — Dismiss search without reopening it on restored focus (2026-09-14T18:15:00Z)
+
+The real-mail UI walkthrough reproduced Escape failing to dismiss the search popup, plus a dismissed search reopening when a later menu restored focus to its text field. Handle Escape in that field and open on deliberate mouse/Tab/back-Tab focus, typing or the existing Find action; popup/window focus restoration alone must not open it. Preserve the query, filters and independent Mail/Calendar contexts. Consumers: Mail UI 28 and Quality 26; other boundaries, schema 20 and fixtures 0/3/protocol 1 stay unchanged. Evidence is the failing native Main regression, its fixed rerun and the real UI retest. Performance and the broad workspace sweep remain deferred under D041.
+
+
+## D046 — Keep generated evidence out of the source tree (2026-09-14T18:58:04Z)
+
+The founder requests cleaning the branch before committing and merging because committed test logs and manifests add over a million lines. Move generated Phase 0–2 assets out of the tracked tree after verifying a complete local archive, including uncommitted Mac evidence and the unchanged Windows final-run ZIP. Preserve authored reports, failures, source/binary identities, supplied designs and executable test fixtures. This supersedes earlier requirements to retain raw evidence in Git; their byte-preservation and acceptance limits still apply. Historical decision entries remain unchanged.
+
+Quality 27 adds evidence storage and repository hygiene checks for documentation contributors and native CI. Link existing raw evidence at exact historical commits and document local-only archive recovery; future raw output belongs in ignored local storage or CI artifacts. Record the snapshot checksum and measured cleanup results in the [archive index](research/evidence-archive.md). No runtime, schema, fixture or product acceptance changes. This prepares the working tree only: no commit, push, merge or history rewrite is performed. A later squash merge can omit the Phase 2 evidence from the main commit; it does not remove existing Git history.

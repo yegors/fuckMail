@@ -1014,7 +1014,7 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
             "calendar_reminders","calendar_reminder_ack","mail_notifications",
             "calendar_combined","calendar_search","account_update","draft_discard","capture_history","calendar_write",
             "calendar_write_ack","calendar_operations","drafts","draft_create","sender_summary",
-            "google_auth_begin","google_auth_restore_begin","google_auth_status","google_auth_cancel","google_disconnect",
+            "google_auth_configuration","google_auth_begin","google_auth_restore_begin","google_auth_status","google_auth_cancel","google_disconnect",
             "accounts_archived","account_remove_preview","account_remove","account_remove_status",
             "google_sync_start","google_sync_stop","google_sync_release","google_sync_status","google_sync_busy",
             "mail_filing","google_mail_mutation_status","google_calendar_write","google_calendar_reconcile","google_calendar_operation",

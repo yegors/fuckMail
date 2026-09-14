@@ -150,7 +150,7 @@ def run(args):
 
             def sign_in(account=None, restore_revision=None, refused=None):
                 tail = ["google", "restore" if restore_revision is not None else "connect",
-                        "--client-config", str(profile / "verification-google-client.json")]
+                        "--email", (account or (personal if ledger["auth_steps"][-1]["identity"] == "personal" else workspace))["email"]]
                 if restore_revision is not None:
                     tail += ["--expected-revision", str(restore_revision)]
                 return cli(tail, account, refused, auth=True)
@@ -199,6 +199,7 @@ def run(args):
                                          stdin=subprocess.DEVNULL, stdout=streams["watch"], stderr=subprocess.STDOUT)
                 children.append(watch)
                 require(rows() == [] and rows(True) == [], "Fixture did not start with zero bound accounts")
+                require(cli(["google", "setup-status"]) == {"available": True}, "App registration not available to ordinary CLI")
                 step(1, "personal", outcome="denied")
                 sign_in(refused={"permission_denied"})
                 denied = fresh_fixture()["account_fixture"]
@@ -339,7 +340,7 @@ def run(args):
 
                 (profile / HOLD_STORE).touch(exist_ok=False)
                 step(7, "personal")
-                tail = ["google", "restore", "--client-config", str(profile / "verification-google-client.json"),
+                tail = ["google", "restore", "--email", personal["email"],
                         "--expected-revision", str(removed["lifecycle"]["revision"])]
                 cancelled = subprocess.Popen(command(tail, personal, True), cwd=scratch, env=env, stdin=subprocess.DEVNULL,
                                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)

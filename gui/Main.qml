@@ -262,7 +262,11 @@ ApplicationWindow {
                                 else backend.query = text
                                 window.openSearch()
                             }
-                            onActiveFocusChanged: if (activeFocus) window.openSearch()
+                            onActiveFocusChanged: {
+                                if (activeFocus && (focusReason === Qt.TabFocusReason || focusReason === Qt.BacktabFocusReason || focusReason === Qt.MouseFocusReason))
+                                    window.openSearch()
+                            }
+                            Keys.onEscapePressed: { searchPopup.close(); calendarSearchPopup.close() }
                             TapHandler { onTapped: { if (window.settingsOpen) window.findMail(); else window.openSearch() } }
                             background: Item { }
                             Accessible.name: window.workspace === "calendar" ? "Search saved calendar events" : "Search current mailbox"

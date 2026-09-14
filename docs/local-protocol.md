@@ -1,6 +1,6 @@
 # Local protocol — protocol 1, Phase 2 additive boundary
 
-P2-06C has a scoped Windows functional interim under D037 against Core 25/Gmail 12/Calendar 18/Platform 13/Mail UI 23/CLI 18/Quality 21/schema 19. Search 5, fixtures 0/3 and protocol 1 remain unchanged. Paired native/CLI one-occurrence organizer edit/cancel and existing account/mail/Calendar workflows pass generated-provider checks from `3242849`; [source-bound evidence](research/assets/phase-2/p2-06c-interim/logs-manifest.json) preserves actual upgrade/refusal, regressions and limitations. This does not establish actual provider or current performance acceptance.
+P2-06C has a scoped Windows functional interim under D037 against Core 25/Gmail 12/Calendar 18/Platform 13/Mail UI 23/CLI 18/Quality 21/schema 19. Search 5, fixtures 0/3 and protocol 1 remain unchanged. Paired native/CLI one-occurrence organizer edit/cancel and existing account/mail/Calendar workflows pass generated-provider checks from `3242849`; [source-bound evidence](https://github.com/yegors/fuckMail/blob/8155e998d5957e60c491475df7877553db2b453b/docs/research/assets/phase-2/p2-06c-interim/logs-manifest.json) preserves actual upgrade/refusal, regressions and limitations. This does not establish actual provider or current performance acceptance.
 
 ## Explicit local account lifecycle under D036
 

@@ -1,10 +1,14 @@
 # Phase 2 — Google mail and calendar together
 
-**September 14 handoff:** runtime `618e8a0` includes the tested list-rendering correction, with final native 22/22. Package03 was interrupted; package/performance and actual-account gates remain open. Continue on the next computer from the [handoff record](../status.md#computer-handoff--start-here), preserving the unchanged budgets and prior failures.
+D046 moves raw evidence to [ignored local/CI artifact storage](../research/evidence-archive.md) before commit/merge preparation. Quality 27 adds repository hygiene checks; product sequence and acceptance gates are unchanged.
 
-**D038/D039 Windows feedback package: `61a212a`, schema 20.** Current revisions are Core 27, Gmail 12, Calendar 20, Platform 14, Mail UI 25, CLI 20, Quality 23 and Search 5; fixtures 0/3 and protocol 1 are unchanged. Account lifecycle, mail/Drafts/Send, supported Calendar recurrence/invitations/RSVP, reminders, partial grants and bounded Calendar search have scoped Windows tests. Package02 and final native CTest02 pass. [Status](../status.md) and [execution](../research/phase-2-execution.md) retain exact source, binaries and limitations.
+**D043–D045 — real-mailbox UI repairs:** the founder has signed into the configured Mac app. Real UI testing found and fixed Calendar creation after first sync, recurring editor invalidation, accessible event activation and search-popup focus/dismissal. Mail and Calendar walkthrough results are recorded below. Performance and the broad workspace sweep remain deferred under D041; this is not full Phase 2 acceptance.
 
-**Final performance is pending.** Generated-sync navigation01 passes all four 100-ms p95 targets; the separate large-navigation01 fails `visible_snapshot` with duplicate stale delegates. Diagnose that correctness failure before final acceptance. Actual Google accounts, sustained authorization, complete agreed offline inventory, backup/retention admission and current other-host CI remain required. Whole Google-first readiness stays **0/9**.
+**D040 / P2-01C on macOS:** email-first Google account addition, app-owned registration, shared CLI/reconnect/Restore and packaging are implemented. Native **22/22**, relocated Mac package and generated-provider account walkthroughs pass. Current boundary: **Core 27/Gmail 13/Calendar 21/Platform 15/Mail UI 28/CLI 21/Quality 26/Search 5/schema 20**; fixtures 0/3 and protocol 1 unchanged. The ordinary workspace rerun was stopped under D041 after the earlier timeout; the two performance attempts lost window focus. D042 supplies the app registration; the founder completed Gmail sign-in and reported sending/receiving. D043–D045 repairs and exercises the real UI.
+
+**Current packet delivered:** configured UI Package03 passes relocated verification and final real-account readback; the connected app is running for founder testing. The walkthrough uses only newly labeled test items and the two explicitly authorized recipient addresses, held outside Git. Calendar creation/editing/invitation/recurrence/cancellation and mail submission/attachments/Reply all/forward/search/triage have observed provider or UI outcomes; detailed results and remaining gaps belong to the execution record. Sustained authorization, Workspace policy, full agreed offline coverage, backup/restore and other-host acceptance remain separate. Performance and the broader workspace sweep stay deferred; readiness stays **0/9**.
+
+D039's Windows Package02 and the `618e8a0` rendering correction remain historical checkpoints. Preserve the 997-artifact handoff archive and all failed attempts. Current results and exact source/binary scope belong to [status](../status.md) and the [execution record](../research/phase-2-execution.md).
 
 ## Historical planning and evidence
 
@@ -12,7 +16,7 @@ D020 prepared this plan from merged Phase 1 `885de67`; D021 authorized implement
 
 ## Intended outcome
 
-Deliver a native Windows build the founder can use with separate personal Gmail and Workspace mailboxes and their combined permitted Google calendars. Both GUI and CLI use the same engine/store and Google APIs. Preserve the current prototype, three themes, right-aligned controls, read-on-open, Done=read+unstar, untimed Delay and Mail-only timeline. Calendar work proceeds alongside mail, not after a mail-only release. This phase ends with controlled real-account evidence; it does not declare the whole Google-first product Ready.
+Deliver native feedback builds the founder can use with separate personal Gmail and Workspace mailboxes and their combined permitted Google calendars. Both GUI and CLI use the same engine/store and Google APIs. Preserve the current prototype, three themes, right-aligned controls, read-on-open, Done=read+unstar, untimed Delay and Mail-only timeline. Calendar work proceeds alongside mail, not after a mail-only release. This phase ends with controlled real-account evidence; it does not declare the whole Google-first product Ready.
 
 ## Implemented scope and remaining qualification
 
@@ -23,7 +27,7 @@ Deliver a native Windows build the founder can use with separate personal Gmail 
 | Calendar catalog/detail/free-busy lanes, staged generations, indexed windows and permission/privacy fences | Real shared-calendar/ACL changes, dense or unsupported source cases, time zones and provider reconciliation |
 | Shared human mail composition, attachments, Google Drafts/Send and uncertainty recovery | User-authorized recipient/attachment/From checks, live conflict/unknown outcomes and sustained daily use |
 | Supported Calendar recurrence/invitations/RSVP, running-app reminders and bounded cached search | Controlled real meeting effects, edge-rule refusals, partial following recovery and actual reminder/lifecycle behavior |
-| Current Windows package/native checks and generated-sync navigation pass | Large-navigation correctness, remaining packaged performance/resize, current other-host CI and physical/platform qualification |
+| Windows checkpoint and current Mac package/native checks | Mac focus diagnosis and final packaged navigation/search/resize, current other-host CI and physical/platform qualification |
 
 Current mail preparation still bounds MIME at 40 MiB, extracted text at 256 KiB and attachments at 50; HTTP bodies remain buffered. Failed/oversized items now retain explicit incomplete coverage and no longer have to prevent bounded siblings from publishing. Large-source retention/streaming remains required before claiming arbitrary full offline mailboxes. Calendar's new live path stages durable generations and selects indexed window candidates; a 10,001-item history fixture selects one relevant source. Live views use a validated saved IANA zone, with explicit missing-zone coverage. Bounded expansion and malformed-source gaps remain visible; native latency and real source completeness are not proved by these storage fixtures.
 

@@ -1,9 +1,0 @@
-[1/12] Automatic MOC and UIC for target gui-google-operation-test
-[2/11] Automatic MOC and UIC for target gui-google-draft-snapshot-controls-test
-[3/10] Automatic MOC and UIC for target gui-google-draft-authoring-controls-test
-[4/9] Building CXX object gui\CMakeFiles\gui-google-operation-test.dir\GoogleOperationTest.cpp.obj
-[5/9] Linking CXX executable gui-google-operation-test.exe
-[6/9] Building CXX object gui\CMakeFiles\gui-google-draft-authoring-controls-test.dir\GoogleDraftAuthoringControlsTest.cpp.obj
-[7/9] Building CXX object gui\CMakeFiles\gui-google-draft-snapshot-controls-test.dir\GoogleDraftSnapshotControlsTest.cpp.obj
-[8/9] Linking CXX executable gui-google-draft-authoring-controls-test.exe
-[9/9] Linking CXX executable gui-google-draft-snapshot-controls-test.exe

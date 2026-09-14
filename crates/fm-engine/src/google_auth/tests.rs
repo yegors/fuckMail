@@ -11,6 +11,190 @@ use tokio::{
 };
 
 const CLIENT: &str = "synthetic-client.apps.googleusercontent.com";
+
+#[tokio::test]
+async fn email_first_login_uses_app_registration_and_verified_identity() {
+    let mut h = Harness::new();
+    let path = h.config();
+    Arc::get_mut(&mut h.runtime.inner).unwrap().app_client = AppClient::configured(path.into());
+    let setup = h
+        .runtime
+        .handle(
+            "owner",
+            CancellationToken::new(),
+            "google_auth_configuration",
+            None,
+            json!({}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(setup, json!({"available":true}));
+    assert_eq!(h.http.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(h.vault.stores.load(Ordering::SeqCst), 0);
+    let reply = h
+        .runtime
+        .handle(
+            "owner",
+            CancellationToken::new(),
+            "google_auth_begin",
+            None,
+            json!({"email":"  intended+mail@workspace.example  "}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        url_field(reply["authorization_url"].as_str().unwrap(), "login_hint"),
+        "intended+mail@workspace.example"
+    );
+    assert_eq!(
+        url_field(reply["authorization_url"].as_str().unwrap(), "client_id"),
+        CLIENT
+    );
+    // Google can select another email or rename a Workspace address. Only its
+    // signed subject binds the account; the hint is neither an alias nor proof.
+    h.signed_callback(
+        &reply,
+        "verified-subject",
+        "chosen@example.invalid",
+        &fm_google::auth::GOOGLE_SCOPES,
+    )
+    .await;
+    let result = completed(&h.runtime, "owner", reply["attempt_id"].as_str().unwrap()).await;
+    assert_eq!(result["phase"], "connected");
+    assert_eq!(
+        result["account"],
+        fm_core::live_profile::google_account_id("verified-subject").unwrap()
+    );
+    assert!(!result.to_string().contains("intended+mail"));
+    assert_eq!(h.vault.stores.load(Ordering::SeqCst), 1);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn missing_registration_and_invalid_email_start_no_browser_or_provider_work() {
+    let h = Harness::new();
+    let setup = h
+        .runtime
+        .handle(
+            "owner",
+            CancellationToken::new(),
+            "google_auth_configuration",
+            None,
+            json!({}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(setup["available"], false);
+    assert_eq!(setup["error"]["code"], "google_not_configured");
+    let failure = h
+        .runtime
+        .handle(
+            "owner",
+            CancellationToken::new(),
+            "google_auth_begin",
+            None,
+            json!({"email":"user@gmail.com"}),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(failure.code, "google_not_configured");
+    assert!(h.runtime.inner.state.lock().await.active.is_none());
+    for email in [
+        json!(""),
+        json!("not-an-email"),
+        json!("user@corp.example\r\n&scope=other"),
+        json!(42),
+        json!("a".repeat(321)),
+    ] {
+        let failure = h
+            .runtime
+            .handle(
+                "owner",
+                CancellationToken::new(),
+                "google_auth_begin",
+                None,
+                json!({"email":email}),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(failure.code, "invalid_request");
+    }
+    assert_eq!(h.http.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(h.vault.stores.load(Ordering::SeqCst), 0);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn legacy_profile_can_reconnect_without_selecting_its_client_file_again() {
+    let h = Harness::new();
+    let account = h.expired_account().await;
+    let reply = h
+        .runtime
+        .handle(
+            "owner",
+            CancellationToken::new(),
+            "google_auth_begin",
+            Some(&account),
+            json!({"email":"old@example.invalid","reauthorize":true}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        url_field(reply["authorization_url"].as_str().unwrap(), "prompt"),
+        "consent select_account"
+    );
+    h.signed_callback(
+        &reply,
+        "expired-subject",
+        "renamed@example.invalid",
+        &fm_google::auth::GOOGLE_SCOPES,
+    )
+    .await;
+    assert_eq!(
+        completed(&h.runtime, "owner", reply["attempt_id"].as_str().unwrap()).await["account"],
+        account
+    );
+    h.close().await;
+}
+
+#[tokio::test]
+async fn relocated_registration_preserves_client_binding_and_explicit_overrides() {
+    let h = Harness::new();
+    let original = h.config();
+    let moved = h.directory.path().join("relocated-google-client.json");
+    std::fs::rename(&original, &moved).unwrap();
+    let reference = GoogleClientReference {
+        client_id: CLIENT.into(),
+        config_path: original.clone(),
+    };
+    let app = AppClient::configured(moved.clone());
+    let (config, path) = app.load_saved(reference.clone()).await.unwrap();
+    assert_eq!(config.client_id(), CLIENT);
+    assert_eq!(path, moved.to_str().unwrap());
+    // A changed registration must never refresh an existing client's credential.
+    std::fs::write(&moved, br#"{"installed":{"client_id":"different.apps.googleusercontent.com","client_secret":"synthetic"}}"#).unwrap();
+    assert_eq!(
+        app.load_saved(reference.clone()).await.err().unwrap().code,
+        "client_mismatch"
+    );
+    // An explicitly configured legacy profile keeps its own valid registration.
+    h.config();
+    assert_eq!(
+        app.load_saved(reference.clone())
+            .await
+            .unwrap()
+            .0
+            .client_id(),
+        CLIENT
+    );
+    // Present corrupt data fails; it must not fall through to another client.
+    std::fs::write(&original, b"{}").unwrap();
+    assert_eq!(
+        app.load_saved(reference).await.err().unwrap().code,
+        "invalid_client_config"
+    );
+    h.close().await;
+}
 #[path = "account_lifecycle_tests.rs"]
 mod lifecycle_tests;
 #[derive(Default)]

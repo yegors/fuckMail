@@ -1,8 +1,0 @@
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.39s
-     Running unittests src\main.rs (target/verification-google\debug\deps\fm_engine-bdc9187f3bef88d8.exe)
-
-running 1 test
-test verification_google::fixture::tests::actions_fixture_keeps_account_targets_sources_and_delete_certainty_distinct ... ok
-
-test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 145 filtered out; finished in 0.09s
-

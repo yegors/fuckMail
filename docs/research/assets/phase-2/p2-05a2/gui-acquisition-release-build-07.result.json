@@ -1,7 +1,0 @@
-{
-  "command": "cmake --build build/p2-08a-gui-release --parallel 8",
-  "exit_code": 0,
-  "elapsed_seconds": 33.8061512,
-  "scope": "Stable mailbox tabs and bounded sibling input geometry; parallel independent dev build",
-  "gui_sha256": "9d8008e55a3dbe00245e89232156f923967995bc97635cc2df3dbee1e3869017"
-}

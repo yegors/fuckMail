@@ -1,26 +1,28 @@
 # fuckMail
 
-A personal mail and calendar client for separate Google accounts, with a native GUI and CLI sharing one local store. Human correspondence comes first: unread means unreviewed, stars hold work for later, and only the user chooses Done/Delayed. Humans write replies.
+**D046 repository cleanup:** raw execution evidence is preserved outside the tracked tree; reports and design references remain in Git. See [archive recovery and storage rules](docs/research/evidence-archive.md). Application behavior and Phase 2 acceptance are unchanged.
 
-**September 14 computer handoff:** latest runtime source is `618e8a0` on `codex/phase-2`. The mail-list rendering fix and final native **22/22** suite pass. Package03 was interrupted; final packaging and performance reruns remain unfinished. Start with the [handoff and next steps](docs/status.md#computer-handoff--start-here). Source, reference assets and verification evidence are committed; local SDKs, binaries, profiles and credentials are not transferred by Git.
+**D043–D045 — real-mailbox UI repairs:** the founder has signed into the configured Mac app. Real UI testing found and fixed Calendar creation after first sync, recurring editor invalidation, accessible event activation and search-popup focus/dismissal. Mail and Calendar walkthrough results are recorded below. Performance and the broad workspace sweep remain deferred under D041; this is not full Phase 2 acceptance.
 
-## Current Windows feedback build
+A personal mail and calendar client for separate Google accounts, with a native GUI and CLI sharing one local store. Humans write messages and choose Done/Delayed.
 
-**D038/D039 at `61a212a` has a verified Windows development package.** Normal startup opens an empty live profile. Settings supports Google account setup, local removal with a retained archive and explicit restoration. Mail includes cached reading/search, composition, attachments, Google Drafts and explicit Send with recovery. Calendar includes permitted combined views, invitations, supported recurrence scopes/self-RSVP, running-app reminders and cached search in the displayed date range. The September 14 reference guides the native design.
+## Current Mac feedback build
 
-The current boundary is **Core 27 / Gmail 12 / Calendar 20 / Platform 14 / Mail UI 25 / CLI 20 / Quality 23 / Search 5 / schema 20**, with fixtures 0/3 and protocol 1 unchanged. Package02 passes relocated GUI/CLI and empty-live startup checks on its exact source. Final native CTest02 passes **22/22**; the [execution record](docs/research/phase-2-execution.md) distinguishes these results from earlier scoped tests and failures.
+**D040 / P2-01C implements email-first Google sign-in.** Open **Settings → Accounts → Connect Google account**, enter a Gmail or Workspace email, and choose **Continue with Google**. Reconnect and Restore share the same browser flow. The app registration is configured once by the developer; individual account users do not select JSON.
 
-**Final performance acceptance is pending.** Generated-sync navigation01 on Package02 passes the four 100 ms p95 targets at **66.1764 / 69.0417 / 67.8952 / 29.6932 ms** for mailbox click/Tab/Shift+Tab/reader. Large-navigation01 found stale delegate text/geometry, now corrected at `618e8a0` with native regressions. The packaged repeat has not run; earlier results keep their original source scope.
+The Mac Release build, **22/22 native checks**, final focused search check, relocated UI Package03, and generated-provider CLI/native account walkthroughs pass. The package is `dist/fuckmail-darwin-arm64.tar.gz`; launch `dist/darwin-arm64/fuckmail-gui.app`. D042 bundles the supplied Desktop registration, and relocated setup reports Google sign-in available. Follow the [one-time setup and launch guide](docs/build-development.md#email-first-google-setup-d040).
 
-**Google-first readiness remains 0/9 whole areas verified.** Generated-provider workflows and a Windows package do not establish actual Google account behavior, sustained authorization, complete offline coverage, protected backup/restore, current other-host CI or trusted distribution.
+The current boundary is **Core 27 / Gmail 13 / Calendar 21 / Platform 15 / Mail UI 28 / CLI 21 / Quality 26 / Search 5 / schema 20**; fixtures 0/3 and protocol 1 are unchanged. Mail composition, Google Drafts/Send, supported Calendar recurrence/invitations/RSVP, reminders, partial grants and cached search retain their existing implementation.
 
-## Try the feedback package
+The real test-account walkthrough verifies Calendar create/edit, invitations, all-day and recurring operations, plus mail sending, Reply all, forwarding, attachments, search and triage. All outbound test recipients were explicitly authorized. The Calendar and search repairs have focused native regressions; see [status](docs/status.md) and the [execution record](docs/research/phase-2-execution.md#d043d045--real-test-mailbox-ui-walkthrough).
 
-Extract `dist/fuckmail-windows-amd64.zip` and launch `windows-amd64/bin/fuckmail-gui.exe`. In **Settings → Accounts → Connect Google account**, select the existing OAuth desktop-client JSON. Keep the file at that path. Sign-in alone does not import: confirm the four actual Cloud quota limits, then choose **Start sync** for each account. The [launch guide](docs/build-development.md#phase-2-feedback-launch) explains profile protection, CLI access and a bounded first session.
+**Phase 2 remains open; whole-area readiness stays 0/9.** Sustained authorization, actual Workspace policy, complete agreed offline coverage, protected backup/restore and current other-host acceptance remain required. Performance and the broad workspace sweep are deferred under D041.
 
-The ZIP is an unsigned Windows feedback artifact from `61a212a`; Package02's SHA-256 is `5f0c98edeeb37a3a7d29312455514bc1f0ae7bae2bd4aaf26123f060b336fbc0`. It is not a public installer. Keep real data outside Git and cloud-sync folders. Settle backup/retention admission before importing real mail; the founder's reported disk encryption remains distinct from an administrator-verified status check.
+Normal startup is empty. Sign-in alone does not import: confirm actual Cloud quota limits and protected-profile/backup admission, then choose **Start sync** for each account. Keep real data outside Git and cloud-sync folders. Removing an account archives local data and removes credentials without deleting anything at Google. Reminders and GUI-owned sync stop when the GUI closes; an explicit CLI session owns its own work.
 
-Calendar search covers selected calendars in an explicit **1–42-day range**, with at most 100 matches and visible coverage limits. Recurrence authoring supports a common rule subset; following changes require confirmation that Google resets later exceptions and may need explicit partial/unknown recovery. Reminders and GUI-owned sync stop when the GUI closes; an explicit CLI session owns its own work. Incomplete mail inventory is not a complete offline copy or a backup.
+Calendar search covers selected calendars in an explicit **1–42-day range**, with at most 100 matches and visible coverage limits. Following recurrence edits require confirmation and can need explicit partial/unknown recovery. Incomplete mail inventory is not a complete offline copy or a backup.
+
+The historical Windows Package02 at `61a212a`, the `618e8a0` rendering correction and interrupted Package03 retain their [handoff evidence](docs/status.md#computer-handoff--start-here). The immutable 997-artifact Windows archive is preserved.
 
 ## Delivery direction
 
@@ -35,7 +37,7 @@ The implementation uses Rust, C++20/Qt Quick/QML, private local IPC and SQLite/F
 
 ## Next work
 
-On the next computer, finish package verification and packaged performance checks for `618e8a0` or its successor. Then use the [Phase 2 admission and comparison gates](docs/plans/phase-2.md#builds-the-founder-can-test) for controlled personal Gmail and Workspace testing, actual provider reconciliation, sustained refresh and complete agreed source coverage. Verify backup/restore and protection on the real profile volume. Current Mac/Linux CI, native vault/input behavior and distribution qualification remain separate.
+Use the configured Mac package for the founder’s immediate test-mailbox sign-in and fix observed blockers. Performance remains deferred under D041. Full Phase 2 acceptance later follows the [Phase 2 admission and comparison gates](docs/plans/phase-2.md#builds-the-founder-can-test) for controlled personal Gmail and Workspace testing, actual provider reconciliation, sustained refresh and complete agreed source coverage. Verify backup/restore and protection on the real profile volume. Current Windows/Linux CI, physical input, sustained vault behavior and distribution qualification remain separate.
 
 IMAP, SMTP and external iCalendar subscriptions stay deferred until the founder has dogfooded the Google GUI and CLI. CalDAV and a broad public launch have separate scope.
 
@@ -43,7 +45,7 @@ IMAP, SMTP and external iCalendar subscriptions stay deferred until the founder 
 
 Phases 0 and 1 are complete on available hosts. Their [foundation](docs/research/phase-0-execution.md) and [Phase 1 execution](docs/research/phase-1-execution.md) records retain source-specific CI, packages, performance and limitations. Those passes are not current Phase 2 other-host acceptance.
 
-Earlier Phase 2 checkpoints, immutable source/artifact manifests, failed attempts and native diagnostics remain in the [Phase 2 execution record](docs/research/phase-2-execution.md). In particular, [D037 occurrence](docs/research/assets/phase-2/p2-06c-interim/logs-manifest.json), [D036 account lifecycle](docs/research/assets/phase-2/p2-01b-interim/logs-manifest.json), [D035 invitations](docs/research/assets/phase-2/p2-06b-interim/logs-manifest.json), [B3B Drafts](docs/research/assets/phase-2/p2-05b3b-interim/logs-manifest.json) and [B2's failed performance checkpoint](docs/research/assets/phase-2/p2-05b2-interim/logs-manifest.json) are preserved. D038 resumed measurement; it did not rewrite D031 or its failed result.
+Earlier Phase 2 checkpoints, immutable source/artifact manifests, failed attempts and native diagnostics remain in the [Phase 2 execution record](docs/research/phase-2-execution.md). In particular, [D037 occurrence](https://github.com/yegors/fuckMail/blob/8155e998d5957e60c491475df7877553db2b453b/docs/research/assets/phase-2/p2-06c-interim/logs-manifest.json), [D036 account lifecycle](https://github.com/yegors/fuckMail/blob/8155e998d5957e60c491475df7877553db2b453b/docs/research/assets/phase-2/p2-01b-interim/logs-manifest.json), [D035 invitations](https://github.com/yegors/fuckMail/blob/8155e998d5957e60c491475df7877553db2b453b/docs/research/assets/phase-2/p2-06b-interim/logs-manifest.json), [B3B Drafts](https://github.com/yegors/fuckMail/blob/8155e998d5957e60c491475df7877553db2b453b/docs/research/assets/phase-2/p2-05b3b-interim/logs-manifest.json) and [B2's failed performance checkpoint](https://github.com/yegors/fuckMail/blob/8155e998d5957e60c491475df7877553db2b453b/docs/research/assets/phase-2/p2-05b2-interim/logs-manifest.json) are preserved. D038 resumed measurement; it did not rewrite D031 or its failed result.
 
 ## Documentation
 

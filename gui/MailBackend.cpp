@@ -127,6 +127,7 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
             auto revision = result["revision"].toInteger();
             const auto calendarRevision = result["calendar_generation"].toInteger(-1);
             const bool calendarChanged = calendarRevision < 0 || calendarRevision != m_calendarRevision;
+            if (calendarChanged) loadCalendarSources();
             const bool changed = m_revision != revision;
             if (changed) m_listRefreshPending = true;
             // A foreground query already reads current store state. Between

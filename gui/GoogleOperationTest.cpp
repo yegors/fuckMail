@@ -61,6 +61,16 @@ void cancelClosesOwner() {
     QCoreApplication::processEvents();
     require(done.calls == 1 && engine.operations == 1, "cancel never replays the operation");
 }
+void cancelBeforeQueuedHandshake() {
+    Engine engine;
+    Completion done;
+    GoogleOperation operation("fixture-account", "fixture-request", nullptr);
+    start(operation, engine, done);
+    operation.cancel();
+    QCoreApplication::processEvents();
+    require(done.calls == 1 && !done.ok && engine.hellos == 0 && engine.operations == 0,
+        "cancellation fences queued socket callbacks before any handshake or operation");
+}
 void refusals() {
     for (const auto mode : {Behavior::Malformed, Behavior::OutOfOrder, Behavior::Oversized, Behavior::WrongType, Behavior::Duplicate, Behavior::WrongMode}) {
         Engine engine(mode);
@@ -182,6 +192,7 @@ int main(int argc, char **argv) {
     QCoreApplication app(argc, argv);
     independentCachedQuery();
     cancelClosesOwner();
+    cancelBeforeQueuedHandshake();
     refusals();
     callbackMayDestroyOperation();
     localImportProfileModes();

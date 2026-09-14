@@ -6,6 +6,42 @@ use std::sync::{
     Arc, Mutex,
 };
 
+#[test]
+fn desktop_email_hint_is_encoded_once_and_never_replaces_identity_checks() {
+    let auth = DesktopAuthorization::with_login_hint(
+        "client".into(),
+        8123,
+        false,
+        Some("a+b&c@workspace.example"),
+    )
+    .unwrap();
+    let url = oauth2::url::Url::parse(&auth.url).unwrap();
+    let hints = url
+        .query_pairs()
+        .filter(|(key, _)| key == "login_hint")
+        .collect::<Vec<_>>();
+    assert_eq!(hints.len(), 1);
+    assert_eq!(hints[0].1, "a+b&c@workspace.example");
+    assert!(url
+        .query_pairs()
+        .any(|(key, value)| key == "code_challenge_method" && value == "S256"));
+    assert!(!url.query_pairs().any(|(key, _)| key == "hd"));
+    for email in [
+        "",
+        "x",
+        "@corp.example",
+        "x@",
+        "x@y@z",
+        "x@y\r\n",
+        "Name <x@y>",
+    ] {
+        assert!(
+            DesktopAuthorization::with_login_hint("client".into(), 8123, false, Some(email))
+                .is_err()
+        );
+    }
+}
+
 fn account(name: &str) -> AccountId {
     AccountId::new(name).unwrap()
 }

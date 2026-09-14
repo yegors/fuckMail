@@ -9,6 +9,8 @@
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QAccessible>
+#include <QKeyEvent>
 
 using namespace GoogleOperationFixture;
 namespace {
@@ -39,6 +41,7 @@ class CalendarSearchTest {
         QList<Held> requests;
         QStringList methods;
         QJsonArray current{event(), event("workspace")};
+        QJsonArray catalog;
         bool holdWindow = false;
         Harness() {
             backend.m_account = "personal"; backend.m_enginePid = QCoreApplication::applicationPid();
@@ -54,6 +57,7 @@ class CalendarSearchTest {
                     {"name", "Saved team calendar"}, {"revision", 1}, {"permission", "reader"}, {"writable", false}});
             }
             require(backend.publishAccounts(backend.m_allAccounts), "stable account model");
+            catalog = QJsonArray::fromVariantList(backend.m_calendarSources);
             engine.customRequest = [this](auto *peer, const auto &request) {
                 const auto method = request["method"].toString(); methods.append(method);
                 if (method == "calendar_search" || (method == "calendar_combined" && holdWindow)) requests.append({peer, request});
@@ -61,7 +65,7 @@ class CalendarSearchTest {
                     QJsonObject result;
                     if (method == "calendar_combined") result = response(request, current);
                     else if (method == "preferences_save") result = {{"revision", 2}};
-                    else if (method == "calendar_sources") result = {{"calendars", QJsonArray::fromVariantList(backend.m_calendarSources)}};
+                    else if (method == "calendar_sources") result = {{"calendars", catalog}};
                     else if (method == "accounts") result = {{"accounts", QJsonArray::fromVariantList(backend.m_allAccounts)}};
                     else if (method == "view_get") result = {{"revision", 0}, {"view", QJsonObject{}}};
                     else if (method == "view_save") result = {{"revision", 1}};
@@ -106,6 +110,37 @@ class CalendarSearchTest {
             return take("calendar_search");
         }
     };
+    static void catalogPolling() {
+        Harness h;
+        h.backend.m_syntheticProfile = true; // Isolate local generation polling from unrelated provider status.
+        h.engine.statusResult = {{"revision", 1}, {"calendar_generation", 5}};
+        h.backend.m_revision = 1; h.backend.m_calendarRevision = 4;
+        h.backend.m_calendarSources.clear();
+        require(QMetaObject::invokeMethod(&h.backend.m_pollTimer, "timeout"), "run the actual status polling handler");
+        await([&] { return h.backend.m_calendarSources.size() == 2 && h.backend.m_pending.isEmpty(); }, "first sync publishes the catalog to the already-connected UI");
+        const auto reads = h.methods.count("calendar_sources");
+        require(reads == 1, "a changed Calendar generation queries its sources");
+        require(QMetaObject::invokeMethod(&h.backend.m_pollTimer, "timeout"), "poll unchanged generation");
+        await([&] { return h.backend.m_pending.isEmpty(); }, "unchanged status completes");
+        require(h.methods.count("calendar_sources") == reads, "unchanged generations do not repeatedly query the catalog");
+        int notifications = 0;
+        QObject::connect(&h.backend, &MailBackend::eventsChanged, [&] { ++notifications; });
+        h.backend.loadCalendarSources();
+        await([&] { return h.backend.m_pending.isEmpty(); }, "same catalog read completes");
+        require(notifications == 0, "identical catalog does not disturb open controls or cached search");
+        const auto epoch = h.backend.m_calendarAuthorityEpoch;
+        auto observed = h.catalog[0].toObject(); observed["revision"] = 2; h.catalog[0] = observed;
+        h.backend.loadCalendarSources(); await([&] { return h.backend.m_pending.isEmpty(); }, "permission observation reaches catalog");
+        require(h.backend.m_calendarAuthorityEpoch == epoch, "unchanged permission observations do not invalidate their own occurrence lookup");
+        observed["permission"] = "none"; h.catalog[0] = observed;
+        h.backend.loadCalendarSources(); await([&] { return h.backend.m_pending.isEmpty(); }, "permission revocation reaches catalog");
+        observed["permission"] = "reader"; h.catalog[0] = observed;
+        h.backend.loadCalendarSources(); await([&] { return h.backend.m_pending.isEmpty(); }, "permission restoration reaches catalog");
+        require(h.backend.m_calendarAuthorityEpoch == epoch + 2, "revocation and restoration retain distinct UI authority epochs");
+        h.catalog.removeAt(0); h.engine.statusResult["calendar_generation"] = 6;
+        require(QMetaObject::invokeMethod(&h.backend.m_pollTimer, "timeout"), "poll withdrawn calendar");
+        await([&] { return h.backend.m_calendarSources.size() == 1 && h.backend.m_pending.isEmpty(); }, "catalog withdrawal reaches current UI");
+    }
     static void contexts() {
         for (int kind = 0; kind < 7; ++kind) {
             Harness h; auto old = h.search();
@@ -190,6 +225,20 @@ class CalendarSearchTest {
         await([&] { return !named(window, "startupOverlay")->property("visible").toBool(); }, "actual startup overlay finishes before search input");
         auto *field = named(window, "searchField"); auto *calendar = named(window, "calendarWorkspace");
         require(field && calendar, "actual top search and Calendar workspace exist");
+        auto *searchField = qobject_cast<QQuickItem *>(field);
+        auto *mailPopup = named(window, "mailSearchPopup");
+        require(searchField && mailPopup, "native Mail search controls exist");
+        searchField->forceActiveFocus(Qt::TabFocusReason);
+        await([&] { return mailPopup->property("opened").toBool(); }, "deliberate keyboard focus opens Mail search");
+        QKeyEvent escapePress(QEvent::KeyPress, Qt::Key_Escape, Qt::NoModifier);
+        QCoreApplication::sendEvent(window, &escapePress);
+        QKeyEvent escapeRelease(QEvent::KeyRelease, Qt::Key_Escape, Qt::NoModifier);
+        QCoreApplication::sendEvent(window, &escapeRelease);
+        await([&] { return !mailPopup->property("visible").toBool(); }, "Escape dismisses search while its text field owns focus");
+        window->contentItem()->forceActiveFocus(Qt::PopupFocusReason);
+        searchField->forceActiveFocus(Qt::PopupFocusReason);
+        QCoreApplication::processEvents();
+        require(!mailPopup->property("visible").toBool(), "restored popup focus does not reopen dismissed search");
         h.backend.m_query = "mail-only words"; emit h.backend.queryChanged();
         require(QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, "calendar")), "actual Calendar navigation");
         require(field->property("text").toString().isEmpty(), "Calendar query starts independently from Mail");
@@ -236,13 +285,41 @@ class CalendarSearchTest {
         const auto detail = details->property("eventData").toMap();
         require(!detail.value("can_edit").toBool() && !detail.value("can_delete").toBool(), "read-only source does not acquire mutation authority through search");
         require(QMetaObject::invokeMethod(details, "close"), "close exact details");
+        await([&] { return !details->property("visible").toBool(); }, "details close before accessible activation");
+        const auto press = [&](const QString &name) {
+            auto *item = named(window, name); require(item, "actual accessible calendar block exists");
+            auto *accessible = QAccessible::queryAccessibleInterface(item);
+            require(accessible && accessible->actionInterface(), "calendar block exposes accessible actions");
+            accessible->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
+        };
+        press("calendarEvent-instance");
+        await([&] { return details->property("opened").toBool(); }, "accessible press opens the timed event");
+        require(QMetaObject::invokeMethod(details, "close"), "close timed event");
+        await([&] { return !details->property("visible").toBool(); }, "timed details close");
+        h.backend.m_todayEvents = h.backend.m_events; h.backend.m_timelineReady = true; emit h.backend.eventsChanged();
         require(QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, "mail")), "return to Mail");
         require(field->property("text") == "mail-only words" && h.backend.calendarSearchQuery() == "project", "context switching preserves both independent queries");
+        press("timelineEvent-instance");
+        QObject *timelineDetails = nullptr;
+        for (auto *candidate : window->findChildren<QObject *>("eventDetails"))
+            if (candidate->property("timelineSource").toBool()) timelineDetails = candidate;
+        require(timelineDetails, "Mail timeline owns its details popup");
+        await([&] { return timelineDetails->property("opened").toBool(); }, "accessible press opens the Mail timeline event");
+        require(QMetaObject::invokeMethod(timelineDetails, "close"), "close timeline details");
+        h.holdWindow = false;
+        require(QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, "calendar")), "return to Calendar for all-day activation");
+        auto allDay = event(); allDay["event_id"] = "all-day"; allDay["all_day"] = true;
+        allDay["start"] = "2026-09-14"; allDay["end"] = "2026-09-15";
+        h.backend.publishCalendarWindow({{"events", QJsonArray{allDay}}, {"time_zone", "UTC"}}, "2026-09-14", 1);
+        emit h.backend.eventsChanged();
+        press("calendarAllDay-all-day");
+        await([&] { return details->property("opened").toBool(); }, "accessible press opens the all-day event");
+        require(QMetaObject::invokeMethod(details, "close"), "close all-day details");
         require(!warnings && h.engine.operations == 0, "native search uses no provider operation and has no QML warnings");
     }
 public:
     static void run() {
-        contexts(); selection(); controls();
+        catalogPolling(); contexts(); selection(); controls();
         qInfo() << "Calendar search passed: shared cached IPC, independent Main search, complete context fences, fresh exact occurrence navigation, full Combined visibility and three-theme/default-large controls. No provider or performance claim.";
     }
 };

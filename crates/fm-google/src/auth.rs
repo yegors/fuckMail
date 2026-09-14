@@ -153,15 +153,24 @@ impl DesktopAuthorization {
     /// Port must come from a successfully bound ephemeral IPv4 loopback listener.
     /// Binding, callback timeout and the actual token exchange remain adapter work.
     pub fn new(client_id: String, loopback_port: u16) -> Result<Self, GoogleError> {
-        Self::build(client_id, loopback_port, false)
+        Self::with_login_hint(client_id, loopback_port, false, None)
     }
 
     /// Explicit recovery after a missing/revoked refresh token; never a refresh retry.
     pub fn new_reauthorization(client_id: String, loopback_port: u16) -> Result<Self, GoogleError> {
-        Self::build(client_id, loopback_port, true)
+        Self::with_login_hint(client_id, loopback_port, true, None)
     }
 
-    fn build(client_id: String, loopback_port: u16, reconsent: bool) -> Result<Self, GoogleError> {
+    /// The hint chooses a Google sign-in screen; verified `sub` still owns identity.
+    pub fn with_login_hint(
+        client_id: String,
+        loopback_port: u16,
+        reconsent: bool,
+        login_hint: Option<&str>,
+    ) -> Result<Self, GoogleError> {
+        if let Some(email) = login_hint {
+            validate_login_hint(email)?;
+        }
         if client_id.is_empty()
             || client_id.len() > 1024
             || client_id.chars().any(char::is_control)
@@ -187,7 +196,7 @@ impl DesktopAuthorization {
             |request, scope| request.add_scope(Scope::new((*scope).to_owned())),
         );
         let nonce = CsrfToken::new_random();
-        let (url, csrf) = request
+        let request = request
             .set_pkce_challenge(challenge)
             .add_extra_param("access_type", "offline")
             .add_extra_param(
@@ -198,8 +207,13 @@ impl DesktopAuthorization {
                     "select_account"
                 },
             )
-            .add_extra_param("nonce", nonce.secret())
-            .url();
+            .add_extra_param("nonce", nonce.secret());
+        let request = if let Some(email) = login_hint {
+            request.add_extra_param("login_hint", email)
+        } else {
+            request
+        };
+        let (url, csrf) = request.url();
         Ok(Self {
             url: url.to_string(),
             redirect_uri,
@@ -231,6 +245,21 @@ impl DesktopAuthorization {
 
     pub(crate) fn matches_state(&self, state: &str) -> bool {
         state.len() <= 1024 && CsrfToken::new(state.to_owned()) == self.csrf
+    }
+}
+
+/// A bounded, bare email hint, never an identity or Workspace-domain restriction.
+pub fn validate_login_hint(email: &str) -> Result<(), GoogleError> {
+    let valid = email.len() <= 320
+        && !email.chars().any(|c| c.is_whitespace() || c.is_control())
+        && !email.contains(['<', '>', ',', ';'])
+        && email.split_once('@').is_some_and(|(local, domain)| {
+            !local.is_empty() && !domain.is_empty() && !domain.contains('@')
+        });
+    if valid {
+        Ok(())
+    } else {
+        Err(GoogleError::InvalidResponse("Enter a Google email address"))
     }
 }
 

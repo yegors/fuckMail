@@ -18,6 +18,7 @@
 #include <QSaveFile>
 #include <QTextDocument>
 #include <QUuid>
+#include <QUrlQuery>
 namespace {
 const QStringList quotaKeys{"gmail_project_units_per_minute", "gmail_account_units_per_minute", "calendar_project_units_per_minute", "calendar_account_units_per_minute"};
 QQuickItem *named(QQuickItem *root, const QString &name) {
@@ -40,8 +41,8 @@ GuiAccountLifecycleSelfTest::GuiAccountLifecycleSelfTest(MailBackend &backend, Q
     QFile input(expectation);
     if (!input.open(QIODevice::ReadOnly) || input.size() > 1024 * 1024) { QTimer::singleShot(0, this, [this] { finish("Missing or oversized lifecycle expectation."); }); return; }
     const auto expected = QJsonDocument::fromJson(input.readAll()).object();
-    m_client = expected["client_config_path"].toString(); m_cli = expected["cli_path"].toString(); m_limits = expected["limits"].toObject(); m_expected = expected["accounts"].toArray(); m_date = expected["calendar_date"].toString();
-    if (!window || expected["version"] != 1 || m_expected.size() != 2 || m_limits.size() != 4 || !QFileInfo(m_client).isAbsolute() || !QFileInfo(m_cli).isAbsolute() || !QDate::fromString(m_date, Qt::ISODate).isValid()) {
+    m_cli = expected["cli_path"].toString(); m_limits = expected["limits"].toObject(); m_expected = expected["accounts"].toArray(); m_date = expected["calendar_date"].toString();
+    if (!window || expected["version"] != 1 || m_expected.size() != 2 || m_limits.size() != 4 || !QFileInfo(m_cli).isAbsolute() || !QDate::fromString(m_date, Qt::ISODate).isValid()) {
         QTimer::singleShot(0, this, [this] { finish("Invalid lifecycle expectation identity/paths."); }); return;
     }
     for (int index = 0; index < 2; ++index) {
@@ -98,6 +99,13 @@ void GuiAccountLifecycleSelfTest::observedControlClick() {
 void GuiAccountLifecycleSelfTest::acceptBrowserUrl(const QUrl &url) {
     if (!m_probe || url.scheme() != "https" || url.host() != "accounts.google.com" || url.path() != "/o/oauth2/v2/auth") {
         finish("Unexpected browser handoff in isolated lifecycle check."); return;
+    }
+    const QUrlQuery query(url);
+    if (m_account < 0 || m_account >= m_expected.size()
+        || query.allQueryItemValues("login_hint").size() != 1
+        || query.queryItemValue("login_hint", QUrl::FullyDecoded) != m_expected[m_account].toObject()["email"].toString()
+        || named(m_window->contentItem(), "googleClientConfigPath")) {
+        finish("Native sign-in did not use the entered email and app registration."); return;
     }
     ++m_browserCount; // Never retain URL, state, code, token or authorization headers.
 }
@@ -239,7 +247,7 @@ void GuiAccountLifecycleSelfTest::tick() {
     case 2: if (click("settingsButton")) m_stage = 3; break;
     case 3: if (click("settingsPage_Accounts") && step(expected["identity"].toString())) m_stage = 4; break;
     case 4: if (click("connectGoogleButton")) m_stage = 5; break;
-    case 5: if (type("googleClientConfigPath", m_client) && click("beginGoogleSignIn")) m_stage = 6; break;
+    case 5: if (type("googleEmailAddress", expected["email"].toString()) && click("beginGoogleSignIn")) m_stage = 6; break;
     case 6:
         if (m_backend.googleAuthBusy() || m_backend.googleAuth().value("phase") != "connected" || row.isEmpty()) return;
         if (row["email"] != expected["email"] || row["lifecycle"].toObject()["state"] != "active") { finish("Native Add bound a different account."); return; }
@@ -318,7 +326,7 @@ void GuiAccountLifecycleSelfTest::tick() {
         if (click("settingsButton")) m_stage = 38; break;
     case 38: if (captureProviderBeforeRestore() && click("settingsPage_Accounts") && step("personal", true)) m_stage = 39; break;
     case 39: if (click("restoreAccount_" + id)) m_stage = 40; break;
-    case 40: if (type("googleClientConfigPath", m_client) && click("beginGoogleSignIn")) m_stage = 41; break;
+    case 40: if (type("googleEmailAddress", expected["email"].toString()) && click("beginGoogleSignIn")) m_stage = 41; break;
     case 41:
         if (m_backend.googleAuthBusy() || row["lifecycle"].toObject()["state"] != "active" || row["email"] != expected["renamed_email"]) return;
         if (m_backend.googleSyncState(id).value("owned").toBool() || m_backend.googleSyncState(id).value("active").toBool()) { finish("Restore started provider work."); return; }

@@ -1,8 +1,0 @@
-    Checking serde_core v1.0.229
-    Checking tokio v1.53.1
-    Checking clap v4.6.6
-    Checking serde_json v1.0.151
-    Checking serde v1.0.229
-    Checking fm-ipc v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-ipc)
-    Checking fm-cli v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-cli)
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.43s

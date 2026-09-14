@@ -6,6 +6,7 @@
 /CMakeUserPresets.json
 /.cache/
 /.venv/
+/.artifacts/
 **/__pycache__/
 *.pyc
 .DS_Store
@@ -25,3 +26,7 @@
 
 # aqt installer diagnostic output
 /aqtinstall.log
+
+# Generated evidence lives in local/CI artifact storage, never documentation.
+/docs/research/assets/phase-*/
+/docs/search/assets/

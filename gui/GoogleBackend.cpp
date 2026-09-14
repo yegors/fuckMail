@@ -157,19 +157,29 @@ void MailBackend::setGoogleAuth(const QJsonObject &status) {
     emit googleAuthChanged();
 }
 
-void MailBackend::connectGoogle(const QString &configFile, const QString &account, bool reauthorize) {
-    if (accountRemoved(account)) { fail("Use Restore for this archived account."); return; }
-    beginGoogleAuth("google_auth_begin", configFile, account, reauthorize);
-}
-void MailBackend::beginGoogleAuth(const QString &method, const QString &configFile, const QString &account, bool reauthorize, qint64 expectedRevision) {
+void MailBackend::prepareGoogleSignIn() {
     if (!m_connected || m_shutdown || m_syntheticProfile || m_googleAuthBusy) return;
-    const QUrl fileUrl(configFile);
-    const auto path = fileUrl.isLocalFile() ? fileUrl.toLocalFile() : configFile;
-    if (!QFileInfo(path).isAbsolute()) { fail("Choose your Google desktop client JSON file."); return; }
+    clearError();
+    m_googleAuthConfiguration = {{"loading", true}};
+    setGoogleAuth({});
+    request("google_auth_configuration", {}, {}, [this](auto result, bool ok) {
+        m_googleAuthConfiguration = ok ? result.toVariantMap()
+            : QVariantMap{{"available", false}, {"error", result.toVariantMap()}};
+        emit googleAuthChanged();
+    });
+}
+
+void MailBackend::connectGoogle(const QString &email, const QString &account, bool reauthorize) {
+    if (accountRemoved(account)) { fail("Use Restore for this archived account."); return; }
+    beginGoogleAuth("google_auth_begin", email, account, reauthorize);
+}
+void MailBackend::beginGoogleAuth(const QString &method, const QString &email, const QString &account, bool reauthorize, qint64 expectedRevision) {
+    if (!m_connected || m_shutdown || m_syntheticProfile || m_googleAuthBusy) return;
+    if (email.trimmed().isEmpty()) { fail("Enter your Gmail or Google Workspace email address."); return; }
     m_googleAuthAttempt.clear();
     m_googleAuthCancelRequested = false;
     setGoogleAuth({{"phase", "starting"}});
-    QJsonObject params{{"client_config_path", path}, {"reauthorize", reauthorize}};
+    QJsonObject params{{"email", email.trimmed()}, {"reauthorize", reauthorize}};
     if (method == "google_auth_restore_begin") params["expected_revision"] = expectedRevision;
     request(method, account, params, [this](auto result, bool ok) {
         if (!ok) { setGoogleAuth({{"phase", "failed"}, {"error", result}}); return; }

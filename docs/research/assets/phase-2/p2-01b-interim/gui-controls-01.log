@@ -1,1 +1,0 @@
-Invocation failed before launch: test executable is in the GUI-only build root, not its gui subdirectory.

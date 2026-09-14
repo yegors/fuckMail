@@ -37,7 +37,7 @@ Popup {
     component Label: Text { color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(11) } Layout.fillWidth: true }
     component Chip: FmButton {
         id: chip
-        implicitHeight: 28; implicitWidth: Math.min(popup.availableWidth, contentItem.implicitWidth + 20)
+        implicitHeight: 28; implicitWidth: Math.min(popup.availableWidth, contentItem.implicitWidth + leftPadding + rightPadding)
         font.pixelSize: Theme.fontSize(12)
         background: Rectangle { radius: 14; color: chip.selected ? Theme.selected : "transparent"; border.color: chip.activeFocus ? Theme.focusBorder : chip.selected ? Theme.controlBorder : Theme.line }
     }

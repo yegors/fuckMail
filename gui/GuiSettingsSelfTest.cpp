@@ -305,12 +305,23 @@ void GuiSettingsSelfTest::step() {
         ++m_stage; break;
     case 31:
         if (!item("settingsPage_General") || !m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.m_calendarRevision < 0) return;
-        m_defaultFontSize = item("settingsPage_General")->property("font").value<QFont>().pixelSize();
-        m_calendarSnapshotGeneration = m_backend.m_calendarGeneration;
-        m_appearanceRevision = m_backend.m_revision;
-        if (!click("theme_paper")) return;
-        m_wait.restart();
-        ++m_stage; break;
+        // Earlier calendar/account settings have already committed. Wait for
+        // their normal status invalidation before measuring an appearance-only
+        // change, so a pending legitimate refresh cannot be blamed on the theme.
+        m_stage = 310;
+        m_backend.request("status", {}, {}, [this, guard = QPointer<GuiSettingsSelfTest>(this)](auto result, bool ok) {
+            if (!guard) return;
+            m_stage = 31;
+            if (!ok) { finish("Could not observe Calendar settings before appearance check."); return; }
+            if (result["calendar_generation"].toInteger(-1) != m_backend.m_calendarRevision
+                || !m_backend.calendarReady() || !m_backend.timelineReady()) return;
+            m_defaultFontSize = item("settingsPage_General")->property("font").value<QFont>().pixelSize();
+            m_calendarSnapshotGeneration = m_backend.m_calendarGeneration;
+            m_appearanceRevision = m_backend.m_revision;
+            if (!click("theme_paper")) return;
+            m_wait.restart(); m_stage = 32;
+        });
+        break;
     case 32:
         if (!saved() || m_backend.preferences()["theme"] != "paper") return;
         if (m_wait.elapsed() < 1400 || m_backend.m_revision <= m_appearanceRevision) return;

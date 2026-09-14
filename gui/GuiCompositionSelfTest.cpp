@@ -166,6 +166,7 @@ void GuiCompositionSelfTest::finish(const QString &error) {
 QQuickItem *GuiCompositionSelfTest::item(const QString &name) const { return find(m_window->contentItem(),name); }
 bool GuiCompositionSelfTest::clickItem(QQuickItem *control) {
     if (!control || !control->isEnabled()) return false;
+    if (const auto overlay = item("startupOverlay"); overlay && overlay->isVisible()) return false;
     if (!visibleCenter(control,m_window)) { reveal(control); return false; }
     const auto position=control->mapToScene({control->width()/2,control->height()/2}); const auto global=m_window->mapToGlobal(position.toPoint());
     QMouseEvent press(QEvent::MouseButtonPress,position,global,Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);

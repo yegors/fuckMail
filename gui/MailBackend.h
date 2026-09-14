@@ -51,6 +51,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(bool connected READ connected NOTIFY connectedChanged)
     Q_PROPERTY(bool syntheticProfile READ syntheticProfile NOTIFY connectedChanged)
     Q_PROPERTY(QVariantMap googleAuth READ googleAuth NOTIFY googleAuthChanged)
+    Q_PROPERTY(QVariantMap googleAuthConfiguration READ googleAuthConfiguration NOTIFY googleAuthChanged)
     Q_PROPERTY(bool googleAuthBusy READ googleAuthBusy NOTIFY googleAuthChanged)
     Q_PROPERTY(QVariantMap googleSync READ googleSync NOTIFY googleSyncChanged)
     Q_PROPERTY(QVariantMap googleSyncLimits READ googleSyncLimits NOTIFY googleSyncChanged)
@@ -141,6 +142,7 @@ public:
     bool connected() const { return m_connected; }
     bool syntheticProfile() const { return m_syntheticProfile; }
     QVariantMap googleAuth() const { return m_googleAuth; }
+    QVariantMap googleAuthConfiguration() const { return m_googleAuthConfiguration; }
     bool googleAuthBusy() const { return m_googleAuthBusy; }
     QVariantMap googleSync() const { return m_googleSync; }
     QVariantMap googleSyncLimits() const { return m_googleSyncLimits; }
@@ -201,7 +203,8 @@ public:
     Q_INVOKABLE void writeToSender(const QString &email, const QString &name);
     Q_INVOKABLE void loadMore();
     Q_INVOKABLE void refresh();
-    Q_INVOKABLE void connectGoogle(const QString &configFile, const QString &account = {}, bool reauthorize = false);
+    Q_INVOKABLE void prepareGoogleSignIn();
+    Q_INVOKABLE void connectGoogle(const QString &email, const QString &account = {}, bool reauthorize = false);
     Q_INVOKABLE void cancelGoogleAuth();
     Q_INVOKABLE void disconnectGoogle(const QString &account);
     Q_INVOKABLE void previewAccountRemoval(const QString &account);
@@ -209,7 +212,7 @@ public:
     Q_INVOKABLE void retryAccountCleanup(const QString &account);
     Q_INVOKABLE void checkAccountRemoval(const QString &account, const QString &requestId);
     Q_INVOKABLE void openAccountArchive(const QString &account);
-    Q_INVOKABLE void restoreGoogleAccount(const QString &configFile, const QString &account, qint64 expectedRevision, bool reauthorize = false);
+    Q_INVOKABLE void restoreGoogleAccount(const QString &email, const QString &account, qint64 expectedRevision, bool reauthorize = false);
     Q_INVOKABLE bool accountNavigationAllowed();
     Q_INVOKABLE void resolveUnsavedAccountBuffer(bool discard);
     Q_INVOKABLE bool accountCapability(const QString &account, const QString &name) const;
@@ -386,7 +389,7 @@ private:
     void loadAccounts();
     void pollGoogleAuth();
     void setGoogleAuth(const QJsonObject &status);
-    void beginGoogleAuth(const QString &method, const QString &configFile, const QString &account, bool reauthorize, qint64 expectedRevision = -1);
+    void beginGoogleAuth(const QString &method, const QString &email, const QString &account, bool reauthorize, qint64 expectedRevision = -1);
     QVariantMap lifecycleAccount(const QString &account) const;
     bool archivedRequestAllowed(const QString &method) const;
     bool blockArchivedRequest(const QString &method, const QString &account) const;
@@ -533,6 +536,7 @@ private:
     QString m_folder = "inbox", m_weekStart = "2026-09-07", m_fixtureToday = "2026-09-11";
     QString m_draftStatus;
     QVariantMap m_googleAuth;
+    QVariantMap m_googleAuthConfiguration;
     QVariantMap m_googleSync;
     QVariantMap m_googleSyncLimits;
     QSet<GoogleOperation *> m_googleOperations;
@@ -596,6 +600,7 @@ private:
     int m_calendarOperationsGeneration = 0;
     qint64 m_preferencesRevision = 0;
     qint64 m_calendarRevision = -1;
+    quint64 m_calendarAuthorityEpoch = 0;
     int m_calendarGeneration = 0;
     int m_calendarWrites = 0, m_accountWrites = 0;
     bool m_preferencesSaving = false, m_capturing = false, m_discarding = false, m_fixtureClock = false;

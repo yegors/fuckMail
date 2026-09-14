@@ -4,6 +4,7 @@ Evidence, alternatives and experiments organized by subject. This index is navig
 
 | Scope | Existing material | Build contract |
 | --- | --- | --- |
+| [Evidence storage and recovery](evidence-archive.md) | Verified local snapshot, historical Git links and rules keeping generated outputs out of source | [Quality](../contracts/quality.md) |
 | [Phase 2 execution](phase-2-execution.md) | Live-profile/account boundary, integrated tests and remaining real-account gates | [Core](../contracts/core-storage.md), [Platform](../contracts/platform.md), [Quality](../contracts/quality.md) |
 | [Phase 2 OAuth/vault](phase-2-auth.md) | Desktop authorization, identity/refreshed grant fixtures and isolated native vault evidence | [Platform](../contracts/platform.md), [Gmail](../contracts/gmail.md) |
 | [Phase 2 transport](phase-2-transport.md) | Bounded native HTTPS, quota scheduling and cancellation/fault evidence | [Gmail](../contracts/gmail.md), [Quality](../contracts/quality.md) |

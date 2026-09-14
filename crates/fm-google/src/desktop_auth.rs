@@ -40,7 +40,7 @@ pub struct DesktopLogin {
 
 impl DesktopLogin {
     pub async fn begin(client_id: String, lifetime: Duration) -> Result<Self, GoogleError> {
-        Self::bind(client_id, lifetime, false).await
+        Self::begin_with_login_hint(client_id, lifetime, false, None).await
     }
 
     /// Only for an explicit reconnect/recovery action when a durable grant is missing.
@@ -48,14 +48,18 @@ impl DesktopLogin {
         client_id: String,
         lifetime: Duration,
     ) -> Result<Self, GoogleError> {
-        Self::bind(client_id, lifetime, true).await
+        Self::begin_with_login_hint(client_id, lifetime, true, None).await
     }
 
-    async fn bind(
+    pub async fn begin_with_login_hint(
         client_id: String,
         lifetime: Duration,
         reconsent: bool,
+        login_hint: Option<&str>,
     ) -> Result<Self, GoogleError> {
+        if let Some(email) = login_hint {
+            crate::auth::validate_login_hint(email)?;
+        }
         if lifetime.is_zero() || lifetime > Duration::from_secs(600) {
             return Err(GoogleError::InvalidResponse("invalid login timeout"));
         }
@@ -68,11 +72,9 @@ impl DesktopLogin {
             .port();
         Ok(Self {
             listener,
-            authorization: if reconsent {
-                DesktopAuthorization::new_reauthorization(client_id, port)?
-            } else {
-                DesktopAuthorization::new(client_id, port)?
-            },
+            authorization: DesktopAuthorization::with_login_hint(
+                client_id, port, reconsent, login_hint,
+            )?,
             deadline: Instant::now() + lifetime,
         })
     }

@@ -1,7 +1,6 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Dialogs
 
 Item {
     id: settings
@@ -112,13 +111,6 @@ Item {
         page = nextPage; localError = ""
         Qt.callLater(function() { contentFlick.contentY = pageScroll[nextPage] || 0 })
     }
-    FileDialog {
-        id: googleClientFile
-        title: "Choose the Google desktop client configuration"
-        nameFilters: ["Google client configuration (*.json)"]
-        fileMode: FileDialog.OpenFile
-        onAccepted: googleConfigPath.text = selectedFile.toString()
-    }
     Dialog {
         id: googleSignIn
         objectName: "googleSignInDialog"
@@ -129,31 +121,49 @@ Item {
         padding: 24
         closePolicy: Popup.CloseOnEscape
         background: Rectangle { color: Theme.canvas; border.color: Theme.controlBorder; radius: 8 }
+        onOpened: { backend.prepareGoogleSignIn(); googleEmail.forceActiveFocus() }
         onClosed: if (backend.googleAuthBusy) backend.cancelGoogleAuth()
+        function signIn() {
+            if (!backend.connected || backend.googleAuthBusy || !backend.googleAuthConfiguration.available || !googleEmail.acceptableInput) return
+            backend.clearError()
+            if (settings.restoreRevision > 0) backend.restoreGoogleAccount(googleEmail.text.trim(), settings.reconnectAccount, settings.restoreRevision, renewGoogleAccess.checked)
+            else backend.connectGoogle(googleEmail.text.trim(), settings.reconnectAccount, renewGoogleAccess.checked)
+        }
+        Connections {
+            target: backend
+            function onGoogleAuthChanged() { if (googleSignIn.opened && backend.googleAuth.phase === "connected") googleSignIn.close() }
+        }
         contentItem: ColumnLayout {
             spacing: 16
             property bool blocksWorkspaceShortcuts: true
             Heading { text: settings.restoreRevision > 0 ? "Restore archived account" : settings.reconnectAccount.length ? "Reconnect Google" : "Connect Google" }
-            Description { text: settings.restoreRevision > 0 ? "Sign in as the same Google account. Your retained data stays here. Restoration does not start sync or Send." : "Choose your Google desktop client JSON file, then sign in with your browser. Google will ask for Mail and Calendar access." }
-            RowLayout {
-                Layout.fillWidth: true; spacing: 8
-                FmTextField { id: googleConfigPath; objectName: "googleClientConfigPath"; Layout.fillWidth: true; placeholderText: "Desktop client JSON file"; enabled: !backend.googleAuthBusy; Accessible.name: "Google desktop client configuration file" }
-                FmButton { text: "Choose file"; outlined: true; enabled: !backend.googleAuthBusy; onClicked: googleClientFile.open() }
+            Description { text: settings.restoreRevision > 0 ? "Sign in as the same Google account to use your saved mail and calendars again." : "Enter your Gmail or Google Workspace email. You'll sign in securely with Google in your browser." }
+            FmTextField {
+                id: googleEmail; objectName: "googleEmailAddress"; Layout.fillWidth: true
+                placeholderText: "you@gmail.com"; enabled: !backend.googleAuthBusy
+                Accessible.name: "Gmail or Google Workspace email address"
+                inputMethodHints: Qt.ImhEmailCharactersOnly | Qt.ImhNoAutoUppercase
+                maximumLength: 320
+                validator: RegularExpressionValidator { regularExpression: / *[^\s@<>,;]+@[^\s@<>,;]+ */ }
+                onAccepted: googleSignIn.signIn()
             }
             CheckBox {
                 id: renewGoogleAccess
                 text: "Ask Google to renew access"
+                visible: settings.reconnectAccount.length > 0 || backend.googleAuth.error_code === "reauthorization_required"
                 enabled: !backend.googleAuthBusy
                 font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13)
                 palette.windowText: Theme.text; palette.buttonText: Theme.text
             }
-            Caption { text: renewGoogleAccess.checked ? "Use this if previous access expired or Google did not supply renewable access." : "You can connect personal Gmail and Google Workspace accounts." }
+            Caption { visible: renewGoogleAccess.visible; text: "Use this if previous access expired or Google did not supply renewable access." }
             Description { visible: (backend.googleAuth.message || "").length > 0; text: backend.googleAuth.message || "" }
+            Description { visible: !!backend.googleAuthConfiguration.error; text: (backend.googleAuthConfiguration.error || {}).message || "" }
+            Caption { text: "Google will ask for Mail and Calendar access. You choose when to start syncing." }
             RowLayout {
                 Layout.fillWidth: true; spacing: 10
                 Item { Layout.fillWidth: true }
                 FmButton { text: "Cancel"; onClicked: googleSignIn.close() }
-                FmButton { objectName: "beginGoogleSignIn"; text: "Sign in"; prominent: true; enabled: backend.connected && !backend.googleAuthBusy && googleConfigPath.text.trim().length > 0; onClicked: { backend.clearError(); if (settings.restoreRevision > 0) backend.restoreGoogleAccount(googleConfigPath.text.trim(), settings.reconnectAccount, settings.restoreRevision, renewGoogleAccess.checked); else backend.connectGoogle(googleConfigPath.text.trim(), settings.reconnectAccount, renewGoogleAccess.checked) } }
+                FmButton { objectName: "beginGoogleSignIn"; text: backend.googleAuthBusy ? "Signing in…" : "Continue with Google"; prominent: true; enabled: backend.connected && !backend.googleAuthBusy && !!backend.googleAuthConfiguration.available && googleEmail.acceptableInput; onClicked: googleSignIn.signIn() }
             }
         }
     }
@@ -461,7 +471,7 @@ Item {
                                     RowLayout {
                                         visible: !backend.syntheticProfile && !accountCard.archived; Layout.fillWidth: true; spacing: 10
                                         Caption { text: ((accountCard.modelData.google || {}).connection_state === "reauthorization_required") ? "Sign in again to restore Google access." : (accountCard.modelData.coverage || {}).text || "Your downloaded copy stays on this machine." }
-                                        FmButton { objectName: "reconnectGoogle_" + accountCard.modelData.id; text: "Reconnect"; outlined: true; enabled: backend.connected && !backend.googleAuthBusy; onClicked: { settings.restoreRevision = -1; settings.reconnectAccount = accountCard.modelData.id; renewGoogleAccess.checked = true; googleSignIn.open() } }
+                                        FmButton { objectName: "reconnectGoogle_" + accountCard.modelData.id; text: "Reconnect"; outlined: true; enabled: backend.connected && !backend.googleAuthBusy; onClicked: { settings.restoreRevision = -1; settings.reconnectAccount = accountCard.modelData.id; googleEmail.text = accountCard.modelData.email; renewGoogleAccess.checked = true; googleSignIn.open() } }
                                         FmButton { objectName: "disconnectGoogle_" + accountCard.modelData.id; text: "Disconnect"; enabled: backend.connected && !backend.googleAuthBusy && (accountCard.modelData.google || {}).connection_state !== "disconnected"; onClicked: backend.disconnectGoogle(accountCard.modelData.id) }
                                     }
                                     ColumnLayout {
@@ -476,13 +486,13 @@ Item {
                                             FmButton { objectName: "retryAccountCleanup_" + accountCard.modelData.id; text: "Retry cleanup"; visible: accountCard.archived && (accountCard.cleanup.state === "pending" || accountCard.cleanup.state === "failed"); enabled: backend.connected && !accountCard.removal.busy; onClicked: backend.retryAccountCleanup(accountCard.modelData.id) }
                                             FmButton { objectName: "checkAccountRemoval_" + accountCard.modelData.id; text: "Check saved result"; visible: accountCard.removal.uncertain || false; enabled: backend.connected && !accountCard.removal.busy; onClicked: backend.checkAccountRemoval(accountCard.modelData.id, accountCard.removal.request_id) }
                                             FmButton { objectName: "retryAccountRemoval_" + accountCard.modelData.id; text: "Retry same removal"; visible: accountCard.removal.uncertain || false; enabled: backend.connected && !accountCard.removal.busy; onClicked: backend.retryAccountCleanup(accountCard.modelData.id) }
-                                            FmButton { objectName: "restoreAccount_" + accountCard.modelData.id; text: "Restore…"; visible: accountCard.archived; enabled: backend.connected && !backend.googleAuthBusy && !accountCard.removal.busy && accountCard.cleanup.state === "complete"; onClicked: { settings.reconnectAccount = accountCard.modelData.id; settings.restoreRevision = accountCard.lifecycle.revision; renewGoogleAccess.checked = false; googleSignIn.open() } }
+                                            FmButton { objectName: "restoreAccount_" + accountCard.modelData.id; text: "Restore…"; visible: accountCard.archived; enabled: backend.connected && !backend.googleAuthBusy && !accountCard.removal.busy && accountCard.cleanup.state === "complete"; onClicked: { settings.reconnectAccount = accountCard.modelData.id; settings.restoreRevision = accountCard.lifecycle.revision; googleEmail.text = accountCard.modelData.email; renewGoogleAccess.checked = false; googleSignIn.open() } }
                                         }
                                     }
                                 }
                             }
                         }
-                        FmButton { objectName: "connectGoogleButton"; visible: !backend.syntheticProfile; text: "Connect Google account"; iconName: "plus"; outlined: true; enabled: backend.connected && !backend.googleAuthBusy; onClicked: { settings.restoreRevision = -1; settings.reconnectAccount = ""; renewGoogleAccess.checked = false; googleSignIn.open() } }
+                        FmButton { objectName: "connectGoogleButton"; visible: !backend.syntheticProfile; text: "Connect Google account"; iconName: "plus"; outlined: true; enabled: backend.connected && !backend.googleAuthBusy; onClicked: { settings.restoreRevision = -1; settings.reconnectAccount = ""; googleEmail.text = ""; renewGoogleAccess.checked = false; googleSignIn.open() } }
                         Caption { visible: !backend.syntheticProfile && (backend.googleAuth.message || "").length > 0; text: backend.googleAuth.message || "" }
                         Caption { Layout.topMargin: 4; visible: backend.syntheticProfile; text: "Open a separate live profile to connect your Google accounts." }
                     }

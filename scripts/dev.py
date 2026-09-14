@@ -287,6 +287,12 @@ def verify_package(preset, stage):
         if not live.get("ok") or live.get("result", {}).get("profile_kind") != "live" or live["result"].get("fixture_revision") != 0:
             raise RuntimeError("Packaged CLI did not create an empty live profile")
         verify_engine_stopped(live_profile)
+        setup = json.loads(run(cli, "--profile", live_profile, "--json", "google", "setup-status",
+                               env=env, cwd=relocated, capture=True, timeout=45))
+        configured = (cli.parent / "google-oauth-client.json").is_file()
+        if not setup.get("ok") or setup.get("result", {}).get("available") is not configured:
+            raise RuntimeError("Relocated Google app registration did not match the package configuration")
+        verify_engine_stopped(live_profile)
         run(gui, "--self-test-live-empty", "--profile", live_profile, env=env, cwd=relocated, timeout=45)
         verify_engine_stopped(live_profile)
         # Exercise the ordinary no-profile CLI route in an isolated user-data
@@ -329,8 +335,8 @@ def package(preset):
         "fuckMail Phase 2 feedback build (unsigned)\n\n"
         "Starts with an empty local database. No demo accounts or mock mail.\n"
         "Launch fuckmail-gui (inside the .app on macOS, bin elsewhere).\n"
-        "Open Settings > Accounts > Connect Google account and select your Google OAuth desktop-client JSON.\n"
-        "Keep that JSON file at the stable path you selected; the app uses it again for reconnect and refresh.\n"
+        "Open Settings > Accounts > Connect Google account, enter your email, and continue with Google in your browser.\n"
+        "Google sign-in requires the app registration included by the build's developer. No per-account JSON file is needed.\n"
         "Sign in using the browser. Personal Gmail and Google Workspace use Google APIs.\n"
         "Sign-in alone does not import: set the actual Google Console quota limits in Settings, then start sync.\n"
         "Use an encrypted local disk before importing personal mail. Keep the profile out of cloud-sync folders.\n"

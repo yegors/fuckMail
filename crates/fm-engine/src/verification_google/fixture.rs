@@ -466,6 +466,7 @@ impl Fixture {
                 accounts.clone(),
                 cancel,
                 accounts.clone(),
+                self.profile.join("verification-google-client.json"),
             )
         } else {
             google_auth::Runtime::for_verification(

@@ -167,7 +167,15 @@ Item {
                     }
                     Repeater { model: dayHeader.allDay.slice(0, 2)
                         Rectangle {
+                            id: allDayBox
                             required property var modelData; Layout.fillWidth: true; implicitHeight: 22; Layout.leftMargin: 3; Layout.rightMargin: 4; color: Theme.selected; radius: 3
+                            objectName: "calendarAllDay-" + (modelData.event_id || modelData.id)
+                            activeFocusOnTab: visible && backend.calendarReady
+                            Keys.onReturnPressed: calendar.showEvent(modelData, allDayBox)
+                            Keys.onSpacePressed: calendar.showEvent(modelData, allDayBox)
+                            border.width: activeFocus ? 1 : 0; border.color: Theme.accent
+                            Accessible.role: Accessible.Button; Accessible.name: modelData.title + ", " + modelData.start_display
+                            Accessible.onPressAction: calendar.showEvent(modelData, allDayBox)
                             Rectangle { width: 2; height: parent.height; color: calendar.sourceRule(parent.modelData) }
                             Text { anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 4; text: modelData.title; color: Theme.text; font.pixelSize: Theme.fontSize(11); verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; textFormat: Text.PlainText }
                             MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: calendar.showEvent(parent.modelData, parent) }
@@ -259,6 +267,7 @@ Item {
                             MouseArea { id: eventMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { eventBox.forceActiveFocus(); calendar.showEvent(eventBox.modelData, eventBox) } }
                             FmToolTip { visible: eventMouse.containsMouse; text: eventBox.modelData.title + " · " + eventBox.modelData.start_display + "\n" + eventBox.modelData.account_name + " / " + eventBox.modelData.calendar_name }
                             Accessible.role: Accessible.Button; Accessible.name: modelData.title + ", " + modelData.start_display
+                            Accessible.onPressAction: calendar.showEvent(modelData, eventBox)
                         }
                     }
                     Rectangle {

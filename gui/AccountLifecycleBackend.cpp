@@ -219,11 +219,11 @@ void MailBackend::openAccountArchive(const QString &account) {
     if (m_unsavedAccountBuffer) { m_afterAccountDisposition = [this, account] { openAccountArchive(account); }; accountNavigationAllowed(); return; }
     m_archiveSelection = account; selectAccount(account);
 }
-void MailBackend::restoreGoogleAccount(const QString &file, const QString &account, qint64 revision, bool reauthorize) {
+void MailBackend::restoreGoogleAccount(const QString &email, const QString &account, qint64 revision, bool reauthorize) {
     const auto lifecycle = lifecycleAccount(account).value("lifecycle").toMap();
     if (!accountRemoved(account) || lifecycle.value("revision").toLongLong() != revision
         || lifecycle.value("cleanup").toMap().value("state").toString() != "complete") {
         fail("Restoration needs the current archived account and completed credential cleanup."); return;
     }
-    beginGoogleAuth("google_auth_restore_begin", file, account, reauthorize, revision);
+    beginGoogleAuth("google_auth_restore_begin", email, account, reauthorize, revision);
 }

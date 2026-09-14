@@ -41,7 +41,7 @@ mod isolation_tests {
     #[tokio::test]
     async fn ordinary_startup_refuses_marked_profile_without_creating_discovery_or_store() {
         let directory = tempfile::tempdir().unwrap();
-        let profile = fm_ipc::private_profile(directory.path()).unwrap();
+        let profile = fm_ipc::private_profile(&directory.path().join("profile")).unwrap();
         std::fs::write(profile.join(MARKER), b"{}").unwrap();
         let args = crate::Args::try_parse_from([
             "fm-engine",

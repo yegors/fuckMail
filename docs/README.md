@@ -19,6 +19,7 @@ fuckMail is a personal, opinionated mail/calendar client for large separate acco
 | [Phase 0 execution evidence](research/phase-0-execution.md) | Observed checks, artifacts and remaining gates |
 | [Phase 1 execution evidence](research/phase-1-execution.md) | Completed local client, native integration and acceptance results |
 | [Phase 2 execution evidence](research/phase-2-execution.md) | Active Google/live-profile integration, tests and admission gaps |
+| [Evidence storage and recovery](research/evidence-archive.md) | Archived raw execution evidence, retained design assets and repository size checks |
 | [Current status](status.md) | What exists, what is active/next, what is deferred or excluded, and evidence for readiness |
 | [Decision log](decisions.md) | Append-only timestamped decisions, pivots and Q&A |
 | [Research index](research/README.md) | Evidence, alternatives and experiments organized by subject |
@@ -45,6 +46,8 @@ Use **status.md** as the current progress record and **decisions.md** as history
 5. Update status and the root README when scope, active work, verified behavior or readiness changes. Link evidence; do not count planned work as implemented.
 
 ## Documentation conventions
+
+Keep authored summaries and reproducible test inputs in Git. Generated logs, traces, screenshots and bulk manifests belong in ignored local storage or CI artifacts; link their location and checksum from the owning report. D046's [archive index](research/evidence-archive.md) preserves earlier evidence and explains recovery. Run `python3 scripts/check_repo_hygiene.py` before committing documentation assets.
 
 Use descriptive kebab-case Markdown filenames. The documentation index lists active phase plans; each research/contract README indexes its current files; add new files to that index when they contain real material. Split a subject when it develops an independent scope, not to pre-create empty placeholders. Future design assets, benchmark reports, build/setup and release instructions should be indexed here or by their owning sub-index when those artifacts exist.
 

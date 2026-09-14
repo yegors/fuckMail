@@ -1,9 +1,0 @@
-{
-  "scope": "Syntax/import and independent expectation construction only; no native/provider execution",
-  "result": "passed",
-  "base_unix_secs": 1789257600,
-  "accounts": 2,
-  "sources": 14,
-  "sha256": "d1e9f6fd27c39e59e3a56b671b83550447f3f30a9b7b6e262d9e0d1ba747bf69",
-  "shared_oracle_sha256": "211c4c162e77c8d275949ca867bf0b0d6267ce646b1eba7bf39f8c940b0df4bc"
-}

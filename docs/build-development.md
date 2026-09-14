@@ -1,10 +1,41 @@
 # Build, run and move between machines
 
+## Email-first Google setup (D040)
+
+Configured builds use **Settings → Accounts → Connect Google account → email → Continue with Google**. Google opens in the system browser. Reconnect and Restore reuse the saved account identity. Sign-in alone does not start sync; confirm actual quotas and protected-profile/backup admission before importing.
+
+D042 configures the founder-supplied Desktop registration on the current Mac in the ignored location below. A new host still needs that private local input. Desktop clients use the app’s temporary `http://127.0.0.1:<port>/oauth2/callback`; no manual web callback URL or hosted callback service is needed.
+
+The app developer configures the Google Desktop client once; individual account users do not supply JSON. With the existing Google Cloud Desktop-client download outside Git, run:
+
+```sh
+python3 scripts/configure_google.py /absolute/private/path/to/desktop-client.json
+scripts/dev.sh build --preset release
+scripts/dev.sh package --preset release
+```
+
+The script stores only app registration fields in ignored `.tools/google-oauth-client.json`. CMake stages it beside the engine in native builds and packages; moving the package retains it. An explicit `FM_GOOGLE_CLIENT_CONFIG` absolute path overrides that local build input and also works when running an engine directly. Never commit this file or put user access/refresh tokens in it. An unconfigured build reports Google sign-in unavailable. CI remains credential-free.
+
+The CLI shares the same setup:
+
+```sh
+fm --profile /absolute/private/profile google setup-status
+fm --profile /absolute/private/profile google connect --email you@gmail.com
+```
+
+Use `--account ID google connect --email ADDRESS --reauthorize` for explicit reconnect; restore also requires the current archive revision. `--client-config` remains a developer override. The email is a Google hint; verified subject and granted permissions determine the connected account. Existing profiles retain their client binding. The app registration must match after a move/reinstall; another project's registration cannot refresh old grants.
+
+
+
 This is the shared native developer workflow. The app is Rust engine/CLI plus a C++20 Qt Quick/QML client and SQLite. Python is used only to orchestrate developer tools; the packaged app has no Python, Node.js or JavaScript build dependency. Phase 1 is complete on available hosts; [Phase 2 execution](research/phase-2-execution.md) owns current integration results. The historical host checks below retain their original source and limits.
 
 ## Phase 2 feedback launch
 
-The current unsigned Windows feedback ZIP is Package02 from clean `61a212a`, using D039/schema 20. Relocated GUI/CLI and empty-live startup checks pass; final performance acceptance is still pending after a separate large-navigation correctness failure. See [current status](status.md) and the [execution record](research/phase-2-execution.md) before attributing a historical test to this package.
+For the current Mac build, launch `dist/darwin-arm64/fuckmail-gui.app` after following the one-time app setup above. Ordinary startup creates an empty live profile. Use **Settings → Accounts → Connect Google account**, enter the Gmail or Workspace email and continue in the browser. Confirm actual Cloud quota limits and protected-profile/backup admission before choosing **Start sync** for each account. Account removal archives local data and removes credentials without deleting anything at Google. The [status](status.md) and [execution record](research/phase-2-execution.md) distinguish current verification from remaining real-account gates.
+
+### Historical Windows Package02
+
+The earlier unsigned Windows feedback ZIP is Package02 from clean `61a212a`, using D039/schema 20. Relocated GUI/CLI and empty-live startup checks pass on that source; its separate large-navigation correctness failure led to the handoff correction. See [current status](status.md) and the [execution record](research/phase-2-execution.md) before attributing a historical test to this package.
 
 Ordinary GUI and CLI startup now use a separate, empty live profile (`fuckMail/default` under the local user-data directory). Existing `demo-v1` data is preserved. Extract the Windows ZIP and launch `windows-amd64/bin/fuckmail-gui.exe`. Open **Settings → Accounts → Connect Google account**, choose the existing OAuth desktop-client JSON and sign in through the browser. Keep that JSON at the selected path; subsequent access reads it again. Sign-in alone does not import. Confirm the four actual Google Console quota limits in Settings, then choose **Start sync** for each account. Real data needs the agreed encrypted local disk and protected profile; keep it outside Git and cloud-sync folders. Removing an account archives its local data and removes credentials without deleting anything at Google.
 

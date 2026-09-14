@@ -6,6 +6,16 @@
 #include <QDesktopServices>
 
 namespace {
+QVariantMap calendarPolicies(const QVariantList &sources) {
+    QVariantMap policies;
+    for (const auto &value : sources) {
+        const auto source = value.toMap();
+        const auto key = QString::fromUtf8(QJsonDocument(QJsonArray{source.value("account").toString(), source.value("calendar_id").toString()}).toJson(QJsonDocument::Compact));
+        policies[key] = QVariantMap{{"permission", source.value("permission")}, {"writable", source.value("writable")},
+            {"can_create", source.value("can_create")}, {"time_zone", source.value("time_zone")}};
+    }
+    return policies;
+}
 QString reminderKey(const QVariantMap &event) {
     return QString::fromUtf8(QJsonDocument(QJsonArray{event.value("account").toString(), event.value("calendar_id").toString(),
         event.value("id").toString(), event.value("start").toString()}).toJson(QJsonDocument::Compact));
@@ -206,7 +216,14 @@ void MailBackend::showTimelineToday() { m_timelineDate = todayDate(); setPrefere
 void MailBackend::loadCalendarSources() {
     request("calendar_sources", {}, {}, [this](auto result, bool ok) {
         if (!ok) return;
-        m_calendarSources = result["calendars"].toArray().toVariantList(); emit eventsChanged();
+        const auto sources = result["calendars"].toArray().toVariantList();
+        if (m_calendarSources == sources) return;
+        // A successful permission recheck advances the store's general source
+        // revision. Only an observed authority change should invalidate the
+        // very occurrence lookup that performed that recheck. Keep a local
+        // epoch so a revoke/restore cycle still fences older UI callbacks.
+        if (calendarPolicies(m_calendarSources) != calendarPolicies(sources)) ++m_calendarAuthorityEpoch;
+        m_calendarSources = sources; emit eventsChanged();
     });
 }
 void MailBackend::calendarWrite(const QVariantMap &values) {

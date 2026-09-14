@@ -75,6 +75,7 @@ struct Engine {
     Behavior behavior;
     QString expectedMethod = "google_calendar_write", profileMode = "live";
     QJsonObject expectedParams, operationParams;
+    QJsonObject statusResult{{"cached", true}};
     std::function<bool(QLocalSocket *, const QJsonObject &)> customRequest;
     int connections = 0, hellos = 0, operations = 0, queries = 0, operationCloses = 0;
     explicit Engine(Behavior mode = Behavior::Hold) : behavior(mode) {
@@ -160,7 +161,7 @@ struct Engine {
                 require(peer->property("authenticated").toBool(), "authenticate before query or operation");
                 if (method == "status") {
                     ++queries;
-                    peer->write(reply(id, {{"cached", true}}));
+                    peer->write(reply(id, statusResult));
                 } else if (customRequest && customRequest(peer, request)) {
                 } else {
                     require(method == expectedMethod, "exact allowed operation method");

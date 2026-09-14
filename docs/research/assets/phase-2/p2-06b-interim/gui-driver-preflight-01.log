@@ -1,8 +1,0 @@
-{
-  "scope": "Syntax/import and independent expectation construction only; no native/provider execution",
-  "result": "passed",
-  "base_unix_secs": 1789257600,
-  "accounts": 2,
-  "sources": 14,
-  "sha256": "6898747cd2581053a0f3867416d752aa91d8a3eb1090ea296c635affcad495b8"
-}

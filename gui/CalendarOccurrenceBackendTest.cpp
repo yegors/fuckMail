@@ -72,7 +72,9 @@ public:
         begin("wrong-master-target"); wrong = scoped; wrong["event_id"] = "opaque-instance"; finish(wrong, false);
         fixture.expectedParams.remove("scope"); fixture.expectedParams.remove("action"); selection.remove("scope"); selection.remove("action");
         begin("epoch"); account["lifecycle"] = QVariantMap{{"state", "active"}, {"revision", 3}}; backend.m_allAccounts = {account}; backend.publishAccounts({account}); finish(valid, false);
-        begin("source"); source["revision"] = 2; backend.m_calendarSources = {source}; finish(valid, false);
+        begin("permission-observation"); source["revision"] = 2; backend.m_calendarSources = {source}; finish(valid, true);
+        begin("authority-cycle"); ++backend.m_calendarAuthorityEpoch; finish(valid, false);
+        begin("source-zone"); source["time_zone"] = "UTC"; backend.m_calendarSources = {source}; finish(valid, false);
         // Reconciliation is a read against the exact recorded target. The
         // shared engine remains authoritative for its current detail access.
         fixture.customRequest = [](QLocalSocket *peer, const QJsonObject &request) {

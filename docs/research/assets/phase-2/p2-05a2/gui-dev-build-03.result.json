@@ -1,6 +1,0 @@
-{
-  "command": "scripts/dev.ps1 build --preset dev",
-  "exit_code": 0,
-  "elapsed_seconds": 29.7292742,
-  "scope": "Stable mailbox tabs and press-through-refresh regression; parallel independent Release build"
-}

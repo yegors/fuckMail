@@ -1,7 +1,0 @@
-{
-  "command": "cmake --build build/p2-08a-gui-release --parallel 8",
-  "exit_code": 0,
-  "elapsed_seconds": 4.795186,
-  "scope": "GUI-only Release with bounded navigation diagnostics",
-  "gui_sha256": "1a193306fe67dfc7c0f99908690f6f51e780fca405cb3ea338d67073e642ae79"
-}

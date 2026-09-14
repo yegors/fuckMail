@@ -1,6 +1,0 @@
-[1/7] Automatic MOC and UIC for target gui-account-lifecycle-controls-test
-[2/6] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\CalendarOperations.cpp.obj
-[3/6] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\AccountLifecycleBackend.cpp.obj
-[4/6] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\DraftAttachmentBackend.cpp.obj
-[5/6] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\AccountLifecycleControlsTest.cpp.obj
-[6/6] Linking CXX executable gui-account-lifecycle-controls-test.exe
