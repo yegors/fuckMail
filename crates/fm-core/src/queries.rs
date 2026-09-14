@@ -123,7 +123,7 @@ impl MailChanges {
         db.update_hook(Some(move |action, _: &str, table: &str, rowid| {
             let mut c = hook.lock().unwrap();
             c.hooks += 1;
-            if table.starts_with("calendar_") {
+            if table == "calendar_publication" {
                 c.calendar += 1;
             }
             if table == "messages" {
@@ -165,6 +165,7 @@ impl MailChanges {
                     | "conversations"
                     | "attachments"
                     | "categories"
+                    | "google_category_labels"
                     | "message_categories"
                     | "message_sender_kinds"
             ) || table.starts_with("message_fts")
@@ -237,11 +238,14 @@ impl MailChanges {
 }
 impl Store {
     pub(crate) fn accounts(&self) -> Result<Value> {
+        self.accounts_including_removed(false)
+    }
+    pub(crate) fn accounts_including_removed(&self, include_removed: bool) -> Result<Value> {
         let mut stmt = self
             .db
-            .prepare("SELECT id,name,email,provider FROM accounts ORDER BY rowid")?;
+            .prepare("SELECT id,name,email,provider FROM accounts WHERE (?1 OR lifecycle_state='active') ORDER BY rowid")?;
         let accounts = stmt
-            .query_map([], |r| {
+            .query_map([include_removed], |r| {
                 Ok((
                     r.get::<_, String>(0)?,
                     r.get::<_, String>(1)?,
@@ -266,11 +270,17 @@ impl Store {
             )?;
             out.push(json!({"metadata_revision":metadata_revision,"unread_conversation_count":counts["unread_conversation_count"],"held_conversation_count":counts["held_conversation_count"],"done_conversation_count":counts["done_conversation_count"],"count_scope":"all_account_mail_including_archive","id":account,"name":name,"email":email,"provider":provider,"signature_text":signature_text,"unread_count":unread,"starred_count":starred,"conversation_count":count,"message_count":messages,"coverage":self.coverage(&account)?}));
             let drafts: i64 = self.db.query_row(
-                "SELECT COUNT(*) FROM drafts WHERE account=?1 AND discarded=0",
+                "SELECT COUNT(*) FROM drafts d WHERE account=?1 AND discarded=0 AND (origin='local' OR NOT EXISTS(SELECT 1 FROM google_draft_sources s WHERE s.account=d.account AND s.draft_id=d.draft_id AND s.is_current=1 AND s.linked_local_draft_id IS NOT NULL))",
                 [&account],
                 |r| r.get(0),
             )?;
             out.last_mut().unwrap()["draft_count"] = json!(drafts);
+            let lifecycle = self.account_lifecycle(&account)?;
+            out.last_mut().unwrap()["read_only"] = json!(lifecycle["state"] == "removed");
+            out.last_mut().unwrap()["lifecycle"] = lifecycle;
+            if let Some(status) = self.google_account_status(&account)? {
+                out.last_mut().unwrap()["google"] = status;
+            }
         }
         Ok(json!({"accounts":out,"fixture_revision":self.fixture_revision()?}))
     }
@@ -465,6 +475,17 @@ impl Store {
         )
     }
     fn coverage(&self, account: &str) -> Result<Value> {
+        if self.profile_kind()? == live_profile::ProfileKind::Live {
+            let coverage = self.google_live_coverage(account)?;
+            return Ok(
+                json!({"synthetic":false,"inventory_complete":coverage.inventory_complete,"delta_current":coverage.delta_current,
+                "messages":coverage.observed,"indexed_messages":coverage.indexed,"text_index_complete":coverage.indexed==coverage.observed,
+                "retained_source_records":coverage.retained_sources,"retained_sources":coverage.retained_sources,"source_verification":"verified_on_acquisition",
+                "attachments":null,"recorded_available_attachments":null,"complete_attachments":null,"verified_attachments":null,"attachment_verification":"verified_on_acquisition",
+                "messages_with_complete_attachments":coverage.complete_attachments,"unavailable_messages":coverage.unavailable,"offline_complete":coverage.offline_complete,
+                "text":format!("Cached text: {}/{} observed messages. {} source records retained; {} items need attention. {}",coverage.indexed,coverage.observed,coverage.retained_sources,coverage.unavailable,if coverage.offline_complete {"Inventory and catch-up are complete at the last sync."} else {"Full offline acquisition is incomplete."})}),
+            );
+        }
         let changes = self.mail_changes.snapshot(&self.db);
         if let Some(old) = self.coverage_cache.borrow().get(account) {
             if old.generation == changes.coverage {
@@ -599,7 +620,7 @@ impl Store {
         // Recount attachments even on append deltas: REPLACE/truncate can omit
         // update hooks when mixed with otherwise ordinary message insertion.
         let (attachments, recorded_available): (i64, i64) = self.db.query_row(
-            "SELECT COUNT(*),COALESCE(SUM(state='available'),0) FROM attachments WHERE account=?1",
+            "SELECT COUNT(*),COALESCE(SUM(state='available'),0) FROM attachments WHERE account=?1 AND message_id IS NOT NULL",
             [account],
             |r| Ok((r.get(0)?, r.get(1)?)),
         )?;
@@ -607,14 +628,15 @@ impl Store {
         // List queries count actual indexed rows but never hash the whole corpus.
         // Individual attachment use verifies its bytes; there is no aggregate
         // full-profile verification pass in this API yet.
+        let synthetic = self.profile_kind()? == live_profile::ProfileKind::Synthetic;
         Ok(
-            json!({"synthetic":true,"inventory_complete":true,"messages":messages,
+            json!({"synthetic":synthetic,"inventory_complete":synthetic,"messages":messages,
             "indexed_messages":indexed_messages,"text_index_complete":indexed_messages==messages,
             "retained_source_records":source_records,"retained_sources":null,"source_verification":"not_run",
             "attachments":attachments,"recorded_available_attachments":recorded_available,
             "complete_attachments":null,"verified_attachments":null,"attachment_verification":"not_run",
             "offline_complete":false,
-            "text":format!("Synthetic text index: {indexed_messages}/{messages} messages. Full offline content verification has not run; missing/partial attachment fixtures are included.")}),
+            "text":if synthetic {format!("Synthetic text index: {indexed_messages}/{messages} messages. Full offline content verification has not run; missing/partial attachment fixtures are included.")} else {format!("Cached text index: {indexed_messages}/{messages} downloaded messages. Google inventory and offline content verification have not completed.")}}),
         )
     }
     pub(crate) fn conversations(&self, account: &str, p: &Value) -> Result<Value> {
@@ -754,7 +776,7 @@ impl Store {
             return Err(err("invalid_request", "Unknown search field"));
         }
         let folder = optional_string(p, "folder", "inbox")?;
-        if !["all", "inbox", "sent"].contains(&folder) {
+        if !["all", "inbox", "sent", "trash"].contains(&folder) {
             return Err(err("invalid_request", "Unknown folder"));
         }
         let category = optional_string(p, "category", "")?;
@@ -1096,8 +1118,13 @@ impl Store {
     pub(crate) fn categories(&self, account: &str) -> Result<Value> {
         let stamp = self.mail_changes.snapshot(&self.db).search;
         self.cached_projection(account, "categories", stamp, || {
-            let mut stmt=self.db.prepare("SELECT c.id,c.name,COUNT(DISTINCT m.conversation_id) FROM categories c LEFT JOIN message_categories mc ON mc.account=c.account AND mc.category_id=c.id LEFT JOIN messages m ON m.account=mc.account AND m.id=mc.message_id WHERE c.account=?1 GROUP BY c.id,c.name ORDER BY c.name")?;
-            Ok(json!({"categories":stmt.query_map([account],|r|Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"conversation_count":r.get::<_,i64>(2)?})))?.collect::<std::result::Result<Vec<_>,_>>()?}))
+            let live = self.profile_kind()? == crate::live_profile::ProfileKind::Live;
+            let mut stmt=self.db.prepare("SELECT c.id,c.name,COUNT(DISTINCT m.conversation_id),g.provider_label_id FROM categories c LEFT JOIN message_categories mc ON mc.account=c.account AND mc.category_id=c.id LEFT JOIN messages m ON m.account=mc.account AND m.id=mc.message_id LEFT JOIN google_category_labels g ON g.account=c.account AND g.category_id=c.id WHERE c.account=?1 GROUP BY c.id,c.name,g.provider_label_id ORDER BY c.name")?;
+            Ok(json!({"categories":stmt.query_map([account],|r| {
+                let mut row=json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"conversation_count":r.get::<_,i64>(2)?});
+                if live { row["provider_label_id"]=json!(r.get::<_,Option<String>>(3)?); }
+                Ok(row)
+            })?.collect::<std::result::Result<Vec<_>,_>>()?}))
         })
     }
     pub(crate) fn view(&self, account: &str) -> Result<Value> {
@@ -1117,6 +1144,13 @@ impl Store {
     }
     pub(crate) fn calendar(&self, account: &str, p: &Value) -> Result<Value> {
         fields(p, &["from", "to"])?;
+        let synthetic = self.profile_kind()? == crate::live_profile::ProfileKind::Synthetic;
+        if !synthetic && (p.get("from").is_none() || p.get("to").is_none()) {
+            return Err(err(
+                "invalid_request",
+                "Live calendar queries need explicit from and to dates",
+            ));
+        }
         let from = optional_string(p, "from", "2026-09-07")?;
         let to = optional_string(p, "to", "2026-09-14")?;
         let parse = |s: &str| {
@@ -1129,7 +1163,7 @@ impl Store {
         }
         let events = self.project_cached_calendars(account, start, end)?;
         Ok(
-            json!({"events":events,"from":from,"to":to,"time_zone":crate::calendar_store::CALENDAR_VIEW_ZONE,"fixture_today":FIXTURE_TODAY}),
+            json!({"events":events,"from":from,"to":to,"time_zone":self.calendar_display_zone()?,"fixture_today":if synthetic {Some(FIXTURE_TODAY)} else {None}}),
         )
     }
 }
@@ -1238,9 +1272,10 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
     // sender/body columns in the old query's scan even for unfiltered listings.
     let mut predicate = "m.account=?1".to_owned();
     match p["folder"].as_str().unwrap_or("inbox") {
-        "inbox" => predicate.push_str(" AND m.inbox=1"),
-        "sent" => predicate.push_str(" AND m.sent=1"),
-        _ => {}
+        "inbox" => predicate.push_str(" AND m.inbox=1 AND m.trashed=0"),
+        "sent" => predicate.push_str(" AND m.sent=1 AND m.trashed=0"),
+        "trash" => predicate.push_str(" AND m.trashed=1"),
+        _ => predicate.push_str(" AND m.trashed=0"),
     }
     if p["category"].as_str().is_some_and(|s| !s.is_empty()) {
         predicate.push_str(" AND m.id IN (SELECT message_id FROM message_categories WHERE account=?1 AND category_id=?3)");
@@ -1263,9 +1298,9 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
     }
     if let Some(has) = p["has_attachment"].as_bool() {
         predicate.push_str(if has {
-            " AND m.id IN (SELECT message_id FROM attachments WHERE account=?1)"
+            " AND m.id IN (SELECT message_id FROM attachments WHERE account=?1 AND message_id IS NOT NULL)"
         } else {
-            " AND m.id NOT IN (SELECT message_id FROM attachments WHERE account=?1)"
+            " AND m.id NOT IN (SELECT message_id FROM attachments WHERE account=?1 AND message_id IS NOT NULL)"
         });
     }
     if p["after"].as_str().is_some_and(|s| !s.is_empty()) {
@@ -1291,6 +1326,50 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
 #[cfg(test)]
 mod projection_tests {
     use super::*;
+    #[test]
+    fn trash_folder_is_explicit_and_restoration_does_not_invent_inbox_membership() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(temp.path()).unwrap();
+        let cid = "windscribe-thread-001";
+        store
+            .db
+            .execute(
+                "UPDATE messages SET trashed=1 WHERE account='windscribe' AND conversation_id=?1",
+                [cid],
+            )
+            .unwrap();
+        for folder in ["inbox", "sent", "all", "trash"] {
+            let page = store
+                .conversations("windscribe", &json!({"folder":folder,"limit":100}))
+                .unwrap();
+            let present = page["conversations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|row| row["id"] == cid);
+            assert_eq!(
+                present,
+                folder == "trash",
+                "Unexpected membership in {folder}"
+            );
+        }
+        store.db.execute("UPDATE messages SET trashed=0,inbox=0 WHERE account='windscribe' AND conversation_id=?1",[cid]).unwrap();
+        for folder in ["inbox", "all", "trash"] {
+            let page = store
+                .conversations("windscribe", &json!({"folder":folder,"limit":100}))
+                .unwrap();
+            let present = page["conversations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|row| row["id"] == cid);
+            assert_eq!(
+                present,
+                folder == "all",
+                "Restoration changed {folder} unexpectedly"
+            );
+        }
+    }
     #[test]
     fn first_page_navigation_reuses_mail_without_source_reads_and_refreshes_cursor_revision() {
         use rusqlite::hooks::{AuthAction, AuthContext, Authorization};
@@ -1661,7 +1740,7 @@ mod projection_tests {
         correct(&store);
         // REPLACE has an unhooked deletion; the inventory check must rebuild the
         // former conversation as well as the replacement's new identity.
-        store.db.execute("INSERT OR REPLACE INTO messages SELECT NULL,account,id,'windscribe-thread-001',remote_id,sender_name,sender_email,recipient,subject,body,sent_at,0,0,inbox,sent,source_hash,revision FROM messages WHERE id='cache-one'",[]).unwrap();
+        store.db.execute("INSERT OR REPLACE INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision,trashed) SELECT account,id,'windscribe-thread-001',remote_id,sender_name,sender_email,recipient,subject,body,sent_at,0,0,inbox,sent,source_hash,revision,trashed FROM messages WHERE id='cache-one'",[]).unwrap();
         correct(&store);
         store
             .db

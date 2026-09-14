@@ -10,6 +10,7 @@
 #include <QMouseEvent>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJSValue>
 #include <QScopedValueRollback>
 #include <QUuid>
 #include <array>
@@ -101,6 +102,7 @@ GuiMailNavigationSelfTest::GuiMailNavigationSelfTest(MailBackend &backend, QQuic
     : QObject(parent), m_backend(backend), m_window(window), m_finished(std::move(finished)) {
     m_timer.setInterval(80);
     connect(&m_timer, &QTimer::timeout, this, [this] { step(); });
+    connect(m_window, &QQuickWindow::frameSwapped, this, [this] { ++m_renderedFrames; });
     connect(&m_backend, &MailBackend::loadingChanged, this, [this] {
         if (m_searchPending && m_backend.query() == m_expectedQuery && m_backend.loading()) m_loadingSeen = true;
     });
@@ -114,6 +116,13 @@ GuiMailNavigationSelfTest::GuiMailNavigationSelfTest(MailBackend &backend, QQuic
 void GuiMailNavigationSelfTest::finish(const QString &error) {
     if (!m_finished) return;
     m_timer.stop();
+    if (m_accountPressHeld) {
+        m_accountPressHeld=false;
+        const QPointF outside(-10,-10), global=m_window->mapToGlobal(outside.toPoint());
+        QMouseEvent move(QEvent::MouseMove,outside,global,Qt::NoButton,Qt::LeftButton,Qt::NoModifier);
+        QMouseEvent release(QEvent::MouseButtonRelease,outside,global,Qt::LeftButton,Qt::NoButton,Qt::NoModifier);
+        QCoreApplication::sendEvent(m_window,&move); QCoreApplication::sendEvent(m_window,&release);
+    }
     if (m_queueCheckActive) { m_queueCheckActive = false; m_backend.m_pollTimer.start(); }
     m_arrivalCliTimeout.stop(); m_arrivalCli.disconnect(this);
     if (m_arrivalCli.state()!=QProcess::NotRunning) m_arrivalCli.kill();
@@ -126,6 +135,51 @@ void GuiMailNavigationSelfTest::finish(const QString &error) {
     if (m_compactOriginalSize.isValid()) { m_window->resize(m_compactOriginalSize); m_compactOriginalSize={}; }
     auto callback = std::move(m_finished); m_finished = {};
     deleteLater(); callback(error);
+}
+bool GuiMailNavigationSelfTest::retainNativeRow(const QString &id, bool requireScrolled) {
+    const auto list=find(m_window->contentItem(),"conversationList");
+    const auto row=find(m_window->contentItem(),"conversationRow_"+id);
+    if (!list || !fullyVisible(row,m_window)) return false;
+    m_retainedRow=row;
+    m_retainedListY=list->property("contentY").toDouble();
+    m_retainedRowY=row->mapToScene(QPointF()).y();
+    return !requireScrolled || m_retainedListY>list->property("originY").toDouble()+1;
+}
+QString GuiMailNavigationSelfTest::retainedNativeRowError(const QString &id) const {
+    const auto list=find(m_window->contentItem(),"conversationList");
+    const auto row=find(m_window->contentItem(),"conversationRow_"+id);
+    if (!list || !m_retainedRow || row!=m_retainedRow || !fullyVisible(row,m_window))
+        return "The native mail delegate was recreated or left the viewport during a same-view update.";
+    const auto tolerance=1.0/m_window->devicePixelRatio()+0.01;
+    if (qAbs(list->property("contentY").toDouble()-m_retainedListY)>tolerance
+        || qAbs(row->mapToScene(QPointF()).y()-m_retainedRowY)>tolerance)
+        return "The native mail viewport moved during a same-position row update: "+geometryDiagnostic(row,m_window);
+    QVariant projection=row->parentItem()->property("rowData");
+    if (projection.metaType()==QMetaType::fromType<QJSValue>()) projection=projection.value<QJSValue>().toVariant();
+    QVariantMap expected;
+    for (const auto &value:m_backend.conversations()) if (value.toMap()["id"].toString()==id) expected=value.toMap();
+    if (expected.isEmpty() || QJsonObject::fromVariantMap(projection.toMap())!=QJsonObject::fromVariantMap(expected))
+        return "The retained native mail delegate did not receive the current canonical row fields.";
+    return {};
+}
+QString GuiMailNavigationSelfTest::retainedAccountTabError(bool pressed) const {
+    const auto tab=find(m_window->contentItem(),"accountTab_"+m_retainedAccount);
+    if (!m_retainedAccountTab || tab!=m_retainedAccountTab || !fullyVisible(tab,m_window))
+        return "The account tab was recreated or left the viewport during the real count refresh.";
+    const auto rect=tab->mapRectToScene(QRectF(0,0,tab->width(),tab->height()));
+    const auto tolerance=1.0/m_window->devicePixelRatio()+0.01;
+    if (qAbs(rect.x()-m_retainedAccountRect.x())>tolerance || qAbs(rect.y()-m_retainedAccountRect.y())>tolerance
+        || qAbs(rect.width()-m_retainedAccountRect.width())>tolerance || qAbs(rect.height()-m_retainedAccountRect.height())>tolerance)
+        return "The unchanged target account tab moved during the origin account's count refresh: "+geometryDiagnostic(tab,m_window);
+    if (tab->property("pressed").toBool()!=pressed)
+        return "The account tab lost its native press across the real count refresh.";
+    QVariant projection=tab->property("rowData");
+    if (projection.metaType()==QMetaType::fromType<QJSValue>()) projection=projection.value<QJSValue>().toVariant();
+    QVariantMap expected;
+    for (const auto &value:m_backend.accounts()) if (value.toMap()["id"].toString()==m_retainedAccount) expected=value.toMap();
+    if (expected.isEmpty() || QJsonObject::fromVariantMap(projection.toMap())!=QJsonObject::fromVariantMap(expected))
+        return "The retained account tab does not carry its current canonical account identity.";
+    return {};
 }
 bool GuiMailNavigationSelfTest::typeQuery(const QString &query) {
     auto field = find(m_window->contentItem(), "searchField");
@@ -461,6 +515,14 @@ void GuiMailNavigationSelfTest::step() {
         m_stage=91; break;
     case 91: {
         if (m_backend.loading() || m_backend.m_searchTimer.isActive()) return;
+        const auto list=find(m_window->contentItem(),"conversationList");
+        if (!list) { finish("Deferred-click setup lost the conversation list."); return; }
+        // A loaded IPC result precedes QML's model/viewport restoration. Choose
+        // source-check candidates from the restored view, not its reset origin.
+        const auto minimum=list->property("originY").toDouble();
+        const auto maximum=minimum+qMax(0.0,list->property("contentHeight").toDouble()-list->height());
+        const auto restored=qBound(minimum,m_backend.presentation()["listY"].toDouble(),maximum);
+        if (qAbs(list->property("contentY").toDouble()-restored)>1) return;
         QStringList candidates;
         for (const auto &value:m_backend.conversations()) {
             const auto row=value.toMap();
@@ -482,12 +544,19 @@ void GuiMailNavigationSelfTest::step() {
         break;
     }
     case 92:
-        if (!click("conversationRow_"+m_deferredFirst)) return;
+        if (!retainNativeRow(m_deferredFirst,true)) {
+            finish("The native delegate-retention check requires a fully visible row in the restored nonzero mail viewport."); return;
+        }
+        if (!click("conversationRow_"+m_deferredFirst)) {
+            finish("The source-verified deferred-click candidate changed geometry before input: " + geometryDiagnostic(find(m_window->contentItem(),"conversationRow_"+m_deferredFirst),m_window)); return;
+        }
         m_stage=93; break;
     case 93:
         if (m_backend.loading() || m_backend.draftBusy() || m_backend.mutationInFlight()
             || m_backend.conversation()["id"].toString()!=m_deferredFirst || !m_backend.m_pending.isEmpty()) return;
         if (m_backend.conversation()["messages"].toList().first().toMap()["unread"].toBool()) return;
+        if (const auto error=retainedNativeRowError(m_deferredFirst); !error.isEmpty()) { finish(error); return; }
+        qInfo() << "Native mail delegate retained through actual read-on-open: identical item, current row fields and nonzero viewport" << m_retainedListY;
         m_deferredHoldArmed=true;
         if (!click("conversationRow_"+m_deferredSecond)) { m_deferredHoldArmed=false; return; }
         m_stage=94; break;
@@ -888,6 +957,20 @@ void GuiMailNavigationSelfTest::step() {
             || draftFields(QJsonObject::fromVariantMap(m_backend.draft()))!=m_arrivalDraft) {
             finish("Independent readback or background polling lost the snapshot-arrival selection, counts or draft."); return;
         }
+        if (!retainNativeRow(m_arrivalThread,false)) {
+            finish("The idle-polling delegate-retention check lost the visible arrival row."); return;
+        }
+        for (const auto &value:m_backend.accounts()) {
+            const auto id=value.toMap()["id"].toString();
+            const auto tab=find(m_window->contentItem(),"accountTab_"+id);
+            if (id!=m_arrivalAccount && fullyVisible(tab,m_window)) {
+                m_retainedAccount=id; m_retainedAccountTab=tab;
+                m_retainedAccountRect=tab->mapRectToScene(QRectF(0,0,tab->width(),tab->height()));
+                break;
+            }
+        }
+        if (!m_retainedAccountTab) { finish("The account retention check needs a visible second mailbox tab."); return; }
+        m_accountsBeforeHold=m_backend.accounts();
         // The preceding arrival can be observed by the Done callback's explicit
         // refresh. Change shared state from a separate CLI process now, while
         // leaving the GUI idle: only ordinary background polling may converge.
@@ -913,6 +996,20 @@ void GuiMailNavigationSelfTest::step() {
             || draftFields(QJsonObject::fromVariantMap(m_backend.draft()))!=m_arrivalDraft) {
             finish("Idle polling changed the active query, selected reader or authored draft."); return;
         }
+        if (const auto error=retainedNativeRowError(m_arrivalThread); !error.isEmpty()) { finish(error); return; }
+        if (m_backend.accounts()==m_accountsBeforeHold) return;
+        if (const auto error=retainedAccountTabError(false); !error.isEmpty()) { finish(error); return; }
+        m_accountsDuringHold=m_backend.accounts();
+        // Keep a real native press active while the existing independent CLI
+        // cleanup changes the account payload through ordinary background IPC.
+        m_accountPressPoint=m_retainedAccountRect.center();
+        const QPointF global=m_window->mapToGlobal(m_accountPressPoint.toPoint());
+        QMouseEvent move(QEvent::MouseMove,m_accountPressPoint,global,Qt::NoButton,Qt::NoButton,Qt::NoModifier);
+        QMouseEvent press(QEvent::MouseButtonPress,m_accountPressPoint,global,Qt::LeftButton,Qt::LeftButton,Qt::NoModifier);
+        m_accountPressHeld=true;
+        QCoreApplication::sendEvent(m_window,&move); QCoreApplication::sendEvent(m_window,&press);
+        if (const auto error=retainedAccountTabError(true); !error.isEmpty()) { finish(error); return; }
+        if (m_backend.account()!=m_arrivalAccount) { finish("The account tab activated before native release."); return; }
         m_stage=41;
         arrivalCli({"mail","flag",m_arrivalThread,"--starred","false"},[this](const auto &result) {
             if (!arrivalMembersMatch(result,false,true)) finish("Independent idle-polling cleanup changed the arrival's unread state or source snapshot.");
@@ -929,6 +1026,16 @@ void GuiMailNavigationSelfTest::step() {
             || draftFields(QJsonObject::fromVariantMap(m_backend.draft()))!=m_arrivalDraft) {
             finish("Idle polling cleanup lost the arriving unread member, active query, selection or draft."); return;
         }
+        if (const auto error=retainedNativeRowError(m_arrivalThread); !error.isEmpty()) { finish(error); return; }
+        if (m_backend.accounts()==m_accountsDuringHold) return;
+        if (const auto error=retainedAccountTabError(true); !error.isEmpty()) { finish(error); return; }
+        const QPointF global=m_window->mapToGlobal(m_accountPressPoint.toPoint());
+        QMouseEvent release(QEvent::MouseButtonRelease,m_accountPressPoint,global,Qt::LeftButton,Qt::NoButton,Qt::NoModifier);
+        m_accountPressHeld=false;
+        QCoreApplication::sendEvent(m_window,&release);
+        if (m_backend.account()!=m_retainedAccount) {
+            finish("Releasing the retained account tab activated the wrong mailbox after the count refresh."); return;
+        }
         m_stage=42;
         arrivalCli({"mail","read",m_arrivalThread},[this](const auto &result) {
             if (!arrivalMembersMatch(result,false,true)) finish("Final independent readback disagrees with idle polling's restored state.");
@@ -936,9 +1043,25 @@ void GuiMailNavigationSelfTest::step() {
         break;
     }
     case 42:
+        if (!m_accountReturnRequested) {
+            if (m_backend.loading() || m_backend.draftBusy() || m_backend.draft().isEmpty()) return;
+            if (m_backend.account()!=m_retainedAccount || m_backend.currentAccount()["id"].toString()!=m_retainedAccount) {
+                finish("The retained account click did not hydrate the requested mailbox."); return;
+            }
+            m_accountReturnRequested=true;
+            m_backend.selectAccount(m_arrivalAccount);
+            return;
+        }
+        if (m_backend.loading() || m_backend.draftBusy() || m_backend.draft().isEmpty()
+            || m_backend.account()!=m_arrivalAccount || m_backend.selectedId()!=m_arrivalThread) return;
+        if (draftFields(QJsonObject::fromVariantMap(m_backend.draft()))!=m_arrivalDraft) {
+            finish("The account refresh/click round trip changed the origin mailbox's durable authored draft."); return;
+        }
         qInfo().noquote() << "Native snapshot arrival passed: real Done receipt targets the two original members; provider arrival remains unread/unstarred; exact GUI/CLI counts, selected reader and Unicode draft retained. Counts:"
             << QString::fromUtf8(QJsonDocument(m_arrivalExpectedCounts).toJson(QJsonDocument::Compact));
         qInfo() << "Idle native polling passed: separate CLI hold/unhold converged in the actual list and reader without GUI query, refresh or navigation; original counts, unread arrival and authored draft restored.";
+        qInfo() << "Native mail delegate retained through independent CLI hold/unhold: identical item, current row fields and unchanged viewport.";
+        qInfo() << "Native account tab retained across two actual account payload changes: unchanged item/geometry, native press survived refresh, original-center release opened the exact mailbox and normal return retained the origin draft.";
         restore(); m_stage=5; break;
     case 5: {
         if (m_backend.loading() || m_backend.draftBusy() || m_backend.selectedId() != m_originalSelected || m_backend.draft().isEmpty()) return;
@@ -1011,17 +1134,31 @@ void GuiMailNavigationSelfTest::step() {
             finish("The native group heading does not display its full filtered count."); return;
         }
         if (!clickItem(heading)) return;
+        m_collapseSettledFrame=-1;
         m_stage=63; break;
     }
     case 63: {
+        if (m_backend.loading()) { m_collapseSettledFrame=-1; return; }
+        // Query completion precedes Qt's creation/layout of replacement group
+        // headers. Assert the actual delegates after that page has rendered.
+        if (m_collapseSettledFrame<0) {
+            m_collapseSettledFrame=m_renderedFrames; m_window->update(); return;
+        }
+        if (m_renderedFrames<=m_collapseSettledFrame) return;
         auto heading=find(m_window->contentItem(),"mailGroup_"+m_surfaceGroup);
-        if (m_backend.loading()) return;
         if (!heading || !heading->property("collapsed").toBool()
             || find(m_window->contentItem(),"conversationRow_"+m_surfaceFirstId)
             || !textItem(heading,QString::number(m_surfaceCounts[m_surfaceGroup].toInteger()))
             || m_backend.selectedId()!=m_originalSelected
             || draftFields(QJsonObject::fromVariantMap(m_backend.draft()))!=draftFields(QJsonObject::fromVariantMap(m_originalDraft))) {
-            finish("Collapsing a native group lost its count, kept its row visible or changed the reader/draft."); return;
+            finish(QString("Collapsing a native group lost its count, kept its row visible or changed the reader/draft. "
+                "heading=%1 collapsed=%2 rowVisible=%3 count=%4 reader=%5 draft=%6 searchPopup=%7 geometry=%8")
+                .arg(heading != nullptr).arg(heading && heading->property("collapsed").toBool())
+                .arg(find(m_window->contentItem(),"conversationRow_"+m_surfaceFirstId) != nullptr)
+                .arg(heading && textItem(heading,QString::number(m_surfaceCounts[m_surfaceGroup].toInteger())))
+                .arg(m_backend.selectedId()==m_originalSelected)
+                .arg(draftFields(QJsonObject::fromVariantMap(m_backend.draft()))==draftFields(QJsonObject::fromVariantMap(m_originalDraft)))
+                .arg(m_window->property("searchPopupOpen").toBool()).arg(geometryDiagnostic(heading,m_window))); return;
         }
         qint64 expanded=0;
         for (const auto group:{"review","held","done"}) if (QString(group)!=m_surfaceGroup) expanded+=m_surfaceCounts[group].toInteger();

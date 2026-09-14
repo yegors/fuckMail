@@ -107,7 +107,7 @@ Popup {
             }
             FmButton {
                 objectName: "senderCardWrite"; text: "Write"; outlined: true; implicitHeight: 28; font.pixelSize: Theme.fontSize(12)
-                enabled: backend.connected && !backend.draftBusy
+                enabled: backend.connected && !backend.draftBusy && !backend.accountArchived && !backend.unsavedAccountBuffer
                 onClicked: card.writeMessage()
             }
         }

@@ -663,4 +663,34 @@ fn category_mappings_reject_all_system_ids_and_existing_invalid_mapping_blocks_i
     ));
     assert_eq!(store.google_checkpoint("windscribe").unwrap(), Some(cp));
     assert!(search(&mut store, "windscribe", "invalidmapping").is_empty());
+    assert_eq!(
+        store
+            .db
+            .query_row(
+                "SELECT COUNT(*) FROM messages WHERE account='windscribe' AND remote_id='a'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap(),
+        0,
+    );
+    assert_eq!(
+        store
+            .db
+            .query_row(
+                "SELECT COUNT(*) FROM google_page_commits WHERE account='windscribe'",
+                [],
+                |r| r.get::<_, i64>(0),
+            )
+            .unwrap(),
+        0,
+    );
+    assert_eq!(
+        store.db.query_row(
+            "SELECT COUNT(*) FROM google_staged_messages WHERE account='windscribe' AND remote_id='a'",
+            [],
+            |r| r.get::<_, i64>(0),
+        ).unwrap(),
+        1,
+    );
 }

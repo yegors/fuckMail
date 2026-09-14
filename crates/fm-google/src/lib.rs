@@ -1,11 +1,16 @@
-//! Google API feasibility boundary. No HTTP client, database or real credentials.
+//! Google API boundary. Provider plans feed Core's one store; credentials stay native.
 //!
 //! API-shaped inputs become account-scoped, replayable plans for Core's one writer.
 //! Transport and vault traits let fixtures exercise decisions before live OAuth.
 pub mod attachment;
 pub mod auth;
+pub mod desktop_auth;
+pub mod gmail_api;
+pub mod scheduler;
 pub mod send;
 pub mod sync;
+pub mod transport;
+pub mod vault;
 
 use serde::{Deserialize, Serialize};
 

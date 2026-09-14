@@ -1,4 +1,4 @@
-//! Atomic, explicitly requested local changes. Provider delivery is a later layer.
+//! Atomic, explicitly requested local changes and live delivery intent.
 use crate::{err, fields, id, string, CoreError, Result, Store};
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
@@ -6,7 +6,12 @@ use sha2::{Digest, Sha256};
 use std::collections::HashSet;
 
 impl Store {
-    pub(crate) fn mutate(&self, method: &str, account: &str, p: &Value) -> Result<Value> {
+    pub(crate) fn mutation_receipt(
+        &self,
+        method: &str,
+        account: &str,
+        p: &Value,
+    ) -> Result<Option<Value>> {
         let allowed: &[&str] = match method {
             "flag" => &[
                 "id",
@@ -23,6 +28,13 @@ impl Store {
                 "present",
                 "expected_revision",
                 "request_id",
+            ],
+            "mail_filing" => &[
+                "id",
+                "message_ids",
+                "expected_revision",
+                "request_id",
+                "action",
             ],
             "draft_save" => &[
                 "conversation_id",
@@ -46,20 +58,15 @@ impl Store {
                 "request_id",
             ],
             "draft_create" => &["mode", "conversation_id", "source_message_id", "request_id"],
+            "draft_attachment_import" => &["draft_id", "expected_revision", "request_id", "path"],
             "view_save" => &["view", "expected_revision", "request_id"],
             _ => return Err(err("unsupported_method", "Unknown mutation")),
         };
         fields(p, allowed)?;
         let request_id = string(p, "request_id")?;
-        let fingerprint = format!(
-            "{:x}",
-            Sha256::digest(serde_json::to_vec(&json!([method, p]))?)
-        );
-        let flag_projection_stamp = (method == "flag").then(|| self.flag_projection_stamp());
-        // The serialized engine owns this connection. Query the same transaction
-        // while constructing the response; record that response before commit.
-        let tx = self.db.unchecked_transaction()?;
-        let previous: Option<(String, String)> = tx
+        let fingerprint = fingerprint(method, p)?;
+        let previous: Option<(String, String)> = self
+            .db
             .query_row(
                 "SELECT fingerprint,result_json FROM operations WHERE account=?1 AND request_id=?2",
                 params![account, request_id],
@@ -100,8 +107,33 @@ impl Store {
                     ));
                 }
             }
-            return Ok(result);
+            return Ok(Some(result));
         }
+        Ok(None)
+    }
+
+    pub(crate) fn mutate(&self, method: &str, account: &str, p: &Value) -> Result<Value> {
+        self.mutate_prepared(method, account, p, None)
+    }
+
+    pub(crate) fn mutate_prepared(
+        &self,
+        method: &str,
+        account: &str,
+        p: &Value,
+        prepared_draft: Option<&Value>,
+    ) -> Result<Value> {
+        // Capture the eligible cache generation before opening the transaction;
+        // uncommitted reads intentionally invalidate reusable projections.
+        let flag_projection_stamp = (method == "flag").then(|| self.flag_projection_stamp());
+        // The serialized writer rechecks replay before every final mutation.
+        let tx = self.db.unchecked_transaction()?;
+        if let Some(reply) = self.mutation_receipt(method, account, p)? {
+            return Ok(reply);
+        }
+        self.require_active_account(account)?;
+        let request_id = string(p, "request_id")?;
+        let fingerprint = fingerprint(method, p)?;
         let expected = if method == "draft_create" {
             0
         } else {
@@ -115,9 +147,9 @@ impl Store {
                     )
                 })?
         };
-        let result = match method {
+        let mut result = match method {
             "draft_create" => self.create_composition(account, p)?,
-            "flag" | "set_category" => {
+            "flag" | "set_category" | "mail_filing" => {
                 let conversation = string(p, "id")?;
                 let current: i64 = tx
                     .query_row(
@@ -158,7 +190,7 @@ impl Store {
                             }
                         }
                     }
-                } else {
+                } else if method == "set_category" {
                     let category = string(p, "category_id")?;
                     let present = p["present"]
                         .as_bool()
@@ -183,6 +215,26 @@ impl Store {
                         )?;
                         record_manual_intent(&tx, account, message, "category", category, present)?;
                     }
+                } else {
+                    if self.profile_kind()? != crate::live_profile::ProfileKind::Live {
+                        return Err(err(
+                            "capability_unavailable",
+                            "Provider filing requires a live account",
+                        ));
+                    }
+                    let action = string(p, "action")?;
+                    let (label, present) = match action {
+                        "archive" => ("INBOX", false),
+                        "trash" => ("TRASH", true),
+                        "restore" => ("TRASH", false),
+                        _ => {
+                            return Err(err("invalid_request", "Choose archive, trash or restore"))
+                        }
+                    };
+                    for message in &targets {
+                        tx.execute("UPDATE messages SET inbox=CASE WHEN ?3='INBOX' THEN ?4 ELSE inbox END,trashed=CASE WHEN ?3='TRASH' THEN ?4 ELSE trashed END,revision=revision+1 WHERE account=?1 AND id=?2",params![account,message,label,present])?;
+                        record_manual_intent(&tx, account, message, "label", label, present)?;
+                    }
                 }
                 tx.execute(
                     "UPDATE conversations SET revision=revision+1 WHERE account=?1 AND id=?2",
@@ -190,9 +242,13 @@ impl Store {
                 )?;
                 self.conversation(account, conversation)?
             }
-            "draft_save" | "draft_discard" => {
-                self.save_composition(account, p, expected, method == "draft_discard")?
-            }
+            "draft_save" | "draft_discard" => self.save_composition_prepared(
+                account,
+                p,
+                expected,
+                method == "draft_discard",
+                prepared_draft,
+            )?,
             "view_save" => {
                 let view = &p["view"];
                 if !view.is_object() {
@@ -218,15 +274,28 @@ impl Store {
             }
             _ => unreachable!(),
         };
+        if matches!(method, "flag" | "set_category" | "mail_filing")
+            && self.profile_kind()? == crate::live_profile::ProfileKind::Live
+        {
+            result["delivery"] = json!({"state":"pending","request_id":request_id});
+        }
         tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
         tx.execute("INSERT INTO operations(account,request_id,fingerprint,result_json) VALUES(?1,?2,?3,?4)",
             params![account, request_id, fingerprint, serde_json::to_string(&result)?])?;
+        crate::google_live_mutations::enqueue(&tx, account, request_id, method, p)?;
         tx.commit()?;
         if let Some(before) = flag_projection_stamp {
             self.refresh_committed_flag_projections(account, string(p, "id")?, before);
         }
         Ok(result)
     }
+}
+
+pub(crate) fn fingerprint(method: &str, p: &Value) -> Result<String> {
+    Ok(format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&json!([method, p]))?)
+    ))
 }
 
 fn next_revision(current: i64) -> Result<i64> {
@@ -428,10 +497,9 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
             }
         }
     }
-    if view
-        .get("folder")
-        .is_some_and(|v| !["inbox", "sent", "all", "drafts"].contains(&v.as_str().unwrap_or("")))
-    {
+    if view.get("folder").is_some_and(|v| {
+        !["inbox", "sent", "all", "trash", "drafts"].contains(&v.as_str().unwrap_or(""))
+    }) {
         return Err(err("invalid_request", "Unknown view folder"));
     }
     if view

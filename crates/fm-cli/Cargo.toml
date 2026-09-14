@@ -5,6 +5,10 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[features]
+default = []
+verification-google = []
+
 [[bin]]
 name = "fm"
 path = "src/main.rs"

@@ -43,64 +43,9 @@ impl<'a> GooglePageStore<'a> {
                 "Invalid staged message identity or bounds",
             ));
         }
-        let parsed = mail_parser::MessageParser::default()
-            .parse(&content.source_mime)
-            .ok_or(GoogleError::InvalidResponse("Cannot parse source MIME"))?;
-        let sender = parsed.from().and_then(|list| list.first());
-        let body = fm_mail::extract_incoming_text(&content.source_mime)
-            .map_err(|_| GoogleError::InvalidResponse("Cannot extract source text"))?;
-        if body.len() > 256 * 1024 {
-            return Err(GoogleError::InvalidResponse(
-                "Normalized body exceeds the first-slice bound",
-            ));
-        }
-        let mut attachments = Vec::new();
-        for part in parsed.attachments() {
-            if attachments.len() >= 50 {
-                return Err(GoogleError::InvalidResponse("Too many staged attachments"));
-            }
-            let mime_type = part
-                .content_type()
-                .map(|ct| {
-                    format!(
-                        "{}/{}",
-                        ct.c_type,
-                        ct.c_subtype.as_deref().unwrap_or("octet-stream")
-                    )
-                })
-                .unwrap_or_else(|| "application/octet-stream".into());
-            let bytes = part.contents();
-            attachments.push(StagedAttachment {
-                name: bounded_header(part.attachment_name().unwrap_or("attachment.bin"), 1024)?,
-                mime_type,
-                hash: self.store.stage_blob(bytes).map_err(storage_error)?,
-                size: bytes.len() as u64,
-            });
-        }
-        let staged = StagedMessage {
-            remote_id: content.id,
-            remote_thread_id: content.thread_id,
-            history_id: content.history_id,
-            labels: content.label_ids,
-            sender_name: bounded_header(sender.and_then(|s| s.name()).unwrap_or(""), 4096)?,
-            sender_email: bounded_header(sender.and_then(|s| s.address()).unwrap_or(""), 4096)?,
-            recipient: bounded_header(
-                parsed
-                    .to()
-                    .and_then(|list| list.first())
-                    .and_then(|s| s.address())
-                    .unwrap_or(""),
-                4096,
-            )?,
-            subject: bounded_header(parsed.subject().unwrap_or("(no subject)"), 16 * 1024)?,
-            body,
-            sent_at: parsed
-                .date()
-                .and_then(|date| chrono::DateTime::from_timestamp(date.to_timestamp(), 0))
-                .map(|date| date.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
-                .unwrap_or_default(),
-            attachments,
-        };
+        let staged = prepare_message(&content, |bytes| {
+            self.store.stage_blob(bytes).map_err(storage_error)
+        })?;
         let source_hash = self
             .store
             .stage_blob(&content.source_mime)
@@ -113,6 +58,9 @@ impl<'a> GooglePageStore<'a> {
     }
 
     fn ensure_checkpoint(&self, expected: &Checkpoint) -> std::result::Result<(), GoogleError> {
+        self.store
+            .require_active_account(expected.account.as_str())
+            .map_err(storage_error)?;
         if self
             .store
             .google_checkpoint(expected.account.as_str())
@@ -128,11 +76,12 @@ impl<'a> GooglePageStore<'a> {
 
 impl Store {
     pub fn google_map_category(
-        &mut self,
+        &self,
         account: &str,
         category: &str,
         provider_label: &str,
     ) -> Result<()> {
+        self.require_active_account(account)?;
         crate::id(account)?;
         crate::id(category)?;
         crate::id(provider_label)?;
@@ -162,6 +111,7 @@ impl Store {
     /// Start a synthetic provider import only for an existing local account.
     /// Repeated setup cannot reset an existing checkpoint or overwrite intent.
     pub fn google_begin_full(&mut self, account: &str, baseline: &str) -> Result<Checkpoint> {
+        self.require_active_account(account)?;
         if let Some(checkpoint) = self.google_checkpoint(account)? {
             return Ok(checkpoint);
         }
@@ -188,27 +138,27 @@ impl Store {
     }
 }
 
-#[derive(Serialize, Deserialize)]
-struct StagedAttachment {
-    name: String,
-    mime_type: String,
-    hash: String,
-    size: u64,
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct StagedAttachment {
+    pub(crate) name: String,
+    pub(crate) mime_type: String,
+    pub(crate) hash: String,
+    pub(crate) size: u64,
 }
 
-#[derive(Serialize, Deserialize)]
-struct StagedMessage {
-    remote_id: String,
-    remote_thread_id: String,
-    history_id: String,
-    labels: Vec<String>,
-    sender_name: String,
-    sender_email: String,
-    recipient: String,
-    subject: String,
-    body: String,
-    sent_at: String,
-    attachments: Vec<StagedAttachment>,
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct StagedMessage {
+    pub(crate) remote_id: String,
+    pub(crate) remote_thread_id: String,
+    pub(crate) history_id: String,
+    pub(crate) labels: Vec<String>,
+    pub(crate) sender_name: String,
+    pub(crate) sender_email: String,
+    pub(crate) recipient: String,
+    pub(crate) subject: String,
+    pub(crate) body: String,
+    pub(crate) sent_at: String,
+    pub(crate) attachments: Vec<StagedAttachment>,
 }
 
 fn storage_error(_: impl std::fmt::Debug) -> GoogleError {
@@ -363,12 +313,20 @@ fn load_stage(
     Ok((staged, hash, u64::try_from(size).map_err(storage_error)?))
 }
 
-fn publish_message(
+pub(crate) fn publish_message(
     db: &rusqlite::Connection,
     account: &str,
     staged: &StagedMessage,
     source_hash: &str,
 ) -> std::result::Result<(), GoogleError> {
+    let indexed_source: Option<String> = db
+        .query_row(
+            "SELECT source_hash FROM messages WHERE account=?1 AND remote_id=?2",
+            params![account, staged.remote_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(storage_error)?;
     let existing: Option<(String, String)> = db
         .query_row(
             "SELECT id,conversation_id FROM messages WHERE account=?1 AND remote_id=?2",
@@ -403,55 +361,41 @@ fn publish_message(
         db.execute("INSERT INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,1)",
             params![account,mid,cid,staged.remote_id,staged.sender_name,staged.sender_email,staged.recipient,staged.subject,staged.body,staged.sent_at,unread,starred,labels.contains("INBOX"),labels.contains("SENT"),source_hash]).map_err(storage_error)?;
     }
-    let rowid: i64 = db
-        .query_row(
-            "SELECT rowid FROM messages WHERE account=?1 AND id=?2",
-            params![account, mid],
-            |r| r.get(0),
+    if indexed_source.as_deref() != Some(source_hash) {
+        let rowid: i64 = db
+            .query_row(
+                "SELECT rowid FROM messages WHERE account=?1 AND id=?2",
+                params![account, mid],
+                |r| r.get(0),
+            )
+            .map_err(storage_error)?;
+        db.execute("DELETE FROM message_fts WHERE rowid=?1", [rowid])
+            .map_err(storage_error)?;
+        db.execute(
+            "INSERT INTO message_fts(rowid,sender,subject,body) VALUES(?1,?2,?3,?4)",
+            params![
+                rowid,
+                format!("{} {}", staged.sender_name, staged.sender_email),
+                staged.subject,
+                staged.body
+            ],
         )
         .map_err(storage_error)?;
-    db.execute("DELETE FROM message_fts WHERE rowid=?1", [rowid])
-        .map_err(storage_error)?;
-    db.execute(
-        "INSERT INTO message_fts(rowid,sender,subject,body) VALUES(?1,?2,?3,?4)",
-        params![
-            rowid,
-            format!("{} {}", staged.sender_name, staged.sender_email),
-            staged.subject,
-            staged.body
-        ],
-    )
-    .map_err(storage_error)?;
-    db.execute("INSERT INTO google_message_state(account,message_id,remote_thread_id,history_id,provider_labels_json,deleted) VALUES(?1,?2,?3,?4,?5,0) ON CONFLICT(account,message_id) DO UPDATE SET remote_thread_id=excluded.remote_thread_id,history_id=excluded.history_id,provider_labels_json=excluded.provider_labels_json,deleted=0",params![account,mid,staged.remote_thread_id,staged.history_id,serde_json::to_string(&staged.labels).map_err(storage_error)?]).map_err(storage_error)?;
-    let mut mappings = db
-        .prepare(
-            "SELECT category_id,provider_label_id FROM google_category_labels WHERE account=?1",
-        )
-        .map_err(storage_error)?;
-    let mappings = mappings
-        .query_map([account], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-        })
-        .map_err(storage_error)?
-        .collect::<std::result::Result<Vec<_>, _>>()
-        .map_err(storage_error)?;
-    for (category, label) in mappings {
-        let manual:Option<bool>=db.query_row("SELECT value FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field='category' AND category_id=?3",params![account,mid,category],|r|r.get(0)).optional().map_err(storage_error)?;
-        let assisted:Option<bool>=db.query_row("SELECT value FROM assist_category_intents WHERE account=?1 AND message_id=?2 AND category_id=?3",params![account,mid,category],|r|r.get(0)).optional().map_err(storage_error)?;
-        if is_system_label(&label) {
-            return Err(GoogleError::InvalidResponse(
-                "Category mapping targets a system label",
-            ));
-        }
-        if manual
-            .or(assisted)
-            .unwrap_or(labels.contains(label.as_str()))
-        {
-            db.execute("INSERT OR IGNORE INTO message_categories(account,message_id,category_id) VALUES(?1,?2,?3)",params![account,mid,category]).map_err(storage_error)?;
-        } else {
-            db.execute("DELETE FROM message_categories WHERE account=?1 AND message_id=?2 AND category_id=?3",params![account,mid,category]).map_err(storage_error)?;
-        }
     }
+    db.execute("INSERT INTO google_message_state(account,message_id,remote_thread_id,history_id,provider_labels_json,deleted) VALUES(?1,?2,?3,?4,?5,0) ON CONFLICT(account,message_id) DO UPDATE SET remote_thread_id=excluded.remote_thread_id,history_id=excluded.history_id,provider_labels_json=excluded.provider_labels_json,deleted=0",params![account,mid,staged.remote_thread_id,staged.history_id,serde_json::to_string(&staged.labels).map_err(storage_error)?]).map_err(storage_error)?;
+    crate::google_live_mutations::project_labels(
+        db,
+        account,
+        &mid,
+        &staged.labels.iter().cloned().collect(),
+    )
+    .map_err(|error| {
+        if error.code == "invalid_google_response" {
+            GoogleError::InvalidResponse("Category mapping targets a system label")
+        } else {
+            storage_error(error)
+        }
+    })?;
     for (index, part) in staged.attachments.iter().enumerate() {
         let aid = local_id(
             "attachment",
@@ -466,4 +410,69 @@ fn publish_message(
     )
     .map_err(storage_error)?;
     Ok(())
+}
+
+pub(crate) fn prepare_message(
+    content: &MessageContent,
+    mut stage: impl FnMut(&[u8]) -> std::result::Result<String, GoogleError>,
+) -> std::result::Result<StagedMessage, GoogleError> {
+    let parsed = mail_parser::MessageParser::default()
+        .parse(&content.source_mime)
+        .ok_or(GoogleError::InvalidResponse("Cannot parse source MIME"))?;
+    let sender = parsed.from().and_then(|list| list.first());
+    let body = fm_mail::extract_parsed_incoming_text(&parsed)
+        .map_err(|_| GoogleError::InvalidResponse("Cannot extract source text"))?;
+    if body.len() > 256 * 1024 {
+        return Err(GoogleError::InvalidResponse(
+            "Normalized body exceeds the first-slice bound",
+        ));
+    }
+    let mut attachments = Vec::new();
+    for part in parsed.attachments() {
+        if attachments.len() >= 50 {
+            return Err(GoogleError::InvalidResponse("Too many staged attachments"));
+        }
+        let mime_type = part
+            .content_type()
+            .map(|ct| {
+                format!(
+                    "{}/{}",
+                    ct.c_type,
+                    ct.c_subtype.as_deref().unwrap_or("octet-stream")
+                )
+            })
+            .unwrap_or_else(|| "application/octet-stream".into());
+        let bytes = part.contents();
+        attachments.push(StagedAttachment {
+            name: bounded_header(part.attachment_name().unwrap_or("attachment.bin"), 1024)?,
+            mime_type,
+            hash: stage(bytes)?,
+            size: bytes.len() as u64,
+        });
+    }
+    let staged = StagedMessage {
+        remote_id: content.id.clone(),
+        remote_thread_id: content.thread_id.clone(),
+        history_id: content.history_id.clone(),
+        labels: content.label_ids.clone(),
+        sender_name: bounded_header(sender.and_then(|s| s.name()).unwrap_or(""), 4096)?,
+        sender_email: bounded_header(sender.and_then(|s| s.address()).unwrap_or(""), 4096)?,
+        recipient: bounded_header(
+            parsed
+                .to()
+                .and_then(|list| list.first())
+                .and_then(|s| s.address())
+                .unwrap_or(""),
+            4096,
+        )?,
+        subject: bounded_header(parsed.subject().unwrap_or("(no subject)"), 16 * 1024)?,
+        body,
+        sent_at: parsed
+            .date()
+            .and_then(|date| chrono::DateTime::from_timestamp(date.to_timestamp(), 0))
+            .map(|date| date.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+            .unwrap_or_default(),
+        attachments,
+    };
+    Ok(staged)
 }

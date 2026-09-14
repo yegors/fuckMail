@@ -1,5 +1,7 @@
 # Phase 0 execution evidence
 
+D046 storage update: raw evidence links resolve to immutable historical Git files. Original inline paths are archive member paths; see [evidence storage and recovery](evidence-archive.md). Recorded results and limitations are unchanged.
+
 Recorded 2026-09-11. Implementation checkpoint on `codex/phase-0`, based on `14f4eca`; latest native implementation checkpoint `204fa62` is pushed; earlier results below retain their exact source attribution. **The synthetic Phase 0 foundation is complete on available hosts.** The final run below passed native tests and packages on Mac, Windows and Ubuntu. This does not complete the Google-first MVP or the separately listed physical/live-provider/release gates. Earlier checkpoint sections preserve failures and corrections as history.
 
 The development host is macOS 15.7.7 on arm64, Apple Clang 17 / SDK 26.2, Rust/Cargo 1.88.0, Qt 6.11.2, CMake 3.31.6 and the pinned Ninja distribution. [Development setup](../build-development.md) owns exact commands and provisioning observations. Dependencies live in ignored `.tools`; user data lives outside the build/package directories.
@@ -22,7 +24,7 @@ The development host is macOS 15.7.7 on arm64, Apple Clang 17 / SDK 26.2, Rust/C
 
 No live Google account, model, IMAP/SMTP server, external calendar feed or real mailbox content was accessed. Tests use disposable synthetic profiles. File/process recovery tests do not prove physical power-loss durability. CI build/test results, when available, do not prove graphics, input or credentials on the founder's home PC or an unavailable Linux desktop.
 
-Native rendered captures (synthetic data, 2880 × 1900): [mail](assets/phase-0/mail.png), [calendar](assets/phase-0/calendar.png), [settings](assets/phase-0/settings.png). These were inspected for clipping/overflow; they are an initial functional interpretation, not final design approval.
+Native rendered captures (synthetic data, 2880 × 1900): [mail](https://github.com/yegors/fuckMail/blob/885de67d2d3807f73374ea2975a63fb9476d6e7f/docs/research/assets/phase-0/mail.png), [calendar](https://github.com/yegors/fuckMail/blob/885de67d2d3807f73374ea2975a63fb9476d6e7f/docs/research/assets/phase-0/calendar.png), [settings](https://github.com/yegors/fuckMail/blob/885de67d2d3807f73374ea2975a63fb9476d6e7f/docs/research/assets/phase-0/settings.png). These were inspected for clipping/overflow; they are an initial functional interpretation, not final design approval.
 
 `cargo clippy --workspace --all-targets --locked --offline -- -D warnings` passes on the Mac.
 

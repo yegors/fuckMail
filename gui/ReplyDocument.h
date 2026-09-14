@@ -13,6 +13,7 @@ class ReplyDocument : public QObject {
     Q_PROPERTY(QQuickItem *editor READ editor WRITE setEditor NOTIFY documentChanged)
     Q_PROPERTY(QString plainText READ plainText NOTIFY textChanged)
     Q_PROPERTY(QString html READ html NOTIFY textChanged)
+    Q_PROPERTY(bool readOnly READ readOnly WRITE setReadOnly NOTIFY readOnlyChanged)
 public:
     explicit ReplyDocument(QObject *parent = nullptr) : QObject(parent) {}
     QQuickTextDocument *textDocument() const { return m_document; }
@@ -21,6 +22,8 @@ public:
     void setEditor(QQuickItem *editor);
     QString plainText() const;
     QString html() const;
+    bool readOnly() const { return m_readOnly; }
+    void setReadOnly(bool value) { if (m_readOnly == value) return; m_readOnly = value; emit readOnlyChanged(); }
     Q_INVOKABLE void setIdentity(const QString &identity);
     Q_INVOKABLE void load(const QString &body, const QString &html);
     Q_INVOKABLE void format(const QString &kind);
@@ -29,6 +32,7 @@ public:
     Q_INVOKABLE void redo();
     static QString limitedHtml(const QString &html);
 signals:
+    void readOnlyChanged();
     void documentChanged();
     void textChanged();
     void contentChanged();
@@ -39,4 +43,5 @@ private:
     QPointer<QQuickItem> m_editor;
     QString m_identity;
     bool m_loading = false;
+    bool m_readOnly = false;
 };

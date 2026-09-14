@@ -2,10 +2,10 @@
 //! No transport, AI, file reads or database.
 mod incoming;
 use ammonia::{Builder as HtmlCleaner, UrlRelative};
-pub use incoming::{extract_incoming_text, IncomingError};
+pub use incoming::{extract_incoming_text, extract_parsed_incoming_text, IncomingError};
 use lettre::message::{
-    header::{ContentTransferEncoding, ContentType},
-    Attachment, Mailbox, Message, MultiPart, SinglePart,
+    header::{self as mime_header, ContentTransferEncoding, ContentType},
+    Attachment, Mailbox, Mailboxes, Message, MultiPart, SinglePart,
 };
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -92,6 +92,26 @@ pub fn build_mail(
     identity: &AccountIdentity,
     attachments: &[StagedAttachment],
 ) -> Result<BuiltMail, ComposeError> {
+    build_authored_mail(request, identity, attachments, false)
+}
+
+/// Format a saved draft, including unfinished drafts with no recipients. The
+/// supplied identity, headers and attachment proofs obey the same checks as
+/// submission; no recipient is invented to satisfy an SMTP envelope.
+pub fn build_draft_mail(
+    request: &ComposeRequest,
+    identity: &AccountIdentity,
+    attachments: &[StagedAttachment],
+) -> Result<BuiltMail, ComposeError> {
+    build_authored_mail(request, identity, attachments, true)
+}
+
+fn build_authored_mail(
+    request: &ComposeRequest,
+    identity: &AccountIdentity,
+    attachments: &[StagedAttachment],
+    allow_no_recipients: bool,
+) -> Result<BuiltMail, ComposeError> {
     if request.account_id.is_empty() || request.account_id != identity.account_id {
         return Err(ComposeError::WrongAccount);
     }
@@ -109,10 +129,11 @@ pub fn build_mail(
     if let Some(reply) = &request.reply_to_message_id {
         message_id(reply)?;
     }
-    if request.to.len() + request.cc.len() + request.bcc.len() == 0 {
+    let recipient_count = request.to.len() + request.cc.len() + request.bcc.len();
+    if recipient_count == 0 && !allow_no_recipients {
         return Err(ComposeError::NoRecipients);
     }
-    if request.to.len() + request.cc.len() + request.bcc.len() > 100 {
+    if recipient_count > 100 {
         return Err(ComposeError::LimitExceeded("recipients"));
     }
     if attachments.len() > 50 {
@@ -160,8 +181,9 @@ pub fn build_mail(
         }
     }
 
+    let from = mailbox(&identity.from)?;
     let mut builder = Message::builder()
-        .from(mailbox(&identity.from)?)
+        .from(from.clone())
         .subject(request.subject.clone())
         .date(UNIX_EPOCH + Duration::from_secs(request.timestamp_secs))
         .message_id(Some(request.message_id.clone()))
@@ -232,10 +254,34 @@ pub fn build_mail(
         }
         body = mixed;
     }
-    let raw = builder
-        .multipart(body)
-        .map_err(|_| ComposeError::MimeBuildFailed)?
-        .formatted();
+    let raw = if recipient_count == 0 {
+        // Lettre's Message requires an SMTP envelope. Its public typed headers
+        // and multipart formatter also support incomplete API drafts directly.
+        let mut headers = mime_header::Headers::new();
+        headers.set(mime_header::From::from(Mailboxes::from(from)));
+        headers.set(mime_header::Subject::from(request.subject.clone()));
+        headers.set(mime_header::Date::new(
+            UNIX_EPOCH + Duration::from_secs(request.timestamp_secs),
+        ));
+        headers.set(mime_header::MessageId::from(request.message_id.clone()));
+        if let Some(reply) = &request.reply_to_message_id {
+            headers.set(mime_header::InReplyTo::from(reply.clone()));
+        }
+        if !references.is_empty() {
+            headers.set(mime_header::References::from(references.join(" ")));
+        }
+        headers.set(mime_header::MIME_VERSION_1_0);
+        let mut raw = headers.to_string().into_bytes();
+        // MultiPart starts with its Content-Type header and owns the separating
+        // blank line; inserting another separator would turn that header into text.
+        raw.extend_from_slice(&body.formatted());
+        raw
+    } else {
+        builder
+            .multipart(body)
+            .map_err(|_| ComposeError::MimeBuildFailed)?
+            .formatted()
+    };
     if raw.len() > MAX_WIRE_BYTES {
         return Err(ComposeError::LimitExceeded("serialized message"));
     }

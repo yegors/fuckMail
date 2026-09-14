@@ -17,6 +17,8 @@ pub const MAX_CLIENTS: usize = 16;
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(5);
 pub const IO_TIMEOUT: Duration = Duration::from_secs(15);
 pub const STARTUP_TIMEOUT: Duration = Duration::from_secs(30);
+/// Engine refusal is permanent; other launch failures retain bounded race recovery.
+pub const ENGINE_PROFILE_KIND_MISMATCH: i32 = 12;
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -97,6 +99,15 @@ pub fn random_token() -> String {
 }
 
 pub fn default_profile() -> io::Result<PathBuf> {
+    profile_path("default")
+}
+
+/// Explicit demo selection never shares the ordinary live profile.
+pub fn demo_profile() -> io::Result<PathBuf> {
+    profile_path("demo-v1")
+}
+
+fn profile_path(name: &str) -> io::Result<PathBuf> {
     #[cfg(target_os = "macos")]
     let base =
         std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support"));
@@ -113,7 +124,8 @@ pub fn default_profile() -> io::Result<PathBuf> {
                 "cannot locate user data directory; pass --profile",
             )
         })?
-        .join("fuckMail/demo-v1"))
+        .join("fuckMail")
+        .join(name))
 }
 
 /// Refuse symlinked, foreign-owned or shared profiles rather than changing them.
@@ -272,6 +284,25 @@ pub struct Client {
 }
 impl Client {
     pub async fn connect(profile: &Path, engine: Option<&Path>) -> io::Result<Self> {
+        Self::connect_profile(profile, engine, false, false).await
+    }
+
+    /// Explicit live initialization must also refuse an already-running demo.
+    pub async fn connect_live(profile: &Path, engine: Option<&Path>) -> io::Result<Self> {
+        Self::connect_profile(profile, engine, true, false).await
+    }
+
+    /// Synthetic creation is available only to an explicitly selected demo/test.
+    pub async fn connect_demo(profile: &Path, engine: Option<&Path>) -> io::Result<Self> {
+        Self::connect_profile(profile, engine, false, true).await
+    }
+
+    async fn connect_profile(
+        profile: &Path,
+        engine: Option<&Path>,
+        require_live: bool,
+        require_demo: bool,
+    ) -> io::Result<Self> {
         let profile = private_profile(profile)?;
         let until = tokio::time::Instant::now() + STARTUP_TIMEOUT;
         let mut child: Option<tokio::process::Child> = None;
@@ -329,6 +360,12 @@ impl Client {
                             Err(e) => return Err(e),
                         };
                         if hello.get("ok") == Some(&Value::Bool(true)) {
+                            if require_live && hello["result"]["mode"] != "live" {
+                                return Err(io::Error::new(io::ErrorKind::InvalidInput, "The selected profile is synthetic; choose a separate live profile path"));
+                            }
+                            if require_demo && hello["result"]["mode"] != "synthetic" {
+                                return Err(io::Error::new(io::ErrorKind::InvalidInput, "The selected profile is live; choose a separate demo profile path"));
+                            }
                             // Reap our child asynchronously while this client process exists.
                             if let Some(mut process) = child {
                                 tokio::spawn(async move {
@@ -364,6 +401,11 @@ impl Client {
             }
             if let Some(process) = child.as_mut() {
                 if let Some(status) = process.try_wait()? {
+                    if (require_live || require_demo)
+                        && status.code() == Some(ENGINE_PROFILE_KIND_MISMATCH)
+                    {
+                        return Err(io::Error::new(io::ErrorKind::InvalidInput, "The selected profile has a different kind; choose a separate profile path"));
+                    }
                     // Reap our exact child. A losing startup can exit while the
                     // old writer is still closing after discovery was removed.
                     last_exit = Some(status.to_string());
@@ -382,6 +424,11 @@ impl Client {
                     }),
                 };
                 let mut command = tokio::process::Command::new(binary);
+                if require_live {
+                    command.arg("--live-profile");
+                } else if require_demo {
+                    command.arg("--demo-profile");
+                }
                 command
                     .arg("--profile")
                     .arg(&profile)
@@ -426,6 +473,15 @@ impl Client {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn ordinary_and_demo_defaults_have_separate_names() {
+        let ordinary = super::default_profile().unwrap();
+        let demo = super::demo_profile().unwrap();
+        assert_eq!(ordinary.file_name().unwrap(), "default");
+        assert_eq!(demo.file_name().unwrap(), "demo-v1");
+        assert_eq!(ordinary.parent(), demo.parent());
+        assert_ne!(ordinary, demo);
+    }
     use super::*;
     #[cfg(unix)]
     fn fake_engine() -> (tempfile::TempDir, PathBuf, tokio::net::UnixListener) {

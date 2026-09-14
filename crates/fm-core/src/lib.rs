@@ -6,9 +6,13 @@ use std::{
     fs::{File, OpenOptions},
     path::{Path, PathBuf},
 };
+pub mod account_lifecycle;
 pub mod assist_store;
 #[cfg(test)]
 mod benchmark;
+mod calendar_projection;
+mod calendar_reminders;
+mod calendar_search;
 pub mod calendar_store;
 mod cancellation;
 mod capture;
@@ -17,7 +21,21 @@ mod composition;
 mod composition_tests;
 mod content;
 mod fixture;
+pub mod google_draft_inventory;
+pub use google_draft_inventory::actions as google_draft_actions;
+pub mod google_drafts;
+pub mod google_labels;
+pub mod google_live_mail;
+pub mod google_live_mutations;
+pub mod google_send;
 pub mod google_store;
+pub mod live_calendar;
+mod live_calendar_invitations;
+pub mod live_calendar_occurrences;
+pub mod live_calendar_recurring;
+pub mod live_calendar_writes;
+pub mod live_profile;
+pub mod local_content;
 mod mutations;
 mod phase1_calendar;
 #[cfg(test)]
@@ -26,7 +44,9 @@ mod preferences;
 mod queries;
 #[cfg(test)]
 mod sender_kind_tests;
-pub const SCHEMA_VERSION: u32 = 7;
+#[cfg(test)]
+mod test_profiles;
+pub const SCHEMA_VERSION: u32 = 20;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -75,6 +95,21 @@ pub struct Store {
 }
 impl Store {
     pub fn open(profile: &Path) -> Result<Self> {
+        Self::open_profile(profile, None)
+    }
+
+    /// Explicit live creation never seeds demo content, including after a crash.
+    /// Existing profiles must already be live; this never converts a demo store.
+    pub fn open_live(profile: &Path) -> Result<Self> {
+        Self::open_profile(profile, Some(live_profile::ProfileKind::Live))
+    }
+
+    /// Explicit demo creation never opens or converts an existing live store.
+    pub fn open_synthetic(profile: &Path) -> Result<Self> {
+        Self::open_profile(profile, Some(live_profile::ProfileKind::Synthetic))
+    }
+
+    fn open_profile(profile: &Path, requested: Option<live_profile::ProfileKind>) -> Result<Self> {
         std::fs::create_dir_all(profile)?;
         let mut options = OpenOptions::new();
         options.read(true).write(true).create(true).truncate(false);
@@ -86,6 +121,24 @@ impl Store {
         let lock = options.open(profile.join("store.lock"))?;
         lock.try_lock_exclusive()
             .map_err(|_| err("store_in_use", "This profile already has a writer"))?;
+        // Persist live creation intent before the first SQLite transaction. A
+        // killed first transaction must not make a later ordinary open seed demo.
+        let marker = live_profile::live_initialization_marker(
+            profile,
+            requested == Some(live_profile::ProfileKind::Live)
+                && !profile.join("store.sqlite3").exists(),
+        )?;
+        if marker && requested == Some(live_profile::ProfileKind::Synthetic) {
+            return Err(err(
+                "profile_kind_mismatch",
+                "A live profile cannot be opened as a demo profile",
+            ));
+        }
+        let requested = if marker {
+            Some(live_profile::ProfileKind::Live)
+        } else {
+            requested
+        };
         let db = Connection::open(profile.join("store.sqlite3"))?;
         db.busy_timeout(std::time::Duration::from_secs(2))?;
         db.execute_batch("PRAGMA foreign_keys=ON; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; PRAGMA trusted_schema=OFF;")?;
@@ -93,8 +146,33 @@ impl Store {
         if version > SCHEMA_VERSION {
             return Err(err("schema_mismatch", "This profile needs a newer engine"));
         }
+        if version != 0 {
+            let stored_kind: Option<i64> = db
+                .query_row("SELECT value FROM meta WHERE key='profile_kind'", [], |r| {
+                    r.get(0)
+                })
+                .optional()?;
+            let kind = live_profile::ProfileKind::from_stored(stored_kind.unwrap_or(0))?;
+            if requested.is_some_and(|requested| requested != kind) {
+                return Err(err(
+                    "profile_kind_mismatch",
+                    "The selected profile kind differs from the requested profile kind",
+                ));
+            }
+        }
         if version == 0 {
-            db.execute_batch(include_str!("schema.sql"))?;
+            // Kind and fixture sentinel are in the first schema transaction.
+            // A crash between migrations therefore cannot turn live into demo.
+            let marker = if requested == Some(live_profile::ProfileKind::Live) {
+                live_profile::live_initialization_marker(profile, true)?;
+                "INSERT INTO meta VALUES('profile_kind',1); INSERT INTO meta VALUES('fixture_revision',0);"
+            } else {
+                "INSERT INTO meta VALUES('profile_kind',0);"
+            };
+            db.execute_batch(&include_str!("schema.sql").replace(
+                "PRAGMA user_version=2;",
+                &format!("{marker}\nPRAGMA user_version=2;"),
+            ))?;
         }
         if version == 1 {
             db.execute_batch(include_str!("migration-002.sql"))?;
@@ -142,6 +220,17 @@ impl Store {
             )
             .optional()?;
         if seeded.is_none() {
+            let live: bool = store.db.query_row(
+                "SELECT COALESCE((SELECT value FROM meta WHERE key='profile_kind'),0)=1",
+                [],
+                |r| r.get(0),
+            )?;
+            if live {
+                return Err(err(
+                    "profile_invalid",
+                    "Live profile fixture marker is missing",
+                ));
+            }
             store.seed()?;
         }
         let version: u32 = store
@@ -169,7 +258,133 @@ impl Store {
             tx.execute_batch("PRAGMA user_version=7")?;
             tx.commit()?;
         }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 7 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-008.sql"))?;
+            tx.execute_batch("PRAGMA user_version=8")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 8 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-009-runtime.sql"))?;
+            tx.execute_batch(include_str!("migration-009-mail.sql"))?;
+            tx.execute_batch(include_str!("migration-009-calendar.sql"))?;
+            tx.execute_batch("PRAGMA user_version=9")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 9 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-010-mail.sql"))?;
+            tx.execute_batch(include_str!("migration-010-calendar-writes.sql"))?;
+            tx.execute_batch("PRAGMA user_version=10")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 10 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-011-labels.sql"))?;
+            tx.execute_batch("PRAGMA user_version=11")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 11 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-012-attachments.sql"))?;
+            tx.execute_batch("PRAGMA user_version=12")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 12 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-013-google-drafts.sql"))?;
+            tx.execute_batch("PRAGMA user_version=13")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 13 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-014-google-send.sql"))?;
+            tx.execute_batch("PRAGMA user_version=14")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 14 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-015-google-draft-inventory.sql"))?;
+            tx.execute_batch("PRAGMA user_version=15")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 15 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-016-google-draft-actions.sql"))?;
+            tx.execute_batch("PRAGMA user_version=16")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 16 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-017-calendar-invitations.sql"))?;
+            tx.execute_batch("PRAGMA user_version=17")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 17 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-018-account-lifecycle.sql"))?;
+            tx.execute_batch("PRAGMA user_version=18")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 18 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-019-calendar-occurrences.sql"))?;
+            tx.execute_batch("PRAGMA user_version=19")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 19 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-020-calendar-workflows.sql"))?;
+            tx.execute_batch("PRAGMA user_version=20")?;
+            tx.commit()?;
+        }
+        store.validate_profile_identity()?;
+        store.recover_account_cleanup()?;
         store.recover_captures()?;
+        store.recover_google_drafts()?;
+        store.recover_google_sends()?;
+        store.recover_google_draft_deletions()?;
+        store.calendar_live_recover()?;
         store.mail_changes.reset_calendar_generation();
         Ok(store)
     }
@@ -177,14 +392,61 @@ impl Store {
         if !params.is_object() {
             return Err(err("invalid_request", "Parameters must be an object"));
         }
+        if self.profile_kind()? == live_profile::ProfileKind::Live
+            && matches!(
+                method,
+                "draft_capture" | "calendar_write_ack" | "calendar_write"
+            )
+        {
+            return Err(err(
+                "capability_unavailable",
+                "This operation is not available for a live account yet",
+            ));
+        }
+        // Direct Rust callers retain a synchronous facade. The engine routes
+        // these methods through the same opaque plan on its blocking workers.
+        if matches!(
+            method,
+            "draft_save" | "draft_capture" | "draft_attachment_import"
+        ) {
+            let account = account.ok_or_else(|| err("account_required", "Choose an account"))?;
+            let mut step = self.local_content_begin(method, account, params)?;
+            for _ in 0..2 {
+                match step {
+                    local_content::LocalContentStep::Reply(reply) => return Ok(reply),
+                    local_content::LocalContentStep::Prepare(plan) => {
+                        let proof = local_content::prepare_local_content(
+                            plan,
+                            &fm_google::transport::CancellationToken::new(),
+                        )?;
+                        step = self.local_content_finish(proof)?;
+                    }
+                }
+            }
+            return match step {
+                local_content::LocalContentStep::Reply(reply) => Ok(reply),
+                _ => Err(err(
+                    "stale_preparation",
+                    "Local content changed during preparation",
+                )),
+            };
+        }
         if method == "accounts" {
-            fields(&params, &[])?;
-            return self.accounts();
+            fields(&params, &["include_removed"])?;
+            let include_removed = match params.get("include_removed") {
+                None => false,
+                Some(Value::Bool(v)) => *v,
+                _ => return Err(err("invalid_request", "include_removed must be boolean")),
+            };
+            return self.accounts_including_removed(include_removed);
         }
         if method == "status" {
             fields(&params, &[])?;
+            let synthetic = self.profile_kind()? == live_profile::ProfileKind::Synthetic;
+            // These describe callable local interfaces. Account grants and
+            // connectivity independently gate provider delivery and writes.
             return Ok(
-                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"calendar_generation":self.mail_changes.calendar_generation(),"synthetic":true,"fixture_today":FIXTURE_TODAY,"capabilities":{"mail":true,"drafts":true,"calendar_read":true,"phase1":true,"typed_filters":true,"preferences":true,"capture_history":true,"calendar_write_local":true,"send":false,"models":false}}),
+                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"calendar_generation":self.mail_changes.calendar_generation(),"synthetic":synthetic,"profile_kind":if synthetic {"synthetic"} else {"live"},"fixture_today":if synthetic {Some(FIXTURE_TODAY)} else {None},"capabilities":{"mail":true,"drafts":true,"calendar_read":true,"phase1":synthetic,"typed_filters":true,"preferences":true,"capture_history":synthetic,"calendar_write_local":synthetic,"send":!synthetic,"models":false,"google_auth":!synthetic,"google_sync":!synthetic}}),
             );
         }
         match method {
@@ -198,19 +460,33 @@ impl Store {
                 return self.calendar_sources();
             }
             "calendar_combined" => return self.calendar_combined(&params),
+            "calendar_search" => return self.calendar_search(&params),
+            "calendar_reminders" => return self.calendar_reminders(&params),
+            "calendar_reminder_ack" => return self.calendar_reminder_ack(account, &params),
+            "mail_notifications" => return self.mail_notifications(&params),
             _ => {}
         }
         if ![
+            "account_remove_preview",
+            "account_remove_status",
             "conversations",
             "conversation",
             "flag",
             "draft_get",
+            "google_drafts_status",
+            "google_draft_sources",
+            "google_draft_delete_status",
+            "google_draft_delete_abandon",
             "draft_save",
             "draft_capture",
             "calendar",
             "attachment",
             "categories",
             "set_category",
+            "mail_filing",
+            "google_mail_mutation_status",
+            "google_labels",
+            "google_category_bind",
             "view_get",
             "view_save",
             "account_update",
@@ -240,6 +516,14 @@ impl Store {
             return Err(err("not_found", "Account does not exist in this profile"));
         }
         match method {
+            "account_remove_preview" => {
+                fields(&params, &[])?;
+                self.account_remove_preview(account)
+            }
+            "account_remove_status" => {
+                fields(&params, &["request_id"])?;
+                self.account_remove_status(account, string(&params, "request_id")?)
+            }
             "conversations" => self.conversations(account, &params),
             "sender_summary" => self.sender_summary(account, &params),
             "conversation" => {
@@ -255,6 +539,16 @@ impl Store {
                 fields(&params, &["id"])?;
                 self.attachment(account, string(&params, "id")?)
             }
+            "google_drafts_status" => {
+                fields(&params, &[])?;
+                self.google_draft_inventory_status(account)
+            }
+            "google_draft_sources" => self.google_draft_source_history(account, &params),
+            "google_draft_delete_status" => {
+                fields(&params, &["request_id"])?;
+                self.google_draft_delete_status(account, string(&params, "request_id")?)
+            }
+            "google_draft_delete_abandon" => self.google_draft_delete_abandon(account, &params),
             "draft_get" => {
                 fields(&params, &["conversation_id", "draft_id"])?;
                 self.composition(account, &params)
@@ -270,8 +564,21 @@ impl Store {
                 fields(&params, &[])?;
                 self.view(account)
             }
-            "flag" | "set_category" | "draft_create" | "draft_save" | "draft_discard"
-            | "view_save" => self.mutate(method, account, &params),
+            "google_mail_mutation_status" => {
+                fields(&params, &["request_id"])?;
+                if params.get("request_id").is_some() {
+                    self.google_mail_mutation_request_status(
+                        account,
+                        string(&params, "request_id")?,
+                    )
+                } else {
+                    self.google_mail_mutation_status(account)
+                }
+            }
+            "google_labels" => self.google_labels(account, &params),
+            "google_category_bind" => self.google_category_bind(account, &params),
+            "flag" | "set_category" | "mail_filing" | "draft_create" | "draft_save"
+            | "draft_discard" | "view_save" => self.mutate(method, account, &params),
             _ => unreachable!(),
         }
     }

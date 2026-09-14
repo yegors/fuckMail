@@ -223,7 +223,7 @@ impl Checkpoint {
 /// `fetch_message_ids` names full messages to obtain before applying the plan. A current
 /// messages.get result reconciles labels without racing historical add/remove sequences.
 /// Source bytes and draft/pending-operation state remain owned by Core, not this crate.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PagePlan {
     pub expected: Checkpoint,
     pub next: Checkpoint,

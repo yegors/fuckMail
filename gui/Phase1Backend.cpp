@@ -2,19 +2,177 @@
 #include <QDate>
 #include <QJsonArray>
 #include <QTimeZone>
+#include <QJsonDocument>
+#include <QDesktopServices>
 
 namespace {
-QTimeZone viewZone() { return QTimeZone("America/Toronto"); }
+QVariantMap calendarPolicies(const QVariantList &sources) {
+    QVariantMap policies;
+    for (const auto &value : sources) {
+        const auto source = value.toMap();
+        const auto key = QString::fromUtf8(QJsonDocument(QJsonArray{source.value("account").toString(), source.value("calendar_id").toString()}).toJson(QJsonDocument::Compact));
+        policies[key] = QVariantMap{{"permission", source.value("permission")}, {"writable", source.value("writable")},
+            {"can_create", source.value("can_create")}, {"time_zone", source.value("time_zone")}};
+    }
+    return policies;
+}
+QString reminderKey(const QVariantMap &event) {
+    return QString::fromUtf8(QJsonDocument(QJsonArray{event.value("account").toString(), event.value("calendar_id").toString(),
+        event.value("id").toString(), event.value("start").toString()}).toJson(QJsonDocument::Compact));
+}
 bool changesCalendarQuery(const QVariantMap &before, const QVariantMap &after) {
-    for (const auto &key : {"week_start", "selected_calendars", "calendar_view", "calendar_date", "timeline_date"})
+    for (const auto &key : {"week_start", "selected_calendars", "calendar_view", "calendar_date", "timeline_date", "calendar_display_time_zone"})
         if (before.value(key) != after.value(key)) return true;
     return before.isEmpty();
 }
+bool reminderReceiptMatches(const QJsonObject &receipt, const QVariantMap &event, const QString &state) {
+    const auto current = receipt["event"].toObject().toVariantMap();
+    return receipt["account"].toString() == event.value("account").toString()
+        && receipt["calendar_id"].toString() == event.value("calendar_id").toString()
+        && receipt["occurrence_id"].toString() == event.value("id").toString()
+        && receipt["start"].toString() == event.value("start").toString()
+        && receipt["state"].toString() == state && reminderKey(current) == reminderKey(event)
+        && !current.value("busy_only").toBool() && !current.value("cancelled").toBool()
+        && current.value("self_response").toString() != "declined";
+}
+QVariantList notificationAccounts(const QVariantList &accounts) {
+    QVariantList result;
+    for (const auto &value : accounts) {
+        const auto account = value.toMap(), google = account.value("google").toMap();
+        result.append(QVariantMap{{"id", account.value("id")}, {"lifecycle", account.value("lifecycle")},
+            {"connection_state", google.value("connection_state")}, {"granted_scopes", google.value("granted_scopes")}});
+    }
+    return result;
+}
+}
+
+QString MailBackend::notificationContext() const {
+    QVariantList sources;
+    for (const auto &value : m_calendarSources) {
+        const auto source = value.toMap();
+        sources.append(QVariantMap{{"account",source.value("account")}, {"calendar_id",source.value("calendar_id")},
+            {"revision",source.value("revision")}, {"permission",source.value("permission")}, {"time_zone",source.value("time_zone")}});
+    }
+    return QString::fromUtf8(QJsonDocument::fromVariant(QVariantList{notificationAccounts(m_allAccounts), sources,
+        m_preferences.value("selected_calendars"), m_preferences.value("calendar_display_time_zone")}).toJson(QJsonDocument::Compact));
+}
+
+void MailBackend::configureNotifications() {
+    const auto mode = m_preferences.value("notifications", "events").toString();
+    const auto enabled = m_connected && startupReady() && !m_shutdown && !m_syntheticProfile && mode != "off";
+    const auto mailConfig = enabled && mode == "all" ? QString::fromUtf8(QJsonDocument::fromVariant(
+        notificationAccounts(m_allAccounts)).toJson(QJsonDocument::Compact)) : QString{};
+    if (mailConfig != m_mailNotificationConfig) {
+        // Calendar-only changes do not discard the arrival cursor. Starting a
+        // new notification session samples MAX before normal background work.
+        if (mailConfig.isEmpty() || m_mailNotificationConfig.isEmpty()) {
+            m_mailNotificationCursor = -1; m_notificationsSince = QDateTime::currentDateTimeUtc();
+        }
+        m_mailNotificationConfig = mailConfig; ++m_mailNotificationGeneration; m_mailNotificationPolling = false;
+    }
+    const auto config = enabled ? mode + notificationContext() : QString{};
+    if (config == m_notificationConfig) return;
+    m_notificationConfig = config; ++m_notificationGeneration; m_notificationPolling = false;
+    if (!m_reminders.isEmpty()) { m_reminders.clear(); emit remindersChanged(); }
+    if (config.isEmpty()) m_notificationTimer.stop();
+    else { m_notificationTimer.start(); QTimer::singleShot(0, this, &MailBackend::pollNotifications); }
+}
+
+void MailBackend::pollMailNotifications() {
+    if (m_mailNotificationConfig.isEmpty() || !m_connected || m_shutdown || m_mailNotificationPolling
+        || (m_mailNotificationCursor >= 0 && (m_pending.size() > 8 || (m_queryActivity.isValid() && m_queryActivity.elapsed() < 500)))) return;
+    const int generation = m_mailNotificationGeneration;
+    QJsonObject params;
+    if (m_mailNotificationCursor >= 0) {
+        params["after"] = m_mailNotificationCursor;
+        params["since"] = m_notificationsSince.toString(Qt::ISODateWithMs);
+    }
+    m_mailNotificationPolling = true;
+    request("mail_notifications", {}, params, [this, generation](auto mail, bool loaded) {
+        if (generation != m_mailNotificationGeneration) return;
+        m_mailNotificationPolling = false;
+        if (!loaded || !m_connected || m_shutdown || !mail["after"].isDouble()
+            || mail["after"].toInteger(-1) < qMax<qint64>(0, m_mailNotificationCursor)) return;
+        m_mailNotificationCursor = mail["after"].toInteger();
+        const auto messages = mail["messages"].toArray();
+        if (messages.isEmpty()) return;
+        if (mail["total"].toInteger() == 1) {
+            const auto message = messages.first().toObject();
+            emit desktopNotification(message["sender"].toString(), message["subject"].toString());
+        } else emit desktopNotification("New mail", QString::number(mail["total"].toInteger()) + " new messages");
+    });
+}
+
+void MailBackend::pollNotifications() {
+    pollMailNotifications();
+    if (m_notificationConfig.isEmpty() || !m_connected || m_shutdown || m_notificationPolling
+        || m_pending.size() > 8 || (m_queryActivity.isValid() && m_queryActivity.elapsed() < 500)) return;
+    const int generation = m_notificationGeneration;
+    m_notificationPolling = true;
+    request("calendar_reminders", {}, {}, [this, generation](auto result, bool ok) {
+        if (generation != m_notificationGeneration) return;
+        m_notificationPolling = false;
+        if (!ok || m_shutdown) {
+            if (!m_reminders.isEmpty()) { m_reminders.clear(); emit remindersChanged(); }
+            return;
+        }
+        QVariantList retained;
+        QList<QVariantMap> fresh;
+        QSet<QString> currentKeys;
+        for (const auto &value : result["reminders"].toArray()) {
+            const auto event = value.toObject().toVariantMap(); const auto key = reminderKey(event);
+            currentKeys.insert(key);
+            if (m_remindersPresented.contains(key)) retained.append(event);
+            else if (event.value("reminder_state").isNull() && fresh.size() < 8) fresh.append(event);
+        }
+        m_remindersPresented.intersect(currentKeys);
+        if (retained != m_reminders) { m_reminders = retained; emit remindersChanged(); }
+        for (const auto &event : fresh) {
+            const auto account = event.value("account").toString();
+            const auto key = reminderKey(event);
+            const QJsonObject params{{"calendar_id",event.value("calendar_id").toString()}, {"occurrence_id",event.value("id").toString()},
+                {"start",event.value("start").toString()}, {"state","shown"}};
+            request("calendar_reminder_ack", account, params, [this, generation, event, key, account](auto receipt, bool acknowledged) {
+                if (generation != m_notificationGeneration || !acknowledged || m_shutdown || accountRemoved(account)
+                    || !reminderReceiptMatches(receipt, event, "shown") || m_remindersPresented.contains(key)) return;
+                auto current = receipt["event"].toObject().toVariantMap(); current["timing"] = event.value("timing");
+                m_remindersPresented.insert(key); m_reminders.append(current); emit remindersChanged();
+                emit desktopNotification(current.value("timing").toString() + " · " + current.value("title").toString(),
+                    current.value("account_name").toString() + " · " + current.value("calendar_name").toString());
+            });
+        }
+    });
+}
+
+void MailBackend::dismissCalendarReminder(const QVariantMap &event) { acknowledgeCalendarReminder(event, false); }
+void MailBackend::joinCalendarEvent(const QVariantMap &event) { acknowledgeCalendarReminder(event, true); }
+void MailBackend::acknowledgeCalendarReminder(const QVariantMap &event, bool join) {
+    if (!m_connected || m_shutdown) return;
+    const auto account = event.value("account").toString();
+    if (account.isEmpty() || accountRemoved(account)) return;
+    const auto lifecycle = lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong();
+    const auto context = notificationContext();
+    const QJsonObject params{{"calendar_id",event.value("calendar_id").toString()}, {"occurrence_id",event.value("id").toString()},
+        {"start",event.value("start").toString()}, {"state","dismissed"}};
+    request("calendar_reminder_ack", account, params, [this, account, lifecycle, context, event, join](auto receipt, bool ok) {
+        if (!ok || m_shutdown || accountRemoved(account)
+            || context != notificationContext() || !reminderReceiptMatches(receipt, event, "dismissed")
+            || lifecycle != lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong()) return;
+        const auto key = reminderKey(event);
+        m_reminders.removeIf([&key](const auto &row) { return reminderKey(row.toMap()) == key; }); emit remindersChanged();
+        if (join) {
+            const QUrl url(receipt["event"].toObject()["conference_url"].toString());
+            if (url.isValid() && url.scheme() == "https" && !url.host().isEmpty() && url.userInfo().isEmpty())
+                QDesktopServices::openUrl(url);
+        }
+    });
 }
 
 QDateTime MailBackend::clockNow() const {
-    return m_fixtureClock ? QDateTime::fromString("2026-09-11T10:42:00-04:00", Qt::ISODate).toTimeZone(viewZone())
-                          : QDateTime::currentDateTimeUtc().toTimeZone(viewZone());
+    const QTimeZone chosen(m_preferences.value("calendar_display_time_zone").toString().toUtf8());
+    const auto zone = m_syntheticProfile ? QTimeZone("America/Toronto") : chosen.isValid() ? chosen : QTimeZone::systemTimeZone();
+    return m_fixtureClock ? QDateTime::fromString("2026-09-11T10:42:00-04:00", Qt::ISODate).toTimeZone(zone)
+                          : QDateTime::currentDateTimeUtc().toTimeZone(zone);
 }
 QString MailBackend::todayDate() const { return clockNow().date().toString(Qt::ISODate); }
 QString MailBackend::calendarDateTime(const QString &date, const QString &time, const QString &zone) const {
@@ -58,27 +216,40 @@ void MailBackend::showTimelineToday() { m_timelineDate = todayDate(); setPrefere
 void MailBackend::loadCalendarSources() {
     request("calendar_sources", {}, {}, [this](auto result, bool ok) {
         if (!ok) return;
-        m_calendarSources = result["calendars"].toArray().toVariantList(); emit eventsChanged();
+        const auto sources = result["calendars"].toArray().toVariantList();
+        if (m_calendarSources == sources) return;
+        // A successful permission recheck advances the store's general source
+        // revision. Only an observed authority change should invalidate the
+        // very occurrence lookup that performed that recheck. Keep a local
+        // epoch so a revoke/restore cycle still fences older UI callbacks.
+        if (calendarPolicies(m_calendarSources) != calendarPolicies(sources)) ++m_calendarAuthorityEpoch;
+        m_calendarSources = sources; emit eventsChanged();
     });
 }
 void MailBackend::calendarWrite(const QVariantMap &values) {
     auto params = QJsonObject::fromVariantMap(values);
     const auto account = params.take("account").toString();
-    if (account.isEmpty()) { emit calendarWriteFinished(false, {}, "Choose a writable calendar account."); return; }
     if (!params.contains("request_id")) params["request_id"] = mutation()["request_id"];
+    const auto requestId = params["request_id"].toString();
     ++m_calendarWrites;
-    request("calendar_write", account, params, [this](auto result, bool ok) {
-        --m_calendarWrites;
-        if (!ok) cancelShutdown();
-        emit calendarWriteFinished(ok, result.toVariantMap(), ok ? QString{} : result["message"].toString("Calendar change could not be saved."));
-        if (ok) { loadCalendar(); loadCalendarSources(); }
-        if (m_shutdown) finishShutdown();
-    });
+    if (account.isEmpty() || !m_connected || m_shutdown) {
+        finishCalendarOperation(account, requestId, {{"code", "calendar_unavailable"}, {"local_preflight", true}, {"operation_action", "write"}, {"message", "Connect to the app and choose a writable calendar account."}}, false); return;
+    }
+    if (!m_syntheticProfile && (!accountCapability(account, "calendar_write") || !googleSyncState(account).value("active").toBool())) {
+        finishCalendarOperation(account, requestId, {{"code", "calendar_sync_required"}, {"local_preflight", true}, {"operation_action", "write"}, {"message", "Start Calendar sync for this Google account before saving. Your fields remain here."}}, false); return;
+    }
+    const auto completed = [this, account, requestId](auto result, bool ok) {
+        result["operation_action"] = "write";
+        finishCalendarOperation(account, requestId, result, ok);
+    };
+    if (m_syntheticProfile) request("calendar_write", account, params, completed);
+    else googleOperation("google_calendar_write", account, params, completed);
 }
 
 void MailBackend::loadPreferences() {
     request("preferences_get", {}, {}, [this](auto result, bool ok) {
         if (!ok || m_preferencesSaving) return;
+        if (!m_initialPreferencesLoaded) { m_initialPreferencesLoaded = true; emit startupReadyChanged(); }
         m_preferencesRevision = result["revision"].toInteger();
         auto preferences = result["preferences"].toObject().toVariantMap();
         for (auto it = m_preferencesPending.cbegin(); it != m_preferencesPending.cend(); ++it) preferences[it.key()] = it.value();
@@ -89,6 +260,12 @@ void MailBackend::loadPreferences() {
             m_calendarDate = preferences.value("calendar_date").isNull() ? todayDate() : preferences.value("calendar_date").toString();
             m_timelineDate = preferences.value("timeline_date").isNull() ? todayDate() : preferences.value("timeline_date").toString();
             emit preferencesChanged(); if (reloadCalendar) loadCalendar();
+        }
+        if (!m_syntheticProfile && m_preferences.value("calendar_display_time_zone").isNull()
+            && !m_preferencesPending.contains("calendar_display_time_zone")) {
+            // Resolve the host zone once; the shared Core validates the IANA ID.
+            const auto systemZone = QTimeZone::systemTimeZone();
+            if (systemZone.isValid()) setPreferences({{"calendar_display_time_zone", QString::fromUtf8(systemZone.id())}});
         }
     });
 }
@@ -118,7 +295,7 @@ void MailBackend::savePreferences() {
             if (m_preferencesPending.value(it.key()) == it.value()) m_preferencesPending.remove(it.key());
         m_preferencesStatus = m_preferencesPending.isEmpty() ? "Saved on this machine" : "Saving…";
         emit preferencesChanged();
-        for (const auto &key : {"week_start", "selected_calendars"})
+        for (const auto &key : {"week_start", "selected_calendars", "calendar_display_time_zone"})
             if (submitted.contains(key)) { loadCalendar(); break; }
         if (!m_preferencesPending.isEmpty()) savePreferences();
         if (m_shutdown) finishShutdown();
@@ -210,17 +387,20 @@ void MailBackend::setDraftSignature(const QString &signature) {
     emit draftChanged(); m_draftTimer.start();
 }
 void MailBackend::reloadDraft() {
-    if (draftBusy() || m_draft.isEmpty()) return;
+    if (m_unsavedAccountBuffer) { accountNavigationAllowed(); return; }
+    cancelPendingGoogleSend("Send cancelled before reloading the draft.");
+    if (draftBusy() || attachmentImportPending() || m_draft.isEmpty()) return;
     m_draftTimer.stop(); m_resolvingDraft = true;
     m_draftStatus = "Loading the saved draft…"; emit draftChanged();
     const auto account = m_account, id = draftContext();
     request("draft_get", account, draftSelector(), [this, account, id](auto result, bool ok) {
         m_resolvingDraft = false;
         if (account != m_account || id != draftContext()) return;
-        if (ok) {
-            m_draft = result.toVariantMap(); m_recipientInputs.clear(); m_draftDirty = false; m_draftConflict = false;
-            m_afterDraftSave = {}; m_draftStatus = "Saved on this machine";
-        } else { m_draftStatus = "Not saved — could not reload. Your version remains here."; cancelShutdown(); }
+        if (ok && !olderDraftProjection(result)) {
+            m_draft = mergedDraftProjection(result); m_recipientInputs.clear(); m_draftDirty = false; m_draftConflict = false;
+            m_afterDraftSave = {}; m_draftStatus = draftReadOnly() ? "Read-only Google draft preview" : "Saved on this machine";
+        } else if (!ok) { m_draftStatus = "Not saved — could not reload. Your version remains here."; cancelShutdown(); }
+        else if (draftReadOnly()) m_draftStatus = "Read-only Google draft preview";
         emit draftChanged();
         if (m_shutdown) finishShutdown();
     });
@@ -229,7 +409,7 @@ void MailBackend::saveMyDraftVersion() {
     // Called only after the user confirms replacement of the other saved
     // version. Fetch its revision, retaining every authored field locally, then
     // use the normal optimistic save. A concurrent edit can conflict again.
-    if (!m_draftConflict || draftBusy() || m_draft.isEmpty()) return;
+    if (accountArchived() || m_unsavedAccountBuffer || draftReadOnly() || !m_draftConflict || draftBusy() || m_draft.isEmpty()) return;
     m_draftTimer.stop(); clearError(); m_resolvingDraft = true;
     m_draftStatus = "Checking the current saved revision…"; emit draftChanged();
     const auto account = m_account, id = draftContext();
@@ -246,17 +426,24 @@ void MailBackend::saveMyDraftVersion() {
             }
         }
         m_draft["revision"] = result["revision"].toVariant();
+        mergeGoogleDraftStatus(result["google"].toObject(), account, result["draft_id"].toString());
+        mergeGoogleSendStatus(result["google_send"].toObject(), account, result["draft_id"].toString());
         m_draftConflict = false; m_draftDirty = true; m_draftStatus = "Saving your version…"; emit draftChanged();
         saveDraft();
     });
 }
 void MailBackend::discardDraft() {
+    if (accountArchived() || m_unsavedAccountBuffer || draftReadOnly()) return;
+    cancelPendingGoogleSend("Send cancelled before discarding the draft.");
+    if (attachmentImportPending()) return;
     if (m_draft.isEmpty() || draftBusy()) return;
     m_draftTimer.stop(); m_discarding = true; emit draftChanged();
     auto params = draftSelector(); params["request_id"] = mutation()["request_id"]; params["expected_revision"] = m_draft["revision"].toLongLong();
-    request("draft_discard", m_account, params, [this](auto result, bool ok) {
+    const auto account = m_account, context = draftContext();
+    request("draft_discard", m_account, params, [this, account, context](auto result, bool ok) {
         m_discarding = false;
-        if (ok) { m_draft = result.toVariantMap(); m_recipientInputs.clear(); m_draftDirty = false; m_draftConflict = false; m_draftStatus = "Draft discarded"; remember("replyOpen", false); remember("selectedDraft", ""); loadAccounts(); if (m_folder == "drafts") loadDraftRows(false); }
+        if (account != m_account || context != draftContext() || m_unsavedAccountBuffer || accountArchived()) return;
+        if (ok) { m_draft = mergedDraftProjection(result); m_recipientInputs.clear(); m_draftDirty = false; m_draftConflict = false; m_draftStatus = "Draft discarded"; remember("replyOpen", false); remember("selectedDraft", ""); loadAccounts(); if (m_folder == "drafts") loadDraftRows(false); }
         else { m_draftStatus = "Discard failed — your reply remains here"; cancelShutdown(); }
         emit draftChanged();
         if (ok) saveDraft();
@@ -289,7 +476,7 @@ void MailBackend::loadCaptures(bool append) {
 }
 void MailBackend::loadMoreCaptures() { loadCaptures(true); }
 void MailBackend::inspectCapture(const QString &operationId) {
-    if (draftBusy()) return;
+    if (draftReadOnly() || draftBusy()) return;
     QVariantMap record;
     for (const auto &value : m_captures) if (value.toMap()["operation_id"].toString() == operationId) { record = value.toMap(); break; }
     if (record.isEmpty()) return;
@@ -313,6 +500,7 @@ void MailBackend::inspectCapture(const QString &operationId) {
     });
 }
 void MailBackend::captureDraft() {
+    if (attachmentImportPending()) return;
     if (draftLocked() || m_draft.isEmpty()) return;
     if (m_draftDirty || m_savingDraft) { m_afterDraftSave = [this] { captureDraft(); }; saveDraft(); return; }
     if (m_captureRequest.isEmpty() || m_captureAccount != m_account || m_captureConversation != draftContext()) {

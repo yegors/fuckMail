@@ -8,6 +8,7 @@
 #include <QJsonDocument>
 #include <QKeyEvent>
 #include <QMouseEvent>
+#include <QPointer>
 #include <QSaveFile>
 #include <QSGRendererInterface>
 #include <QSysInfo>
@@ -85,7 +86,7 @@ QJsonObject itemDiagnostic(QQuickItem *item, QQuickWindow *window) {
         {"visible", item->isVisible()}, {"enabled", item->isEnabled()}, {"opacity", item->opacity()}, {"clip", item->clip()},
         {"scene_rect", rectJson(item->mapRectToScene(QRectF(0, 0, item->width(), item->height())))},
         {"visible_rect", rectJson(visibleRect(item, window))}, {"implicit_width", item->implicitWidth()}, {"implicit_height", item->implicitHeight()}};
-    for (const auto key : {"contentY", "contentHeight", "originY", "count", "readOnly", "isExpanded"}) {
+    for (const auto key : {"contentY", "contentHeight", "originY", "count", "readOnly", "isExpanded", "pressed", "down", "hovered", "activeFocus"}) {
         const auto value = item->property(key);
         if (value.isValid()) result[key] = QJsonValue::fromVariant(value);
     }
@@ -154,15 +155,52 @@ void GuiInteractionBenchmark::startWhenReady() {
     QTimer::singleShot(500, this, [this] { beginSample(); });
 }
 bool GuiInteractionBenchmark::click(QQuickItem *item) {
+    const auto backendState = [this] {
+        return QJsonObject{{"account", m_backend.account()}, {"selected_id", m_backend.selectedId()},
+            {"draft_dirty", m_backend.m_draftDirty}, {"draft_busy", m_backend.draftBusy()},
+            {"deferred_save", bool(m_backend.m_afterDraftSave)}, {"saving_draft", m_backend.m_savingDraft},
+            {"account_selection_requests", qint64(m_backend.m_accountSelectionRequests)},
+            {"last_requested_account", m_backend.m_lastAccountSelectionRequest},
+            {"last_request_dirty", m_backend.m_lastAccountSelectionDirty}, {"last_request_busy", m_backend.m_lastAccountSelectionBusy}};
+    };
+    const auto beforeRequests = m_backend.m_accountSelectionRequests;
+    QJsonObject dispatch{{"control_before", itemDiagnostic(item, m_window)}, {"backend_before", backendState()}};
+    m_input["mouse_dispatch"] = dispatch;
     if (!item || !item->isEnabled()) return false;
     const auto rect = visibleRect(item, m_window);
     if (rect.width() < 16 || rect.height() < 8) return false;
     const auto local = rect.center(), global = QPointF(m_window->mapToGlobal(local.toPoint()));
+    dispatch["scene_position"] = QJsonObject{{"x", local.x()}, {"y", local.y()}};
+    dispatch["global_position"] = QJsonObject{{"x", global.x()}, {"y", global.y()}};
+    QPointer<QQuickItem> control(item);
+    QPointer<QQuickItem> tabParent(item->objectName().startsWith("accountTab_") ? item->parentItem() : nullptr);
+    const auto siblingTabs = [this, tabParent] {
+        QJsonArray tabs;
+        if (tabParent) for (auto sibling : tabParent->childItems()) {
+            if (sibling->objectName().startsWith("accountTab_")) tabs.append(itemDiagnostic(sibling, m_window));
+            if (tabs.size() == 32) break;
+        }
+        return tabs;
+    };
     QMouseEvent move(QEvent::MouseMove, local, global, Qt::NoButton, Qt::NoButton, Qt::NoModifier);
     QMouseEvent press(QEvent::MouseButtonPress, local, global, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
     QMouseEvent release(QEvent::MouseButtonRelease, local, global, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    dispatch["sibling_tabs_before_move"] = siblingTabs();
     QCoreApplication::sendEvent(m_window, &move);
-    QCoreApplication::sendEvent(m_window, &press); QCoreApplication::sendEvent(m_window, &release);
+    const bool aliveAfterMove = !control.isNull();
+    dispatch["sibling_tabs_before_press"] = siblingTabs();
+    QCoreApplication::sendEvent(m_window, &press);
+    const bool aliveAfterPress = !control.isNull();
+    const bool pressedAfterPress = control && control->property("pressed").toBool();
+    QCoreApplication::sendEvent(m_window, &release);
+    dispatch["sibling_tabs_after_release"] = siblingTabs();
+    dispatch["move_accepted"] = move.isAccepted(); dispatch["press_accepted"] = press.isAccepted(); dispatch["release_accepted"] = release.isAccepted();
+    dispatch["alive_after_move"] = aliveAfterMove; dispatch["alive_after_press"] = aliveAfterPress;
+    dispatch["alive_after_release"] = !control.isNull(); dispatch["pressed_after_press"] = pressedAfterPress;
+    dispatch["control_after"] = itemDiagnostic(control.data(), m_window);
+    dispatch["backend_after"] = backendState();
+    dispatch["account_selection_request_delta"] = qint64(m_backend.m_accountSelectionRequests - beforeRequests);
+    m_input["mouse_dispatch"] = dispatch;
     return true;
 }
 void GuiInteractionBenchmark::prepareLargeMailbox() {
@@ -173,6 +211,7 @@ void GuiInteractionBenchmark::prepareLargeMailbox() {
         {"input_object", "accountTab_" + m_largeMailbox}};
     m_targetAccount = m_largeMailbox; m_targetSelected = m_restoredSelections.value(m_largeMailbox); m_targetMessage.clear();
     m_modelAt = 0; m_visibleAt = 0; m_modelInvalidations = 0; m_visibilityWaits = 0;
+    m_armEvents = {}; m_frameEvents = {}; m_armEventsDropped = 0; m_frameEventsDropped = 0;
     m_armedGeneration = 0; m_armedSnapshot = {}; m_paint->arm(0);
     m_phase = Phase::AwaitingModel; m_watchdog.start(10000); m_inspectTimer.start();
     m_inputUnixMs = QDateTime::currentMSecsSinceEpoch(); m_inputAt = GuiPaintObserver::nowNanos();
@@ -220,6 +259,7 @@ void GuiInteractionBenchmark::beginSample() {
     }
     m_input["target_account"] = m_targetAccount; m_input["target_selected_id"] = m_targetSelected;
     m_modelAt = 0; m_visibleAt = 0; m_modelInvalidations = 0; m_visibilityWaits = 0;
+    m_armEvents = {}; m_frameEvents = {}; m_armEventsDropped = 0; m_frameEventsDropped = 0;
     m_armedGeneration = 0; m_armedSnapshot = {}; m_paint->arm(0);
     m_phase = Phase::AwaitingModel; m_watchdog.start(10000); m_inspectTimer.start();
     m_inputUnixMs = QDateTime::currentMSecsSinceEpoch(); m_inputAt = GuiPaintObserver::nowNanos();
@@ -285,14 +325,54 @@ void GuiInteractionBenchmark::inspect() {
     if (!visibleSnapshot(snapshot)) { ++m_visibilityWaits; return; }
     if (m_visibleAt == 0) m_visibleAt = GuiPaintObserver::nowNanos();
     if (m_phase == Phase::AwaitingPaint && snapshot == m_armedSnapshot) return;
+    const auto previousSnapshot = m_armedSnapshot;
+    const auto previousGeneration = m_armedGeneration;
     m_armedSnapshot = snapshot; m_armedGeneration = ++m_generation; m_phase = Phase::AwaitingPaint;
-    m_paint->arm(m_armedGeneration); m_window->update();
+    m_paint->arm(m_armedGeneration);
+    const auto armedAt = GuiPaintObserver::nowNanos();
+    m_window->update();
+    if (m_armEvents.size() < 64) {
+        QJsonArray changed;
+        for (auto it = snapshot.constBegin(); it != snapshot.constEnd(); ++it)
+            if (!previousSnapshot.contains(it.key()) || previousSnapshot[it.key()] != it.value()) changed.append(it.key());
+        for (auto it = previousSnapshot.constBegin(); it != previousSnapshot.constEnd(); ++it)
+            if (!snapshot.contains(it.key())) changed.append(it.key());
+        m_armEvents.append(QJsonObject{{"generation", qint64(m_armedGeneration)}, {"previous_generation", qint64(previousGeneration)},
+            {"input_offset_ms", double(armedAt - m_inputAt) / 1000000.0}, {"changed_fields", changed},
+            {"backend_list_generation", m_backend.m_listGeneration}, {"loading", m_backend.loading()},
+            {"read_mutation_in_flight", m_backend.mutationInFlight()}});
+    } else ++m_armEventsDropped;
+}
+void GuiInteractionBenchmark::recordFrame(GuiPaintObserver::Frame frame, const QString &reason, const QJsonObject &snapshot) {
+    if (m_frameEvents.size() >= 64) { ++m_frameEventsDropped; return; }
+    QJsonArray changed;
+    if (!snapshot.isEmpty()) {
+        for (auto it = snapshot.constBegin(); it != snapshot.constEnd(); ++it)
+            if (!m_armedSnapshot.contains(it.key()) || m_armedSnapshot[it.key()] != it.value()) changed.append(it.key());
+        for (auto it = m_armedSnapshot.constBegin(); it != m_armedSnapshot.constEnd(); ++it)
+            if (!snapshot.contains(it.key())) changed.append(it.key());
+    }
+    m_frameEvents.append(QJsonObject{{"generation", qint64(frame.generation)}, {"serial", qint64(frame.serial)},
+        {"armed_generation", qint64(m_armedGeneration)}, {"phase", int(m_phase)}, {"reason", reason},
+        {"sync_input_offset_ms", double(frame.synchronizedAt - m_inputAt) / 1000000.0},
+        {"render_input_offset_ms", double(frame.renderedAt - m_inputAt) / 1000000.0},
+        {"swap_input_offset_ms", double(frame.swappedAt - m_inputAt) / 1000000.0},
+        {"callback_input_offset_ms", double(frame.callbackAt - m_inputAt) / 1000000.0},
+        {"changed_fields", changed}});
 }
 void GuiInteractionBenchmark::painted(GuiPaintObserver::Frame frame) {
-    if (m_phase != Phase::AwaitingPaint || !m_armedGeneration || frame.generation != m_armedGeneration || frame.serial <= m_lastSerial) return;
+    if (m_phase != Phase::AwaitingPaint) {
+        if (m_phase == Phase::AwaitingModel) recordFrame(frame, "awaiting_model");
+        return;
+    }
+    if (!m_armedGeneration) { recordFrame(frame, "unarmed"); return; }
+    if (frame.generation != m_armedGeneration) { recordFrame(frame, "generation_mismatch"); return; }
+    if (frame.serial <= m_lastSerial) { recordFrame(frame, "serial_not_newer"); return; }
     QJsonObject snapshot;
-    if (!visibleSnapshot(snapshot) || snapshot != m_armedSnapshot) { inspect(); return; }
-    if (frame.swappedAt < m_modelAt || m_modelAt < m_inputAt) { finish("A pre-input or pre-model frame reached navigation measurement."); return; }
+    if (!visibleSnapshot(snapshot)) { recordFrame(frame, "visible_snapshot_unavailable"); inspect(); return; }
+    if (snapshot != m_armedSnapshot) { recordFrame(frame, "snapshot_changed", snapshot); inspect(); return; }
+    if (frame.swappedAt < m_modelAt || m_modelAt < m_inputAt) { recordFrame(frame, "timestamp_order"); finish("A pre-input or pre-model frame reached navigation measurement."); return; }
+    recordFrame(frame, "accepted");
     m_lastSerial = frame.serial; m_watchdog.stop(); m_inspectTimer.stop(); m_paint->arm(0); m_armedGeneration = 0;
     if (m_preparingLargeMailbox) {
         m_preparingLargeMailbox = false; m_restoredSelections[m_backend.account()] = m_backend.selectedId();
@@ -311,6 +391,8 @@ void GuiInteractionBenchmark::painted(GuiPaintObserver::Frame frame) {
     snapshot["model_invalidations"] = m_modelInvalidations; snapshot["visibility_waits"] = m_visibilityWaits;
     snapshot["frame_generation"] = qint64(frame.generation); snapshot["frame_serial"] = qint64(frame.serial);
     snapshot["loading_at_paint"] = m_backend.loading(); snapshot["read_mutation_in_flight_at_paint"] = m_backend.mutationInFlight();
+    snapshot["arm_events"] = m_armEvents; snapshot["frame_events"] = m_frameEvents;
+    snapshot["arm_events_dropped"] = m_armEventsDropped; snapshot["frame_events_dropped"] = m_frameEventsDropped;
     if (m_iteration > 0) { snapshot["sample"] = m_iteration; m_samples[m_class].append(snapshot); }
     m_restoredSelections[m_backend.account()] = m_backend.selectedId();
     if (++m_iteration > 100) {
@@ -358,7 +440,15 @@ QJsonObject GuiInteractionBenchmark::diagnostic() const {
         {"model_elapsed_ms", m_modelAt ? double(m_modelAt - m_inputAt) / 1000000.0 : -1},
         {"visible_elapsed_ms", m_visibleAt ? double(m_visibleAt - m_inputAt) / 1000000.0 : -1},
         {"model_invalidations", m_modelInvalidations}, {"visibility_waits", m_visibilityWaits},
+        {"arm_events", m_armEvents}, {"frame_events", m_frameEvents},
+        {"arm_events_dropped", m_armEventsDropped}, {"frame_events_dropped", m_frameEventsDropped},
         {"backend_generation", m_backend.m_generation}, {"backend_list_generation", m_backend.m_listGeneration},
+        {"draft_dirty", m_backend.m_draftDirty}, {"draft_busy", m_backend.draftBusy()},
+        {"deferred_save", bool(m_backend.m_afterDraftSave)}, {"saving_draft", m_backend.m_savingDraft},
+        {"account_selection_requests", qint64(m_backend.m_accountSelectionRequests)},
+        {"last_requested_account", m_backend.m_lastAccountSelectionRequest},
+        {"last_request_dirty", m_backend.m_lastAccountSelectionDirty}, {"last_request_busy", m_backend.m_lastAccountSelectionBusy},
+        {"mouse_dispatch", m_input.value("mouse_dispatch")},
         {"pinned_index", m_backend.m_pinnedIndex}, {"pinned_row", QJsonObject::fromVariantMap(m_backend.m_pinnedRow)},
         {"in_flight", pendingJson(m_backend.m_inFlight)}, {"queued", queue}};
 }
@@ -391,6 +481,7 @@ void GuiInteractionBenchmark::finish(const QString &error) {
         {"interruption_diagnostic", interruption},
         {"boundary", "Native QQuickWindow mouse/key event to the first frame carrying the matching account, conversation model, actual visible row delegates and latest-message body. Generation captured afterSynchronizing, carried through afterRendering and directly timestamped frameSwapped."},
         {"sample_policy", "One unmeasured warmup per route; 100 measured inputs per route; next input 25 ms after the prior correct paint. Normal polling, read-on-open and serial backend queues remain enabled. No pending-queue drain."},
+        {"diagnostic_policy", "At most 64 arm events and 64 delivered frame events per input, with separate dropped counts. Arm events retain changed snapshot field names and actual generations; frame events retain acceptance/rejection reason and sync/render/swap/GUI-callback timestamps as offsets from input. Render-thread timestamps use fixed-size copies and constant-time clock reads. Diagnostics do not change any snapshot field, acceptance rule, timer or latency budget; their instrumentation overhead remains in measured runs."},
         {"identity_oracle", "Every sampled model row, visible delegate, selected conversation and latest body hash is recorded for independent SQLite account/source verification."},
         {"accounts", QJsonArray::fromStringList(m_accounts)}, {"host", QSysInfo::prettyProductName()}, {"architecture", QSysInfo::currentCpuArchitecture()},
         {"large_mailbox_account", m_routeCount == 5 ? m_largeMailbox : QString{}}, {"large_mailbox_conversation_count", m_routeCount == 5 ? m_largeMailboxCount : 0},

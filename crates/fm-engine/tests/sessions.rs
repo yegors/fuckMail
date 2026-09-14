@@ -12,7 +12,7 @@ fn engine() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_fm-engine"))
 }
 async fn client(profile: &Path) -> Client {
-    Client::connect(profile, Some(&engine()))
+    Client::connect_demo(profile, Some(&engine()))
         .await
         .expect("start/connect actual engine")
 }
@@ -45,6 +45,77 @@ async fn wait_stopped(profile: &Path) {
     }
 }
 
+#[tokio::test]
+async fn live_profile_stays_empty_through_shared_clients_and_owner_restart() {
+    let root = tempfile::tempdir().unwrap();
+    let profile = root.path().join("live-profile");
+    let mut owner = Client::connect(&profile, Some(&engine())).await.unwrap();
+    let status = ok(owner.call("status", None, json!({})).await.unwrap());
+    assert_eq!(status["profile_kind"], "live");
+    assert_eq!(status["fixture_revision"], 0);
+    assert!(Client::connect_demo(&profile, Some(&engine()))
+        .await
+        .is_err());
+    // This advertises the live interface. The empty account list below still
+    // proves initialization grants no account a submission capability.
+    assert_eq!(status["capabilities"]["send"], true);
+    let mut observer = Client::connect(&profile, Some(&engine())).await.unwrap();
+    assert_eq!(
+        ok(observer.call("accounts", None, json!({})).await.unwrap())["accounts"],
+        json!([])
+    );
+    drop(owner);
+    assert_eq!(
+        ok(observer.call("status", None, json!({})).await.unwrap())["synthetic"],
+        false
+    );
+    drop(observer);
+    wait_stopped(&profile).await;
+    let mut reopened = Client::connect(&profile, Some(&engine())).await.unwrap();
+    assert_eq!(
+        ok(reopened.call("accounts", None, json!({})).await.unwrap())["accounts"],
+        json!([])
+    );
+    assert_eq!(
+        ok(reopened.call("status", None, json!({})).await.unwrap())["fixture_revision"],
+        0
+    );
+    drop(reopened);
+    wait_stopped(&profile).await;
+    assert!(Client::connect_demo(&profile, Some(&engine()))
+        .await
+        .is_err());
+}
+
+#[tokio::test]
+async fn live_initialization_refuses_a_running_synthetic_profile_without_conversion() {
+    let root = tempfile::tempdir().unwrap();
+    let profile = root.path().join("demo");
+    let mut owner = client(&profile).await;
+    let before = ok(owner.call("accounts", None, json!({})).await.unwrap());
+    let error = match Client::connect_live(&profile, Some(&engine())).await {
+        Ok(_) => panic!("demo accepted as live"),
+        Err(error) => error,
+    };
+    assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
+    assert_eq!(
+        ok(owner.call("accounts", None, json!({})).await.unwrap()),
+        before
+    );
+    drop(owner);
+    wait_stopped(&profile).await;
+    assert!(Client::connect_live(&profile, Some(&engine()))
+        .await
+        .is_err());
+    let mut reopened = client(&profile).await;
+    assert_eq!(
+        ok(reopened.call("accounts", None, json!({})).await.unwrap()),
+        before
+    );
+    drop(reopened);
+    wait_stopped(&profile).await;
+}
+
 // Own the exact process handle used by kill tests; never kill a PID merely
 // because a profile/discovery file names it, and clean up on assertion failure.
 struct OwnedEngine(Child);
@@ -57,6 +128,7 @@ impl Drop for OwnedEngine {
 async fn owned_engine(profile: &Path) -> OwnedEngine {
     let mut process = OwnedEngine(
         Command::new(engine())
+            .arg("--demo-profile")
             .arg("--profile")
             .arg(profile)
             .stdin(Stdio::null())
@@ -280,19 +352,36 @@ async fn paired_clients_share_durable_state_and_explicit_lifetimes() {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn startup_recovers_when_a_previous_writer_releases_its_lock() {
-    let temp = tempfile::tempdir().unwrap();
-    let profile = fm_ipc::private_profile(&temp.path().join("profile")).unwrap();
-    // Model the real shutdown interval after discovery disappears but before
-    // SQLite closes and releases the previous engine's exclusive writer lock.
-    let previous_writer = fm_core::Store::open(&profile).unwrap();
-    let reconnect_profile = profile.clone();
-    let reconnect = tokio::spawn(async move { client(&reconnect_profile).await });
-    tokio::time::sleep(Duration::from_secs(2)).await;
-    drop(previous_writer);
-    let mut next = reconnect.await.unwrap();
-    ok(next.call("status", None, json!({})).await.unwrap());
-    drop(next);
-    wait_stopped(&profile).await;
+    for live in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let profile = fm_ipc::private_profile(&temp.path().join("profile")).unwrap();
+        // Model the real shutdown interval after discovery disappears but before
+        // SQLite closes and releases the previous engine's exclusive writer lock.
+        let previous_writer = if live {
+            fm_core::Store::open_live(&profile).unwrap()
+        } else {
+            fm_core::Store::open(&profile).unwrap()
+        };
+        let reconnect_profile = profile.clone();
+        let reconnect = tokio::spawn(async move {
+            if live {
+                Client::connect_live(&reconnect_profile, Some(&engine()))
+                    .await
+                    .unwrap()
+            } else {
+                client(&reconnect_profile).await
+            }
+        });
+        tokio::time::sleep(Duration::from_secs(2)).await;
+        drop(previous_writer);
+        let mut next = reconnect.await.unwrap();
+        assert_eq!(
+            ok(next.call("status", None, json!({})).await.unwrap())["synthetic"],
+            !live
+        );
+        drop(next);
+        wait_stopped(&profile).await;
+    }
 }
 
 // CTest supplies the built native GUI; plain cargo runs have no Qt build.

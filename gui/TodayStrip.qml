@@ -127,6 +127,7 @@ Rectangle {
                 model: timeline.blocks
                 Item {
                     id: eventBlock; required property var modelData; required property int index
+                    objectName: "timelineEvent-" + (modelData.event_id || modelData.id)
                     readonly property int lane: timeline.laneAssignments[index] === undefined ? 0 : timeline.laneAssignments[index]
                     visible: lane < timeline.shownLanes
                     x: 24 + modelData.fraction * timeline.trackWidth; y: 28 + lane * 28
@@ -150,6 +151,7 @@ Rectangle {
                     }
                     FmToolTip { visible: eventMouse.containsMouse && !timeline.dragging; text: modelData.title + "\n" + modelData.time_display + " – " + modelData.end_display + "\n" + modelData.account_name + " / " + modelData.calendar_name }
                     Accessible.role: Accessible.Button; Accessible.name: modelData.title + ", " + modelData.start_display
+                    Accessible.onPressAction: timeline.showEvent(modelData, eventBlock)
                 }
             }
             Item {
@@ -171,7 +173,7 @@ Rectangle {
             FmButton { objectName: "timelineNextDay"; iconName: "next"; iconSize: 10; implicitWidth: 18; implicitHeight: 20; leftPadding: 4; rightPadding: 4; tip: "Next day"; onClicked: backend.moveTimeline(1) }
             Text { objectName: "timelineDateLabel"; text: Qt.formatDate(new Date(backend.timelineDate + "T12:00:00"), "ddd d MMM"); color: Theme.subtle; font.pixelSize: Theme.fontSize(10); height: 20; verticalAlignment: Text.AlignVCenter }
             FmButton { objectName: "timelineToday"; visible: backend.timelineDate !== backend.todayDate; text: "Back to today"; foreground: Theme.accent; implicitHeight: 20; font.pixelSize: Theme.fontSize(10); leftPadding: 5; rightPadding: 5; onClicked: backend.showTimelineToday() }
-            FmButton { id: overflowButton; text: timeline.hiddenEvents > 0 ? "+" + timeline.hiddenEvents : ""; iconName: "more"; iconSize: 12; implicitHeight: 20; leftPadding: 5; rightPadding: 5; font.pixelSize: Theme.fontSize(10); tip: "All events · America/Toronto · " + backend.timelineCoverage; onClicked: timelineMenu.open() }
+            FmButton { id: overflowButton; text: timeline.hiddenEvents > 0 ? "+" + timeline.hiddenEvents : ""; iconName: "more"; iconSize: 12; implicitHeight: 20; leftPadding: 5; rightPadding: 5; font.pixelSize: Theme.fontSize(10); tip: "All events · " + (backend.preferences.calendar_display_time_zone || "Time zone unavailable") + " · " + backend.timelineCoverage; onClicked: timelineMenu.open() }
         }
     }
     Popup {
@@ -182,10 +184,10 @@ Rectangle {
             spacing: 4
             FmButton { text: "All " + backend.todayEvents.length + " events"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { timelineMenu.close(); dayEvents.open() } }
             FmButton { text: "Open calendar"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { timelineMenu.close(); timeline.openCalendar() } }
-            Text { text: "America/Toronto\n" + backend.timelineCoverage; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); Layout.fillWidth: true; wrapMode: Text.Wrap }
+            Text { text: (backend.preferences.calendar_display_time_zone || "Time zone unavailable") + "\n" + backend.timelineCoverage; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); Layout.fillWidth: true; wrapMode: Text.Wrap }
         }
     }
     EventDetails { id: details; timelineSource: true; timelineInset: timeline.height; timelineAtTop: timeline.headerPosition; timelineEdge: timeline.mapToItem(Overlay.overlay, 0, timeline.headerPosition ? timeline.height : 0).y; onEditRequested: function(event) { editor.editEvent = event; editor.openForDate(event.start.slice(0, 10)) } }
-    EventEditor { id: editor; timelineInset: timeline.visible ? timeline.height : 0; timelineAtTop: timeline.headerPosition }
+    EventEditor { id: editor; timelineSource: true; timelineInset: timeline.visible ? timeline.height : 0; timelineAtTop: timeline.headerPosition }
     CalendarEventList { id: dayEvents; title: Qt.formatDate(new Date(backend.timelineDate + "T12:00:00"), "ddd d MMM") + " · all events"; eventRows: backend.todayEvents; available: backend.timelineReady && backend.connected; onEventSelected: function(event) { timeline.showEvent(event) } }
 }

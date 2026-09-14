@@ -4,8 +4,14 @@ Evidence, alternatives and experiments organized by subject. This index is navig
 
 | Scope | Existing material | Build contract |
 | --- | --- | --- |
+| [Evidence storage and recovery](evidence-archive.md) | Verified local snapshot, historical Git links and rules keeping generated outputs out of source | [Quality](../contracts/quality.md) |
+| [Phase 2 execution](phase-2-execution.md) | Live-profile/account boundary, integrated tests and remaining real-account gates | [Core](../contracts/core-storage.md), [Platform](../contracts/platform.md), [Quality](../contracts/quality.md) |
+| [Phase 2 OAuth/vault](phase-2-auth.md) | Desktop authorization, identity/refreshed grant fixtures and isolated native vault evidence | [Platform](../contracts/platform.md), [Gmail](../contracts/gmail.md) |
+| [Phase 2 transport](phase-2-transport.md) | Bounded native HTTPS, quota scheduling and cancellation/fault evidence | [Gmail](../contracts/gmail.md), [Quality](../contracts/quality.md) |
+| [Phase 2 Gmail HTTP](phase-2-gmail-http.md) | Typed Google mail endpoints, method costs and single-attempt submission outcomes | [Gmail](../contracts/gmail.md) |
+| [Phase 2 Calendar HTTP](phase-2-calendar.md) | Catalog/events, limited-access availability and conditional write fixtures | [Calendar](../contracts/calendar.md) |
 | [Flight Progress v2 design](flight-progress-v2.md) | Exact HTML/export support files, source and browser review, confirmed changes and native Phase 1 adaptation | [Mail UI](../contracts/mail-ui.md), [Calendar](../contracts/calendar.md) |
-| [Phase 1 execution](phase-1-execution.md) | Active local slice, schema/fixture boundary, measured integration and acceptance gates | [Core](../contracts/core-storage.md), [Mail UI](../contracts/mail-ui.md), [Calendar](../contracts/calendar.md), [Quality](../contracts/quality.md) |
+| [Phase 1 execution](phase-1-execution.md) | Completed local phase, schema/fixture boundary, measured integration and acceptance evidence | [Core](../contracts/core-storage.md), [Mail UI](../contracts/mail-ui.md), [Calendar](../contracts/calendar.md), [Quality](../contracts/quality.md) |
 | [Phase 0 execution](phase-0-execution.md) | Native experiment evidence and outstanding gates | [Quality](../contracts/quality.md) |
 | [Google feasibility execution](google-feasibility-execution.md) | Fake transport/auth/journal tests and live prerequisites | [Gmail](../contracts/gmail.md) |
 | [MIME feasibility execution](mime-feasibility-execution.md) | Shared parser/builder/capture and retained-content tests | [Mail UI](../contracts/mail-ui.md) |
@@ -15,9 +21,9 @@ Evidence, alternatives and experiments organized by subject. This index is navig
 | [Desktop stack and QML](desktop-stack.md) | Rust engine/CLI + C++20/Qt Quick UI recommendation, external-analysis assessment and feasibility gates | [Platform](../contracts/platform.md) |
 | [Slint UI investigation](slint-ui.md) | Published examples, toolkit capabilities, reader/composer and platform gaps | [Mail UI](../contracts/mail-ui.md) |
 | [HTML mail](html-mail.md) | Text-first reading, later best-effort HTML, human composition and content isolation | [Mail UI](../contracts/mail-ui.md) |
-| [Gmail](gmail.md) | History sync, quotas, OAuth, polling and labels | [Gmail](../contracts/gmail.md) |
+| [Gmail](gmail.md) | Current Phase 2 OAuth/scopes/quotas, history/offline sync, drafts/send and live-test prerequisites | [Gmail](../contracts/gmail.md) |
 | [IMAP/SMTP](imap-smtp.md) | Deferred: identities, capabilities, folder moves and uncertain sending after Google dogfooding | [IMAP/SMTP](../contracts/imap-smtp.md) |
-| [Calendar](calendar.md) | Google synchronization/recurrence first; external feeds and CalDAV deferred | [Calendar](../contracts/calendar.md) |
+| [Calendar](calendar.md) | Current Phase 2 quotas/permissions, sync/free-busy, recurrence/invitations and live-test prerequisites; feeds/CalDAV deferred | [Calendar](../contracts/calendar.md) |
 | [Search/storage](search-storage.md) | SQLite/FTS5, Tantivy, Notmuch, WAL and scale experiments | [Core](../contracts/core-storage.md), [Search](../contracts/search.md) |
 | [Local AI](local-ai.md) | Ollama/vLLM setup, structured results, supported platforms and evaluation | [Local assistance](../contracts/local-ai.md) |
 | [exec-buddy product lessons](exec-buddy.md) | Source evidence for selected mail/calendar interactions and rejected carryovers | [Triage](../contracts/triage.md), [Calendar](../contracts/calendar.md) |

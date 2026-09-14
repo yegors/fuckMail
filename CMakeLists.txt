@@ -10,9 +10,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 file(READ "${CMAKE_SOURCE_DIR}/scripts/toolchain.json" FM_TOOLCHAIN_JSON)
 string(JSON FM_QT_VERSION GET "${FM_TOOLCHAIN_JSON}" qt)
-find_package(Qt6 ${FM_QT_VERSION} EXACT REQUIRED COMPONENTS Quick QuickControls2 Network)
+find_package(Qt6 ${FM_QT_VERSION} EXACT REQUIRED COMPONENTS Quick QuickControls2 Network Widgets)
 qt_standard_project_setup(REQUIRES 6.8)
 include(CTest)
+if(BUILD_TESTING)
+    find_package(Qt6 ${FM_QT_VERSION} EXACT REQUIRED COMPONENTS Test)
+endif()
 option(FM_GUI_ONLY "Compile only the Qt client while editing UI; not an installable app" OFF)
 if(FM_GUI_ONLY)
     add_subdirectory(gui)
@@ -46,6 +49,27 @@ add_custom_target(fm-client-runtime ALL
         "$<TARGET_FILE_DIR:fuckmail-gui>"
     DEPENDS fuckmail-gui fm-rust)
 
+# App registration belongs to the configured build, never to each user's account
+# setup. The source file and staged copies are ignored local/package artifacts.
+set(FM_GOOGLE_CLIENT_CONFIG "$ENV{FM_GOOGLE_CLIENT_CONFIG}")
+if(NOT FM_GOOGLE_CLIENT_CONFIG)
+    set(FM_GOOGLE_CLIENT_CONFIG "${CMAKE_SOURCE_DIR}/.tools/google-oauth-client.json")
+elseif(NOT IS_ABSOLUTE "${FM_GOOGLE_CLIENT_CONFIG}" OR NOT EXISTS "${FM_GOOGLE_CLIENT_CONFIG}")
+    message(FATAL_ERROR "FM_GOOGLE_CLIENT_CONFIG must name an existing absolute desktop-client file")
+endif()
+if(EXISTS "${FM_GOOGLE_CLIENT_CONFIG}")
+    add_custom_command(TARGET fm-client-runtime POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${FM_GOOGLE_CLIENT_CONFIG}"
+            "${FM_RUST_BIN_DIR}/google-oauth-client.json"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${FM_GOOGLE_CLIENT_CONFIG}"
+            "$<TARGET_FILE_DIR:fuckmail-gui>/google-oauth-client.json")
+else()
+    add_custom_command(TARGET fm-client-runtime POST_BUILD
+        COMMAND "${CMAKE_COMMAND}" -E rm -f "${FM_RUST_BIN_DIR}/google-oauth-client.json"
+            "$<TARGET_FILE_DIR:fuckmail-gui>/google-oauth-client.json")
+    message(STATUS "Google app registration is not configured; browser sign-in will report this in Settings")
+endif()
+
 install(TARGETS fuckmail-gui BUNDLE DESTINATION . RUNTIME DESTINATION bin)
 if(APPLE)
     set(FM_INSTALL_BIN "fuckmail-gui.app/Contents/MacOS")
@@ -56,6 +80,9 @@ install(PROGRAMS
     "${FM_RUST_BIN_DIR}/fm-engine${CMAKE_EXECUTABLE_SUFFIX}"
     "${FM_RUST_BIN_DIR}/fm${CMAKE_EXECUTABLE_SUFFIX}"
     DESTINATION "${FM_INSTALL_BIN}")
+if(EXISTS "${FM_GOOGLE_CLIENT_CONFIG}")
+    install(FILES "${FM_GOOGLE_CLIENT_CONFIG}" DESTINATION "${FM_INSTALL_BIN}" RENAME "google-oauth-client.json")
+endif()
 install(FILES "${CMAKE_SOURCE_DIR}/gui/fonts/LICENSE-Geist.txt"
     DESTINATION "${FM_INSTALL_BIN}/licenses")
 # The normal OS plugin remains selected by Qt. Ship offscreen too so the exact
@@ -86,15 +113,24 @@ if(BUILD_TESTING)
     add_test(NAME rust-workspace COMMAND "${FM_CARGO}" test --workspace --locked
         ${FM_CARGO_PROFILE_ARGS} --target-dir "${CMAKE_SOURCE_DIR}/target")
     set_tests_properties(rust-workspace PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
-        # The expanded independent durable-profile suite exceeds three minutes
-        # on the Windows hosted runner. Individual operation watchdogs remain.
-        TIMEOUT 600 FIXTURES_REQUIRED rust_test_binaries RESOURCE_LOCK fm_cargo)
+        # The Phase 2 durable-profile suite exceeds ten minutes on hosted Windows.
+        # Individual operation watchdogs and application latency targets remain.
+        TIMEOUT 1800 FIXTURES_REQUIRED rust_test_binaries RESOURCE_LOCK fm_cargo)
     # --smoke exercises a disposable profile and must exit nonzero on load/IPC errors.
     add_test(NAME gui-smoke COMMAND "$<TARGET_FILE:fuckmail-gui>" --smoke)
     set_tests_properties(gui-smoke PROPERTIES TIMEOUT 45
         ENVIRONMENT "${FM_GUI_TEST_ENV}")
+    add_test(NAME gui-live-empty COMMAND "$<TARGET_FILE:fuckmail-gui>" --self-test-live-empty)
+    set_tests_properties(gui-live-empty PROPERTIES TIMEOUT 45
+        ENVIRONMENT "${FM_GUI_TEST_ENV}")
     add_test(NAME gui-integration COMMAND "$<TARGET_FILE:fuckmail-gui>" --self-test)
-    set_tests_properties(gui-integration PROPERTIES TIMEOUT 150
+    # Includes the bounded main walkthrough plus five fresh GUI restarts and
+    # their independent CLI readback. Match the existing package-test allowance;
+    # individual operation and input-to-paint budgets are unchanged.
+    set_tests_properties(gui-integration PROPERTIES TIMEOUT 180
+        ENVIRONMENT "${FM_GUI_TEST_ENV};FM_GUI_TEST_TRACE=1")
+    add_test(NAME gui-attachments COMMAND "$<TARGET_FILE:fuckmail-gui>" --self-test --self-test-attachments)
+    set_tests_properties(gui-attachments PROPERTIES TIMEOUT 90
         ENVIRONMENT "${FM_GUI_TEST_ENV};FM_GUI_TEST_TRACE=1")
     add_test(NAME gui-startup-recovery COMMAND "${FM_CARGO}" test -p fm-engine --test sessions
         --locked ${FM_CARGO_PROFILE_ARGS} --target-dir "${CMAKE_SOURCE_DIR}/target"

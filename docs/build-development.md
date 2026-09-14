@@ -1,6 +1,47 @@
 # Build, run and move between machines
 
-This is the shared Phase 0/Phase 1 developer workflow. The app is Rust engine/CLI plus a C++20 Qt Quick/QML client and SQLite. Python is used only to orchestrate developer tools; the packaged app has no Python, Node.js or JavaScript build dependency. Phase 1 integration is active; [its execution record](research/phase-1-execution.md) owns current results. The historical host checks below retain their original source and limits.
+## Email-first Google setup (D040)
+
+Configured builds use **Settings → Accounts → Connect Google account → email → Continue with Google**. Google opens in the system browser. Reconnect and Restore reuse the saved account identity. Sign-in alone does not start sync; confirm actual quotas and protected-profile/backup admission before importing.
+
+D042 configures the founder-supplied Desktop registration on the current Mac in the ignored location below. A new host still needs that private local input. Desktop clients use the app’s temporary `http://127.0.0.1:<port>/oauth2/callback`; no manual web callback URL or hosted callback service is needed.
+
+The app developer configures the Google Desktop client once; individual account users do not supply JSON. With the existing Google Cloud Desktop-client download outside Git, run:
+
+```sh
+python3 scripts/configure_google.py /absolute/private/path/to/desktop-client.json
+scripts/dev.sh build --preset release
+scripts/dev.sh package --preset release
+```
+
+The script stores only app registration fields in ignored `.tools/google-oauth-client.json`. CMake stages it beside the engine in native builds and packages; moving the package retains it. An explicit `FM_GOOGLE_CLIENT_CONFIG` absolute path overrides that local build input and also works when running an engine directly. Never commit this file or put user access/refresh tokens in it. An unconfigured build reports Google sign-in unavailable. CI remains credential-free.
+
+The CLI shares the same setup:
+
+```sh
+fm --profile /absolute/private/profile google setup-status
+fm --profile /absolute/private/profile google connect --email you@gmail.com
+```
+
+Use `--account ID google connect --email ADDRESS --reauthorize` for explicit reconnect; restore also requires the current archive revision. `--client-config` remains a developer override. The email is a Google hint; verified subject and granted permissions determine the connected account. Existing profiles retain their client binding. The app registration must match after a move/reinstall; another project's registration cannot refresh old grants.
+
+
+
+This is the shared native developer workflow. The app is Rust engine/CLI plus a C++20 Qt Quick/QML client and SQLite. Python is used only to orchestrate developer tools; the packaged app has no Python, Node.js or JavaScript build dependency. Phase 1 is complete on available hosts; [Phase 2 execution](research/phase-2-execution.md) owns current integration results. The historical host checks below retain their original source and limits.
+
+## Phase 2 feedback launch
+
+For the current Mac build, launch `dist/darwin-arm64/fuckmail-gui.app` after following the one-time app setup above. Ordinary startup creates an empty live profile. Use **Settings → Accounts → Connect Google account**, enter the Gmail or Workspace email and continue in the browser. Confirm actual Cloud quota limits and protected-profile/backup admission before choosing **Start sync** for each account. Account removal archives local data and removes credentials without deleting anything at Google. The [status](status.md) and [execution record](research/phase-2-execution.md) distinguish current verification from remaining real-account gates.
+
+### Historical Windows Package02
+
+The earlier unsigned Windows feedback ZIP is Package02 from clean `61a212a`, using D039/schema 20. Relocated GUI/CLI and empty-live startup checks pass on that source; its separate large-navigation correctness failure led to the handoff correction. See [current status](status.md) and the [execution record](research/phase-2-execution.md) before attributing a historical test to this package.
+
+Ordinary GUI and CLI startup now use a separate, empty live profile (`fuckMail/default` under the local user-data directory). Existing `demo-v1` data is preserved. Extract the Windows ZIP and launch `windows-amd64/bin/fuckmail-gui.exe`. Open **Settings → Accounts → Connect Google account**, choose the existing OAuth desktop-client JSON and sign in through the browser. Keep that JSON at the selected path; subsequent access reads it again. Sign-in alone does not import. Confirm the four actual Google Console quota limits in Settings, then choose **Start sync** for each account. Real data needs the agreed encrypted local disk and protected profile; keep it outside Git and cloud-sync folders. Removing an account archives its local data and removes credentials without deleting anything at Google.
+
+The September 14 prototype is the current visual reference. Native loading follows actual startup readiness, mail revisits use bounded caches, and reminder/notification preferences apply while the GUI is running. Run `fm --help` for the matching CLI workflows. This unsigned feedback build requires the current execution checks and user-driven Google account trial; the historical Phase 1 walkthrough below retains its synthetic scope.
+
+For the first feedback session, connect personal Gmail and Workspace separately, start their sync, then compare Inbox/Sent/Drafts and selected Calendar details with Google. Check a cached mail switch, a reply with an attachment, and a disposable Calendar event before testing invitations or recurring edits with other people. Calendar search is local to the displayed date range and selected calendars; its coverage label distinguishes partial results. Closing the GUI ends its sync and reminders, while an explicitly running CLI keeps its own session. Reopen the app to confirm account access, draft persistence and cached navigation. An incomplete inventory is not a backup and must not be described as fully downloaded.
 
 ## First setup
 
@@ -41,7 +82,7 @@ Ubuntu 24.04 uses the same `scripts/dev.sh` commands after installing a C++ comp
 | CLI help | `scripts/dev.sh cli -- --help` | `./scripts/dev.ps1 cli -- --help` |
 | Optimized development package | `scripts/dev.sh package --preset release` | `./scripts/dev.ps1 package --preset release` |
 
-GUI/CLI arguments follow `--`, for example `scripts/dev.sh run -- --profile /absolute/local/demo-profile`. Use the same profile for both clients. The engine creates a private profile directory, including missing parent directories. The normal demo is synthetic and never authenticates with a provider. Do not point test commands at a real mailbox profile.
+GUI/CLI arguments follow `--`, for example `scripts/dev.sh run -- --profile /absolute/local/demo-profile --demo-profile`. Use the same profile for both clients. The engine creates a private profile directory, including missing parent directories. Synthetic data requires explicit `--demo-profile` or a test/fixture option. Do not point test commands at a real mailbox profile.
 
 `--preset dev` is the default; `release` uses optimized Rust and C++ builds. Both use the tracked [CMake presets](../CMakePresets.json), [tool inputs](../scripts/toolchain.json), [Python dependency lock](../scripts/bootstrap-requirements.txt) and Rust toolchain/lockfile. Builds copy `fm` and `fm-engine` beside the GUI executable so engine discovery is the same as in the package. The developer launcher reads CMake’s generated executable path, including the different Windows build-directory layout. The CLI itself does not load Qt or need a display.
 
@@ -68,17 +109,17 @@ On Mac/Linux use `scripts/dev.sh run -- --profile /absolute/local/phase1-walkthr
 The CLI takes the same profile. With the executable directory containing `fm` and `fm-engine`, these are read-only checks:
 
 ```text
-fm --profile /absolute/local/phase1-walkthrough --json accounts
-fm --profile /absolute/local/phase1-walkthrough --account windscribe --json mail list --grouped --limit 50
-fm --profile /absolute/local/phase1-walkthrough --account windscribe --json draft list
-fm --profile /absolute/local/phase1-walkthrough --account windscribe --json draft history
-fm --profile /absolute/local/phase1-walkthrough --json calendar --combined --from 2026-09-11 --to 2026-09-12
-fm --profile /absolute/local/phase1-walkthrough --json preferences show
+fm --demo-profile --profile /absolute/local/phase1-walkthrough --json accounts
+fm --demo-profile --profile /absolute/local/phase1-walkthrough --account windscribe --json mail list --grouped --limit 50
+fm --demo-profile --profile /absolute/local/phase1-walkthrough --account windscribe --json draft list
+fm --demo-profile --profile /absolute/local/phase1-walkthrough --account windscribe --json draft history
+fm --demo-profile --profile /absolute/local/phase1-walkthrough --json calendar --combined --from 2026-09-11 --to 2026-09-12
+fm --demo-profile --profile /absolute/local/phase1-walkthrough --json preferences show
 ```
 
 Use a native Windows path in place of the illustrative absolute path. `mail read ID` is a query and does not mark the conversation reviewed; `mail review`, `mail done` and `mail delay` are explicit actions. Run `fm --help` and the command's `--help` for mutation parameters. The [fixture API](../fixtures/README.md) defines exact fields and limits. [Phase 1 execution evidence](research/phase-1-execution.md) distinguishes executed checks from remaining acceptance work.
 
-The Windows package at clean source `8743162` passes relocated runtime, preserved schema4/schema5 upgrade/refusal and packaged concurrent-search checks. It is `dist/fuckmail-windows-amd64.zip`, with a preserved copy under `dist/baselines/fuckmail-windows-amd64-schema7-8743162.zip`. Its staged GUI runs without rebuilding or the SDK. The package's `build-manifest.json` records its exact source; [current execution evidence](research/phase-1-execution.md#p1-09-clean-windows-package--8743162) records the hashes and limits. To build later source, run `./scripts/dev.ps1 package --preset release` and retain that run's own checks. Use a fresh synthetic profile for the updated walkthrough:
+The Windows package at clean source `8743162` passes relocated runtime, preserved schema4/schema5 upgrade/refusal and packaged concurrent-search checks. It is `dist/fuckmail-windows-amd64.zip`, with a preserved copy under `dist/baselines/fuckmail-windows-amd64-schema7-8743162.zip`. Its staged GUI runs without rebuilding or the SDK. The package's `build-manifest.json` records its exact source; [historical execution evidence](research/phase-1-execution.md#p1-09-clean-windows-package--8743162) records the hashes and limits. To build later source, run `./scripts/dev.ps1 package --preset release` and retain that run's own checks. Use a fresh synthetic profile for the updated walkthrough:
 
 ```powershell
 ./dist/windows-amd64/bin/fuckmail-gui.exe --profile C:/Users/Yegor/Projects/Fuckaround/fuckMail/.tools/phase1-update2-walkthrough --fixture-clock
@@ -105,19 +146,19 @@ Qt 6.11 changed Windows repository directories. The pinned aqt release still com
 
 ## CI, packages and handoff
 
-The native workflow runs on `macos-15`, `windows-2022` and `ubuntu-24.04`, using these same scripts. It caches SDKs and incremental Rust output, runs fixture tests and GUI smoke, and uploads development archives plus native logs. Cached state is an optimization; a cold bootstrap must work. Explicit restore/save steps keep successfully acquired SDKs and compiled Rust output even when a later runtime test fails; failure status is preserved and all tests still run. SDKs are saved only after successful bootstrap. See the [cache action documentation](https://github.com/actions/cache/tree/v4#using-a-combination-of-restore-and-save-actions). CTest prepares Rust test binaries in a separate `rust-test-build` setup fixture (900-second compile limit), then runs the expanded workspace under a 600-second aggregate execution watchdog. This keeps a cold optimized test build from consuming the runtime limit; application latency targets are unchanged. GUI checks set `QT_FORCE_STDERR_LOGGING=1` so native Windows failures are retained in CTest output. [Qt logging environment](https://doc.qt.io/qtcreator/creator-how-set-project-environment.html). A CI build is not verification of the founder's actual PC, compositor, clipboard, IME or keyring.
+The native workflow runs on `macos-15`, `windows-2022` and `ubuntu-24.04`, using these same scripts. It caches SDKs and incremental Rust output, runs fixture tests and GUI smoke, and uploads development archives plus native logs. Cached state is an optimization; a cold bootstrap must work. Explicit restore/save steps keep successfully acquired SDKs and compiled Rust output even when a later runtime test fails; failure status is preserved and all tests still run. SDKs are saved only after successful bootstrap. See the [cache action documentation](https://github.com/actions/cache/tree/v4#using-a-combination-of-restore-and-save-actions). CTest prepares Rust test binaries in a separate `rust-test-build` setup fixture (900-second compile limit), then runs the expanded workspace under a 1,800-second aggregate execution watchdog (D048). Each hosted job has a 60-minute allowance for cold compilation, tests and package checks. This keeps a cold optimized test build from consuming the runtime limit; application latency targets are unchanged. GUI checks set `QT_FORCE_STDERR_LOGGING=1` so native Windows failures are retained in CTest output. [Qt logging environment](https://doc.qt.io/qtcreator/creator-how-set-project-environment.html). A CI build is not verification of the founder's actual PC, compositor, clipboard, IME or keyring.
 
 Packages land in `dist/`. macOS contains `fuckmail-gui.app` with `fm` and `fm-engine` in `Contents/MacOS`; Windows/Linux place the three executables in `bin`. Qt's deployment step stages required libraries/plugins/QML resources. Package smoke clears developer Qt/engine overrides, uses a disposable profile and checks the installed executable. A build manifest records source commit, dirty state, tools and host. Archives are unsigned development artifacts; signing/notarization, a finished installer, PATH integration and full clean-machine qualification remain separate gates.
 
 For a fresh terminal, invoke the bundled CLI by its absolute path or add its containing directory to that terminal's PATH. No global CLI launcher is installed automatically. Move/copy the package directory to install the development build; remove that directory to uninstall. Profiles remain outside installation/build output. This is not a final upgrade or migration system.
 
-The portable `scripts/verify_upgrade.py` checks two preserved packages with different schema versions. Pass each directory containing the three executables, plus a report path; on macOS that directory is inside `fuckmail-gui.app/Contents/MacOS`, on Windows/Linux it is `bin`:
+The historical Phase 1 `scripts/verify_upgrade.py` checks preserved schema-4/schema-5 packages against its fixed schema-7 target; it is not the schema-20 upgrade runner. Pass each directory containing the three executables, plus a report path; on macOS that directory is inside `fuckmail-gui.app/Contents/MacOS`, on Windows/Linux it is `bin`:
 
 ```sh
 python3 scripts/verify_upgrade.py --old-bin /absolute/old/package/bin --new-bin /absolute/new/package/bin --report build/verification/package-upgrade.json
 ```
 
-On Windows use `python` and native absolute paths. The default baseline is schema 4/fixture 1; add `--expected-old-schema 5` for the preserved schema 5/fixture 2 package. Both upgrade to schema 6 while preserving the original fixture revision and accounts. Choose a new report filename for each run; existing reports are refused. The script creates its own disposable synthetic profile; it has no existing-profile argument. It checks compatible old/new client coexistence, explicit owner shutdown, Unicode draft/flag/receipt preservation, schema migration, the new GUI against the upgraded profile and refusal of an incompatible old engine without resetting data. It starts and cleans up only its own subprocess handles; discovery PIDs are never terminated. The JSON report preserves the exact package manifests, including dirty state, and executable hashes. A report counts as evidence only after an actual passing run; this developer check is not an automatic updater or physical keychain/input qualification.
+On Windows use `python` and native absolute paths. The default baseline is schema 4/fixture 1; add `--expected-old-schema 5` for the preserved schema 5/fixture 2 package. Both historical baselines upgrade to schema 7 while preserving the original fixture revision and accounts. Current Phase 2 schema upgrades use their separate source-bound checks recorded in [Phase 2 execution](research/phase-2-execution.md). Choose a new report filename for each run; existing reports are refused. The script creates its own disposable synthetic profile; it has no existing-profile argument. It checks compatible old/new client coexistence, explicit owner shutdown, Unicode draft/flag/receipt preservation, schema migration, the new GUI against the upgraded profile and refusal of an incompatible old engine without resetting data. It starts and cleans up only its own subprocess handles; discovery PIDs are never terminated. The JSON report preserves the exact package manifests, including dirty state, and executable hashes. A report counts as evidence only after an actual passing run; this developer check is not an automatic updater or physical keychain/input qualification.
 
 Before changing machines, commit and push source, lockfiles, fixtures and accurate status. On the other host, pull the same branch/revision, run bootstrap once, then doctor/test. Never transfer `.tools`, `target`, `build`, `dist`, tokens or live SQLite profiles through Git or a cloud folder. Generate synthetic data locally. Keep any real mail, draft or credential handoff separate from source control.
 

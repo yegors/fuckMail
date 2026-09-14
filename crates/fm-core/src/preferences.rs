@@ -5,10 +5,14 @@ use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
     json!({"density":"comfortable","week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
-        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60})
+        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"calendar_display_time_zone":null,"google_sync_limits":null,"notifications":"events"})
 }
 impl Store {
     pub(crate) fn preferences(&self) -> Result<Value> {
+        let mut profile_defaults = defaults();
+        if self.profile_kind()? == crate::live_profile::ProfileKind::Synthetic {
+            profile_defaults["calendar_display_time_zone"] = "America/Toronto".into();
+        }
         let found: Option<(i64, String)> = self
             .db
             .query_row(
@@ -19,7 +23,7 @@ impl Store {
             .optional()?;
         let (revision, preferences) = match found {
             Some((r, j)) => {
-                let mut merged = defaults();
+                let mut merged = profile_defaults;
                 let saved: Value = serde_json::from_str(&j)?;
                 for (key, value) in saved
                     .as_object()
@@ -29,7 +33,7 @@ impl Store {
                 }
                 (r, merged)
             }
-            None => (0, defaults()),
+            None => (0, profile_defaults),
         };
         Ok(json!({"revision":revision,"preferences":preferences}))
     }
@@ -78,12 +82,40 @@ impl Store {
                 "startup_view",
                 "last_workspace",
                 "timeline_position",
+                "google_sync_limits",
+                "notifications",
                 "default_event_duration_minutes",
+                "calendar_display_time_zone",
             ],
         )?;
         let mut preferences = current["preferences"].clone();
         for (key, value) in patch.as_object().unwrap() {
             preferences[key] = value.clone();
+        }
+        if !preferences["google_sync_limits"].is_null() {
+            fm_google::scheduler::SchedulerConfig::from_confirmed_json(
+                &preferences["google_sync_limits"],
+            )
+            .map_err(|_| {
+                err(
+                    "invalid_request",
+                    "Supply all four actual Google Console quota limits (100–100000000 each)",
+                )
+            })?;
+        }
+        if !preferences["calendar_display_time_zone"].is_null() {
+            let zone = preferences["calendar_display_time_zone"]
+                .as_str()
+                .filter(|v| !v.is_empty() && v.len() <= 256 && !v.chars().any(char::is_control))
+                .ok_or_else(|| {
+                    err(
+                        "invalid_request",
+                        "Calendar display zone must be an IANA zone",
+                    )
+                })?;
+            let day = chrono::NaiveDate::from_ymd_opt(2026, 1, 1).unwrap();
+            fm_calendar::Window::from_dates(day, day.succ_opt().unwrap(), zone)
+                .map_err(crate::calendar_store::calendar_error)?;
         }
         for (key, allowed) in [
             ("theme", &["graphite", "paper", "harbour"][..]),
@@ -91,6 +123,7 @@ impl Store {
             ("startup_view", &["mail", "calendar", "last"][..]),
             ("last_workspace", &["mail", "calendar"][..]),
             ("timeline_position", &["footer", "header"][..]),
+            ("notifications", &["all", "events", "off"][..]),
         ] {
             if !preferences[key]
                 .as_str()
@@ -155,7 +188,9 @@ impl Store {
             for source in selected {
                 fields(source, &["account", "calendar_id"])?;
                 let account = string(source, "account")?;
-                let calendar = string(source, "calendar_id")?;
+                let calendar = crate::live_calendar::provider_id(
+                    source["calendar_id"].as_str().unwrap_or_default(),
+                )?;
                 if !seen.insert((account, calendar)) {
                     return Err(err("invalid_request", "Repeated calendar source"));
                 }
@@ -173,6 +208,12 @@ impl Store {
             params![request, fingerprint, serde_json::to_string(&result)?],
         )?;
         tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
+        if preferences["calendar_display_time_zone"]
+            != current["preferences"]["calendar_display_time_zone"]
+            || preferences["selected_calendars"] != current["preferences"]["selected_calendars"]
+        {
+            tx.execute("UPDATE calendar_publication SET revision=revision+1", [])?;
+        }
         tx.commit()?;
         Ok(result)
     }
@@ -203,6 +244,7 @@ impl Store {
             }
             return Ok(serde_json::from_str(&response)?);
         }
+        self.require_active_account(account)?;
         let name = p["name"]
             .as_str()
             .filter(|v| {
@@ -273,6 +315,56 @@ pub(crate) fn required_revision(p: &Value) -> Result<i64> {
 #[cfg(test)]
 mod appearance_tests {
     use super::*;
+
+    #[test]
+    fn confirmed_google_limits_are_durable_atomic_preferences_without_accounts() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_live(dir.path()).unwrap();
+        let limits = json!({"gmail_project_units_per_minute":1000,"gmail_account_units_per_minute":100,
+            "calendar_project_units_per_minute":2000,"calendar_account_units_per_minute":200});
+        let command = json!({"request_id":"confirmed-limits","expected_revision":0,"preferences":{"google_sync_limits":limits}});
+        let saved = store
+            .handle("preferences_save", None, command.clone())
+            .unwrap();
+        assert_eq!(saved["preferences"]["google_sync_limits"], limits);
+        assert!(store.google_account_bindings().unwrap().is_empty());
+        for invalid in [
+            json!({}),
+            json!(true),
+            json!({"gmail_project_units_per_minute":1000}),
+        ] {
+            assert_eq!(
+                store
+                    .handle(
+                        "preferences_save",
+                        None,
+                        json!({"request_id":"invalid-limits","expected_revision":1,
+                "preferences":{"google_sync_limits":invalid,"theme":"paper"}})
+                    )
+                    .unwrap_err()
+                    .code,
+                "invalid_request"
+            );
+            assert_eq!(store.preferences().unwrap(), saved);
+        }
+        drop(store);
+        let mut store = Store::open_live(dir.path()).unwrap();
+        assert_eq!(store.preferences().unwrap(), saved);
+        assert_eq!(
+            store.handle("preferences_save", None, command).unwrap(),
+            saved
+        );
+        assert!(store.google_account_bindings().unwrap().is_empty());
+        let cleared = store
+            .handle(
+                "preferences_save",
+                None,
+                json!({"request_id":"clear-limits","expected_revision":1,
+            "preferences":{"google_sync_limits":null}}),
+            )
+            .unwrap();
+        assert!(cleared["preferences"]["google_sync_limits"].is_null());
+    }
 
     #[test]
     fn appearance_defaults_merge_old_preferences_and_preserve_receipts() {

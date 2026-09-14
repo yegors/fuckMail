@@ -31,6 +31,8 @@ if ($Command -in @('bootstrap','doctor','build','test','package','run')) { Enabl
 $pythonCommand = Get-Command python.exe -ErrorAction SilentlyContinue
 $pythonPath = if ($pythonCommand) { $pythonCommand.Source } else { $null }
 if ($pythonPath -like '*WindowsApps*') { $pythonPath = $null }
+$projectPython = Join-Path $taskRoot '.tools\bootstrap\Scripts\python.exe'
+if (Test-Path -LiteralPath $projectPython) { $pythonPath = $projectPython }
 if (-not $pythonPath) {
     if ($Command -eq 'bootstrap' -and (Get-Command winget -ErrorAction SilentlyContinue)) {
         & winget install --id Python.Python.3.11 --exact --silent --accept-package-agreements --accept-source-agreements

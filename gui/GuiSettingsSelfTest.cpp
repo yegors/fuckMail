@@ -127,15 +127,22 @@ void GuiSettingsSelfTest::step() {
         QMetaObject::invokeMethod(m_window->findChild<QObject *>("mailWorkspace"), "openReply");
         m_wait.start(); ++m_stage; break;
     case 1: {
-        if (m_backend.loading() || m_wait.elapsed() < 240 || !click("replyComposer")) return;
+        const auto revealTimer = m_window->findChild<QObject *>("replyReveal");
+        if (!revealTimer) { finish("Reply reveal timer is missing."); return; }
+        if (m_backend.loading() || m_backend.draftBusy() || m_wait.elapsed() < 240 || revealTimer->property("running").toBool()) return;
         const auto list=item("conversationList"), reader=item("reader"), editor=item("replyComposer");
         if (!list || !reader || !editor) { finish("Mail scroll surfaces are missing."); return; }
+        if (!m_editorPrepared) {
+            if (!click("replyComposer")) return;
+            editor->forceActiveFocus(); QMetaObject::invokeMethod(editor, "select", Q_ARG(int,6), Q_ARG(int,10));
+            m_editorPrepared = true; m_wait.restart(); return;
+        }
         // Programmatic viewport setup tests restoration, not physical wheel input.
-        // Use each Flickable's public property and existing end-of-movement handler.
+        // Opening the draft intentionally reveals it asynchronously. Finish that
+        // operation and selection layout before installing independent positions.
         m_listY=qMin(240.0,list->property("contentHeight").toDouble()-list->height());
         m_readerY=qMin(160.0,reader->property("contentHeight").toDouble()-reader->height());
         list->setProperty("contentY",m_listY); reader->setProperty("contentY",m_readerY);
-        editor->forceActiveFocus(); QMetaObject::invokeMethod(editor, "select", Q_ARG(int,6), Q_ARG(int,10));
         if (!QMetaObject::invokeMethod(list,"movementEnded") || !QMetaObject::invokeMethod(reader,"movementEnded")) { finish("Cannot exercise the viewport persistence handlers."); return; }
         m_wait.restart(); ++m_stage; break;
     }
@@ -298,12 +305,23 @@ void GuiSettingsSelfTest::step() {
         ++m_stage; break;
     case 31:
         if (!item("settingsPage_General") || !m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.m_calendarRevision < 0) return;
-        m_defaultFontSize = item("settingsPage_General")->property("font").value<QFont>().pixelSize();
-        m_calendarSnapshotGeneration = m_backend.m_calendarGeneration;
-        m_appearanceRevision = m_backend.m_revision;
-        if (!click("theme_paper")) return;
-        m_wait.restart();
-        ++m_stage; break;
+        // Earlier calendar/account settings have already committed. Wait for
+        // their normal status invalidation before measuring an appearance-only
+        // change, so a pending legitimate refresh cannot be blamed on the theme.
+        m_stage = 310;
+        m_backend.request("status", {}, {}, [this, guard = QPointer<GuiSettingsSelfTest>(this)](auto result, bool ok) {
+            if (!guard) return;
+            m_stage = 31;
+            if (!ok) { finish("Could not observe Calendar settings before appearance check."); return; }
+            if (result["calendar_generation"].toInteger(-1) != m_backend.m_calendarRevision
+                || !m_backend.calendarReady() || !m_backend.timelineReady()) return;
+            m_defaultFontSize = item("settingsPage_General")->property("font").value<QFont>().pixelSize();
+            m_calendarSnapshotGeneration = m_backend.m_calendarGeneration;
+            m_appearanceRevision = m_backend.m_revision;
+            if (!click("theme_paper")) return;
+            m_wait.restart(); m_stage = 32;
+        });
+        break;
     case 32:
         if (!saved() || m_backend.preferences()["theme"] != "paper") return;
         if (m_wait.elapsed() < 1400 || m_backend.m_revision <= m_appearanceRevision) return;

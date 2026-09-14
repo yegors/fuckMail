@@ -426,7 +426,10 @@ fn schema6_migration_keeps_old_profiles_receipts_and_sources_unclassified() {
     );
     let capture_params = json!({"conversation_id":"windscribe-thread-000","expected_revision":1,"request_id":"migration-capture","outcome":"accepted"});
     let receipt = call(&mut old, "draft_capture", capture_params.clone());
-    old.db.execute_batch("DROP TABLE message_sender_kinds; UPDATE meta SET value=2 WHERE key='fixture_revision'; PRAGMA user_version=6;").unwrap();
+    crate::test_profiles::restore_schema_eight(&old.db);
+    // Reconstruct the actual historical schema, including removal of later
+    // profile tables; merely lowering user_version is not a schema-6 fixture.
+    old.db.execute_batch("DROP TABLE google_accounts; DROP TABLE profile_identity; DELETE FROM meta WHERE key='profile_kind'; DROP TABLE message_sender_kinds; UPDATE meta SET value=2 WHERE key='fixture_revision'; PRAGMA user_version=6;").unwrap();
     let snapshot = |db: &Connection| -> Vec<Vec<Vec<String>>> {
         [
             "accounts",
@@ -439,8 +442,28 @@ fn schema6_migration_keeps_old_profiles_receipts_and_sources_unclassified() {
         ]
         .iter()
         .map(|table| {
+            let where_clause = if *table == "meta" {
+                " WHERE key!='profile_kind'"
+            } else {
+                ""
+            };
+            // Compare the exact historical columns. New Trash/lifecycle
+            // projections are checked separately below.
+            let columns = if *table == "accounts" {
+                "id,name,email,provider"
+            } else if *table == "messages" {
+                "rowid,account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision"
+            } else if *table == "drafts" {
+                "account,draft_id,conversation_id,legacy_reply,mode,source_message_id,source_hash,routing_json,body,revision,body_html,attachments_json,discarded,signature_text,from_name,identity_revision,created_at,updated_at"
+            } else if *table == "capture_operations" {
+                "account,id,json,blob_hash"
+            } else {
+                "*"
+            };
             let mut stmt = db
-                .prepare(&format!("SELECT * FROM {table} ORDER BY rowid"))
+                .prepare(&format!(
+                    "SELECT {columns} FROM {table}{where_clause} ORDER BY rowid"
+                ))
                 .unwrap();
             let count = stmt.column_count();
             stmt.query_map([], |r| {
@@ -458,7 +481,35 @@ fn schema6_migration_keeps_old_profiles_receipts_and_sources_unclassified() {
     drop(old);
     let mut store = Store::open(dir.path()).unwrap();
     assert_eq!(store.fixture_revision().unwrap(), 2);
-    assert_eq!(snapshot(&store.db), before);
+    let after = snapshot(&store.db);
+    for (index, (actual, expected)) in after.iter().zip(&before).enumerate() {
+        assert_eq!(
+            actual.len(),
+            expected.len(),
+            "historical table {index} row count"
+        );
+        for (row, (actual, expected)) in actual.iter().zip(expected).enumerate() {
+            assert_eq!(actual, expected, "historical table {index}, row {row}");
+        }
+    }
+    assert_eq!(
+        store.db.query_row(
+            "SELECT COUNT(*) FROM accounts WHERE lifecycle_state!='active' OR lifecycle_revision!=1 OR cleanup_json IS NOT NULL",
+            [],
+            |r| r.get::<_, i64>(0),
+        ).unwrap(),
+        0,
+        "historical accounts gain only active lifecycle defaults"
+    );
+    assert_eq!(
+        store
+            .db
+            .query_row("SELECT COUNT(*) FROM messages WHERE trashed!=0", [], |r| {
+                r.get::<_, i64>(0)
+            })
+            .unwrap(),
+        0
+    );
     assert_eq!(
         store
             .db

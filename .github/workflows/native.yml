@@ -20,12 +20,14 @@ jobs:
       matrix:
         os: [macos-15, windows-2022, ubuntu-24.04]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Check repository hygiene
+        run: python scripts/check_repo_hygiene.py
       - name: Restore project SDKs and Rust downloads
         id: sdk_cache
         uses: actions/cache/restore@v4

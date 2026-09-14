@@ -1,0 +1,565 @@
+//! Durable delivery of explicit local message snapshots. No HTTP runs on Store.
+use crate::{
+    err,
+    live_profile::{ConnectionState, ProfileKind},
+    Result, Store,
+};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::collections::BTreeSet;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MailMutationAction {
+    Modify,
+    Trash,
+    Restore,
+}
+impl MailMutationAction {
+    fn key(&self) -> &'static str {
+        match self {
+            Self::Modify => "modify",
+            Self::Trash => "trash",
+            Self::Restore => "restore",
+        }
+    }
+}
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct DesiredField {
+    field: String,
+    key: String,
+    value: bool,
+    revision: i64,
+    label: String,
+    present: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct MailMutationWork {
+    pub account: String,
+    pub request_id: String,
+    pub message_id: String,
+    pub remote_id: String,
+    pub action: MailMutationAction,
+    pub connection_generation: i64,
+    pub attempt: i64,
+    now_ms: u64,
+    desired: Vec<DesiredField>,
+}
+#[derive(Clone, Debug)]
+pub struct MailLabelObservation {
+    pub remote_id: String,
+    pub remote_thread_id: String,
+    pub history_id: String,
+    pub labels: BTreeSet<String>,
+}
+#[derive(Clone, Debug)]
+pub struct MailMutationAttempt {
+    pub work: MailMutationWork,
+    pub add_labels: Vec<String>,
+    pub remove_labels: Vec<String>,
+}
+#[derive(Clone, Debug)]
+pub enum MailMutationDecision {
+    Finished,
+    RetryRead,
+    Submit(MailMutationAttempt),
+}
+#[derive(Clone, Debug)]
+pub enum MailMutationAttemptOutcome {
+    Submitted,
+    Reconcile {
+        retry_at_ms: u64,
+        error_code: &'static str,
+    },
+    Failed {
+        error_code: &'static str,
+    },
+}
+
+/// Same transaction as the local operation and its exact replay receipt.
+pub(crate) fn enqueue(
+    db: &Transaction<'_>,
+    account: &str,
+    request: &str,
+    method: &str,
+    p: &Value,
+) -> Result<()> {
+    if !matches!(method, "flag" | "set_category" | "mail_filing") {
+        return Ok(());
+    }
+    let live: bool = db.query_row(
+        "SELECT value=1 FROM meta WHERE key='profile_kind'",
+        [],
+        |r| r.get(0),
+    )?;
+    if !live {
+        return Ok(());
+    }
+    validate_authoring(db, account)?;
+    let action = match p["action"].as_str() {
+        Some("trash") => MailMutationAction::Trash,
+        Some("restore") => MailMutationAction::Restore,
+        _ => MailMutationAction::Modify,
+    };
+    let keys: Vec<(&str, String)> = match method {
+        "flag" => ["read", "starred"]
+            .into_iter()
+            .filter(|field| p.get(*field).is_some())
+            .map(|field| (field, String::new()))
+            .collect(),
+        "set_category" => vec![("category", crate::string(p, "category_id")?.into())],
+        "mail_filing" => vec![(
+            "label",
+            if action == MailMutationAction::Modify {
+                "INBOX"
+            } else {
+                "TRASH"
+            }
+            .into(),
+        )],
+        _ => unreachable!(),
+    };
+    for value in p["message_ids"]
+        .as_array()
+        .ok_or_else(|| err("invalid_request", "Supply message IDs"))?
+    {
+        let message = value
+            .as_str()
+            .ok_or_else(|| err("invalid_request", "Invalid message ID"))?;
+        let remote:String=db.query_row("SELECT m.remote_id FROM messages m JOIN google_message_state s ON s.account=m.account AND s.message_id=m.id WHERE m.account=?1 AND m.id=?2 AND s.deleted=0",params![account,message],|r|r.get(0)).optional()?.ok_or_else(||err("not_found","Provider message is no longer available"))?;
+        let mut desired = Vec::new();
+        for (field, key) in &keys {
+            let (value,revision):(bool,i64)=db.query_row("SELECT value,revision FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field=?3 AND category_id=?4",params![account,message,field,key],|r|Ok((r.get(0)?,r.get(1)?)))?;
+            let (label, present) = match *field {
+                "read" => ("UNREAD".into(), !value),
+                "starred" => ("STARRED".into(), value),
+                "label" => (key.clone(), value),
+                "category" => {
+                    let label:String=db.query_row("SELECT provider_label_id FROM google_category_labels WHERE account=?1 AND category_id=?2",params![account,key],|r|r.get(0)).optional()?.ok_or_else(||err("label_mapping_required","Choose an existing Google label for this category"))?;
+                    if crate::google_store::is_system_label(&label) {
+                        return Err(err("invalid_request", "Category requires a user label"));
+                    }
+                    (label, value)
+                }
+                _ => unreachable!(),
+            };
+            desired.push(DesiredField {
+                field: (*field).into(),
+                key: key.clone(),
+                value,
+                revision,
+                label,
+                present,
+            });
+        }
+        db.execute("INSERT INTO google_mail_mutations(account,request_id,message_id,remote_id,action,desired_json,state) VALUES(?1,?2,?3,?4,?5,?6,'pending')",params![account,request,message,remote,action.key(),serde_json::to_string(&desired)?])?;
+    }
+    Ok(())
+}
+fn validate_authoring(db: &Connection, account: &str) -> Result<()> {
+    let scopes: Option<String> = db
+        .query_row(
+            "SELECT scopes_json FROM google_accounts WHERE account=?1",
+            [account],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let scopes: BTreeSet<String> = serde_json::from_str(
+        &scopes.ok_or_else(|| err("not_found", "Google account is unavailable"))?,
+    )?;
+    if !fm_google::auth::ScopeSet::new(&scopes).mail_write() {
+        return Err(err(
+            "capability_unavailable",
+            "Google mail modification permission is required",
+        ));
+    }
+    Ok(())
+}
+impl Store {
+    pub fn google_mail_mutation_next(
+        &self,
+        account: &str,
+        generation: i64,
+        now_ms: u64,
+    ) -> Result<Option<MailMutationWork>> {
+        self.mutation_connection(account, generation)?;
+        type Row = (String, String, String, String, String, i64);
+        let row:Option<Row>=self.db.query_row("SELECT request_id,message_id,remote_id,action,desired_json,attempt FROM google_mail_mutations WHERE account=?1 AND state IN ('pending','in_flight','reconcile') AND retry_at_ms<=?2 ORDER BY rowid LIMIT 1",params![account,integer_time(now_ms)],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?,r.get(5)?))).optional()?;
+        row.map(
+            |(request_id, message_id, remote_id, action, desired, attempt)| {
+                Ok(MailMutationWork {
+                    account: account.into(),
+                    request_id,
+                    message_id,
+                    remote_id,
+                    action: serde_json::from_value(json!(action))?,
+                    desired: serde_json::from_str(&desired)?,
+                    attempt,
+                    connection_generation: generation,
+                    now_ms,
+                })
+            },
+        )
+        .transpose()
+    }
+    pub fn google_mail_mutation_observe(
+        &mut self,
+        work: &MailMutationWork,
+        observation: Option<MailLabelObservation>,
+    ) -> Result<MailMutationDecision> {
+        self.mutation_connection(&work.account, work.connection_generation)?;
+        let tx = self.db.unchecked_transaction()?;
+        verify_work(&tx, work)?;
+        let local: Option<(String, String)> = tx
+            .query_row(
+                "SELECT conversation_id,remote_id FROM messages WHERE account=?1 AND id=?2",
+                params![work.account, work.message_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((conversation, remote)) = local else {
+            finish(&tx, work, "failed", Some("local_message_missing"))?;
+            tx.commit()?;
+            return Ok(MailMutationDecision::Finished);
+        };
+        if remote != work.remote_id {
+            return Err(err(
+                "stale_google_work",
+                "Captured message identity changed",
+            ));
+        }
+        let Some(observed) = observation else {
+            finish(&tx, work, "failed", Some("provider_message_missing"))?;
+            tx.commit()?;
+            return Ok(MailMutationDecision::Finished);
+        };
+        validate_observation(work, &observed)?;
+        let history: u128 = observed.history_id.parse().map_err(|_| {
+            err(
+                "invalid_google_history",
+                "Invalid Google history identifier",
+            )
+        })?;
+        let previous:Option<(String,String)>=tx.query_row("SELECT history_id,remote_thread_id FROM google_message_state WHERE account=?1 AND message_id=?2",params![work.account,work.message_id],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+        if previous
+            .as_ref()
+            .is_some_and(|(_, thread)| thread != &observed.remote_thread_id)
+        {
+            return Err(err(
+                "invalid_google_response",
+                "Google message thread changed",
+            ));
+        }
+        let coverage: Option<String> = tx
+            .query_row(
+                "SELECT history_id FROM google_mail_coverage WHERE account=?1 AND remote_id=?2",
+                params![work.account, work.remote_id],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        if previous
+            .as_ref()
+            .and_then(|(v, _)| v.parse::<u128>().ok())
+            .into_iter()
+            .chain(coverage.as_ref().and_then(|v| v.parse::<u128>().ok()))
+            .any(|v| v > history)
+        {
+            tx.execute("UPDATE google_mail_mutations SET state='reconcile',retry_at_ms=?4,error_code='stale_readback' WHERE account=?1 AND request_id=?2 AND message_id=?3",params![work.account,work.request_id,work.message_id,integer_time(work.now_ms.saturating_add(1000))])?;
+            tx.commit()?;
+            return Ok(MailMutationDecision::RetryRead);
+        }
+        let mut active = Vec::new();
+        for desired in &work.desired {
+            let current:Option<(bool,i64)>=tx.query_row("SELECT value,revision FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field=?3 AND category_id=?4",params![work.account,work.message_id,desired.field,desired.key],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+            if current != Some((desired.value, desired.revision)) {
+                continue;
+            }
+            if desired.field == "category" {
+                let mapping:Option<String>=tx.query_row("SELECT provider_label_id FROM google_category_labels WHERE account=?1 AND category_id=?2",params![work.account,desired.key],|r|r.get(0)).optional()?;
+                if mapping.as_deref() != Some(&desired.label) {
+                    finish(&tx, work, "failed", Some("label_mapping_changed"))?;
+                    tx.commit()?;
+                    return Ok(MailMutationDecision::Finished);
+                }
+            }
+            active.push(desired.clone());
+        }
+        let was_active = !active.is_empty();
+        let mut remaining = Vec::new();
+        for desired in active {
+            if observed.labels.contains(&desired.label) == desired.present {
+                tx.execute("DELETE FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field=?3 AND category_id=?4 AND value=?5 AND revision=?6",params![work.account,work.message_id,desired.field,desired.key,desired.value,desired.revision])?;
+            } else {
+                remaining.push(desired);
+            }
+        }
+        tx.execute("UPDATE google_message_state SET provider_labels_json=?3,history_id=?4,deleted=0 WHERE account=?1 AND message_id=?2",params![work.account,work.message_id,serde_json::to_string(&observed.labels)?,observed.history_id])?;
+        // Keep the existing acquisition fence current without changing source,
+        // index, coverage metrics or any lane's independent continuation.
+        tx.execute(
+            "UPDATE google_mail_coverage SET history_id=?3 WHERE account=?1 AND remote_id=?2",
+            params![work.account, work.remote_id, observed.history_id],
+        )?;
+        let before = tx.total_changes();
+        project_labels(&tx, &work.account, &work.message_id, &observed.labels)?;
+        if tx.total_changes() != before {
+            tx.execute(
+                "UPDATE messages SET revision=revision+1 WHERE account=?1 AND id=?2",
+                params![work.account, work.message_id],
+            )?;
+            tx.execute(
+                "UPDATE conversations SET revision=revision+1 WHERE account=?1 AND id=?2",
+                params![work.account, conversation],
+            )?;
+            tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
+        }
+        if remaining.is_empty() {
+            finish(
+                &tx,
+                work,
+                if was_active {
+                    "confirmed"
+                } else {
+                    "superseded"
+                },
+                None,
+            )?;
+            tx.commit()?;
+            return Ok(MailMutationDecision::Finished);
+        }
+        let attempt = work
+            .attempt
+            .checked_add(1)
+            .ok_or_else(|| err("storage_error", "Mutation attempt sequence exhausted"))?;
+        tx.execute("UPDATE google_mail_mutations SET state='in_flight',attempt=?4,connection_generation=?5,retry_at_ms=0,error_code=NULL WHERE account=?1 AND request_id=?2 AND message_id=?3",params![work.account,work.request_id,work.message_id,attempt,work.connection_generation])?;
+        let mut claimed = work.clone();
+        claimed.attempt = attempt;
+        let add_labels = remaining
+            .iter()
+            .filter(|v| v.present)
+            .map(|v| v.label.clone())
+            .collect();
+        let remove_labels = remaining
+            .iter()
+            .filter(|v| !v.present)
+            .map(|v| v.label.clone())
+            .collect();
+        tx.commit()?;
+        Ok(MailMutationDecision::Submit(MailMutationAttempt {
+            work: claimed,
+            add_labels,
+            remove_labels,
+        }))
+    }
+    pub fn google_mail_mutation_attempt_result(
+        &mut self,
+        attempt: &MailMutationAttempt,
+        outcome: MailMutationAttemptOutcome,
+    ) -> Result<()> {
+        let work = &attempt.work;
+        // An already admitted HTTP attempt may return after disconnect. Only
+        // its exact durable claim can accept this status; no labels or pending
+        // human intent are published here, and a newer claim fences it out.
+        let tx = self.db.unchecked_transaction()?;
+        verify_work(&tx, work)?;
+        let (state, retry, error) = match outcome {
+            MailMutationAttemptOutcome::Submitted => {
+                // A successful HTTP response is still not a label receipt.
+                // Repeated mismatches (including provider propagation delay)
+                // are read back with bounded cadence instead of a hot POST loop.
+                let delay = if work.attempt <= 1 {
+                    0
+                } else if work.attempt >= 6 {
+                    300_000
+                } else {
+                    1000_u64 << (work.attempt - 2)
+                };
+                (
+                    "reconcile",
+                    integer_time(work.now_ms.saturating_add(delay)),
+                    None,
+                )
+            }
+            MailMutationAttemptOutcome::Reconcile {
+                retry_at_ms,
+                error_code,
+            } => ("reconcile", integer_time(retry_at_ms), Some(error_code)),
+            MailMutationAttemptOutcome::Failed { error_code } => ("failed", 0, Some(error_code)),
+        };
+        let changed=tx.execute("UPDATE google_mail_mutations SET state=?4,retry_at_ms=?5,error_code=?6 WHERE account=?1 AND request_id=?2 AND message_id=?3 AND state='in_flight' AND connection_generation=?7",params![work.account,work.request_id,work.message_id,state,retry,error,work.connection_generation])?;
+        if changed != 1 {
+            return Err(err(
+                "stale_google_work",
+                "Mutation attempt is no longer current",
+            ));
+        }
+        tx.commit()?;
+        Ok(())
+    }
+    pub fn google_mail_mutation_status(&self, account: &str) -> Result<Value> {
+        let mut statement = self.db.prepare(
+            "SELECT state,count(*) FROM google_mail_mutations WHERE account=?1 GROUP BY state",
+        )?;
+        let counts = statement
+            .query_map([account], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, u64>(1)?))
+            })?
+            .collect::<std::result::Result<std::collections::BTreeMap<_, _>, _>>()?;
+        let mut statement=self.db.prepare("SELECT request_id,message_id,error_code FROM google_mail_mutations WHERE account=?1 AND state='failed' ORDER BY rowid DESC LIMIT 20")?;
+        let failures=statement.query_map([account],|r|Ok(json!({"request_id":r.get::<_,String>(0)?,"message_id":r.get::<_,String>(1)?,"error_code":r.get::<_,Option<String>>(2)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;
+        let mut statement=self.db.prepare("SELECT request_id,message_id,state,error_code,retry_at_ms FROM google_mail_mutations WHERE account=?1 AND state IN ('pending','in_flight','reconcile') ORDER BY rowid LIMIT 20")?;
+        let pending=statement.query_map([account],|r|Ok(json!({"request_id":r.get::<_,String>(0)?,"message_id":r.get::<_,String>(1)?,"state":r.get::<_,String>(2)?,"error_code":r.get::<_,Option<String>>(3)?,"retry_at_ms":r.get::<_,i64>(4)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;
+        Ok(json!({"counts":counts,"failures":failures,"pending":pending}))
+    }
+    /// Exact delivery state is derived from every row in this immutable request,
+    /// never from the separately bounded account pending/failure previews.
+    pub fn google_mail_mutation_request_status(
+        &self,
+        account: &str,
+        request_id: &str,
+    ) -> Result<Value> {
+        crate::id(account)?;
+        crate::id(request_id)?;
+        let mut statement = self.db.prepare(
+            "SELECT state,count(*) FROM google_mail_mutations WHERE account=?1 AND request_id=?2 GROUP BY state",
+        )?;
+        let counts = statement
+            .query_map(params![account, request_id], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?))
+            })?
+            .collect::<std::result::Result<std::collections::BTreeMap<_, _>, _>>()?;
+        let total: u64 = counts.values().sum();
+        if total == 0 {
+            return Err(err(
+                "not_found",
+                "No mail delivery journal exists for this request",
+            ));
+        }
+        let count = |state: &str| counts.get(state).copied().unwrap_or(0);
+        let state = if count("confirmed") == total {
+            "confirmed"
+        } else if count("in_flight") + count("reconcile") > 0 {
+            "unknown"
+        } else if count("failed") > 0 {
+            "failed"
+        } else if count("pending") > 0 {
+            "pending"
+        } else {
+            "superseded"
+        };
+        Ok(json!({"request_id":request_id,"state":state,"counts":counts,"total":total}))
+    }
+    fn mutation_connection(&self, account: &str, generation: i64) -> Result<()> {
+        self.require_active_account(account)?;
+        if self.profile_kind()? != ProfileKind::Live {
+            return Err(err(
+                "profile_kind_mismatch",
+                "Live delivery requires a live profile",
+            ));
+        }
+        if !self.google_account_bindings()?.iter().any(|binding| {
+            binding.account == account
+                && binding.connection_generation == generation
+                && binding.state == ConnectionState::Connected
+        }) {
+            return Err(err("stale_google_work", "Google connection changed"));
+        }
+        validate_authoring(&self.db, account)
+    }
+}
+fn integer_time(value: u64) -> i64 {
+    value.min(i64::MAX as u64) as i64
+}
+fn verify_work(db: &Connection, work: &MailMutationWork) -> Result<()> {
+    let current:Option<(String,i64,String)>=db.query_row("SELECT state,attempt,remote_id FROM google_mail_mutations WHERE account=?1 AND request_id=?2 AND message_id=?3",params![work.account,work.request_id,work.message_id],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional()?;
+    if !current.is_some_and(|(state, attempt, remote)| {
+        matches!(state.as_str(), "pending" | "in_flight" | "reconcile")
+            && attempt == work.attempt
+            && remote == work.remote_id
+    }) {
+        return Err(err(
+            "stale_google_work",
+            "Mutation work is no longer current",
+        ));
+    }
+    Ok(())
+}
+fn finish(
+    db: &Connection,
+    work: &MailMutationWork,
+    state: &str,
+    error: Option<&str>,
+) -> Result<()> {
+    db.execute("UPDATE google_mail_mutations SET state=?4,error_code=?5,retry_at_ms=0 WHERE account=?1 AND request_id=?2 AND message_id=?3",params![work.account,work.request_id,work.message_id,state,error])?;
+    Ok(())
+}
+fn validate_observation(work: &MailMutationWork, observation: &MailLabelObservation) -> Result<()> {
+    if observation.remote_id != work.remote_id
+        || observation.remote_thread_id.is_empty()
+        || observation.remote_thread_id.len() > 256
+        || observation.history_id.is_empty()
+        || observation.history_id.len() > 40
+        || !observation.history_id.bytes().all(|b| b.is_ascii_digit())
+        || observation.labels.len() > 1000
+        || observation
+            .labels
+            .iter()
+            .any(|s| s.is_empty() || s.len() > 256 || s.chars().any(char::is_control))
+    {
+        return Err(err(
+            "invalid_google_response",
+            "Invalid Google message state",
+        ));
+    }
+    Ok(())
+}
+/// Shared by full-source publication and lightweight mutation observations.
+pub(crate) fn project_labels(
+    db: &Connection,
+    account: &str,
+    message: &str,
+    labels: &BTreeSet<String>,
+) -> Result<()> {
+    let pending = |field: &str, key: &str| -> Result<Option<bool>> {
+        Ok(db.query_row("SELECT value FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field=?3 AND category_id=?4",params![account,message,field,key],|r|r.get(0)).optional()?)
+    };
+    let unread = pending("read", "")?
+        .map(|v| !v)
+        .unwrap_or(labels.contains("UNREAD"));
+    let starred = pending("starred", "")?.unwrap_or(labels.contains("STARRED"));
+    let inbox = pending("label", "INBOX")?.unwrap_or(labels.contains("INBOX"));
+    let trash = pending("label", "TRASH")?.unwrap_or(labels.contains("TRASH"));
+    db.execute("UPDATE messages SET unread=?3,starred=?4,inbox=?5,sent=?6,trashed=?7 WHERE account=?1 AND id=?2 AND (unread!=?3 OR starred!=?4 OR inbox!=?5 OR sent!=?6 OR trashed!=?7)",params![account,message,unread,starred,inbox,labels.contains("SENT"),trash])?;
+    let mut statement = db.prepare(
+        "SELECT category_id,provider_label_id FROM google_category_labels WHERE account=?1",
+    )?;
+    let mappings = statement
+        .query_map([account], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    for (category, label) in mappings {
+        if crate::google_store::is_system_label(&label) {
+            return Err(err(
+                "invalid_google_response",
+                "Category targets a system label",
+            ));
+        }
+        let assisted:Option<bool>=db.query_row("SELECT value FROM assist_category_intents WHERE account=?1 AND message_id=?2 AND category_id=?3",params![account,message,category],|r|r.get(0)).optional()?;
+        if pending("category", &category)?
+            .or(assisted)
+            .unwrap_or(labels.contains(&label))
+        {
+            db.execute("INSERT OR IGNORE INTO message_categories(account,message_id,category_id) VALUES(?1,?2,?3)",params![account,message,category])?;
+        } else {
+            db.execute("DELETE FROM message_categories WHERE account=?1 AND message_id=?2 AND category_id=?3",params![account,message,category])?;
+        }
+    }
+    Ok(())
+}
+#[cfg(test)]
+#[path = "google_live_mutations/tests.rs"]
+mod tests;

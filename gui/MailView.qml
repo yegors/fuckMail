@@ -18,10 +18,13 @@ Item {
     property string pendingReveal: ""
     property string replyRevealIdentity: ""
     readonly property string composerIdentity: backend.account + (backend.activeDraftId.length ? "/draft/" + backend.activeDraftId : "/" + backend.selectedId)
-    readonly property bool newMessageAvailable: backend.connected
-    readonly property bool popupOpen: filterPopup.opened || categoryPopup.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
+    readonly property bool newMessageAvailable: backend.connected && backend.account.length > 0 && !backend.accountArchived && !backend.unsavedAccountBuffer
+    readonly property bool popupOpen: folderPopup.opened || filterPopup.opened || categoryPopup.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
+    readonly property bool canMutate: { const accounts = backend.accounts; return backend.connected && backend.accountCapability(backend.account,"mail_write") }
     readonly property bool singleKeyActionsAllowed: mail.visible && !popupOpen && mail.ApplicationWindow.window && mail.ApplicationWindow.window.singleKeysAllowed
     readonly property bool draftsMode: backend.folder === "drafts"
+    readonly property bool collapsedDraftVisible: !replyOpen && backend.draftStatus !== "Draft discarded"
+        && (backend.activeDraftId.length > 0 || (backend.draft.body || "").length > 0)
     readonly property bool anyUnread: members.some(function(m) { return m.unread })
     readonly property bool anyStarred: members.some(function(m) { return m.starred })
     readonly property int rowHeight: Math.ceil((backend.preferences.density === "compact" ? Theme.compactRowHeight : Theme.comfortableRowHeight) * Theme.fontScale)
@@ -47,7 +50,7 @@ Item {
         if (f.before) labels.push("Before " + f.before + " UTC")
         return labels.join(" · ")
     }
-    onVisibleChanged: if (!visible) { filterPopup.close(); categoryPopup.close(); morePopup.close(); senderCard.close(); railCategories.close() }
+    onVisibleChanged: if (!visible) { folderPopup.close(); filterPopup.close(); categoryPopup.close(); morePopup.close(); senderCard.close(); railCategories.close() }
     function categoryCount(id) { return members.filter(function(m) { return (m.categories || []).indexOf(id) >= 0 }).length }
     function groupOf(row) { return row ? row.display_group || row.group || "done" : "done" }
     function groupTitle(group) { return {review:"To review",held:"Delayed",done:"Done"}[group] || "Conversations" }
@@ -61,11 +64,10 @@ Item {
         const groups = ["review", "held", "done"]
         return groups.filter(function(group, index) { return index > previous && index < next && mail.groupCollapsed(group) && mail.groupCount(group) > 0 })
     }
-    function collapsedBefore(index) {
-        const rows = backend.conversations, groups = ["review", "held", "done"]
-        if (index < 0 || index >= rows.length || !rows[index]) return []
-        if (index > 0 && groupOf(rows[index - 1]) === groupOf(rows[index])) return []
-        return collapsedBetween(index > 0 ? groups.indexOf(groupOf(rows[index - 1])) : -1, groups.indexOf(groupOf(rows[index])))
+    function collapsedBefore(index, previous, current) {
+        const groups = ["review", "held", "done"]
+        if (index < 0 || (index > 0 && previous === current)) return []
+        return collapsedBetween(index > 0 ? groups.indexOf(previous) : -1, groups.indexOf(current))
     }
     readonly property var trailingCollapsed: collapsedBetween(backend.conversations.length ? ["review", "held", "done"].indexOf(groupOf(backend.conversations[backend.conversations.length - 1])) : -1, 3)
     component ReaderAction: FmButton {
@@ -85,7 +87,7 @@ Item {
         contentItem: RowLayout {
             spacing: 12
             FmIcon { name: heading.group === "review" ? "review" : heading.group === "held" ? "clock" : "checkCircle"; size: 12; color: Theme.subtle }
-            Text { text: backend.folder === "sent" ? "Sent" : mail.groupTitle(heading.group); color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { text: backend.folder === "sent" ? "Sent" : backend.folder === "trash" ? "Trash" : backend.folder === "all" ? "All mail" : mail.groupTitle(heading.group); color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
             Text { visible: backend.folder === "inbox"; text: mail.groupCount(heading.group); color: Theme.subtle; font.pixelSize: Theme.fontSize(12) }
             FmIcon { visible: backend.folder === "inbox"; name: "down"; size: 10; color: Theme.subtle; rotation: heading.collapsed ? -90 : 0; Behavior on rotation { NumberAnimation { duration: 180 } } }
@@ -203,6 +205,7 @@ Item {
         replyOpen = value; backend.remember("replyOpen",value)
     }
     function openReply() {
+        if (backend.accountArchived || backend.unsavedAccountBuffer) return
         if (backend.draft.mode && backend.draft.mode !== "reply") { backend.beginDraft("reply"); return }
         resumeDraft()
     }
@@ -214,6 +217,7 @@ Item {
     }
     Timer {
         id: replyReveal
+        objectName: "replyReveal"
         interval: 16; repeat: true
         property int pass: 0
         property int stable: 0
@@ -317,11 +321,18 @@ Item {
                 anchors.fill: parent; spacing: 0
                 ColumnLayout {
                     Layout.fillWidth: true; Layout.leftMargin: 24; Layout.rightMargin: 24; Layout.topMargin: 24; spacing: 16
+                    Text {
+                        objectName: "accountArchiveNotice"; visible: backend.accountArchived || backend.unsavedAccountBuffer
+                        Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                        text: (backend.currentAccount.email || "") + (backend.unsavedAccountBuffer ? " · unsaved edits retained in this editor" : " · read-only account archive")
+                        color: backend.unsavedAccountBuffer ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12)
+                    }
                     RowLayout {
                         Layout.fillWidth: true; spacing: 14
                         FmButton { objectName: "inboxScopeButton"; text: "Inbox"; selected: backend.folder==="inbox"; font.pixelSize: Theme.fontSize(selected ? 22 : 15); font.weight: Font.Medium; implicitWidth: contentItem.implicitWidth; foreground: selected ? Theme.text : Theme.inkAlpha(.32); leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft; background: Item {} Behavior on font.pixelSize { NumberAnimation { duration: 150 } } onClicked: backend.folder="inbox" }
                         FmButton { objectName: "sentScopeButton"; text: "Sent"; selected: backend.folder==="sent"; font.pixelSize: Theme.fontSize(selected ? 22 : 15); font.weight: Font.Medium; implicitWidth: contentItem.implicitWidth; foreground: selected ? Theme.text : Theme.inkAlpha(.32); leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft; background: Item {} Behavior on font.pixelSize { NumberAnimation { duration: 150 } } onClicked: backend.folder="sent" }
                         FmButton { objectName: "draftsScopeButton"; text: "Drafts"; selected: backend.folder==="drafts"; font.pixelSize: Theme.fontSize(selected ? 22 : 15); font.weight: Font.Medium; implicitWidth: contentItem.implicitWidth; foreground: selected ? Theme.text : Theme.inkAlpha(.32); leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft; background: Item {} Behavior on font.pixelSize { NumberAnimation { duration: 150 } } onClicked: backend.folder="drafts" }
+                        FmButton { id: folderButton; objectName: "moreMailFolders"; visible: !backend.syntheticProfile; text: backend.folder === "trash" ? "Trash" : backend.folder === "all" ? "All mail" : ""; iconName: "down"; implicitHeight: 28; leftPadding: 0; rightPadding: 0; tip: "More mail folders"; onClicked: folderPopup.open() }
                         Item { Layout.fillWidth: true }
                         RowLayout {
                             spacing: 6
@@ -337,6 +348,23 @@ Item {
                         }
                     }
                     RowLayout {
+                    visible: mail.draftsMode && !backend.syntheticProfile
+                    Layout.fillWidth: true; spacing: 8
+                    Text {
+                        objectName: "googleDraftInventoryStatus"
+                        Layout.fillWidth: true
+                        text: backend.googleDraftInventory.status || "Cached Google drafts"
+                        textFormat: Text.PlainText; wrapMode: Text.Wrap
+                        color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12)
+                    }
+                    FmButton {
+                        objectName: "refreshGoogleDrafts"; text: "Refresh"; outlined: true
+                        enabled: backend.googleDraftInventory.can_refresh || false
+                        tip: "Check Google drafts using this account's active sync session"
+                        onClicked: backend.refreshGoogleDraftInventory()
+                    }
+                }
+                RowLayout {
                     visible: !mail.draftsMode; Layout.fillWidth: true; spacing: 6
                     Flickable {
                         visible: !mail.draftsMode
@@ -382,16 +410,32 @@ Item {
                 ListView {
                     id: list; objectName: "conversationList"
                     Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 6
-                    clip: true; model: backend.conversations; boundsBehavior: Flickable.StopAtBounds
+                    clip: true; model: backend.conversationModel; boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: ScrollBar {}
+                    // Consume each structural batch before the next can reuse
+                    // delegate indexes. Retaining an old layout across several
+                    // remove/move batches leaves retired rows over replacements.
+                    Connections {
+                        target: backend.conversationModel
+                        function onRowsRemoved() { list.forceLayout() }
+                        function onRowsMoved() { list.forceLayout() }
+                        function onRowsInserted() { list.forceLayout() }
+                    }
                     onContentHeightChanged: Qt.callLater(mail.restoreListPosition)
                     onMovementEnded: if (!mail.restoring) backend.remember("listY",contentY)
                     delegate: Item {
                         id: groupedRow
-                        required property var modelData
+                        required property var rowData
+                        required property string previousGroup
+                        readonly property var modelData: rowData
                         required property int index
+                        // Qt can retain a removed delegate with index -1 while
+                        // replacements are laid out. Retired rows must neither
+                        // paint over the new page nor remain clickable.
+                        visible: index >= 0
+                        enabled: index >= 0
                         readonly property string group: mail.groupOf(modelData)
-                        readonly property bool firstInGroup: index===0 || mail.groupOf(backend.conversations[index-1])!==group
+                        readonly property bool firstInGroup: index===0 || previousGroup!==group
                         readonly property bool doneRow: group==="done" && !mail.draftsMode
                         readonly property bool collapsed: backend.folder === "inbox" && mail.groupCollapsed(group)
                         readonly property int headingHeight: firstInGroup && !mail.draftsMode ? (index === 0 ? 34 : 44) : 0
@@ -399,7 +443,7 @@ Item {
                         Column {
                             id: collapsedHeaders; width: parent.width
                             Repeater {
-                                model: mail.collapsedBefore(groupedRow.index)
+                                model: mail.collapsedBefore(groupedRow.index, groupedRow.previousGroup, groupedRow.group)
                                 GroupHeader { required property string modelData; group: modelData; width: collapsedHeaders.width }
                             }
                         }
@@ -452,7 +496,7 @@ Item {
                         Item {
                             width: list.width; height: backend.hasMore || (backend.folder==="sent" && backend.captures.length) ? 48 : 0
                             Row { anchors.centerIn: parent; spacing: 12
-                                FmButton { visible: backend.hasMore; text: backend.loading ? "Loading…" : "Load more"; enabled: !backend.loading; onClicked: backend.loadMore() }
+                                FmButton { objectName: "loadMoreConversations"; visible: backend.hasMore; text: backend.loading ? "Loading…" : "Load more"; enabled: !backend.loading; onClicked: backend.loadMore() }
                                 FmButton { objectName: "localCapturesButton"; visible: backend.folder==="sent" && backend.captures.length>0; text: "Local captures"; font.pixelSize: Theme.fontSize(12); onClicked: capturePopup.open() }
                             }
                         }
@@ -460,7 +504,7 @@ Item {
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter; y: 48; width: parent.width-48
                         visible: list.count===0 && mail.trailingCollapsed.length===0
-                        text: !backend.connected ? "Connecting to your local mail…" : backend.loading ? "Searching…" : mail.filtering ? "No conversations match these filters." : "No conversations in this view."
+                        text: !backend.connected ? "Connecting to your local mail…" : !backend.accounts.length ? "No accounts connected." : backend.loading ? "Searching…" : mail.filtering ? "No conversations match these filters." : "No conversations in this view."
                         color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); horizontalAlignment: Text.AlignHCenter; wrapMode: Text.Wrap
                     }
                 }
@@ -474,7 +518,7 @@ Item {
             Rectangle {
                 width: 28; height: parent.height
                 gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: Theme.shadow } GradientStop { position: 1; color: "transparent" } }
-                opacity: .3
+                opacity: .18
             }
             ColumnLayout {
                 anchors.fill: parent; spacing: 0
@@ -497,14 +541,22 @@ Item {
                             x: Math.max(0, readerActions.width - width)
                             y: readerActions.wrapped ? readerCategoryRow.height + 12 : 0
                             height: 32; spacing: 4
-                            ReaderAction { objectName: "replyButton"; text: "Reply"; iconName: "reply"; font.pixelSize: Theme.fontSize(13); prominent: true; enabled: !backend.draftBusy; onClicked: mail.openReply() }
-                            ReaderAction { objectName: "replyAllButton"; visible: backend.draft.reply_all_available === true; text: "Reply all"; iconName: "replyAll"; font.pixelSize: Theme.fontSize(13); outlined: true; enabled: !backend.draftBusy; onClicked: backend.beginDraft("reply_all") }
-                            ReaderAction { objectName: "forwardButton"; text: "Forward"; iconName: "forward"; font.pixelSize: Theme.fontSize(13); outlined: true; enabled: !backend.draftBusy; onClicked: backend.beginDraft("forward") }
+                            ReaderAction { objectName: "replyButton"; text: "Reply"; iconName: "reply"; font.pixelSize: Theme.fontSize(13); prominent: true; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: mail.openReply() }
+                            ReaderAction { objectName: "replyAllButton"; visible: backend.draft.reply_all_available === true; text: "Reply all"; iconName: "replyAll"; font.pixelSize: Theme.fontSize(13); outlined: true; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: backend.beginDraft("reply_all") }
+                            ReaderAction { objectName: "forwardButton"; text: "Forward"; iconName: "forward"; font.pixelSize: Theme.fontSize(13); outlined: true; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: backend.beginDraft("forward") }
                             Item { width: 13; height: 32; Rectangle { x: Theme.snapX(parent, (parent.width-1)/2); y: Theme.snapY(parent, (parent.height-20)/2); width: Theme.ruleWidth; height: 20; color: Theme.controlBorder } }
-                            ReaderAction { objectName: "delayConversationButton"; visible: !mail.anyStarred; text: "Delay"; iconName: "clock"; outlined: true; font.pixelSize: Theme.fontSize(13); enabled: !backend.mutationInFlight; tip: "Hold this conversation for later, without a timer · D"; onClicked: backend.setStarred(true) }
-                            ReaderAction { objectName: "doneConversationButton"; visible: mail.anyStarred; text: "Done"; iconName: "check"; outlined: true; font.pixelSize: Theme.fontSize(13); enabled: !backend.mutationInFlight; tip: "Clear unread and stars on the loaded members · E"; onClicked: backend.doneConversation() }
-                            FmButton { id: moreButton; objectName: "conversationActionsButton"; visible: backend.folder==="sent"; iconName: "more"; implicitWidth: 30; outlined: true; tip: "More conversation actions"; onClicked: morePopup.open() }
+                            ReaderAction { objectName: "delayConversationButton"; visible: !mail.anyStarred; text: "Delay"; iconName: "clock"; outlined: true; font.pixelSize: Theme.fontSize(13); enabled: !backend.mutationInFlight && mail.canMutate; tip: "Hold this conversation for later, without a timer · D"; onClicked: backend.setStarred(true) }
+                            ReaderAction { objectName: "doneConversationButton"; visible: mail.anyStarred; text: "Done"; iconName: "check"; outlined: true; font.pixelSize: Theme.fontSize(13); enabled: !backend.mutationInFlight && mail.canMutate; tip: "Clear unread and stars on the loaded members · E"; onClicked: backend.doneConversation() }
+                            FmButton { id: moreButton; objectName: "conversationActionsButton"; visible: backend.folder==="sent" || !backend.syntheticProfile; iconName: "more"; implicitWidth: 30; outlined: true; tip: "More conversation actions"; onClicked: morePopup.open() }
                         }
+                    }
+                    Text {
+                        objectName: "mailDeliveryStatus"; visible: !backend.syntheticProfile && (!mail.canMutate || text.length > 0)
+                        text: backend.accountArchived ? "Read-only account archive" : !mail.canMutate ? "Cached copy · reconnect with Mail access to mark reviewed or change labels"
+                            : ({pending:"Saved locally · waiting for Google",unknown:"Saved locally · checking Google's outcome",confirmed:"Synced to Google",failed:"Google did not accept this change · check account access",superseded:"Replaced by a later change"})[backend.mailDelivery.state] || ""
+                        color: backend.mailDelivery.state === "failed" ? Theme.error : Theme.subtle
+                        font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) }
+                        Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
                     }
                     Text { text: mail.thread.subject||""; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(28); font.weight: Font.Medium; font.letterSpacing: -0.56; wrapMode: Text.Wrap; Layout.fillWidth: true; Layout.topMargin: 10; textFormat: Text.PlainText }
                     RowLayout {
@@ -541,7 +593,7 @@ Item {
                     onMovementEnded: if (!mail.restoring) backend.remember("readerY",contentY)
                     ColumnLayout {
                         id: readerColumn
-                        x: readerPane.margin; y: 8; width: reader.width-readerPane.margin*2; spacing: 0; visible: mail.members.length>0 || mail.replyOpen
+                        x: readerPane.margin; y: 8; width: reader.width-readerPane.margin*2; spacing: 0; visible: mail.members.length>0 || mail.replyOpen || mail.collapsedDraftVisible
                         RowLayout {
                             Layout.fillWidth: true; visible: mail.members.length>1; spacing: 12; Layout.topMargin: 6; Layout.bottomMargin: 5
                             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
@@ -550,10 +602,11 @@ Item {
                         }
                         Repeater {
                             id: memberRepeater
-                            model: mail.members
+                            model: backend.messageModel
                             delegate: ColumnLayout {
                                 id: member
-                                required property var modelData
+                                required property var rowData
+                                property var modelData: rowData
                                 required property int index
                                 readonly property bool isExpanded: mail.memberIsExpanded(modelData.id,index)
                                 readonly property bool isMatch: mail.matchingIds.indexOf(modelData.id)>=0
@@ -611,6 +664,20 @@ Item {
                                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line; Layout.topMargin: 10 }
                             }
                         }
+                        Item {
+                            objectName: "minimisedDraft"
+                            visible: mail.collapsedDraftVisible
+                            Layout.fillWidth: true; Layout.topMargin: visible ? 36 : 0
+                            implicitHeight: 32
+                            Rectangle { width: 2; height: parent.height; color: Theme.accentAlpha(.35) }
+                            RowLayout {
+                                anchors.fill: parent; anchors.leftMargin: 20; spacing: 10
+                                FmIcon { name: "edit"; size: 13; color: Theme.accent }
+                                FmButton { objectName: "resumeDraftButton"; text: backend.draft.subject || "New message"; foreground: Theme.text; font.pixelSize: Theme.fontSize(13); Layout.fillWidth: true; leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft; tip: "Open the draft"; onClicked: mail.resumeDraft() }
+                                Text { text: (backend.draft.to_recipients || []).length ? "to " + (backend.draft.to_recipients[0].name || backend.draft.to_recipients[0].email) : "no recipients yet"; color: Theme.muted; font.pixelSize: Theme.fontSize(12); Layout.maximumWidth: 135; elide: Text.ElideRight }
+                                FmButton { objectName: "minimisedDraftDiscard"; visible: !reply.readOnly; iconName: "close"; iconSize: 11; implicitWidth: 28; implicitHeight: 28; leftPadding: 0; rightPadding: 0; tip: "Discard draft"; enabled: !backend.draftLocked && !backend.attachmentImport.pending; onClicked: reply.confirmDiscard() }
+                            }
+                        }
                         ReplyComposer {
                             id: reply
                             objectName: "replyPanel"
@@ -620,26 +687,12 @@ Item {
                         }
                     }
                     Column {
-                        visible: mail.members.length===0 && !mail.replyOpen; anchors.horizontalCenter: parent.horizontalCenter; y: parent.height*0.2; width: parent.width-readerPane.margin*2; spacing: 14
+                        visible: mail.members.length===0 && !mail.replyOpen && !mail.collapsedDraftVisible; anchors.horizontalCenter: parent.horizontalCenter; y: parent.height*0.2; width: parent.width-readerPane.margin*2; spacing: 14
                         Text { text: backend.loading ? "Loading conversation…" : "Select a conversation"; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(28); font.weight: Font.Medium; width: parent.width; wrapMode: Text.Wrap }
                         Text { text: "Mail stays in "+(backend.currentAccount.name||"the selected account")+". Your calendar remains in view below."; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(14); width: parent.width; wrapMode: Text.Wrap; lineHeight: 1.5 }
                     }
                 }
             }
-        }
-    }
-    Rectangle {
-        objectName: "minimisedDraft"
-        visible: !mail.replyOpen && backend.draftStatus!=="Draft discarded" && (backend.activeDraftId.length>0 || (backend.draft.body||"").length>0)
-        anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.rightMargin: 24; anchors.bottomMargin: 16
-        width: Math.min(420, readerPane.width - 48); height: Math.max(40, draftBar.implicitHeight + 8); z: 4
-        color: Theme.surface; radius: 6; border.color: Theme.controlBorder
-        RowLayout {
-            id: draftBar; anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 6; spacing: 10
-            FmIcon { name: "edit"; size: 13; color: Theme.accent }
-            FmButton { objectName: "resumeDraftButton"; text: backend.draft.subject || "New message"; foreground: Theme.text; font.pixelSize: Theme.fontSize(13); Layout.fillWidth: true; leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft; tip: "Open the draft"; onClicked: mail.resumeDraft() }
-            Text { text: (backend.draft.to_recipients || []).length ? "to " + (backend.draft.to_recipients[0].name || backend.draft.to_recipients[0].email) : "no recipients yet"; color: Theme.muted; font.pixelSize: Theme.fontSize(12); Layout.maximumWidth: 135; elide: Text.ElideRight }
-            FmButton { objectName: "minimisedDraftDiscard"; iconName: "close"; iconSize: 11; implicitWidth: 28; implicitHeight: 28; leftPadding: 0; rightPadding: 0; tip: "Discard draft"; onClicked: reply.confirmDiscard() }
         }
     }
     SenderCard { id: senderCard; formatAge: mail.relativeTime; onConversationOpened: function(id) { backend.openConversation(id) } }
@@ -678,10 +731,21 @@ Item {
                     Layout.fillWidth: true
                     Text { Layout.fillWidth: true; text: modelData.name; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); textFormat: Text.PlainText }
                     Text { text: memberCount===0 ? "None" : memberCount===mail.members.length ? "All" : memberCount+"/"+mail.members.length; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11) }
-                    FmButton { objectName: "categoryAdd_"+modelData.id; text: memberCount===mail.members.length ? "Clear" : "Apply"; enabled: !backend.mutationInFlight; outlined: true; font.pixelSize: Theme.fontSize(11); onClicked: backend.setCategoryMembership(modelData.id,memberCount!==mail.members.length) }
-                    FmButton { visible: memberCount>0 && memberCount<mail.members.length; text: "Clear"; font.pixelSize: Theme.fontSize(11); enabled: !backend.mutationInFlight; onClicked: backend.setCategoryMembership(modelData.id,false) }
+                    FmButton { objectName: "categoryAdd_"+modelData.id; text: memberCount===mail.members.length ? "Clear" : "Apply"; enabled: !backend.mutationInFlight && mail.canMutate; outlined: true; font.pixelSize: Theme.fontSize(11); onClicked: backend.setCategoryMembership(modelData.id,memberCount!==mail.members.length) }
+                    FmButton { visible: memberCount>0 && memberCount<mail.members.length; text: "Clear"; font.pixelSize: Theme.fontSize(11); enabled: !backend.mutationInFlight && mail.canMutate; onClicked: backend.setCategoryMembership(modelData.id,false) }
                 }
             }
+        }
+    }
+    Popup {
+        id: folderPopup; parent: Overlay.overlay; width: 160; padding: 6
+        onAboutToShow: { const p=folderButton.mapToItem(parent,0,folderButton.height+6); x=Math.max(12,p.x); y=p.y }
+        focus: true; closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 6 }
+        contentItem: ColumnLayout {
+            spacing: 2
+            FmButton { objectName: "allMailScopeButton"; text: "All mail"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { backend.folder="all"; folderPopup.close() } }
+            FmButton { objectName: "trashScopeButton"; text: "Trash"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { backend.folder="trash"; folderPopup.close() } }
         }
     }
     Popup {
@@ -691,11 +755,14 @@ Item {
         background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 6 }
         contentItem: ColumnLayout {
             spacing: 2
-            FmButton { text: "Mark unread"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: !backend.mutationInFlight; onClicked: { backend.setRead(false); morePopup.close() } }
-            FmButton { text: "Mark reviewed"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: !backend.mutationInFlight; onClicked: { backend.setRead(true); morePopup.close() } }
-            FmButton { objectName: "unholdConversationButton"; visible: mail.anyStarred; text: "Remove Delay"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: !backend.mutationInFlight; onClicked: { backend.setStarred(false); morePopup.close() } }
-            FmButton { text: "Done"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: !backend.mutationInFlight; onClicked: { backend.doneConversation(); morePopup.close() } }
-            FmButton { text: "Local captures"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { morePopup.close(); capturePopup.open() } }
+            FmButton { text: "Mark unread"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: !backend.mutationInFlight && mail.canMutate; onClicked: { backend.setRead(false); morePopup.close() } }
+            FmButton { text: "Mark reviewed"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: !backend.mutationInFlight && mail.canMutate; onClicked: { backend.setRead(true); morePopup.close() } }
+            FmButton { objectName: "unholdConversationButton"; visible: mail.anyStarred; text: "Remove Delay"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: !backend.mutationInFlight && mail.canMutate; onClicked: { backend.setStarred(false); morePopup.close() } }
+            FmButton { text: "Done"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: !backend.mutationInFlight && mail.canMutate; onClicked: { backend.doneConversation(); morePopup.close() } }
+            FmButton { objectName: "archiveConversation"; visible: !backend.syntheticProfile && backend.folder !== "trash"; text: "Archive"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: !backend.mutationInFlight && mail.canMutate; onClicked: { backend.fileConversation("archive"); morePopup.close() } }
+            FmButton { objectName: "trashConversation"; visible: !backend.syntheticProfile && backend.folder !== "trash"; text: "Move to Trash"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: !backend.mutationInFlight && mail.canMutate; onClicked: { backend.fileConversation("trash"); morePopup.close() } }
+            FmButton { objectName: "restoreConversation"; visible: !backend.syntheticProfile && backend.folder === "trash"; text: "Restore from Trash"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: !backend.mutationInFlight && mail.canMutate; onClicked: { backend.fileConversation("restore"); morePopup.close() } }
+            FmButton { visible: backend.syntheticProfile; text: "Local captures"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { morePopup.close(); capturePopup.open() } }
         }
     }
     Popup {
@@ -735,10 +802,10 @@ Item {
     Shortcut { sequence: "R"; enabled: mail.singleKeyActionsAllowed && mail.members.length>0; onActivated: mail.openReply() }
     Shortcut { sequence: "A"; enabled: mail.singleKeyActionsAllowed && mail.members.length>0 && backend.draft.reply_all_available === true; onActivated: backend.beginDraft("reply_all") }
     Shortcut { sequence: "F"; enabled: mail.singleKeyActionsAllowed && mail.members.length>0; onActivated: backend.beginDraft("forward") }
-    Shortcut { sequence: "E"; enabled: mail.singleKeyActionsAllowed && mail.members.length>0; onActivated: backend.doneConversation() }
-    Shortcut { sequence: "D"; enabled: mail.singleKeyActionsAllowed && mail.members.length>0; onActivated: backend.setStarred(!mail.anyStarred) }
+    Shortcut { sequence: "E"; enabled: mail.singleKeyActionsAllowed && mail.members.length>0 && mail.canMutate; onActivated: backend.doneConversation() }
+    Shortcut { sequence: "D"; enabled: mail.singleKeyActionsAllowed && mail.members.length>0 && mail.canMutate; onActivated: backend.setStarred(!mail.anyStarred) }
     Shortcut { sequence: "S"; enabled: mail.singleKeyActionsAllowed; onActivated: backend.folder=backend.folder==="inbox" ? "sent" : backend.folder==="sent" ? "drafts" : "inbox" }
     Shortcut { sequence: "J"; enabled: mail.singleKeyActionsAllowed; onActivated: mail.moveSelection(1) }
     Shortcut { sequence: "K"; enabled: mail.singleKeyActionsAllowed; onActivated: mail.moveSelection(-1) }
-    Shortcut { sequence: "Escape"; enabled: mail.visible && mail.replyOpen && !mail.popupOpen; onActivated: { backend.saveDraft(); mail.setReplyOpen(false) } }
+    Shortcut { sequence: "Escape"; enabled: mail.visible && mail.replyOpen && !mail.popupOpen; onActivated: { if (backend.accountNavigationAllowed()) { backend.saveDraft(); mail.setReplyOpen(false) } } }
 }

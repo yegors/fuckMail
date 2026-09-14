@@ -19,7 +19,8 @@ ComboBox {
         required property var modelData
         width: control.width
         implicitHeight: 34
-        contentItem: Text { text: control.textRole ? modelData[control.textRole] : modelData; color: Theme.text; font: control.font; verticalAlignment: Text.AlignVCenter }
+        text: control.textRole ? modelData[control.textRole] : modelData
+        contentItem: Text { text: option.text; color: Theme.text; font: control.font; verticalAlignment: Text.AlignVCenter }
         background: Rectangle { color: option.highlighted ? Theme.selected : "transparent" }
         highlighted: control.highlightedIndex === index
     }

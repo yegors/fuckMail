@@ -1,5 +1,7 @@
 # Visual design and interaction brief
 
+**D020 Phase 2 planning:** preserve the implemented Update 2 design and P1-10 responsiveness while connecting actual Google capabilities. The [Phase 2 plan](plans/phase-2.md) owns live-account admission, provider progress, real human send/calendar writes and running-app reminders. Existing Settings and composer surfaces gain only verified capabilities; no prototype callback or planning text is evidence of live behavior. The source exports remain reference assets.
+
 **D018 Update 2, 2026-09-12:** the second same-day [Flight Progress v2 export](research/flight-progress-v2.md) is the active Phase 1 design reference. Implement it closely, replacing invented elements. It adds General settings, three themes, text/startup choices, Mail timeline placement and mail-list/sender refinements under P1-09. D016/D017's explicitly confirmed New message, Reply all, Forward and account-scoped Drafts remain durable local workflows alongside Reply. D014's read-on-open, Done clearing unread and stars, untimed Delay, combined permitted calendar details and browsable Mail-only timeline remain. Live Google, models, legacy protocols and received HTML rendering are later work.
 
 Updated 2026-09-12. Working brief for the founder's collaboration with Claude Design. Update 2 supersedes the earlier same-day export, September 11 HTML and earlier trio's visual direction; preserve those references as history. Confirmed choices, implementation details and sample prototype behavior remain distinct. No full-product design or stack freeze is implied.

@@ -37,7 +37,7 @@ Popup {
     component Label: Text { color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(11) } Layout.fillWidth: true }
     component Chip: FmButton {
         id: chip
-        implicitHeight: 28; implicitWidth: Math.min(popup.availableWidth, contentItem.implicitWidth + 20)
+        implicitHeight: 28; implicitWidth: Math.min(popup.availableWidth, contentItem.implicitWidth + leftPadding + rightPadding)
         font.pixelSize: Theme.fontSize(12)
         background: Rectangle { radius: 14; color: chip.selected ? Theme.selected : "transparent"; border.color: chip.activeFocus ? Theme.focusBorder : chip.selected ? Theme.controlBorder : Theme.line }
     }
@@ -53,7 +53,7 @@ Popup {
             RowLayout {
                 Layout.fillWidth: true
                 Text { text: "Search " + (backend.currentAccount.name || "mail") + " — " + (popup.draftScope ? "drafts" : "sender, words, or filters"); color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } elide: Text.ElideRight; Layout.fillWidth: true }
-                FmButton { text: "Esc"; implicitHeight: 21; implicitWidth: 31; font.pixelSize: Theme.fontSize(11); outlined: true; onClicked: popup.close() }
+                FmButton { text: "Esc"; implicitHeight: 21; implicitWidth: 31; leftPadding: 4; rightPadding: 4; font.pixelSize: Theme.fontSize(11); outlined: true; onClicked: popup.close() }
             }
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 8
