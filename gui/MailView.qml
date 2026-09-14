@@ -412,6 +412,15 @@ Item {
                     Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 6
                     clip: true; model: backend.conversationModel; boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: ScrollBar {}
+                    // Consume each structural batch before the next can reuse
+                    // delegate indexes. Retaining an old layout across several
+                    // remove/move batches leaves retired rows over replacements.
+                    Connections {
+                        target: backend.conversationModel
+                        function onRowsRemoved() { list.forceLayout() }
+                        function onRowsMoved() { list.forceLayout() }
+                        function onRowsInserted() { list.forceLayout() }
+                    }
                     onContentHeightChanged: Qt.callLater(mail.restoreListPosition)
                     onMovementEnded: if (!mail.restoring) backend.remember("listY",contentY)
                     delegate: Item {
@@ -420,6 +429,11 @@ Item {
                         required property string previousGroup
                         readonly property var modelData: rowData
                         required property int index
+                        // Qt can retain a removed delegate with index -1 while
+                        // replacements are laid out. Retired rows must neither
+                        // paint over the new page nor remain clickable.
+                        visible: index >= 0
+                        enabled: index >= 0
                         readonly property string group: mail.groupOf(modelData)
                         readonly property bool firstInGroup: index===0 || previousGroup!==group
                         readonly property bool doneRow: group==="done" && !mail.draftsMode

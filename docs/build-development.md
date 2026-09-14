@@ -4,6 +4,8 @@ This is the shared native developer workflow. The app is Rust engine/CLI plus a 
 
 ## Phase 2 feedback launch
 
+The current unsigned Windows feedback ZIP is Package02 from clean `61a212a`, using D039/schema 20. Relocated GUI/CLI and empty-live startup checks pass; final performance acceptance is still pending after a separate large-navigation correctness failure. See [current status](status.md) and the [execution record](research/phase-2-execution.md) before attributing a historical test to this package.
+
 Ordinary GUI and CLI startup now use a separate, empty live profile (`fuckMail/default` under the local user-data directory). Existing `demo-v1` data is preserved. Extract the Windows ZIP and launch `windows-amd64/bin/fuckmail-gui.exe`. Open **Settings → Accounts → Connect Google account**, choose the existing OAuth desktop-client JSON and sign in through the browser. Keep that JSON at the selected path; subsequent access reads it again. Sign-in alone does not import. Confirm the four actual Google Console quota limits in Settings, then choose **Start sync** for each account. Real data needs the agreed encrypted local disk and protected profile; keep it outside Git and cloud-sync folders. Removing an account archives its local data and removes credentials without deleting anything at Google.
 
 The September 14 prototype is the current visual reference. Native loading follows actual startup readiness, mail revisits use bounded caches, and reminder/notification preferences apply while the GUI is running. Run `fm --help` for the matching CLI workflows. This unsigned feedback build requires the current execution checks and user-driven Google account trial; the historical Phase 1 walkthrough below retains its synthetic scope.
@@ -76,17 +78,17 @@ On Mac/Linux use `scripts/dev.sh run -- --profile /absolute/local/phase1-walkthr
 The CLI takes the same profile. With the executable directory containing `fm` and `fm-engine`, these are read-only checks:
 
 ```text
-fm --profile /absolute/local/phase1-walkthrough --json accounts
-fm --profile /absolute/local/phase1-walkthrough --account windscribe --json mail list --grouped --limit 50
-fm --profile /absolute/local/phase1-walkthrough --account windscribe --json draft list
-fm --profile /absolute/local/phase1-walkthrough --account windscribe --json draft history
-fm --profile /absolute/local/phase1-walkthrough --json calendar --combined --from 2026-09-11 --to 2026-09-12
-fm --profile /absolute/local/phase1-walkthrough --json preferences show
+fm --demo-profile --profile /absolute/local/phase1-walkthrough --json accounts
+fm --demo-profile --profile /absolute/local/phase1-walkthrough --account windscribe --json mail list --grouped --limit 50
+fm --demo-profile --profile /absolute/local/phase1-walkthrough --account windscribe --json draft list
+fm --demo-profile --profile /absolute/local/phase1-walkthrough --account windscribe --json draft history
+fm --demo-profile --profile /absolute/local/phase1-walkthrough --json calendar --combined --from 2026-09-11 --to 2026-09-12
+fm --demo-profile --profile /absolute/local/phase1-walkthrough --json preferences show
 ```
 
 Use a native Windows path in place of the illustrative absolute path. `mail read ID` is a query and does not mark the conversation reviewed; `mail review`, `mail done` and `mail delay` are explicit actions. Run `fm --help` and the command's `--help` for mutation parameters. The [fixture API](../fixtures/README.md) defines exact fields and limits. [Phase 1 execution evidence](research/phase-1-execution.md) distinguishes executed checks from remaining acceptance work.
 
-The Windows package at clean source `8743162` passes relocated runtime, preserved schema4/schema5 upgrade/refusal and packaged concurrent-search checks. It is `dist/fuckmail-windows-amd64.zip`, with a preserved copy under `dist/baselines/fuckmail-windows-amd64-schema7-8743162.zip`. Its staged GUI runs without rebuilding or the SDK. The package's `build-manifest.json` records its exact source; [current execution evidence](research/phase-1-execution.md#p1-09-clean-windows-package--8743162) records the hashes and limits. To build later source, run `./scripts/dev.ps1 package --preset release` and retain that run's own checks. Use a fresh synthetic profile for the updated walkthrough:
+The Windows package at clean source `8743162` passes relocated runtime, preserved schema4/schema5 upgrade/refusal and packaged concurrent-search checks. It is `dist/fuckmail-windows-amd64.zip`, with a preserved copy under `dist/baselines/fuckmail-windows-amd64-schema7-8743162.zip`. Its staged GUI runs without rebuilding or the SDK. The package's `build-manifest.json` records its exact source; [historical execution evidence](research/phase-1-execution.md#p1-09-clean-windows-package--8743162) records the hashes and limits. To build later source, run `./scripts/dev.ps1 package --preset release` and retain that run's own checks. Use a fresh synthetic profile for the updated walkthrough:
 
 ```powershell
 ./dist/windows-amd64/bin/fuckmail-gui.exe --profile C:/Users/Yegor/Projects/Fuckaround/fuckMail/.tools/phase1-update2-walkthrough --fixture-clock
@@ -119,13 +121,13 @@ Packages land in `dist/`. macOS contains `fuckmail-gui.app` with `fm` and `fm-en
 
 For a fresh terminal, invoke the bundled CLI by its absolute path or add its containing directory to that terminal's PATH. No global CLI launcher is installed automatically. Move/copy the package directory to install the development build; remove that directory to uninstall. Profiles remain outside installation/build output. This is not a final upgrade or migration system.
 
-The portable `scripts/verify_upgrade.py` checks two preserved packages with different schema versions. Pass each directory containing the three executables, plus a report path; on macOS that directory is inside `fuckmail-gui.app/Contents/MacOS`, on Windows/Linux it is `bin`:
+The historical Phase 1 `scripts/verify_upgrade.py` checks preserved schema-4/schema-5 packages against its fixed schema-7 target; it is not the schema-20 upgrade runner. Pass each directory containing the three executables, plus a report path; on macOS that directory is inside `fuckmail-gui.app/Contents/MacOS`, on Windows/Linux it is `bin`:
 
 ```sh
 python3 scripts/verify_upgrade.py --old-bin /absolute/old/package/bin --new-bin /absolute/new/package/bin --report build/verification/package-upgrade.json
 ```
 
-On Windows use `python` and native absolute paths. The default baseline is schema 4/fixture 1; add `--expected-old-schema 5` for the preserved schema 5/fixture 2 package. Both upgrade to schema 6 while preserving the original fixture revision and accounts. Choose a new report filename for each run; existing reports are refused. The script creates its own disposable synthetic profile; it has no existing-profile argument. It checks compatible old/new client coexistence, explicit owner shutdown, Unicode draft/flag/receipt preservation, schema migration, the new GUI against the upgraded profile and refusal of an incompatible old engine without resetting data. It starts and cleans up only its own subprocess handles; discovery PIDs are never terminated. The JSON report preserves the exact package manifests, including dirty state, and executable hashes. A report counts as evidence only after an actual passing run; this developer check is not an automatic updater or physical keychain/input qualification.
+On Windows use `python` and native absolute paths. The default baseline is schema 4/fixture 1; add `--expected-old-schema 5` for the preserved schema 5/fixture 2 package. Both historical baselines upgrade to schema 7 while preserving the original fixture revision and accounts. Current Phase 2 schema upgrades use their separate source-bound checks recorded in [Phase 2 execution](research/phase-2-execution.md). Choose a new report filename for each run; existing reports are refused. The script creates its own disposable synthetic profile; it has no existing-profile argument. It checks compatible old/new client coexistence, explicit owner shutdown, Unicode draft/flag/receipt preservation, schema migration, the new GUI against the upgraded profile and refusal of an incompatible old engine without resetting data. It starts and cleans up only its own subprocess handles; discovery PIDs are never terminated. The JSON report preserves the exact package manifests, including dirty state, and executable hashes. A report counts as evidence only after an actual passing run; this developer check is not an automatic updater or physical keychain/input qualification.
 
 Before changing machines, commit and push source, lockfiles, fixtures and accurate status. On the other host, pull the same branch/revision, run bootstrap once, then doctor/test. Never transfer `.tools`, `target`, `build`, `dist`, tokens or live SQLite profiles through Git or a cloud folder. Generate synthetic data locally. Keep any real mail, draft or credential handoff separate from source control.
 

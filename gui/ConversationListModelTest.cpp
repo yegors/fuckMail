@@ -178,6 +178,29 @@ private slots:
         QVERIFY(model.replace({}, {}));
         QCOMPARE(model.rowCount(), 0); QVERIFY(!retained.isValid());
     }
+
+    void pinnedPageRefreshPublishesFinalRolesOnce() {
+        ConversationListModel model;
+        QAbstractItemModelTester tester(&model, QAbstractItemModelTester::FailureReportingMode::Fatal);
+        QVariantList before, after;
+        for (int number : {0, 3, 5, 7, 9, 11, 13, 15, 18, 20, 21}) before.append(row(QString::number(number)));
+        for (int number = 22; before.size() < 100; ++number) before.append(row(QString::number(number)));
+        for (int number = 22; number < 222; ++number) after.append(row(QString::number(number)));
+        auto pinned = row("13"); pinned["pinned"] = true; after.insert(6, pinned);
+        QVERIFY(model.replace("personal/inbox", before));
+        const QPersistentModelIndex selected(model.index(6, 0));
+        QSignalSpy changed(&model, &QAbstractItemModel::dataChanged), reset(&model, &QAbstractItemModel::modelReset);
+        for (int pass = 0; pass < 9; ++pass) {
+            const auto &expected = pass % 2 ? before : after;
+            changed.clear(); QVERIFY(model.replace("personal/inbox", expected)); verifyRows(model, expected);
+            QVERIFY(selected.isValid()); QCOMPARE(selected.row(), 6); QCOMPARE(idAt(model, selected.row()), "13");
+            QCOMPARE(reset.count(), 0); QCOMPARE(changed.count(), 1);
+            QCOMPARE(changed[0][0].value<QModelIndex>().row(), 0);
+            QCOMPARE(changed[0][1].value<QModelIndex>().row(), expected.size() - 1);
+            QCOMPARE(changed[0][2].value<QList<int>>(), (QList<int>{ConversationListModel::RowDataRole, ConversationListModel::PreviousGroupRole}));
+            changed.clear(); QVERIFY(model.replace("personal/inbox", expected)); QCOMPARE(changed.count(), 0);
+        }
+    }
 };
 
 QTEST_GUILESS_MAIN(ConversationListModelTest)

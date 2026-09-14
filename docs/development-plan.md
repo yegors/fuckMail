@@ -1,22 +1,14 @@
 # Development plan
 
-**D039 final gap:** implement required cached Calendar search through the existing shared projection before final packaging. Core 27/Calendar 20/Mail UI 25/CLI 20/Quality 23; schema 20, Platform 14/Gmail 12/Search 5, fixtures 0/3 and protocol 1 unchanged. D038 Package01 passed on its own source; final search/native/performance evidence is pending.
+Updated 2026-09-14 under [D009–D039](decisions.md). **Phases 0 and 1 are complete on available hosts. Phase 2 has a D039 Windows feedback package at `61a212a`; Google-first readiness remains 0/9 whole areas verified.**
 
-**Active: D038/P2-Final feedback build from `bfd7e05`.** Finish fresh empty live startup and Settings account management, remaining recurrence/reminders and partial grants, the September 14 design, cached navigation and Windows packaging. Performance measurement is resumed by the founder. Core 26/Calendar 19/Mail UI 24/CLI 19/Platform 14/Quality 22/schema 20; Gmail 12/Search 5 and fixtures 0/3/protocol 1 unchanged. Prior functional evidence is preserved; no new pass or real-account acceptance is claimed.
+Current boundary: Core 27 / Gmail 12 / Calendar 20 / Platform 14 / Mail UI 25 / CLI 20 / Quality 23 / Search 5 / schema 20; fixtures 0/3 and protocol 1 unchanged. Account lifecycle, Google mail/Drafts/Send, supported Calendar recurrence/invitations/RSVP, running-app reminders, partial grants and bounded cached Calendar search are implemented with scoped Windows evidence. Package02 and final native CTest02 pass. [Status](status.md) summarizes the exact tested scope; [execution](research/phase-2-execution.md) retains failures and source identities.
 
-**Current checkpoint: P2-06C one-occurrence Calendar edit/cancel, Windows functional interim under D037**, from `3242849`. Paired CLI/native checks pass for timed, moved and all-day instances, exact cancellation identity and recovery after a lost response. Workspace **574 passed, five ignored**; isolated engine **161 unit + five process** and CLI **five unit + 16 process**; actual schema-18→19 upgrade/refusal/reopen, existing workflows and native **19/19** pass. The [343-artifact archive](research/assets/phase-2/p2-06c-interim/logs-manifest.json) binds **371 runtime inputs, 240 Rust inputs and 23 executable identities**, retaining failures and seven final native notices. Core 25/Calendar 18/Mail UI 23/CLI 18/Quality 21/schema 19 define this scope; Gmail 12/Platform 13/Search 5, fixtures 0/3/protocol 1 stay unchanged. D031 still defers performance. Series/following, recurring self-RSVP, reminders, broader partial-grant acquisition, current packages/CI and protected real-account acceptance remain required. Readiness stays **0/9**.
+**Next:** fix the large-navigation `visible_snapshot` correctness failure and complete final packaged performance checks. Generated-sync navigation01 passes its four targets, but it does not close the separate large-navigation failure. Then follow protected-profile/backup admission and controlled personal Gmail/Workspace comparisons. Actual providers, sustained refresh, full agreed offline coverage, current other-host CI and trusted distribution remain required. No generated fixture authorizes an automated live send or invitation.
 
-**Previous checkpoint: P2-01B account lifecycle, Windows functional interim under D036**, from P2-06B `7129129`. Paired native/CLI Add, local Remove, cleanup retry and explicit same-subject Restore pass with saved archives, unsaved buffers and exact receipts preserved. Workspace **547 passed, five ignored**; isolated engine **156 unit + four process** and CLI **five unit + 15 process**; actual schema-17→18 upgrade/refusal/reopen, mail/Calendar regressions and native **18/18** pass. The [467-artifact archive](research/assets/phase-2/p2-01b-interim/logs-manifest.json) binds **356 source inputs, 230 Rust inputs and 22 executable identities**, retaining all failed attempts and eight final native notices. Core 24/Gmail 12/Calendar 17/Platform 13/Mail UI 22/CLI 17/Quality 20/schema 18 are the boundary; Search 5, fixtures 0/3/protocol 1 stay unchanged. The read-only archive is D036's conservative implementation default, not an answer to the pending optional preference question. D031 still defers performance; recurrence/reminders, current packages/CI and protected actual-account acceptance remain required. Readiness stays **0/9**.
+## Historical checkpoints
 
-**P2-06B has a Windows functional interim under D035**, from B3B `d174525`: ordinary organizer invitations and truthful observed-state recovery pass paired native/CLI checks. Workspace 529 passed/five ignored, isolated 149 unit plus three process, actual schema-16→17 upgrade/refusal/reopen, existing mail regressions and native 17/17 pass. The [280-artifact archive](research/assets/phase-2/p2-06b-interim/logs-manifest.json) preserves 340 source inputs, failures and diagnostics. Core 23/Calendar 16/Mail UI 21/CLI 16/Quality 19/schema 17; Gmail 11/Platform 12/Search 5, fixtures 0/3/protocol 1 unchanged. Continue D034 account workflows and remaining recurrence/reminders/packages/live admission. D031 still defers performance; whole readiness stays 0/9.
-
-Updated 2026-09-14 under [D009–D037](decisions.md). **Phases 0 and 1 are complete on available hosts; Phase 2 implementation is active on `codex/phase-2`. Google-first readiness: 0/9 whole areas verified.** [Status](status.md) tracks evidence; [contracts](contracts/README.md) own behavior; [research](research/README.md) preserves sources and alternatives.
-
-D033/P2-05B3B has a Windows functional interim for explicit source conversion, supported observed-target editing and remote-draft deletion/recovery. Core 22/Gmail 11/Mail UI 20/CLI 15/Quality 18/schema 16 define the checkpoint: 512 workspace tests, 146 isolated unit plus three process tests, paired workflows, actual upgrade/refusal and native 17/17 pass. Preserve the [337-artifact evidence](research/assets/phase-2/p2-05b3b-interim/logs-manifest.json), earlier failures and D031's performance deferral. Remaining Calendar invitations, recurrence and reminders follow, alongside account removal, current packages and actual-account acceptance.
-
-D034 also requires account addition and removal through both interfaces. Existing OAuth addition and disconnect are separate from a complete removal workflow; settle retained local data, unsent work, uncertain receipts and credential cleanup in the shared boundary before implementation. The app must not delete Google mail, calendars or the Google account through local removal.
-
-P2-05B2 has a [functional interim checkpoint](research/assets/phase-2/p2-05b2-interim/logs-manifest.json) under Core 20/Gmail 9/Mail UI 18/CLI 13/Quality 16/schema 14: workspace02 passes 469 tests with five ignored, isolated feature tests pass 132 unit plus three process cases, CLI03 verifies four generated Sends/nine Google operations, and native04 passes 15/15. Integration takes 150.731 seconds under the 180-second aggregate watchdog; primary 120-second and child 45-second limits are unchanged. Navigation01 fails the unchanged 100-ms p95 target at 158.3543/136.6387/177.9872/86.3356 ms for click/Tab/Shift+Tab/reader; all 400 exact paints, 1,640 sources and 176 parts pass. D031 directs “Keep working; measure later”: defer remeasurement, preserve the failure and continue B3 remote Drafts plus remaining invitations, recurrence and running-app reminders after their packet boundaries are agreed. B2 is not fully accepted; current packages, complete Calendar and actual-account gates remain open.
+Completed source-specific results are maintained in [Phase 0 execution](research/phase-0-execution.md), [Phase 1 execution](research/phase-1-execution.md) and [Phase 2 execution](research/phase-2-execution.md), including their immutable manifests, failed runs and retained diagnostics. The earlier packet descriptions below preserve sequence and scope; they are not a list of currently missing D039 implementation. D031's failed performance result remains preserved after D038 resumed measurement.
 
 ## Delivery direction
 
@@ -26,7 +18,7 @@ The first usable milestone includes a real GUI and a useful partial CLI. Impleme
 
 Prioritize human correspondence and replies. Decode MIME, preserve original HTML/attachments and safely extract text from HTML-only mail from the start. Received HTML display can arrive later with best-effort readability. Browser-level fidelity, WebEngine packaging and legacy protocol compatibility are not early gates.
 
-The user always chooses Done/Delayed. Classification supplies user-defined human/automation/noise and category/scope tags; it never changes review/action state. The Flight Progress v2 HTML reference guides Phase 1, including local settings preferences. D014 confirms read-on-open, Done clearing unread/stars, untimed Delay, combined full permitted calendar details and a browsable timeline only in Mail. Remaining production interactions use the reviewed design for their slice.
+The user always chooses Done/Delayed. Classification supplies user-defined human/automation/noise and category/scope tags; it never changes review/action state. The September 14 Flight Progress v2 reference guides the current native client; earlier September 12 references retain their Phase 1 scope. D014 confirms read-on-open, Done clearing unread/stars, untimed Delay, combined full permitted calendar details and a browsable timeline only in Mail. Remaining production interactions use the reviewed design for their slice.
 
 IMAP, SMTP and external iCalendar URL support start only after the founder has dogfooded working Google GUI and CLI workflows. Retain their research and future contracts without implementing transports/feeds or making them early dependencies. MIME and Google recurrence/invitation representations remain needed.
 
@@ -43,11 +35,11 @@ P1-10's [Windows acceptance and final CI](research/phase-1-execution.md#p1-10-fi
 | 4 — Later protocol support | IMAP, SMTP and external iCalendar subscriptions | Start only after founder Google GUI/CLI dogfooding; then prove their own interoperability and recovery |
 | Later | Editable CalDAV; possible broad public/open-source launch | Separate decisions |
 
-Phase detail decreases with distance. Completed [Phase 0](plans/phase-0.md)/[Phase 1](plans/phase-1.md) and approaching [Phase 2](plans/phase-2.md) have detailed packets. Refine the next slice from evidence rather than writing every future API in advance. Missing provider access, final design or test hosts blocks only the affected evidence.
+Phase detail decreases with distance. Completed [Phase 0](plans/phase-0.md)/[Phase 1](plans/phase-1.md) and active [Phase 2](plans/phase-2.md) have detailed packets. Refine the next slice from evidence rather than writing every future API in advance. Missing provider access, final design or test hosts blocks only the affected evidence.
 
 The [first self-contained package](plans/phase-0.md#proposed-first-deliverable-a-runnable-desktop-slice-on-mac-and-windows) delivered a small runnable synthetic-mail slice from Phases 0/1, with repeatable development on the founder's Mac and Windows PC. Its bounded walkthrough and native build evidence are part of the now-completed Phase 0 experiments.
 
-## Phase 0: a GUI before a CLI monolith
+## Historical Phase 0: a GUI before a CLI monolith
 
 The packets below have been executed for the synthetic foundation; [execution evidence](research/phase-0-execution.md) records all available-host results and the separate physical/live-provider gates. Do not repeat this foundation as new work.
 
@@ -59,7 +51,7 @@ Entry to Phase 1 is per ready slice: proven native build on available hosts, the
 
 Do not implement legacy transports/feeds, an exhaustive CLI grammar, a model installation manager or final visual polish in this phase. Record versions and measured outcomes only after work runs.
 
-## Phase 1: the redesigned local milestone
+## Historical Phase 1: the redesigned local milestone
 
 The [detailed Phase 1 plan](plans/phase-1.md) is completed on available hosts, including the updated design, local workflows and navigation/rendering spike. Preserve the existing engine/GUI/CLI and source-specific [execution evidence](research/phase-1-execution.md); whole-product/physical/live-provider qualification remains separate.
 
@@ -71,15 +63,11 @@ No Google credentials or further product decision is needed to begin the first p
 
 ## Phase 2: Google mail and calendar together
 
-D020's [detailed packets](plans/phase-2.md) start from merged `885de67` on `codex/phase-2`; D021 starts implementation after planning checkpoint `0ced122`. The founder has Cloud/OAuth/admin access and selected OS permissions plus verified disk encryption for the pilot; app-level mail-store encryption is deferred. [Execution evidence](research/phase-2-execution.md) distinguishes current tested slices from live admission and full-phase acceptance.
+The [Phase 2 plan](plans/phase-2.md) starts from merged `885de67` and now reaches D038/D039's Windows feedback package. Ordinary startup is an empty live profile, while explicit demo/test profiles retain their synthetic data. Account removal retains a read-only local archive and records credential cleanup; restoration requires the same verified identity. GUI and CLI share these workflows.
 
-Implement consumer Gmail and Workspace setup, durable desktop OAuth, recent-first access with resumable full body/attachment retention, history reconciliation, labels/flags, signatures, human reply/forward/send and uncertain-submission recovery. All send/retrieve operations use Google APIs; one shared MIME interpretation serves GUI and CLI.
+Generated-provider and local tests cover recent-first Gmail acquisition, history/label reconciliation, composition, attachments, Drafts, explicit Send and uncertain-outcome recovery. Calendar includes catalog/permission handling, combined views and timeline, supported recurrence scopes, invitations/self-RSVP, reminders and cached search. Their source-specific limits remain in the contracts and execution record; implementation is not proof of real Google compatibility or complete offline inventory.
 
-Develop Google Calendar alongside mail: discovery/permissions, sync, day/week/month/agenda, the Mail-only header/footer timeline, event edits, recurrence, invitations/RSVP and reminders as their fixtures pass. Recurrence/ICS representations used inside Google are not external-feed support.
-
-Add CLI commands as their GUI/core workflows become usable. Begin controlled founder use on the available machine when the data/recovery gates are safe; a partial command set is expected initially. Record missing functionality rather than expanding into IMAP/SMTP to satisfy the old plan.
-
-Durable auth, full offline progress and calendar correctness are core product work. Retention, account removal with unsent work, encryption and recovery must be settled before committing affected real-data behavior. Workspace access/admin restrictions have explicit gates.
+The remaining execution is final packaged correctness/performance, protected-profile and restorable-backup admission, then bounded real personal Gmail and Workspace comparisons. Verify actual grants, quotas, admin policy, native vault failure behavior and sustained refresh. Start user-owned canary writes on disposable recipients/calendars, with explicit authorization for any automated external effects. Daily-driver closeout requires complete agreed source coverage and defect retests. App-level store encryption remains deferred; the founder's disk-encryption report is distinct from native administrator verification.
 
 ## Phase 3: complete and dogfood the Google product
 

@@ -49,12 +49,14 @@ bool ConversationListModel::replace(const QString &scope, const QVariantList &ro
         return true;
     }
     if (next == m_rows) return true;
+    bool structural = false;
 
     for (int last = int(m_rows.size()) - 1; last >= 0;) {
         if (keys.contains(m_rows[last].key)) { --last; continue; }
         int first = last;
         while (first > 0 && !keys.contains(m_rows[first - 1].key)) --first;
         beginRemoveRows({}, first, last);
+        structural = true;
         m_rows.remove(first, last - first + 1);
         endRemoveRows();
         last = first - 1;
@@ -72,6 +74,7 @@ bool ConversationListModel::replace(const QString &scope, const QVariantList &ro
             int last = i;
             while (last + 1 < next.size() && !positions.contains(next[last + 1].key)) ++last;
             beginInsertRows({}, i, last);
+            structural = true;
             for (int added = i; added <= last; ++added) m_rows.insert(added, next[added]);
             endInsertRows();
             for (int changed = i; changed < m_rows.size(); ++changed)
@@ -83,6 +86,7 @@ bool ConversationListModel::replace(const QString &scope, const QVariantList &ro
             const bool moving = beginMoveRows({}, source, source, {}, i);
             Q_ASSERT(moving);
             if (!moving) qFatal("Conversation row move violated the validated prefix invariant");
+            structural = true;
             m_rows.move(source, i);
             endMoveRows();
             for (int changed = i; changed <= source; ++changed)
@@ -102,7 +106,11 @@ bool ConversationListModel::replace(const QString &scope, const QVariantList &ro
             m_rows[i].previousGroup = next[i].previousGroup;
             changed.append(PreviousGroupRole);
         }
-        if (!changed.isEmpty()) emit dataChanged(index(i, 0), index(i, 0), changed);
+        if (!structural && !changed.isEmpty()) emit dataChanged(index(i, 0), index(i, 0), changed);
     }
+    // A Quick view can cache roles while consuming successive structural
+    // changes. Publish the final roles once, after all indexes have settled,
+    // without resetting surviving delegates. Data-only updates stay narrow.
+    if (structural && !m_rows.isEmpty()) emit dataChanged(index(0, 0), index(m_rows.size() - 1, 0), {RowDataRole, PreviousGroupRole});
     return true;
 }
