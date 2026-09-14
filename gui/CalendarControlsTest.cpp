@@ -16,6 +16,7 @@
 #include <QTemporaryDir>
 #include <cstdlib>
 #include <functional>
+#include <source_location>
 
 static void require(bool condition, const char *message) {
     if (!condition) { qCritical() << message; std::exit(1); }
@@ -23,10 +24,15 @@ static void require(bool condition, const char *message) {
 static QVariant plain(QVariant value) {
     return value.canConvert<QJSValue>() ? value.value<QJSValue>().toVariant() : value;
 }
-static void settle(const std::function<bool()> &predicate) {
+static void settle(const std::function<bool()> &predicate,
+                   const std::source_location &caller = std::source_location::current()) {
     QElapsedTimer timer; timer.start();
     while (!predicate() && timer.elapsed() < 1500) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-    require(predicate(), "QML state did not settle");
+    if (!predicate()) {
+        qCritical() << "QML state did not settle at" << caller.file_name() << caller.line()
+                    << caller.function_name();
+        std::exit(1);
+    }
 }
 
 // The actual QML controls run against scripted completions. No engine, vault,

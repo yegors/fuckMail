@@ -1,6 +1,6 @@
 # Current status
 
-**D047 CI gate:** further Phase 2 feedback work waits for green macOS, Windows and Ubuntu native/package pipelines. [CI repairs and verification](research/phase-2-execution.md#d047--p2-ci--september-14-hosted-verification-repairs) preserve the original failures and unchanged acceptance budgets.
+**D047 CI gate:** further Phase 2 feedback work waits for green macOS, Windows and Ubuntu native/package pipelines. [CI repairs and verification](research/phase-2-execution.md#d047--p2-ci--september-14-hosted-verification-repairs) preserve the original failures. D048 expands the workspace aggregate allowance; individual watchdogs and product performance targets stay unchanged.
 
 **D046 repository cleanup:** generated Phase 0–2 evidence is preserved in a verified local archive and historical commits, with the current tree retaining reports and supplied designs. [Storage, recovery and checks](research/evidence-archive.md) replace the old tracked-evidence convention. Quality 27 changes documentation/CI storage only; runtime results retain their original revisions and Phase 2 readiness remains unchanged.
 

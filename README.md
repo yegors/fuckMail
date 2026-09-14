@@ -1,6 +1,6 @@
 # fuckMail
 
-**D047 CI gate:** further Phase 2 feedback work waits for green macOS, Windows and Ubuntu native/package pipelines. [CI repairs and verification](docs/research/phase-2-execution.md#d047--p2-ci--september-14-hosted-verification-repairs) preserve the original failures and unchanged acceptance budgets.
+**D047 CI gate:** further Phase 2 feedback work waits for green macOS, Windows and Ubuntu native/package pipelines. [CI repairs and verification](docs/research/phase-2-execution.md#d047--p2-ci--september-14-hosted-verification-repairs) preserve the original failures. D048 expands the workspace aggregate allowance; individual watchdogs and product performance targets stay unchanged.
 
 **D046 repository cleanup:** raw execution evidence is preserved outside the tracked tree; reports and design references remain in Git. See [archive recovery and storage rules](docs/research/evidence-archive.md). Application behavior and Phase 2 acceptance are unchanged.
 
