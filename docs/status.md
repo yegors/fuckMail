@@ -1,5 +1,7 @@
 # Current status
 
+**D047 CI gate:** further Phase 2 feedback work waits for green macOS, Windows and Ubuntu native/package pipelines. [CI repairs and verification](research/phase-2-execution.md#d047--p2-ci--september-14-hosted-verification-repairs) preserve the original failures and unchanged acceptance budgets.
+
 **D046 repository cleanup:** generated Phase 0–2 evidence is preserved in a verified local archive and historical commits, with the current tree retaining reports and supplied designs. [Storage, recovery and checks](research/evidence-archive.md) replace the old tracked-evidence convention. Quality 27 changes documentation/CI storage only; runtime results retain their original revisions and Phase 2 readiness remains unchanged.
 
 **D043–D045 — real-mailbox UI repairs:** the founder has signed into the configured Mac app. Real UI testing found and fixed Calendar creation after first sync, recurring editor invalidation, accessible event activation and search-popup focus/dismissal. Mail and Calendar walkthrough results are recorded below. Performance and the broad workspace sweep remain deferred under D041; this is not full Phase 2 acceptance.

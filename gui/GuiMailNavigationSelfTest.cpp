@@ -102,6 +102,7 @@ GuiMailNavigationSelfTest::GuiMailNavigationSelfTest(MailBackend &backend, QQuic
     : QObject(parent), m_backend(backend), m_window(window), m_finished(std::move(finished)) {
     m_timer.setInterval(80);
     connect(&m_timer, &QTimer::timeout, this, [this] { step(); });
+    connect(m_window, &QQuickWindow::frameSwapped, this, [this] { ++m_renderedFrames; });
     connect(&m_backend, &MailBackend::loadingChanged, this, [this] {
         if (m_searchPending && m_backend.query() == m_expectedQuery && m_backend.loading()) m_loadingSeen = true;
     });
@@ -1133,17 +1134,31 @@ void GuiMailNavigationSelfTest::step() {
             finish("The native group heading does not display its full filtered count."); return;
         }
         if (!clickItem(heading)) return;
+        m_collapseSettledFrame=-1;
         m_stage=63; break;
     }
     case 63: {
+        if (m_backend.loading()) { m_collapseSettledFrame=-1; return; }
+        // Query completion precedes Qt's creation/layout of replacement group
+        // headers. Assert the actual delegates after that page has rendered.
+        if (m_collapseSettledFrame<0) {
+            m_collapseSettledFrame=m_renderedFrames; m_window->update(); return;
+        }
+        if (m_renderedFrames<=m_collapseSettledFrame) return;
         auto heading=find(m_window->contentItem(),"mailGroup_"+m_surfaceGroup);
-        if (m_backend.loading()) return;
         if (!heading || !heading->property("collapsed").toBool()
             || find(m_window->contentItem(),"conversationRow_"+m_surfaceFirstId)
             || !textItem(heading,QString::number(m_surfaceCounts[m_surfaceGroup].toInteger()))
             || m_backend.selectedId()!=m_originalSelected
             || draftFields(QJsonObject::fromVariantMap(m_backend.draft()))!=draftFields(QJsonObject::fromVariantMap(m_originalDraft))) {
-            finish("Collapsing a native group lost its count, kept its row visible or changed the reader/draft."); return;
+            finish(QString("Collapsing a native group lost its count, kept its row visible or changed the reader/draft. "
+                "heading=%1 collapsed=%2 rowVisible=%3 count=%4 reader=%5 draft=%6 searchPopup=%7 geometry=%8")
+                .arg(heading != nullptr).arg(heading && heading->property("collapsed").toBool())
+                .arg(find(m_window->contentItem(),"conversationRow_"+m_surfaceFirstId) != nullptr)
+                .arg(heading && textItem(heading,QString::number(m_surfaceCounts[m_surfaceGroup].toInteger())))
+                .arg(m_backend.selectedId()==m_originalSelected)
+                .arg(draftFields(QJsonObject::fromVariantMap(m_backend.draft()))==draftFields(QJsonObject::fromVariantMap(m_originalDraft)))
+                .arg(m_window->property("searchPopupOpen").toBool()).arg(geometryDiagnostic(heading,m_window))); return;
         }
         qint64 expanded=0;
         for (const auto group:{"review","held","done"}) if (QString(group)!=m_surfaceGroup) expanded+=m_surfaceCounts[group].toInteger();

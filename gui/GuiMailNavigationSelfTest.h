@@ -77,6 +77,7 @@ private:
     int m_stage = 0, m_case = 0, m_ticks = 0, m_stable = 0, m_lastStage = -1;
     bool m_loadingSeen = false, m_searchPending = false, m_originalSettings = false;
     bool m_surfacesDone = false;
+    qint64 m_renderedFrames = 0, m_collapseSettledFrame = -1;
     QString m_surfaceGroup, m_surfaceFirstId, m_senderDraftId;
     QJsonObject m_surfaceCounts, m_senderBefore;
     QStringList m_queueExpected, m_queueObserved;

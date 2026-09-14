@@ -1,5 +1,15 @@
 # Phase 2 execution
 
+## D047 / P2-CI — September 14 hosted verification repairs
+
+The founder requires green hosted CI before further Phase 2 development. The original push and PR runs at `ebc3484` were refused before runner allocation because of account billing; the founder resolved billing and authorized the second attempts. The [push run](https://github.com/yegors/fuckMail/actions/runs/34885514383) and [PR run](https://github.com/yegors/fuckMail/actions/runs/34885520788) retain those failures and subsequent job logs.
+
+The macOS PR job passes 22/23 CTests; `rust-workspace` fails because the marker-refusal process test creates a profile using ambient permissions. The same failure reproduces locally under umask 022. The fixture now uses the existing `fm_ipc::private_profile` initializer; the two ordinary and five isolated process tests pass under that umask. The isolated test's first sandboxed attempt could not start local IPC; its unsandboxed rerun passes. Runtime privacy and marker checks are unchanged.
+
+The macOS push job also reports a group-collapse GUI assertion failure. Three local diagnostic runs pass, preserving its intermittent status. The self-test now waits for a frame after query completion before checking replacement group headers/delegates, and reports each failed condition separately. Counts, row absence, reader/draft preservation, paging assertions and all watchdogs remain required. This is a test synchronization correction under Platform 15/Quality 27, with no runtime contract, schema, fixture or protocol revision. Three corrected offscreen GUI integration runs pass in 47.13/48.06/47.43 seconds (142.62 seconds total).
+
+Raw CI logs and focused before/after logs stay under ignored `.tools/ci/` and Actions artifacts under D046. Final hosted verification of the repair remains required; performance and full Phase 2 acceptance remain separate.
+
 D046 storage update: tracked raw evidence links resolve to immutable historical Git files; the newer Mac evidence is preserved in the verified local snapshot only. Original inline paths are archive member paths; see [evidence storage and recovery](evidence-archive.md). Recorded results and limitations are unchanged.
 
 Current work, 2026-09-13: implementation is active under D021–D023 on `codex/phase-2`, after acquisition checkpoint `099558c`. **Core 16, Gmail 6, Calendar 14, Mail UI 14, CLI 9, Platform 11 and Quality 11 consume tested schema 10 / live fixture 0 / synthetic fixture 3 / protocol 1.** Search 5/Triage 6 retain their meanings. The schema-8/9 evidence below is historical; D023's integrated and native verification is recorded separately below.

@@ -60,7 +60,8 @@ fn marked_profile_is_refused_by_an_actual_ordinary_startup_without_store_mutatio
         } else {
             "file-marker"
         });
-        fs::create_dir(&profile).unwrap();
+        // Reach marker refusal regardless of the host's umask or inherited ACL.
+        fm_ipc::private_profile(&profile).unwrap();
         let marker = profile.join(MARKER);
         if directory_marker {
             fs::create_dir(&marker).unwrap();
