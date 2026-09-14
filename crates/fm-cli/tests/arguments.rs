@@ -1,6 +1,40 @@
 use std::process::Command;
 
 #[test]
+fn calendar_search_rejects_bad_limits_and_queries_before_engine_start() {
+    let root = tempfile::tempdir().unwrap();
+    let profile = root.path().join("not-created");
+    for (query, limit) in [
+        ("".to_owned(), "1"),
+        (" \t".to_owned(), "1"),
+        ("é".repeat(257), "1"),
+        ("word ".repeat(33), "1"),
+        ("term".to_owned(), "0"),
+        ("term".to_owned(), "101"),
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args([
+                "--profile",
+                profile.to_str().unwrap(),
+                "--json",
+                "calendar",
+                "search",
+                &query,
+                "--from",
+                "2026-09-12",
+                "--to",
+                "2026-09-15",
+                "--limit",
+                limit,
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(!profile.exists(), "Invalid search must not open storage");
+    }
+}
+
+#[test]
 fn account_removal_refuses_missing_scope_and_unsafe_requests_before_storage() {
     let root = tempfile::tempdir().unwrap();
     let profile = root.path().join("not-created");

@@ -142,6 +142,16 @@ enum Command {
 
 #[derive(Subcommand)]
 enum CalendarCommand {
+    /// Search cached permitted occurrences in an explicit 1–42 day range; no Google request.
+    Search {
+        query: String,
+        #[arg(long)]
+        from: String,
+        #[arg(long)]
+        to: String,
+        #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u64).range(1..=100))]
+        limit: u64,
+    },
     /// List current selected, permitted Soon/Now reminders without acknowledging them.
     Reminders {
         #[arg(long)]
@@ -1087,6 +1097,31 @@ async fn main() {
     }
 }
 
+fn calendar_search_request(command: &Command) -> Result<Option<Value>, Failure> {
+    let Command::Calendar {
+        command:
+            Some(CalendarCommand::Search {
+                query,
+                from,
+                to,
+                limit,
+            }),
+        ..
+    } = command
+    else {
+        return Ok(None);
+    };
+    let count = query.split_whitespace().count();
+    if query.len() > 512 || count == 0 || count > 32 {
+        return Err(invalid(
+            "Calendar search needs 1–32 words in at most 512 UTF-8 bytes",
+        ));
+    }
+    Ok(Some(
+        json!({"query":query,"from":from,"to":to,"limit":limit}),
+    ))
+}
+
 fn notification_request(command: &Command) -> Result<Option<(&'static str, Value)>, Failure> {
     let (method, mut params, now) = match command {
         Command::Notifications { after, since, now } => {
@@ -1180,6 +1215,10 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 command: Some(CalendarCommand::Reminders { .. }),
                 ..
             }
+            | Command::Calendar {
+                command: Some(CalendarCommand::Search { .. }),
+                ..
+            }
             | Command::ProfileInit
             | Command::Google {
                 command: Google::Connect { .. }
@@ -1247,6 +1286,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
     let draft_source = draft_source_request(&args.command)?;
     let account_lifecycle = account_lifecycle_request(&args.command)?;
     let notification = notification_request(&args.command)?;
+    let calendar_search = calendar_search_request(&args.command)?;
     let mut client = if args.demo_profile {
         Client::connect_demo(&profile, engine.as_deref()).await?
     } else if live_command || args.profile.is_none() {
@@ -1288,6 +1328,18 @@ async fn run(args: &Args) -> Result<(), Failure> {
             client.call(method, scope, params).await?
         }
         Command::Status | Command::ProfileInit => client.call("status", None, json!({})).await?,
+        Command::Calendar {
+            command: Some(CalendarCommand::Search { .. }),
+            ..
+        } => {
+            client
+                .call(
+                    "calendar_search",
+                    None,
+                    calendar_search.expect("validated search request"),
+                )
+                .await?
+        }
         Command::Notifications { .. }
         | Command::Calendar {
             command: Some(_), ..
@@ -2091,6 +2143,44 @@ fn emit(args: &Args, reply: &Value) -> Result<(), Failure> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn calendar_search_routes_global_explicit_range_without_notification_or_provider_work() {
+        let args = Args::try_parse_from([
+            "fm",
+            "calendar",
+            "search",
+            "Élodie Room",
+            "--from",
+            "2026-09-12",
+            "--to",
+            "2026-09-15",
+            "--limit",
+            "7",
+        ])
+        .unwrap();
+        assert_eq!(
+            calendar_search_request(&args.command).unwrap(),
+            Some(json!({"query":"Élodie Room","from":"2026-09-12","to":"2026-09-15","limit":7}))
+        );
+        assert!(notification_request(&args.command).unwrap().is_none());
+        assert!(args.account.is_none());
+        for tail in [
+            vec!["calendar", "search", "term"],
+            vec!["calendar", "search", "term", "--from", "2026-09-12"],
+            vec![
+                "calendar",
+                "--combined",
+                "search",
+                "term",
+                "--from",
+                "2026-09-12",
+                "--to",
+                "2026-09-15",
+            ],
+        ] {
+            assert!(Args::try_parse_from(std::iter::once("fm").chain(tail)).is_err());
+        }
+    }
     use super::*;
 
     #[test]

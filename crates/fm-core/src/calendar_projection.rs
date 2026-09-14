@@ -201,26 +201,31 @@ impl Store {
             ) {
                 Ok(rows) => {
                     for mut row in rows {
+                        let occurrence_source = children
+                            .get(&event.key.event)
+                            .and_then(|items| {
+                                items.iter().find(|child| {
+                                    child.original_start.as_ref().is_some_and(|original| {
+                                        row["occurrence_key"]["original_start"]
+                                            == original.identity()
+                                    })
+                                })
+                            })
+                            .unwrap_or(event);
                         if row["busy_only"] != true {
                             row["event_id"] = event.key.event.clone().into();
                             row["etag"] = event.etag.clone().into();
+                            if let Some(name) =
+                                occurrence_source.source["organizer"]["displayName"].as_str()
+                            {
+                                row["organizer_name"] = name.into();
+                            }
                         }
                         if live {
                             let (edit, rsvp) = crate::live_calendar_writes::live_event_actions(
                                 event, access, &actor,
                             );
                             let available = row["busy_only"] != true && write_ready;
-                            let occurrence_source = children
-                                .get(&event.key.event)
-                                .and_then(|items| {
-                                    items.iter().find(|child| {
-                                        child.original_start.as_ref().is_some_and(|original| {
-                                            row["occurrence_key"]["original_start"]
-                                                == original.identity()
-                                        })
-                                    })
-                                })
-                                .unwrap_or(event);
                             let selector = crate::live_calendar_occurrences::projection_selector(
                                 event,
                                 occurrence_source,

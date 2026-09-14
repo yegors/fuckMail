@@ -53,7 +53,7 @@ Popup {
             RowLayout {
                 Layout.fillWidth: true
                 Text { text: "Search " + (backend.currentAccount.name || "mail") + " — " + (popup.draftScope ? "drafts" : "sender, words, or filters"); color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } elide: Text.ElideRight; Layout.fillWidth: true }
-                FmButton { text: "Esc"; implicitHeight: 21; implicitWidth: 31; font.pixelSize: Theme.fontSize(11); outlined: true; onClicked: popup.close() }
+                FmButton { text: "Esc"; implicitHeight: 21; implicitWidth: 31; leftPadding: 4; rightPadding: 4; font.pixelSize: Theme.fontSize(11); outlined: true; onClicked: popup.close() }
             }
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 8

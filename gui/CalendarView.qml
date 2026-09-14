@@ -8,6 +8,11 @@ Item {
     objectName: "calendarWorkspace"
     property int dayCount: backend.calendarView === "day" ? 1 : 7
     property bool combinedAccounts: true
+    function prepareSearch() {
+        if (editor.opened || operationHistory.opened) return false
+        cancelRange(); details.close()
+        return true
+    }
     property var visibleEvents: combinedAccounts ? backend.events : backend.events.filter(function(e) { return e.account === backend.account })
     readonly property real workingStart: backend.preferences.timeline_start_hour === undefined ? 7 : backend.preferences.timeline_start_hour
     readonly property real workingEnd: backend.preferences.timeline_end_hour === undefined ? 21 : backend.preferences.timeline_end_hour

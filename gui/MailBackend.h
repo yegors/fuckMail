@@ -87,6 +87,8 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QVariantMap googleDraft READ googleDraft NOTIFY draftChanged)
     Q_PROPERTY(QVariantMap googleSend READ googleSend NOTIFY draftChanged)
     Q_PROPERTY(QVariantList calendarSources READ calendarSources NOTIFY eventsChanged)
+    Q_PROPERTY(QString calendarSearchQuery READ calendarSearchQuery WRITE setCalendarSearchQuery NOTIFY calendarSearchChanged)
+    Q_PROPERTY(QVariantMap calendarSearch READ calendarSearch NOTIFY calendarSearchChanged)
     Q_PROPERTY(QString calendarView READ calendarView NOTIFY eventsChanged)
     Q_PROPERTY(QString calendarDate READ calendarDate NOTIFY eventsChanged)
     Q_PROPERTY(QString calendarFrom READ calendarFrom NOTIFY eventsChanged)
@@ -166,6 +168,11 @@ public:
     bool draftLocked() const { return accountArchived() || m_unsavedAccountBuffer || draftReadOnly() || m_capturing || m_discarding || m_resolvingDraft; }
     bool draftConflict() const { return m_draftConflict; }
     QVariantList calendarSources() const { return m_calendarSources; }
+    QString calendarSearchQuery() const { return m_calendarSearchQuery; }
+    QVariantMap calendarSearch() const;
+    void setCalendarSearchQuery(const QString &query);
+    Q_INVOKABLE void setCalendarSearchContext(bool active, bool combined);
+    Q_INVOKABLE void openCalendarSearchResult(const QVariantMap &event);
     QString calendarView() const { return m_calendarView; }
     QString calendarDate() const { return m_calendarDate; }
     QString calendarFrom() const;
@@ -300,6 +307,8 @@ public:
     Q_INVOKABLE void remember(const QString &key, const QVariant &value);
     Q_INVOKABLE void shutdown();
 signals:
+    void calendarSearchChanged();
+    void calendarSearchResultReady(const QVariantMap &event);
     void remindersChanged();
     void desktopNotification(const QString &title, const QString &body);
     void startupReadyChanged();
@@ -338,6 +347,7 @@ signals:
     void ready();
     void shutdownReady();
 private:
+    friend class CalendarSearchTest;
     friend class MailNavigationCacheTest;
     friend class NotificationBackendTest;
     friend class GuiMailNavigationSelfTest;
@@ -399,6 +409,13 @@ private:
     void loadConversationPage(const QString &account, int generation, QJsonObject params, QVariantList collected, int desiredCount, int cursorRetries = 0);
     void loadConversation(bool loadDraft, bool reviewOnLoad = false);
     void loadCalendar();
+    QString calendarCoverageText(const QJsonObject &coverage) const;
+    void publishCalendarWindow(const QJsonObject &result, const QString &from, int days);
+    void initializeCalendarSearch();
+    void refreshCalendarSearchContext();
+    void runCalendarSearch();
+    QJsonObject calendarSearchParams() const;
+    QString calendarSearchContextStamp() const;
     void loadCalendarOperationsPage(bool append);
     void loadPreferences();
     void configureNotifications();
@@ -562,6 +579,11 @@ private:
     QVariantMap m_pinnedRow;
     int m_pinnedIndex = -1;
     QVariantList m_calendarSources, m_captures;
+    QString m_calendarSearchQuery, m_calendarSearchContext, m_calendarSearchStatus;
+    QVariantMap m_calendarSearchResult;
+    bool m_calendarSearchActive = false, m_calendarSearchCombined = true, m_calendarSearchBusy = false;
+    int m_calendarSearchGeneration = 0;
+    QTimer m_calendarSearchTimer;
     QString m_preferencesStatus, m_captureStatus, m_nextCursor;
     int m_captureNextOffset = -1, m_captureGeneration = 0;
     QString m_calendarView = "week", m_calendarDate, m_timelineDate, m_calendarCoverage;

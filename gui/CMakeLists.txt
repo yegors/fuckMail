@@ -17,7 +17,7 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     GoogleDraftBackend.cpp
     GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp
     GoogleSendBackend.cpp
-    CalendarOperations.cpp
+    CalendarOperations.cpp CalendarSearchBackend.cpp
     ReplyDocument.cpp
     ReplyDocument.h
     CalendarLayout.cpp
@@ -56,7 +56,7 @@ set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(fuckmail-gui
     URI FuckMail
     VERSION 1.0
-    QML_FILES Main.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml FmButton.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmComboBox.qml MailView.qml MailFilters.qml SearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleLabelSetup.qml TodayStrip.qml
+    QML_FILES Main.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml FmButton.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmComboBox.qml MailView.qml MailFilters.qml SearchPopup.qml CalendarSearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleLabelSetup.qml TodayStrip.qml
     RESOURCES fonts/Geist-Regular.ttf fonts/Geist-Medium.ttf fonts/Geist-SemiBold.ttf fonts/LICENSE-Geist.txt
 )
 target_link_libraries(fuckmail-gui PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets)
@@ -131,7 +131,7 @@ if(BUILD_TESTING)
     add_executable(gui-google-draft-controls-test GoogleDraftControlsTest.cpp GoogleOperationTestFixture.h
         AccountLifecycleBackend.cpp
     MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp GoogleSendBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
-        Phase1Backend.cpp CompositionBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp
+        Phase1Backend.cpp CompositionBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp CalendarSearchBackend.cpp
         ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h
         ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
     target_link_libraries(gui-google-draft-controls-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
@@ -145,7 +145,7 @@ if(BUILD_TESTING)
     add_executable(gui-google-send-controls-test GoogleSendControlsTest.cpp GoogleOperationTestFixture.h
         AccountLifecycleBackend.cpp
     MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp GoogleSendBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
-        Phase1Backend.cpp CompositionBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp
+        Phase1Backend.cpp CompositionBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp CalendarSearchBackend.cpp
         ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h
         ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
     target_link_libraries(gui-google-send-controls-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
@@ -159,7 +159,7 @@ if(BUILD_TESTING)
     add_executable(gui-calendar-occurrence-test CalendarOccurrenceBackendTest.cpp GoogleOperationTestFixture.h
         AccountLifecycleBackend.cpp MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp
         GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp GoogleSendBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
-        Phase1Backend.cpp CompositionBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp
+        Phase1Backend.cpp CompositionBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp CalendarSearchBackend.cpp
         ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
     target_link_libraries(gui-calendar-occurrence-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
     target_compile_features(gui-calendar-occurrence-test PRIVATE cxx_std_20)
@@ -178,6 +178,15 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME gui-mail-navigation-cache COMMAND gui-mail-navigation-cache-test)
     set_tests_properties(gui-mail-navigation-cache PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
+    add_executable(gui-calendar-search-test CalendarSearchTest.cpp HatchItem.cpp HatchItem.h ${FM_NAVIGATION_TEST_SOURCES})
+    target_link_libraries(gui-calendar-search-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
+    target_compile_features(gui-calendar-search-test PRIVATE cxx_std_20)
+    target_compile_definitions(gui-calendar-search-test PRIVATE FM_GUI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    if(WIN32)
+        target_link_libraries(gui-calendar-search-test PRIVATE advapi32)
+    endif()
+    add_test(NAME gui-calendar-search COMMAND gui-calendar-search-test)
+    set_tests_properties(gui-calendar-search PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
     add_executable(gui-notification-backend-test NotificationBackendTest.cpp ${FM_NAVIGATION_TEST_SOURCES})
     target_link_libraries(gui-notification-backend-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
     target_compile_features(gui-notification-backend-test PRIVATE cxx_std_20)
@@ -194,7 +203,7 @@ if(BUILD_TESTING)
         GuiGoogleDraftSnapshotSelfTest.cpp GuiGoogleDraftSnapshotSelfTest.h
         AccountLifecycleBackend.cpp
     MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp GoogleSendBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
-        Phase1Backend.cpp CompositionBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp
+        Phase1Backend.cpp CompositionBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp CalendarSearchBackend.cpp
         ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h
         ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
     target_link_libraries(gui-google-draft-snapshot-controls-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)

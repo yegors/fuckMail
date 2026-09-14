@@ -25,6 +25,7 @@ QString uuid() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 
 MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool fixtureClock, bool liveProfile)
     : QObject(parent), m_accountModel(this), m_conversationModel(this), m_messageModel(this), m_profile(std::move(profile)), m_engine(std::move(engine)), m_fixtureClock(fixtureClock), m_liveProfileRequested(liveProfile), m_syntheticProfile(!liveProfile) {
+    initializeCalendarSearch();
     connect(this, &MailBackend::conversationChanged, this, [this] {
         const auto scope = QJsonDocument(QJsonArray{m_account, m_selected}).toJson(QJsonDocument::Compact);
         if (!m_messageModel.replace(QString::fromUtf8(scope), m_conversation.value("messages").toList())) {
@@ -853,6 +854,18 @@ void MailBackend::openLink(const QString &value) {
     if (!url.isValid() || (url.scheme() != "https" && url.scheme() != "http" && url.scheme() != "mailto")) { fail("This link type is not supported."); return; }
     if (!QDesktopServices::openUrl(url)) fail("No application could open this link.");
 }
+QString MailBackend::calendarCoverageText(const QJsonObject &coverage) const {
+    if (coverage["state"] == "display_zone_required") return QString("Choose a display time zone in Calendar settings");
+    if (!m_syntheticProfile && coverage["selected_calendars"].toInt() == 0)
+        return QString("No Google calendars connected");
+    const QString suffix = coverage["state"] == "restricted" ? "some calendars are unavailable"
+        : coverage["complete"].toBool() ? (m_syntheticProfile ? "cached fixture data" : "cached calendar data") : "incomplete cached data";
+    return QString("%1 selected calendars · %2").arg(coverage["selected_calendars"].toInt()).arg(suffix);
+}
+void MailBackend::publishCalendarWindow(const QJsonObject &result, const QString &from, int days) {
+    m_events = calendarPresentation(result["events"].toArray(), QDate::fromString(from, Qt::ISODate), days, QTimeZone(result["time_zone"].toString().toUtf8()));
+    m_calendarReady = true; m_calendarCoverage = calendarCoverageText(result["coverage"].toObject());
+}
 void MailBackend::loadCalendar() {
     const auto from = calendarFrom(), timeline = m_timelineDate;
     const int days = calendarDays(), generation = ++m_calendarGeneration;
@@ -879,12 +892,7 @@ void MailBackend::loadCalendar() {
     m_timelineCoverage = hadTimelineSnapshot ? "Refreshing cached timeline…" : "Loading timeline…";
     emit eventsChanged();
     auto coverageText = [this](const QJsonObject &coverage) {
-        if (coverage["state"] == "display_zone_required") return QString("Choose a display time zone in Calendar settings");
-        if (!m_syntheticProfile && coverage["selected_calendars"].toInt() == 0)
-            return QString("No Google calendars connected");
-        const QString suffix = coverage["state"] == "restricted" ? "some calendars are unavailable"
-            : coverage["complete"].toBool() ? (m_syntheticProfile ? "cached fixture data" : "cached calendar data") : "incomplete cached data";
-        return QString("%1 selected calendars · %2").arg(coverage["selected_calendars"].toInt()).arg(suffix);
+        return calendarCoverageText(coverage);
     };
     request("calendar_combined", {}, calendarParams,
       [this, from, days, generation, hadCalendarSnapshot, coverageText](auto result, bool ok) {
@@ -896,8 +904,7 @@ void MailBackend::loadCalendar() {
             m_calendarCoverage = (m_events.isEmpty() ? "Calendar unavailable: " : "Cached calendar is stale: ") + result["message"].toString();
             emit eventsChanged(); return;
         }
-        m_events = calendarPresentation(result["events"].toArray(), QDate::fromString(from, Qt::ISODate), days, QTimeZone(result["time_zone"].toString().toUtf8()));
-        m_calendarReady = true; m_calendarCoverage = coverageText(result["coverage"].toObject());
+        publishCalendarWindow(result, from, days);
         emit eventsChanged();
     });
     request("calendar_combined", {}, timelineParams,

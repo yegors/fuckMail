@@ -12,6 +12,7 @@ pub mod assist_store;
 mod benchmark;
 mod calendar_projection;
 mod calendar_reminders;
+mod calendar_search;
 pub mod calendar_store;
 mod cancellation;
 mod capture;
@@ -459,6 +460,7 @@ impl Store {
                 return self.calendar_sources();
             }
             "calendar_combined" => return self.calendar_combined(&params),
+            "calendar_search" => return self.calendar_search(&params),
             "calendar_reminders" => return self.calendar_reminders(&params),
             "calendar_reminder_ack" => return self.calendar_reminder_ack(account, &params),
             "mail_notifications" => return self.mail_notifications(&params),
