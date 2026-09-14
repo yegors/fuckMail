@@ -243,7 +243,7 @@ Item {
         ListView {
             id: agenda; objectName: "calendarAgenda"; visible: backend.calendarView === "agenda"; Layout.fillWidth: true; Layout.fillHeight: true; Layout.bottomMargin: 16; model: calendar.agendaEvents; clip: true
             delegate: ItemDelegate {
-                required property var modelData; objectName: "calendarAgendaEvent-" + modelData.account + "-" + modelData.event_id; width: agenda.width; height: 70; onClicked: calendar.showEvent(modelData, this)
+                required property var modelData; objectName: modelData.occurrence_selector ? "calendarAgendaOccurrence-" + modelData.id : "calendarAgendaEvent-" + modelData.account + "-" + modelData.event_id; width: agenda.width; height: 70; onClicked: calendar.showEvent(modelData, this)
                 background: Rectangle { color: parent.hovered ? Theme.surface : "transparent"; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, parent.height - 1); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
                 contentItem: RowLayout { spacing: 18
                     Text { text: modelData.start_display; color: Theme.subtle; font.pixelSize: Theme.fontSize(12); Layout.preferredWidth: 200 }

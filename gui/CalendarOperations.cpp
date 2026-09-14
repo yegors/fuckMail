@@ -1,6 +1,58 @@
 #include "MailBackend.h"
 #include <QJsonArray>
 #include <memory>
+#include <QDateTime>
+
+QVariantMap MailBackend::calendarOccurrenceContext(const QString &account, const QString &calendar) const {
+    if (!m_connected || m_shutdown || m_syntheticProfile || !accountCapability(account, "calendar_write")
+        || !googleSyncState(account).value("active").toBool()) return {};
+    for (const auto &entry : m_calendarSources) {
+        const auto source = entry.toMap();
+        if (source.value("account") == account && source.value("calendar_id") == calendar && source.value("writable").toBool())
+            return {{"account", account}, {"calendar_id", calendar}, {"lifecycle", lifecycleAccount(account).value("lifecycle")},
+                {"source_revision", source.value("revision")}, {"permission", source.value("permission")}, {"time_zone", source.value("time_zone")}};
+    }
+    return {};
+}
+
+void MailBackend::readCalendarOccurrence(const QVariantMap &selector, const QString &correlation) {
+    auto params = QJsonObject::fromVariantMap(selector);
+    const auto account = params.take("account").toString(), calendar = params.value("calendar_id").toString();
+    const auto context = calendarOccurrenceContext(account, calendar);
+    if (correlation.isEmpty() || correlation.size() > 128 || context.isEmpty()) {
+        emit calendarOccurrenceReadFinished(correlation, false, {}, "Start sync for this writable calendar before checking the occurrence."); return;
+    }
+    const auto original = params.value("original_start").toObject();
+    const auto series = params.value("series_id").toString();
+    if (series.isEmpty() || calendar.isEmpty() || original.isEmpty()) {
+        emit calendarOccurrenceReadFinished(correlation, false, {}, "This occurrence has no complete source identity."); return;
+    }
+    googleOperation("google_calendar_occurrence_read", account, params, [this, account, calendar, context, original, series, correlation](auto result, bool ok) {
+        if (context != calendarOccurrenceContext(account, calendar)) {
+            emit calendarOccurrenceReadFinished(correlation, false, {}, "The account or calendar changed. Check this occurrence again."); return;
+        }
+        const auto occurrence = result.value("occurrence").toObject(), returnedOriginal = occurrence.value("original_start").toObject();
+        bool sameOriginal = original.value("kind") == returnedOriginal.value("kind");
+        if (original.value("kind") == "date") sameOriginal = sameOriginal && original.value("date") == returnedOriginal.value("date");
+        else if (original.value("kind") == "zoned") {
+            const auto wanted = QDateTime::fromString(original.value("instant").toString(), Qt::ISODate);
+            const auto actual = QDateTime::fromString(returnedOriginal.value("instant").toString(), Qt::ISODate);
+            sameOriginal = sameOriginal && wanted.isValid() && actual.isValid() && wanted == actual;
+        } else sameOriginal = false;
+        const auto event = result.value("event").toObject();
+        if (ok && (result.value("account") != account || result.value("calendar_id") != calendar
+            || occurrence.value("series_id") != series || !sameOriginal || occurrence.value("expected_master_etag").toString().isEmpty()
+            || result.value("event_id").toString().isEmpty() || result.value("etag").toString().isEmpty()
+            || event.value("account") != account || event.value("calendar_id") != calendar
+            || event.value("event_id") != result.value("event_id") || event.value("etag") != result.value("etag")
+            || event.value("busy_only").toBool() || event.value("cancelled").toBool()
+            || (!event.value("can_edit").toBool() && !event.value("can_delete").toBool()))) {
+            ok = false; result = {{"message", "Google did not return an editable version of this exact occurrence."}};
+        }
+        emit calendarOccurrenceReadFinished(correlation, ok, ok ? result.toVariantMap() : QVariantMap{},
+            ok ? QString{} : result.value("message").toString("This occurrence could not be checked. Its current details remain here."));
+    });
+}
 
 void MailBackend::loadCalendarOperations() {
     m_calendarOperationStatus.clear();

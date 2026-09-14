@@ -1,0 +1,1591 @@
+{
+  "result": "passed",
+  "scenario": "isolated-google-send-cli",
+  "version": 2,
+  "executables": {
+    "engine": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\verification-google\\release\\fm-engine.exe",
+      "sha256": "80330ed65f860d9834686c48a798b1ee5f5afcca53b0a1f87b9bca78ffbd0997"
+    },
+    "cli": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\release\\fm.exe",
+      "sha256": "794017f232842c8c3eaf9cff650ffd4ba181f2813d6c32392b188a3a6b3002a1"
+    }
+  },
+  "sources": {
+    "Cargo.lock": "f9f7cacd924bbbc38c7b56e1a5a5957ae18fd0f98e56a3b1907ae560f9dcddba",
+    "Cargo.toml": "8e789e663090c7b78781a746cf834d09c036b4a3625fc4ef7a981474692c397e",
+    "CMakeLists.txt": "4d5b988b189547a6283e0ecdce7ec20c736a4465e5aab697811fc152a25ea2b0",
+    "crates/fm-assist/Cargo.toml": "8a9e42b107eb897ed684117af342008611ac70e1f5e7ad1ccdbd22571d01e7d7",
+    "crates/fm-assist/src/lib.rs": "97893fa643ebf78caaac657d92c69fa7794f69c4a37c5e7a21cc4ddc2bd5083b",
+    "crates/fm-calendar/Cargo.toml": "ac3c3176b30bcfe4da25994f41f590c6858f329ae11f8ba486c277f1766f2c50",
+    "crates/fm-calendar/src/edits.rs": "e54c196f2e4a0971ddd604cb7b6bb21c07b8212e51503082fbcd12e40826b25f",
+    "crates/fm-calendar/src/google_api/occurrences.rs": "fcc924593d659fc1701a0da21c580cdb8b31a67babf6d26bca2c0fc402b47795",
+    "crates/fm-calendar/src/google_api/tests/occurrences.rs": "28b8a45c322311beb91ed73672c67b22bea51c462d8045ad9e855e16369974a0",
+    "crates/fm-calendar/src/google_api/tests.rs": "40344b6aad3cea821642a7f0d427ca4cd66c11c93744a6bd6d8c184a16caaf1a",
+    "crates/fm-calendar/src/google_api.rs": "f9da38c5315fd084573b07b43bc6ad17b510d8ead179c135315ef53f0366775b",
+    "crates/fm-calendar/src/lib.rs": "b3d21388c56e0ec7820242dc406f8349ccbe3314f218402260e710c6dcbbca11",
+    "crates/fm-calendar/src/sync.rs": "68730d5f7d15cbc5ae46c6cb7816dcc4aa26339e276b15141d590fdfca45781a",
+    "crates/fm-calendar/tests/calendar.rs": "0c9a474052cf30575de541f6e42df94632f1fef743b7a8e0eabf1466b4327046",
+    "crates/fm-calendar/tests/limited_access.rs": "ba69af530a744e1bdc16b2ad05c0e6ff03c720b6558dd3bb88695323de63cb71",
+    "crates/fm-calendar/vendor/rrule/.cargo_vcs_info.json": "97c42d8c1faa0d245d7848dc97fe306d568054e6de81c0d1a962bf248c95a064",
+    "crates/fm-calendar/vendor/rrule/Cargo.toml": "e19a6e8e9e36f84dc51bef4042dfed693881e556c43829cb5cf1aa6c132d51b2",
+    "crates/fm-calendar/vendor/rrule/examples/manual_iter.rs": "9b3a62f41503c7ec611ee085dbb0f4edaeb8d0e095ca768b5740281459d01f16",
+    "crates/fm-calendar/vendor/rrule/examples/manual_rrule.rs": "f490000e4e2ef37947d145900a1edbe37a58276a927d689d81d9f0e35f66d9a5",
+    "crates/fm-calendar/vendor/rrule/examples/manual_rrule_set.rs": "c601ddc59850a3ab29a27f405759e715ef0a3b2ea0d180a798db33bb004766a6",
+    "crates/fm-calendar/vendor/rrule/examples/timezone_support.rs": "36d9c6544c73cf10f56e92c420b215a43f770faa7f2dca0f520458b982231257",
+    "crates/fm-calendar/vendor/rrule/src/bin/rrule.rs": "e1fcaa156443b7572ed199122f518342e221238119f9fea703c182ed25293083",
+    "crates/fm-calendar/vendor/rrule/src/core/datetime.rs": "ea86ca59578b216706c83bd515f7cfed6e8692a8c53f97db5cc2a9c20d735c2f",
+    "crates/fm-calendar/vendor/rrule/src/core/mod.rs": "c7d4c0a5888f5e51b5c9a571e2b2480a0d6de19dda8a64a411cd424871fb0d9d",
+    "crates/fm-calendar/vendor/rrule/src/core/rrule.rs": "c3c7c37460f345eadc014a0778d2dc5afb27e0b32a1ba7de50aa1f5c86a18b74",
+    "crates/fm-calendar/vendor/rrule/src/core/rruleset.rs": "ca3ac69025f14568541f62e731bb05134e17c2ec9f70b3a0cb891996bb76bf95",
+    "crates/fm-calendar/vendor/rrule/src/core/timezone.rs": "f41320031e072cc6e98496137cfdfd10d701ab2e13926656e2e792d65479768b",
+    "crates/fm-calendar/vendor/rrule/src/core/timezone_impl.rs": "08e774806d3f307c2bc8e2fc43d3bad88091096ebfec95535e497a3cb3a4fcca",
+    "crates/fm-calendar/vendor/rrule/src/core/utils.rs": "48294c53bdec5a8c01fc4fd7fd7b0b0f170bfbc8deea8c492d720ac9395212ee",
+    "crates/fm-calendar/vendor/rrule/src/error.rs": "6c47e262ebd76600644ac20eedd871cb1fe61ffdea1522e444abbdd0c951a282",
+    "crates/fm-calendar/vendor/rrule/src/iter/checks.rs": "3cd7fd9d3d9a6143d81254509f2e62444d191d0f60fb2ec923c15dbaadcc6b74",
+    "crates/fm-calendar/vendor/rrule/src/iter/counter_date.rs": "a2d4977e377ba76946ef7542a8d6786f222e282a6e5279eda69cfb544d4f691f",
+    "crates/fm-calendar/vendor/rrule/src/iter/easter.rs": "2519e5e16afdbf2d0526b26f7dc6bde8d07d6195699c53a4189ae8534e846a72",
+    "crates/fm-calendar/vendor/rrule/src/iter/filters.rs": "aad4c3b50875d7f8b3ae3f202c67a70279e49df2d358b1aba5854abd694b5d41",
+    "crates/fm-calendar/vendor/rrule/src/iter/iterinfo.rs": "2c96ed0b7f6c8b69cbcc25e56866496e2a5b468a19d315d2cf1640e303589668",
+    "crates/fm-calendar/vendor/rrule/src/iter/masks.rs": "7ab761922c134a4180ee0b764ff171ef92cd08409d738972684084835c87db8c",
+    "crates/fm-calendar/vendor/rrule/src/iter/mod.rs": "1f8edf65b4dc6bf7bb7b99283f4c42ea0b40d8e9ac286ddf4f8b526affbc04cc",
+    "crates/fm-calendar/vendor/rrule/src/iter/monthinfo.rs": "760c03e97813fd6d868a8349865e62805caff9d358b921d6c2ce3c2723e1ecd7",
+    "crates/fm-calendar/vendor/rrule/src/iter/operation_errors.rs": "85e03a525c4b35aaf8b0feede9b84b0d123760a9780c33d1b702358e99a9fd16",
+    "crates/fm-calendar/vendor/rrule/src/iter/pos_list.rs": "e586bacb184ac9c9dbdddfef9d426a35653c3f68f544b42cc4452a2b7748ed6e",
+    "crates/fm-calendar/vendor/rrule/src/iter/rrule_iter.rs": "499b6faa46fc5f7e5615e6f9ea4695f1c7581663e10870e5a8230f3225ecde8c",
+    "crates/fm-calendar/vendor/rrule/src/iter/rruleset_iter.rs": "9cbe13f172045f18a66e50bb2c8c95ada1131bca42e52d88738bf9711be96f3f",
+    "crates/fm-calendar/vendor/rrule/src/iter/utils.rs": "3b46a700ec1dd2af155bdd873702c238f9c046a240130c18a459da621a2a5462",
+    "crates/fm-calendar/vendor/rrule/src/iter/yearinfo.rs": "fe0f07eaabf4c9f672dc5dbee93067b972059d8a7e8f487c1ea06cadf7295047",
+    "crates/fm-calendar/vendor/rrule/src/lib.rs": "02ee7585d8b194109bed21318ea1ebb1ffcc3c8a950e14e26ecde9ca01bcff8b",
+    "crates/fm-calendar/vendor/rrule/src/parser/content_line/content_line_parts.rs": "24c1b5deb8b90d0894e3f91022edd51d460db8573ceff79d2293b47d14908657",
+    "crates/fm-calendar/vendor/rrule/src/parser/content_line/date_content_line.rs": "de076becc4aac6480cef2044aa22c5dc29f187ffbda1535232b79e29b3c2624c",
+    "crates/fm-calendar/vendor/rrule/src/parser/content_line/mod.rs": "fa109d1cd36315a1ce85513117e3f607b5b623f8c59b01817b28ff466d742e02",
+    "crates/fm-calendar/vendor/rrule/src/parser/content_line/parameters.rs": "d08f96fac225ec316819873ca3ab12b16f86f32caf45038c384c71797ef0c589",
+    "crates/fm-calendar/vendor/rrule/src/parser/content_line/rule_content_line.rs": "a6034e444b24ae5a1c093c8e42a00aa92e82fcede7a16a30daad0c32d0b628ec",
+    "crates/fm-calendar/vendor/rrule/src/parser/content_line/start_date_content_line.rs": "7e5c06262ad74bdf0f07c26f93d4c61cc42987c8e84ae984accf35cfa217f863",
+    "crates/fm-calendar/vendor/rrule/src/parser/datetime.rs": "d1e0219a49a363cda436352da83a44a623856d6559c82d3c80c0c49e7bbadd3e",
+    "crates/fm-calendar/vendor/rrule/src/parser/error.rs": "1fd62d58402a809c9c84343d41d69a59ca23080e2aacdc9e0c5b0ddda99faff9",
+    "crates/fm-calendar/vendor/rrule/src/parser/mod.rs": "3a8a05b9c70470de6237298fe6c9de63feee31067a8ecbb8adfbc77b21e37920",
+    "crates/fm-calendar/vendor/rrule/src/parser/regex.rs": "90944636cd9f132af9376eaa7873bb448e75cd43421f64f83484ccf06243f022",
+    "crates/fm-calendar/vendor/rrule/src/parser/utils.rs": "88c3f3f435464a5509e8a4b55ad30acb8ac79254c9c9258e7b2240ded9e3633f",
+    "crates/fm-calendar/vendor/rrule/src/tests/common.rs": "bd55e57f5755ce153ae94381e081f53adebfea462b89ff9baf63f688c7248098",
+    "crates/fm-calendar/vendor/rrule/src/tests/datetime.rs": "1cad4667656840f421b3cab4dc0027964e643bc82a71e5e04ce77ec2eaaa7168",
+    "crates/fm-calendar/vendor/rrule/src/tests/daylight_saving.rs": "a187cb00ea2be2c4cd6a98b8721a953def7843e256816d186c828b1d59742801",
+    "crates/fm-calendar/vendor/rrule/src/tests/mod.rs": "d203483717683d580c3f1535a357e31c576094ca90dcc7e9e4d7623dce496261",
+    "crates/fm-calendar/vendor/rrule/src/tests/regression.rs": "8145182f90f7155ebf15189fd48a90f3d012a3da2a335739043b435a6db27bd9",
+    "crates/fm-calendar/vendor/rrule/src/tests/rfc_tests.rs": "2d1cc964d1441792259a20c6ea578797122bd41f6f2a6251635e86c23505b107",
+    "crates/fm-calendar/vendor/rrule/src/tests/rrule.rs": "bec429c914e539c7e79e63353c8f9f57fe44f0bd0863381182182e339d5b39f8",
+    "crates/fm-calendar/vendor/rrule/src/tests/rruleset.rs": "71cc2521acb9ff0cc9334fe465a0fd5aa913b6a64a9f768a7b86c48909c5f7f4",
+    "crates/fm-calendar/vendor/rrule/src/tests/serde.rs": "caf44bf45f415d4962c9fc2beecf4ddd9bafb98d7b0f102b52e2499510f0af52",
+    "crates/fm-calendar/vendor/rrule/src/validator/error.rs": "055327cc021bf1e06dbec79fcb50a7b0b5c1520f9dee68d931af32fe19a5ebb6",
+    "crates/fm-calendar/vendor/rrule/src/validator/mod.rs": "cc5554a80a472f428bc949d6b0029e6a87f9935c9fcef1a858c4ae90549d7657",
+    "crates/fm-calendar/vendor/rrule/src/validator/validate_rrule.rs": "928e1ab6b3cba503670335a5f8f59c67ac32bee062d92eb2efc3160aa8ff2316",
+    "crates/fm-cli/Cargo.toml": "2152e17bdca0f091ca38112b8c520e32878e94f012539302bdeadd4521b2cfb8",
+    "crates/fm-cli/src/main.rs": "ec1a9d303952f4ac924c88fde6c14867d4fdd1c0e407e89eecabd2d1409eb772",
+    "crates/fm-cli/tests/arguments.rs": "b2cf9dd2c71ee3f73c621f9537864366fae8ee4aebcd142d9afc1f7ba7a91649",
+    "crates/fm-core/Cargo.toml": "ed506fe4c586b77255aebe920b6a2ad126353275228f49bde04d83ce18e8554c",
+    "crates/fm-core/src/account_lifecycle/tests.rs": "dac1070ac027e566f6760f4544155ce6bbbd585362ecd1d83b606d3bdea96d9d",
+    "crates/fm-core/src/account_lifecycle.rs": "3099a49b635159b7d21608e4096ded2e186ba4c4a2665101c4ee0f94d8785325",
+    "crates/fm-core/src/assist_store.rs": "3c10923dcd8e914fa1f7e5d5bfc610a590a69216e2dceab53895d640e328c332",
+    "crates/fm-core/src/benchmark.rs": "43b499386d5b3a9d41e0a80b15bc192df559d23f6c095a5671938d66ac4aeb37",
+    "crates/fm-core/src/calendar_projection.rs": "6fafd098f19a792058c51cd9311b4cfa137c87947c9711172a1eeff3d0e00151",
+    "crates/fm-core/src/calendar_store.rs": "4a7f9025d414c5434521e88fa7995b432bd96d383e3cf2a969e55d2637d78fcc",
+    "crates/fm-core/src/calendar_store_tests.rs": "71d98727e02653c1fb25ec7a5e9e26cecd959597ffa0145602a503f318286214",
+    "crates/fm-core/src/cancellation.rs": "53695b0aa5a1cc25055270bf00d9a03997c57fe81942298ee4e64b97db68aa26",
+    "crates/fm-core/src/capture.rs": "9a456690b6ce60c61254a35d6b5fdeff1c6b9095f3f48df4a279db53389a98a7",
+    "crates/fm-core/src/composition.rs": "c3268a6ff89329f1537c8e691fa4722dc2b9322d94f5bed7c697b20c39f5ead6",
+    "crates/fm-core/src/composition_tests.rs": "f7c50fcb695068cf9ba690c18ad8580a5c2b245b18cd89d0d99c72cc41e7fc7c",
+    "crates/fm-core/src/content.rs": "54827d9c854b1e59dccb45f0307d1bd962ace1a7e136746b0f6a95357c008b3f",
+    "crates/fm-core/src/fixture.rs": "f0e33cd61094dbd70b356053c8d8344a92ada9620f4cce319e0114931b2beb9d",
+    "crates/fm-core/src/google_draft_inventory/actions/authoring.rs": "00a57a8243aa0a674b104ef312fe0c4257c5b848bc28473df3555dbe3419c1ff",
+    "crates/fm-core/src/google_draft_inventory/actions/deletion.rs": "0b5ddcb3d88073be84ec9d309ac227da8c1002fe96f9ffa39a3a81997e91c2ee",
+    "crates/fm-core/src/google_draft_inventory/actions/migration_tests.rs": "bb8dba7039212bc56855ae1a0b2c15b138a20720e6d9d7544f7d9e4fba512040",
+    "crates/fm-core/src/google_draft_inventory/actions/tests.rs": "5158be8563ca496fbf339ffc5a8d8a6b26c8c1253304129098ec1be63d471f35",
+    "crates/fm-core/src/google_draft_inventory/actions.rs": "840d82f8cbec42fa6b9e5c87db10f8c798ca60abfcf23fd8a0b6271b40d37f26",
+    "crates/fm-core/src/google_draft_inventory/preparation.rs": "9b541840c1f5b3f4d1e2a4e9aecc93db37c2e4701d4da46b5b459895b71d04c3",
+    "crates/fm-core/src/google_draft_inventory/tests.rs": "2f0f33057d6022bbedcb96edff2f6d6a3da1649f65f4147aa6fc8942b988ed8f",
+    "crates/fm-core/src/google_draft_inventory.rs": "7dcb96b9bac6e5c70e03edc4d71d2723fbee4c74143d3516d65518e4ed9d8f84",
+    "crates/fm-core/src/google_drafts/tests.rs": "95bdc3679d88d1500042eceb3923ce149d1ecf6543153f24768e879b8546a52c",
+    "crates/fm-core/src/google_drafts.rs": "8d189dadcd90f90a4db0e5c5493affdefa2755b15703679bf51fe48fe5cbb556",
+    "crates/fm-core/src/google_labels/tests.rs": "1f0941790b4ca3af362ea39921628c4abe69b6f1a01a52a6e32f50a6defc803d",
+    "crates/fm-core/src/google_labels.rs": "33bacc7bef9b41f8e28203bcfafb8741cfce292395b99966541cc460c4d6cbd1",
+    "crates/fm-core/src/google_live_mail/preparation.rs": "d53c5ebb4cad6007dba8597d8833a90322d0c20a0e7835f0477ef245d35ee99b",
+    "crates/fm-core/src/google_live_mail/tests.rs": "e78dcbf60745b0c849fd2dc459f91b56cb980b49f4c5ba189ad98d812f40b7f9",
+    "crates/fm-core/src/google_live_mail.rs": "28b1f5a43eed104d03a58f19d514a34481df55e62e008ce6b4b5c295eb9b5757",
+    "crates/fm-core/src/google_live_mutations/tests.rs": "cdb15053a6c5f0db2b806de3a3d135be3474d174287455200266f378a89fcea5",
+    "crates/fm-core/src/google_live_mutations.rs": "6da8e3cde7151334a26fe11f3f9f24255356cc44df135a4b289cbc1a8a6b562d",
+    "crates/fm-core/src/google_send/tests.rs": "57cc1216181cd4db7dbfd119bdce7e6879fee6748b1dbcc5240f1b62deb3fd1a",
+    "crates/fm-core/src/google_send.rs": "d5cd3e947b51eb4644db8d6a2e81b17b78a088a5540d0651b98584f95f9d88d9",
+    "crates/fm-core/src/google_store.rs": "298a0f936786887b7d5f7ea8d36f0df54efdf65d1752c6580821f71381e95a8b",
+    "crates/fm-core/src/google_store_tests.rs": "298b84d79b1facb2170a1100eec4ddb81c18e80ce9b1cffb2b0e5d3638e8ed56",
+    "crates/fm-core/src/lib.rs": "6ce12ce36f511979dc5d880e4db6701fb7ab020a7ae9de639a4ad28b34a08d59",
+    "crates/fm-core/src/live_calendar.rs": "03ce5b11fe0d61a5ba2bdace26528aa11cdcf6c13f6ecb41d72b868826c2bc47",
+    "crates/fm-core/src/live_calendar_invitations.rs": "5bab87c627afbf0d046a86e6c63f41a1a9fd75cea6f7fa7ee22a38d5a8248057",
+    "crates/fm-core/src/live_calendar_invitations_tests.rs": "aad08725209cb5ba1ce5346b710b11b76e18946a7eef27154d4d6f8ea67f51ba",
+    "crates/fm-core/src/live_calendar_occurrences.rs": "568baed778ec52f9a4b6d56187f159dcc97ab95962086ef353702834bfa2d06a",
+    "crates/fm-core/src/live_calendar_occurrences_tests.rs": "4d0cced57d7744f419d01b8c28ca9ffcd203f9fa1dd68632d7e70880b8c0333e",
+    "crates/fm-core/src/live_calendar_preparation.rs": "45fe913ce08d8d5cd68db2a85414adcc6998901ae32795a520ff86678dfa3269",
+    "crates/fm-core/src/live_calendar_tests.rs": "cc8ee6765cecbf4449ec1223745ab333868d837a2d8c48cd2aadb9f176925d36",
+    "crates/fm-core/src/live_calendar_tombstone_tests.rs": "e8dd756851dbe0f7fe28c677af6804652908cb613537ecb90796afa65f7b8bfc",
+    "crates/fm-core/src/live_calendar_writes.rs": "5347c68a6efef57afc47613996312016053d7bf44db75774efd7fdb15f45d8d1",
+    "crates/fm-core/src/live_calendar_writes_tests.rs": "f7c002066b7d5d39ec92c787e0d6f4d94569af5855b0fef1bde498421e27ef97",
+    "crates/fm-core/src/live_profile.rs": "ec139e1974e583c39132de3793073357b8db39bca1a3d263b2199276ae908660",
+    "crates/fm-core/src/live_profile_tests.rs": "7f7356f42c5f3683dfd2aa87f6808e4e2c8f89ab612756526449c6485a0038bf",
+    "crates/fm-core/src/local_content/tests.rs": "882a3311f6df28e2b697618f9254afa2dc7712c6c06220af500f80d35566d8a1",
+    "crates/fm-core/src/local_content.rs": "29d863c9865cfed5f5a269fafb82c4ea4b99500977844a4ad63e7a303e78315c",
+    "crates/fm-core/src/migration-002.sql": "603d9a8b0f3ef0e9d27762016cd113802756dd15fbb2e955656f2b4fd361ab45",
+    "crates/fm-core/src/migration-003-drafts.sql": "1b695969257624427a902eb8d89db55a8d679925bbd17b0f158b10101f66377f",
+    "crates/fm-core/src/migration-003-google.sql": "29f056e3e2ba0aa70cf5313595a3339d5de079adba1b02d7fc44555dfd7e8c90",
+    "crates/fm-core/src/migration-004-assist.sql": "f6c3290d15fd028b28b84311f538bfaef4532248a5ab3c9b566c542a9ea61c95",
+    "crates/fm-core/src/migration-004-calendar.sql": "c2721c2f95f55bbca74c7937431f10139de4eeaa97d9aec06341b49c2c33cfe6",
+    "crates/fm-core/src/migration-005.sql": "a432df291d832ae47b3430a85a4117215eaf2121dec802058631dd0255c7d33d",
+    "crates/fm-core/src/migration-006.sql": "a7bfae7b9188d0f0e480f72e67ca9b4510dd27b4e46085c26adc0173b71c766c",
+    "crates/fm-core/src/migration-007.sql": "3e0b6ea35416da0c94e38a67646606f25824379e3ad2ffac56c9201939fad3bb",
+    "crates/fm-core/src/migration-008.sql": "356705db16ad2c3ed0a6968047580f86b1fdb60e7b3a14a2963e6900a267f7f9",
+    "crates/fm-core/src/migration-009-calendar.sql": "2dbd5f01cc36e563791e574ece3ecba0e5d98520ae2d20880a3fddadecf9ee1f",
+    "crates/fm-core/src/migration-009-mail.sql": "2cfc49fb7131fca43589dee7dd06c16bf0177695b228fb78564bba2e0afdbe73",
+    "crates/fm-core/src/migration-009-runtime.sql": "dfd9399bfe62fccf32263980047f150a5168bcfb9d38c930d0f8862aace5a0a6",
+    "crates/fm-core/src/migration-010-calendar-writes.sql": "05addf0fb6081156ff66b2c317674d1291517d83252ab2de65552b5a5ffab197",
+    "crates/fm-core/src/migration-010-mail.sql": "c47f154ea3a4ea9a6fca448f83b63f33ca451adf58391f299bc15d91225792b0",
+    "crates/fm-core/src/migration-011-labels.sql": "728b8ddbe4b3c6afb242f85ad33d25081a62b110a2fdcd6b5de496dae5b393ed",
+    "crates/fm-core/src/migration-012-attachments.sql": "6798bb9aa3b17ba70a4e04721c73f43931d37d3290c04a0976f49177e1354d4e",
+    "crates/fm-core/src/migration-013-google-drafts.sql": "85d1a99b2c6ff5eaaa8a827aa28a3b99094e5662f35060370db64aa49220d5db",
+    "crates/fm-core/src/migration-014-google-send.sql": "5c0b07d979313966be4c69a88e6177d8f0c8d6d87186ad8c1b88af799bdf1663",
+    "crates/fm-core/src/migration-015-google-draft-inventory.sql": "5b461229d01ced35d59629133137db4faab748d617f0b6612d97d099aafb3d8c",
+    "crates/fm-core/src/migration-016-google-draft-actions.sql": "ca6d00e13d8d9635b95985afe62dcc081571694b67822e647be0fbcff6d97a0b",
+    "crates/fm-core/src/migration-017-calendar-invitations.sql": "c8b7fc8f69a85894dfc7bd4564ef8312b7300ea51e4fa23da58302b7c363eb5d",
+    "crates/fm-core/src/migration-018-account-lifecycle.sql": "1cc337f45f1e5253cb9f274441f1e4878239e17c434487d3815579e36b707d03",
+    "crates/fm-core/src/migration-019-calendar-occurrences.sql": "6e1f6b472b95e65bfea67c5a97de089c4afe4c44e8e92a5edfb5b02b1c4ff062",
+    "crates/fm-core/src/mutations.rs": "13e9f50f24b56a5a1bc7f5ba209faa5dcb6972e027b4e8c2361580961b79842f",
+    "crates/fm-core/src/phase1_calendar.rs": "17f6a85f7b24a2e57ad6ee3dd9539ce35386c6c868d2606ac3b505da90a39ed6",
+    "crates/fm-core/src/phase1_calendar_tests.rs": "41a1723f8b8a62568990208f86967c34bcff7eb3c4dfe57f8441b5ce0cfedc61",
+    "crates/fm-core/src/phase1_tests.rs": "bd7ea34803da1a67d5c125df5c1cc880c58227d539be32e39f3a78c00c46f7c6",
+    "crates/fm-core/src/preferences.rs": "e67258c6ea4ae911cde19de28c0d04da0c9bdf70e55b6ee90d99d21568b3a068",
+    "crates/fm-core/src/queries.rs": "1ca582dd2e4a05084240e789451ea46d2bfcbea0328d645eea2c680017014473",
+    "crates/fm-core/src/schema.sql": "dd31abdda46f90c8c262902fe9ec4e98be20a28d27745c1846d10bd113a627d8",
+    "crates/fm-core/src/sender_kind_tests.rs": "992f9673b96effc2d6988a26436c7eb5182c4dcbba0b1ff933f76d89acdb9546",
+    "crates/fm-core/src/test_profiles.rs": "b15e1f84c2a990ece26444c30ebac5c57186013a728779cc9d859f969747a97d",
+    "crates/fm-core/tests/coverage.rs": "6726caff313ea23e117dbda39920323f77b2e8e446819baf21033e89a99b4b73",
+    "crates/fm-core/tests/mutations.rs": "64b67d3092ca9daa26508dc5f58ff106e481c64bd2029d3ee2e00384f37220d3",
+    "crates/fm-core/tests/search.rs": "d8272db3353ab5c96718fd1c6a931a0e647d6c2e976f0e05c48a7a353be5134a",
+    "crates/fm-engine/Cargo.toml": "66aa16af68cef9fd09f1dd04ef7ffa0634ca509e05693e7163e74f1d7c205677",
+    "crates/fm-engine/src/core_tasks.rs": "ac37f38aa277110c91e9b344b546db3d385d4d7b3bfb4112564f5270d4d9ed1a",
+    "crates/fm-engine/src/google_auth/account_lifecycle.rs": "6a3b33200fd18a1710f9a6aab0a906b55cdf3d15e9bbce4a7960c4f926a31f74",
+    "crates/fm-engine/src/google_auth/account_lifecycle_tests.rs": "abcd1318b1e1ebafef89a0b1c653dd51a59f10a0a78fe89009080962dd4ac08d",
+    "crates/fm-engine/src/google_auth/tests.rs": "17fb3175468d2331274b9ac1b2929b3dbb1f2a5186b18da074977ef341ca1d4e",
+    "crates/fm-engine/src/google_auth.rs": "d698551c4d928d5fe11eaf850a66d9e12a74b59142af012c69f851d615c5df67",
+    "crates/fm-engine/src/google_sync/calendar.rs": "fad5d88f7dd2832b4b4ad291f5da9487adf2d8002df1b541549e2831c8281877",
+    "crates/fm-engine/src/google_sync/calendar_occurrences.rs": "28f7108fc3fcc279a44bb58029f5e9973338875654e531db714394bc862058b8",
+    "crates/fm-engine/src/google_sync/calendar_occurrences_tests.rs": "e6fe53c635b044c895e3b52d80c2325092f470e466ac950f2ef80ed1c8090793",
+    "crates/fm-engine/src/google_sync/calendar_tests.rs": "5568acb40ce8a8b5c5576656efa664e210f6d96fbe69f5f153e48287c1a48361",
+    "crates/fm-engine/src/google_sync/calendar_writes.rs": "040f7f239e531576428010936241c6e6d7aaaf3bb3d818c98ff441785480fd41",
+    "crates/fm-engine/src/google_sync/calendar_writes_tests.rs": "02271dbf1cae405fbdcc2b4f2f8daa5caa0be4e41e66f011c48a8d02df937595",
+    "crates/fm-engine/src/google_sync/draft_actions/tests.rs": "4fa20d5fb19a325d4aec9ed3edbee35cf6b9e9b691ace140a1e9d7c61311eec6",
+    "crates/fm-engine/src/google_sync/draft_actions.rs": "78f99d137fafc54cfddfee0bcef3caf10f5c6b3a524cec01389f06d7f72c352f",
+    "crates/fm-engine/src/google_sync/drafts/tests.rs": "35d4916e923632a66702e6f5d1a1edf4f584176f5ac6ee75345a995af8cf04a9",
+    "crates/fm-engine/src/google_sync/drafts.rs": "b2edb7c5335332a590a7386215d9c579fc9b469fd6c60580da5415cf46b33569",
+    "crates/fm-engine/src/google_sync/labels/tests.rs": "904c6be9d79fb3548b09177d72d066c64905eccb301424ff290d4ac24603951d",
+    "crates/fm-engine/src/google_sync/labels.rs": "37594fd81fc2f346fd280caa436a389ded01d2f75dda7432c3f3aeed9c2fcd66",
+    "crates/fm-engine/src/google_sync/mail/tests.rs": "93f0edb362ee9ced165988afb521b06d6af4cace7efc468d68b3b2940145f57c",
+    "crates/fm-engine/src/google_sync/mail.rs": "9314a04e18416b1b29f18b87d97cf62b6a09a03ce36b45be3f1bd86b8fb481c8",
+    "crates/fm-engine/src/google_sync/mail_mutations/tests.rs": "2d8f7c12e7728b90db18073e0b768c810f9c545593ea50e4711aaa46d547f8ef",
+    "crates/fm-engine/src/google_sync/mail_mutations.rs": "7e7f2abff24df89783e7bf0eabe412a850f7a76b51e32525561980543dc0ccbf",
+    "crates/fm-engine/src/google_sync/quota.rs": "db0617f22faecbb5e5dc7e8bb05c47c34636d6282662bf611ce9f5c06f66927d",
+    "crates/fm-engine/src/google_sync/remote_drafts/tests.rs": "d7b00779a144031ba31264cec182692d734a7b6724e90efbf601823ad1990024",
+    "crates/fm-engine/src/google_sync/remote_drafts.rs": "a633faf4ac45e9c7c11a227e0c9f54d45d783e8d4f3332f57452fde5c17c51ba",
+    "crates/fm-engine/src/google_sync/runtime_tests.rs": "c467d94fbaee29e5c2a293c79f64fe4ab638082fdce403f46fd7ea6a647e1cba",
+    "crates/fm-engine/src/google_sync/send/tests.rs": "848c5f374d57822d658d5b545ed7afaaae610f8a5512ef3defc936ad2981fe83",
+    "crates/fm-engine/src/google_sync/send.rs": "ef5577c00a2ce6965cc8016052ce9d0089c531e39c44d0b78bee0a8b2ef25a85",
+    "crates/fm-engine/src/google_sync.rs": "304ad05eab0137c72f136440e67bb9630fdf2c603674e997d9b411fa83be48b4",
+    "crates/fm-engine/src/local_content/tests.rs": "178232a3e3b820c8267b53fb009f7bb16f1374264982d798668553fb4c0b6727",
+    "crates/fm-engine/src/local_content.rs": "cbcd3629be1ad605e0a1b4855a5ba154a76e05e92f98c20922455d158d476c54",
+    "crates/fm-engine/src/main.rs": "51bd2494f44461508c9fafedabbbf2a23346a065770598248d74aac1c0ae63c8",
+    "crates/fm-engine/src/verification_fixture.rs": "9a3e16d3c021f46b5c71c54725eec6230d205c16506b238a69dcda7069a6d306",
+    "crates/fm-engine/src/verification_google/fixture/accounts.rs": "973f90f753acda672745de1699985a6ffc1d0f441238698bad4e5823de33c406",
+    "crates/fm-engine/src/verification_google/fixture/accounts_tests.rs": "0862f06621009819fa5c704f0984138058fcdfa23afdd2b84925939b45068506",
+    "crates/fm-engine/src/verification_google/fixture/calendar_invitations.rs": "97927a0f6b9f5f98338018d5cd33600569298c0ebcc338e86df80d44f12352cf",
+    "crates/fm-engine/src/verification_google/fixture/calendar_occurrences.rs": "63f3259781ccbbf4e35cfcc30b5b733c894802a8c705d4785671928ae6488ac9",
+    "crates/fm-engine/src/verification_google/fixture/calendar_tests.rs": "117434ccfbfd49af8f84b57c14088e350ecdad095f3c250c00d7f403c0e9978c",
+    "crates/fm-engine/src/verification_google/fixture/draft_actions.rs": "672db9cf776fb0fa9879c4e5a6dd7f9cda16e06f90012738e02237df979c7d00",
+    "crates/fm-engine/src/verification_google/fixture/occurrence_tests.rs": "dd6cc89ac76847c30d6fa4cd4e37bae035e5b02cc1fcb686e977461275a61274",
+    "crates/fm-engine/src/verification_google/fixture/remote_drafts.rs": "858019a39b3794ff24f17cc81ec1b746b6bf621ea203068a4bcd7b38de3fb6cb",
+    "crates/fm-engine/src/verification_google/fixture/tests.rs": "db8ef07644d4650e0ce7ea1b7bcf1509eb3d42086f4fa8d82fa3719170e05a70",
+    "crates/fm-engine/src/verification_google/fixture/transport.rs": "513beb19c5427ad9e8e51c42ba896ff75ea6f6f3e01ef077ae5e264aa10afec1",
+    "crates/fm-engine/src/verification_google/fixture.rs": "7d721b41ed9e09f4579ec5559058691f2dc2bdd3c59789c82589f798e85d55a3",
+    "crates/fm-engine/src/verification_google.rs": "7a0ad0005f9af1279334da5241907c2f49076c4653d2d4cccbf0bfe849a6a990",
+    "crates/fm-engine/tests/sessions.rs": "1377fe133ba0f7d08250ed8b3d229d3950bd25da0e30cadf996f92dc72802469",
+    "crates/fm-engine/tests/verification_profile.rs": "1aade4cc5def3f57d74b66b7852fdfc82a80128529b2f5beb9f1d0f1987022c2",
+    "crates/fm-google/Cargo.toml": "58e2db94f77448e0665b5646a6da60bb6571cefe89b4d2431042c010f8a9715f",
+    "crates/fm-google/src/attachment.rs": "004da5e077cf3aeb1a468374fe5c5f85b07abd6f109a65c4ac28973f0f837e64",
+    "crates/fm-google/src/auth.rs": "f1d535d0ba5617538b4253da8a49ff6e0b1f2d0b0d0c1439f82dd4a57321d565",
+    "crates/fm-google/src/auth_cleanup_tests.rs": "af04e6409d39acfa96d8e9ca648eced3a7d62a8f6e5170804d3735a419a0922c",
+    "crates/fm-google/src/desktop_auth/tests.rs": "e3fb43b01ada3985bbb6ae0d179ce2c921228932f5073c5966ea98736b5b1ccb",
+    "crates/fm-google/src/desktop_auth.rs": "a81f9cb454c32de01de2e2e6e56b59f9fb42e5543a8b38e4ed00cb9ae5f445ad",
+    "crates/fm-google/src/gmail_api/tests.rs": "7de182d01e9802cc78c8a8e6713556599bba7138c57beeec75ddf85730ab7cb2",
+    "crates/fm-google/src/gmail_api.rs": "b2701853b64f1aba02308c5542f997b39a9dc0a7c3d49c4110ec020fc65f3e37",
+    "crates/fm-google/src/lib.rs": "a9aad07fdb8bf5baa553d4a20be7626e759883505409060941e038243bdc0ed7",
+    "crates/fm-google/src/scheduler.rs": "48c0f6e2fe6834c58cbbcecbd623b46618d50bd56d135444c1aa30de7099abe0",
+    "crates/fm-google/src/send.rs": "cacf83634172ab9d4d2bfb43184abc796c3364a9e52bd8381350041cba028213",
+    "crates/fm-google/src/sync.rs": "b0c701eb1f8b9aa91bdf5a8d51a7751620d1c94fff838724e82d2e11a9537e90",
+    "crates/fm-google/src/transport.rs": "1a8b8e16e05f1c1b028f9ab2711fac5278a9462d3fbaa7fa55b366dc56e26ff1",
+    "crates/fm-google/src/vault.rs": "42e0437b7c4fdc889c9150e5ae11cbaea68ebde16b7c714fe936a8df80f5ad67",
+    "crates/fm-google/tests/feasibility.rs": "0f8f41e42f40c27f6decc96163bc005b68f34869a40e2136819273e1cb25cca4",
+    "crates/fm-google/tests/fixtures/auth-v1/jwks.json": "01155aaac5b83f83cf41bf0482d6ae8c0fdaf499a40dab66575f014f8083a021",
+    "crates/fm-google/tests/fixtures/history-first.json": "9c26f5103796a4253cb30479edfce9f876454d31492be5e4bf99fd0d188a2992",
+    "crates/fm-google/tests/fixtures/history-last.json": "52d3e79b923a795e2665aae714bdb000413379b239e858fbf165d731bfb80840",
+    "crates/fm-google/tests/fixtures/list-first.json": "a591fe9ed877f3e98bb53ec1fd111929a450023aeaba40eca6cbce8f55632654",
+    "crates/fm-google/tests/fixtures/list-last.json": "300c3262393b409cd46221a82643c8ea0e1efd5c8fd7cf72804a3bf444a9d62a",
+    "crates/fm-ipc/Cargo.toml": "9aae4c119d69df38f7dcb5c1792ebcfd9c7d49cec8c8c70304a2a4cb50af7ba4",
+    "crates/fm-ipc/src/lib.rs": "fbc07261ab11ddfc253d75579e97aaf05297a21573ec5e762a76772177158b57",
+    "crates/fm-ipc/src/windows.rs": "e288d97c77da17a7b6c85b19bd053e423bd4e0ae0a244e1939fbb31a0ed98464",
+    "crates/fm-mail/Cargo.toml": "764d90aeb8c88169d0977c143585cf16c98610714071637976edbaa57d05da82",
+    "crates/fm-mail/src/incoming.rs": "e1dc703264e18f9ea58e4bad0c9eed16b8e7609491508c35705edf1b6158df24",
+    "crates/fm-mail/src/lib.rs": "b6c027279b8eada846b5c5ec48fd3aa8535cf62619ec635770be0aed54a13b82",
+    "crates/fm-mail/tests/roundtrip.rs": "854c265532938995cf005e6db26af5d1edc85a30a9923ac167c8ea82e4e18fcb",
+    "gui/AccountLifecycleBackend.cpp": "b0bce400430a0f24ceb2528c715c46dcb2893a10a14e8061cfe71b81015bb61c",
+    "gui/AccountLifecycleControlsTest.cpp": "aec8009594486a670978c5e269c2e5ef4f0f425e5b996a482aa4dd05a50192c4",
+    "gui/AccountLifecycleDialogs.qml": "96506ae1f009f4d3c2f7ed37a04fbc8ed7e6659331501b3495c302d89e07cad3",
+    "gui/CalendarControlsTest.cpp": "9c3ed84283ba7c218db4b3495458bd072a5f7e73fc2dc34715fe84c40d3ff465",
+    "gui/CalendarEventList.qml": "f29c5367b0fc60ae1aacb585a7350121fa99d5559df02bb34c39046554c6a9cc",
+    "gui/CalendarLayout.cpp": "4cf58082f3ecd62c5435d4121cd755d42b9b0866d70f2ada18f8e59b784547ff",
+    "gui/CalendarLayout.h": "65a0e26bdc628b2ffcd7fd0214ea58e3fb74dca029027e5a892cd0f1def01ce0",
+    "gui/CalendarLayoutTest.cpp": "79c3c585d64242f329b94da295476818bc632b4063a2118c0a7cbf6312578aff",
+    "gui/CalendarOccurrenceBackendTest.cpp": "af32cda60432c445ec6ee7a8b984ee422004379dbaa9c98f69baefd64910da79",
+    "gui/CalendarOccurrenceRead.qml": "67a377ad7a850c9f6c96687163fc3360648b77b55a8121de6899219f9b5840c5",
+    "gui/CalendarOperations.cpp": "963fad03d1eb20c34dfd6901f0e078057f2d80dec661f7f5e0a437268f147b55",
+    "gui/CalendarOperations.qml": "f2832ab259af9556e447024df7f1c2a4ba5b5ded37a41769a0e9cef45b6ab4e3",
+    "gui/CalendarView.qml": "cbc2268e29bdbd9ba1a2a32ef960ad0d8bbab5bd8376fa8d32d5b78b704b720d",
+    "gui/CMakeLists.txt": "2b2f9a0beda43dee8c8482c31a4066efb9bf6ebc476b86dc0bd8d24e4adb6f41",
+    "gui/ComposerProbe.cpp": "3b584d1da7985ebfe7457608cb9dab05225d11aad99ccc1ec813030ca512a495",
+    "gui/CompositionBackend.cpp": "f55aa03738451954fd6a28c643ee0b90f148e2e5351fdca31d0c92c9fa67d76b",
+    "gui/ConversationListModel.cpp": "08178b3a5133bf77d6084cdb31a2a564f56b482d20d4621f820e8aacaf012891",
+    "gui/ConversationListModel.h": "b003c60d54d3b73bb759c32bd82a5fbcbd2930e61ba00f5880b5c2e460eacef5",
+    "gui/ConversationListModelTest.cpp": "7a252061c82aae80992f853c15e9ba2eaa043a5b5089c096b1b2a70fa242ec91",
+    "gui/DraftAttachmentBackend.cpp": "ee5b09e8f993b72f9b364376e95b83509b2d921084f74fa368a972c0b374921b",
+    "gui/EventDetails.qml": "4dcde682ff7feb25715ad5b08e7c3ff5ea48a83f6f2359462e3bead7022519f3",
+    "gui/EventEditor.qml": "562d21f344c3c1089a3db164694a2010ad61b5e5989dbd747236fbb07b3ecccf",
+    "gui/FmButton.qml": "ef91b8213bd0e6574705d71547eab7828d29f4f726fcbcc43020a0bfa4be2682",
+    "gui/FmComboBox.qml": "8211a0cfe55ca336543b00428623a23550bb5df578972fed335c96f434dcf674",
+    "gui/FmIcon.qml": "d29a159d764bfd060d08f21482fd4195f3ed90463858adf74ec7a0c38670ebd5",
+    "gui/FmSegmented.qml": "a4284642383c07bc37f01c01bdd2347f618579e747c2eb36eacbb45c7b57eb1f",
+    "gui/FmTextField.qml": "71c1a522229acea29c8a0631f6682c14b571523bf5e89d0af648b3827cbaab56",
+    "gui/FmToolTip.qml": "b6ab0965b5a92958062915c0c71c123af0fe6e679afa33c7b234ab4a3fedb7cb",
+    "gui/GoogleBackend.cpp": "f5ed445bbb640814512eac65c6e36364bcf77f920c5465d5502b11c53452e677",
+    "gui/GoogleDraftAuthoringBackend.cpp": "0fdb9e6fca6a2887fd7aa7092a91703be32a3b95a3c3aa7d6f0fb98a8579234f",
+    "gui/GoogleDraftAuthoringControlsTest.cpp": "cc77d08ceba103fa741adcb94828adb79923b26b1ae2274025f0319f93198dfa",
+    "gui/GoogleDraftBackend.cpp": "e694e75792238059a6d08f7b06f2055c6dd44e07331332e7b8e17e97779efe28",
+    "gui/GoogleDraftControlsTest.cpp": "2a01807866a680679fa0142dd50ca11645d12c545756c693e952bc176373a760",
+    "gui/GoogleDraftSnapshotBackend.cpp": "833d6e539bf8baa83f50a8db1054764e7d1e05acee2d8ff36a7b50b0108cc3b0",
+    "gui/GoogleDraftSnapshotControlsTest.cpp": "63a59b4164acd3f2174bb8b50396204c201c513c89f2d81c59ead72451f21de4",
+    "gui/GoogleLabels.cpp": "56c69973f74f69dc89013643f133ee9755e6140ecfd9fc27d4ece484271e82c0",
+    "gui/GoogleLabelSetup.qml": "53be94ac8a790052581d789d55a906445f05fed126db42351e5894cc08d445b3",
+    "gui/GoogleOperation.cpp": "28cbeaaf8c052e57bc05fc906aca1b0f48bfd6832d67c4c62c02eb4ed5280e34",
+    "gui/GoogleOperation.h": "c2298dd41dd24fb4e3bb620a58b7da26a9ce30cc8b2a33965ced53b6a739013f",
+    "gui/GoogleOperationTest.cpp": "14e0a7c262285fa29916c41c1af47261418e5537bd07c8be2f5bfba8a1c5887c",
+    "gui/GoogleOperationTestFixture.h": "7f54ce6294323db9743395e63ad6b5d04e972d2547ffdd15dd1cd113323f05ab",
+    "gui/GoogleSendBackend.cpp": "9c7f0821213491217994b828e79f07e54b0910ebd44e63393099a69a9a941ad8",
+    "gui/GoogleSendControlsTest.cpp": "be653ef860258134d2ebab48d979cf930072227209016aa450be299a8edf6627",
+    "gui/GuiAccountLifecycleSelfTest.cpp": "56343e211009c368ba636f148e7794e3a944a6d0a63649f60a518c929b63a8da",
+    "gui/GuiAccountLifecycleSelfTest.h": "0016bb5234fd9381abec16fb59e7a4fdf21ea3f178b489b04eb8301964ba0673",
+    "gui/GuiCalendarSelfTest.cpp": "cd8bdeec97dc69584ece0899b6e5f72b2a3835474b66f4b3e46d0ceebcb183df",
+    "gui/GuiCalendarSelfTest.h": "037dc1e3b1f77ac54c25a083cda9cd8e390d63cfdf241bce47738766027f3666",
+    "gui/GuiCompositionSelfTest.cpp": "87af11e6c85c341be138c1c8a3a25458d696b04a12945e4ccf70aa85e207b5a2",
+    "gui/GuiCompositionSelfTest.h": "c2efce76753a01bb735fb527164e76dcbc0c8ab8f74ee78ab98d15df3d4442a3",
+    "gui/GuiGoogleCalendarSelfTest.cpp": "4880535cd1e3203544478f86dc8fc1e78c28b891493a8225cbeb97375f296858",
+    "gui/GuiGoogleCalendarSelfTest.h": "b904d29473b1cb218b3eb81c02a78de761da32cac80126f9a7138816993f1262",
+    "gui/GuiGoogleDraftActionsSelfTest.cpp": "92ef6e9d701cb3d6852019bc88c60bd979b2b522b7ae873614b2cbef4888ed29",
+    "gui/GuiGoogleDraftActionsSelfTest.h": "61c18c7449ce104fe62d6c45394d2e67ac47d529e998a01babc948c88e5c0a19",
+    "gui/GuiGoogleDraftSnapshotSelfTest.cpp": "be67b1143d28976df40f120be667b2a20972bfc900c51d74dc7a35b0c688bcdf",
+    "gui/GuiGoogleDraftSnapshotSelfTest.h": "297af24adf7e9ca1f0a676189270bb6be8eae33111ccd5dfdfa59361554bb5d4",
+    "gui/GuiInteractionBenchmark.cpp": "e567c5a30b7034087c999d2ef85263294eaa754093588066f917402894a51454",
+    "gui/GuiInteractionBenchmark.h": "80d6535b72f7ac68d595526351e72c47ce514619ee119fcf7c727be514f2fa42",
+    "gui/GuiMailNavigationSelfTest.cpp": "38bfad27431cd1ab378be0488697d5531af55cb8d180abbfd9f8b2593bb81573",
+    "gui/GuiMailNavigationSelfTest.h": "c93aaf5e89152078639bd1ee2a487e39a3a2a41e67cd88773b0a2fa638ee378d",
+    "gui/GuiPaintObserver.h": "12689c068b529c3fa011ffe23f946e4943bd79ffdec2858fe4fa6a11c32ba807",
+    "gui/GuiResizeBenchmark.cpp": "b2b17bd589a6a261145c9ca854b3e66e03e596f74d07022d80ea264ceb9496f6",
+    "gui/GuiResizeBenchmark.h": "c171ab0da1cf813e56215a8e0983c9cec430077f9df5686eb7c9efe37047bbe0",
+    "gui/GuiSearchBenchmark.cpp": "34bdc6a8c1e08f03242d9c334c96ca4cb61072f777fdec67ce58c6392ac05dff",
+    "gui/GuiSearchBenchmark.h": "16df9a920ea223112bb894f5db337d910f62e4639e070809efc8a94ce55ba6db",
+    "gui/GuiSelfTest.cpp": "22d4743a8052c57e984759719df1f3d01019e8b6fdadcbe9e8b1aef7958e8012",
+    "gui/GuiSelfTest.h": "1b71a45ca139a0500f73e7dea5d3239f2d69f33c2cf565c0ffb6e5671f39fe9e",
+    "gui/GuiSettingsSelfTest.cpp": "a41abc62bc05a7e9a51c910f10a1572588a390b45026353a2a693707a0e2bd02",
+    "gui/GuiSettingsSelfTest.h": "92e2313e6b0452e4dd0a70edc6dc77cdf0814d338a2457431f19f8b1fbe9d21d",
+    "gui/HatchItem.cpp": "739e268f5cbe598157fc70ac45b18593d25eddcb46544e7b3ce1ad4c3e10f626",
+    "gui/HatchItem.h": "b8b1e98daf84d10b3fca85f2e4e51991a05bb9a998708ffed119ff9150260433",
+    "gui/IpcTrust.cpp": "70a78af92569adf6cc16b51b81b91dd222f96acfe5592e2400c0df4c59f78349",
+    "gui/IpcTrust.h": "0cd854952a13c41109f5145c8d1b395c84d977441c1642ae11cc4f1505d991b1",
+    "gui/IpcTrustTest.cpp": "f042dc53c8f920f1a4bdaf6f48e3028524e23fb4ba17f51a4360954321e42ce4",
+    "gui/IpcTrustWindowsTest.cpp": "bce7fc482c6924b4e98120ec6dde68e5c308071cc9072d606b7eb3c71e5908b8",
+    "gui/MailBackend.cpp": "484d88f59cb455057a7a4c6cc30830c5567c7c439984551fad29ba7bef6093e9",
+    "gui/MailBackend.h": "fd506c7c872ce338fdc188d17c38df9ed3727e2ce73f99ee2001ac1f003e4abe",
+    "gui/MailFilters.qml": "f672fd3c20792c45e1394d716867a4e4812a96a1917eeda4c390b39bc73ade12",
+    "gui/MailView.qml": "d3f859acfae737db1bd7e7c40acc685a02187b297d9666d8820e5a9da6adf019",
+    "gui/main.cpp": "150314cead04cc4cf05d10a195700ee7b721328c8c1707eec84fca86cb807093",
+    "gui/Main.qml": "6097b4fa63ea5af0244a1c87f909be65f4a930fd5e57e38b586bfacc0e32f8f2",
+    "gui/Phase1Backend.cpp": "c7c1a79f72398b06cde73a443ccdacd51119f2a1f4a6a640308ee5adb9ffbc8d",
+    "gui/RecipientField.qml": "a78217962c3e6d64db3aa990b54d3a9cfb18a4e1b0ac35770372185b0eba1843",
+    "gui/ReplyComposer.qml": "3d0c5eb92942ff7a5f56810e277dff42c3b1a721f1c1988312357b9cbb9b5da0",
+    "gui/ReplyDocument.cpp": "02c5ea491ab2705aacc8f4c5927205c7ea889e36c294af555c18cf584f0757e3",
+    "gui/ReplyDocument.h": "b8533db623704a0e397f85afa74dd6ee1b21679682e7a6af8a4ebe8132517ee0",
+    "gui/ReplyDocumentTest.cpp": "06495c23640f4e67ea675adef438be686a28c48801bba5070412c80eaaeb8063",
+    "gui/SearchPopup.qml": "557453cbd1a04602d157f064486858d79e15271d7947a82551885787c0d914f3",
+    "gui/SenderCard.qml": "c1961b66dbfbe03ac68bcd801876718a05f9bc7a1a8837b16777deb87b386249",
+    "gui/SettingsView.qml": "bec781a69babb1091d2fe584fc2e6a2e902c09c2631edda5247fbc6a105c4440",
+    "gui/Theme.qml": "40a2081782d69fa972d895ff5b4bc59564b5aa26c39b0e7e89cfb56f86ae6e84",
+    "gui/TodayStrip.qml": "364cace0ee11e6d588531db62da15ddcc8da3450b61c2901290449341f57753c",
+    "rust-toolchain.toml": "6a3177dca3783745b00765ea571974808dad2644947fc0a8df5927048edf13a5",
+    "scripts/bootstrap_qt.py": "bbd3f7945fa4a35c743e86d573656824ed76d920a6cf3b38790ed2e392b16639",
+    "scripts/dev.py": "7af10a552d02ba7ebd70604d2511a6b6583b49beee3ca799a225ad89d15ac470",
+    "scripts/toolchain.json": "66d629bad28b902e7a3863205c1b127a8bd015a9fda7f85cff846984df6ae02d",
+    "scripts/verify_draft_snapshot_upgrade.py": "ab7537f3532f2704843f36243cab0a4d30cac01eeed1859c9083e26edb384b67",
+    "scripts/verify_google_account_sources.py": "c1887c182e15427ea23bfb204046ac291c69d666675ab2f3ef9e42c272b15011",
+    "scripts/verify_google_accounts.py": "e8ee48cce70f61659d2739c60ae05f7cee874b05f0bbaae7209add3898997d6b",
+    "scripts/verify_google_accounts_gui.py": "d7f160b4eca5d13503069ab934d76e8e2c1a32d82fbb962fcb0eae544f5371d2",
+    "scripts/verify_google_calendar.py": "48b55dd8de453ee7bc7ba74fe0fd810d2786342559c9f742c68752e4438c24ee",
+    "scripts/verify_google_calendar_gui.py": "cbb64999e0eacdb6f308845a74e96ef97ba9f8c17c1a58bef2444169e35d914a",
+    "scripts/verify_google_draft_actions.py": "3662472e1e0f113dc9f75ea584c44b5abb3e742ed3bc90404439de0cff51035b",
+    "scripts/verify_google_drafts.py": "47fa510be3651b6ff51d0b7d930136c08f385ca7d30fa0686de9f96cc8e19948",
+    "scripts/verify_google_navigation.py": "35cf04a5ecce34c42631d1a116dcab2e08430d0f54ecfb4caba2dc9b1defb790",
+    "scripts/verify_google_occurrence_native.py": "6d761137759baf3995f583b86fd07c91414cab977148a350ed6167ad92d8a7e8",
+    "scripts/verify_google_occurrence_sources.py": "ffbbb1da2469fdec719cff104541ba9945516c9466d64255b55e52786f7e3e95",
+    "scripts/verify_google_occurrences.py": "ebff7dc2ec53b654ceef951d18dba07fd34f11f22e6048903980e78e151a4abd",
+    "scripts/verify_google_remote_drafts.py": "45db7d15f301c5fbfcd9f723a9796f703a02acff34aacf2cc4564e850b8215d4",
+    "scripts/verify_google_send.py": "d5d90bfded19e77773819f1bb74c6288df2524b4a0e7cfbef974fdab1ea7efaa",
+    "scripts/verify_interaction.py": "aea43c3496f052c55db52be16bcdfac87b2d2ab01bb422c619d44fc6c3a8a466",
+    "scripts/verify_search_ingestion.py": "5a9408e12e5a91958fb73dfba08c1330378089eaa398c5f4696052a6c7d5c26f",
+    "scripts/verify_upgrade.py": "bc88104803648a1dc8dcda8dcefdadc64ac2851d64d6a8f85c17e56c2d1b2217"
+  },
+  "limits": {
+    "gmail_project_units_per_minute": 1000000,
+    "gmail_account_units_per_minute": 500000,
+    "calendar_project_units_per_minute": 10000,
+    "calendar_account_units_per_minute": 5000
+  },
+  "accounts": [
+    {
+      "account": "personal",
+      "draft_id": "draft-48ae61446d96df7ecb1040e8639d880a1521d19a699fb963bdfe4eedbacbaa1f",
+      "first": {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "adoption": null,
+        "baseline": {
+          "draft_id": "vd0001",
+          "draft_revision": 3,
+          "message_id": "vmd0001",
+          "observed_sha256": "0bfeac51a9a2c71c5ee92d36cd6e01e7b75ace1010dcc0d3e21dd9b2a511e712",
+          "size": 12290,
+          "thread_id": "vdt-vd0001",
+          "upload_sha256": "0bfeac51a9a2c71c5ee92d36cd6e01e7b75ace1010dcc0d3e21dd9b2a511e712"
+        },
+        "conflict": null,
+        "deletion": null,
+        "derivation": null,
+        "draft_id": "draft-48ae61446d96df7ecb1040e8639d880a1521d19a699fb963bdfe4eedbacbaa1f",
+        "effective_target": {
+          "message_id": "vmd0001",
+          "provider_draft_id": "vd0001",
+          "sha256": "0bfeac51a9a2c71c5ee92d36cd6e01e7b75ace1010dcc0d3e21dd9b2a511e712",
+          "size": 12290,
+          "thread_id": "vdt-vd0001"
+        },
+        "fidelity_warning": false,
+        "local_revision": 3,
+        "operation": {
+          "ack": {
+            "draft_id": "vd0001",
+            "message_id": "vmd0001"
+          },
+          "connection_generation": 1,
+          "draft_revision": 3,
+          "error": null,
+          "provider_draft_id": null,
+          "request_id": "979e9e72c3a62ca1089efdf03e075dc6aad777439843e84df1902fce9c177355",
+          "revision": 4,
+          "size": 12290,
+          "state": "synced",
+          "upload_sha256": "0bfeac51a9a2c71c5ee92d36cd6e01e7b75ace1010dcc0d3e21dd9b2a511e712"
+        },
+        "operation_is_current": true,
+        "preparation_failure": null,
+        "retry": null,
+        "revision": 4,
+        "state": "synced"
+      },
+      "final": {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "adoption": null,
+        "baseline": {
+          "draft_id": "vd0001",
+          "draft_revision": 4,
+          "message_id": "vmd0002",
+          "observed_sha256": "3c39ae64b216eb2f83b3d6bc0306b965e41eae7792af2b32fec05a22ad39684a",
+          "size": 12336,
+          "thread_id": "vdt-vd0001",
+          "upload_sha256": "3c39ae64b216eb2f83b3d6bc0306b965e41eae7792af2b32fec05a22ad39684a"
+        },
+        "conflict": null,
+        "deletion": null,
+        "derivation": null,
+        "draft_id": "draft-48ae61446d96df7ecb1040e8639d880a1521d19a699fb963bdfe4eedbacbaa1f",
+        "effective_target": {
+          "message_id": "vmd0002",
+          "provider_draft_id": "vd0001",
+          "sha256": "3c39ae64b216eb2f83b3d6bc0306b965e41eae7792af2b32fec05a22ad39684a",
+          "size": 12336,
+          "thread_id": "vdt-vd0001"
+        },
+        "fidelity_warning": false,
+        "local_revision": 4,
+        "operation": {
+          "ack": {
+            "draft_id": "vd0001",
+            "message_id": "vmd0002"
+          },
+          "connection_generation": 1,
+          "draft_revision": 4,
+          "error": null,
+          "provider_draft_id": "vd0001",
+          "request_id": "8294e32c885bd284c1586e00368692eacebcd600ed9b8313c152ca494a0c8220",
+          "revision": 4,
+          "size": 12336,
+          "state": "synced",
+          "upload_sha256": "3c39ae64b216eb2f83b3d6bc0306b965e41eae7792af2b32fec05a22ad39684a"
+        },
+        "operation_is_current": true,
+        "preparation_failure": null,
+        "retry": null,
+        "revision": 8,
+        "state": "synced"
+      },
+      "first_mime": {
+        "sha256": "0bfeac51a9a2c71c5ee92d36cd6e01e7b75ace1010dcc0d3e21dd9b2a511e712",
+        "size": 12290,
+        "text_bytes": 93,
+        "attachment_sha256": "dc404a613fedaeb54034514bc6505f56b933caa5250299ba7d094377a51caa46"
+      },
+      "final_mime": {
+        "sha256": "3c39ae64b216eb2f83b3d6bc0306b965e41eae7792af2b32fec05a22ad39684a",
+        "size": 12336,
+        "text_bytes": 124,
+        "attachment_sha256": "dc404a613fedaeb54034514bc6505f56b933caa5250299ba7d094377a51caa46"
+      }
+    },
+    {
+      "account": "workspace",
+      "draft_id": "draft-ee4008601ab7932c21dade8b9fd85dad1f3d7acc123a7b10b3a53a92b262326a",
+      "first": {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "adoption": null,
+        "baseline": {
+          "draft_id": "vd0001",
+          "draft_revision": 3,
+          "message_id": "vmd0001",
+          "observed_sha256": "1708d550ff7787e69dbc5bfa1c4f0b5df5c4d98f5f7e63698baead6ef365a306",
+          "size": 12379,
+          "thread_id": "vdt-vd0001",
+          "upload_sha256": "1708d550ff7787e69dbc5bfa1c4f0b5df5c4d98f5f7e63698baead6ef365a306"
+        },
+        "conflict": null,
+        "deletion": null,
+        "derivation": null,
+        "draft_id": "draft-ee4008601ab7932c21dade8b9fd85dad1f3d7acc123a7b10b3a53a92b262326a",
+        "effective_target": {
+          "message_id": "vmd0001",
+          "provider_draft_id": "vd0001",
+          "sha256": "1708d550ff7787e69dbc5bfa1c4f0b5df5c4d98f5f7e63698baead6ef365a306",
+          "size": 12379,
+          "thread_id": "vdt-vd0001"
+        },
+        "fidelity_warning": false,
+        "local_revision": 3,
+        "operation": {
+          "ack": {
+            "draft_id": "vd0001",
+            "message_id": "vmd0001"
+          },
+          "connection_generation": 1,
+          "draft_revision": 3,
+          "error": null,
+          "provider_draft_id": null,
+          "request_id": "e423ecefdaf7f7610b08568fc207ba4fdc9600fa6ab278381c74b7d40dfd9752",
+          "revision": 4,
+          "size": 12379,
+          "state": "synced",
+          "upload_sha256": "1708d550ff7787e69dbc5bfa1c4f0b5df5c4d98f5f7e63698baead6ef365a306"
+        },
+        "operation_is_current": true,
+        "preparation_failure": null,
+        "retry": null,
+        "revision": 4,
+        "state": "synced"
+      },
+      "final": {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "adoption": null,
+        "baseline": {
+          "draft_id": "vd0001",
+          "draft_revision": 4,
+          "message_id": "vmd0002",
+          "observed_sha256": "b1cc442f50a05654446066f92c282a30970d504edd1bffcf6bdad8b675b86e0e",
+          "size": 12421,
+          "thread_id": "vdt-vd0001",
+          "upload_sha256": "b1cc442f50a05654446066f92c282a30970d504edd1bffcf6bdad8b675b86e0e"
+        },
+        "conflict": null,
+        "deletion": null,
+        "derivation": null,
+        "draft_id": "draft-ee4008601ab7932c21dade8b9fd85dad1f3d7acc123a7b10b3a53a92b262326a",
+        "effective_target": {
+          "message_id": "vmd0002",
+          "provider_draft_id": "vd0001",
+          "sha256": "b1cc442f50a05654446066f92c282a30970d504edd1bffcf6bdad8b675b86e0e",
+          "size": 12421,
+          "thread_id": "vdt-vd0001"
+        },
+        "fidelity_warning": false,
+        "local_revision": 4,
+        "operation": {
+          "ack": {
+            "draft_id": "vd0001",
+            "message_id": "vmd0002"
+          },
+          "connection_generation": 1,
+          "draft_revision": 4,
+          "error": null,
+          "provider_draft_id": "vd0001",
+          "request_id": "669c17835d84ba53c91521f6e02ba66d06162ba9b6f2b0715ed3032de0950e4b",
+          "revision": 4,
+          "size": 12421,
+          "state": "synced",
+          "upload_sha256": "b1cc442f50a05654446066f92c282a30970d504edd1bffcf6bdad8b675b86e0e"
+        },
+        "operation_is_current": true,
+        "preparation_failure": null,
+        "retry": null,
+        "revision": 8,
+        "state": "synced"
+      },
+      "first_mime": {
+        "sha256": "1708d550ff7787e69dbc5bfa1c4f0b5df5c4d98f5f7e63698baead6ef365a306",
+        "size": 12379,
+        "text_bytes": 95,
+        "attachment_sha256": "dc404a613fedaeb54034514bc6505f56b933caa5250299ba7d094377a51caa46"
+      },
+      "final_mime": {
+        "sha256": "b1cc442f50a05654446066f92c282a30970d504edd1bffcf6bdad8b675b86e0e",
+        "size": 12421,
+        "text_bytes": 126,
+        "attachment_sha256": "dc404a613fedaeb54034514bc6505f56b933caa5250299ba7d094377a51caa46"
+      }
+    }
+  ],
+  "commands": [
+    {
+      "command": [
+        "draft",
+        "create"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "draft",
+        "save"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "draft",
+        "attach"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "draft",
+        "create"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "draft",
+        "save"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "draft",
+        "attach"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "sync-status"
+      ],
+      "account": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-sync"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "draft",
+        "save"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-reconcile"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "draft-sync"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "draft",
+        "save"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "draft-reconcile"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "status"
+      ],
+      "account": null
+    },
+    {
+      "command": [
+        "accounts"
+      ],
+      "account": null
+    },
+    {
+      "command": [
+        "draft",
+        "save"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "send"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "send"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "send-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "send-reconcile"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "send"
+      ],
+      "account": "personal",
+      "expected_error": "google_send_consumed"
+    },
+    {
+      "command": [
+        "google",
+        "send-abandon"
+      ],
+      "account": "personal",
+      "expected_error": "stale_google_work"
+    },
+    {
+      "command": [
+        "google",
+        "send-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "draft",
+        "save"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "send"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "send"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "send-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "send-reconcile"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "send"
+      ],
+      "account": "personal",
+      "expected_error": "google_send_consumed"
+    },
+    {
+      "command": [
+        "google",
+        "send-abandon"
+      ],
+      "account": "personal",
+      "expected_error": "stale_google_work"
+    },
+    {
+      "command": [
+        "google",
+        "send-status"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "send"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "personal"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "send"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "send"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "send-status"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "send-reconcile"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "send"
+      ],
+      "account": "workspace",
+      "expected_error": "google_send_consumed"
+    },
+    {
+      "command": [
+        "google",
+        "send-abandon"
+      ],
+      "account": "workspace",
+      "expected_error": "stale_google_work"
+    },
+    {
+      "command": [
+        "google",
+        "send-status"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "draft",
+        "save"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "send"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "send"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "send-status"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "send-reconcile"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "send"
+      ],
+      "account": "workspace",
+      "expected_error": "google_send_consumed"
+    },
+    {
+      "command": [
+        "google",
+        "send-abandon"
+      ],
+      "account": "workspace",
+      "expected_error": "stale_google_work"
+    },
+    {
+      "command": [
+        "google",
+        "send-status"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "google",
+        "send"
+      ],
+      "account": "workspace"
+    },
+    {
+      "command": [
+        "draft",
+        "show"
+      ],
+      "account": "workspace"
+    }
+  ],
+  "limitations": [
+    "Generated in-memory provider; no live account, credential or real send.",
+    "CLI integration; no GUI, navigation, package or restart acceptance.",
+    "Provider echoes RAW; real-provider transformations remain unverified."
+  ],
+  "independent_google_operations": 4,
+  "submissions": [
+    {
+      "account": "personal",
+      "operation": {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "ack": {
+          "message_id": "vms0001",
+          "thread_id": "vdt-vd0001"
+        },
+        "bcc_recipients": [
+          {
+            "email": "hidden@example.test"
+          }
+        ],
+        "cc_recipients": [
+          {
+            "email": "carbon@example.test"
+          }
+        ],
+        "connection_generation": 1,
+        "created_at": 1789359179,
+        "current_google_revision": 16,
+        "draft_id": "draft-48ae61446d96df7ecb1040e8639d880a1521d19a699fb963bdfe4eedbacbaa1f",
+        "draft_revision": 5,
+        "error": null,
+        "from": "personal@example.test",
+        "google_revision": 12,
+        "last_accepted_draft_revision": 5,
+        "message_id": "<send-82ac5f584a892e9303a987732b4e12eb89a5a782fbd552a9c55a6d0c9bb7d568@fuckmail.invalid>",
+        "operation_is_current": true,
+        "provider_draft_id": "vd0001",
+        "read_evidence": {
+          "acknowledged_message": {
+            "history_id": "101",
+            "labels": [
+              "SENT"
+            ],
+            "message_id": "vms0001",
+            "thread_id": "vdt-vd0001"
+          },
+          "checked_at": 1789359179,
+          "draft_observation": "not_checked",
+          "matches": [
+            {
+              "history_id": "101",
+              "labels": [
+                "SENT"
+              ],
+              "message_id": "vms0001",
+              "thread_id": "vdt-vd0001"
+            }
+          ],
+          "missing_ids": [],
+          "query": "sent_message_id",
+          "truncated": false
+        },
+        "request": {
+          "draft_id": "draft-48ae61446d96df7ecb1040e8639d880a1521d19a699fb963bdfe4eedbacbaa1f",
+          "expected_google_revision": 12,
+          "expected_revision": 5,
+          "request_id": "personal-explicit-send-1"
+        },
+        "request_id": "personal-explicit-send-1",
+        "revision": 4,
+        "size": 12414,
+        "state": "accepted",
+        "subject": "Human draft personal",
+        "thread_id": "vdt-vd0001",
+        "to_recipients": [
+          {
+            "email": "recipient@example.test"
+          }
+        ],
+        "upload_sha256": "01947edc35a963bcb19c057ba5229613cb9c891dcfa604d583f912b994c3dd6b"
+      },
+      "mime": {
+        "sha256": "01947edc35a963bcb19c057ba5229613cb9c891dcfa604d583f912b994c3dd6b",
+        "size": 12414,
+        "text_bytes": 124,
+        "attachment_sha256": "dc404a613fedaeb54034514bc6505f56b933caa5250299ba7d094377a51caa46"
+      }
+    },
+    {
+      "account": "personal",
+      "operation": {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "ack": {
+          "message_id": "vms0002",
+          "thread_id": "vdt-vd0001"
+        },
+        "bcc_recipients": [
+          {
+            "email": "hidden@example.test"
+          }
+        ],
+        "cc_recipients": [
+          {
+            "email": "carbon@example.test"
+          }
+        ],
+        "connection_generation": 1,
+        "created_at": 1789359180,
+        "current_google_revision": 20,
+        "draft_id": "draft-48ae61446d96df7ecb1040e8639d880a1521d19a699fb963bdfe4eedbacbaa1f",
+        "draft_revision": 6,
+        "error": null,
+        "from": "personal@example.test",
+        "google_revision": 16,
+        "last_accepted_draft_revision": 6,
+        "message_id": "<send-4fbcb29e1b469d8fe5c15050d2f5833cac070effc1a0bdd2416f785594395fbc@fuckmail.invalid>",
+        "operation_is_current": true,
+        "provider_draft_id": null,
+        "read_evidence": {
+          "acknowledged_message": {
+            "history_id": "102",
+            "labels": [
+              "SENT"
+            ],
+            "message_id": "vms0002",
+            "thread_id": "vdt-vd0001"
+          },
+          "checked_at": 1789359180,
+          "draft_observation": "not_checked",
+          "matches": [
+            {
+              "history_id": "102",
+              "labels": [
+                "SENT"
+              ],
+              "message_id": "vms0002",
+              "thread_id": "vdt-vd0001"
+            }
+          ],
+          "missing_ids": [],
+          "query": "sent_message_id",
+          "truncated": false
+        },
+        "request": {
+          "draft_id": "draft-48ae61446d96df7ecb1040e8639d880a1521d19a699fb963bdfe4eedbacbaa1f",
+          "expected_google_revision": 16,
+          "expected_revision": 6,
+          "request_id": "personal-explicit-send-2"
+        },
+        "request_id": "personal-explicit-send-2",
+        "revision": 4,
+        "size": 12488,
+        "state": "accepted",
+        "subject": "Human draft personal",
+        "thread_id": "vdt-vd0001",
+        "to_recipients": [
+          {
+            "email": "recipient@example.test"
+          }
+        ],
+        "upload_sha256": "0ab228e1f32a8cf3c290f01827eb4aca046a4f38a15bd985d80bbf8c21af6541"
+      },
+      "mime": {
+        "sha256": "0ab228e1f32a8cf3c290f01827eb4aca046a4f38a15bd985d80bbf8c21af6541",
+        "size": 12488,
+        "text_bytes": 178,
+        "attachment_sha256": "dc404a613fedaeb54034514bc6505f56b933caa5250299ba7d094377a51caa46"
+      }
+    },
+    {
+      "account": "workspace",
+      "operation": {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "ack": {
+          "message_id": "vms0001",
+          "thread_id": "vdt-vd0001"
+        },
+        "bcc_recipients": [
+          {
+            "email": "hidden@example.test"
+          }
+        ],
+        "cc_recipients": [
+          {
+            "email": "carbon@example.test"
+          }
+        ],
+        "connection_generation": 1,
+        "created_at": 1789359180,
+        "current_google_revision": 12,
+        "draft_id": "draft-ee4008601ab7932c21dade8b9fd85dad1f3d7acc123a7b10b3a53a92b262326a",
+        "draft_revision": 4,
+        "error": null,
+        "from": "workspace@example.test",
+        "google_revision": 8,
+        "last_accepted_draft_revision": 4,
+        "message_id": "<send-65e69c54cde2134b1970dbbc387421d9d2de6109f8080d3f9598a6d518158e84@fuckmail.invalid>",
+        "operation_is_current": true,
+        "provider_draft_id": "vd0001",
+        "read_evidence": {
+          "acknowledged_message": {
+            "history_id": "101",
+            "labels": [
+              "SENT"
+            ],
+            "message_id": "vms0001",
+            "thread_id": "vdt-vd0001"
+          },
+          "checked_at": 1789359180,
+          "draft_observation": "not_checked",
+          "matches": [
+            {
+              "history_id": "101",
+              "labels": [
+                "SENT"
+              ],
+              "message_id": "vms0001",
+              "thread_id": "vdt-vd0001"
+            }
+          ],
+          "missing_ids": [],
+          "query": "sent_message_id",
+          "truncated": false
+        },
+        "request": {
+          "draft_id": "draft-ee4008601ab7932c21dade8b9fd85dad1f3d7acc123a7b10b3a53a92b262326a",
+          "expected_google_revision": 8,
+          "expected_revision": 4,
+          "request_id": "workspace-explicit-send-1"
+        },
+        "request_id": "workspace-explicit-send-1",
+        "revision": 4,
+        "size": 12420,
+        "state": "accepted",
+        "subject": "Human draft workspace",
+        "thread_id": "vdt-vd0001",
+        "to_recipients": [
+          {
+            "email": "recipient@example.test"
+          }
+        ],
+        "upload_sha256": "35f5311b1a5a3c56206d12bc70c97f08f088f3ce8de44e696cea49292c4ff60a"
+      },
+      "mime": {
+        "sha256": "35f5311b1a5a3c56206d12bc70c97f08f088f3ce8de44e696cea49292c4ff60a",
+        "size": 12420,
+        "text_bytes": 126,
+        "attachment_sha256": "dc404a613fedaeb54034514bc6505f56b933caa5250299ba7d094377a51caa46"
+      }
+    },
+    {
+      "account": "workspace",
+      "operation": {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "ack": {
+          "message_id": "vms0002",
+          "thread_id": "vdt-vd0001"
+        },
+        "bcc_recipients": [
+          {
+            "email": "hidden@example.test"
+          }
+        ],
+        "cc_recipients": [
+          {
+            "email": "carbon@example.test"
+          }
+        ],
+        "connection_generation": 1,
+        "created_at": 1789359180,
+        "current_google_revision": 16,
+        "draft_id": "draft-ee4008601ab7932c21dade8b9fd85dad1f3d7acc123a7b10b3a53a92b262326a",
+        "draft_revision": 5,
+        "error": null,
+        "from": "workspace@example.test",
+        "google_revision": 12,
+        "last_accepted_draft_revision": 5,
+        "message_id": "<send-dca47151347f012b2fe587c65a2e21a133863649abf8bf11052df6321e72f7a5@fuckmail.invalid>",
+        "operation_is_current": true,
+        "provider_draft_id": null,
+        "read_evidence": {
+          "acknowledged_message": {
+            "history_id": "102",
+            "labels": [
+              "SENT"
+            ],
+            "message_id": "vms0002",
+            "thread_id": "vdt-vd0001"
+          },
+          "checked_at": 1789359180,
+          "draft_observation": "not_checked",
+          "matches": [
+            {
+              "history_id": "102",
+              "labels": [
+                "SENT"
+              ],
+              "message_id": "vms0002",
+              "thread_id": "vdt-vd0001"
+            }
+          ],
+          "missing_ids": [],
+          "query": "sent_message_id",
+          "truncated": false
+        },
+        "request": {
+          "draft_id": "draft-ee4008601ab7932c21dade8b9fd85dad1f3d7acc123a7b10b3a53a92b262326a",
+          "expected_google_revision": 12,
+          "expected_revision": 5,
+          "request_id": "workspace-explicit-send-2"
+        },
+        "request_id": "workspace-explicit-send-2",
+        "revision": 4,
+        "size": 12494,
+        "state": "accepted",
+        "subject": "Human draft workspace",
+        "thread_id": "vdt-vd0001",
+        "to_recipients": [
+          {
+            "email": "recipient@example.test"
+          }
+        ],
+        "upload_sha256": "a5a23962ec24daae60f9e42c801b847c3800ecccd471c12453dd81a0c9a7be64"
+      },
+      "mime": {
+        "sha256": "a5a23962ec24daae60f9e42c801b847c3800ecccd471c12453dd81a0c9a7be64",
+        "size": 12494,
+        "text_bytes": 180,
+        "attachment_sha256": "dc404a613fedaeb54034514bc6505f56b933caa5250299ba7d094377a51caa46"
+      }
+    }
+  ],
+  "independent_send_operations": 4,
+  "independent_all_google_operations_after_send": 9,
+  "provider_counters": {
+    "calendar_acknowledged": 0,
+    "calendar_lost_responses": 0,
+    "calendar_mutation_attempts": 0,
+    "calendar_mutations": 0,
+    "calendar_reads": 0,
+    "draft_created": 2,
+    "draft_delete_attempts": 0,
+    "draft_delete_unknown": 0,
+    "draft_deleted": 0,
+    "draft_list": 2,
+    "draft_read": 15,
+    "draft_updated": 3,
+    "http_cancelled": 1,
+    "http_completed": 211,
+    "http_rejected": 0,
+    "http_started": 212,
+    "modify_completed": 0,
+    "raw_active": 0,
+    "raw_cancelled": 1,
+    "raw_completed": 140,
+    "raw_held_active": 0,
+    "raw_started": 141,
+    "send_completed": 4,
+    "sent_read": 4,
+    "vault_loads": 213,
+    "vault_stores": 0
+  },
+  "elapsed_seconds": 5.407000000122935,
+  "outputs_sha256": {
+    "draftsend-01.engine.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "draftsend-01.watch.log": "6d94404b07ff7120f1c903d64e73613e1c6adc10c74d48802ace0e7edd5be940",
+    "draftsend-01.personal.log": "4cb289df33d39d78c36c5bc67e91b9e525fdb82599f1ee38e2e458b6a5d59558",
+    "draftsend-01.workspace.log": "ba1857eb107502fbb34a673a52e8e7e40665f9936c8d63de3d6cd2fa51a7d636",
+    "draftsend-01.fixture.json": "ba01c9c1aec827858bd600d30948c64c39205de6ff85cacbeac379eba19cd4f3"
+  }
+}

@@ -1,5 +1,6 @@
 //! Explicit Google read sessions share quotas, one Store writer and cancellation.
 pub(crate) mod calendar;
+pub(crate) mod calendar_occurrences;
 pub(crate) mod calendar_writes;
 pub(crate) mod draft_actions;
 pub(crate) mod drafts;
@@ -580,6 +581,7 @@ impl Runtime {
                 | "google_sync_status"
                 | "google_sync_busy"
                 | "google_calendar_write"
+                | "google_calendar_occurrence_read"
                 | "google_calendar_reconcile"
                 | "google_calendar_operation"
                 | "google_calendar_resume"
@@ -845,6 +847,7 @@ impl Runtime {
         if matches!(
             method,
             "google_calendar_write"
+                | "google_calendar_occurrence_read"
                 | "google_calendar_reconcile"
                 | "google_calendar_resume"
                 | "google_labels_refresh"
@@ -899,6 +902,9 @@ impl Runtime {
                         drafts::reconcile(&context, params["draft_id"].as_str().unwrap()).await
                     }
                     "google_calendar_write" => calendar_writes::execute(&context, params).await,
+                    "google_calendar_occurrence_read" => {
+                        calendar_occurrences::read(&context, params).await
+                    }
                     "google_calendar_resume" => {
                         operation_params(&params)?;
                         let request_id = operation_id(&params)?.to_owned();

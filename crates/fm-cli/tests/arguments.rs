@@ -201,6 +201,12 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         vec!["google", "sync"],
         vec!["google", "sync", "--gmail-project-units-per-minute", "0"],
         vec!["google", "calendar-write", "--params-file", "absent.json"],
+        vec![
+            "google",
+            "calendar-occurrence",
+            "--params-file",
+            "absent.json",
+        ],
         vec!["google", "calendar-reconcile", "request"],
         vec!["google", "calendar-operation", "request"],
         vec!["google", "calendar-resume", "request"],
@@ -278,6 +284,7 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         "sync-status",
         "sync-stop",
         "calendar-write",
+        "calendar-occurrence",
         "calendar-reconcile",
         "calendar-operation",
         "calendar-resume",
@@ -327,6 +334,35 @@ fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
         !absent.exists(),
         "missing Calendar input must fail before storage starts"
     );
+}
+
+#[test]
+fn occurrence_lookup_rejects_invalid_or_oversized_input_before_storage() {
+    let root = tempfile::tempdir().unwrap();
+    let profile = root.path().join("not-created");
+    let input = root.path().join("occurrence.json");
+    for content in [
+        "[".to_owned(),
+        "[]".to_owned(),
+        format!("{{\"padding\":\"{}\"}}", "x".repeat(16 * 1024)),
+    ] {
+        std::fs::write(&input, content).unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args([
+                "--profile",
+                profile.to_str().unwrap(),
+                "--account",
+                "chosen-account",
+                "google",
+                "calendar-occurrence",
+                "--params-file",
+                input.to_str().unwrap(),
+            ])
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        assert!(!profile.exists(), "invalid lookup started storage");
+    }
 }
 
 #[test]

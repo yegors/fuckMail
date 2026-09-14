@@ -1,0 +1,7 @@
+{
+  "result": "passed",
+  "scope": "Python AST/import and independent generated expectation construction only; no engine or provider execution",
+  "source_sha256": "d0c8103374c59846e514b305937970050513255f85fbea5e6e4cecd104a6da7f",
+  "provider_identities_per_account": 17,
+  "native_actions_per_account": 3
+}

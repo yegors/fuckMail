@@ -54,7 +54,7 @@ set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(fuckmail-gui
     URI FuckMail
     VERSION 1.0
-    QML_FILES Main.qml AccountLifecycleDialogs.qml Theme.qml FmButton.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmComboBox.qml MailView.qml MailFilters.qml SearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleLabelSetup.qml TodayStrip.qml
+    QML_FILES Main.qml AccountLifecycleDialogs.qml Theme.qml FmButton.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmComboBox.qml MailView.qml MailFilters.qml SearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleLabelSetup.qml TodayStrip.qml
     RESOURCES fonts/Geist-Regular.ttf fonts/Geist-Medium.ttf fonts/Geist-SemiBold.ttf fonts/LICENSE-Geist.txt
 )
 target_link_libraries(fuckmail-gui PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
@@ -154,6 +154,18 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME gui-google-send-controls COMMAND gui-google-send-controls-test)
     set_tests_properties(gui-google-send-controls PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
+    add_executable(gui-calendar-occurrence-test CalendarOccurrenceBackendTest.cpp GoogleOperationTestFixture.h
+        AccountLifecycleBackend.cpp MailBackend.cpp MailBackend.h GoogleBackend.cpp GoogleDraftBackend.cpp
+        GoogleDraftSnapshotBackend.cpp GoogleDraftAuthoringBackend.cpp GoogleSendBackend.cpp GoogleLabels.cpp GoogleOperation.cpp GoogleOperation.h
+        Phase1Backend.cpp CompositionBackend.cpp DraftAttachmentBackend.cpp CalendarOperations.cpp
+        ConversationListModel.cpp ConversationListModel.h CalendarLayout.cpp CalendarLayout.h ReplyDocument.cpp ReplyDocument.h IpcTrust.cpp IpcTrust.h)
+    target_link_libraries(gui-calendar-occurrence-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
+    target_compile_features(gui-calendar-occurrence-test PRIVATE cxx_std_20)
+    if(WIN32)
+        target_link_libraries(gui-calendar-occurrence-test PRIVATE advapi32)
+    endif()
+    add_test(NAME gui-calendar-occurrence COMMAND gui-calendar-occurrence-test)
+    set_tests_properties(gui-calendar-occurrence PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
 endif()
 
 if(BUILD_TESTING)

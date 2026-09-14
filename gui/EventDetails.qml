@@ -26,6 +26,11 @@ Popup {
     property bool timelineAtTop: false
     property real timelineEdge: parent.height - timelineInset
     property var sourceEvents: timelineSource ? backend.todayEvents : backend.events
+    CalendarOccurrenceRead {
+        id: occurrenceRead; selection: details.eventData; active: details.visible; timelineSource: details.timelineSource
+        onResolved: function(event) { details.editRequested(event); details.close() }
+        onFailed: function(message) { details.feedback = message }
+    }
     property var conflicts: {
         let seen = {}
         return sourceEvents.filter(function(e) {
@@ -46,8 +51,10 @@ Popup {
     }
     enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180 } }
     onAboutToShow: { feedback = ""; pendingResponse = ({}); awaitedEtag = ""; operationState = ""; operationRevision = -1 }
+    onAboutToHide: occurrenceRead.invalidate()
     function openAt(event, anchor) {
         if (saving || (visible && hasPendingResponse)) return
+        occurrenceRead.invalidate()
         eventData = event
         if (anchor) { let point = anchor.mapToItem(parent, anchor.width / 2, anchor.height); originX = point.x; originY = point.y }
         open()
@@ -146,7 +153,7 @@ Popup {
                 TextArea { id: description; text: details.eventData.description || ""; color: Theme.muted; font.pixelSize: Theme.fontSize(12); textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; readOnly: true; selectByMouse: true; background: null; padding: 0 }
             }
             Text { visible: !!details.eventData.busy_only; text: "Availability only · details are not shared."; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
-            Text { visible: !!details.eventData.recurring; text: "Recurring changes are unavailable."; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Text { visible: !!details.eventData.occurrence_selector; text: "Changes apply to this occurrence only. Series changes are unavailable."; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
             Text { visible: !!details.eventData.read_only && !details.eventData.busy_only; text: "Read-only event"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11) }
             ColumnLayout {
                 visible: !!details.eventData.can_rsvp; spacing: 5; Layout.fillWidth: true
@@ -172,7 +179,7 @@ Popup {
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
             RowLayout {
                 Layout.fillWidth: true; spacing: 6
-                FmButton { objectName: "eventEditButton"; visible: !!details.eventData.can_edit; text: "Edit"; prominent: true; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); enabled: !details.saving && !details.awaitedEtag.length && details.accountReady && !details.hasPendingResponse; onClicked: { details.editRequested(details.eventData); details.close() } }
+                FmButton { objectName: "eventEditButton"; visible: !!details.eventData.can_edit || details.eventData.can_resolve_occurrence === true; text: occurrenceRead.busy ? "Checking…" : details.eventData.can_resolve_occurrence === true ? "Edit this occurrence" : "Edit"; prominent: true; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); enabled: !details.saving && !occurrenceRead.busy && !details.awaitedEtag.length && details.accountReady && !details.hasPendingResponse; onClicked: { if (details.eventData.can_resolve_occurrence === true) { details.feedback = "Checking this occurrence on Google…"; occurrenceRead.read() } else { details.editRequested(details.eventData); details.close() } } }
                 Item { Layout.fillWidth: true }
                 FmButton { objectName: "eventDetailsClose"; text: details.live && details.saving ? "Cancel request" : "Close"; implicitHeight: 28; font.pixelSize: Theme.fontSize(11); enabled: !details.saving || details.live; onClicked: { if (details.live && details.saving) backend.cancelGoogleOperation(details.pendingResponse.account, details.pendingResponse.request_id); else details.close() } }
             }

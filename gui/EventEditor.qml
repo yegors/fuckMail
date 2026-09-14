@@ -24,6 +24,17 @@ Popup {
     property var submittedRequest: ({})
     property bool staleRevision: false
     property var latestEvent: ({})
+    property bool timelineSource: false
+    readonly property bool occurrence: !!editEvent.occurrence
+    readonly property bool occurrenceReady: !occurrence || occurrenceRead.current(editEvent.occurrence_ui_context)
+    CalendarOccurrenceRead {
+        id: occurrenceRead; selection: editor.editEvent; active: editor.visible; timelineSource: editor.timelineSource
+        onResolved: function(event) {
+            editor.editEvent = event; editor.staleRevision = false; editor.requestId = ""; editor.submittedFields = ""
+            editor.feedback = "Current occurrence checked. Your fields are retained; review them before saving."
+        }
+        onFailed: function(message) { editor.feedback = message + " Your event fields remain here." }
+    }
     property var guestAddresses: []
     property var initialGuestAddresses: []
     readonly property bool guestsEditable: !live || (!editEvent.event_id ? formReady : editEvent.can_edit_attendees === true)
@@ -33,7 +44,7 @@ Popup {
     readonly property bool accountReady: backend.connected && (!live || (backend.accounts.length >= 0 && backend.googleSync
         && backend.accountCapability(targetAccount, "calendar_write") && backend.googleSyncState(targetAccount).active === true))
     readonly property bool sourceReady: backend.calendarSources.some(function(s) { return s.account === editor.targetAccount && s.calendar_id === editor.targetCalendarId && s.writable && (!editor.live || !!editor.editEvent.event_id || s.can_create === true) })
-    readonly property bool formReady: accountReady && sourceReady && (!live || !editEvent.event_id || editEvent.can_edit === true)
+    readonly property bool formReady: accountReady && sourceReady && occurrenceReady && !occurrenceRead.busy && (!live || !editEvent.event_id || editEvent.can_edit === true)
     readonly property bool actionReady: backend.connected && (!unknownOutcome || !live || ["prepared", "ready", "unknown"].indexOf(operationState) < 0 || accountReady)
     readonly property bool canAbandon: live && unknownOutcome && operationRevision >= 0
         && ["prepared", "ready", "unknown", "conflict", "rejected"].indexOf(operationState) >= 0
@@ -77,7 +88,9 @@ Popup {
         formScroll.contentItem.contentY = 0
         Qt.callLater(function() { if (editor.opened) formScroll.contentItem.contentY = 0 })
     }
+    onAboutToHide: occurrenceRead.invalidate()
     function openForDate(date) {
+        occurrenceRead.invalidate()
         titleField.text = editEvent.title || ""
         allDay.checked = !!editEvent.all_day
         startDate.text = editEvent.start ? editEvent.start.slice(0, 10) : date
@@ -146,24 +159,26 @@ Popup {
         submittedFields = serialized
         let request = {account: source.account, calendar_id: source.calendar_id, kind: editEvent.event_id ? "edit" : "create", fields: values, request_id: requestId}
         if (editEvent.event_id) { request.event_id = editEvent.event_id; request.expected_etag = editEvent.etag }
+        if (occurrence) request.occurrence = editEvent.occurrence
         submittedRequest = request; saving = true; feedback = live ? "Saving to Google Calendar…" : "Saving locally…"; backend.calendarWrite(request)
     }
     function deleteEvent() {
-        if (saving || unknownOutcome || !live || !accountReady || !sourceReady || editEvent.can_delete !== true) return
+        if (saving || unknownOutcome || occurrenceRead.busy || !occurrenceReady || !live || !accountReady || !sourceReady || editEvent.can_delete !== true) return
         requestId = "gui-delete-" + Date.now() + "-" + Math.floor(Math.random() * 1000000000)
         submittedRequest = {account: editEvent.account, calendar_id: editEvent.calendar_id, event_id: editEvent.event_id,
             expected_etag: editEvent.etag, kind: "delete", request_id: requestId}
+        if (occurrence) submittedRequest.occurrence = editEvent.occurrence
         saving = true; feedback = "Deleting from Google Calendar…"; backend.calendarWrite(submittedRequest)
     }
     Connections {
         target: backend
         function onEventsChanged() {
-            if (editor.opened && editor.live && editor.editEvent.event_id) {
+            if (editor.opened && editor.live && editor.editEvent.event_id && !editor.occurrence) {
                 let current = backend.events.concat(backend.todayEvents).find(function(e) { return e.account === editor.editEvent.account && e.calendar_id === editor.editEvent.calendar_id && e.event_id === editor.editEvent.event_id })
                 if (current) editor.editEvent = Object.assign({}, editor.editEvent, {can_edit: current.can_edit === true, can_delete: current.can_delete === true,
                     can_edit_attendees: current.can_edit_attendees === true, attendee_edit_reason: current.attendee_edit_reason})
             }
-            if (!editor.opened || !editor.staleRevision || !editor.editEvent.id) return
+            if (!editor.opened || editor.occurrence || !editor.staleRevision || !editor.editEvent.id) return
             let latest = backend.events.concat(backend.todayEvents).find(function(e) { return e.id === editor.editEvent.id && e.can_edit && e.etag !== editor.editEvent.etag })
             if (latest) editor.latestEvent = latest
         }
@@ -195,9 +210,9 @@ Popup {
         spacing: 0
         RowLayout {
             Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 14; Layout.preferredHeight: 56
-            Text { text: editor.editEvent.event_id ? "Edit event" : "New event"; color: Theme.text; font.pixelSize: Theme.fontSize(13); font.weight: Font.Medium }
+            Text { text: editor.occurrence ? "Edit this occurrence" : editor.editEvent.event_id ? "Edit event" : "New event"; color: Theme.text; font.pixelSize: Theme.fontSize(13); font.weight: Font.Medium }
             Item { Layout.fillWidth: true }
-            FmButton { objectName: "eventDeleteButton"; visible: editor.live && editor.editEvent.can_delete === true && !editor.unknownOutcome; text: "Delete"; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); enabled: !editor.saving && editor.accountReady && editor.sourceReady; tip: "Delete this event from Google Calendar"; onClicked: deleteConfirmation.open() }
+            FmButton { objectName: "eventDeleteButton"; visible: editor.live && editor.editEvent.can_delete === true && !editor.unknownOutcome; text: editor.occurrence ? "Cancel occurrence" : "Delete"; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); enabled: !editor.saving && !occurrenceRead.busy && editor.occurrenceReady && editor.accountReady && editor.sourceReady; tip: editor.occurrence ? "Cancel only this occurrence on Google Calendar" : "Delete this event from Google Calendar"; onClicked: deleteConfirmation.open() }
             FmButton { objectName: "eventAbandonButton"; visible: editor.canAbandon; text: "Abandon"; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); enabled: !editor.saving; tip: "Abandon the recorded change and retain these form fields"; onClicked: abandonConfirmation.open() }
             FmButton { iconName: "close"; implicitWidth: 28; implicitHeight: 28; enabled: !editor.saving; tip: "Close — Esc"; onClicked: editor.close() }
         }
@@ -301,7 +316,12 @@ Popup {
         }
         Text { visible: editor.feedback.length > 0; text: editor.feedback; color: Theme.accent; font.pixelSize: Theme.fontSize(12); wrapMode: Text.Wrap; Layout.fillWidth: true; Layout.margins: 12; textFormat: Text.PlainText }
         RowLayout {
-            visible: editor.staleRevision && !editor.unknownOutcome && !!editor.latestEvent.etag; Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.bottomMargin: 10
+            visible: editor.occurrence && !editor.unknownOutcome; Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.bottomMargin: 10
+            Text { text: editor.occurrenceReady ? "This occurrence only" : "The occurrence needs a fresh check."; color: Theme.muted; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            FmButton { objectName: "eventRefreshOccurrence"; text: occurrenceRead.busy ? "Checking…" : "Refresh occurrence"; outlined: true; font.pixelSize: Theme.fontSize(11); enabled: !editor.saving && !occurrenceRead.busy && editor.accountReady && editor.sourceReady; onClicked: occurrenceRead.read() }
+        }
+        RowLayout {
+            visible: !editor.occurrence && editor.staleRevision && !editor.unknownOutcome && !!editor.latestEvent.etag; Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.bottomMargin: 10
             Text { text: "Current: " + (editor.latestEvent.title || ""); color: Theme.muted; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true; textFormat: Text.PlainText }
             FmButton { objectName: "eventUseCurrentVersion"; text: "Use current version"; outlined: true; font.pixelSize: Theme.fontSize(11); tip: "Keep your fields and update the event version"; onClicked: { let event = Object.assign({}, editor.editEvent); event.etag = editor.latestEvent.etag; editor.editEvent = event; editor.staleRevision = false; editor.requestId = ""; editor.feedback = "Current version loaded. Review your fields, then save." } }
         }
@@ -318,13 +338,13 @@ Popup {
         id: deleteConfirmation; objectName: "eventDeleteConfirmation"; parent: Overlay.overlay; anchors.centerIn: parent; modal: true
         implicitWidth: 344; width: Math.min(implicitWidth, parent.width - 32)
         implicitHeight: topPadding + bottomPadding + deleteBody.implicitHeight + (header ? header.implicitHeight + spacing : 0) + (footer ? footer.implicitHeight + spacing : 0)
-        title: "Delete event?"; standardButtons: Dialog.Ok | Dialog.Cancel
+        title: editor.occurrence ? "Cancel this occurrence?" : "Delete event?"; standardButtons: Dialog.Ok | Dialog.Cancel
         background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
         palette.windowText: Theme.text; palette.buttonText: Theme.text
-        onOpened: { standardButton(Dialog.Ok).text = "Delete"; standardButton(Dialog.Ok).objectName = "eventConfirmDelete" }
+        onOpened: { standardButton(Dialog.Ok).text = editor.occurrence ? "Cancel occurrence" : "Delete"; standardButton(Dialog.Ok).objectName = "eventConfirmDelete" }
         contentItem: Item {
             implicitHeight: deleteBody.implicitHeight
-            Text { id: deleteBody; width: deleteConfirmation.availableWidth; text: "Remove “" + (editor.editEvent.title || "this event") + "” from Google Calendar? Google may notify guests. Notification delivery is not confirmed here."; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; textFormat: Text.PlainText }
+            Text { id: deleteBody; width: deleteConfirmation.availableWidth; text: (editor.occurrence ? "Cancel only the occurrence of “" + (editor.editEvent.title || "this event") + "” originally scheduled for " + (editor.editEvent.occurrence.original_start.date || editor.editEvent.occurrence.original_start.instant) + "? Other occurrences remain unchanged." : "Remove “" + (editor.editEvent.title || "this event") + "” from Google Calendar?") + " Google may notify guests. Notification delivery is not confirmed here."; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; textFormat: Text.PlainText }
         }
         onAccepted: editor.deleteEvent()
     }

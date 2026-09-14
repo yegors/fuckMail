@@ -394,13 +394,11 @@ async fn stage(
     })
     .await
 }
-async fn blocking_preparation<T, F>(
-    memory: OwnedSemaphorePermit,
-    operation: F,
-) -> Result<(T, OwnedSemaphorePermit)>
+pub(super) async fn blocking_preparation<T, F, M>(memory: M, operation: F) -> Result<(T, M)>
 where
     T: Send + 'static,
     F: FnOnce() -> Result<T> + Send + 'static,
+    M: Send + 'static,
 {
     tokio::task::spawn_blocking(move || operation().map(|value| (value, memory)))
         .await

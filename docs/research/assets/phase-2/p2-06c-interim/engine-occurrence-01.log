@@ -1,0 +1,18 @@
+   Compiling tokio-rustls v0.26.5
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+   Compiling fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 29.28s
+     Running unittests src\main.rs (target\debug\deps\fm_engine-3a2ea17661e1de87.exe)
+
+running 4 tests
+test google_sync::calendar_occurrences::tests::terminal_uniqueness_checks_later_pages_and_refuses_exhaustion_and_date_aliases ... ok
+test google_sync::calendar_occurrences::tests::cancelled_instance_read_releases_admissions_and_retains_no_editable_reply ... ok
+test google_sync::calendar_occurrences::tests::master_publication_during_held_instance_get_refuses_stale_editor_projection ... ok
+test google_sync::calendar_occurrences::tests::four_lookup_workers_share_two_seats_without_nested_admission_and_queries_progress ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 140 filtered out; finished in 0.53s
+

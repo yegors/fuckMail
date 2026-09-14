@@ -20,6 +20,9 @@ pub const EVENT_SYNC_FINGERPRINT: &str =
 const PAGE_BYTES: usize = 16 * 1024 * 1024;
 const EVENT_BYTES: usize = 2 * 1024 * 1024;
 
+mod occurrences;
+pub use occurrences::{InstanceIdentity, InstancesPage, OccurrenceResource};
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApiError {
     InvalidRequest,

@@ -41,7 +41,23 @@ pub(crate) fn restore_schema_fifteen(db: &Connection) {
 }
 
 pub(crate) fn restore_schema_seventeen(db: &Connection) {
+    restore_schema_eighteen(db);
     db.execute_batch("DROP INDEX accounts_active; ALTER TABLE accounts DROP COLUMN cleanup_json; ALTER TABLE accounts DROP COLUMN lifecycle_revision; ALTER TABLE accounts DROP COLUMN lifecycle_state; PRAGMA user_version=17;").unwrap();
+}
+pub(crate) fn restore_schema_eighteen(db: &Connection) {
+    db.execute_batch("DROP VIEW calendar_visible_sources; DROP VIEW calendar_published_sources;")
+        .unwrap();
+    let old_view = include_str!("migration-009-calendar.sql")
+        .split_once("CREATE VIEW calendar_visible_sources")
+        .unwrap()
+        .1
+        .split_once(';')
+        .unwrap()
+        .0;
+    db.execute_batch(&format!(
+        "CREATE VIEW calendar_visible_sources{old_view}; PRAGMA user_version=18;"
+    ))
+    .unwrap();
 }
 pub(crate) fn restore_schema_sixteen(db: &Connection) {
     restore_schema_seventeen(db);

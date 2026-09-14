@@ -1,5 +1,5 @@
 //! Calendar-only, bounded in-memory invitation provider. Never opens a socket.
-use super::{transport::decoded_query, Account, Evidence};
+use super::{calendar_occurrences, transport::decoded_query, Account, Evidence};
 use fm_google::transport::{HttpMethod, HttpRequest, HttpResponse, TransportError};
 use serde_json::{json, Value};
 use std::{
@@ -59,11 +59,13 @@ struct State {
     events: BTreeMap<String, Value>,
     version: u64,
     lost: BTreeSet<String>,
+    exceptions: BTreeSet<String>,
 }
 pub(super) struct CalendarFixture {
     accounts: Arc<Vec<Account>>,
     states: Vec<Mutex<State>>,
     evidence: Arc<Mutex<Evidence>>,
+    occurrences: bool,
 }
 impl CalendarFixture {
     pub(super) fn new(
@@ -88,6 +90,7 @@ impl CalendarFixture {
                         .collect(),
                     version: 1,
                     lost: BTreeSet::new(),
+                    exceptions: BTreeSet::new(),
                 })
             })
             .collect();
@@ -95,6 +98,30 @@ impl CalendarFixture {
             accounts,
             states,
             evidence,
+            occurrences: false,
+        }
+    }
+    pub(super) fn occurrences(
+        accounts: Arc<Vec<Account>>,
+        base: u64,
+        evidence: Arc<Mutex<Evidence>>,
+    ) -> Self {
+        let states = accounts
+            .iter()
+            .map(|account| {
+                Mutex::new(State {
+                    events: calendar_occurrences::sources(account.key, base),
+                    version: 1,
+                    lost: BTreeSet::new(),
+                    exceptions: BTreeSet::new(),
+                })
+            })
+            .collect();
+        Self {
+            accounts,
+            states,
+            evidence,
+            occurrences: true,
         }
     }
     fn reject(&self, code: &'static str) -> TransportError {
@@ -149,9 +176,14 @@ impl CalendarFixture {
                     (catalog(account.key), "catalog_get")
                 }
                 ["calendars", id, "events"] if *id == cal && valid_list(&params, false) => (
-                    json!({"items":state.events.values().collect::<Vec<_>>(),"nextSyncToken":format!("fixture-events-v{}",state.version),"timeZone":"UTC","accessRole":"owner","defaultReminders":[]}),
+                    json!({"items":state.events.iter().filter(|(id,_)|!self.occurrences||calendar_occurrences::initially_visible(id)||state.exceptions.contains(*id)).map(|(_,source)|source).collect::<Vec<_>>(),"nextSyncToken":format!("fixture-events-v{}",state.version),"timeZone":"UTC","accessRole":"owner","defaultReminders":[]}),
                     "event_list",
                 ),
+                ["calendars", id, "events", series, "instances"]
+                    if self.occurrences && *id == cal =>
+                {
+                    (self.instances(&state, series, &params)?, "instances")
+                }
                 ["calendars", id, "events", event] if *id == cal && params.is_empty() => {
                     let Some(value) = state.events.get(*event) else {
                         return reply(404, json!({"error":{"code":404}}));
@@ -217,6 +249,15 @@ impl CalendarFixture {
             _ => return Err(self.reject("unexpected_calendar_mutation_target")),
         }
         .to_owned();
+        if self.occurrences
+            && (is_create
+                || !matches!(
+                    event.as_str(),
+                    "oi0000" | "oi0001" | "oi0004" | "oi0005" | "od0000" | "od0002"
+                ))
+        {
+            return Err(self.reject("unexpected_occurrence_mutation_target"));
+        }
         let before = state.events.get(&event).cloned().unwrap_or(Value::Null);
         self.evidence
             .lock()
@@ -275,8 +316,15 @@ impl CalendarFixture {
             after["organizer"] = json!({"email":account.email,"self":true});
             after["status"] = "confirmed".into();
         }
+        if self.occurrences && is_delete {
+            after = calendar_occurrences::cancelled(&before);
+        }
         state.events.insert(event.clone(), after.clone());
-        let lost = (is_patch && event == "ci0001" || is_delete && event == "ci0004")
+        if self.occurrences {
+            state.exceptions.insert(event.clone());
+        }
+        let lost = (is_patch && event == if self.occurrences { "oi0001" } else { "ci0001" }
+            || is_delete && event == if self.occurrences { "oi0004" } else { "ci0004" })
             && state.lost.insert(event.clone());
         let mut evidence = self.evidence.lock().unwrap();
         evidence.counters.calendar_mutations += 1;
@@ -294,6 +342,62 @@ impl CalendarFixture {
         } else {
             reply(200, after)
         }
+    }
+    fn instances(
+        &self,
+        state: &State,
+        series: &str,
+        params: &BTreeMap<String, String>,
+    ) -> Result<Value, TransportError> {
+        if params.get("maxResults").map(String::as_str) != Some("250")
+            || params.get("showDeleted").map(String::as_str) != Some("true")
+            || params.keys().any(|key| {
+                !matches!(
+                    key.as_str(),
+                    "maxResults" | "showDeleted" | "originalStart" | "pageToken"
+                )
+            })
+            || !matches!(series, "co0000" | "co0001" | "co0002" | "co0003")
+        {
+            return Err(self.reject("unexpected_occurrence_instances_query"));
+        }
+        let original = params
+            .get("originalStart")
+            .map(|v| {
+                chrono::DateTime::parse_from_rfc3339(v)
+                    .map_err(|_| self.reject("invalid_occurrence_original_start"))
+            })
+            .transpose()?;
+        if series == "co0001" && original.is_some() {
+            return Err(self.reject("unverified_all_day_original_start"));
+        }
+        let rows = state
+            .events
+            .values()
+            .filter(|source| source["recurringEventId"] == series)
+            .filter(|source| {
+                original.is_none_or(|original| {
+                    source["originalStartTime"]["dateTime"]
+                        .as_str()
+                        .and_then(|v| chrono::DateTime::parse_from_rfc3339(v).ok())
+                        == Some(original)
+                })
+            })
+            .collect::<Vec<_>>();
+        let offset = match params.get("pageToken") {
+            None => 0,
+            Some(token) => token
+                .strip_prefix(&format!("occurrence-{series}-"))
+                .and_then(|n| n.parse::<usize>().ok())
+                .filter(|n| *n > 0 && *n < rows.len() && *n % calendar_occurrences::PAGE_SIZE == 0)
+                .ok_or_else(|| self.reject("invalid_occurrence_page_token"))?,
+        };
+        let end = (offset + calendar_occurrences::PAGE_SIZE).min(rows.len());
+        let mut page = json!({"items":rows[offset..end]});
+        if end < rows.len() {
+            page["nextPageToken"] = format!("occurrence-{series}-{end}").into();
+        }
+        Ok(page)
     }
 }
 // Google returns read-only identity fields even when PATCH correctly omits

@@ -1,0 +1,18 @@
+    Checking tokio-rustls v0.26.5
+    Checking hyper-rustls v0.27.9
+    Checking reqwest v0.12.28
+    Checking fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+    Checking fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+    Checking fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+    Checking fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+error: the borrowed expression implements the required traits
+  --> crates\fm-engine\src\verification_google\fixture\occurrence_tests.rs:79:41
+   |
+79 |     let db = rusqlite::Connection::open(&profile.join("store.sqlite3")).unwrap();
+   |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: change this to: `profile.join("store.sqlite3")`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#needless_borrows_for_generic_args
+   = note: `-D clippy::needless-borrows-for-generic-args` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::needless_borrows_for_generic_args)]`
+
+error: could not compile `fm-engine` (bin "fm-engine" test) due to 1 previous error

@@ -1,0 +1,33 @@
+{
+  "limits": [
+    "Focused fixture controls and private IPC only; actual generated provider native walkthrough remains unrun.",
+    "Final controls05 adds timeline test instrumentation only after visual03; production QML/backend/helper inputs remain identical.",
+    "Captures use offscreen software renderer and installed Windows fonts; no physical/GPU/performance claim."
+  ],
+  "visuals": "visual-03/manifest.json",
+  "builds": [
+    "gui-build-02",
+    "gui-build-04",
+    "gui-build-05"
+  ],
+  "production_frozen": true,
+  "version": 1,
+  "tests": [
+    "gui-controls-05",
+    "gui-occurrence-03"
+  ],
+  "binaries": [
+    {
+      "path": "build/p2-05b3a-gui-dev/fuckmail-gui.exe",
+      "sha256": "4fee20fc7535bc942e354be68a2735f6ae3dab4eb9daa379592a2a05d3d7d699"
+    },
+    {
+      "path": "build/p2-05b3a-gui-dev/gui-calendar-controls-test.exe",
+      "sha256": "bd7dd6f1d44338528240121bdbc71a12a651b52f40084f8e3050e2c630929f2b"
+    },
+    {
+      "path": "build/p2-05b3a-gui-dev/gui-calendar-occurrence-test.exe",
+      "sha256": "3f1767d9a4f714eebcd7922a194357cce544ff5edae37254ade3eda3c6ac9c90"
+    }
+  ]
+}

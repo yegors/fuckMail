@@ -2,6 +2,7 @@
 #include "MailBackend.h"
 #include <QCoreApplication>
 #include <QDate>
+#include <QDateTime>
 #include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
@@ -26,6 +27,21 @@ QStringList addresses(const QJsonValue &value) {
     for (const auto &entry : value.toArray()) result << entry.toString().trimmed().toLower();
     result.sort(); return result;
 }
+bool matchesOccurrence(const QJsonObject &row, const QString &account, const QJsonObject &selector) {
+    const auto key = row.value("occurrence_key").toObject(), original = selector.value("original_start").toObject();
+    if (row.value("account") != account || row.value("calendar_id") != selector.value("calendar_id")
+        || key.value("series") != selector.value("series_id")) return false;
+    if (original.value("kind") == "date") return row.value("all_day").toBool() && key.value("original_start") == original.value("date");
+    const auto wanted = QDateTime::fromString(original.value("instant").toString(), Qt::ISODate);
+    const auto actual = QDateTime::fromString(key.value("original_start").toString(), Qt::ISODate);
+    return original.value("kind") == "zoned" && !row.value("all_day").toBool() && wanted.isValid() && actual.isValid() && wanted == actual;
+}
+bool sameOriginal(const QJsonObject &left, const QJsonObject &right) {
+    if (left.value("kind") != right.value("kind")) return false;
+    if (left.value("kind") == "date") return left.value("date") == right.value("date");
+    const auto a = QDateTime::fromString(left.value("instant").toString(), Qt::ISODate), b = QDateTime::fromString(right.value("instant").toString(), Qt::ISODate);
+    return left.value("kind") == "zoned" && a.isValid() && b.isValid() && a == b;
+}
 }
 GuiGoogleCalendarSelfTest::GuiGoogleCalendarSelfTest(MailBackend &backend, QQuickWindow *window,
         const QString &expectation, const QString &report, QObject *parent)
@@ -39,6 +55,7 @@ GuiGoogleCalendarSelfTest::GuiGoogleCalendarSelfTest(MailBackend &backend, QQuic
         QTimer::singleShot(0, this, [this] { finish("Missing or oversized Calendar expectation."); }); return;
     }
     const auto expected = QJsonDocument::fromJson(input.readAll()).object();
+    m_occurrenceMode = expected.value("scenario") == "occurrence";
     m_expected = expected["accounts"].toArray(); m_limits = expected["limits"].toObject(); m_date = expected["calendar_date"].toString();
     if (!window || expected["version"] != 1 || m_expected.isEmpty() || m_expected.size() > 4
         || !QDate::fromString(m_date, Qt::ISODate).isValid() || m_limits.size() != quotaKeys.size()) {
@@ -52,6 +69,22 @@ GuiGoogleCalendarSelfTest::GuiGoogleCalendarSelfTest(MailBackend &backend, QQuic
     }
     for (const auto &value : m_expected) {
         const auto row = value.toObject(), event = row["event"].toObject(), fresh = row["new_event"].toObject();
+        if (m_occurrenceMode) {
+            const auto actions = row.value("actions").toArray();
+            if (row.value("account").toString().isEmpty() || row.value("calendar_id").toString().isEmpty() || actions.isEmpty() || actions.size() > 8 || row.value("absent_selectors").toArray().size() > 8) {
+                QTimer::singleShot(0, this, [this] { finish("Incomplete native occurrence expectation."); }); return;
+            }
+            for (const auto &entry : actions) {
+                const auto action = entry.toObject(), selector = action.value("selector").toObject();
+                if (!QStringList{"edit", "delete"}.contains(action.value("kind").toString()) || selector.value("calendar_id") != row.value("calendar_id")
+                    || selector.value("series_id").toString().isEmpty() || selector.value("original_start").toObject().isEmpty()
+                    || action.value("event_id").toString().isEmpty() || !QDate::fromString(action.value("date").toString(), Qt::ISODate).isValid()
+                    || (action.value("kind") == "edit" && (action.value("fields").toObject().size() != 1 || action.value("fields").toObject().value("title").toString().isEmpty()))) {
+                    QTimer::singleShot(0, this, [this] { finish("Unsupported native occurrence action expectation."); }); return;
+                }
+            }
+            continue;
+        }
         if (row["account"].toString().isEmpty() || event["event_id"].toString().isEmpty() || event["calendar_id"].toString().isEmpty()
             || row["add_guest"].toString().isEmpty() || fresh["title"].toString().isEmpty() || fresh["attendees"].toArray().isEmpty()
             || fresh["start"].toString().size() < 16 || fresh["end"].toString().size() < 16 || fresh["time_zone"].toString().isEmpty()) {
@@ -63,6 +96,14 @@ GuiGoogleCalendarSelfTest::GuiGoogleCalendarSelfTest(MailBackend &backend, QQuic
         if (m_finished || result.value("account").toString() != m_request["account"].toString()
             || result.value("request_id").toString() != m_request["request_id"].toString()) return;
         m_response = QJsonObject::fromVariantMap(result); m_responseOk = ok; m_responseError = error;
+    });
+    connect(&backend, &MailBackend::calendarOccurrenceReadFinished, this, [this](const QString &, bool ok, const QVariantMap &result, const QString &) {
+        if (!m_occurrenceMode || !ok || m_finished) return;
+        const auto account = m_expected[m_account].toObject();
+        const auto actions = account.value("actions").toArray(); if (m_occurrenceIndex >= actions.size()) return;
+        const auto action = actions[m_occurrenceIndex].toObject();
+        if (result.value("account").toString() == account.value("account").toString() && result.value("event_id").toString() == action.value("event_id").toString())
+            m_occurrenceResponse = QJsonObject::fromVariantMap(result);
     });
     m_timer.setInterval(50); connect(&m_timer, &QTimer::timeout, this, &GuiGoogleCalendarSelfTest::tick);
     m_watchdog.setSingleShot(true); connect(&m_watchdog, &QTimer::timeout, this, [this] {
@@ -115,7 +156,7 @@ bool GuiGoogleCalendarSelfTest::submit(const QString &action, int nextStage) {
     if (!click(action == "delete" ? "eventConfirmDelete" : "eventSaveButton")) return false;
     m_request = object(m_window->findChild<QObject *>("eventEditor"), "submittedRequest");
     if (m_request["request_id"].toString().isEmpty()) { finish("Actual Calendar control did not submit a request."); return false; }
-    m_action = action; m_nextStage = nextStage; m_stage = 13; return true;
+    m_action = action; m_nextStage = nextStage; m_stage = m_occurrenceMode ? 106 : 13; return true;
 }
 void GuiGoogleCalendarSelfTest::tick() {
     if (m_finished || !m_window) return;
@@ -124,6 +165,7 @@ void GuiGoogleCalendarSelfTest::tick() {
     const auto account = m_expected[m_account].toObject(), expected = account["event"].toObject();
     const QString id = account["account"].toString(), eventId = expected["event_id"].toString(), calendar = expected["calendar_id"].toString();
     auto editor = m_window->findChild<QObject *>("eventEditor");
+    if (m_occurrenceMode && m_stage >= 100) { occurrenceTick(account, editor); return; }
     const auto eventFor = [&](const QString &key) {
         for (const auto &value : m_backend.events()) {
             const auto row = QJsonObject::fromVariantMap(value.toMap());
@@ -166,6 +208,7 @@ void GuiGoogleCalendarSelfTest::tick() {
     case 7: if (click("calendarMoreButton")) m_stage = 8; break;
     case 8: if (click("calendarAgendaButton")) m_stage = 9; break;
     case 9:
+        if (m_occurrenceMode) { m_occurrenceIndex = 0; m_stage = 100; break; }
         if (eventFor(eventId).isEmpty()) return;
         m_initial = eventFor(eventId);
         for (auto it = expected.begin(); it != expected.end(); ++it) if (m_initial[it.key()] != it.value()) { finish("Initial native event differs at " + it.key()); return; }
@@ -260,11 +303,102 @@ void GuiGoogleCalendarSelfTest::tick() {
         m_stage = 1; break;
     }
 }
+QJsonObject GuiGoogleCalendarSelfTest::occurrenceFor(const QString &account, const QJsonObject &selector) const {
+    for (const auto &value : m_backend.events()) {
+        const auto row = QJsonObject::fromVariantMap(value.toMap());
+        if (matchesOccurrence(row, account, selector)) return row;
+    }
+    return {};
+}
+bool GuiGoogleCalendarSelfTest::openOccurrence(const QString &account, const QJsonObject &selector) {
+    auto workspace = named(m_window->contentItem(), "calendarWorkspace"), agenda = named(m_window->contentItem(), "calendarAgenda");
+    if (!workspace || !agenda || !m_backend.calendarReady()) return false;
+    const auto rows = plain(workspace->property("agendaEvents")).toList();
+    for (int index = 0; index < rows.size(); ++index) {
+        const auto row = QJsonObject::fromVariantMap(rows[index].toMap());
+        if (!matchesOccurrence(row, account, selector)) continue;
+        const auto name = "calendarAgendaOccurrence-" + row.value("id").toString();
+        if (!named(m_window->contentItem(), name)) { QMetaObject::invokeMethod(agenda, "positionViewAtIndex", Q_ARG(int, index), Q_ARG(int, 4)); return false; }
+        return click(name);
+    }
+    return false;
+}
+void GuiGoogleCalendarSelfTest::occurrenceTick(const QJsonObject &account, QObject *editor) {
+    const auto id = account.value("account").toString(), calendar = account.value("calendar_id").toString();
+    const auto actions = account.value("actions").toArray(); const auto action = actions[m_occurrenceIndex].toObject();
+    const auto selector = action.value("selector").toObject();
+    switch (m_stage) {
+    case 100: {
+        if (!m_backend.calendarReady()) return;
+        if (m_occurrenceIndex == 0 && !m_accountResult.contains("initial_events")) {
+            if (m_backend.calendarFrom() != m_date || m_backend.calendarDays() != 42) return;
+            bool complete = false;
+            for (const auto &value : m_backend.calendarSources()) { const auto source = value.toMap(); if (source.value("account") == id && source.value("calendar_id") == calendar && source.value("coverage") == "cached") complete = true; }
+            if (!complete) return;
+            for (const auto &entry : actions) if (occurrenceFor(id, entry.toObject().value("selector").toObject()).isEmpty()) return;
+            QJsonArray initial, absent;
+            for (const auto &value : m_backend.events()) { const auto row = QJsonObject::fromVariantMap(value.toMap()); if (row.value("account") == id && row.value("calendar_id") == calendar) initial.append(row); }
+            for (const auto &entry : account.value("absent_selectors").toArray()) {
+                const auto excluded = entry.toObject(), start = excluded.value("original_start").toObject();
+                const auto date = QDate::fromString(start.value("kind") == "date" ? start.value("date").toString() : start.value("instant").toString().left(10), Qt::ISODate);
+                const auto from = QDate::fromString(m_backend.calendarFrom(), Qt::ISODate);
+                if (!date.isValid() || date < from || date >= from.addDays(m_backend.calendarDays()) || !occurrenceFor(id, excluded).isEmpty()) { finish("Expected sparse cancellation is visible or outside the inspected native window."); return; }
+                absent.append(excluded);
+            }
+            m_accountResult["initial_events"] = initial; m_accountResult["observed_absent_selectors"] = absent;
+            m_accountResult["calendar_from"] = m_backend.calendarFrom(); m_accountResult["calendar_days"] = m_backend.calendarDays();
+        }
+        if (m_backend.calendarDate() != action.value("date").toString()) { m_backend.setCalendarDate(action.value("date").toString()); return; }
+        m_initial = occurrenceFor(id, selector); if (m_initial.isEmpty()) return;
+        if (!m_initial.value("can_resolve_occurrence").toBool()) { finish("Expected occurrence is not eligible for provider resolution."); return; }
+        if (openOccurrence(id, selector)) { m_occurrenceResponse = {}; m_stage = 101; } break;
+    }
+    case 101: if (click("eventEditButton")) m_stage = 102; break;
+    case 102: {
+        if (!editor || !editor->property("opened").toBool()) {
+            const auto details = m_window->findChild<QObject *>("eventDetails");
+            const auto feedback = details ? details->property("feedback").toString() : QString{};
+            if (!feedback.isEmpty() && feedback != "Checking this occurrence on Google…") finish("Native occurrence resolution failed: " + feedback);
+            return;
+        }
+        m_resolvedOccurrence = object(editor, "editEvent");
+        const auto occurrence = m_resolvedOccurrence.value("occurrence").toObject();
+        if (m_occurrenceResponse.isEmpty() || m_resolvedOccurrence.value("account") != id || m_resolvedOccurrence.value("calendar_id") != calendar
+            || m_resolvedOccurrence.value("event_id") != action.value("event_id") || occurrence.value("series_id") != selector.value("series_id")
+            || occurrence.value("expected_master_etag").toString().isEmpty() || !sameOriginal(occurrence.value("original_start").toObject(), selector.value("original_start").toObject())) { finish("Native resolved occurrence has an unexpected identity."); return; }
+        const auto expected = action.value("event").toObject();
+        for (auto it = expected.begin(); it != expected.end(); ++it) if (m_resolvedOccurrence.value(it.key()) != it.value()) { finish("Resolved native occurrence differs at " + it.key()); return; }
+        if (action.value("kind") == "delete") { if (click("eventDeleteButton")) m_stage = 104; }
+        else { auto title = named(m_window->contentItem(), "eventTitle"); if (!title || !title->setProperty("text", action.value("fields").toObject().value("title").toString())) { finish("Could not author occurrence title."); return; } m_stage = 103; }
+        break;
+    }
+    case 103: submit("edit", 107); break;
+    case 104: submit("delete", 107); break;
+    case 106: {
+        if (m_response.isEmpty()) return;
+        if (!m_responseOk || !QStringList{"accepted", "acknowledged"}.contains(m_response.value("state").toString())) { finish("Expected occurrence provider acceptance: " + m_responseError); return; }
+        if (editor && editor->property("visible").toBool()) return;
+        const auto current = occurrenceFor(id, selector);
+        if (action.value("kind") == "delete") { if (!current.isEmpty()) return; }
+        else {
+            if (current.isEmpty() || current.value("title") != action.value("fields").toObject().value("title")) return;
+            for (const auto field : {"start", "end", "all_day", "time_zone", "location", "description", "conference_url"})
+                if (current.value(field) != m_resolvedOccurrence.value(field)) { finish("Occurrence title edit changed native field " + QString(field)); return; }
+        }
+        auto observed = m_accountResult.value("actions").toArray();
+        QJsonObject result{{"account", id}, {"kind", action.value("kind")}, {"selector", selector}, {"selected_occurrence", m_initial},
+            {"resolved_event", m_resolvedOccurrence}, {"resolved_response", m_occurrenceResponse}, {"request", m_request}, {"outcome", m_response}};
+        if (!current.isEmpty()) result["event"] = current;
+        observed.append(result); m_accountResult["actions"] = observed; m_stage = 107; break;
+    }
+    case 107: m_stage = ++m_occurrenceIndex < actions.size() ? 100 : 28; break;
+    }
+}
 void GuiGoogleCalendarSelfTest::finish(const QString &error) {
     if (m_finished) return;
     m_finished = true; m_timer.stop(); m_watchdog.stop();
     const QJsonObject result{{"version", 1}, {"result", error.isEmpty() ? "passed" : "failed"}, {"error", error},
-        {"stage", m_stage}, {"gui_pid", QCoreApplication::applicationPid()}, {"accounts", m_observed}, {"in_progress", m_accountResult},
+        {"scenario", m_occurrenceMode ? "occurrence" : "ordinary"}, {"stage", m_stage}, {"gui_pid", QCoreApplication::applicationPid()}, {"accounts", m_observed}, {"in_progress", m_accountResult},
         {"last_request", m_request}, {"last_outcome", m_response}};
     QSaveFile file(m_report);
     if (QFileInfo::exists(m_report) || !file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(result).toJson()) < 0 || !file.commit()) {

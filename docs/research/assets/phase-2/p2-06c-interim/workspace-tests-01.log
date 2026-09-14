@@ -1,0 +1,739 @@
+   Compiling ring v0.17.14
+   Compiling libsqlite3-sys v0.30.1
+   Compiling fm-cli v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-cli)
+   Compiling rusqlite v0.32.1
+   Compiling rustls v0.23.44
+   Compiling rustls-webpki v0.103.15
+   Compiling jsonwebtoken v9.3.1
+   Compiling tokio-rustls v0.26.5
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+   Compiling fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+   Compiling fm-mail v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-mail)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 25.16s
+     Running unittests src\lib.rs (target\debug\deps\fm_assist-b1136fd18666e022.exe)
+
+running 7 tests
+test tests::manual_use_needs_no_runner_and_off_starts_nothing ... ok
+test tests::cancellation_stops_only_owner_jobs_and_rejects_late_output ... ok
+test tests::auto_apply_is_explicit_and_abstention_is_harmless ... ok
+test tests::drafts_excluded_coverage_is_engine_owned_and_scoped ... ok
+test tests::newer_manual_provider_content_policy_or_members_defeat_late_results ... ok
+test tests::configured_categories_only_never_actions_or_system_labels ... ok
+test tests::partial_context_queue_and_output_are_bounded ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\fm_calendar-a238c8090b1a78b1.exe)
+
+running 12 tests
+test google_api::tests::occurrences::occurrence_get_retains_full_moved_source_and_sparse_cancellation_without_fabricating_etag ... ok
+test google_api::tests::event_sync_keeps_source_and_fixed_full_delta_query_with_empty_intermediate_page ... ok
+test google_api::tests::patch_is_conditional_preserves_provider_fields_and_does_not_retry_conflicts_or_disconnect ... ok
+test google_api::tests::catalog_pages_keep_hidden_deleted_and_limited_writer_without_acl_assumptions ... ok
+test google_api::tests::occurrences::instances_terminal_and_empty_continuation_preserve_identity_without_actual_time_filters ... ok
+test google_api::tests::insert_keeps_durable_id_and_delete_keeps_precondition_and_explicit_notifications ... ok
+test google_api::tests::occurrences::occurrence_get_refuses_wrong_target_or_parent_and_non_cancelled_etag_absence ... ok
+test google_api::tests::retained_event_label_requires_version_without_changing_legacy_color_requests ... ok
+test google_api::tests::free_busy_has_exact_bounded_calendar_coverage_and_no_false_free_time ... ok
+test google_api::tests::page_failures_expiry_policy_quota_and_cancel_are_explicit_and_never_retried ... ok
+test google_api::tests::conditional_event_read_validates_identity_and_preserves_etag_and_fields ... ok
+test google_api::tests::occurrences::instances_refuse_repeated_tokens_malformed_identity_and_unbounded_pages ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\calendar.rs (target\debug\deps\calendar-4a112ced0909e720.exe)
+
+running 17 tests
+test all_day_dates_have_exclusive_end_and_survive_dst ... ok
+test edits_rsvp_and_following_have_one_notification_owner_and_revision_guards ... ok
+test source_and_private_fields_do_not_leak_into_busy_projection ... ok
+test sync_pages_commit_cursor_only_at_end_and_410_restarts_full_snapshot ... ok
+test unsupported_rules_zones_and_unbounded_ranges_are_explicit_errors ... ok
+test all_day_recurrence_keeps_dates ... ok
+test all_day_exdate_and_rdate_are_preserved ... ok
+test non_existent_dst_wall_time_is_skipped_without_consuming_count ... ok
+test repeated_dst_wall_time_uses_first_occurrence ... ok
+test moved_occurrence_enters_window_from_outside_original_range ... ok
+test rdate_exdate_and_monthly_rule_keep_expected_occurrences ... ok
+test weekly_wall_clock_keeps_nine_across_fall_dst ... ok
+test moved_and_cancelled_instances_keep_original_identity ... ok
+test private_master_cannot_leak_through_public_looking_exception ... ok
+test weekly_wall_clock_keeps_nine_across_spring_dst ... ok
+test overlapping_independent_events_are_both_preserved_and_scope_is_strict ... ok
+test collection_adapter_uses_one_identity_for_week_footer_and_cli ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\limited_access.rs (target\debug\deps\limited_access-6b5c5ec2c2945542.exe)
+
+running 5 tests
+test unresolved_instances_fail_closed_until_same_scope_public_master_is_bound ... ok
+test compact_master_context_preserves_private_cancelled_and_scope_rules_after_source_drop ... ok
+test limited_writer_edits_public_events_but_private_details_and_writes_are_denied ... ok
+test master_privacy_and_private_exception_both_survive_limited_writer_expansion ... ok
+test collection_projection_groups_instances_and_cancelled_parent_suppresses_children ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\main.rs (target\debug\deps\fm-158d08b8ccf5184e.exe)
+
+running 5 tests
+test tests::engine_recovery_proofs_survive_failure_and_cli_json_serialization ... ok
+test tests::cli_errors_keep_only_bounded_affirmative_recovery_proofs ... ok
+test tests::attachment_request_maps_exact_fields_without_opening_relative_or_deleted_sources ... ok
+test tests::remote_draft_actions_keep_read_conversion_adoption_and_deletion_distinct ... ok
+test tests::verified_export_preserves_exact_bytes_and_never_overwrites ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests\arguments.rs (target\debug\deps\arguments-a60ae72fe3b565b5.exe)
+
+running 16 tests
+test live_profile_initialization_requires_an_explicit_path ... ok
+test help_and_version_are_headless_and_do_not_start_a_profile ... ok
+test scope_and_bound_errors_are_machine_readable_without_a_live_engine ... ok
+test occurrence_lookup_rejects_invalid_or_oversized_input_before_storage ... ok
+test synthetic_browser_flag_cannot_silently_apply_to_ordinary_commands ... ok
+test sender_commands_and_kinds_are_headless_and_reject_invalid_kinds ... ok
+test restore_requires_account_revision_and_configuration_before_storage ... ok
+test composition_selectors_reject_ambiguity_before_starting_an_engine ... ok
+test attachment_import_requires_scope_saved_draft_revision_and_stable_identity ... ok
+test label_pagination_and_binding_require_explicit_unambiguous_choices_before_storage ... ok
+test account_removal_refuses_missing_scope_and_unsafe_requests_before_storage ... ok
+test google_draft_preflight_refuses_ambiguous_revisions_and_identities_before_storage ... ok
+test google_send_preflight_requires_exact_identity_and_revision_before_storage ... ok
+test remote_draft_sources_reject_invalid_identity_revision_and_paging_before_storage ... ok
+test google_preflight_does_not_start_storage_for_missing_scope_or_setup ... ok
+test remote_draft_actions_require_exact_scope_source_and_conversion_before_storage ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.54s
+
+     Running unittests src\lib.rs (target\debug\deps\fm_core-c16a4300718408a8.exe)
+
+running 265 tests
+test account_lifecycle::tests::removal_cleanup_claims_are_serial_and_old_receipts_cannot_delete_restored_grants ... ok
+test benchmark::search_100k ... ignored, Opt-in 100k search experiment: cargo test -p fm-core --release search_100k -- --ignored --nocapture
+test account_lifecycle::tests::held_local_and_provider_preparations_cannot_revive_after_remove_restore ... ok
+test account_lifecycle::tests::live_calendar_late_ack_is_retained_while_archive_blocks_cache_and_pending_replay_dispatch ... ok
+test account_lifecycle::tests::archived_prepared_replay_is_status_only_and_exact_late_send_ack_survives ... ok
+test account_lifecycle::tests::failed_cleanup_and_restore_restart_remain_truthfully_retryable ... ok
+test account_lifecycle::tests::retained_source_and_attachment_exports_survive_archive_but_held_import_cannot_publish ... ok
+test account_lifecycle::tests::live_schema_seventeen_preserves_unknown_upload_and_accepted_send_bytes ... ok
+test assist_store::tests::permitted_auto_apply_and_summary_commit_once_and_replay_after_restart ... ok
+test account_lifecycle::tests::schema_seventeen_upgrade_preserves_old_columns_receipts_and_future_refusal ... ok
+test account_lifecycle::tests::archived_prepared_capture_exports_without_attempt_or_journal_transition ... ok
+test assist_store::tests::forbidden_output_and_failed_result_commit_have_no_partial_category_effect ... ok
+test account_lifecycle::tests::archive_keeps_cached_calendar_and_capture_but_blocks_new_authorship ... ok
+test assist_store::tests::manual_correction_defeats_late_output_and_future_routine_reclassification ... ok
+test assist_store::tests::disabled_or_absent_runner_never_starts_and_suggestions_exclude_drafts ... ok
+test assist_store::tests::independent_summary_switch_and_source_count_bound_are_enforced ... ok
+test calendar_store::tests::fake_rsvp_uses_account_self_attendee_and_ack_transaction_is_replayable ... ok
+test calendar_store::tests::failed_second_calendar_source_rolls_back_sources_visibility_cursor_and_receipt ... ok
+test calendar_store::tests::remote_etag_change_preserves_pending_edit_and_query_scope_cannot_reuse_cursor ... ok
+test calendar_store::tests::incomplete_expired_batch_retains_previous_view_until_complete_commit_and_replay ... ok
+test calendar_store::tests::fake_edit_ack_is_durable_scoped_etag_checked_and_revoked_acl_cannot_commit ... ok
+test calendar_store::tests::mixed_calendar_midnights_use_display_day_and_rows_sort_by_actual_instant ... ok
+test calendar_store::tests::shared_calendar_projection_keeps_real_identity_and_filters_each_acl ... ok
+test capture::tests::actual_v2_profile_upgrade_preserves_accepted_capture_without_resubmission ... ok
+test capture::tests::v1_migration_preserves_authored_drafts_views_flags_and_operation_journal ... ok
+test calendar_store::tests::sparse_cancelled_instance_keeps_identity_and_exact_observation ... ok
+test cancellation::tests::active_sqlite_read_stops_without_cancelling_the_next_owner ... ok
+test cancellation::tests::cancelled_queued_mutation_has_no_journal_or_draft_effect ... ok
+test content::tests::attachment_lookup_is_account_scoped_and_checks_content_before_returning_path ... ok
+test content::tests::content_is_published_verified_and_idempotent ... ok
+test capture::tests::durable_draft_capture_replays_exact_mime_after_reopen_without_changing_draft ... ok
+test content::tests::interrupted_orphans_are_never_available_or_removed_by_later_staging ... ok
+test capture::tests::actual_qt_formatting_and_retained_attachment_survive_draft_restart_and_capture ... ok
+test capture::tests::interrupted_in_flight_capture_recovers_unknown_without_repeat_transport_call ... ok
+test content::tests::over_limit_content_is_rejected_before_creating_storage ... ok
+test content::tests::missing_corrupt_wrong_size_and_invalid_hash_are_rejected ... ok
+test content::tests::export_names_cannot_choose_paths_or_reserved_device_names ... ok
+test capture::tests::invalid_or_cross_account_attachments_cannot_replace_an_authored_draft ... ok
+test capture::tests::older_plain_clients_clear_stale_html_and_preserve_selected_attachments ... ok
+test capture::tests::explicit_unknown_and_failed_receipt_commit_never_resubmit ... ok
+test composition_tests::composition_drafts_page_search_scope_and_invalid_edits_are_bounded ... ok
+test composition_tests::composition_legacy_first_save_binds_loaded_member_across_actual_arrival ... ok
+test capture::tests::prepared_capture_resumes_immutable_bytes_and_parameter_conflicts_are_rejected ... ok
+test google_draft_inventory::actions::tests::adoption_preserves_source_no_upload_and_uses_same_target_for_first_edit_and_send ... ok
+test google_draft_inventory::actions::tests::copy_conversion_preserves_all_text_routes_and_files_and_refuses_unsupported_adoption ... ok
+test google_draft_inventory::actions::tests::adopted_observation_retains_actual_thread_and_both_raw_versions_without_replacing_editor ... ok
+test google_draft_inventory::actions::tests::delete_late_ack_preserves_current_edits_and_kind_collision_does_not_rewrite_receipts ... ok
+test google_draft_inventory::actions::tests::delete_prepared_resume_claim_unknown_restart_and_source_evidence_never_infer_deletion ... ok
+test google_draft_inventory::actions::tests::deletion_blocks_provider_work_but_preserves_new_local_text_and_requires_fresh_claim_stamp ... ok
+test google_draft_inventory::actions::tests::fresh_divergence_is_retained_and_cannot_adopt_or_delete ... ok
+test google_draft_inventory::actions::tests::invocation_proof_distinguishes_early_refusal_from_an_attempted_authored_commit ... ok
+test capture::tests::unresolved_history_precedes_limit_and_replays_older_revision_without_changing_new_draft ... ok
+test google_draft_inventory::actions::tests::prepared_proofs_are_cancelled_or_fenced_without_authored_commit ... ok
+test google_draft_inventory::actions::tests::read_only_reconcile_retains_unknown_outcome_after_write_permission_is_removed ... ok
+test google_draft_inventory::tests::capable_account_cannot_mutate_upload_or_send_read_only_snapshot ... ok
+test google_draft_inventory::tests::export_validates_ids_version_membership_cancellation_and_corruption ... ok
+test google_draft_inventory::actions::migration_tests::schema15_upgrade_keeps_source_versions_authored_bytes_and_mixed_receipts ... ok
+test google_draft_inventory::tests::exact_raw_routing_cid_parts_and_account_isolation_survive_restart ... ok
+test google_draft_inventory::tests::page_checkpoint_cancel_generation_and_expiry_are_bounded_and_restartable ... ok
+test google_draft_inventory::tests::latest_preview_history_empty_scan_and_missing_observation_are_distinct ... ok
+test google_drafts::tests::deterministic_failure_is_revision_bound_and_does_not_starve_later_drafts ... ok
+test google_draft_inventory::tests::schema14_mixed_google_journal_preserves_accepted_submission_and_draft_receipts ... ok
+test google_draft_inventory::tests::schema14_upgrade_preserves_live_draft_journal_and_refuses_future_schema ... ok
+test google_draft_inventory::tests::unknown_create_similarity_is_evidence_only_and_late_exact_ack_links_without_retargeting ... ok
+test google_drafts::tests::draft_gate_uses_shared_granted_mail_write_capability ... ok
+test google_drafts::tests::failed_replacement_keeps_conflict_and_definitive_rejection_requires_an_edit ... ok
+test google_draft_inventory::actions::tests::full_mime_eligibility_refuses_special_routing_partial_content_and_honors_bounds ... ok
+test google_drafts::tests::generation_and_revision_fences_do_not_publish_stale_preparation_or_raw ... ok
+test google_drafts::tests::historical_replay_is_not_current_twin_metadata ... ok
+test google_drafts::tests::import_attachment_freeze_verifies_bytes_and_scope_without_writer_io ... ok
+test google_drafts::tests::in_flight_restart_is_unknown_and_never_due_or_recreated ... ok
+test google_draft_inventory::tests::publication_rechecks_new_exact_owner_and_preserves_pending_and_accepted_send ... ok
+test google_drafts::tests::changed_ack_identity_same_id_raw_change_and_missing_preserve_conflicts ... ok
+test google_draft_inventory::tests::cached_page_reads_only_requested_routing_and_caps_enriched_payload ... ok
+test google_labels::tests::duplicate_or_oversized_catalogs_fail_before_store_publication ... ok
+test google_drafts::tests::prepared_resume_uses_original_params_and_checks_observed_remote_before_claim ... ok
+test google_drafts::tests::transient_deferral_is_bounded_retryable_and_skips_only_the_same_authored_revision ... ok
+test google_drafts::tests::recipient_free_create_dual_hash_baseline_newer_authored_text_and_noop ... ok
+test google_labels::tests::bounded_catalog_parts_are_invisible_and_resume_after_restart ... ok
+test google_drafts::tests::unknown_update_replacement_requires_explicit_revision_bound_existing_target ... ok
+test google_labels::tests::stale_connection_and_invalid_binding_never_publish_or_create_categories ... ok
+test google_labels::tests::explicit_binding_is_replayable_offline_and_provider_names_do_not_rename_categories ... ok
+test google_labels::tests::remapping_preserves_existing_assignments_pending_intent_and_flags ... ok
+test google_live_mail::tests::cancellation_leaves_no_staged_work_and_same_source_label_refresh_skips_fts ... ok
+test google_live_mail::tests::bounded_preparation_retains_attachments_and_remote_drafts_without_publishing_drafts ... ok
+test google_live_mail::tests::date_order_uses_internal_date_and_original_rfc_date_is_retained ... ok
+test google_live_mail::tests::expired_history_absence_needs_reconciliation_and_never_erases_authored_work ... ok
+test google_live_mail::tests::explicit_retry_repairs_older_message_history_and_counters_survive_resync_deletion ... ok
+test google_live_mail::tests::independent_delta_wins_over_older_inventory_and_preserves_manual_intent ... ok
+test google_live_mail::tests::oversized_and_malformed_items_do_not_poison_page_or_claim_offline_coverage ... ok
+test google_live_mail::tests::newer_deletion_cannot_be_resurrected_by_an_older_inventory_result ... ok
+test google_live_mail::tests::parallel_content_publication_reuses_one_verified_blob ... ok
+test google_live_mail::tests::generation_connection_and_profile_fences_reject_old_preparation ... ok
+test google_live_mail::tests::recovery_rehash_rejects_corruption_and_preparation_is_store_independent ... ok
+test google_live_mail::tests::part_item_and_normalized_byte_limits_are_enforced_before_any_publication ... ok
+test google_live_mail::tests::transaction_failure_rolls_back_fts_coverage_receipt_and_messages ... ok
+test google_live_mutations::tests::ambiguous_applied_post_confirms_by_readback_without_another_claim ... ok
+test google_live_mail::tests::visible_parts_replay_resume_and_page_cursor_wait_for_every_outcome ... ok
+test google_live_mutations::tests::archive_trash_restore_preserve_review_flags_and_other_labels ... ok
+test google_live_mutations::tests::category_uses_frozen_mapping_and_rejects_a_changed_mapping ... ok
+test google_live_mutations::tests::confirming_identical_visible_state_does_not_invalidate_navigation_or_fts ... ok
+test google_live_mutations::tests::deleted_local_target_keeps_receipt_and_finishes_without_delivery ... ok
+test google_live_mutations::tests::epochs_stale_readbacks_and_missing_targets_never_allow_blind_retry ... ok
+test google_live_mutations::tests::exact_delivery_status_refuses_missing_non_mail_and_foreign_requests ... ok
+test google_live_mutations::tests::missing_scope_or_mapping_rolls_back_local_change_and_journal ... ok
+test google_live_mutations::tests::newer_intent_supersedes_old_fields_without_late_ack_overwrite ... ok
+test google_live_mutations::tests::newer_reverse_action_after_claim_stays_overlaid_until_its_own_confirmation ... ok
+test google_live_mutations::tests::offline_snapshot_and_exact_receipt_survive_restart_and_new_arrival ... ok
+test google_send::tests::absence_future_revisions_and_existing_journals_never_prove_obsolete ... ok
+test google_send::tests::b1_and_send_preparation_race_cannot_bypass_each_other_or_unknown_draft ... ok
+test google_send::tests::competing_same_request_preparations_and_claims_keep_one_winner ... ok
+test google_live_mutations::tests::exact_delivery_status_counts_every_member_outside_bounded_account_previews ... ok
+test google_send::tests::local_and_connection_races_refuse_preparation_but_keep_exact_late_acceptance ... ok
+test google_send::tests::prepared_resume_and_abandon_are_exact_and_never_apply_to_unknown ... ok
+test google_send::tests::read_evidence_never_promotes_unknown_and_is_bounded_revision_and_generation_fenced ... ok
+test google_draft_inventory::tests::truncation_issues_and_large_read_cap_preserve_original_raw ... ok
+test google_send::tests::reply_reply_all_and_forward_reuse_exact_retained_source_and_threading ... ok
+test google_send::tests::restart_mixed_journal_and_execution_collisions_remain_separate ... ok
+test google_send::tests::obsolete_unpublished_requests_fence_every_prepared_proof_after_save_or_observation ... ok
+test google_send::tests::strict_missing_recipients_bad_primary_and_cancel_never_publish_dispatchable_work ... ok
+test google_send::tests::strict_frozen_mime_attachment_acceptance_and_newer_explicit_send_preserve_work ... ok
+test google_send::tests::synced_target_uses_frozen_mime_and_remote_divergence_prevents_claim ... ok
+test google_send::tests::schema13_migration_preserves_absent_draft_kind_json_and_old_engine_refuses14 ... ok
+test composition_tests::composition_maximum_escaped_subject_capture_remains_replayable ... ok
+test composition_tests::composition_new_draft_capture_and_restart_never_manufacture_received_mail ... ok
+test google_drafts::tests::prepared_due_partial_index_skips_synced_inventory_and_keeps_exact_resume_revision ... ok
+test live_calendar::tests::asynchronous_preparation_rechecks_policy_and_keeps_sparse_cancellation_source ... ok
+test google_send::tests::provider_byte_limit_is_checked_after_real_mime_encoding_before_journal_publication ... ok
+test live_calendar::tests::catalog_only_permission_refresh_does_not_require_ungranted_event_details ... ok
+test live_calendar::tests::catalog_restrictions_apply_during_staging_and_full_absence_hides_retained_details ... ok
+test live_calendar::tests::duplicate_provider_identity_is_retained_as_explicit_incomplete_data ... ok
+test composition_tests::composition_reply_all_and_forward_freeze_retained_source_without_bcc_or_attachments ... ok
+test live_calendar::tests::expiry_discards_partial_sources_preserves_previous_view_and_requires_cleanup ... ok
+test live_calendar::tests::durable_chunks_resume_then_publish_without_early_cursor_or_projection_change ... ok
+test live_calendar::tests::exception_budget_reports_incomplete_without_publishing_an_unresolved_master ... ok
+test live_calendar::tests::free_busy_has_distinct_display_identity_no_event_or_edit_identity_and_explicit_errors ... ok
+test live_calendar::tests::limited_writer_resolves_parent_privacy_and_fails_closed_for_orphans ... ok
+test composition_tests::composition_schema5_upgrade_preserves_authored_columns_and_exact_old_journals ... ok
+test live_calendar::tests::malformed_raw_items_remain_durable_and_prevent_false_complete_inventory ... ok
+test live_calendar::tests::old_permission_response_cannot_restore_grants_after_a_newer_observation ... ok
+test live_calendar::tests::permission_and_connection_epochs_fence_old_pages_and_stale_catalog_grants ... ok
+test live_calendar::tests::permission_upgrade_requires_fresh_inventory_and_preserves_retained_cache ... ok
+test live_calendar::tests::prepared_large_page_writer_timing ... ignored, Explicit large synthetic Calendar preparation/writer timing experiment
+test live_calendar::tests::prepared_chunks_enforce_input_bytes_and_cancel_without_receipts ... ok
+test live_calendar::tests::provider_identity_and_cursor_bounds_are_separate ... ok
+test live_calendar::tests::prepared_page_digest_matches_existing_receipts_and_chunks_are_bound_to_the_profile ... ok
+test live_calendar::tests::replay_manifest_and_cursor_cycles_cannot_advance_checkpoint ... ok
+test live_calendar::tests::restart_discovers_published_and_expired_consolidation_without_losing_committed_rows ... ok
+test live_calendar::tests::tombstones::equal_provider_ids_in_other_accounts_and_calendars_do_not_cross_suppress ... ok
+test google_drafts::tests::schema12_migration_and_execution_discriminator_preserve_synthetic_receipts ... ok
+test live_calendar::tests::tombstones::hidden_published_cancelled_master_blocks_a_still_current_moved_child ... ok
+test google_labels::tests::cached_categories_follow_binding_remapping_and_rolled_back_receipts ... ok
+test live_calendar::tests::large_retained_history_uses_window_candidates_and_live_zone_is_explicit ... ok
+test live_calendar::tests::tombstones::moved_cancellation_and_hidden_ack_identity_are_superseded_only_after_publication ... ok
+test live_calendar::tests::tombstones::retained_cancellations_do_not_restore_absent_parents_or_bypass_catalog_privacy_and_archive ... ok
+test live_calendar::tests::tombstones::schema_eighteen_upgrade_changes_only_views_and_preserves_sources_and_legacy_intent ... ok
+test live_calendar::tests::unchanged_permission_refresh_preserves_staging_and_reconnect_rebind_fences_old_response ... ok
+test live_calendar::tests::tombstones::minimal_timed_dst_and_date_cancellations_survive_full_refresh_and_reopen ... ok
+test live_calendar_writes::invitation_tests::invitation_fifty_participants_includes_protected_and_implicit_organizer ... ok
+test live_calendar_writes::invitation_tests::invitation_fifty_writable_rows_reconcile_without_double_counting_organizer ... ok
+test live_calendar_writes::invitation_tests::invitation_incomplete_or_unsupported_rosters_block_only_roster_replacement ... ok
+test live_calendar_writes::invitation_tests::invitation_labels_meetings_and_ordinary_attachments_survive_dispatch ... ok
+test live_calendar_writes::invitation_tests::catalog_membership_loss_blocks_ack_publication_and_staging_expiry ... ok
+test live_calendar_writes::invitation_tests::invitation_reconcile_requires_exact_complete_guest_membership_including_removals ... ok
+test live_calendar_writes::invitation_tests::invitation_reconciled_delete_and_newer_cache_remain_distinct_from_acknowledgement ... ok
+test live_calendar_writes::invitation_tests::invitation_roster_replaces_only_membership_and_preserves_provider_objects ... ok
+test live_calendar_writes::invitation_tests::invitation_create_reconciliation_accepts_optional_organizer_but_no_extra_guests ... ok
+test google_store::tests::category_mappings_reject_all_system_ids_and_existing_invalid_mapping_blocks_import ... ok
+test google_store::tests::accepted_assistance_category_survives_provider_observation_but_manual_value_wins ... ok
+test live_calendar_writes::invitation_tests::invitation_schema_seventeen_preserves_legacy_journal_bytes_and_interpretation ... ok
+test live_calendar_writes::invitation_tests::invitation_abandoned_v2_attempt_retains_only_its_exact_late_acceptance ... ok
+test live_calendar::tests::oversized_prior_and_merged_cancellations_preserve_source_and_checkpoint ... ok
+test google_store::tests::missing_or_corrupt_staged_content_never_advances_checkpoint ... ok
+test live_calendar_writes::invitation_tests::invitation_unchanged_explicit_fields_still_constrain_observed_state ... ok
+test google_store::tests::expired_cursor_restart_preserves_unseen_messages_and_rate_limit_does_not_advance ... ok
+test google_store::tests::manual_intents_and_draft_survive_newer_provider_snapshot_and_explicit_delete ... ok
+test live_calendar_writes::occurrence_tests::all_day_identity_and_effective_generation_survive_source_consolidation ... ok
+test live_calendar_writes::invitation_tests::invitation_unknown_restart_observed_state_is_terminal_and_exact_late_ack_strengthens ... ok
+test google_store::tests::partial_transport_staging_is_invisible_and_retry_survives_restart ... ok
+test live_calendar_writes::occurrence_tests::current_detail_read_grants_can_reconcile_but_cannot_open_editable_or_dispatch ... ok
+test google_store::tests::mime_corpus_import_preserves_bytes_visible_search_and_attachment_checksums ... ok
+test live_calendar_writes::occurrence_tests::delete_ack_keeps_derived_provenance_and_sync_replaces_it_with_exact_observation ... ok
+test live_calendar_writes::occurrence_tests::opaque_qualification_rejects_wrong_identity_semantics_and_bounded_sources ... ok
+test live_calendar_writes::occurrence_tests::resolved_moved_editor_and_flat_selectors_use_verified_instance_identity ... ok
+test live_calendar_writes::tests::changed_fields_preserve_unedited_provider_data_and_replay_does_not_dispatch ... ok
+test live_calendar_writes::tests::accepted_write_expires_older_staging_without_losing_source_or_receipt ... ok
+test live_calendar_writes::occurrence_tests::sparse_read_reconciliation_stays_observed_and_exact_late_ack_strengthens_receipt ... ok
+test google_store::tests::sql_failure_rolls_back_messages_fts_checkpoint_and_commit_journal ... ok
+test live_calendar_writes::occurrence_tests::removed_restored_epoch_never_revives_old_proof_and_late_abandoned_ack_is_retained ... ok
+test live_calendar_writes::occurrence_tests::v3_dispatch_preserves_exact_intent_instance_and_compact_master_across_restart ... ok
+test live_calendar_writes::tests::conflict_and_crash_preserve_intent_and_reconcile_without_retry ... ok
+test google_store::tests::two_page_import_catchup_reopen_replay_and_colliding_accounts ... ok
+test live_calendar_writes::tests::live_operation_history_pages_all_states_and_sanitizes_outcomes_without_sources ... ok
+test live_calendar_writes::tests::no_conference_changes_no_recurring_writes_and_no_stale_claims ... ok
+test live_calendar_writes::tests::proven_undispatched_cooldown_preserves_ready_intent_and_rejects_an_old_attempt ... ok
+test live_calendar_writes::tests::self_rsvp_is_a_minimal_patch_and_reader_cannot_submit ... ok
+test live_calendar_writes::tests::status_projects_small_fields_without_parsing_retained_dispatch_or_accepted_source ... ok
+test live_calendar_writes::tests::stable_create_id_and_delete_are_journaled_without_fake_acknowledgement ... ok
+test live_profile::tests::cached_labels_and_binding_dispatch_share_account_validation_and_exact_receipts ... ok
+test live_calendar_writes::tests::resume_loads_only_bounded_immutable_unsent_request_and_never_changes_state ... ok
+test live_profile::tests::interrupted_first_live_transaction_or_marker_never_seeds_demo ... ok
+test live_calendar_writes::tests::successful_receipt_survives_newer_sync_and_permission_observation ... ok
+test live_calendar_writes::invitation_tests::invitation_read_publication_uses_current_fence_and_preserves_dispatch ... ok
+test live_profile::tests::desktop_client_reference_and_connection_generation_publish_atomically ... ok
+test live_profile::tests::interrupted_live_schema_migration_keeps_empty_identity ... ok
+test live_calendar_writes::occurrence_tests::held_reconciliation_and_late_provider_outcome_have_distinct_publication_fences ... ok
+test live_profile::tests::subject_binding_deduplicates_preserves_drafts_and_rejects_wrong_reconnect ... ok
+test live_profile::tests::live_capabilities_distinguish_cached_work_grants_and_active_delivery ... ok
+test live_profile::tests::empty_live_profile_reopens_without_seed_or_simulated_operations ... ok
+test live_calendar_writes::tests::live_action_projection_matches_supported_writes_roles_and_private_sources ... ok
+test live_calendar_writes::occurrence_tests::held_occurrence_proofs_and_ready_dispatches_recheck_all_current_authority ... ok
+test live_calendar::tests::tombstones::malformed_duplicate_and_byte_limited_children_block_their_series ... ok
+test local_content::tests::local_concurrent_capture_exports_publish_one_verified_copy ... ok
+test local_content::tests::local_first_save_prepares_frozen_legacy_routing_and_rechecks_source_and_identity ... ok
+test local_content::tests::local_capture_race_replays_winning_bytes_after_later_draft_edit ... ok
+test local_content::tests::local_import_cancellation_stale_revision_and_failed_commit_publish_no_attachment ... ok
+test local_content::tests::local_import_rejects_changed_open_file_before_publishing_content ... ok
+test local_content::tests::local_import_capture_restart_and_replay_preserve_bytes_and_received_queries ... ok
+test local_content::tests::local_save_replay_precedes_corrupt_blob_access_and_new_saves_verify_content ... ok
+test live_profile::tests::schema_seven_upgrade_preserves_demo_and_refuses_live_conversion ... ok
+test local_content::tests::local_legacy_source_io_is_deferred_and_unavailable_fallback_remains_capture_refusal ... ok
+test local_content::tests::local_import_zero_byte_count_and_combined_byte_bounds_and_live_capture_refusal ... ok
+test local_content::tests::local_schema11_upgrade_preserves_existing_rows_receipts_and_fixture_revision ... ok
+test live_profile::tests::schema_ten_to_eleven_preserves_profile_authored_rows_and_receipts ... ok
+test assist_store::tests::policy_provider_content_mapping_or_new_member_changes_reject_stale_results ... ok
+test phase1_calendar::tests::aggregate_occurrence_limit_never_silently_truncates_multiple_accounts ... ok
+test phase1_calendar::tests::combined_scope_is_independent_with_restricted_fields_and_empty_selection ... ok
+test local_content::tests::local_preparation_rechecks_selected_attachment_stamps_and_account_scope ... ok
+test phase1_calendar::tests::invalid_fields_and_recurring_changes_are_explicitly_rejected ... ok
+test phase1_calendar::tests::durable_prepare_rechecks_revoked_permissions_before_publishing ... ok
+test phase1_calendar::tests::public_operation_history_prioritizes_pending_and_pages_through_all_records ... ok
+test phase1_calendar::tests::title_edit_preserves_self_and_existing_attendee_response_metadata ... ok
+test phase1_calendar::tests::six_week_month_across_fall_dst_is_a_valid_bounded_calendar_window ... ok
+test phase1_calendar::tests::self_rsvp_preserves_other_attendees_and_replays ... ok
+test phase1_calendar::tests::unloaded_or_revoked_selected_calendars_are_not_reported_as_complete_empty_days ... ok
+test phase1_tests::phase1_schema4_upgrade_preserves_existing_fixture_and_authored_state ... ok
+test phase1_calendar::tests::creation_replay_restart_edit_and_stale_revision_preserve_one_source ... ok
+test phase1_tests::phase1_cached_counts_invalidate_after_source_and_flag_changes ... ok
+test phase1_tests::phase1_authored_signature_override_captures_once_after_preference_change ... ok
+test mutations::tests::a_new_reply_does_not_inherit_an_earlier_snapshot_action ... ok
+test phase1_tests::phase1_discarded_reply_restarts_with_current_identity_and_outgoing_reply_targets_recipient ... ok
+test preferences::appearance_tests::confirmed_google_limits_are_durable_atomic_preferences_without_accounts ... ok
+test phase1_tests::phase1_fixture_counts_filters_groups_and_cursor_agree ... ok
+test phase1_tests::phase1_preferences_validate_replay_and_keep_none_distinct_from_all ... ok
+test phase1_tests::phase1_status_filters_use_entire_conversation_and_source_filters_share_one_member ... ok
+test phase1_tests::phase1_signature_snapshot_capture_discard_and_history_are_durable ... ok
+test preferences::appearance_tests::appearance_defaults_merge_old_preferences_and_preserve_receipts ... ok
+test queries::projection_tests::committed_flags_preserve_other_accounts_and_source_coverage_without_promoting_stale_caches ... ok
+test queries::projection_tests::category_counts_survive_navigation_and_follow_direct_membership_changes_and_rollback ... ok
+test queries::projection_tests::reader_and_flag_receipts_keep_kind_without_loading_an_account_projection ... ok
+test queries::projection_tests::cursor_survives_non_search_writes_and_rejects_search_changes_and_writer_restart ... ok
+test preferences::appearance_tests::appearance_preferences_are_typed_atomic_revisioned_and_durable ... ok
+test queries::projection_tests::first_page_navigation_reuses_mail_without_source_reads_and_refreshes_cursor_revision ... ok
+test queries::projection_tests::projection_cache_skips_navigation_writes_and_handles_appends_replacements_and_rollback ... ok
+test queries::projection_tests::first_page_cache_follows_flags_source_edits_rollback_filters_and_account_scope ... ok
+test queries::projection_tests::coverage_append_deltas_preserve_independent_index_source_and_attachment_counts ... ok
+test queries::projection_tests::projection_reads_inside_transactions_never_survive_rollback_or_savepoint_restore ... ok
+test queries::projection_tests::projection_cache_rebuilds_after_delta_overflow_and_unhooked_truncate ... ok
+test queries::projection_tests::trash_folder_is_explicit_and_restoration_does_not_invent_inbox_membership ... ok
+test sender_kind_tests::calendar_generation_tracks_actual_calendar_writes_but_not_appearance_or_mail ... ok
+test sender_kind_tests::collapsed_groups_page_expanded_rows_without_changing_full_filter_counts ... ok
+test sender_kind_tests::explicit_fixture_roles_and_filtered_counts_are_independent_of_the_page ... ok
+test sender_kind_tests::latest_incoming_kind_is_source_bound_and_invalidates_cached_filters_and_cursors ... ok
+test sender_kind_tests::sender_history_uses_exact_identity_full_counts_and_actual_recent_instants_without_reviewing ... ok
+test sender_kind_tests::schema6_migration_keeps_old_profiles_receipts_and_sources_unclassified ... ok
+
+test result: ok. 263 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 83.02s
+
+     Running tests\coverage.rs (target\debug\deps\coverage-afac95ef97a8b3a6.exe)
+
+running 2 tests
+test recorded_available_attachment_never_implies_a_verified_offline_copy ... ok
+test coverage_counts_real_index_rows_and_marks_file_verification_unknown ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.77s
+
+     Running tests\mutations.rs (target\debug\deps\mutations-f648c4abe8f26b34.exe)
+
+running 7 tests
+test account_view_is_durable_and_rejects_foreign_selection ... ok
+test explicit_flags_target_only_snapshot_and_remain_independent ... ok
+test manual_categories_preserve_all_flags_and_other_members ... ok
+test stale_and_cross_account_snapshot_rejections_have_no_partial_effect ... ok
+test journal_replay_returns_original_response_across_restart_and_later_edits ... ok
+test draft_unicode_and_empty_discard_survive_restart_without_changing_flags ... ok
+test invalid_mutations_reject_duplicates_unknown_fields_and_size_overflow ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.75s
+
+     Running tests\search.rs (target\debug\deps\search-e64d2f2a2861dd23.exe)
+
+running 5 tests
+test long_thread_search_groups_once_and_returns_actual_matching_member ... ok
+test punctuation_partial_sender_and_source_fields_are_scoped ... ok
+test unsent_drafts_never_replace_or_enter_source_search ... ok
+test query_bounds_and_unknown_fields_are_rejected ... ok
+test pagination_is_stable_distinct_and_does_not_change_account_totals ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.25s
+
+     Running unittests src\main.rs (target\debug\deps\fm_engine-3a2ea17661e1de87.exe)
+
+running 144 tests
+test google_auth::tests::aborted_begin_releases_its_reserved_attempt_without_starting_login_later ... ok
+test google_auth::tests::real_loopback_callback_uses_fixed_fixture_transport_and_retains_no_failed_grant ... ok
+test google_auth::tests::rejected_refresh_stops_sibling_account_work_and_keeps_the_vault ... ok
+test google_auth::tests::cancelled_reconnect_after_vault_write_cannot_restart_with_stale_connected_scopes ... ok
+test google_auth::tests::attempts_are_session_owned_cancelled_on_owner_exit_and_status_is_redacted ... ok
+test google_auth::tests::queued_refresh_rejection_cannot_downgrade_a_disconnect ... ok
+test google_auth::tests::lifecycle_tests::local_removal_restore_and_historical_replay_preserve_identity_without_provider_work ... ok
+test google_sync::calendar::tests::a_reconnected_account_rejects_the_previous_worker_before_network_or_store_changes ... ok
+test google_auth::tests::saved_client_load_and_disconnect_use_one_shared_vault_without_deletion ... ok
+test google_auth::tests::lifecycle_tests::duplicate_removal_waiter_revalidates_after_lock_and_failed_cleanup_needs_explicit_retry ... ok
+test google_auth::tests::lifecycle_tests::a_previously_admitted_duplicate_cannot_delete_a_later_restored_grant ... ok
+test google_auth::tests::successful_signed_login_and_partial_reconnect_publish_only_durable_verified_grants ... ok
+test google_auth::tests::configuration_is_bounded_installed_only_and_never_supplies_endpoints ... ok
+test google_auth::tests::failed_core_binding_after_vault_write_leaves_reconnect_required ... ok
+test google_sync::calendar::tests::admitted_calendar_read_observes_new_cooldown_before_http_and_can_retry ... ok
+test google_sync::calendar::tests::aborted_caller_keeps_memory_seat_until_blocking_preparation_finishes ... ok
+test google_sync::calendar::tests::unusable_calendar_page_does_not_block_other_calendar_and_cancellation_stops_all_reads ... ok
+test google_auth::tests::lifecycle_tests::cancelled_or_failed_restore_after_native_store_keeps_truthful_cleanup_needed ... ok
+test google_sync::calendar_occurrences::tests::terminal_uniqueness_checks_later_pages_and_refuses_exhaustion_and_date_aliases ... ok
+test google_sync::calendar_occurrences::tests::cancelled_instance_read_releases_admissions_and_retains_no_editable_reply ... ok
+test google_sync::calendar_writes::tests::cancelled_queued_core_payload_retains_memory_until_writer_discards_it ... ok
+test google_sync::calendar::tests::metadata_permission_loss_redacts_and_free_busy_errors_never_become_free_time ... ok
+test google_sync::calendar_writes::tests::cancellation_after_dispatch_still_records_unknown_outcome ... ok
+test google_sync::calendar_writes::tests::cancellation_during_mutation_cooldown_preserves_unsent_ready_without_holding_memory ... ok
+test google_sync::calendar_occurrences::tests::master_publication_during_held_instance_get_refuses_stale_editor_projection ... ok
+test google_sync::draft_actions::tests::draft_action_fields_and_identifier_bounds_are_exact ... ok
+test google_sync::calendar::tests::catalog_pagination_calendar_fairness_and_saved_event_cursor_survive_restart ... ok
+test google_sync::calendar::tests::changed_partial_page_is_expired_and_replaced_without_publishing_mixed_sources ... ok
+test google_sync::calendar_writes::tests::cancellation_after_committed_claim_keeps_lease_until_exact_outcome_is_retained ... ok
+test google_sync::calendar::tests::expired_catalog_and_event_tokens_replace_only_after_complete_publication ... ok
+test google_sync::calendar_writes::tests::conditional_edit_preserves_omitted_fields_and_completed_replay_has_no_http ... ok
+test google_sync::calendar_writes::tests::cooldown_learned_after_claim_returns_ready_without_provider_dispatch ... ok
+test google_sync::calendar_writes::tests::lost_response_reconciles_with_reads_only ... ok
+test google_sync::calendar_writes::tests::precondition_failure_keeps_intent_and_never_automatically_retries ... ok
+test google_sync::draft_actions::tests::local_assessment_copy_and_replay_need_no_provider_owner_and_preserve_source ... ok
+test google_sync::calendar_writes::tests::create_delete_and_self_rsvp_use_exact_scoped_requests ... ok
+test google_sync::drafts::tests::ipc_grammar_is_exact_and_send_is_absent ... ok
+test google_sync::drafts::tests::cancellation_immediately_after_core_claim_does_not_lose_the_returned_lease ... ok
+test google_sync::drafts::tests::authored_binary_attachment_and_all_recipient_headers_reach_exact_retained_mime ... ok
+test google_sync::draft_actions::tests::two_account_delete_unknown_replay_and_absence_never_become_acknowledged ... ok
+test google_sync::draft_actions::tests::changed_source_and_cancelled_read_do_not_claim_but_late_delete_receipt_survives_close ... ok
+test google_sync::draft_actions::tests::adopted_target_waits_for_edit_and_immediate_send_uses_original_container ... ok
+test google_sync::drafts::tests::cancelled_preparation_retains_memory_until_the_actual_blocking_work_finishes ... ok
+test google_auth::tests::completed_status_retention_is_bounded_and_shutdown_closes_the_listener ... ok
+test google_sync::drafts::tests::lost_ack_survives_restart_without_automatic_duplicate_creation ... ok
+test google_sync::drafts::tests::primary_mailbox_mismatch_never_dispatches_the_frozen_from ... ok
+test google_sync::drafts::tests::actual_cached_queries_and_newer_edits_progress_during_upload_and_late_ack ... ok
+test google_sync::drafts::tests::definitive_provider_rejection_waits_for_new_authored_revision_before_retry ... ok
+test google_sync::drafts::tests::normalized_raw_has_a_distinct_retained_baseline_not_claimed_byte_fidelity ... ok
+test google_sync::calendar_occurrences::tests::four_lookup_workers_share_two_seats_without_nested_admission_and_queries_progress ... ok
+test google_sync::drafts::tests::late_ack_after_connection_generation_change_is_durable_without_publishing_a_baseline ... ok
+test google_sync::drafts::tests::quota_blocked_draft_keeps_core_available_and_preparation_memory_unclaimed ... ok
+test google_sync::drafts::tests::prepared_update_survives_quota_cancellation_and_replays_old_bytes_before_new_revision ... ok
+test google_sync::drafts::tests::changed_remote_message_or_missing_twin_blocks_automatic_overwrite ... ok
+test google_sync::drafts::tests::changed_prepared_update_is_stopped_and_revision_bound_replace_handles_missing_twin ... ok
+test google_sync::drafts::tests::acknowledged_raw_retention_failure_defers_without_changing_the_exact_ack ... ok
+test google_sync::labels::tests::invalid_complete_response_cannot_replace_the_last_good_catalog ... ok
+test google_sync::drafts::tests::recipient_free_create_update_ack_raw_and_changed_message_identity ... ok
+test google_sync::labels::tests::concurrent_explicit_and_periodic_refreshes_share_a_current_catalog_revision ... ok
+test google_sync::labels::tests::connection_change_after_http_admission_retains_prior_published_catalog ... ok
+test google_sync::labels::tests::owned_label_cadence_publishes_complete_catalog_while_cached_queries_make_no_http ... ok
+test google_sync::drafts::tests::same_revision_coalesces_but_exact_request_reuse_still_validates_its_original_fields ... ok
+test google_sync::mail::tests::cancellation_during_raw_response_never_publishes_or_advances_page ... ok
+test google_sync::calendar_writes::tests::reconciliation_held_read_cannot_overwrite_newer_permission_membership_or_cache ... ok
+test google_sync::mail::tests::authoritative_history_deletion_never_fetches_or_mutates_remote_mail ... ok
+test google_sync::drafts::tests::unknown_update_requires_fresh_observation_and_new_explicit_replacement_identity ... ok
+test google_sync::mail::tests::expired_history_preserves_source_until_explicit_missing_reconciliation ... ok
+test google_sync::mail::tests::paused_http_leaves_writer_available_and_new_connection_fences_old_result ... ok
+test google_sync::quota::tests::aborted_waiter_and_lease_release_admission ... ok
+test google_sync::quota::tests::cancellation_wakes_quota_wait_without_spending_another_request ... ok
+test google_sync::quota::tests::lease_dispatch_is_one_shot_and_cancellation_releases_concurrency ... ok
+test google_sync::quota::tests::lease_hook_keeps_delayed_reservation_until_actual_dispatch ... ok
+test google_sync::quota::tests::newly_learned_cooldown_is_recoverable_and_keeps_lease_until_drop ... ok
+test google_sync::mail_mutations::tests::cancelled_after_apply_persists_attempt_outcome_and_reconnect_readback_confirms ... ok
+test google_sync::mail_mutations::tests::done_is_immediate_locally_and_one_message_post_preserves_other_labels ... ok
+test google_sync::mail_mutations::tests::lost_post_response_restarts_with_readback_and_never_repeats_applied_write ... ok
+test google_sync::mail_mutations::tests::permission_failure_stays_visible_without_retrying_or_reverting_local_intent ... ok
+test google_sync::mail_mutations::tests::trash_and_restore_use_distinct_endpoints_without_invented_inbox_changes ... ok
+test google_sync::runtime_tests::actual_quota_configuration_preserves_service_units_and_headroom ... ok
+test google_sync::mail::tests::permanent_source_and_remote_draft_gaps_stay_incomplete_without_retry_loops ... ok
+test google_sync::runtime_tests::admitted_transport_is_one_shot_and_mutations_use_only_their_costed_lane ... ok
+test google_sync::runtime_tests::calendar_page_memory_is_shared_and_quota_waiters_do_not_occupy_it ... ok
+test google_sync::runtime_tests::calendar_preparation_cancellation_releases_quota_capacity ... ok
+test google_sync::runtime_tests::cancellation_while_waiting_for_memory_releases_admitted_http_capacity ... ok
+test google_sync::runtime_tests::deletion_admission_is_exact_one_shot_and_cannot_become_create_update_or_send ... ok
+test google_sync::runtime_tests::draft_quota_wait_precedes_memory_and_each_dispatch_is_charged_once ... ok
+test google_sync::runtime_tests::draft_transport_allowlist_has_only_exact_create_update_paths_and_costs ... ok
+test google_sync::runtime_tests::explicit_send_costs_100_once_and_quota_wait_never_takes_mime_memory ... ok
+test google_sync::mail_mutations::tests::uncertain_unapplied_write_is_retried_only_after_a_fresh_readback ... ok
+test google_sync::runtime_tests::quota_waiting_backfill_does_not_hold_memory_needed_by_other_accounts_recent_mail ... ok
+test google_sync::runtime_tests::raw_response_keeps_memory_lease_until_preparation_releases_it ... ok
+test google_sync::mail::tests::interrupted_part_resumes_saved_ids_and_verified_manifests_without_relisting ... ok
+test google_sync::mail::tests::saved_inventory_continuation_advances_only_after_all_page_items_commit ... ok
+test google_sync::remote_drafts::tests::a_late_raw_result_cannot_publish_after_connection_generation_changes ... ok
+test google_sync::runtime_tests::send_allowlist_requires_explicit_submission_class_exact_post_path_and_100_units ... ok
+test google_sync::runtime_tests::transient_retries_remain_recoverable_after_fast_attempts_and_preserve_provider_delay ... ok
+test google_sync::mail::tests::normalized_byte_ceiling_splits_part_and_retains_overflow_manifest ... ok
+test google_sync::remote_drafts::tests::provider_permission_pause_is_visible_and_explicit_refresh_resumes_the_same_scan ... ok
+test google_sync::remote_drafts::tests::cancelled_raw_resumes_saved_page_without_relisting_and_cached_queries_progress ... ok
+test google_sync::runtime_tests::explicit_send_requires_owner_but_local_status_does_not_and_refusal_is_typed ... ok
+test google_sync::mail::tests::recent_first_full_inventory_and_final_catchup_have_exact_coverage ... ok
+test google_sync::runtime_tests::disconnecting_one_real_runtime_owner_preserves_other_owner_until_last_disconnect ... ok
+test google_sync::runtime_tests::releasing_one_real_runtime_owner_preserves_other_owner_and_final_release_cancels ... ok
+test google_sync::runtime_tests::remote_inventory_refresh_is_bounded_owned_and_does_not_restart_for_an_additional_owner ... ok
+test google_sync::runtime_tests::temporary_calendar_request_owner_survives_gui_exit_and_preserves_normal_cli_owner ... ok
+test google_sync::send::tests::claimed_unavailable_mime_is_known_unsent_and_only_revision_bound_abandon_clears_it ... ok
+test google_sync::send::tests::concurrent_request_and_late_cancelled_ack_keep_exact_receipt_and_newer_local_text ... ok
+test google_sync::send::tests::direct_submission_retains_exact_recipients_body_ack_and_immutable_replay ... ok
+test google_sync::send::tests::explicit_same_request_resume_racing_memory_wait_dispatches_once ... ok
+test google_sync::send::tests::obsolete_unrecorded_request_invalidates_held_mime_proof_and_allows_newer_explicit_send ... ok
+test google_sync::send::tests::lost_ack_restart_and_sent_match_never_replay_or_promote_unknown ... ok
+test google_sync::send::tests::known_twin_sends_frozen_latest_mime_and_consumed_twin_never_reappears ... ok
+test session_tests::actual_session_cancels_backpressured_handshake_and_error_replies ... ok
+test session_tests::actual_session_engine_cancel_releases_queued_request_ownership ... ok
+test session_tests::actual_sessions_cancel_idle_and_partial_reads_without_dropping_clients ... ok
+test session_tests::closed_or_pipelined_clients_finish_their_cancelled_provider_receipt ... ok
+test session_tests::completed_provider_reply_is_returned_without_cancelling_owner ... ok
+test session_tests::disconnect_marks_only_that_queued_request_cancelled ... ok
+test session_tests::engine_cancel_drains_admitted_receipt_with_client_still_connected ... ok
+test session_tests::foreground_overtakes_background_with_bounded_fair_work_and_owned_permits ... ok
+test google_sync::mail::tests::pending_delta_gets_a_turn_after_four_recent_parts ... ok
+test local_content::tests::cancelled_blocking_workers_keep_both_slots_until_they_really_complete ... ok
+test google_sync::send::tests::prepared_restart_resume_keeps_original_mime_despite_newer_authored_revision ... ok
+test google_sync::send::tests::quota_wait_retains_identifiers_only_and_cached_queries_progress_before_cancel ... ok
+test google_sync::send::tests::recipientless_and_wrong_primary_from_fail_before_any_submission ... ok
+test google_sync::calendar_writes::tests::four_accounts_share_http_slots_without_nested_mutation_read_deadlock ... ok
+test google_sync::send::tests::known_rejection_and_malformed_acceptance_have_distinct_durable_states ... ok
+test verification_google::isolation_tests::marker_refusal_precedes_store_and_applies_to_file_and_directory_markers ... ok
+test verification_google::isolation_tests::verification_option_is_absent_from_default_build_and_requires_explicit_live_profile ... ok
+test google_sync::send::tests::reconciliation_bounds_first_page_and_reads_distinct_ack_without_raw_or_resend ... ok
+test verification_google::isolation_tests::ordinary_startup_refuses_marked_profile_without_creating_discovery_or_store ... ok
+test google_sync::send::tests::read_only_grant_and_disconnected_context_cannot_submit ... ok
+test google_sync::drafts::tests::retryable_missing_oldest_blob_defers_only_that_draft_and_later_recovers ... ok
+test google_sync::remote_drafts::tests::two_accounts_multipage_changed_get_identity_and_unavailable_items_preserve_read_only_sources ... ok
+test google_sync::remote_drafts::tests::expired_continuation_restarts_without_losing_versions_and_refresh_retains_old_export ... ok
+test google_sync::drafts::tests::oversized_oldest_draft_is_reported_without_starving_a_newer_valid_draft ... ok
+test verification_fixture::tests::normal_fixture_is_refused_for_search_without_starting_an_import ... ok
+test verification_fixture::tests::abandoned_staging_is_reported_and_never_enters_visible_mail ... ok
+test session_tests::hello_preserves_migrated_fixture_revision_and_advertises_additive_methods ... ok
+test verification_fixture::tests::snapshot_uses_source_ingestion_and_preserves_the_original_receipt ... ok
+test verification_fixture::tests::cooperative_staging_yields_invisible_sources_and_publishes_whole_pages ... ok
+test verification_fixture::tests::search_sources_match_combined_filters_and_publish_distinct_members ... ok
+test local_content::tests::actual_import_preparation_leaves_writer_free_and_cancellation_preserves_draft ... ok
+test local_content::tests::authenticated_import_sessions_drain_preparation_on_client_and_engine_close ... ok
+
+test result: ok. 144 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 16.38s
+
+     Running tests\sessions.rs (target\debug\deps\sessions-e8feea43ad5a8afa.exe)
+
+running 9 tests
+test gui_startup_recovers_after_writer_closes ... ignored, Requires the actual native GUI; invoked by CTest gui-startup-recovery
+test live_profile_stays_empty_through_shared_clients_and_owner_restart ... ok
+test private_handshake_and_version_are_enforced_before_queries ... ok
+test killed_engine_recovers_an_unread_draft_receipt_without_repeating_it ... ok
+test simultaneous_launches_elect_one_writer ... ok
+test partial_frame_owner_does_not_stall_another_client_or_keep_engine_after_disconnect ... ok
+test live_initialization_refuses_a_running_synthetic_profile_without_conversion ... ok
+test paired_clients_share_durable_state_and_explicit_lifetimes ... ok
+test startup_recovers_when_a_previous_writer_releases_its_lock ... ok
+
+test result: ok. 8 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 13.19s
+
+     Running tests\verification_profile.rs (target\debug\deps\verification_profile-fe647fe5df0088b4.exe)
+
+running 2 tests
+test marked_profile_is_refused_by_an_actual_ordinary_startup_without_store_mutation ... ok
+test ordinary_binary_has_no_verification_option_and_does_not_create_a_profile ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+     Running unittests src\lib.rs (target\debug\deps\fm_google-2a69ce3ca8eb9fe0.exe)
+
+running 51 tests
+test desktop_auth::tests::native_vault_synthetic_roundtrip_and_cleanup ... ignored, explicit isolated native-vault exercise; never part of credential-free CI
+test auth::scope_tests::granted_mail_scopes_distinguish_read_access_from_mutation_access ... ok
+test desktop_auth::tests::callback_parser_rejects_wrong_target_host_duplicates_and_injection ... ok
+test gmail_api::tests::account_mismatch_never_calls_transport_and_bearer_stays_out_of_url_debug ... ok
+test gmail_api::tests::api_quota_and_permission_errors_remain_sanitized_and_do_not_retry ... ok
+test gmail_api::tests::deletion_certainty_distinguishes_completion_absence_and_accepted_only ... ok
+test gmail_api::tests::draft_container_identity_survives_message_replacement_and_frozen_send ... ok
+test gmail_api::tests::ids_and_queries_are_encoded_and_boundaries_reject_invalid_calls ... ok
+test gmail_api::tests::endpoint_inventory_has_documented_costs_and_fixed_mutation_classes ... ok
+test gmail_api::tests::labels_and_remote_drafts_keep_resource_ids_and_full_raw ... ok
+test desktop_auth::tests::identity_accepts_documented_issuer_and_explicit_authorized_party ... ok
+test desktop_auth::tests::refresh_requires_bound_subject_and_rejects_changed_identity ... ok
+test gmail_api::tests::local_cooldown_preserves_retry_delay_without_replaying_reads_or_state_writes ... ok
+test gmail_api::tests::pages_preserve_opaque_tokens_estimates_and_history_checkpoint_boundary ... ok
+test gmail_api::tests::rejected_draft_continuation_is_a_read_restart_only_for_a_supplied_token ... ok
+test gmail_api::tests::raw_outcomes_isolate_missing_oversized_malformed_and_valid_source ... ok
+test gmail_api::tests::state_mutation_targets_one_message_and_checks_returned_identity ... ok
+test gmail_api::tests::rejected_submissions_retain_auth_policy_and_quota_metadata_without_retry ... ok
+test desktop_auth::tests::exchange_checks_identity_reports_partial_grants_and_persists_only_explicitly ... ok
+test scheduler::tests::backfill_reserves_quota_and_one_foreground_slot ... ok
+test scheduler::tests::cancelled_reservation_charges_once_and_frees_concurrency_during_cooldown ... ok
+test scheduler::tests::confirmed_quota_json_has_one_exact_bounded_headroom_contract ... ok
+test gmail_api::tests::uncertain_send_is_single_attempt_and_rejection_is_distinct ... ok
+test scheduler::tests::continuous_urgent_work_does_not_starve_eligible_backfill_or_lanes ... ok
+test gmail_api::tests::versioned_label_read_excludes_bodies_and_validates_identity_and_history ... ok
+test scheduler::tests::delayed_backfill_still_reserves_foreground_budget_and_concurrency ... ok
+test scheduler::tests::delayed_dispatch_keeps_reservation_then_starts_the_actual_rolling_minute ... ok
+test scheduler::tests::retry_policy_never_replays_writes_and_stops_terminal_errors ... ok
+test scheduler::tests::reads_and_manual_mutations_have_bounded_ordered_lanes ... ok
+test scheduler::tests::rolling_units_account_project_and_services_are_distinct ... ok
+test scheduler::tests::shared_cooldowns_cancel_and_capacity_do_not_leak_work ... ok
+test scheduler::tests::slow_response_does_not_extend_the_dispatch_charge ... ok
+test transport::tests::native_roots_public_google_jwks_smoke ... ignored, explicit native HTTPS probe of public Google JWKS; no credentials or mailbox access
+test transport::tests::endpoints_and_debug_are_bounded_and_private ... ok
+test transport::tests::retry_after_delta_date_and_invalid_values ... ok
+test vault::tests::namespaces_are_profile_and_account_scoped ... ok
+test desktop_auth::tests::refused_grants_and_vault_write_failures_never_publish_tokens ... ok
+test desktop_auth::tests::signed_identity_checks_signature_claims_nonce_and_expected_subject ... ok
+test transport::tests::conditional_read_preserves_not_modified_status_and_etag ... ok
+test desktop_auth::tests::denial_timeout_and_cancel_close_the_listener ... ok
+test desktop_auth::tests::eight_async_consumers_share_one_durable_refresh_and_locked_vault_fails_closed ... ok
+test transport::tests::size_checks_and_cancel_precede_network ... ok
+test transport::tests::returns_status_once_and_caps_actual_chunked_body ... ok
+test auth::cleanup_tests::aborted_cleanup_waiter_keeps_exact_account_locked_until_native_delete_finishes ... ok
+test transport::tests::redirect_never_forwards_authorization ... ok
+test transport::tests::interrupted_submission_is_one_attempt_and_never_returns_partial_content ... ok
+test desktop_auth::tests::aborted_waiter_keeps_refresh_serialized_until_blocking_vault_store_finishes ... ok
+test transport::tests::whole_deadline_bounds_a_body_that_keeps_making_progress ... ok
+test desktop_auth::tests::verified_reconnect_and_refresh_share_durable_finalization_after_caller_abort ... ok
+test transport::tests::cancellation_interrupts_headers_and_body_and_read_deadline ... ok
+test desktop_auth::tests::bound_login_has_full_scopes_and_accepts_only_matching_one_use_callback ... ok
+
+test result: ok. 49 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 2.04s
+
+     Running tests\feasibility.rs (target\debug\deps\feasibility-595524b5e1c7c724.exe)
+
+running 16 tests
+test attachments_publish_only_complete_verified_content ... ok
+test raw_source_is_preserved_and_identity_mismatch_is_rejected ... ok
+test retry_budget_respects_provider_delay_without_retrying_permissions ... ok
+test journal_before_send_and_unknown_recovery_after_receipt_commit_failure ... ok
+test error_classification_distinguishes_history_expiry_permissions_and_quota ... ok
+test locked_vault_read_releases_no_token_and_never_refreshes_or_falls_back ... ok
+test modified_mime_and_duplicate_operation_are_not_sent ... ok
+test expiry_requests_new_generation_without_erase_and_rate_limit_keeps_checkpoint ... ok
+test partial_message_retrieval_never_advances_inventory_token ... ok
+test paginated_inventory_replay_and_interleaved_history_keep_local_intent ... ok
+test refreshed_tokens_are_not_returned_before_vault_persistence ... ok
+test colliding_google_ids_cannot_commit_into_another_account ... ok
+test uncertain_send_is_never_automatically_submitted_again ... ok
+test malformed_paging_history_and_oversized_json_fail_closed ... ok
+test desktop_authorization_uses_system_browser_url_pkce_and_one_time_state ... ok
+test simultaneous_mail_and_calendar_requests_share_one_refresh ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src\lib.rs (target\debug\deps\fm_ipc-62aad3fa7bef9bf0.exe)
+
+running 3 tests
+test windows::tests::private_file_has_explicit_process_user_owner ... ok
+test tests::framing_is_bounded_and_handles_fragmentation ... ok
+test tests::discovery_roundtrip_and_profile_permissions ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src\lib.rs (target\debug\deps\fm_mail-f8cdd7ddf24e3529.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests\roundtrip.rs (target\debug\deps\roundtrip-4bca662b54205c7c.exe)
+
+running 13 tests
+test injected_header_newlines_are_rejected_before_serialization ... ok
+test oversized_attachment_and_invalid_mime_metadata_fail_before_encoding ... ok
+test limits_missing_recipients_and_cross_account_attachments_are_explicit_errors ... ok
+test plain_unicode_reply_roundtrips_exact_author_text_signature_and_headers ... ok
+test shared_mime_bytes_reach_google_capture_once_with_unchanged_authored_text ... ok
+test recipient_free_plain_draft_keeps_exact_headers_and_text_without_an_envelope ... ok
+test recipient_free_rich_draft_retains_exact_alternatives_and_attachment_metadata ... ok
+test html_alternative_keeps_qt_formatting_and_inline_attachment_bytes ... ok
+test unfinished_drafts_keep_account_header_address_and_attachment_validation ... ok
+test malformed_html_and_cids_do_not_discard_the_plain_authored_alternative ... ok
+test pasted_html_drops_active_content_remote_images_and_unbounded_styles ... ok
+test shared_incoming_corpus_retains_sources_and_attachment_hashes ... ok
+test recipient_bearing_drafts_are_byte_identical_to_existing_submission_formatting ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Doc-tests fm_assist
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests fm_calendar
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests fm_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests fm_google
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests fm_ipc
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests fm_mail
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

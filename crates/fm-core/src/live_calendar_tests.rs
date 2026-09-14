@@ -1,6 +1,9 @@
 use super::*;
 use std::collections::{BTreeMap, BTreeSet};
 
+#[path = "live_calendar_tombstone_tests.rs"]
+mod tombstones;
+
 const CAL: &str = "human@example.test";
 fn scopes() -> BTreeSet<String> {
     [

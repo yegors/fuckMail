@@ -77,6 +77,7 @@ impl Store {
                 calendar,
                 id,
                 zone,
+                None,
                 &mut events,
                 &mut bytes,
                 &mut incomplete,
@@ -84,16 +85,25 @@ impl Store {
         }
         // A moved exception can enter from outside its parent's date range. Always
         // recover its parent before evaluating inherited privacy or cancellation.
+        let mut blocked_series = BTreeSet::new();
         let parents = events
             .values()
             .filter_map(|v| v.series_id.clone())
             .collect::<BTreeSet<_>>();
         for parent in parents {
+            // A current moved child must not outlive a known cancelled parent
+            // merely because that parent is hidden from the ordinary view.
+            let cancelled: bool = self.db.query_row("SELECT EXISTS(SELECT 1 FROM calendar_event_index i JOIN calendar_published_sources p ON p.account=i.account AND p.calendar_id=i.calendar_id AND p.event_id=i.event_id AND p.slot=i.slot AND p.generation=i.generation WHERE i.account=?1 AND i.calendar_id=?2 AND i.event_id=?3 AND i.series_id IS NULL AND i.cancelled=1)",params![account,calendar,parent],|r|r.get(0))?;
+            if cancelled {
+                blocked_series.insert(parent);
+                continue;
+            }
             self.load_calendar_candidate(
                 account,
                 calendar,
                 &parent,
                 zone,
+                None,
                 &mut events,
                 &mut bytes,
                 &mut incomplete,
@@ -101,14 +111,16 @@ impl Store {
         }
         let masters = events
             .values()
-            .filter(|v| !v.recurrence.is_empty() && v.series_id.is_none())
+            .filter(|v| !v.cancelled && !v.recurrence.is_empty() && v.series_id.is_none())
             .map(|v| v.key.event.clone())
             .take(SERIES_BUDGET)
             .collect::<Vec<_>>();
-        let mut blocked_series = BTreeSet::new();
         for master in &masters {
             let remaining = SOURCE_BUDGET.saturating_sub(events.len());
-            let mut statement=self.db.prepare("SELECT i.event_id FROM calendar_event_index i INDEXED BY calendar_index_series JOIN calendar_visible_sources v ON v.account=i.account AND v.calendar_id=i.calendar_id AND v.event_id=i.event_id AND v.slot=i.slot WHERE i.account=?1 AND i.calendar_id=?2 AND i.series_id=?3 ORDER BY i.event_id LIMIT ?4")?;
+            // The parent came from the strict current view. An old cancellation
+            // can suppress its occurrence, but cannot restore an absent parent.
+            // Select the effective published slot before considering cancellation.
+            let mut statement=self.db.prepare("SELECT i.event_id FROM calendar_event_index i INDEXED BY calendar_index_series JOIN calendar_published_sources p ON p.account=i.account AND p.calendar_id=i.calendar_id AND p.event_id=i.event_id AND p.slot=i.slot AND p.generation=i.generation WHERE i.account=?1 AND i.calendar_id=?2 AND i.series_id=?3 AND ((p.visible=1 AND p.seen_full_generation>=p.full_generation) OR i.cancelled=1) ORDER BY i.event_id LIMIT ?4")?;
             let child_ids = statement
                 .query_map(
                     params![account, calendar, master, (remaining + 1).min(1001) as i64],
@@ -121,15 +133,18 @@ impl Store {
                 continue;
             }
             for id in child_ids {
-                self.load_calendar_candidate(
+                if !self.load_calendar_candidate(
                     account,
                     calendar,
                     &id,
                     zone,
+                    Some(master),
                     &mut events,
                     &mut bytes,
                     &mut incomplete,
-                )?;
+                )? {
+                    blocked_series.insert(master.clone());
+                }
             }
         }
         let mut children = BTreeMap::<String, Vec<Event>>::new();
@@ -195,6 +210,29 @@ impl Store {
                                 event, access, &actor,
                             );
                             let available = row["busy_only"] != true && write_ready;
+                            let occurrence_source = children
+                                .get(&event.key.event)
+                                .and_then(|items| {
+                                    items.iter().find(|child| {
+                                        child.original_start.as_ref().is_some_and(|original| {
+                                            row["occurrence_key"]["original_start"]
+                                                == original.identity()
+                                        })
+                                    })
+                                })
+                                .unwrap_or(event);
+                            let selector = crate::live_calendar_occurrences::projection_selector(
+                                event,
+                                occurrence_source,
+                                &row,
+                            );
+                            row["can_resolve_occurrence"] =
+                                (available && selector.is_some()).into();
+                            if available {
+                                if let Some(selector) = selector {
+                                    row["occurrence_selector"] = selector;
+                                }
+                            }
                             row["can_edit"] = (available && edit).into();
                             row["can_delete"] = (available && edit).into();
                             row["can_rsvp"] = (available && rsvp).into();
@@ -237,8 +275,13 @@ impl Store {
                         if archived {
                             row["account_archived"] = json!(true);
                             row["read_only"] = json!(true);
-                            for key in ["can_edit", "can_delete", "can_rsvp", "can_edit_attendees"]
-                            {
+                            for key in [
+                                "can_edit",
+                                "can_delete",
+                                "can_rsvp",
+                                "can_edit_attendees",
+                                "can_resolve_occurrence",
+                            ] {
                                 row[key] = json!(false);
                             }
                             row["attendee_edit_reason"] = json!("account_removed");
@@ -268,37 +311,52 @@ impl Store {
         calendar: &str,
         id: &str,
         zone: &str,
+        master: Option<&str>,
         events: &mut BTreeMap<String, Event>,
         bytes: &mut usize,
         incomplete: &mut bool,
-    ) -> Result<()> {
-        if events.contains_key(id) {
-            return Ok(());
+    ) -> Result<bool> {
+        if let Some(event) = events.get(id) {
+            let matches = master.is_none_or(|parent| event.series_id.as_deref() == Some(parent));
+            *incomplete |= !matches;
+            return Ok(matches);
         }
         if events.len() >= SOURCE_BUDGET || *bytes >= SOURCE_BYTES {
             *incomplete = true;
-            return Ok(());
+            return Ok(false);
         }
-        let raw:Option<String>=self.db.query_row("SELECT json FROM calendar_visible_sources WHERE account=?1 AND calendar_id=?2 AND event_id=?3",params![account,calendar,id],|r|r.get(0)).optional()?;
-        let Some(raw) = raw else {
-            *incomplete = true;
-            return Ok(());
+        let remaining = SOURCE_BYTES.saturating_sub(*bytes);
+        let row: Option<(usize, Option<String>)> = if let Some(parent) = master {
+            self.db.query_row("SELECT length(CAST(p.json AS BLOB)),CASE WHEN length(CAST(p.json AS BLOB))<=?5 THEN p.json END FROM calendar_published_sources p JOIN calendar_event_index i ON i.account=p.account AND i.calendar_id=p.calendar_id AND i.event_id=p.event_id AND i.slot=p.slot AND i.generation=p.generation WHERE p.account=?1 AND p.calendar_id=?2 AND p.event_id=?3 AND i.series_id=?4 AND ((p.visible=1 AND p.seen_full_generation>=p.full_generation) OR i.cancelled=1)", params![account,calendar,id,parent,remaining], |r| Ok((r.get(0)?,r.get(1)?))).optional()?
+        } else {
+            self.db.query_row("SELECT length(CAST(json AS BLOB)),CASE WHEN length(CAST(json AS BLOB))<=?4 THEN json END FROM calendar_visible_sources WHERE account=?1 AND calendar_id=?2 AND event_id=?3", params![account,calendar,id,remaining], |r| Ok((r.get(0)?,r.get(1)?))).optional()?
         };
-        *bytes += raw.len();
-        if *bytes > SOURCE_BYTES {
+        let Some((size, raw)) = row else {
             *incomplete = true;
-            return Ok(());
-        }
+            return Ok(false);
+        };
+        let Some(raw) = raw else {
+            *bytes = SOURCE_BYTES;
+            *incomplete = true;
+            return Ok(false);
+        };
+        *bytes += size;
         match serde_json::from_str::<Value>(&raw)
             .ok()
             .and_then(|value| fm_calendar::normalize(account, calendar, zone, &value).ok())
         {
-            Some(event) => {
+            Some(event)
+                if event.key.event == id
+                    && master.is_none_or(|parent| event.series_id.as_deref() == Some(parent)) =>
+            {
                 events.insert(id.into(), event);
+                Ok(true)
             }
-            None => *incomplete = true,
-        };
-        Ok(())
+            _ => {
+                *incomplete = true;
+                Ok(false)
+            }
+        }
     }
     pub(crate) fn calendar_busy_projection(
         &self,

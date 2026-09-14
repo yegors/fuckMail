@@ -1,0 +1,953 @@
+{
+  "version": 1,
+  "result": "passed",
+  "scenario": "isolated-google-occurrences-cli",
+  "commands": [
+    {
+      "command": [
+        "preferences",
+        "show"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "preferences",
+        "save"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "preferences",
+        "show"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "scope_mismatch"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "unsupported_operation"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "personal",
+      "exit_code": 2,
+      "error": "invalid_request"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "calendar_occurrence_unresolved"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-reconcile"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-reconcile"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "scope_mismatch"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "unsupported_operation"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "workspace",
+      "exit_code": 2,
+      "error": "invalid_request"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "calendar_occurrence_unresolved"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-reconcile"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-reconcile"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-occurrence"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "sync-status"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "sync-status"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "sync-status"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "sync_not_running"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "sync_not_running"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "sync_not_running"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "sync_not_running"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "sync_not_running"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "sync_not_running"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "sync_not_running"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "sync_not_running"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "sync_not_running"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "sync_not_running"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "sync_not_running"
+    },
+    {
+      "command": [
+        "google",
+        "calendar-operation"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "calendar-write"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "sync_not_running"
+    },
+    {
+      "command": [
+        "calendar-operations",
+        "--limit"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar-operations",
+        "--limit"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar-operations",
+        "--limit"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar-operations",
+        "--limit"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar-operations",
+        "--limit"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar-operations",
+        "--limit"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar",
+        "--combined"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar",
+        "--combined"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    }
+  ],
+  "base_unix_secs": 1789257600,
+  "limits": {
+    "gmail_project_units_per_minute": 1000000,
+    "gmail_account_units_per_minute": 500000,
+    "calendar_project_units_per_minute": 10000,
+    "calendar_account_units_per_minute": 5000
+  },
+  "limitations": [
+    "Generated in-memory provider/vault only; no real account or notification delivery.",
+    "Functional source/journal checks; no benchmark, package or physical-input acceptance.",
+    "Cached checks keep an explicit local Watch owner; marked profiles cannot restart."
+  ],
+  "executables": {
+    "cli": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\verification-google\\release\\fm.exe",
+      "sha256": "c0974c8cdf4c041320135e81d9e02eef4d3b95e6480020a01b927e87dc7fea29"
+    },
+    "engine": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\verification-google\\release\\fm-engine.exe",
+      "sha256": "80330ed65f860d9834686c48a798b1ee5f5afcca53b0a1f87b9bca78ffbd0997"
+    },
+    "ordinary_engine": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\release\\fm-engine.exe",
+      "sha256": "a9e098dfb71befa8d442df86b4eb0756adc0884a6ce88373c3516e33d34bcfb6"
+    }
+  },
+  "initial_sources": {
+    "retained_sources": 12,
+    "active_sources": 8,
+    "query_sources": 12,
+    "cancelled_sources": 4
+  },
+  "final_sources": {
+    "retained_sources": 22,
+    "active_sources": 12,
+    "query_sources": 16,
+    "cancelled_sources": 10
+  },
+  "journal_rows": 12,
+  "cached_windows": [
+    {
+      "from": "2026-09-13",
+      "to": "2026-09-20",
+      "events": 12
+    },
+    {
+      "from": "2026-11-13",
+      "to": "2026-11-15",
+      "events": 2
+    }
+  ],
+  "provider_verification": {
+    "publications": 12,
+    "mutation_attempts": 12,
+    "lost_responses": 4,
+    "acknowledged_responses": 8
+  },
+  "restart_refusals": [
+    {
+      "case": "feature_unflagged",
+      "executable": "engine",
+      "flags": [],
+      "exit_code": 1,
+      "diagnostic_kind": "isolated_build_guard",
+      "output": "fm-engine: This isolated build requires --verification-google and a new disposable live profile\n",
+      "journal_unchanged": true,
+      "journal_before_sha256": "d07cbcc347da5dc270db4d96d20fedf7783e45ec4034cf9750e35fe5120ad7cd",
+      "journal_after_sha256": "d07cbcc347da5dc270db4d96d20fedf7783e45ec4034cf9750e35fe5120ad7cd"
+    },
+    {
+      "case": "feature_flagged",
+      "executable": "engine",
+      "flags": [
+        "--verification-google"
+      ],
+      "exit_code": 1,
+      "diagnostic_kind": "isolation_marker",
+      "output": "fm-engine: Google verification profiles cannot be opened by an ordinary or restarted engine\n",
+      "journal_unchanged": true,
+      "journal_before_sha256": "d07cbcc347da5dc270db4d96d20fedf7783e45ec4034cf9750e35fe5120ad7cd",
+      "journal_after_sha256": "d07cbcc347da5dc270db4d96d20fedf7783e45ec4034cf9750e35fe5120ad7cd"
+    },
+    {
+      "case": "ordinary_unflagged",
+      "executable": "ordinary_engine",
+      "flags": [],
+      "exit_code": 1,
+      "diagnostic_kind": "isolation_marker",
+      "output": "fm-engine: Google verification profiles cannot be opened by an ordinary or restarted engine\n",
+      "journal_unchanged": true,
+      "journal_before_sha256": "d07cbcc347da5dc270db4d96d20fedf7783e45ec4034cf9750e35fe5120ad7cd",
+      "journal_after_sha256": "d07cbcc347da5dc270db4d96d20fedf7783e45ec4034cf9750e35fe5120ad7cd"
+    }
+  ],
+  "provider_counters": {
+    "calendar_acknowledged": 8,
+    "calendar_lost_responses": 4,
+    "calendar_mutation_attempts": 12,
+    "calendar_mutations": 12,
+    "calendar_reads": 132,
+    "draft_created": 0,
+    "draft_delete_attempts": 0,
+    "draft_delete_unknown": 0,
+    "draft_deleted": 0,
+    "draft_list": 0,
+    "draft_read": 0,
+    "draft_updated": 0,
+    "http_cancelled": 0,
+    "http_completed": 140,
+    "http_rejected": 4,
+    "http_started": 144,
+    "modify_completed": 0,
+    "raw_active": 0,
+    "raw_cancelled": 0,
+    "raw_completed": 0,
+    "raw_held_active": 0,
+    "raw_started": 0,
+    "send_completed": 0,
+    "sent_read": 0,
+    "vault_loads": 144,
+    "vault_stores": 0
+  },
+  "journal_sha256": "d07cbcc347da5dc270db4d96d20fedf7783e45ec4034cf9750e35fe5120ad7cd",
+  "offline_queries_preserved_journal_and_http": true,
+  "final_owner_drained_engine": true,
+  "elapsed_seconds": 3.5,
+  "outputs_sha256": {
+    "engine": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "watch": "deea779f0173807367c879a7c5f87257cb1c947e87211c49b089a0a12c91f39d",
+    "personal": "c5da37cf10b32c1d5dda59b749d4e368bf3957d32cb77a38e56fb2c347ba42ba",
+    "workspace": "e6252f8c0829c4b57a35fba8f026cd6510c6477131f8db28820337f19d7118d4",
+    "fixture": "88a630b0755018a7c6ef580fa08dd8583257680f2435097f4f0f6497b130f729",
+    "sources": "3b7251f82754b0af670a8514fd55988bd22ac3f6e8b8cb09e48971b37f4258b4",
+    "ledger": "cd32e045d3d0931198ef98dfa60d1c10a0491e3e6f42919d6dfc8224a3e66722",
+    "refusal": "86458f2f1956efc61012c140ffbfcf525f21509564d7b0dddfdb2047593c522c"
+  }
+}

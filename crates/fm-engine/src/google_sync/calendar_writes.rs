@@ -1,5 +1,5 @@
 //! Explicit Calendar writes. Read reconciliation never repeats a mutation.
-use super::{failure, SyncContext};
+use super::{calendar_occurrences, failure, SyncContext};
 use fm_calendar::{
     edits::GoogleWrite,
     google_api::{ApiError, EventFetch, EventResource, NotificationPolicy},
@@ -12,10 +12,11 @@ use fm_google::{scheduler::WorkClass, transport::TransportError, GoogleError};
 use serde_json::Value;
 use std::sync::Arc;
 use tokio::sync::OwnedSemaphorePermit;
-type Memory = Arc<OwnedSemaphorePermit>;
+pub(super) type Memory = Arc<OwnedSemaphorePermit>;
 
 pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> {
     let request_id = text(&request, "request_id")?.to_owned();
+    let occurrence = request.get("occurrence").cloned();
     let account = ctx.account.as_str().to_owned();
     let prepared = ctx
         .core_call(move |s| s.calendar_live_prepare(&account, &request))
@@ -31,33 +32,45 @@ pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> 
         .as_i64()
         .ok_or_else(|| failure("invalid_request", "Calendar intent revision is invalid"))?;
     let epoch = refresh_permission(ctx, &calendar).await?;
-    let (source, memory) = if kind == "create" {
-        (None, Arc::new(ctx.calendar_prepare_permit().await?))
-    } else {
-        let (read, memory) = ctx.calendar_request(WorkClass::UserRead).await?;
-        let source = match read
-            .get_event("engine-managed", &calendar, &event, None, &ctx.cancel)
-            .await
-            .map_err(read_error)?
-        {
-            EventFetch::Found(resource) => event_source(resource),
-            EventFetch::NotModified => {
-                return Err(failure(
-                    "calendar_response_invalid",
-                    "Fresh Calendar source is required",
-                ))
-            }
-        };
-        (Some(source), Arc::new(memory))
-    };
-    let account = ctx.account.as_str().to_owned();
-    let id = request_id.clone();
     let generation = ctx.connection_generation;
-    memory_core(ctx, &memory, move |s| {
-        s.calendar_live_stage(&account, &id, version, generation, epoch, source)
-    })
-    .await?;
-    drop(memory);
+    if let Some(occurrence) = occurrence {
+        let selector = calendar_occurrences::selector(&calendar, &event, &occurrence)?;
+        let (proof, memory) = calendar_occurrences::prepare(ctx, selector, epoch).await?;
+        let account = ctx.account.as_str().to_owned();
+        let id = request_id.clone();
+        memory_core(ctx, &memory, move |store| {
+            store.calendar_live_stage_occurrence(&account, &id, version, proof)
+        })
+        .await?;
+        drop(memory);
+    } else {
+        let (source, memory) = if kind == "create" {
+            (None, Arc::new(ctx.calendar_prepare_permit().await?))
+        } else {
+            let (read, memory) = ctx.calendar_request(WorkClass::UserRead).await?;
+            let source = match read
+                .get_event("engine-managed", &calendar, &event, None, &ctx.cancel)
+                .await
+                .map_err(read_error)?
+            {
+                EventFetch::Found(resource) => event_source(resource),
+                EventFetch::NotModified => {
+                    return Err(failure(
+                        "calendar_response_invalid",
+                        "Fresh Calendar source is required",
+                    ))
+                }
+            };
+            (Some(source), Arc::new(memory))
+        };
+        let account = ctx.account.as_str().to_owned();
+        let id = request_id.clone();
+        memory_core(ctx, &memory, move |s| {
+            s.calendar_live_stage(&account, &id, version, generation, epoch, source)
+        })
+        .await?;
+        drop(memory);
+    }
     // No active HTTP lease or decoded event is held during mutation cooldown.
     // Reload the frozen preflight only after both quota and memory admission.
     let api = ctx
@@ -144,7 +157,10 @@ pub(crate) async fn reconcile(ctx: &SyncContext, request_id: &str) -> Result<Val
     }
     let calendar = text(&current["target"], "calendar")?;
     // A current permission observation is required even for read reconciliation.
-    refresh_permission(ctx, calendar).await?;
+    let epoch = refresh_permission(ctx, calendar).await?;
+    if current["intent_version"] == 3 {
+        return reconcile_occurrence(ctx, request_id, &current, epoch).await;
+    }
     let (api, memory) = ctx.calendar_request(WorkClass::UserRead).await?;
     let memory = Arc::new(memory);
     let op = operation(ctx, request_id, &memory).await?;
@@ -191,7 +207,64 @@ pub(crate) async fn reconcile(ctx: &SyncContext, request_id: &str) -> Result<Val
     publish_if_possible(ctx, &lease, receipt?, &memory).await
 }
 
-fn event_source(mut event: EventResource) -> Value {
+async fn reconcile_occurrence(
+    ctx: &SyncContext,
+    request_id: &str,
+    current: &Value,
+    epoch: i64,
+) -> Result<Value> {
+    let calendar = text(&current["target"], "calendar")?;
+    let event = text(&current["target"], "event")?;
+    let selector = calendar_occurrences::selector(calendar, event, &current["occurrence"])?;
+    let master = calendar_occurrences::master(ctx, selector, epoch).await?;
+    // The original dispatch source is reloaded only under the final GET's seat;
+    // no historical source or lease crosses the next quota admission.
+    let (api, memory) = ctx.calendar_request(WorkClass::UserRead).await?;
+    let memory = Arc::new(memory);
+    let op = operation(ctx, request_id, &memory).await?;
+    let Some(lease) = op.lease else {
+        return status(ctx, request_id).await;
+    };
+    if !matches!(op.state.as_str(), "in_flight" | "unknown") {
+        return status(ctx, request_id).await;
+    }
+    let saved = lease.clone();
+    let generation = ctx.connection_generation;
+    let fence = memory_core(ctx, &memory, move |store| {
+        store.calendar_live_reconcile_begin(&saved, generation)
+    })
+    .await?;
+    let source = match api
+        .get_occurrence(
+            "engine-managed",
+            calendar,
+            master.selector().series_id(),
+            event,
+            &ctx.cancel,
+        )
+        .await
+    {
+        Ok(resource) => resource.source,
+        Err(ApiError::Provider(GoogleError::NotFound)) => return status(ctx, request_id).await,
+        Err(error) => return Err(read_error(error)),
+    };
+    let (proof, memory) =
+        calendar_occurrences::instance_source(ctx, master, source, memory).await?;
+    let saved = lease.clone();
+    let held = memory.clone();
+    let (receipt, _held) = ctx
+        .core
+        .call(move |store| {
+            Ok((
+                store.calendar_live_reconcile_occurrence_read(&saved, &fence, proof),
+                held,
+            ))
+        })
+        .await?;
+    publish_if_possible(ctx, &lease, receipt?, &memory).await
+}
+
+pub(super) fn event_source(mut event: EventResource) -> Value {
     // The adapter validates matching body/header ETags; retain header-only
     // versions for Core's conditional-write boundary as well.
     if event.source.get("etag").is_none() {
@@ -261,7 +334,7 @@ async fn publish_if_possible(
         Err(error) => Err(error),
     }
 }
-async fn refresh_permission(ctx: &SyncContext, calendar: &str) -> Result<i64> {
+pub(super) async fn refresh_permission(ctx: &SyncContext, calendar: &str) -> Result<i64> {
     let account = ctx.account.as_str().to_owned();
     let id = calendar.to_owned();
     let before = ctx
@@ -302,7 +375,7 @@ async fn operation(
 /// Both the queued closure and its reply carry a share of the memory permit.
 /// Cancelling the awaiting future cannot release capacity while its source or
 /// returned lease still lives on the writer queue or in an undelivered reply.
-async fn memory_core<T, F>(ctx: &SyncContext, memory: &Memory, operation: F) -> Result<T>
+pub(super) async fn memory_core<T, F>(ctx: &SyncContext, memory: &Memory, operation: F) -> Result<T>
 where
     T: Send + 'static,
     F: FnOnce(&mut fm_core::Store) -> Result<T> + Send + 'static,
@@ -366,7 +439,7 @@ fn write_error(error: ApiError) -> CalendarWriteOutcome {
         _ => CalendarWriteOutcome::Unknown,
     }
 }
-fn read_error(error: ApiError) -> fm_core::CoreError {
+pub(super) fn read_error(error: ApiError) -> fm_core::CoreError {
     match error {
         ApiError::Provider(GoogleError::PermissionDenied | GoogleError::NotFound) => {
             failure("permission_denied", "Calendar source is unavailable")

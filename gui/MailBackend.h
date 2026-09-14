@@ -274,6 +274,8 @@ public:
     Q_INVOKABLE void moveTimeline(int delta);
     Q_INVOKABLE void showTimelineToday();
     Q_INVOKABLE void calendarWrite(const QVariantMap &values);
+    Q_INVOKABLE QVariantMap calendarOccurrenceContext(const QString &account, const QString &calendar) const;
+    Q_INVOKABLE void readCalendarOccurrence(const QVariantMap &selector, const QString &correlation);
     Q_INVOKABLE void loadCalendarOperations();
     Q_INVOKABLE void loadMoreCalendarOperations();
     Q_INVOKABLE void retryCalendarOperation(const QString &account, const QString &requestId);
@@ -314,6 +316,7 @@ signals:
     void preferencesChanged();
     void capturesChanged();
     void calendarWriteFinished(bool ok, const QVariantMap &result, const QString &error);
+    void calendarOccurrenceReadFinished(const QString &correlation, bool ok, const QVariantMap &result, const QString &error);
     void calendarOperationsChanged();
     void accountChanged();
     void queryChanged();
@@ -332,6 +335,7 @@ private:
     friend class GoogleDraftAuthoringControlsTest;
     friend class GuiGoogleDraftSnapshotSelfTest;
     friend class GoogleSendControlsTest;
+    friend class CalendarOccurrenceBackendTest;
     friend class AccountLifecycleControlsTest;
     friend class GuiAccountLifecycleSelfTest;
     using Callback = std::function<void(const QJsonObject &, bool)>;

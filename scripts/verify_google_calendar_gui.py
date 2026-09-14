@@ -223,7 +223,7 @@ def run(args):
                     owners.append(owner)
                 wait_for(acquired, "all fourteen independent Calendar sources")
                 with closing(read_database(profile)) as db:
-                    require(db.execute("PRAGMA user_version").fetchone()[0] == 18, "Wrong shared Calendar schema")
+                    require(db.execute("PRAGMA user_version").fetchone()[0] == 19, "Wrong shared Calendar schema")
                 result["initial_sources"] = verify_retained_sources(profile, ledger)
                 require(not journal_snapshot(profile), "Acquisition unexpectedly created authored Calendar operations")
                 for owner in owners:

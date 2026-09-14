@@ -1,0 +1,283 @@
+{
+  "version": 1,
+  "scenario": "occurrence",
+  "limits": {
+    "gmail_project_units_per_minute": 1000000,
+    "gmail_account_units_per_minute": 500000,
+    "calendar_project_units_per_minute": 10000,
+    "calendar_account_units_per_minute": 5000
+  },
+  "calendar_date": "2026-09-13",
+  "accounts": [
+    {
+      "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+      "calendar_id": "calendar-personal@example.test",
+      "actions": [
+        {
+          "kind": "edit",
+          "selector": {
+            "calendar_id": "calendar-personal@example.test",
+            "series_id": "co0000",
+            "original_start": {
+              "kind": "zoned",
+              "instant": "2026-09-13T01:00:00Z",
+              "time_zone": "UTC"
+            }
+          },
+          "event_id": "oi0000",
+          "date": "2026-09-13",
+          "event": {
+            "event_id": "oi0000",
+            "etag": "\"oi0000-v1\"",
+            "title": "Occurrence personal 0000",
+            "description": "Preserved generated occurrence details",
+            "location": "Fixture room",
+            "start": "2026-09-13T01:00:00+00:00",
+            "end": "2026-09-13T01:30:00+00:00",
+            "all_day": false,
+            "time_zone": "UTC",
+            "conference_url": "https://meet.example.test/fixture",
+            "guest_addresses": [
+              "alpha@example.test",
+              "beta@example.test"
+            ],
+            "protected_attendees": [
+              {
+                "email": "personal@example.test",
+                "organizer": true,
+                "self": true,
+                "responseStatus": "accepted"
+              }
+            ]
+          },
+          "fields": {
+            "title": "Native occurrence personal timed"
+          }
+        },
+        {
+          "kind": "edit",
+          "selector": {
+            "calendar_id": "calendar-personal@example.test",
+            "series_id": "co0001",
+            "original_start": {
+              "kind": "date",
+              "date": "2026-09-14"
+            }
+          },
+          "event_id": "od0000",
+          "date": "2026-09-14",
+          "event": {
+            "event_id": "od0000",
+            "etag": "\"od0000-v1\"",
+            "title": "Occurrence personal 0001",
+            "description": "Preserved generated occurrence details",
+            "location": "Fixture room",
+            "start": "2026-09-14",
+            "end": "2026-09-15",
+            "all_day": true,
+            "time_zone": "UTC",
+            "conference_url": "https://meet.example.test/fixture",
+            "guest_addresses": [
+              "alpha@example.test",
+              "beta@example.test"
+            ],
+            "protected_attendees": [
+              {
+                "email": "personal@example.test",
+                "organizer": true,
+                "self": true,
+                "responseStatus": "accepted"
+              }
+            ]
+          },
+          "fields": {
+            "title": "Native occurrence personal all-day"
+          }
+        },
+        {
+          "kind": "delete",
+          "selector": {
+            "calendar_id": "calendar-personal@example.test",
+            "series_id": "co0000",
+            "original_start": {
+              "kind": "zoned",
+              "instant": "2026-09-18T01:00:00Z",
+              "time_zone": "UTC"
+            }
+          },
+          "event_id": "oi0005",
+          "date": "2026-09-18",
+          "event": {
+            "event_id": "oi0005",
+            "etag": "\"oi0005-v1\"",
+            "title": "Occurrence personal 0000",
+            "description": "Preserved generated occurrence details",
+            "location": "Fixture room",
+            "start": "2026-09-18T01:00:00+00:00",
+            "end": "2026-09-18T01:30:00+00:00",
+            "all_day": false,
+            "time_zone": "UTC",
+            "conference_url": "https://meet.example.test/fixture",
+            "guest_addresses": [
+              "alpha@example.test",
+              "beta@example.test"
+            ],
+            "protected_attendees": [
+              {
+                "email": "personal@example.test",
+                "organizer": true,
+                "self": true,
+                "responseStatus": "accepted"
+              }
+            ]
+          }
+        }
+      ],
+      "absent_selectors": [
+        {
+          "calendar_id": "calendar-personal@example.test",
+          "series_id": "co0001",
+          "original_start": {
+            "kind": "date",
+            "date": "2026-09-15"
+          }
+        }
+      ]
+    },
+    {
+      "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+      "calendar_id": "calendar-workspace@example.test",
+      "actions": [
+        {
+          "kind": "edit",
+          "selector": {
+            "calendar_id": "calendar-workspace@example.test",
+            "series_id": "co0000",
+            "original_start": {
+              "kind": "zoned",
+              "instant": "2026-09-13T01:00:00Z",
+              "time_zone": "UTC"
+            }
+          },
+          "event_id": "oi0000",
+          "date": "2026-09-13",
+          "event": {
+            "event_id": "oi0000",
+            "etag": "\"oi0000-v1\"",
+            "title": "Occurrence workspace 0000",
+            "description": "Preserved generated occurrence details",
+            "location": "Fixture room",
+            "start": "2026-09-13T01:00:00+00:00",
+            "end": "2026-09-13T01:30:00+00:00",
+            "all_day": false,
+            "time_zone": "UTC",
+            "conference_url": "https://meet.example.test/fixture",
+            "guest_addresses": [
+              "alpha@example.test",
+              "beta@example.test"
+            ],
+            "protected_attendees": [
+              {
+                "email": "workspace@example.test",
+                "organizer": true,
+                "self": true,
+                "responseStatus": "accepted"
+              }
+            ]
+          },
+          "fields": {
+            "title": "Native occurrence workspace timed"
+          }
+        },
+        {
+          "kind": "edit",
+          "selector": {
+            "calendar_id": "calendar-workspace@example.test",
+            "series_id": "co0001",
+            "original_start": {
+              "kind": "date",
+              "date": "2026-09-14"
+            }
+          },
+          "event_id": "od0000",
+          "date": "2026-09-14",
+          "event": {
+            "event_id": "od0000",
+            "etag": "\"od0000-v1\"",
+            "title": "Occurrence workspace 0001",
+            "description": "Preserved generated occurrence details",
+            "location": "Fixture room",
+            "start": "2026-09-14",
+            "end": "2026-09-15",
+            "all_day": true,
+            "time_zone": "UTC",
+            "conference_url": "https://meet.example.test/fixture",
+            "guest_addresses": [
+              "alpha@example.test",
+              "beta@example.test"
+            ],
+            "protected_attendees": [
+              {
+                "email": "workspace@example.test",
+                "organizer": true,
+                "self": true,
+                "responseStatus": "accepted"
+              }
+            ]
+          },
+          "fields": {
+            "title": "Native occurrence workspace all-day"
+          }
+        },
+        {
+          "kind": "delete",
+          "selector": {
+            "calendar_id": "calendar-workspace@example.test",
+            "series_id": "co0000",
+            "original_start": {
+              "kind": "zoned",
+              "instant": "2026-09-18T01:00:00Z",
+              "time_zone": "UTC"
+            }
+          },
+          "event_id": "oi0005",
+          "date": "2026-09-18",
+          "event": {
+            "event_id": "oi0005",
+            "etag": "\"oi0005-v1\"",
+            "title": "Occurrence workspace 0000",
+            "description": "Preserved generated occurrence details",
+            "location": "Fixture room",
+            "start": "2026-09-18T01:00:00+00:00",
+            "end": "2026-09-18T01:30:00+00:00",
+            "all_day": false,
+            "time_zone": "UTC",
+            "conference_url": "https://meet.example.test/fixture",
+            "guest_addresses": [
+              "alpha@example.test",
+              "beta@example.test"
+            ],
+            "protected_attendees": [
+              {
+                "email": "workspace@example.test",
+                "organizer": true,
+                "self": true,
+                "responseStatus": "accepted"
+              }
+            ]
+          }
+        }
+      ],
+      "absent_selectors": [
+        {
+          "calendar_id": "calendar-workspace@example.test",
+          "series_id": "co0001",
+          "original_start": {
+            "kind": "date",
+            "date": "2026-09-15"
+          }
+        }
+      ]
+    }
+  ]
+}

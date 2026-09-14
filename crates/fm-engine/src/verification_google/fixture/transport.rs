@@ -260,6 +260,13 @@ impl FixtureHttp {
             self.evidence.clone(),
         ));
     }
+    pub(super) fn enable_occurrences(&mut self) {
+        self.calendar = Some(CalendarFixture::occurrences(
+            self.accounts.clone(),
+            self.base,
+            self.evidence.clone(),
+        ));
+    }
     pub(super) fn enable_accounts(&mut self) {
         self.account_mode = true;
         self.calendar = Some(CalendarFixture::with_count(

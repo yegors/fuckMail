@@ -16,6 +16,9 @@ private:
     void finish(const QString &error = {});
     bool click(const QString &name);
     bool openEvent(const QString &account, const QString &eventId);
+    bool openOccurrence(const QString &account, const QJsonObject &selector);
+    QJsonObject occurrenceFor(const QString &account, const QJsonObject &selector) const;
+    void occurrenceTick(const QJsonObject &account, QObject *editor);
     bool submit(const QString &action, int nextStage);
     MailBackend &m_backend;
     QPointer<QQuickWindow> m_window;
@@ -23,6 +26,9 @@ private:
     QString m_report, m_date, m_action, m_createdId, m_responseError;
     QJsonArray m_expected, m_observed;
     QJsonObject m_limits, m_accountResult, m_initial, m_request, m_response;
+    QJsonObject m_resolvedOccurrence, m_occurrenceResponse;
+    int m_occurrenceIndex = 0;
+    bool m_occurrenceMode = false;
     int m_stage = 0, m_account = 0, m_nextStage = 0, m_loggedStage = -1;
     bool m_quotaFilled = false, m_quotaSubmitted = false, m_responseOk = false;
     bool m_finished = false, m_passed = false;

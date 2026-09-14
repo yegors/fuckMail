@@ -113,6 +113,8 @@ fn ordinary_binary_has_no_verification_option_and_does_not_create_a_profile() {
         "--verification-google-calendar-base",
         "--verification-google-accounts",
         "--verification-google-accounts-base",
+        "--verification-google-occurrences",
+        "--verification-google-occurrences-base",
     ] {
         let profile = directory.path().join(option.trim_start_matches('-'));
         let log = profile.with_extension("log");
@@ -128,6 +130,53 @@ fn ordinary_binary_has_no_verification_option_and_does_not_create_a_profile() {
             output.contains("unexpected argument") && output.contains(option),
             "{output}"
         );
+        assert!(!profile.exists());
+    }
+}
+
+#[cfg(feature = "verification-google")]
+#[test]
+fn occurrences_fixture_requires_bounded_explicit_base_and_exclusive_mode_before_creation() {
+    let directory = tempfile::tempdir().unwrap();
+    for (index, extra) in [
+        vec![],
+        vec!["--verification-google-occurrences-base", "1789257601"],
+        vec!["--verification-google-occurrences-base", "1"],
+        vec!["--verification-google-occurrences-base", "4102444800"],
+        vec![
+            "--verification-google-occurrences-base",
+            "1789257600",
+            "--verification-google-send",
+        ],
+        vec![
+            "--verification-google-occurrences-base",
+            "1789257600",
+            "--verification-google-calendar",
+            "--verification-google-calendar-base",
+            "1789257600",
+        ],
+        vec![
+            "--verification-google-occurrences-base",
+            "1789257600",
+            "--verification-google-accounts",
+            "--verification-google-accounts-base",
+            "1789257600",
+        ],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let profile = directory
+            .path()
+            .join(format!("invalid-occurrences-{index}"));
+        let mut args = vec![
+            "--live-profile",
+            "--verification-google",
+            "--verification-google-occurrences",
+        ];
+        args.extend(extra);
+        let mut child = spawn(&profile, &args, &profile.with_extension("log"));
+        assert_eq!(child.wait_bounded(Duration::from_secs(5)).code(), Some(2));
         assert!(!profile.exists());
     }
 }
@@ -291,6 +340,17 @@ async fn explicit_empty_fixture_serves_cached_queries_without_acquisition_and_st
     use serde_json::{json, Value};
 
     for (calendar_mode, account_mode, args) in [
+        (
+            true,
+            false,
+            vec![
+                "--live-profile",
+                "--verification-google",
+                "--verification-google-occurrences",
+                "--verification-google-occurrences-base",
+                "1789300800",
+            ],
+        ),
         (
             false,
             false,

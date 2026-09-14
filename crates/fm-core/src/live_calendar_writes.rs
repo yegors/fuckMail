@@ -1,5 +1,8 @@
 //! Durable human Calendar intent. Provider receipts and visible cache publication
 //! are separate: a reconnect or concurrent read never erases a dispatched result.
+use crate::live_calendar_occurrences::{
+    same_original, CalendarOccurrenceSelector, MasterStamp, PreparedCalendarOccurrence,
+};
 use crate::{err, Result, Store};
 use fm_calendar::{Access, Event, EventKey};
 use rusqlite::{params, OptionalExtension};
@@ -59,7 +62,7 @@ type OperationRow = (
 );
 // Accepted outcomes may contain a full provider event. Read their small public
 // meaning from state/kind; only the small rejection/cooldown evidence is parsed.
-const PUBLIC_COLUMNS: &str = "request_id,json_extract(intent_json,'$.target.calendar'),json_extract(intent_json,'$.target.event'),json_extract(intent_json,'$.request.kind'),state,operation_revision,CASE WHEN state IN ('ready','rejected','abandoned') THEN json_extract(outcome_json,'$.kind') END,CASE WHEN state IN ('rejected','abandoned') THEN json_extract(outcome_json,'$.code') END,CASE WHEN state IN ('ready','abandoned') THEN json_extract(outcome_json,'$.retry_after_secs') END,CASE WHEN state IN ('acknowledged','reconciled') THEN json_extract(result_json,'$.cache_published') END,coalesce(json_extract(intent_json,'$.version'),1),CASE WHEN state='reconciled' THEN json_extract(outcome_json,'$.observed_etag') END,CASE WHEN state='reconciled' THEN json_extract(outcome_json,'$.event_cancelled') END";
+const PUBLIC_COLUMNS: &str = "request_id,json_extract(intent_json,'$.target.calendar'),json_extract(intent_json,'$.target.event'),json_extract(intent_json,'$.request.kind'),state,operation_revision,CASE WHEN state IN ('ready','rejected','abandoned') THEN json_extract(outcome_json,'$.kind') END,CASE WHEN state IN ('rejected','abandoned') THEN json_extract(outcome_json,'$.code') END,CASE WHEN state IN ('ready','abandoned') THEN json_extract(outcome_json,'$.retry_after_secs') END,CASE WHEN state IN ('acknowledged','reconciled') THEN json_extract(result_json,'$.cache_published') END,coalesce(json_extract(intent_json,'$.version'),1),CASE WHEN state='reconciled' THEN json_extract(outcome_json,'$.observed_etag') END,CASE WHEN state='reconciled' THEN json_extract(outcome_json,'$.event_cancelled') END,CASE WHEN json_extract(intent_json,'$.version')=3 AND length(CAST(json_extract(intent_json,'$.request.occurrence') AS BLOB))<=4096 THEN json_extract(intent_json,'$.request.occurrence') END";
 struct OperationProjection {
     request_id: String,
     calendar: String,
@@ -74,6 +77,7 @@ struct OperationProjection {
     intent_version: u64,
     observed_etag: Option<String>,
     event_cancelled: Option<bool>,
+    occurrence: Option<String>,
 }
 impl OperationProjection {
     fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
@@ -91,6 +95,7 @@ impl OperationProjection {
             intent_version: row.get(10)?,
             observed_etag: row.get(11)?,
             event_cancelled: row.get(12)?,
+            occurrence: row.get(13)?,
         })
     }
     fn value(self, account: &str) -> Value {
@@ -137,7 +142,7 @@ impl OperationProjection {
         if let Some(published) = self.cache_published {
             outcome["cache_published"] = published.into();
         }
-        if self.intent_version == 2 {
+        if matches!(self.intent_version, 2 | 3) {
             if matches!(evidence, Some("accepted" | "deleted")) {
                 outcome["evidence_origin"] = "provider_response".into();
                 outcome["notification_delivery"] = "unverified".into();
@@ -148,7 +153,22 @@ impl OperationProjection {
                 outcome["notification_delivery"] = "unverified".into();
             }
         }
-        json!({"request_id":self.request_id,"target":{"account":account,"calendar":self.calendar,"event":self.event},"kind":self.kind,"state":self.state,"revision":self.revision,"intent_version":self.intent_version,"local_only":false,"outcome":outcome})
+        if self.intent_version == 3 {
+            if evidence == Some("deleted") {
+                outcome["source_origin"] = "dispatched_occurrence_identity".into();
+            }
+            if evidence == Some("observed_state") {
+                outcome["source_origin"] = "fetched".into();
+            }
+        }
+        let mut value = json!({"request_id":self.request_id,"target":{"account":account,"calendar":self.calendar,"event":self.event},"kind":self.kind,"state":self.state,"revision":self.revision,"intent_version":self.intent_version,"local_only":false,"outcome":outcome});
+        if let Some(occurrence) = self
+            .occurrence
+            .and_then(|raw| serde_json::from_str::<Value>(&raw).ok())
+        {
+            value["occurrence"] = occurrence;
+        }
+        value
     }
 }
 
@@ -170,6 +190,7 @@ impl Store {
                 "expected_etag",
                 "fields",
                 "response",
+                "occurrence",
             ],
         )?;
         let request_id = crate::string(request, "request_id")?;
@@ -195,6 +216,18 @@ impl Store {
             return self.calendar_live_status(account, request_id);
         }
         live(self, account)?;
+        let version = if request.get("occurrence").is_some() {
+            if !matches!(kind, "edit" | "delete") {
+                return Err(err(
+                    "unsupported_operation",
+                    "Occurrence scope supports organizer edit or delete only",
+                ));
+            }
+            occurrence_request(request)?;
+            3
+        } else {
+            2
+        };
         let event = if kind == "create" {
             if request.get("event_id").is_some()
                 || request.get("expected_etag").is_some()
@@ -243,7 +276,7 @@ impl Store {
             calendar: calendar.into(),
             event,
         };
-        let intent = json!({"version":2,"request":request,"target":target});
+        let intent = json!({"version":version,"request":request,"target":target});
         self.db.execute("INSERT INTO calendar_write_operations(account,request_id,fingerprint,intent_json,execution_mode,state) VALUES(?1,?2,?3,?4,'live','prepared')",params![account,request_id,hash,serde_json::to_string(&intent)?])?;
         self.calendar_live_status(account, request_id)
     }
@@ -340,8 +373,8 @@ impl Store {
                 |row| {
                     Ok((
                         OperationProjection::read(row)?,
-                        row.get::<_, i64>(13)?,
-                        row.get::<_, bool>(14)?,
+                        row.get::<_, i64>(14)?,
+                        row.get::<_, bool>(15)?,
                     ))
                 },
             )?
@@ -449,6 +482,12 @@ impl Store {
         let zone = crate::string(&checkpoint, "time_zone")?;
         let request = &op.intent["request"];
         let intent_version = document_version(&op.intent)?;
+        if intent_version == 3 {
+            return Err(err(
+                "invalid_request",
+                "Occurrence writes require a qualified master and instance proof",
+            ));
+        }
         let kind = crate::string(request, "kind")?;
         let actor: String =
             self.db
@@ -520,6 +559,73 @@ impl Store {
         self.calendar_live_status(account, request_id)
     }
 
+    pub fn calendar_live_stage_occurrence(
+        &mut self,
+        account: &str,
+        request_id: &str,
+        expected_version: i64,
+        proof: PreparedCalendarOccurrence,
+    ) -> Result<Value> {
+        let op = self.calendar_live_operation(account, request_id)?;
+        if document_version(&op.intent)? != 3
+            || !matches!(op.state.as_str(), "prepared" | "ready")
+            || op.version != expected_version
+        {
+            return Err(err(
+                "calendar_operation_pending",
+                "This occurrence intent was already attempted or changed",
+            ));
+        }
+        if proof.master.stamp.account != account {
+            return Err(err(
+                "scope_mismatch",
+                "Occurrence belongs to another account",
+            ));
+        }
+        self.check_calendar_occurrence_master(&proof.master.stamp)?;
+        if live(self, account)? != proof.master.stamp.connection_generation {
+            return Err(err("stale_revision", "Calendar connection changed"));
+        }
+        proof.require_editable()?;
+        let request = &op.intent["request"];
+        let selector = occurrence_request(request)?;
+        if !proof_matches_selector(&proof, &selector)
+            || request["expected_etag"] != proof.event.etag
+            || request["occurrence"]["expected_master_etag"] != proof.master.stamp.etag
+        {
+            return Err(err(
+                "stale_revision",
+                "The selected instance or recurring master changed; authored fields are retained",
+            ));
+        }
+        let actor: String =
+            self.db
+                .query_row("SELECT email FROM accounts WHERE id=?1", [account], |r| {
+                    r.get(0)
+                })?;
+        let kind = crate::string(request, "kind")?;
+        let body = if kind == "edit" {
+            field_patch(
+                &request["fields"],
+                Some(&proof.event),
+                &proof.master.stamp.zone,
+                &actor,
+                2,
+            )?
+        } else {
+            Value::Null
+        };
+        let label_version = if body.get("eventLabelId").is_some() {
+            1
+        } else {
+            0
+        };
+        let stamp = &proof.master.stamp;
+        let dispatch = json!({"version":3,"kind":kind,"target":op.intent["target"],"body":body,"if_match":request["expected_etag"],"send_updates":"all","baseline":proof.event.source,"base_revision":stamp.calendar_revision,"event_label_version":label_version,"occurrence":request["occurrence"],"original_start_provider":proof.event.source["originalStartTime"],"master_proof":stamp});
+        if self.db.execute("UPDATE calendar_write_operations SET state='ready',operation_revision=operation_revision+1,connection_generation=?4,permission_epoch=?5,dispatch_json=?6 WHERE account=?1 AND request_id=?2 AND execution_mode='live' AND state IN ('prepared','ready') AND operation_revision=?3",params![account,request_id,expected_version,stamp.connection_generation,stamp.permission_epoch,serde_json::to_string(&dispatch)?])?!=1 {return Err(err("stale_revision","Calendar operation changed"));}
+        self.calendar_live_status(account, request_id)
+    }
+
     /// Called with mutation quota and one response/source memory seat already
     /// admitted. This is the final durable boundary before the one HTTP attempt.
     pub fn calendar_live_start(
@@ -558,6 +664,11 @@ impl Store {
                 "Calendar changed while waiting; the unsent intent is retained",
             ));
         }
+        if document_version(&lease.dispatch)? == 3 {
+            let stamp: MasterStamp =
+                serde_json::from_value(lease.dispatch["master_proof"].clone())?;
+            self.check_calendar_occurrence_master(&stamp)?;
+        }
         lease.attempt += 1;
         if self.db.execute("UPDATE calendar_write_operations SET state='in_flight',attempt=?4,operation_revision=operation_revision+1 WHERE account=?1 AND request_id=?2 AND execution_mode='live' AND state='ready' AND operation_revision=?3",params![account,request_id,op.version,lease.attempt])?!=1 {return Err(err("stale_revision","Calendar operation changed"));}
         Ok(lease)
@@ -576,7 +687,7 @@ impl Store {
         // and never-dispatched abandonment remain unchanged.
         let late_abandoned = op.state == "abandoned"
             && lease.attempt > 0
-            && document_version(&lease.dispatch)? == 2
+            && matches!(document_version(&lease.dispatch)?, 2 | 3)
             && matches!(
                 &outcome,
                 CalendarWriteOutcome::Accepted(_) | CalendarWriteOutcome::Deleted
@@ -601,6 +712,14 @@ impl Store {
                 let target: EventKey = serde_json::from_value(lease.dispatch["target"].clone())?;
                 bounded_source(&source, &target)?;
                 etag(crate::string(&source, "etag")?)?;
+                if document_version(&lease.dispatch)? == 3
+                    && !matches_occurrence_source(&source, &lease.dispatch)?
+                {
+                    return Err(err(
+                        "scope_mismatch",
+                        "Provider response differs from the dispatched occurrence",
+                    ));
+                }
                 ("accepted", json!({"kind":"accepted","source":source}))
             }
             CalendarWriteOutcome::Deleted => {
@@ -629,9 +748,12 @@ impl Store {
             ),
             CalendarWriteOutcome::Unknown => ("unknown", json!({"kind":"unknown"})),
         };
-        if document_version(&lease.dispatch)? == 2 && state == "accepted" {
+        if matches!(document_version(&lease.dispatch)?, 2 | 3) && state == "accepted" {
             evidence["evidence_origin"] = "provider_response".into();
             evidence["notification_delivery"] = "unverified".into();
+        }
+        if document_version(&lease.dispatch)? == 3 && evidence["kind"] == "deleted" {
+            evidence["source_origin"] = "dispatched_occurrence_identity".into();
         }
         // A late exact response strengthens a matching observation. Its cache
         // publication is re-evaluated independently under the original fence.
@@ -647,7 +769,12 @@ impl Store {
         connection_generation: i64,
     ) -> Result<CalendarReadPublicationFence> {
         self.check_calendar_write_lease(lease)?;
-        if live(self, &lease.account)? != connection_generation {
+        let generation = if document_version(&lease.dispatch)? == 3 {
+            self.calendar_occurrence_read_connection(&lease.account)?
+        } else {
+            live(self, &lease.account)?
+        };
+        if generation != connection_generation {
             return Err(err(
                 "stale_revision",
                 "Calendar connection changed before observation",
@@ -702,6 +829,12 @@ impl Store {
         let target: EventKey = serde_json::from_value(lease.dispatch["target"].clone())?;
         bounded_source(&source, &target)?;
         let version = document_version(&lease.dispatch)?;
+        if version == 3 {
+            return Err(err(
+                "invalid_request",
+                "Occurrence reconciliation requires a qualified master and instance proof",
+            ));
+        }
         let matches = if lease.dispatch["kind"] == "delete" {
             source["status"] == "cancelled"
         } else if version == 2 {
@@ -730,6 +863,54 @@ impl Store {
         }
     }
 
+    pub fn calendar_live_reconcile_occurrence_read(
+        &mut self,
+        lease: &CalendarWriteLease,
+        fence: &CalendarReadPublicationFence,
+        proof: PreparedCalendarOccurrence,
+    ) -> Result<Value> {
+        let op = self.check_calendar_write_lease(lease)?;
+        fence.check(lease)?;
+        if document_version(&lease.dispatch)? != 3 {
+            return Err(err("invalid_request", "This is not an occurrence dispatch"));
+        }
+        self.check_calendar_occurrence_master(&proof.master.stamp)?;
+        let stamp = &proof.master.stamp;
+        if stamp.account != lease.account
+            || stamp.calendar != fence.calendar
+            || stamp.connection_generation != fence.connection_generation
+            || stamp.permission_epoch != fence.permission_epoch
+            || stamp.calendar_revision != fence.source_revision
+            || Some(stamp.lifecycle_revision) != fence.lifecycle_revision
+        {
+            return Err(err(
+                "stale_revision",
+                "Occurrence observation and read publication fence differ",
+            ));
+        }
+        if !matches!(op.state.as_str(), "in_flight" | "unknown") {
+            return self.calendar_live_status(&lease.account, &lease.request_id);
+        }
+        if !matches_occurrence_source(&proof.event.source, &lease.dispatch)? {
+            return Err(err(
+                "scope_mismatch",
+                "Observed instance differs from the original occurrence",
+            ));
+        }
+        let cancelled = proof.event.source["status"] == "cancelled";
+        let matches = if lease.dispatch["kind"] == "delete" {
+            cancelled
+        } else {
+            !proof.event.cancelled && matches_intent_v2(&proof.event, &op.intent, &lease.dispatch)
+        };
+        if !matches {
+            return self.calendar_live_record_outcome(lease, CalendarWriteOutcome::Unknown);
+        }
+        let evidence = json!({"kind":"observed_state","matches_intent":true,"observed_etag":proof.event.source["etag"].as_str(),"event_cancelled":cancelled,"notification_delivery":"unverified","source_origin":"fetched","source":proof.event.source,"publication_fence":fence,"master_read_proof":stamp});
+        self.db.execute("UPDATE calendar_write_operations SET state='reconciled',outcome_json=?3,operation_revision=operation_revision+1 WHERE account=?1 AND request_id=?2 AND execution_mode='live'",params![lease.account,lease.request_id,serde_json::to_string(&evidence)?])?;
+        self.calendar_live_status(&lease.account, &lease.request_id)
+    }
+
     /// Fence acquisition which began before an accepted write. Cleanup remains
     /// bounded outside this call, and a newer published revision is never expired.
     pub fn calendar_live_expire_staging(
@@ -752,7 +933,13 @@ impl Store {
             .map_or(lease.dispatch["base_revision"].as_i64().unwrap(), |f| {
                 f.source_revision
             });
-        if live(self, &lease.account)? != generation {
+        let current_generation =
+            if op.state == "reconciled" && document_version(&lease.dispatch)? == 3 {
+                self.calendar_occurrence_read_connection(&lease.account)?
+            } else {
+                live(self, &lease.account)?
+            };
+        if current_generation != generation {
             return Ok(vec![]);
         }
         let calendar = crate::string(&lease.dispatch["target"], "calendar")?;
@@ -760,6 +947,11 @@ impl Store {
         if scope["membership_denied"] == true
             || scope["permission_epoch"] != permission
             || scope["revision"] != revision
+        {
+            return Ok(vec![]);
+        }
+        if document_version(&lease.dispatch)? == 3
+            && !self.calendar_occurrence_publication_current(lease, &op.state)?
         {
             return Ok(vec![]);
         }
@@ -800,7 +992,12 @@ impl Store {
         if already_published {
             return self.calendar_live_status(&lease.account, &lease.request_id);
         }
-        let current_generation = live(self, &lease.account)?;
+        let current_generation =
+            if op.state == "reconciled" && document_version(&lease.dispatch)? == 3 {
+                self.calendar_occurrence_read_connection(&lease.account)?
+            } else {
+                live(self, &lease.account)?
+            };
         let target: EventKey = serde_json::from_value(lease.dispatch["target"].clone())?;
         let scope = self.calendar_sync_scope(&lease.account, &target.calendar)?;
         let fence = self.calendar_read_publication_fence(lease, &op.state)?;
@@ -819,7 +1016,9 @@ impl Store {
         // event-scope stamps. That membership loss also fences cache publication.
         let authority_unchanged = current_generation == generation
             && scope["permission_epoch"] == permission
-            && scope["membership_denied"] != true;
+            && scope["membership_denied"] != true
+            && (document_version(&lease.dispatch)? != 3
+                || self.calendar_occurrence_publication_current(lease, &op.state)?);
         if authority_unchanged {
             self.calendar_assert_no_pending(&lease.account, &target.calendar)?;
         }
@@ -830,7 +1029,11 @@ impl Store {
         )?;
         let outcome: Value = serde_json::from_str(&raw)?;
         let source = if outcome["kind"] == "deleted" {
-            json!({"id":target.event,"status":"cancelled"})
+            if document_version(&lease.dispatch)? == 3 {
+                json!({"id":target.event,"status":"cancelled","recurringEventId":lease.dispatch["occurrence"]["series_id"],"originalStartTime":lease.dispatch["original_start_provider"]})
+            } else {
+                json!({"id":target.event,"status":"cancelled"})
+            }
         } else {
             outcome["source"].clone()
         };
@@ -862,10 +1065,19 @@ impl Store {
             )
             .map_err(crate::calendar_store::calendar_error)?;
             let raw = serde_json::to_string(&source)?;
+            let observed = if document_version(&lease.dispatch)? == 3
+                && outcome["kind"] == "deleted"
+            {
+                serde_json::to_string(
+                    &json!({"kind":"acknowledged_occurrence_cancellation","request_id":lease.request_id,"source":source}),
+                )?
+            } else {
+                raw.clone()
+            };
             tx.execute("UPDATE calendar_sync_state SET revision=revision+1 WHERE account=?1 AND calendar_id=?2",params![lease.account,target.calendar])?;
             tx.execute("INSERT INTO calendar_sources(account,calendar_id,event_id,json,source_generation) VALUES(?1,?2,?3,?4,?5) ON CONFLICT(account,calendar_id,event_id) DO UPDATE SET json=excluded.json,source_generation=excluded.source_generation",params![lease.account,target.calendar,target.event,raw,generation])?;
             crate::live_calendar::index_event(&tx, &event, 0, generation)?;
-            tx.execute("INSERT INTO calendar_event_state(account,calendar_id,event_id,visible,observed_json,seen_full_generation) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(account,calendar_id,event_id) DO UPDATE SET visible=excluded.visible,observed_json=excluded.observed_json,seen_full_generation=excluded.seen_full_generation",params![lease.account,target.calendar,target.event,!event.cancelled,raw,full])?;
+            tx.execute("INSERT INTO calendar_event_state(account,calendar_id,event_id,visible,observed_json,seen_full_generation) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(account,calendar_id,event_id) DO UPDATE SET visible=excluded.visible,observed_json=excluded.observed_json,seen_full_generation=excluded.seen_full_generation",params![lease.account,target.calendar,target.event,!event.cancelled,observed,full])?;
             tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
         }
         let state = if op.state == "reconciled" {
@@ -884,7 +1096,7 @@ impl Store {
         lease: &CalendarWriteLease,
         state: &str,
     ) -> Result<Option<CalendarReadPublicationFence>> {
-        if state != "reconciled" || document_version(&lease.dispatch)? != 2 {
+        if state != "reconciled" || !matches!(document_version(&lease.dispatch)?, 2 | 3) {
             return Ok(None);
         }
         let raw: Option<String> = self.db.query_row(
@@ -898,6 +1110,20 @@ impl Store {
             fence.check(lease)?;
         }
         Ok(fence)
+    }
+
+    fn calendar_occurrence_publication_current(
+        &self,
+        lease: &CalendarWriteLease,
+        state: &str,
+    ) -> Result<bool> {
+        let stamp: MasterStamp = if state == "reconciled" {
+            let raw:String=self.db.query_row("SELECT CASE WHEN length(CAST(json_extract(outcome_json,'$.master_read_proof') AS BLOB))<=16384 THEN json_extract(outcome_json,'$.master_read_proof') END FROM calendar_write_operations WHERE account=?1 AND request_id=?2",params![lease.account,lease.request_id],|r|r.get(0))?;
+            serde_json::from_str(&raw)?
+        } else {
+            serde_json::from_value(lease.dispatch["master_proof"].clone())?
+        };
+        Ok(self.check_calendar_occurrence_master(&stamp).is_ok())
     }
 
     fn check_calendar_write_lease(
@@ -936,7 +1162,55 @@ impl CalendarReadPublicationFence {
     }
 }
 
-fn live(store: &Store, account: &str) -> Result<i64> {
+fn occurrence_request(request: &Value) -> Result<CalendarOccurrenceSelector> {
+    let occurrence = &request["occurrence"];
+    crate::fields(
+        occurrence,
+        &["series_id", "original_start", "expected_master_etag"],
+    )?;
+    etag(crate::string(occurrence, "expected_master_etag")?)?;
+    CalendarOccurrenceSelector::parse(
+        &json!({"calendar_id":request["calendar_id"],"series_id":occurrence["series_id"],"original_start":occurrence["original_start"],"event_id":request["event_id"]}),
+    )
+}
+fn proof_matches_selector(
+    proof: &PreparedCalendarOccurrence,
+    selector: &CalendarOccurrenceSelector,
+) -> bool {
+    let stamp = &proof.master.stamp;
+    stamp.calendar == selector.calendar_id()
+        && stamp.series == selector.series_id()
+        && selector.event_id() == Some(proof.event.key.event.as_str())
+        && proof
+            .event
+            .original_start
+            .as_ref()
+            .is_some_and(|v| same_original(v, selector.original_start()))
+}
+fn matches_occurrence_source(source: &Value, dispatch: &Value) -> Result<bool> {
+    let wanted = crate::live_calendar_occurrences::parse_original(
+        &dispatch["occurrence"]["original_start"],
+    )?;
+    let target: EventKey = serde_json::from_value(dispatch["target"].clone())?;
+    if source["id"] != target.event
+        || source["recurringEventId"] != dispatch["occurrence"]["series_id"]
+    {
+        return Ok(false);
+    }
+    let stamp: MasterStamp = serde_json::from_value(dispatch["master_proof"].clone())?;
+    Ok(
+        fm_calendar::normalize(&target.account, &target.calendar, &stamp.zone, source).is_ok_and(
+            |event| {
+                event
+                    .original_start
+                    .as_ref()
+                    .is_some_and(|v| same_original(v, &wanted))
+            },
+        ),
+    )
+}
+
+pub(crate) fn live(store: &Store, account: &str) -> Result<i64> {
     store.require_active_account(account)?;
     crate::id(account)?;
     if store.profile_kind()? != crate::live_profile::ProfileKind::Live {
@@ -962,7 +1236,7 @@ fn live(store: &Store, account: &str) -> Result<i64> {
     }
     Ok(binding.connection_generation)
 }
-fn etag(value: &str) -> Result<()> {
+pub(crate) fn etag(value: &str) -> Result<()> {
     if value.is_empty()
         || value.len() > 1024
         || value == "*"
@@ -1017,13 +1291,17 @@ pub(crate) fn live_self_attendee<'a>(event: &'a Event, actor: &str) -> Result<&'
         )),
     }
 }
-fn initial_event(event: &Event, access: Access, kind: &str, version: u64) -> Result<()> {
+pub(crate) fn initial_event(event: &Event, access: Access, kind: &str, version: u64) -> Result<()> {
     if !matches!(access.for_event(event), Access::Writer | Access::Owner) {
         return Err(err("permission_denied", "This event copy is not writable"));
     }
     if event.cancelled
         || !event.recurrence.is_empty()
-        || event.series_id.is_some()
+        || (version != 3 && event.series_id.is_some())
+        || (version == 3
+            && (event.series_id.is_none()
+                || event.original_start.is_none()
+                || event.series_private.is_none()))
         || event.source["locked"] == true
         || !matches!(event.source["eventType"].as_str(), None | Some("default"))
     {
@@ -1042,7 +1320,7 @@ fn initial_event(event: &Event, access: Access, kind: &str, version: u64) -> Res
             "This operation requires a supported organizer copy",
         ));
     }
-    if version == 2 && !fm_calendar::ordinary_conference_supported(&event.source) {
+    if matches!(version, 2 | 3) && !fm_calendar::ordinary_conference_supported(&event.source) {
         return Err(err(
             "unsupported_operation",
             "This provider meeting cannot be safely modified",
@@ -1179,7 +1457,7 @@ fn field_patch(
 fn document_version(document: &Value) -> Result<u64> {
     match document.get("version") {
         None => Ok(1),
-        Some(value) if value == 1 || value == 2 => Ok(value.as_u64().unwrap()),
+        Some(value) if value == 1 || value == 2 || value == 3 => Ok(value.as_u64().unwrap()),
         _ => Err(err(
             "unsupported_operation",
             "This Calendar intent version is not supported",
@@ -1346,6 +1624,9 @@ fn same_time(actual: &Value, wanted: &Value) -> bool {
 #[cfg(test)]
 #[path = "live_calendar_invitations_tests.rs"]
 mod invitation_tests;
+#[cfg(test)]
+#[path = "live_calendar_occurrences_tests.rs"]
+mod occurrence_tests;
 #[cfg(test)]
 #[path = "live_calendar_writes_tests.rs"]
 mod tests;

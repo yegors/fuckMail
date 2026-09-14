@@ -28,7 +28,7 @@ def verify_initial_sources(profile):
                 for account, value in accounts.items() for remote in ("vr0000", "vr0001")}
     checked = []
     with closing(read_database(profile)) as db:
-        require(db.execute("PRAGMA user_version").fetchone()[0] == 18, "Wrong account lifecycle schema")
+        require(db.execute("PRAGMA user_version").fetchone()[0] == 19, "Wrong account lifecycle schema")
         meta = dict(db.execute("SELECT key,value FROM meta"))
         require(str(meta["fixture_revision"]) == "0" and str(meta["profile_kind"]) == "1",
                 "Expected the new empty-live-derived isolated profile")

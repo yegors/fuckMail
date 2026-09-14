@@ -112,6 +112,26 @@ pub struct Event {
     pub source: Value,
 }
 
+/// Source-free recurring-master context, constructed through the same master
+/// validation used when the complete normalized source is available.
+#[derive(Debug, Clone)]
+pub struct RecurringMasterContext {
+    key: EventKey,
+    private: bool,
+    cancelled: bool,
+}
+impl RecurringMasterContext {
+    pub fn key(&self) -> &EventKey {
+        &self.key
+    }
+    pub fn private(&self) -> bool {
+        self.private
+    }
+    pub fn cancelled(&self) -> bool {
+        self.cancelled
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Access {
     None,
@@ -137,14 +157,29 @@ impl Access {
     }
 }
 impl Event {
+    pub fn recurring_master_context(&self) -> Result<RecurringMasterContext> {
+        if self.series_id.is_some() || (!self.cancelled && self.recurrence.is_empty()) {
+            return Err(error("scope_mismatch", "A recurring master is required"));
+        }
+        Ok(RecurringMasterContext {
+            key: self.key.clone(),
+            private: self.private,
+            cancelled: self.cancelled,
+        })
+    }
+
     /// Bind an instance to its current same-scope master before a direct edit or
     /// RSVP. A public-looking exception cannot override private master access.
     pub fn with_recurring_master(&self, master: &Event) -> Result<Self> {
+        self.with_recurring_context(&master.recurring_master_context()?)
+    }
+
+    /// Apply the same privacy/cancellation rules after the master source has
+    /// been released from a bounded preparation stage.
+    pub fn with_recurring_context(&self, master: &RecurringMasterContext) -> Result<Self> {
         if self.key.account != master.key.account
             || self.key.calendar != master.key.calendar
             || self.series_id.as_deref() != Some(master.key.event.as_str())
-            || master.series_id.is_some()
-            || (!master.cancelled && master.recurrence.is_empty())
         {
             return Err(error(
                 "scope_mismatch",

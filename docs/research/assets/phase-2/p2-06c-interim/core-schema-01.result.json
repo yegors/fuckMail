@@ -1,0 +1,27 @@
+{
+  "command": [
+    "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\cargo\\bin\\cargo.EXE",
+    "test",
+    "-p",
+    "fm-core",
+    "--locked",
+    "schema",
+    "--",
+    "--nocapture"
+  ],
+  "scope": "fm-core,fm-google,fm-calendar,fm-mail,fm-assist,fm-search",
+  "dependency_test_sources_excluded": [
+    "fm-assist",
+    "fm-calendar",
+    "fm-google",
+    "fm-mail",
+    "fm-search"
+  ],
+  "exit_code": 101,
+  "elapsed_seconds": 8.390999999828637,
+  "source_count": 162,
+  "source_changes": [],
+  "status": "failed",
+  "source_sha256": "7c0877618d89db96ca47ba21134319fe7c99b3ca0293ddd89c8f76858f78ebc1",
+  "log_sha256": "8e2ab70c253c0be0fa12fc7f39d1ac2c43f7dfd92455a57d0e840732c93c99f6"
+}

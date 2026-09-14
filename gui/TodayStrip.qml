@@ -186,6 +186,6 @@ Rectangle {
         }
     }
     EventDetails { id: details; timelineSource: true; timelineInset: timeline.height; timelineAtTop: timeline.headerPosition; timelineEdge: timeline.mapToItem(Overlay.overlay, 0, timeline.headerPosition ? timeline.height : 0).y; onEditRequested: function(event) { editor.editEvent = event; editor.openForDate(event.start.slice(0, 10)) } }
-    EventEditor { id: editor; timelineInset: timeline.visible ? timeline.height : 0; timelineAtTop: timeline.headerPosition }
+    EventEditor { id: editor; timelineSource: true; timelineInset: timeline.visible ? timeline.height : 0; timelineAtTop: timeline.headerPosition }
     CalendarEventList { id: dayEvents; title: Qt.formatDate(new Date(backend.timelineDate + "T12:00:00"), "ddd d MMM") + " · all events"; eventRows: backend.todayEvents; available: backend.timelineReady && backend.connected; onEventSelected: function(event) { timeline.showEvent(event) } }
 }

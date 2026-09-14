@@ -83,17 +83,18 @@ def run(args):
     report.parent.mkdir(parents=True, exist_ok=True)
     # Reserve before launching anything; this report cannot replace an older run.
     with report.open("x", encoding="utf-8") as destination:
-        lifecycle_upgrade = (args.old_schema, args.new_schema) == (17, 18)
+        occurrence_upgrade = (args.old_schema, args.new_schema) == (18, 19)
+        lifecycle_upgrade = (args.old_schema, args.new_schema) == (17, 18) or occurrence_upgrade
         calendar_upgrade = (args.old_schema, args.new_schema) == (16, 17) or lifecycle_upgrade
-        scenario = "account-lifecycle" if lifecycle_upgrade else "calendar-intents" if calendar_upgrade else "draft-provenance"
-        result = {"result": "failed", "scenario": f"schema-{args.old_schema}-to-{args.new_schema}-{scenario}", "version": 4,
+        scenario = "calendar-occurrences" if occurrence_upgrade else "account-lifecycle" if lifecycle_upgrade else "calendar-intents" if calendar_upgrade else "draft-provenance"
+        result = {"result": "failed", "scenario": f"schema-{args.old_schema}-to-{args.new_schema}-{scenario}", "version": 5,
                   "limitations": ["Generated synthetic composition/Calendar only; live journals have separate Core fixtures.",
                                   "Standalone engine/CLI source evidence; no GUI/package/performance acceptance."], "artifacts": []}
         started = time.monotonic()
         try:
             old = {"fm": args.old_cli.resolve(strict=True), "fm-engine": args.old_engine.resolve(strict=True)}
             new = {"fm": args.new_cli.resolve(strict=True), "fm-engine": args.new_engine.resolve(strict=True)}
-            require((args.old_schema, args.new_schema) in ((14, 15), (15, 16), (16, 17), (17, 18)), "Choose a documented journal-schema upgrade")
+            require((args.old_schema, args.new_schema) in ((14, 15), (15, 16), (16, 17), (17, 18), (18, 19)), "Choose a documented journal-schema upgrade")
             require(old["fm-engine"] != new["fm-engine"], "Use a distinct preserved old-schema engine")
             result["executables"] = {kind: {key: {"path": str(path), "sha256": sha256(path)} for key, path in files.items()}
                                      for kind, files in (("old", old), ("new", new))}
@@ -207,7 +208,7 @@ if __name__ == "__main__":
     parser.add_argument("--old-engine", type=Path, required=True)
     parser.add_argument("--new-cli", type=Path, required=True)
     parser.add_argument("--new-engine", type=Path, required=True)
-    parser.add_argument("--old-schema", type=int, choices=(14, 15, 16, 17), default=14)
-    parser.add_argument("--new-schema", type=int, choices=(15, 16, 17, 18), default=15)
+    parser.add_argument("--old-schema", type=int, choices=(14, 15, 16, 17, 18), default=14)
+    parser.add_argument("--new-schema", type=int, choices=(15, 16, 17, 18, 19), default=15)
     parser.add_argument("--report", type=Path, required=True)
     raise SystemExit(run(parser.parse_args()))

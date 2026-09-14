@@ -1,0 +1,15 @@
+   Compiling ring v0.17.14
+   Compiling libsqlite3-sys v0.30.1
+   Compiling fm-cli v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-cli)
+   Compiling rustls v0.23.44
+   Compiling rustls-webpki v0.103.15
+   Compiling jsonwebtoken v9.3.1
+   Compiling tokio-rustls v0.26.5
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+   Compiling fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+   Compiling rusqlite v0.32.1
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `release` profile [optimized] target(s) in 1m 36s

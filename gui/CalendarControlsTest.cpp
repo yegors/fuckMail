@@ -39,7 +39,7 @@ class CalendarBackendProbe : public QObject {
     Q_PROPERTY(QVariantMap googleSync MEMBER googleSync NOTIFY googleSyncChanged)
     Q_PROPERTY(QVariantList calendarSources MEMBER calendarSources NOTIFY eventsChanged)
     Q_PROPERTY(QVariantList events MEMBER events NOTIFY eventsChanged)
-    Q_PROPERTY(QVariantList todayEvents MEMBER events NOTIFY eventsChanged)
+    Q_PROPERTY(QVariantList todayEvents MEMBER todayEvents NOTIFY eventsChanged)
     Q_PROPERTY(QVariantMap preferences MEMBER preferences CONSTANT)
     Q_PROPERTY(bool calendarReady MEMBER calendarReady CONSTANT)
     Q_PROPERTY(bool timelineReady MEMBER calendarReady CONSTANT)
@@ -64,7 +64,7 @@ public:
     QVariantList calendarSources{
         QVariantMap{{"account", "alpha"}, {"calendar_id", "primary"}, {"account_name", "Alpha"}, {"name", "Personal"}, {"writable", true}, {"can_create", true}},
         QVariantMap{{"account", "beta"}, {"calendar_id", "primary"}, {"account_name", "Beta"}, {"name", "Workspace"}, {"writable", true}, {"can_create", true}}};
-    QVariantList events, calendarOperations;
+    QVariantList events, todayEvents, calendarOperations;
     QVariantList categories{QVariantMap{{"id", "work"}, {"name", "Work"}, {"provider_label_id", "Label_old"}}};
     QVariantList googleLabels{
         QVariantMap{{"id", "INBOX"}, {"name", "Inbox"}, {"present", true}, {"selectable", false}},
@@ -74,12 +74,23 @@ public:
     QVariantMap googleLabelState{{"account", "alpha"}, {"catalog_revision", 1}, {"available", true}, {"connection_state", "connected"}, {"stale_connection", false}, {"next_after", "Label_new"}};
     QVariantMap lastWrite, lastAction;
     int writes = 0, actions = 0, refreshes = 0;
+    int occurrenceReads = 0;
+    QVariantMap lastOccurrenceSelector;
+    QString lastOccurrenceCorrelation;
+    int occurrenceEpoch = 1;
     int labelCacheReads = 0, labelRefreshes = 0, labelBindings = 0;
     QVariantMap lastLabelBinding, lastLabelRead;
     Q_INVOKABLE bool accountCapability(const QString &account, const QString &name) const { return capability && account == "alpha" && (name == "calendar_write" || name == "mail_read" || name == "mail_write"); }
     Q_INVOKABLE QVariantMap googleSyncState(const QString &account) const { return {{"active", active && account == "alpha"}}; }
     Q_INVOKABLE QString calendarDateTime(const QString &date, const QString &time, const QString &) const { return date + "T" + time + ":00-04:00"; }
     Q_INVOKABLE void calendarWrite(const QVariantMap &value) { lastWrite = value; ++writes; }
+    Q_INVOKABLE QVariantMap calendarOccurrenceContext(const QString &account, const QString &calendar) const {
+        return capability && active && connected && account == "alpha" && calendar == "primary"
+            ? QVariantMap{{"account", account}, {"calendar_id", calendar}, {"epoch", occurrenceEpoch}} : QVariantMap{};
+    }
+    Q_INVOKABLE void readCalendarOccurrence(const QVariantMap &selector, const QString &correlation) {
+        lastOccurrenceSelector = selector; lastOccurrenceCorrelation = correlation; ++occurrenceReads;
+    }
     Q_INVOKABLE void calendarOperationAction(const QString &account, const QString &id, const QString &action, qint64 revision) {
         lastAction = {{"account", account}, {"request_id", id}, {"action", action}, {"revision", revision}}; ++actions;
     }
@@ -107,6 +118,7 @@ signals:
     void googleLabelsChanged();
     void googleLabelBindingFinished(const QString &account, bool ok, const QVariantMap &result, const QString &error);
     void calendarWriteFinished(bool ok, const QVariantMap &result, const QString &error);
+    void calendarOccurrenceReadFinished(const QString &correlation, bool ok, const QVariantMap &result, const QString &error);
 };
 
 static QQuickItem *visualNamed(QQuickItem *item, const QString &name) {
@@ -146,7 +158,7 @@ int main(int argc, char **argv) {
         require(QFontDatabase::addApplicationFont(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/fonts/" + font) >= 0, "Load actual bundled UI fonts");
     app.setFont(QFont("Geist", 10));
     QTemporaryDir copy; require(copy.isValid(), "Temporary QML directory");
-    for (const auto name : {"Theme.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "EventEditor.qml", "EventDetails.qml", "CalendarOperations.qml", "GoogleLabelSetup.qml"})
+    for (const auto name : {"Theme.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "CalendarOccurrenceRead.qml", "EventEditor.qml", "EventDetails.qml", "CalendarOperations.qml", "GoogleLabelSetup.qml"})
         require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/" + name, copy.filePath(name)), "Copy actual QML control");
     QFile module(copy.filePath("qmldir")); require(module.open(QIODevice::WriteOnly), "QML singleton directory");
     module.write("singleton Theme 1.0 Theme.qml\n"); module.close();
@@ -169,8 +181,8 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     palette.base: Theme.canvas; palette.text: Theme.text
     palette.button: Theme.surface; palette.buttonText: Theme.text
     palette.highlight: Theme.accent; palette.highlightedText: Theme.selectedText
-    EventEditor {}
-    EventDetails { exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 80 } } }
+    EventEditor { id: testEditor }
+    EventDetails { onEditRequested: function(event) { testEditor.editEvent = event; testEditor.openForDate(event.start.slice(0, 10)) }; exit: Transition { NumberAnimation { property: "opacity"; from: 1; to: 0; duration: 80 } } }
     CalendarOperations {}
     GoogleLabelSetup { visible: false; width: 560 }
 })QML", QUrl::fromLocalFile(copy.filePath("Harness.qml")));
@@ -391,6 +403,159 @@ ApplicationWindow { width: 1100; height: 850; visible: true
             const auto file = QDir(captureDir).filePath(QString("guests-%1-%2.png").arg(theme, size));
             require(!QFile::exists(file) && window->grabWindow().save(file), "Preserve calendar guest capture without overwrite");
             call(editor, "close"); settle([&] { return !editor->property("visible").toBool(); });
+        }
+        window->resize(1100, 850);
+    }
+
+    // Expanded master rows never identify an editable provider instance. The
+    // real popup opens the shared editor only after its current exact read.
+    auto recurring = original; recurring["id"] = "alpha:primary:series:original";
+    recurring["event_id"] = "series"; recurring["etag"] = "master-v1";
+    recurring["time_display"] = "09:00"; recurring["end_display"] = "10:00";
+    recurring["start_hour"] = 9.; recurring["duration_hours"] = 1.;
+    recurring["can_edit"] = false; recurring["can_delete"] = false; recurring["can_resolve_occurrence"] = true;
+    const QVariantMap originalStart{{"kind", "zoned"}, {"instant", "2026-09-13T13:00:00Z"}, {"time_zone", "America/Toronto"}};
+    recurring["occurrence_selector"] = QVariantMap{{"calendar_id", "primary"}, {"series_id", "series"}, {"original_start", originalStart}};
+    backend.events = {recurring}; backend.account = "alpha"; emit backend.eventsChanged(); emit backend.accountChanged();
+    const auto openOccurrence = [&] { call(details, "openAt", recurring, QVariant{}); settle([&] { return details->property("opened").toBool(); }); call(named(root, "eventEditButton"), "clicked"); };
+    const auto resolved = [&](const QString &instanceEtag, const QString &masterEtag) {
+        auto instance = original; instance["event_id"] = "opaque-instance"; instance["etag"] = instanceEtag;
+        return QVariantMap{{"account", "alpha"}, {"calendar_id", "primary"}, {"event_id", "opaque-instance"}, {"etag", instanceEtag},
+            {"occurrence", QVariantMap{{"series_id", "series"}, {"original_start", originalStart}, {"expected_master_etag", masterEtag}}}, {"event", instance}};
+    };
+    openOccurrence(); const auto closedRead = backend.lastOccurrenceCorrelation;
+    require(backend.occurrenceReads == 1 && !editor->property("visible").toBool()
+        && !backend.lastOccurrenceSelector.contains("event_id") && backend.lastOccurrenceSelector["account"] == "alpha", "master projection never opens or submits an instance editor");
+    call(details, "close"); settle([&] { return !details->property("visible").toBool(); }); openOccurrence();
+    const auto currentRead = backend.lastOccurrenceCorrelation;
+    emit backend.calendarOccurrenceReadFinished(closedRead, true, resolved("instance-v1", "master-v1"), {});
+    require(!editor->property("visible").toBool() && currentRead != closedRead, "same-occurrence close/reopen rejects the older read generation");
+    auto sibling = recurring; sibling["id"] = "alpha:primary:series:other-original";
+    auto siblingSelector = recurring["occurrence_selector"].toMap(), siblingStart = originalStart; siblingStart["instant"] = "2026-09-14T13:00:00Z";
+    siblingSelector["original_start"] = siblingStart; sibling["occurrence_selector"] = siblingSelector;
+    backend.events = {recurring, sibling}; emit backend.eventsChanged();
+    call(details, "openAt", sibling, QVariant{}); call(named(root, "eventEditButton"), "clicked"); const auto siblingRead = backend.lastOccurrenceCorrelation;
+    openOccurrence(); const auto returnedRead = backend.lastOccurrenceCorrelation;
+    emit backend.calendarOccurrenceReadFinished(currentRead, true, resolved("instance-v1", "master-v1"), {});
+    emit backend.calendarOccurrenceReadFinished(siblingRead, true, resolved("instance-v1", "master-v1"), {});
+    require(!editor->property("visible").toBool(), "A-to-B-to-A selection rejects both prior read generations");
+    emit backend.calendarOccurrenceReadFinished(returnedRead, true, resolved("instance-v1", "master-v1"), {});
+    settle([&] { return editor->property("opened").toBool(); });
+    title->setProperty("text", "Authored occurrence title"); call(editor, "save"); frozen = backend.lastWrite;
+    require(frozen["event_id"] == "opaque-instance" && frozen["expected_etag"] == "instance-v1"
+        && frozen["occurrence"].toMap()["expected_master_etag"] == "master-v1"
+        && frozen["fields"].toMap() == QVariantMap{{"title", "Authored occurrence title"}}, "occurrence edit freezes resolved instance and master, omitting untouched fields");
+    backend.complete(false, resultFor(frozen, "conflict", 30)); call(editor, "resolveOperation", "abandon"); backend.complete(false, resultFor(frozen, "abandoned", 31));
+    recurring["etag"] = "master-v2"; backend.events = {recurring}; emit backend.eventsChanged();
+    require(!save->property("enabled").toBool() && title->property("text") == "Authored occurrence title", "changed master requires explicit refresh and preserves authored text");
+    call(named(root, "eventRefreshOccurrence"), "clicked"); const auto refreshRead = backend.lastOccurrenceCorrelation;
+    title->setProperty("text", "Newer text while checking"); backend.account = "beta"; emit backend.accountChanged();
+    emit backend.calendarOccurrenceReadFinished(refreshRead, true, resolved("instance-v2", "master-v2"), {});
+    require(title->property("text") == "Newer text while checking" && plain(editor->property("editEvent")).toMap()["account"] == "alpha", "explicit same-occurrence refresh preserves newer fields and captured event account");
+    call(editor, "deleteEvent"); frozen = backend.lastWrite;
+    require(frozen["kind"] == "delete" && frozen["account"] == "alpha" && frozen["event_id"] == "opaque-instance"
+        && frozen["expected_etag"] == "instance-v2" && frozen["occurrence"].toMap()["expected_master_etag"] == "master-v2"
+        && !frozen.contains("fields"), "one-occurrence cancellation carries the refreshed exact immutable scope");
+    backend.complete(true, resultFor(frozen, "reconciled", 32)); settle([&] { return !editor->property("visible").toBool(); });
+    openOccurrence(); const auto removedEpochRead = backend.lastOccurrenceCorrelation;
+    ++backend.occurrenceEpoch; emit backend.accountsChanged();
+    emit backend.calendarOccurrenceReadFinished(removedEpochRead, true, resolved("instance-v3", "master-v2"), {});
+    require(!editor->property("visible").toBool(), "remove and restore epoch cannot publish a held occurrence editor");
+    call(details, "close"); settle([&] { return !details->property("visible").toBool(); }); openOccurrence();
+    const auto withdrawnRead = backend.lastOccurrenceCorrelation; backend.events.clear(); emit backend.eventsChanged();
+    emit backend.calendarOccurrenceReadFinished(withdrawnRead, true, resolved("instance-v3", "master-v2"), {});
+    require(!editor->property("visible").toBool(), "source withdrawal rejects late resolved occurrence");
+    settle([&] { return !details->property("visible").toBool(); }); backend.events = {recurring}; emit backend.eventsChanged(); openOccurrence();
+    emit backend.calendarOccurrenceReadFinished(backend.lastOccurrenceCorrelation, false, {}, "This occurrence is cancelled.");
+    require(!editor->property("visible").toBool() && details->property("feedback") == "This occurrence is cancelled.", "cancelled resolution remains a read-only popup error");
+    call(details, "close"); settle([&] { return !details->property("visible").toBool(); }); backend.account = "alpha"; emit backend.accountChanged();
+
+    // A retained child can change without changing its master-enriched ETag,
+    // original key or instance hint. A completed old read must not reopen it.
+    const auto unchangedChild = recurring;
+    const QVariantList childChanges{QVariantMap{{"title", "Changed retained exception"}},
+        QVariantMap{{"start", "2026-09-13T11:00:00-04:00"}, {"end", "2026-09-13T12:00:00-04:00"}},
+        QVariantMap{{"attendees", QVariantList{QVariantMap{{"email", "changed-guest@example.test"}}}}}};
+    for (const auto &value : childChanges) {
+        openOccurrence(); const auto childRead = backend.lastOccurrenceCorrelation;
+        const auto changes = value.toMap(); for (auto it = changes.begin(); it != changes.end(); ++it) recurring[it.key()] = it.value();
+        backend.events = {recurring}; emit backend.eventsChanged();
+        emit backend.calendarOccurrenceReadFinished(childRead, true, resolved("old-instance", "master-v2"), {});
+        require(!editor->property("visible").toBool() && !details->property("feedback").toString().isEmpty(),
+            "changed exception fields reject a held popup reply even with unchanged master identity");
+        call(details, "close"); settle([&] { return !details->property("visible").toBool(); });
+        recurring = unchangedChild; backend.events = {recurring}; emit backend.eventsChanged();
+    }
+    openOccurrence(); emit backend.calendarOccurrenceReadFinished(backend.lastOccurrenceCorrelation, true, resolved("instance-v3", "master-v2"), {});
+    settle([&] { return editor->property("opened").toBool(); }); title->setProperty("text", "Authored text before child change");
+    const auto readsBeforeChildChange = backend.occurrenceReads;
+    recurring["attendees"] = childChanges.last().toMap()["attendees"]; backend.events = {recurring}; emit backend.eventsChanged();
+    require(!save->property("enabled").toBool() && title->property("text") == "Authored text before child change"
+        && backend.occurrenceReads == readsBeforeChildChange, "changed exception disables stale saving and retains fields without automatic resolution");
+    call(named(root, "eventRefreshOccurrence"), "clicked"); const auto childRefresh = backend.lastOccurrenceCorrelation;
+    title->setProperty("text", "Newer authored text during explicit child refresh");
+    auto refreshedChild = resolved("instance-v4", "master-v2"); auto refreshedEvent = refreshedChild["event"].toMap();
+    refreshedEvent["attendees"] = recurring["attendees"]; refreshedChild["event"] = refreshedEvent;
+    emit backend.calendarOccurrenceReadFinished(childRefresh, true, refreshedChild, {});
+    require(save->property("enabled").toBool() && title->property("text") == "Newer authored text during explicit child refresh",
+        "explicit current-child resolution preserves newer authored fields and enables reviewed save");
+    call(editor, "save"); frozen = backend.lastWrite;
+    require(frozen["expected_etag"] == "instance-v4" && frozen["occurrence"].toMap()["expected_master_etag"] == "master-v2"
+        && frozen["fields"].toMap() == QVariantMap{{"title", "Newer authored text during explicit child refresh"}},
+        "refreshed child save uses its current instance version and only the retained authored change");
+    backend.complete(true, resultFor(frozen, "accepted", 34)); settle([&] { return !editor->property("visible").toBool(); });
+    recurring = unchangedChild; backend.events = {recurring}; emit backend.eventsChanged();
+
+    // Mail's timeline uses its own retained event window, independently of the
+    // Calendar workspace window. Exercise the same actual popup/editor path.
+    details->setProperty("timelineSource", true); editor->setProperty("timelineSource", true);
+    backend.events.clear(); backend.todayEvents = {recurring}; emit backend.eventsChanged(); openOccurrence();
+    const auto timelineRead = backend.lastOccurrenceCorrelation;
+    backend.events = {sibling}; emit backend.eventsChanged();
+    emit backend.calendarOccurrenceReadFinished(timelineRead, true, resolved("instance-v3", "master-v2"), {});
+    settle([&] { return editor->property("opened").toBool(); });
+    title->setProperty("text", "Timeline occurrence edit"); call(editor, "save"); frozen = backend.lastWrite;
+    require(frozen["account"] == "alpha" && frozen["event_id"] == "opaque-instance"
+        && frozen["occurrence"].toMap()["original_start"].toMap() == originalStart,
+        "timeline resolution and edit use the retained Mail window and exact occurrence");
+    backend.complete(true, resultFor(frozen, "accepted", 33)); settle([&] { return !editor->property("visible").toBool(); });
+    details->setProperty("timelineSource", false); editor->setProperty("timelineSource", false);
+    backend.events = {recurring}; backend.todayEvents.clear(); emit backend.eventsChanged();
+
+    backend.calendarOperations = {QVariantMap{{"request_id", "occurrence-observed"}, {"account", "alpha"}, {"account_name", "Alpha"},
+        {"target", QVariantMap{{"calendar", "primary"}}}, {"kind", "delete"}, {"state", "reconciled"}, {"revision", 33},
+        {"occurrence", resolved("instance-v2", "master-v2")["occurrence"]}}};
+    emit backend.calendarOperationsChanged(); call(history, "open"); settle([&] { return history->property("opened").toBool(); });
+    require(named(root, "calendarOperationOccurrence-occurrence-observed")->property("text").toString().contains("2026-09-13T13:00:00Z")
+        && !named(root, "calendarOperationResolve-occurrence-observed")->property("visible").toBool(), "activity retains original occurrence identity without replaying reconciled cancellation");
+    call(history, "close"); settle([&] { return !history->property("visible").toBool(); });
+    if (!captureDir.isEmpty()) {
+        auto window = qobject_cast<QQuickWindow *>(root); window->resize(390, 720);
+        recurring["title"] = "A long recurring planning conversation across separate calendars"; backend.events = {recurring}; emit backend.eventsChanged();
+        const auto retain = [&](const QString &name) {
+            QElapsedTimer paint; paint.start(); while (paint.elapsed() < 120) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            const auto file = QDir(captureDir).filePath(name + ".png"); require(!QFile::exists(file) && window->grabWindow().save(file), "preserve occurrence capture without overwrite");
+        };
+        const auto contained = [&](const char *name) {
+            auto item = qobject_cast<QQuickItem *>(named(root, name)); require(item && item->isVisible(), "occurrence control visible");
+            if (!QRectF(0, 0, window->width(), window->height()).contains(item->mapRectToScene(item->boundingRect())) || item->width() + .5 < item->implicitWidth())
+                qWarning() << name << "geometry" << item->mapRectToScene(item->boundingRect()) << "implicit width" << item->implicitWidth();
+            require(QRectF(0, 0, window->width(), window->height()).contains(item->mapRectToScene(item->boundingRect()))
+                && item->width() + .5 >= item->implicitWidth(), "occurrence action remains contained with its full label");
+        };
+        for (const auto theme : {"graphite", "paper", "harbour"}) for (const auto size : {"default", "large"}) {
+            root->setProperty("testTheme", theme); root->setProperty("testTextSize", size);
+            call(details, "openAt", recurring, QVariant{}); settle([&] { return details->property("opened").toBool(); });
+            retain(QString("occurrence-details-%1-%2").arg(theme, size)); contained("eventEditButton");
+            call(named(root, "eventEditButton"), "clicked"); auto result = resolved("instance-v2", "master-v2");
+            auto source = result["event"].toMap(); source["title"] = recurring["title"]; result["event"] = source;
+            emit backend.calendarOccurrenceReadFinished(backend.lastOccurrenceCorrelation, true, result, {});
+            settle([&] { return editor->property("opened").toBool(); });
+            retain(QString("occurrence-editor-%1-%2").arg(theme, size));
+            contained("eventDeleteButton"); contained("eventRefreshOccurrence"); contained("eventSaveButton");
+            call(named(root, "eventDeleteButton"), "clicked"); settle([&] { return deleteDialog->property("opened").toBool(); });
+            retain(QString("occurrence-cancel-%1-%2").arg(theme, size)); contained("eventConfirmDelete");
+            call(deleteDialog, "reject"); call(editor, "close"); settle([&] { return !editor->property("visible").toBool(); });
         }
         window->resize(1100, 850);
     }

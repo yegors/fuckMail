@@ -75,6 +75,12 @@ struct Args {
     #[cfg(feature = "verification-google")]
     #[arg(long, hide = true, requires = "verification_google_accounts", value_parser = calendar_fixture_base)]
     verification_google_accounts_base: Option<u64>,
+    #[cfg(feature = "verification-google")]
+    #[arg(long, hide = true, requires_all = ["verification_google", "verification_google_occurrences_base"], conflicts_with_all = ["verification_google_send", "verification_google_drafts", "verification_google_draft_actions", "verification_google_calendar", "verification_google_accounts"])]
+    verification_google_occurrences: bool,
+    #[cfg(feature = "verification-google")]
+    #[arg(long, hide = true, requires = "verification_google_occurrences", value_parser = calendar_fixture_base)]
+    verification_google_occurrences_base: Option<u64>,
 }
 
 #[cfg(feature = "verification-google")]
@@ -719,7 +725,7 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let google_fixture = args
         .verification_google
         .then(|| {
-            verification_google::Fixture::prepare_with_accounts(
+            verification_google::Fixture::prepare_with_occurrences(
                 &profile,
                 &mut store,
                 args.verification_google_send,
@@ -727,6 +733,7 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                 args.verification_google_draft_actions,
                 args.verification_google_calendar_base,
                 args.verification_google_accounts_base,
+                args.verification_google_occurrences_base,
             )
         })
         .transpose()?;
@@ -999,7 +1006,7 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
             "accounts_archived","account_remove_preview","account_remove","account_remove_status",
             "google_sync_start","google_sync_stop","google_sync_release","google_sync_status","google_sync_busy",
             "mail_filing","google_mail_mutation_status","google_calendar_write","google_calendar_reconcile","google_calendar_operation",
-            "google_calendar_resume","google_calendar_abandon","google_labels","google_labels_refresh","google_category_bind",
+            "google_calendar_resume","google_calendar_abandon","google_calendar_occurrence_read","google_labels","google_labels_refresh","google_category_bind",
             "google_draft_sync","google_draft_status","google_draft_reconcile","google_draft_resolve",
             "google_send","google_send_status","google_send_reconcile","google_send_abandon",
             "google_drafts_refresh","google_drafts_status","google_draft_sources","google_draft_source",

@@ -235,6 +235,45 @@ fn unresolved_instances_fail_closed_until_same_scope_public_master_is_bound() {
 }
 
 #[test]
+fn compact_master_context_preserves_private_cancelled_and_scope_rules_after_source_drop() {
+    let child = exception(false);
+    for (private, cancelled) in [(false, false), (true, false), (false, true)] {
+        let mut master = series(private);
+        master.cancelled = cancelled;
+        let expected = child.with_recurring_master(&master).unwrap();
+        let context = master.recurring_master_context().unwrap();
+        assert_eq!(context.key(), &master.key);
+        assert_eq!(context.private(), private);
+        assert_eq!(context.cancelled(), cancelled);
+        drop(master);
+        let actual = child.with_recurring_context(&context).unwrap();
+        assert_eq!(actual.source, child.source);
+        assert_eq!(actual.series_private, expected.series_private);
+        assert_eq!(actual.cancelled, expected.cancelled);
+        assert_eq!(
+            Access::WriterWithoutPrivateAccess.for_event(&actual),
+            Access::WriterWithoutPrivateAccess.for_event(&expected)
+        );
+        for dimension in 0..3 {
+            let mut wrong = child.clone();
+            match dimension {
+                0 => wrong.key.account = "different".into(),
+                1 => wrong.key.calendar = "different".into(),
+                _ => wrong.series_id = Some("different".into()),
+            }
+            assert_eq!(
+                wrong.with_recurring_context(&context).unwrap_err().code,
+                "scope_mismatch"
+            );
+        }
+    }
+    assert!(event(&source("ordinary", false))
+        .recurring_master_context()
+        .is_err());
+    assert!(child.recurring_master_context().is_err());
+}
+
+#[test]
 fn collection_projection_groups_instances_and_cancelled_parent_suppresses_children() {
     let master = series(true);
     let child = exception(false);

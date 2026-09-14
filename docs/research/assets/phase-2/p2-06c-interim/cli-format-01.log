@@ -1,0 +1,14 @@
+Diff in \\?\C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-cli\tests\arguments.rs:201:
+         vec!["google", "sync"],
+         vec!["google", "sync", "--gmail-project-units-per-minute", "0"],
+         vec!["google", "calendar-write", "--params-file", "absent.json"],
+-        vec!["google", "calendar-occurrence", "--params-file", "absent.json"],
++        vec![
++            "google",
++            "calendar-occurrence",
++            "--params-file",
++            "absent.json",
++        ],
+         vec!["google", "calendar-reconcile", "request"],
+         vec!["google", "calendar-operation", "request"],
+         vec!["google", "calendar-resume", "request"],

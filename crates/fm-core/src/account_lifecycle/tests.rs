@@ -590,7 +590,7 @@ fn schema_seventeen_upgrade_preserves_old_columns_receipts_and_future_refusal() 
             .db
             .pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))
             .unwrap(),
-        18
+        crate::SCHEMA_VERSION as i64
     );
     for (name, columns, rows) in before {
         let mut stmt = store
@@ -625,7 +625,10 @@ fn schema_seventeen_upgrade_preserves_old_columns_receipts_and_future_refusal() 
             .unwrap(),
         draft
     );
-    store.db.pragma_update(None, "user_version", 19).unwrap();
+    store
+        .db
+        .pragma_update(None, "user_version", crate::SCHEMA_VERSION + 1)
+        .unwrap();
     drop(store);
     assert_eq!(code(Store::open(dir.path())), "schema_mismatch");
 }

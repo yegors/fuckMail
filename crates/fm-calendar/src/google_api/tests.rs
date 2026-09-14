@@ -3,6 +3,8 @@ use super::*;
 use fm_google::transport::HttpFuture;
 use std::{collections::VecDeque, sync::Mutex};
 
+mod occurrences;
+
 struct FakeHttp {
     responses: Mutex<VecDeque<std::result::Result<HttpResponse, TransportError>>>,
     requests: Mutex<Vec<HttpRequest>>,

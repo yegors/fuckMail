@@ -1,0 +1,21 @@
+{
+  "command": [
+    "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\cargo\\bin\\cargo.EXE",
+    "fmt",
+    "-p",
+    "fm-cli",
+    "--",
+    "--check"
+  ],
+  "scope": "fm-cli,fm-ipc",
+  "dependency_test_sources_excluded": [
+    "fm-ipc"
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 0.26599999982863665,
+  "source_count": 19,
+  "source_changes": [],
+  "status": "passed",
+  "source_sha256": "26588ea41acf499230278dcea9702a9a8ef1b70314b0af90b584439904e7ff47",
+  "log_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

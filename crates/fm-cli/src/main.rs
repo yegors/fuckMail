@@ -192,6 +192,12 @@ enum Google {
     },
     /// Read back an uncertain Calendar operation without submitting it again.
     CalendarReconcile { request_id: String },
+    /// Resolve one recurring occurrence for editing; requires an active owned Google session.
+    /// Reads Google without creating a mutation or starting acquisition.
+    CalendarOccurrence {
+        #[arg(long)]
+        params_file: PathBuf,
+    },
     /// Inspect one retained Calendar outcome without provider access.
     CalendarOperation { request_id: String },
     /// Resume an operation that has never dispatched; requires an active sync session.
@@ -1114,14 +1120,20 @@ async fn run(args: &Args) -> Result<(), Failure> {
     } else {
         None
     };
-    let google_calendar_request = if let Command::Google {
-        command: Google::CalendarWrite { params_file },
-    } = &args.command
-    {
-        let value: Value = serde_json::from_slice(&read_input(params_file, 512 * 1024)?)
-            .map_err(|_| invalid("Calendar write must be JSON"))?;
+    let google_calendar_input = match &args.command {
+        Command::Google {
+            command: Google::CalendarWrite { params_file },
+        } => Some((params_file, 512 * 1024, "Calendar write")),
+        Command::Google {
+            command: Google::CalendarOccurrence { params_file },
+        } => Some((params_file, 16 * 1024, "Calendar occurrence lookup")),
+        _ => None,
+    };
+    let google_calendar_request = if let Some((params_file, limit, label)) = google_calendar_input {
+        let value: Value = serde_json::from_slice(&read_input(params_file, limit)?)
+            .map_err(|_| invalid(&format!("{label} must be JSON")))?;
         if !value.is_object() {
-            return Err(invalid("Calendar write must be a JSON object"));
+            return Err(invalid(&format!("{label} must be a JSON object")));
         }
         Some(value)
     } else {
@@ -1305,6 +1317,17 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     "google_calendar_reconcile",
                     scope,
                     json!({"request_id":request_id}),
+                )
+                .await?
+        }
+        Command::Google {
+            command: Google::CalendarOccurrence { .. },
+        } => {
+            client
+                .call(
+                    "google_calendar_occurrence_read",
+                    scope,
+                    google_calendar_request.unwrap(),
                 )
                 .await?
         }
