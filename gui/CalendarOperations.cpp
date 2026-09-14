@@ -24,14 +24,18 @@ void MailBackend::readCalendarOccurrence(const QVariantMap &selector, const QStr
     }
     const auto original = params.value("original_start").toObject();
     const auto series = params.value("series_id").toString();
-    if (series.isEmpty() || calendar.isEmpty() || original.isEmpty()) {
+    const auto scope = params.value("scope").toString(), action = params.value("action").toString();
+    const bool scoped = !scope.isEmpty();
+    if ((scoped && scope != "occurrence" && scope != "series" && scope != "following")
+        || (scoped && action != "edit" && action != "delete" && action != "rsvp")
+        || (!scoped && !action.isEmpty()) || series.isEmpty() || calendar.isEmpty() || original.isEmpty()) {
         emit calendarOccurrenceReadFinished(correlation, false, {}, "This occurrence has no complete source identity."); return;
     }
-    googleOperation("google_calendar_occurrence_read", account, params, [this, account, calendar, context, original, series, correlation](auto result, bool ok) {
+    googleOperation("google_calendar_occurrence_read", account, params, [this, account, calendar, context, original, series, correlation, scope, action, scoped](auto result, bool ok) {
         if (context != calendarOccurrenceContext(account, calendar)) {
             emit calendarOccurrenceReadFinished(correlation, false, {}, "The account or calendar changed. Check this occurrence again."); return;
         }
-        const auto occurrence = result.value("occurrence").toObject(), returnedOriginal = occurrence.value("original_start").toObject();
+        const auto occurrence = result.value(scoped ? "recurring" : "occurrence").toObject(), returnedOriginal = occurrence.value("original_start").toObject();
         bool sameOriginal = original.value("kind") == returnedOriginal.value("kind");
         if (original.value("kind") == "date") sameOriginal = sameOriginal && original.value("date") == returnedOriginal.value("date");
         else if (original.value("kind") == "zoned") {
@@ -40,13 +44,18 @@ void MailBackend::readCalendarOccurrence(const QVariantMap &selector, const QStr
             sameOriginal = sameOriginal && wanted.isValid() && actual.isValid() && wanted == actual;
         } else sameOriginal = false;
         const auto event = result.value("event").toObject();
+        const bool permitted = scoped ? event.value("can_" + action).toBool()
+            : event.value("can_edit").toBool() || event.value("can_delete").toBool();
+        if (scoped && scope == "series") sameOriginal = !occurrence.contains("original_start") && result.value("event_id") == series;
         if (ok && (result.value("account") != account || result.value("calendar_id") != calendar
             || occurrence.value("series_id") != series || !sameOriginal || occurrence.value("expected_master_etag").toString().isEmpty()
+            || (scoped && (occurrence.value("scope") != scope || occurrence.contains("reset_future_exceptions")))
+            || (scoped && scope == "series" && result.value("etag") != occurrence.value("expected_master_etag"))
             || result.value("event_id").toString().isEmpty() || result.value("etag").toString().isEmpty()
             || event.value("account") != account || event.value("calendar_id") != calendar
             || event.value("event_id") != result.value("event_id") || event.value("etag") != result.value("etag")
             || event.value("busy_only").toBool() || event.value("cancelled").toBool()
-            || (!event.value("can_edit").toBool() && !event.value("can_delete").toBool()))) {
+            || !permitted)) {
             ok = false; result = {{"message", "Google did not return an editable version of this exact occurrence."}};
         }
         emit calendarOccurrenceReadFinished(correlation, ok, ok ? result.toVariantMap() : QVariantMap{},
@@ -163,7 +172,7 @@ void MailBackend::calendarOperationAction(const QString &account, const QString 
         finishCalendarOperation(account, requestId, {{"code", "calendar_unavailable"}, {"message", "Reconnect to inspect the recorded change."}}, false); return;
     }
     if ((action == "resume" || action == "reconcile")
-        && (!accountCapability(account, "calendar_write") || !googleSyncState(account).value("active").toBool())) {
+        && (!accountCapability(account, action == "reconcile" ? "calendar_read" : "calendar_write") || !googleSyncState(account).value("active").toBool())) {
         finishCalendarOperation(account, requestId, {{"code", "calendar_sync_required"}, {"message", "Start Calendar sync for this Google account before continuing its change."}}, false); return;
     }
     QJsonObject params{{"request_id", requestId}};
@@ -199,6 +208,7 @@ void MailBackend::finishCalendarOperation(const QString &account, const QString 
     else if (state == "reconciled") message = "The observed Google event matches this change. Its original response and notification delivery remain unconfirmed. This change will not be sent again.";
     else if (state == "ready") message = "The change is ready but has not been sent. Resume sends this same change.";
     else if (state == "prepared") message = "The change is recorded but has not been sent. Resume sends this same change.";
+    else if (state == "partial") message = result["can_resume"].toBool() ? "The old series was trimmed. The replacement has not been attempted. Resume explicitly creates the recorded replacement." : "The following-series change is incomplete. Check its saved steps; do not repeat an uncertain write.";
     else if (state == "in_flight") message = "The recorded change is still in progress. Check its status before taking another action.";
     else if (state == "unknown") message = "Google's outcome is not confirmed. Check the outcome to reconcile this same change.";
     else if (state == "conflict") message = "The event changed on Google. Your submitted fields are retained; review the current version.";

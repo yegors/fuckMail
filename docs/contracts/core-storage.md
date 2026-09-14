@@ -1,6 +1,6 @@
 # Core and storage
 
-State: Draft · Revision: 25 · Updated: 2026-09-14 · Implementation: P2-06C has a Windows functional interim under D037 from 3242849, with paired generated-provider checks, actual schema-18→19 upgrade/refusal/reopen and final native 19/19. Core 25/Calendar 18/Mail UI 23/CLI 18/Quality 21/schema 19; Gmail 12/Platform 13/Search 5, fixtures 0/3/protocol 1 unchanged. [Source-bound evidence](../research/assets/phase-2/p2-06c-interim/logs-manifest.json) preserves failures and seven native notices. D031 performance, remaining Calendar work, current packages/CI and real-account acceptance stay open; readiness remains 0/9.
+State: Draft · Revision: 26 · Updated: 2026-09-14 · Implementation: D038/P2-Final is active from bfd7e05 under Core 26/Calendar 19/Mail UI 24/CLI 19/Platform 14/Quality 22/schema 20. Gmail 12/Search 5, fixtures 0/3/protocol 1 unchanged. Fresh live startup, complete recurring workflows/reminders, new reference UI and final package/performance gates are in progress; prior evidence remains source-specific and readiness stays 0/9.
 
 Revision 25 applies D037/P2-06C to schema 19. Preserve old journal/source bytes and version only new occurrence intents/dispatches as 3. Retain actual instance target, expected instance/master versions, typed parent/original identity, exact originalStartTime source, full instance baseline and opaque bounded master observation/fences. Master source comparison and normalization run off-writer under one admitted Calendar seat; finish/stage/start recheck current lifecycle, connection, permission, effective published source generation and Calendar revision. No full master/page source crosses a later quota wait. Reuse the existing journal and exact late-outcome/read-publication distinctions. Keep ordinary visible source selection strict and add a narrow effective-published cancellation input for an already-current parent, preserving observation metadata and supersession ordering. An unreadable or over-budget exception blocks its series. Consumers: Calendar 18/Mail UI 23/CLI 18/Quality 21; Gmail 12/Platform 13/Search 5 unchanged.
 
@@ -207,6 +207,12 @@ Proposed send states: draft, queued, submitting, accepted, failed, and acceptanc
 - Read/search during ingestion; retain every synchronized body and attachment. Track inventory, text/index and attachment completion separately; pause on low disk without silent history eviction.
 - Preserve authored drafts, staged attachments, manual corrections and queued operations across restart and index rebuild. An uncertain send cannot become an automatic duplicate submission.
 - Account removal clears its derived/model results and cancels its work; no search or view can expose data through another account. Coordinate handling of durable unsent work with Platform before removal ships.
+
+## D038 recurring journal and reminder storage
+
+Schema 20 adds nullable bounded `recurring_steps_json` to the existing `calendar_write_operations`; it retains the first following-step lease, outcome and receipt while the same row advances to its frozen replacement. Existing v1/v2/v3 intent, dispatch and receipt bytes remain unchanged. Only recurring requests select version four. The schema bump prevents older engines from interpreting a new two-step intent as an ordinary one-request operation. Metadata-only status exposes step identity and resume eligibility without loading full sources. Related unresolved series work fences new mutations, including legacy occurrence entry points; exact immutable replay retains priority.
+
+The same migration adds `calendar_reminder_receipts`, keyed by account/calendar/occurrence/exact start with shown/dismissed state and timestamp. This is local presentation acknowledgment, never a provider operation. Existing account lifecycle, cached-read policy, quota-before-memory ownership and permission/source publication guards remain unchanged. Following recovery cannot overwrite a newer or absent current master, and a fresh confirmed trim is cached before its never-attempted replacement is admitted.
 
 ## Open before implementation
 

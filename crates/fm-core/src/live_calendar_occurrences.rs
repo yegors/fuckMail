@@ -10,10 +10,18 @@ use serde_json::{json, Value};
 const SOURCE_LIMIT: usize = 256 * 1024;
 
 pub(crate) fn projection_selector(parent: &Event, source: &Event, row: &Value) -> Option<Value> {
+    projection_selector_with_role(parent, source, row, true)
+}
+pub(crate) fn projection_selector_with_role(
+    parent: &Event,
+    source: &Event,
+    row: &Value,
+    organizer: bool,
+) -> Option<Value> {
     if row["busy_only"] == true
         || parent.cancelled
         || source.cancelled
-        || parent.source["organizer"]["self"] != true
+        || (organizer && parent.source["organizer"]["self"] != true)
         || parent.source["locked"] == true
         || source.source["locked"] == true
         || !matches!(parent.source["eventType"].as_str(), None | Some("default"))

@@ -468,12 +468,13 @@ impl Store {
         let (state, generation, scopes) =
             row.ok_or_else(|| err("not_found", "Google account is not connected"))?;
         let scopes: std::collections::BTreeSet<String> = serde_json::from_str(&scopes)?;
-        let scope = match kind {
-            "catalog" => "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
-            "busy" => "https://www.googleapis.com/auth/calendar.events.freebusy",
-            _ => "https://www.googleapis.com/auth/calendar.events",
+        let scopes = fm_google::auth::ScopeSet::new(&scopes);
+        let granted = match kind {
+            "catalog" => scopes.calendar_catalog_read(),
+            "busy" => scopes.calendar_free_busy(),
+            _ => scopes.calendar_events_read(),
         };
-        if state != "connected" || !scopes.contains(scope) {
+        if state != "connected" || !granted {
             return Err(err(
                 "permission_denied",
                 "Google Calendar scope or connection is unavailable",

@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QDir>
 #include <QGuiApplication>
+#include <QMouseEvent>
 #include <QFontDatabase>
 #include <QJSValue>
 #include <QQmlApplicationEngine>
@@ -44,6 +45,10 @@ class CalendarBackendProbe : public QObject {
     Q_PROPERTY(bool calendarReady MEMBER calendarReady CONSTANT)
     Q_PROPERTY(bool timelineReady MEMBER calendarReady CONSTANT)
     Q_PROPERTY(QString todayDate MEMBER todayDate CONSTANT)
+    Q_PROPERTY(QString calendarDate MEMBER calendarDate NOTIFY eventsChanged)
+    Q_PROPERTY(QString calendarFrom MEMBER calendarFrom NOTIFY eventsChanged)
+    Q_PROPERTY(QString calendarView MEMBER calendarView NOTIFY eventsChanged)
+    Q_PROPERTY(QString calendarCoverage MEMBER calendarCoverage CONSTANT)
     Q_PROPERTY(double nowHour MEMBER nowHour CONSTANT)
     Q_PROPERTY(QVariantList calendarOperations MEMBER calendarOperations NOTIFY calendarOperationsChanged)
     Q_PROPERTY(bool calendarOperationsLoading MEMBER calendarOperationsLoading NOTIFY calendarOperationsChanged)
@@ -53,10 +58,11 @@ class CalendarBackendProbe : public QObject {
     Q_PROPERTY(QVariantList googleLabels MEMBER googleLabels NOTIFY googleLabelsChanged)
     Q_PROPERTY(QVariantMap googleLabelState MEMBER googleLabelState NOTIFY googleLabelsChanged)
 public:
-    bool syntheticProfile = false, connected = true, capability = true, active = true;
+    bool syntheticProfile = false, connected = true, capability = true, readCapability = false, active = true;
     bool calendarReady = true, calendarOperationsLoading = false, calendarOperationsHasMore = false;
     double nowHour = 8;
     QString todayDate = "2026-09-13", calendarOperationStatus;
+    QString calendarDate = "2026-09-13", calendarFrom = "2026-09-13", calendarView = "week", calendarCoverage;
     QString account = "alpha";
     QVariantList accounts{QVariantMap{{"id", "alpha"}}, QVariantMap{{"id", "beta"}}};
     QVariantMap googleSync{{"alpha", QVariantMap{{"active", true}}}};
@@ -72,7 +78,9 @@ public:
         QVariantMap{{"id", "Label_gone"}, {"present", false}, {"selectable", false}},
         QVariantMap{{"id", "Label_taken"}, {"name", "Taken"}, {"present", true}, {"selectable", true}, {"category_id", "other"}}};
     QVariantMap googleLabelState{{"account", "alpha"}, {"catalog_revision", 1}, {"available", true}, {"connection_state", "connected"}, {"stale_connection", false}, {"next_after", "Label_new"}};
-    QVariantMap lastWrite, lastAction;
+    QVariantMap lastWrite, lastAction, signaledResponse;
+    QObject *responseControl = nullptr;
+    Q_SLOT void captureResponseSignal() { signaledResponse = responseControl ? plain(responseControl->property("pendingResponse")).toMap() : QVariantMap{}; }
     int writes = 0, actions = 0, refreshes = 0;
     int occurrenceReads = 0;
     QVariantMap lastOccurrenceSelector;
@@ -80,7 +88,7 @@ public:
     int occurrenceEpoch = 1;
     int labelCacheReads = 0, labelRefreshes = 0, labelBindings = 0;
     QVariantMap lastLabelBinding, lastLabelRead;
-    Q_INVOKABLE bool accountCapability(const QString &account, const QString &name) const { return capability && account == "alpha" && (name == "calendar_write" || name == "mail_read" || name == "mail_write"); }
+    Q_INVOKABLE bool accountCapability(const QString &account, const QString &name) const { return (capability || (readCapability && name == "calendar_read")) && account == "alpha" && (name == "calendar_read" || name == "calendar_write" || name == "mail_read" || name == "mail_write"); }
     Q_INVOKABLE QVariantMap googleSyncState(const QString &account) const { return {{"active", active && account == "alpha"}}; }
     Q_INVOKABLE QString calendarDateTime(const QString &date, const QString &time, const QString &) const { return date + "T" + time + ":00-04:00"; }
     Q_INVOKABLE void calendarWrite(const QVariantMap &value) { lastWrite = value; ++writes; }
@@ -96,6 +104,12 @@ public:
     }
     Q_INVOKABLE void cancelGoogleOperation(const QString &account, const QString &id) { lastAction = {{"account", account}, {"request_id", id}, {"action", "cancel"}}; ++actions; }
     Q_INVOKABLE void refresh() { ++refreshes; }
+    Q_INVOKABLE void remember(const QString &, const QVariant &) {}
+    Q_INVOKABLE void setCalendarView(const QString &view) { calendarView = view; emit eventsChanged(); }
+    Q_INVOKABLE void setCalendarDate(const QString &date) { calendarDate = calendarFrom = date; emit eventsChanged(); }
+    Q_INVOKABLE void showCalendarToday() { setCalendarDate(todayDate); }
+    Q_INVOKABLE void moveCalendar(int) {}
+    Q_INVOKABLE void joinCalendarEvent(const QVariantMap &) {}
     Q_INVOKABLE void loadCalendarOperations() {}
     Q_INVOKABLE void loadMoreCalendarOperations() {}
     Q_INVOKABLE void retryCalendarOperation(const QString &account, const QString &id) { lastAction = {{"account", account}, {"request_id", id}, {"action", "local_retry"}}; ++actions; }
@@ -158,7 +172,7 @@ int main(int argc, char **argv) {
         require(QFontDatabase::addApplicationFont(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/fonts/" + font) >= 0, "Load actual bundled UI fonts");
     app.setFont(QFont("Geist", 10));
     QTemporaryDir copy; require(copy.isValid(), "Temporary QML directory");
-    for (const auto name : {"Theme.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "CalendarOccurrenceRead.qml", "EventEditor.qml", "EventDetails.qml", "CalendarOperations.qml", "GoogleLabelSetup.qml"})
+    for (const auto name : {"Theme.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "FmTextField.qml", "CalendarOccurrenceRead.qml", "EventEditor.qml", "EventDetails.qml", "CalendarOperations.qml", "GoogleLabelSetup.qml", "CalendarView.qml", "CalendarEventList.qml", "StartupOverlay.qml"})
         require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/" + name, copy.filePath(name)), "Copy actual QML control");
     QFile module(copy.filePath("qmldir")); require(module.open(QIODevice::WriteOnly), "QML singleton directory");
     module.write("singleton Theme 1.0 Theme.qml\n"); module.close();
@@ -189,6 +203,8 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     require(!engine.rootObjects().isEmpty(), "Actual Calendar QML loads");
     auto root = engine.rootObjects().first();
     auto editor = named(root, "eventEditor"), details = named(root, "eventDetails"), history = named(root, "calendarOperations");
+    backend.responseControl = details;
+    require(QObject::connect(details, SIGNAL(pendingResponseChanged()), &backend, SLOT(captureResponseSignal())), "Observe exact pending response property signal");
     auto title = named(root, "eventTitle"), save = named(root, "eventSaveButton");
     const auto openEditor = [&](QVariantMap value) { editor->setProperty("editEvent", value); call(editor, "openForDate", "2026-09-13"); settle([&] { return editor->property("opened").toBool(); }); };
     const auto original = event();
@@ -560,10 +576,192 @@ ApplicationWindow { width: 1100; height: 850; visible: true
         window->resize(1100, 850);
     }
 
+    // D038: the action scope is resolved before any write. A following split
+    // has a separate explicit consequence confirmation and typed recovery.
+    auto scopedSource = recurring;
+    scopedSource["recurring_selector"] = scopedSource.take("occurrence_selector"); scopedSource["can_resolve_occurrence"] = false;
+    scopedSource["recurring_scopes"] = QVariantMap{{"edit", QStringList{"occurrence", "series", "following"}},
+        {"delete", QStringList{"occurrence", "series", "following"}}, {"rsvp", QStringList{"occurrence", "series"}}};
+    backend.events = {scopedSource}; emit backend.eventsChanged();
+    const auto scopedResult = [&](const QString &scope, const QString &action) {
+        auto result = resolved("instance-v4", "master-v4"); result.remove("occurrence");
+        QVariantMap context{{"scope", scope}, {"series_id", "series"}, {"expected_master_etag", "master-v4"}};
+        if (scope != "series") context["original_start"] = originalStart;
+        result["recurring"] = context;
+        auto source = result["event"].toMap(); source["recurrence"] = QStringList{"RRULE:FREQ=DAILY;COUNT=6"};
+        source["can_rsvp"] = action == "rsvp";
+        if (scope == "series") { result["event_id"] = "series"; result["etag"] = "master-v4"; source["event_id"] = "series"; source["etag"] = "master-v4"; }
+        result["event"] = source;
+        result["following_notice"] = "Google resets later exceptions. Earlier exceptions remain. A replacement Google Meet uses a new meeting.";
+        return result;
+    };
+    const auto openScope = [&](const QString &scope, const char *button) {
+        call(details, "openAt", scopedSource, QVariant{}); settle([&] { return details->property("opened").toBool(); });
+        details->setProperty("recurringScope", scope); call(named(root, button), "clicked");
+        require(backend.lastOccurrenceSelector["scope"] == scope && backend.lastOccurrenceSelector["account"] == "alpha", "Scope read freezes action and event account");
+    };
+    for (const auto scope : {QString("occurrence"), QString("series")}) {
+        openScope(scope, "eventEditButton");
+        emit backend.calendarOccurrenceReadFinished(backend.lastOccurrenceCorrelation, true, scopedResult(scope, "edit"), {});
+        settle([&] { return editor->property("opened").toBool(); });
+        title->setProperty("text", "Scoped authored title"); call(editor, "save"); frozen = backend.lastWrite;
+        require(frozen["recurring"].toMap()["scope"] == scope && !frozen.contains("occurrence")
+            && frozen["event_id"] == (scope == "series" ? "series" : "opaque-instance")
+            && frozen["fields"].toMap() == QVariantMap{{"title", "Scoped authored title"}}, "Scoped edits retain authoritative target and omit untouched recurrence/source fields");
+        backend.complete(true, resultFor(frozen, "acknowledged")); settle([&] { return !editor->property("visible").toBool(); });
+    }
+    openScope("following", "eventEditButton"); const auto heldScope = backend.lastOccurrenceCorrelation;
+    details->setProperty("recurringScope", "series");
+    emit backend.calendarOccurrenceReadFinished(heldScope, true, scopedResult("following", "edit"), {});
+    require(!editor->property("visible").toBool() && details->property("feedback").toString().contains("changed"), "Scope change invalidates a held lookup before any editor transition");
+    call(details, "close"); settle([&] { return !details->property("visible").toBool(); });
+    openScope("following", "eventEditButton");
+    emit backend.calendarOccurrenceReadFinished(backend.lastOccurrenceCorrelation, true, scopedResult("following", "edit"), {});
+    settle([&] { return editor->property("opened").toBool(); });
+    require(!named(root, "eventRepeat")->property("visible").toBool() && named(root, "eventRetainedRecurrence")->property("visible").toBool(), "Following preserves the existing rule without offering unsupported recurrence changes");
+    title->setProperty("text", "Following authored title"); const int beforeFollowing = backend.writes; call(editor, "save");
+    auto followingDialog = named(root, "eventFollowingConfirmation"); settle([&] { return followingDialog->property("opened").toBool(); });
+    require(backend.writes == beforeFollowing, "Following save does not trim before explicit consequence confirmation");
+    call(followingDialog, "reject"); require(title->property("text") == "Following authored title", "Declining split confirmation retains authored text");
+    call(editor, "save"); settle([&] { return followingDialog->property("opened").toBool(); }); call(followingDialog, "accept"); frozen = backend.lastWrite;
+    require(frozen["recurring"].toMap()["reset_future_exceptions"] == true
+        && frozen["recurring"].toMap()["original_start"].toMap() == originalStart, "Confirmed following write carries exact original and exception-reset choice");
+    auto partial = resultFor(frozen, "partial", 41); partial["can_resume"] = false;
+    partial["steps"] = QVariantList{QVariantMap{{"step", "trim"}, {"state", "acknowledged"}}, QVariantMap{{"step", "replacement"}, {"state", "not_attempted"}}};
+    backend.complete(false, partial);
+    require(editor->property("feedback").toString().contains("Old series trim: accepted by Google") && editor->property("feedback").toString().contains("Replacement: not attempted"), "Partial feedback identifies both provider steps without asserting notification delivery");
+    call(editor, "save");
+    require(backend.lastAction["action"] == "check" && backend.writes == beforeFollowing + 1, "Partial result without never-attempted proof cannot resume");
+    partial["can_resume"] = true; backend.complete(false, partial);
+    backend.active = false; emit backend.googleSyncChanged();
+    require(!save->property("enabled").toBool() && editor->property("canAbandon").toBool(), "Partial Resume needs an active owner while local abandonment stays available");
+    backend.active = true; emit backend.googleSyncChanged(); call(editor, "save");
+    require(backend.lastAction["action"] == "resume" && backend.lastAction["request_id"] == frozen["request_id"] && backend.writes == beforeFollowing + 1, "Explicit partial Resume continues only recorded never-attempted work");
+    auto replacementUnknown = resultFor(frozen, "unknown", 42); replacementUnknown["can_resume"] = false;
+    replacementUnknown["steps"] = QVariantList{QVariantMap{{"step", "trim"}, {"state", "acknowledged"}}, QVariantMap{{"step", "replacement"}, {"state", "unknown"}}};
+    backend.complete(false, replacementUnknown);
+    require(editor->property("feedback").toString().contains("Old series trim: accepted by Google") && editor->property("feedback").toString().contains("Replacement: result unconfirmed"), "Unknown replacement retains known trim evidence");
+    backend.capability = false; emit backend.accountsChanged();
+    require(!save->property("enabled").toBool(), "Reconciliation cannot proceed without current detail-read grant");
+    backend.readCapability = true; emit backend.accountsChanged();
+    require(save->property("enabled").toBool(), "Unknown outcome remains inspectable with read-only Calendar grant");
+    call(editor, "save"); require(backend.lastAction["action"] == "reconcile" && backend.writes == beforeFollowing + 1, "Unknown replacement only performs read reconciliation");
+    backend.capability = true; backend.readCapability = false; emit backend.accountsChanged();
+    backend.complete(true, resultFor(frozen, "acknowledged", 43)); settle([&] { return !editor->property("visible").toBool(); });
+    openScope("following", "eventScopedCancel");
+    require(backend.lastOccurrenceSelector["action"] == "delete", "Cancellation resolves its own permitted action");
+    emit backend.calendarOccurrenceReadFinished(backend.lastOccurrenceCorrelation, true, scopedResult("following", "delete"), {});
+    settle([&] { return deleteDialog->property("opened").toBool(); }); call(deleteDialog, "accept"); frozen = backend.lastWrite;
+    require(frozen["kind"] == "delete" && frozen["recurring"].toMap()["reset_future_exceptions"] == true, "Following cancellation requires exact reset confirmation");
+    backend.complete(true, resultFor(frozen, "acknowledged")); settle([&] { return !editor->property("visible").toBool(); });
+    openScope("series", "eventRsvp-accepted"); const int beforeRsvpScope = backend.writes;
+    require(backend.lastOccurrenceSelector["action"] == "rsvp", "Recurring RSVP first resolves participant eligibility");
+    emit backend.calendarOccurrenceReadFinished(backend.lastOccurrenceCorrelation, true, scopedResult("series", "rsvp"), {});
+    frozen = backend.lastWrite;
+    require(backend.writes == beforeRsvpScope + 1 && frozen["kind"] == "rsvp" && frozen["event_id"] == "series"
+        && frozen["recurring"].toMap()["scope"] == "series", "Series RSVP uses the verified master and captured scope");
+    require(backend.signaledResponse == frozen, "Pending RSVP property signal contains the complete actual scoped request before dispatch");
+    backend.complete(false, resultFor(frozen, "unknown", 44));
+    backend.capability = false; backend.readCapability = true; emit backend.accountsChanged();
+    require(named(root, "eventRsvpResolve")->property("enabled").toBool(), "Scoped RSVP outcome remains inspectable after write grant loss");
+    call(named(root, "eventRsvpResolve"), "clicked"); require(backend.lastAction["action"] == "reconcile", "Actual RSVP recovery control selects read reconciliation");
+    backend.capability = true; backend.readCapability = false; emit backend.accountsChanged();
+    backend.complete(true, resultFor(frozen, "acknowledged")); call(details, "close"); settle([&] { return !details->property("visible").toBool(); });
+    openEditor({}); title->setProperty("text", "Repeating new event");
+    auto repeat = named(root, "eventRepeat"); repeat->setProperty("currentIndex", 1); require(QMetaObject::invokeMethod(repeat, "activated", Q_ARG(int, 1)), "Select native Repeat control");
+    named(root, "eventRepeatInterval")->setProperty("text", "2"); named(root, "eventRepeatCount")->setProperty("text", "5"); call(editor, "save"); frozen = backend.lastWrite;
+    require(frozen["fields"].toMap()["recurrence"].toStringList() == QStringList{"RRULE:FREQ=DAILY;INTERVAL=2;COUNT=5"}, "Repeat control emits the shared common-rule array");
+    backend.complete(true, resultFor(frozen, "acknowledged")); settle([&] { return !editor->property("visible").toBool(); });
+
+    if (!captureDir.isEmpty()) {
+        auto window = qobject_cast<QQuickWindow *>(root); window->resize(390, 720);
+        const auto retainNew = [&](const QString &name) {
+            QElapsedTimer paint; paint.start(); while (paint.elapsed() < 120) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            const auto file = QDir(captureDir).filePath(name + ".png"); require(!QFile::exists(file) && window->grabWindow().save(file), "Preserve new reference controls without overwrite");
+        };
+        for (const auto theme : {"graphite", "paper", "harbour"}) for (const auto size : {"default", "large"}) {
+            root->setProperty("testTheme", theme); root->setProperty("testTextSize", size);
+            call(details, "openAt", scopedSource, QVariant{}); settle([&] { return details->property("opened").toBool(); });
+            details->setProperty("recurringScope", "following"); retainNew(QString("recurring-scope-%1-%2").arg(theme, size));
+            call(named(root, "eventEditButton"), "clicked"); emit backend.calendarOccurrenceReadFinished(backend.lastOccurrenceCorrelation, true, scopedResult("following", "edit"), {});
+            settle([&] { return editor->property("opened").toBool(); }); title->setProperty("text", "Following planning session");
+            call(editor, "save"); settle([&] { return followingDialog->property("opened").toBool(); });
+            retainNew(QString("following-confirmation-%1-%2").arg(theme, size));
+            auto confirm = qobject_cast<QQuickItem *>(named(root, "eventConfirmFollowing"));
+            require(confirm && QRectF(0, 0, window->width(), window->height()).contains(confirm->mapRectToScene(confirm->boundingRect())), "Following confirmation fits narrow large-font window");
+            call(followingDialog, "reject"); call(editor, "close"); settle([&] { return !editor->property("visible").toBool(); });
+            openEditor({}); title->setProperty("text", "Weekly planning"); repeat->setProperty("currentIndex", 2);
+            require(QMetaObject::invokeMethod(repeat, "activated", Q_ARG(int, 2)), "Show recurring-create controls");
+            auto scroll = named(root, "eventFormScroll")->property("contentItem").value<QObject *>();
+            scroll->setProperty("contentY", std::max(0., scroll->property("contentHeight").toDouble() - scroll->property("height").toDouble()));
+            retainNew(QString("repeat-create-%1-%2").arg(theme, size));
+            call(editor, "close"); settle([&] { return !editor->property("visible").toBool(); });
+        }
+        window->resize(1100, 850);
+    }
     backend.syntheticProfile = true; emit backend.modeChanged(); openEditor({});
     title->setProperty("text", "Synthetic event"); named(root, "eventAttendees")->setProperty("text", "guest@example.test"); call(editor, "save"); frozen = backend.lastWrite;
     require(frozen["fields"].toMap().contains("conference_url") && frozen["fields"].toMap()["attendees"].toStringList().contains("guest@example.test"), "Synthetic form retains Phase 1 attendees and complete fields");
     auto local = resultFor(frozen, "fake_acknowledged"); backend.complete(true, local); settle([&] { return !editor->property("visible").toBool(); });
+    backend.syntheticProfile = false; emit backend.modeChanged(); backend.account = "alpha"; emit backend.accountChanged();
+    auto visualA = event(); visualA["start_display"] = "Sun 13 Sep 09:00"; visualA["time_display"] = "09:00"; visualA["end_display"] = "10:00"; visualA["day_index"] = 0; visualA["start_hour"] = 9.; visualA["duration_hours"] = 1.;
+    auto visualB = visualA; visualB["id"] = "beta:event"; visualB["account"] = "beta"; visualB["event_id"] = "beta-event";
+    backend.events = {visualA, visualB}; emit backend.eventsChanged();
+    QQmlApplicationEngine visualEngine; visualEngine.rootContext()->setContextProperty("backend", &backend);
+    QObject::connect(&visualEngine, &QQmlEngine::warnings, [&](const QList<QQmlError> &errors) { qmlError = true; for (const auto &error : errors) qWarning() << error.toString(); });
+    visualEngine.loadData(R"QML(import QtQuick
+import QtQuick.Controls
+ApplicationWindow { width: 1100; height: 850; visible: true
+    property string testTheme: "graphite"
+    color: Theme.canvas
+    Binding { target: Theme; property: "themeId"; value: testTheme }
+    CalendarView { anchors.fill: parent }
+    StartupOverlay { objectName: "readyLoader"; anchors.fill: parent }
+    StartupOverlay { objectName: "failedLoader"; anchors.fill: parent; startupFailed: true }
+})QML", QUrl::fromLocalFile(copy.filePath("VisualTest.qml")));
+    require(!visualEngine.rootObjects().isEmpty(), "Actual calendar and startup component load");
+    auto visualRoot = visualEngine.rootObjects().first(); auto visualWindow = qobject_cast<QQuickWindow *>(visualRoot);
+    auto loader = named(visualRoot, "readyLoader"); require(loader->property("visible").toBool(), "Startup stays covered before hydration");
+    require(!named(visualRoot, "failedLoader")->property("visible").toBool(), "Startup failure reveals existing recovery immediately");
+    const auto retainVisual = [&](const QString &name) {
+        QElapsedTimer paint; paint.start(); while (paint.elapsed() < 120) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        const auto file = QDir(captureDir).filePath(name + ".png"); require(!QFile::exists(file) && visualWindow->grabWindow().save(file), "Preserve startup/grid capture without overwrite");
+    };
+    if (!captureDir.isEmpty()) {
+        QElapsedTimer animation; animation.start(); while (animation.elapsed() < 1500) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        for (const auto theme : {"graphite", "paper", "harbour"}) { visualRoot->setProperty("testTheme", theme); retainVisual(QString("startup-%1").arg(theme)); }
+    }
+    loader->setProperty("startupReady", true); settle([&] { return !loader->property("visible").toBool(); });
+    loader->setProperty("startupReady", false); require(!loader->property("visible").toBool(), "Later queries cannot replay startup animation");
+    auto calendar = named(visualRoot, "calendarWorkspace");
+    require(plain(calendar->property("visibleEvents")).toList().size() == 2, "Calendar defaults to combined permitted projection");
+    const auto savedSelection = backend.preferences;
+    call(named(visualRoot, "calendarCombinedToggle"), "clicked");
+    require(plain(calendar->property("visibleEvents")).toList().size() == 1 && backend.preferences == savedSelection, "Account-only display preserves saved calendar selection");
+    backend.account = "beta"; emit backend.accountChanged();
+    require(plain(calendar->property("visibleEvents")).toList().first().toMap()["account"] == "beta", "Account-only display follows explicit selected account");
+    backend.account = "alpha"; emit backend.accountChanged(); call(named(visualRoot, "calendarCombinedToggle"), "clicked");
+    auto slot = qobject_cast<QQuickItem *>(named(visualRoot, "calendarSlot-0")); auto gridEditor = named(visualRoot, "eventEditor");
+    const auto nativeMouse = [&](QEvent::Type type, const QPointF &point, Qt::MouseButton button, Qt::MouseButtons buttons) {
+        QMouseEvent mouse(type, point, visualWindow->mapToGlobal(point.toPoint()), button, buttons, Qt::NoModifier); QCoreApplication::sendEvent(visualWindow, &mouse);
+    };
+    settle([&] { return slot->width() > 0 && slot->height() > 0; });
+    const auto hh = calendar->property("hourHeight").toDouble();
+    const auto startPoint = slot->mapToScene({slot->width() / 2, hh * 12 + 2});
+    const auto endPoint = slot->mapToScene({slot->width() / 2, hh * 13.5});
+    nativeMouse(QEvent::MouseButtonPress, startPoint, Qt::LeftButton, Qt::LeftButton);
+    nativeMouse(QEvent::MouseMove, endPoint, Qt::NoButton, Qt::LeftButton);
+    require(named(visualRoot, "calendarRangePreview")->property("visible").toBool(), "Native empty-grid drag paints range before opening editor");
+    if (!captureDir.isEmpty()) for (const auto theme : {"graphite", "paper", "harbour"}) { visualRoot->setProperty("testTheme", theme); retainVisual(QString("calendar-range-%1").arg(theme)); }
+    nativeMouse(QEvent::MouseButtonRelease, endPoint, Qt::LeftButton, Qt::NoButton);
+    settle([&] { return gridEditor->property("opened").toBool(); });
+    require(named(visualRoot, "eventStartTime")->property("text") == "12:00" && named(visualRoot, "eventEndTime")->property("text") == "13:30", "Actual range drag transfers snapped start and end to native editor");
+    call(gridEditor, "close"); settle([&] { return !gridEditor->property("visible").toBool(); });
+    call(calendar, "beginRange", 0, hh * 12); backend.account = "beta"; emit backend.accountChanged(); call(calendar, "finishRange");
+    require(!gridEditor->property("opened").toBool(), "Account change cancels range intent before editor creation");
+    require(QMetaObject::invokeMethod(gridEditor, "setSlotRange", Q_ARG(QVariant, "2026-09-13"), Q_ARG(QVariant, 23.5), Q_ARG(QVariant, 24.)), "Set explicit midnight range");
+    require(named(visualRoot, "eventEndDate")->property("text") == "2026-09-14" && named(visualRoot, "eventEndTime")->property("text") == "00:00", "Midnight drag creates a real next-day endpoint");
+    visualWindow->close();
     require(!qmlError, "Actual controls run without QML binding errors");
     qInfo() << "Calendar and label controls passed: partial live patches, frozen scope, recovery, sync/capability gates, delete placement, RSVP projection, cached-only labels, offline local binding, explicit remap and synthetic compatibility.";
 }

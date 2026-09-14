@@ -12,7 +12,7 @@ fn engine() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_fm-engine"))
 }
 async fn client(profile: &Path) -> Client {
-    Client::connect(profile, Some(&engine()))
+    Client::connect_demo(profile, Some(&engine()))
         .await
         .expect("start/connect actual engine")
 }
@@ -49,16 +49,17 @@ async fn wait_stopped(profile: &Path) {
 async fn live_profile_stays_empty_through_shared_clients_and_owner_restart() {
     let root = tempfile::tempdir().unwrap();
     let profile = root.path().join("live-profile");
-    let mut owner = Client::connect_live(&profile, Some(&engine()))
-        .await
-        .unwrap();
+    let mut owner = Client::connect(&profile, Some(&engine())).await.unwrap();
     let status = ok(owner.call("status", None, json!({})).await.unwrap());
     assert_eq!(status["profile_kind"], "live");
     assert_eq!(status["fixture_revision"], 0);
+    assert!(Client::connect_demo(&profile, Some(&engine()))
+        .await
+        .is_err());
     // This advertises the live interface. The empty account list below still
     // proves initialization grants no account a submission capability.
     assert_eq!(status["capabilities"]["send"], true);
-    let mut observer = client(&profile).await;
+    let mut observer = Client::connect(&profile, Some(&engine())).await.unwrap();
     assert_eq!(
         ok(observer.call("accounts", None, json!({})).await.unwrap())["accounts"],
         json!([])
@@ -70,7 +71,7 @@ async fn live_profile_stays_empty_through_shared_clients_and_owner_restart() {
     );
     drop(observer);
     wait_stopped(&profile).await;
-    let mut reopened = client(&profile).await;
+    let mut reopened = Client::connect(&profile, Some(&engine())).await.unwrap();
     assert_eq!(
         ok(reopened.call("accounts", None, json!({})).await.unwrap())["accounts"],
         json!([])
@@ -81,6 +82,9 @@ async fn live_profile_stays_empty_through_shared_clients_and_owner_restart() {
     );
     drop(reopened);
     wait_stopped(&profile).await;
+    assert!(Client::connect_demo(&profile, Some(&engine()))
+        .await
+        .is_err());
 }
 
 #[tokio::test]
@@ -124,6 +128,7 @@ impl Drop for OwnedEngine {
 async fn owned_engine(profile: &Path) -> OwnedEngine {
     let mut process = OwnedEngine(
         Command::new(engine())
+            .arg("--demo-profile")
             .arg("--profile")
             .arg(profile)
             .stdin(Stdio::null())

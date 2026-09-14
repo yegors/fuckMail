@@ -374,7 +374,7 @@ impl Store {
             let active=self.account_lifecycle(account)?["state"]=="active";
             let connected=state=="connected" && active;
             let mail_write=active && fm_google::auth::ScopeSet::new(&scopes).mail_write();
-            let calendar_write=connected && scopes.contains("https://www.googleapis.com/auth/calendar.events");
+            let calendar_write=connected && fm_google::auth::ScopeSet::new(&scopes).calendar_events_write();
             Ok(json!({"connection_state":state,"granted_scopes":scopes,
                 "capabilities":{"mail_read":active,"drafts":active,"mail_write":mail_write,"mail_delivery":mail_write && connected,"send":mail_write && connected,"calendar_read":active,"calendar_write":calendar_write},
                 "sync":{"state":if !started {"not_started"} else if coverage.offline_complete {"caught_up"} else {"incomplete"},"inventory_complete":coverage.inventory_complete,"delta_current":coverage.delta_current,"offline_complete":coverage.offline_complete,"observed_messages":coverage.observed,"retained_sources":coverage.retained_sources,"indexed_messages":coverage.indexed,"unavailable_messages":coverage.unavailable}}))

@@ -583,7 +583,7 @@ void GuiCompositionSelfTest::step() {
             || m_backend.draft()["body"]!="New local text typed while the import receipt is delayed") {
             finish("Cached query did not progress independently or delayed import replaced new text."); return;
         }
-        if (!item("captureReply") || item("captureReply")->isEnabled() || !item("draftDiscardButton") || item("draftDiscardButton")->isEnabled()) {
+        if (!item("captureReply") || item("captureReply")->isEnabled() || !item("discardReply") || item("discardReply")->isEnabled()) {
             finish("Native capture/discard stayed enabled before the selected attachment outcome was resolved."); return;
         }
         // Exercise the production cancellation path used by Pause, without

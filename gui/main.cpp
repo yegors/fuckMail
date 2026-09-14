@@ -1,4 +1,5 @@
 #include "MailBackend.h"
+#include "NotificationPresenter.h"
 #include "GuiSelfTest.h"
 #include "GuiCalendarSelfTest.h"
 #include "GuiCompositionSelfTest.h"
@@ -17,7 +18,7 @@
 #include <QFile>
 #include <QFont>
 #include <QFontDatabase>
-#include <QGuiApplication>
+#include <QApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
@@ -35,7 +36,7 @@ int main(int argc, char **argv) {
     if (!qEnvironmentVariableIsSet("QT_D3D_NO_VBLANK_THREAD"))
         qputenv("QT_D3D_NO_VBLANK_THREAD", "1");
 #endif
-    QGuiApplication app(argc, argv);
+    QApplication app(argc, argv);
     app.setApplicationName("fuckMail");
     app.setOrganizationName("fuckMail");
     app.setApplicationVersion("0.1.0");
@@ -48,6 +49,7 @@ int main(int argc, char **argv) {
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOption({"profile", "Local profile directory.", "directory"});
     parser.addOption({"live-profile", "Create or open an explicitly selected live profile without demo content."});
+    parser.addOption({"demo-profile", "Explicitly open synthetic demo content in a separate profile."});
     parser.addOption({"self-test-live-empty", "Verify a new empty live profile and close without connecting Google."});
     parser.addOption({"engine", "Path to fm-engine.", "executable"});
     parser.addOption({"smoke", "Exit successfully after the real engine supplies a conversation."});
@@ -114,6 +116,7 @@ int main(int argc, char **argv) {
         || parser.isSet("smoke") || parser.isSet("screenshot") || parser.isSet("live-profile")
         || parser.isSet("self-test-live-empty") || parser.isSet("benchmark-search-output")
         || parser.isSet("benchmark-navigation-output") || parser.isSet("benchmark-resize-output"))) parser.showHelp(1);
+    if (parser.isSet("demo-profile") && (parser.isSet("live-profile") || parser.isSet("self-test-live-empty") || lifecycleTest || calendarTest || actionsTest || snapshotTest)) parser.showHelp(1);
     if (parser.isSet("live-profile") && (!parser.isSet("profile") || parser.isSet("self-test") || parser.isSet("fixture-clock"))) parser.showHelp(1);
     if (parser.isSet("self-test-live-empty") && (parser.isSet("self-test") || parser.isSet("fixture-clock") || parser.isSet("smoke") || parser.isSet("screenshot"))) parser.showHelp(1);
     if (parser.isSet("self-test-startup-workspace") && (!parser.isSet("smoke") || !parser.isSet("profile") || parser.isSet("self-test")
@@ -130,6 +133,8 @@ int main(int argc, char **argv) {
     if (!QStringList{"General", "Accounts", "Local model", "Mail", "Calendar", "Shortcuts", "Diagnostics"}.contains(parser.value("screenshot-settings-page"))) parser.showHelp(1);
     if (parser.isSet("screenshot-date") && !QDate::fromString(parser.value("screenshot-date"), Qt::ISODate).isValid()) parser.showHelp(1);
     auto profile = parser.value("profile");
+    const bool demoProfile = parser.isSet("demo-profile") || parser.isSet("self-test")
+        || parser.isSet("smoke") || parser.isSet("fixture-clock");
     std::unique_ptr<QTemporaryDir> smokeProfile;
     if (parser.isSet("self-test") || (profile.isEmpty() && (parser.isSet("smoke") || parser.isSet("self-test-live-empty")))) {
         smokeProfile = std::make_unique<QTemporaryDir>(QDir::tempPath() + "/fuckmail-gui-smoke-XXXXXX");
@@ -137,6 +142,7 @@ int main(int argc, char **argv) {
         profile = QDir(smokeProfile->path()).filePath("profile");
     }
     if (profile.isEmpty()) profile = qEnvironmentVariable("FM_PROFILE");
+    const bool selectedProfile = !profile.isEmpty();
     if (profile.isEmpty()) {
 #ifdef Q_OS_MACOS
         auto base = QDir::homePath() + "/Library/Application Support";
@@ -145,7 +151,8 @@ int main(int argc, char **argv) {
 #else
         auto base = qEnvironmentVariable("XDG_DATA_HOME", QDir::homePath() + "/.local/share");
 #endif
-        profile = QDir(base).filePath("fuckMail/demo-v1");
+        if (base.isEmpty()) { qCritical() << "Cannot locate the user data directory; pass --profile."; return 2; }
+        profile = QDir(base).filePath(demoProfile ? "fuckMail/demo-v1" : "fuckMail/default");
     }
     profile = QDir(profile).absolutePath();
     auto program = parser.value("engine");
@@ -155,7 +162,11 @@ int main(int argc, char **argv) {
         ".exe"
 #endif
     );
-    MailBackend backend(profile, program, nullptr, parser.isSet("fixture-clock") || parser.isSet("self-test"), parser.isSet("live-profile") || parser.isSet("self-test-live-empty") || snapshotTest || actionsTest || calendarTest || lifecycleTest);
+    const bool requireLive = parser.isSet("live-profile") || parser.isSet("self-test-live-empty")
+        || snapshotTest || actionsTest || calendarTest || lifecycleTest || (!selectedProfile && !demoProfile);
+    MailBackend backend(profile, program, nullptr, parser.isSet("fixture-clock") || parser.isSet("self-test"), requireLive);
+    backend.setProperty("demoProfileRequested", demoProfile && !requireLive);
+    NotificationPresenter notifications(&backend);
     if (parser.isSet("self-test")) {
         backend.setProperty("verificationFixture", "snapshot");
         backend.setProperty("selfTestArrivalReport", QDir(profile).filePath("verification-ingestion.json"));

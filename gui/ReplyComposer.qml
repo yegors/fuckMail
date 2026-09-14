@@ -102,10 +102,12 @@ Rectangle {
         RowLayout {
             Layout.fillWidth: true; Layout.bottomMargin: 14; spacing: 10
             Text { text: root.draftTitle; color: Theme.text; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(15); weight: Font.Medium; letterSpacing: -0.15 } }
-            Text { visible: !root.readOnly && root.mode!=="new"; text: root.mode==="forward" ? "original message quoted below" : "in this conversation"; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); Layout.fillWidth: true; elide: Text.ElideRight }
             Item { Layout.fillWidth: true }
-            FmButton { objectName: "collapseReply"; text: "Minimise"; font.pixelSize: Theme.fontSize(12); leftPadding: 0; rightPadding: 0; tip: "Keep this draft and hide the editor"; onClicked: { if (backend.accountNavigationAllowed()) { backend.saveDraft(); root.dismissed() } } }
-            FmButton { objectName: "discardReply"; visible: !root.readOnly; text: "Discard"; font.pixelSize: Theme.fontSize(12); leftPadding: 4; rightPadding: 0; enabled: !backend.draftLocked && !backend.attachmentImport.pending; onClicked: discardDialog.open() }
+            RowLayout {
+                spacing: 6
+                FmButton { objectName: "discardReply"; visible: !root.readOnly; iconName: "trash"; iconSize: 12; implicitWidth: 26; implicitHeight: 26; leftPadding: 0; rightPadding: 0; outlined: true; foreground: !enabled ? Theme.subtle : hovered ? Theme.error : Theme.inkAlpha(.6); tip: "Discard this draft"; enabled: !backend.draftLocked && !backend.attachmentImport.pending; onClicked: discardDialog.open() }
+                FmButton { objectName: "collapseReply"; iconName: "minus"; iconSize: 12; implicitWidth: 26; implicitHeight: 26; leftPadding: 0; rightPadding: 0; outlined: true; foreground: hovered ? Theme.text : Theme.inkAlpha(.6); tip: "Minimise — keeps the draft, Esc"; onClicked: { if (backend.accountNavigationAllowed()) { backend.saveDraft(); root.dismissed() } } }
+            }
         }
         Item { Layout.fillWidth: true; implicitHeight: 1; Rectangle { y: Theme.snapY(parent, 0); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
         Text {
@@ -343,7 +345,6 @@ Rectangle {
                 onClicked: { if (backend.syntheticProfile) backend.captureDraft(); else backend.sendGoogleDraft() }
             }
             FmButton { objectName: "draftAttachButton"; visible: !root.readOnly; text: "Attach"; iconName: "attachment"; outlined: true; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pixelSize: Theme.fontSize(13); tip: "Attach a local file or a retained conversation file"; enabled: backend.connected && !backend.draftBusy && !backend.attachmentImportBusy; onClicked: attachmentMenu.popup() }
-            FmButton { objectName: "draftDiscardButton"; visible: !root.readOnly; text: "Discard"; leftPadding: 12; rightPadding: 12; font.pixelSize: Theme.fontSize(13); enabled: !backend.draftLocked && !backend.attachmentImport.pending; onClicked: discardDialog.open() }
             Item { Layout.fillWidth: true }
             Text {
                 text: backend.draftStatus

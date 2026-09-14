@@ -357,6 +357,11 @@ impl Contexts {
             quota: quota.clone(),
             preparation: preparation.clone(),
             calendar_preparation: calendar_preparation.clone(),
+            calendar_reads: calendar::ReadGrants {
+                catalog: true,
+                events: true,
+                busy: true,
+            },
             remote_drafts_wake: Arc::new(Notify::new()),
         };
         let second = SyncContext {
@@ -369,6 +374,11 @@ impl Contexts {
             quota,
             preparation,
             calendar_preparation,
+            calendar_reads: calendar::ReadGrants {
+                catalog: true,
+                events: true,
+                busy: true,
+            },
             remote_drafts_wake: Arc::new(Notify::new()),
         };
         Self {

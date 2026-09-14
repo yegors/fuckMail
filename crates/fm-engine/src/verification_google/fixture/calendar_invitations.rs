@@ -182,6 +182,31 @@ impl CalendarFixture {
                 ["calendars", id, "events", series, "instances"]
                     if self.occurrences && *id == cal =>
                 {
+                    if series.starts_with('f') {
+                        let master = state
+                            .events
+                            .get(*series)
+                            .cloned()
+                            .ok_or_else(|| self.reject("unknown_created_series"))?;
+                        let generated = calendar_occurrences::materialize(&master)
+                            .map_err(|_| self.reject("unsupported_created_fixture_rule"))?;
+                        let current_ids: BTreeSet<_> = generated
+                            .iter()
+                            .map(|source| source["id"].as_str().unwrap().to_owned())
+                            .collect();
+                        let exceptions = state.exceptions.clone();
+                        state.events.retain(|id, source| {
+                            source["recurringEventId"] != *series
+                                || exceptions.contains(id)
+                                || current_ids.contains(id)
+                        });
+                        for source in generated {
+                            let id = source["id"].as_str().unwrap().to_owned();
+                            if !state.exceptions.contains(&id) {
+                                state.events.insert(id, source);
+                            }
+                        }
+                    }
                     (self.instances(&state, series, &params)?, "instances")
                 }
                 ["calendars", id, "events", event] if *id == cal && params.is_empty() => {
@@ -250,10 +275,19 @@ impl CalendarFixture {
         }
         .to_owned();
         if self.occurrences
-            && (is_create
-                || !matches!(
+            && !(event.starts_with('f')
+                || matches!(
                     event.as_str(),
-                    "oi0000" | "oi0001" | "oi0004" | "oi0005" | "od0000" | "od0002"
+                    "co0000"
+                        | "co0001"
+                        | "oi0000"
+                        | "oi0001"
+                        | "oi0002"
+                        | "oi0003"
+                        | "oi0004"
+                        | "oi0005"
+                        | "od0000"
+                        | "od0002"
                 ))
         {
             return Err(self.reject("unexpected_occurrence_mutation_target"));
@@ -317,7 +351,43 @@ impl CalendarFixture {
             after["status"] = "confirmed".into();
         }
         if self.occurrences && is_delete {
-            after = calendar_occurrences::cancelled(&before);
+            after = if before.get("recurringEventId").is_some() {
+                calendar_occurrences::cancelled(&before)
+            } else {
+                json!({"id":before["id"],"status":"cancelled"})
+            };
+        }
+        if is_create && after["conferenceData"]["createRequest"].is_object() {
+            after["conferenceData"]["createRequest"]["status"] = json!({"statusCode":"success"});
+            after["conferenceData"]["conferenceSolution"] =
+                json!({"key":{"type":"hangoutsMeet"},"name":"Google Meet"});
+            after["conferenceData"]["conferenceId"] = format!("fixture-{event}").into();
+            after["conferenceData"]["entryPoints"] = json!([{"entryPointType":"video","uri":format!("https://meet.example.test/{event}")}]);
+        }
+        if self.occurrences && is_patch && before["recurrence"].is_array() {
+            let version = state.version;
+            let protected = state.exceptions.clone();
+            for (id, child) in state
+                .events
+                .iter_mut()
+                .filter(|(_, source)| source["recurringEventId"] == event)
+            {
+                if protected.contains(id) || calendar_occurrences::initially_visible(id) {
+                    continue;
+                }
+                for (key, value) in body.as_object().unwrap() {
+                    if matches!(key.as_str(), "recurrence" | "start" | "end") {
+                        continue;
+                    }
+                    if key == "attendees" {
+                        child[key] =
+                            provider_roster(child, value, body["attendeesOmitted"] == true)?;
+                    } else if key != "attendeesOmitted" {
+                        child[key] = value.clone();
+                    }
+                }
+                child["etag"] = format!("\"{id}-v{version}\"").into();
+            }
         }
         state.events.insert(event.clone(), after.clone());
         if self.occurrences {
@@ -357,7 +427,8 @@ impl CalendarFixture {
                     "maxResults" | "showDeleted" | "originalStart" | "pageToken"
                 )
             })
-            || !matches!(series, "co0000" | "co0001" | "co0002" | "co0003")
+            || !(series.starts_with('f')
+                || matches!(series, "co0000" | "co0001" | "co0002" | "co0003"))
         {
             return Err(self.reject("unexpected_occurrence_instances_query"));
         }

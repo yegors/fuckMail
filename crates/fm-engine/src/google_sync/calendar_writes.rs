@@ -15,14 +15,31 @@ use tokio::sync::OwnedSemaphorePermit;
 pub(super) type Memory = Arc<OwnedSemaphorePermit>;
 
 pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> {
+    execute_inner(ctx, request, false).await
+}
+pub(crate) async fn resume(ctx: &SyncContext, request: Value) -> Result<Value> {
+    execute_inner(ctx, request, true).await
+}
+async fn execute_inner(ctx: &SyncContext, request: Value, explicit_resume: bool) -> Result<Value> {
     let request_id = text(&request, "request_id")?.to_owned();
     let occurrence = request.get("occurrence").cloned();
+    let recurring = request.get("recurring").cloned();
     let account = ctx.account.as_str().to_owned();
     let prepared = ctx
         .core_call(move |s| s.calendar_live_prepare(&account, &request))
         .await?;
-    if !matches!(prepared["state"].as_str(), Some("prepared" | "ready")) {
+    if !matches!(
+        prepared["state"].as_str(),
+        Some("prepared" | "ready" | "partial")
+    ) {
         return Ok(prepared);
+    }
+    if prepared["state"] == "partial" || prepared["step_index"] == 1 {
+        if !explicit_resume {
+            return Ok(prepared);
+        }
+        let next = advance_following(ctx, &request_id, &prepared).await?;
+        return submit(ctx, &request_id, &next).await;
     }
     let target = &prepared["target"];
     let calendar = text(target, "calendar")?.to_owned();
@@ -33,7 +50,21 @@ pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> 
         .ok_or_else(|| failure("invalid_request", "Calendar intent revision is invalid"))?;
     let epoch = refresh_permission(ctx, &calendar).await?;
     let generation = ctx.connection_generation;
-    if let Some(occurrence) = occurrence {
+    if recurring
+        .as_ref()
+        .is_some_and(|r| matches!(r["scope"].as_str(), Some("occurrence" | "following")))
+    {
+        let selector =
+            calendar_occurrences::selector(&calendar, &event, recurring.as_ref().unwrap())?;
+        let (proof, memory) = calendar_occurrences::prepare(ctx, selector, epoch).await?;
+        let account = ctx.account.as_str().to_owned();
+        let id = request_id.clone();
+        memory_core(ctx, &memory, move |store| {
+            store.calendar_live_stage_recurring(&account, &id, version, proof)
+        })
+        .await?;
+        drop(memory);
+    } else if let Some(occurrence) = occurrence {
         let selector = calendar_occurrences::selector(&calendar, &event, &occurrence)?;
         let (proof, memory) = calendar_occurrences::prepare(ctx, selector, epoch).await?;
         let account = ctx.account.as_str().to_owned();
@@ -71,6 +102,59 @@ pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> 
         .await?;
         drop(memory);
     }
+    let staged = status(ctx, &request_id).await?;
+    let receipt = submit(ctx, &request_id, &staged).await?;
+    if receipt["state"] == "partial" && !ctx.cancel.is_cancelled() {
+        let next = advance_following(ctx, &request_id, &receipt).await?;
+        return submit(ctx, &request_id, &next).await;
+    }
+    Ok(receipt)
+}
+
+async fn advance_following(ctx: &SyncContext, request_id: &str, current: &Value) -> Result<Value> {
+    let calendar = text(&current["target"], "calendar")?;
+    let epoch = refresh_permission(ctx, calendar).await?;
+    let (api, memory) = ctx.calendar_request(WorkClass::UserRead).await?;
+    let source = match api
+        .get_event(
+            "engine-managed",
+            calendar,
+            text(&current["recurring"], "series_id")?,
+            None,
+            &ctx.cancel,
+        )
+        .await
+        .map_err(read_error)?
+    {
+        EventFetch::Found(resource) => event_source(resource),
+        EventFetch::NotModified => {
+            return Err(failure(
+                "calendar_response_invalid",
+                "Fresh trimmed series source is required",
+            ))
+        }
+    };
+    let memory = Arc::new(memory);
+    let account = ctx.account.as_str().to_owned();
+    let id = request_id.to_owned();
+    let generation = ctx.connection_generation;
+    memory_core(ctx, &memory, move |store| {
+        store.calendar_live_following_advance(&account, &id, generation, epoch, source)
+    })
+    .await
+}
+
+async fn submit(ctx: &SyncContext, request_id: &str, current: &Value) -> Result<Value> {
+    let generation = ctx.connection_generation;
+    let calendar = text(&current["target"], "calendar")?.to_owned();
+    let event = current["dispatch_event_id"]
+        .as_str()
+        .unwrap_or(text(&current["target"], "event")?)
+        .to_owned();
+    let kind = current["dispatch_kind"]
+        .as_str()
+        .unwrap_or(text(current, "kind")?)
+        .to_owned();
     // No active HTTP lease or decoded event is held during mutation cooldown.
     // Reload the frozen preflight only after both quota and memory admission.
     let api = ctx
@@ -82,7 +166,7 @@ pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> 
         .await?;
     let memory = Arc::new(ctx.calendar_prepare_permit().await?);
     let account = ctx.account.as_str().to_owned();
-    let id = request_id.clone();
+    let id = request_id.to_owned();
     let lease = memory_core(ctx, &memory, move |s| {
         s.calendar_live_start(&account, &id, generation)
     })
@@ -139,7 +223,18 @@ pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> 
         .core
         .call(move |s| Ok((s.calendar_live_record_outcome(&saved, outcome), held)))
         .await?;
-    publish_if_possible(ctx, &lease, receipt?, &memory).await
+    let receipt = publish_if_possible(ctx, &lease, receipt?, &memory).await?;
+    if lease.dispatch["version"] == 4 {
+        let saved = lease.clone();
+        let held = memory.clone();
+        let (finished, _held) = ctx
+            .core
+            .call(move |store| Ok((store.calendar_live_recurring_finish_step(&saved), held)))
+            .await?;
+        finished
+    } else {
+        Ok(receipt)
+    }
 }
 
 pub(crate) async fn reconcile(ctx: &SyncContext, request_id: &str) -> Result<Value> {
@@ -148,7 +243,17 @@ pub(crate) async fn reconcile(ctx: &SyncContext, request_id: &str) -> Result<Val
         let memory = Arc::new(ctx.calendar_prepare_permit().await?);
         let op = operation(ctx, request_id, &memory).await?;
         return match op.lease {
-            Some(lease) => publish_if_possible(ctx, &lease, current, &memory).await,
+            Some(lease) => {
+                let receipt = publish_if_possible(ctx, &lease, current, &memory).await?;
+                if lease.dispatch["version"] == 4 {
+                    memory_core(ctx, &memory, move |store| {
+                        store.calendar_live_recurring_finish_step(&lease)
+                    })
+                    .await
+                } else {
+                    Ok(receipt)
+                }
+            }
             None => Ok(current),
         };
     }
@@ -158,7 +263,9 @@ pub(crate) async fn reconcile(ctx: &SyncContext, request_id: &str) -> Result<Val
     let calendar = text(&current["target"], "calendar")?;
     // A current permission observation is required even for read reconciliation.
     let epoch = refresh_permission(ctx, calendar).await?;
-    if current["intent_version"] == 3 {
+    if current["intent_version"] == 3
+        || (current["intent_version"] == 4 && current["recurring"]["scope"] == "occurrence")
+    {
         return reconcile_occurrence(ctx, request_id, &current, epoch).await;
     }
     let (api, memory) = ctx.calendar_request(WorkClass::UserRead).await?;
@@ -176,8 +283,16 @@ pub(crate) async fn reconcile(ctx: &SyncContext, request_id: &str) -> Result<Val
         s.calendar_live_reconcile_begin(&saved, generation)
     })
     .await?;
-    let source = match api
-        .get_event(
+    let observed = if current["intent_version"] == 4 {
+        api.get_event_observation(
+            "engine-managed",
+            calendar,
+            text(&lease.dispatch["target"], "event")?,
+            &ctx.cancel,
+        )
+        .await
+    } else {
+        api.get_event(
             "engine-managed",
             calendar,
             text(&lease.dispatch["target"], "event")?,
@@ -185,14 +300,13 @@ pub(crate) async fn reconcile(ctx: &SyncContext, request_id: &str) -> Result<Val
             &ctx.cancel,
         )
         .await
-    {
-        Ok(EventFetch::Found(resource)) => event_source(resource),
-        Ok(EventFetch::NotModified) => {
-            return Err(failure(
-                "calendar_response_invalid",
-                "Fresh Calendar source is required",
-            ))
-        }
+        .and_then(|value| match value {
+            EventFetch::Found(resource) => Ok(event_source(resource)),
+            EventFetch::NotModified => Err(ApiError::InvalidResponse),
+        })
+    };
+    let source = match observed {
+        Ok(source) => source,
         Err(ApiError::Provider(GoogleError::NotFound)) => return status(ctx, request_id).await,
         Err(error) => return Err(read_error(error)),
     };
@@ -204,7 +318,15 @@ pub(crate) async fn reconcile(ctx: &SyncContext, request_id: &str) -> Result<Val
         .await?;
     // The read has its own current publication fence; the original mutation's
     // immutable dispatch lease remains unchanged for any late provider reply.
-    publish_if_possible(ctx, &lease, receipt?, &memory).await
+    let receipt = publish_if_possible(ctx, &lease, receipt?, &memory).await?;
+    if lease.dispatch["version"] == 4 {
+        let saved = lease.clone();
+        return memory_core(ctx, &memory, move |store| {
+            store.calendar_live_recurring_finish_step(&saved)
+        })
+        .await;
+    }
+    Ok(receipt)
 }
 
 async fn reconcile_occurrence(

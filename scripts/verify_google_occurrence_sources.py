@@ -175,19 +175,43 @@ def check_occurrence(actual, expected):
             "Occurrence parent, original identity or master version differs")
 
 
-def validate_resolution(response, account, source):
-    require(set(response) == {"account", "calendar_id", "event_id", "etag", "occurrence", "event"},
+def check_recurring_occurrence(actual, expected):
+    require(set(actual) == {"scope", "series_id", "original_start", "expected_master_etag"}
+            and actual["scope"] == "occurrence", "Recurring action escaped the single-occurrence scope")
+    check_occurrence({key: value for key, value in actual.items() if key != "scope"}, expected)
+    if actual["original_start"]["kind"] == "zoned":
+        require(actual["original_start"]["time_zone"] == expected["original_start"]["time_zone"],
+                "Recurring occurrence changed the qualified original time zone")
+
+
+def validate_resolution(response, account, source, *, version=3, action=None):
+    require(version in (3, 4), "Unknown occurrence resolution version")
+    context_key = "recurring" if version == 4 else "occurrence"
+    require(set(response) == {"account", "calendar_id", "event_id", "etag", context_key, "event"},
             "Occurrence response leaked raw authority or omitted editor data")
     require(response["account"] == account["id"] and response["calendar_id"] == calendar(account)
             and response["event_id"] == source["id"] and response["etag"] == source["etag"],
             "Resolved provider instance crossed an identity or version")
     expected = {"series_id": source["recurringEventId"], "original_start": original_time(source),
                 "expected_master_etag": f'"{source["recurringEventId"]}-v1"'}
-    check_occurrence(response["occurrence"], expected)
+    if version == 4:
+        require(action in ("edit", "delete"), "Native occurrence resolution needs its exact authored action")
+        check_recurring_occurrence(response["recurring"], expected)
+        master = expected_master(account, int(source["recurringEventId"][2:]))
+        require(response["event"]["recurring"] is True and response["event"]["recurrence"] == master["recurrence"],
+                "Resolved version-four editor lost its retained master rule")
+    else:
+        check_occurrence(response["occurrence"], expected)
     for key, value in editor_event(source).items():
         same(response["event"].get(key), value, "Resolved editor field " + key)
-    require(response["event"]["can_edit"] is True and response["event"]["can_delete"] is True
-            and response["event"]["can_rsvp"] is False, "Resolved editor grants wrong occurrence actions")
+    if version == 4:
+        require(response["event"]["can_edit"] is (action == "edit")
+                and response["event"]["can_delete"] is (action == "delete")
+                and response["event"]["can_edit_attendees"] is (action == "edit")
+                and response["event"]["can_rsvp"] is False, "Version-four resolver changed its selected action authority")
+    else:
+        require(response["event"]["can_edit"] is True and response["event"]["can_delete"] is True
+                and response["event"]["can_rsvp"] is False, "Resolved editor grants wrong occurrence actions")
 
 
 def verify_retained_occurrences(profile, ledger):
@@ -217,11 +241,23 @@ def verify_retained_occurrences(profile, ledger):
 
 def validate_status(status, account, request, state, ledger):
     event = request["event_id"]
+    version = 4 if "recurring" in request else 3
     require(status["request_id"] == request["request_id"] and status["kind"] == request["kind"]
             and status["target"] == {"account": account["id"], "calendar": calendar(account), "event": event}
-            and status["intent_version"] == 3 and status["local_only"] is False and status["state"] == state,
-            "Wrong scoped version-three Calendar status")
-    check_occurrence(status["occurrence"], request["occurrence"])
+            and status["intent_version"] == version and status["local_only"] is False and status["state"] == state,
+            "Wrong scoped Calendar status version or identity")
+    if version == 4:
+        require("occurrence" not in request, "Version-four request mixed two scope grammars")
+        occurrence = {key: value for key, value in request["recurring"].items() if key != "scope"}
+        check_recurring_occurrence(status["recurring"], occurrence)
+        require(status["recurring"] == request["recurring"] and status["dispatch_kind"] == request["kind"]
+                and status["dispatch_event_id"] == event and status["step_index"] is None
+                and status["can_resume"] is False and "steps" not in status and "following_complete" not in status,
+                "Single-occurrence receipt invented following steps, resume permission or a different dispatch")
+        check_occurrence(status["occurrence"], occurrence)
+    else:
+        require("recurring" not in status, "Version-three receipt acquired a version-four scope")
+        check_occurrence(status["occurrence"], request["occurrence"])
     outcome = status["outcome"]
     require(not any(key in outcome for key in ("source", "master_read_proof", "publication_fence")),
             "Public activity leaked retained provider source or internal proof")
@@ -229,13 +265,17 @@ def validate_status(status, account, request, state, ledger):
         require(outcome["kind"] == ("deleted" if request["kind"] == "delete" else "accepted")
                 and outcome["evidence_origin"] == "provider_response"
                 and outcome["notification_delivery"] == "unverified", "Provider ACK invented notification delivery")
-        if request["kind"] == "delete":
+        if request["kind"] == "delete" and version == 3:
             require(outcome["source_origin"] == "dispatched_occurrence_identity", "DELETE ACK claimed a fetched event")
+        if version == 4:
+            require("source_origin" not in outcome, "Version-four public ACK invented an unprojected source-origin field")
     elif state == "reconciled":
         source = ledger.sources[account["id"]][event]
         require(outcome["kind"] == "observed_state" and outcome["matches_intent"] is True
                 and outcome["event_cancelled"] is (request["kind"] == "delete")
-                and outcome["observed_etag"] == source.get("etag") and outcome["source_origin"] == "fetched"
+                and outcome["observed_etag"] == source.get("etag")
+                and ((version == 3 and outcome.get("source_origin") == "fetched")
+                     or (version == 4 and "source_origin" not in outcome))
                 and outcome["notification_delivery"] == "unverified" and "evidence_origin" not in outcome,
                 "Read reconciliation invented acknowledgment, ETag or notification delivery")
 
@@ -286,20 +326,31 @@ def verify_journals(rows, requests):
         request, publication = expected["request"], expected["publication"]
         intent, dispatch = json.loads(row[3]), json.loads(row[11])
         target = {"account": row[0], "calendar": publication["calendar"], "event": publication["event"]}
-        require(intent == {"version": 3, "request": request, "target": target}, "Original version-three intent bytes changed")
-        require(dispatch["version"] == 3 and dispatch["kind"] == request["kind"] and dispatch["target"] == target
+        version = 4 if "recurring" in request else 3
+        if version == 4:
+            require("occurrence" not in request, "Version-four journal mixed scope grammars")
+            occurrence = {key: value for key, value in request["recurring"].items() if key != "scope"}
+            check_recurring_occurrence(dispatch["recurring"], occurrence)
+            require(dispatch["recurring"] == request["recurring"] and set(dispatch) == {
+                "version", "kind", "target", "body", "if_match", "send_updates", "baseline", "base_revision",
+                "event_label_version", "recurring", "occurrence", "original_start_provider", "master_proof", "lifecycle_revision"},
+                "Single-occurrence dispatch lost its exact version-four shape or acquired a second mutation step")
+        else:
+            occurrence = request["occurrence"]
+        require(intent == {"version": version, "request": request, "target": target}, "Original versioned occurrence intent bytes changed")
+        require(dispatch["version"] == version and dispatch["kind"] == request["kind"] and dispatch["target"] == target
                 and dispatch["if_match"] == publication["if_match"] and dispatch["send_updates"] == "all",
                 "Frozen occurrence dispatch lost version, target or conditional/notification semantics")
         same(dispatch["baseline"], publication["before"], "Full frozen provider instance")
         same(dispatch["body"], publication["body"], "Exact frozen occurrence patch")
-        require(dispatch["occurrence"] == request["occurrence"]
+        require(dispatch["occurrence"] == occurrence
                 and dispatch["original_start_provider"] == publication["before"]["originalStartTime"],
                 "Frozen provider original identity changed")
         stamp = dispatch["master_proof"]
         require(set(stamp) == {"account", "calendar", "series", "etag", "source_sha256", "recurrence_sha256",
                                "source_generation", "calendar_revision", "lifecycle_revision", "connection_generation",
                                "permission_epoch", "zone", "access"}, "Master proof lost bounded metadata shape")
-        master = expected_master(expected["account"], int(request["occurrence"]["series_id"][2:]))
+        master = expected_master(expected["account"], int(occurrence["series_id"][2:]))
         canonical_hash = lambda value: hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
         require(stamp["account"] == row[0] and stamp["calendar"] == target["calendar"]
                 and stamp["series"] == master["id"] and stamp["etag"] == master["etag"]
@@ -308,4 +359,10 @@ def verify_journals(rows, requests):
                 and all(isinstance(stamp[field], int) and stamp[field] > 0 for field in
                         ("source_generation", "calendar_revision", "lifecycle_revision", "connection_generation", "permission_epoch")),
                 "Frozen master proof differs from qualified generated source/authority")
+        if version == 4:
+            require(dispatch["lifecycle_revision"] == stamp["lifecycle_revision"]
+                    and dispatch["base_revision"] == stamp["calendar_revision"]
+                    and dispatch["event_label_version"] == (1 if isinstance(publication["body"], dict)
+                                                            and "eventLabelId" in publication["body"] else 0),
+                    "Version-four dispatch lost its lifecycle, source revision or label-version fence")
     return len(rows)

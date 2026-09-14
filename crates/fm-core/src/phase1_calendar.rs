@@ -12,7 +12,7 @@ impl Store {
     }
     pub(crate) fn calendar_sources_for(&self, archive_account: Option<&str>) -> Result<Value> {
         let live = self.profile_kind()? == crate::live_profile::ProfileKind::Live;
-        let mut statement = self.db.prepare("SELECT c.account,c.calendar_id,a.name,a.email,c.time_zone,c.access,c.revision,c.sync_token,k.json,COALESCE(k.deleted,0),COALESCE(k.observed_epoch,0),COALESCE(cs.full_generation,0),COALESCE(cs.complete,0),c.published_generation,c.retained_errors,c.full_generation,a.lifecycle_state FROM calendar_sync_state c JOIN accounts a ON a.id=c.account LEFT JOIN calendar_catalog k USING(account,calendar_id) LEFT JOIN calendar_catalog_state cs ON cs.account=c.account WHERE (a.lifecycle_state='active' OR a.id=?1) ORDER BY a.name,c.calendar_id LIMIT 101")?;
+        let mut statement = self.db.prepare("SELECT c.account,c.calendar_id,a.name,a.email,c.time_zone,c.access,c.revision,c.sync_token,k.json,COALESCE(k.deleted,0),COALESCE(k.observed_epoch,0),COALESCE(cs.full_generation,0),COALESCE(cs.complete,0),c.published_generation,c.retained_errors,c.full_generation,a.lifecycle_state,g.scopes_json,g.connection_state FROM calendar_sync_state c JOIN accounts a ON a.id=c.account LEFT JOIN calendar_catalog k USING(account,calendar_id) LEFT JOIN calendar_catalog_state cs ON cs.account=c.account LEFT JOIN google_accounts g ON g.account=c.account WHERE (a.lifecycle_state='active' OR a.id=?1) ORDER BY a.name,c.calendar_id LIMIT 101")?;
         let mut calendars = Vec::new();
         let mut rows = statement.query([archive_account])?;
         while let Some(row) = rows.next()? {
@@ -25,6 +25,23 @@ impl Store {
                 .unwrap_or(Value::Null);
             if live && (row.get::<_, bool>(9)? || row.get::<_, i64>(10)? < row.get::<_, i64>(11)?) {
                 permission = "none".into();
+            }
+            let active = row.get::<_, String>(16)? == "active";
+            let grants: BTreeSet<String> = row
+                .get::<_, Option<String>>(17)?
+                .map(|value| serde_json::from_str(&value))
+                .transpose()?
+                .unwrap_or_default();
+            let grants = fm_google::auth::ScopeSet::new(&grants);
+            // Keep the provider ACL intact in storage. OAuth grants can limit
+            // this active view further; an explicitly opened archive stays readable.
+            if live && active && permission != "none" && !grants.calendar_events_read() {
+                permission = if grants.calendar_free_busy() {
+                    "free_busy"
+                } else {
+                    "none"
+                }
+                .into();
             }
             let generation: i64 = row.get(13)?;
             let complete = if live {
@@ -42,7 +59,10 @@ impl Store {
                 });
             let writable =
                 crate::live_calendar_writes::live_source_writable(parse_access(&permission)?)
-                    && row.get::<_, String>(16)? == "active";
+                    && active
+                    && (!live
+                        || (row.get::<_, Option<String>>(18)?.as_deref() == Some("connected")
+                            && grants.calendar_events_write()));
             calendars.push(json!({"account":row.get::<_,String>(0)?,"calendar_id":calendar,"name":name,"account_name":row.get::<_,String>(2)?,"account_email":row.get::<_,String>(3)?,"time_zone":row.get::<_,String>(4)?,"permission":permission,"writable":writable,"can_create":writable && (!live || complete),"revision":row.get::<_,i64>(6)?,"primary":metadata["primary"]==true,"hidden":metadata["hidden"]==true,"provider_selected":metadata["selected"],"color":metadata["backgroundColor"],"coverage":if permission=="none"{"denied"}else if complete{"cached"}else{"incomplete"}}));
         }
         let truncated = calendars.len() > 100;

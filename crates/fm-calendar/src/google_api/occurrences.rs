@@ -25,6 +25,43 @@ pub struct OccurrenceResource {
 }
 
 impl<T: HttpTransport> GoogleCalendarApi<T> {
+    /// Read-only evidence for an exact master or client-generated series ID.
+    /// A sparse cancellation remains source evidence, never a writable resource.
+    pub async fn get_event_observation(
+        &self,
+        access_token: &str,
+        calendar: &str,
+        event: &str,
+        cancel: &CancellationToken,
+    ) -> Result<Value> {
+        let url = endpoint(&["calendars", calendar, "events", event])?;
+        let response = self
+            .execute(
+                request(HttpMethod::Get, &url, access_token, EVENT_BYTES)?,
+                cancel,
+                false,
+            )
+            .await?;
+        if response.status != 200 {
+            return Err(ApiError::InvalidResponse);
+        }
+        let mut source = parse_json(&response.body, EVENT_BYTES)?;
+        if required_text(&source, "id", 1024)? != event || source.get("recurringEventId").is_some()
+        {
+            return Err(ApiError::InvalidResponse);
+        }
+        let etag = response_etag(&source, response.etag)?;
+        if etag.is_none() && source["status"] != "cancelled" {
+            return Err(ApiError::InvalidResponse);
+        }
+        if source.get("etag").is_none() {
+            if let Some(etag) = etag {
+                source["etag"] = etag.into();
+            }
+        }
+        Ok(source)
+    }
+
     /// No actual-time window: a moved exception must remain discoverable.
     /// All-day originalStart query serialization is intentionally not assumed.
     pub async fn instances(

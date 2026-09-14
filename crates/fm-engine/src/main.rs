@@ -34,8 +34,11 @@ struct Args {
     #[arg(long)]
     profile: Option<PathBuf>,
     /// Create or open an explicitly selected live profile; never seed demo data.
-    #[arg(long, requires = "profile", conflicts_with = "verification_fixture")]
+    #[arg(long, requires = "profile", conflicts_with_all = ["verification_fixture", "demo_profile"])]
     live_profile: bool,
+    /// Explicit synthetic examples; ordinary new profiles are always empty/live.
+    #[arg(long)]
+    demo_profile: bool,
     #[arg(long, hide = true, value_enum)]
     verification_fixture: Option<verification_fixture::Mode>,
     /// In-memory provider verification, compiled only in an isolated developer build.
@@ -690,7 +693,13 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     if args.verification_fixture.is_some() && args.profile.is_none() {
         return Err("verification fixtures require an explicit disposable profile".into());
     }
-    let profile = fm_ipc::private_profile(&args.profile.unwrap_or(fm_ipc::default_profile()?))?;
+    let require_live = args.live_profile || (args.profile.is_none() && !args.demo_profile);
+    let selected_profile = match args.profile {
+        Some(profile) => profile,
+        None if args.demo_profile => fm_ipc::demo_profile()?,
+        None => fm_ipc::default_profile()?,
+    };
+    let profile = fm_ipc::private_profile(&selected_profile)?;
     // This refusal is present in ordinary builds too. A verification profile
     // must never fall through to real Google services on a later startup.
     verification_google::refuse_marked_profile(&profile)?;
@@ -701,7 +710,9 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(mode) = args.verification_fixture {
         verification_fixture::preflight(mode, &profile)?;
     }
-    let mut store = match if args.live_profile {
+    let mut store = match if args.demo_profile || args.verification_fixture.is_some() {
+        fm_core::Store::open_synthetic(&profile)
+    } else if require_live || !profile.join("store.sqlite3").exists() {
         fm_core::Store::open_live(&profile)
     } else {
         fm_core::Store::open(&profile)
@@ -1000,6 +1011,7 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
         "methods":["accounts","status","conversations","conversation","flag","draft_get",
             "draft_save","draft_capture","draft_attachment_import","calendar","attachment","categories","set_category",
             "view_get","view_save","preferences_get","preferences_save","calendar_sources",
+            "calendar_reminders","calendar_reminder_ack","mail_notifications",
             "calendar_combined","account_update","draft_discard","capture_history","calendar_write",
             "calendar_write_ack","calendar_operations","drafts","draft_create","sender_summary",
             "google_auth_begin","google_auth_restore_begin","google_auth_status","google_auth_cancel","google_disconnect",

@@ -233,6 +233,38 @@ impl Store {
                                     row["occurrence_selector"] = selector;
                                 }
                             }
+                            if available && !event.recurrence.is_empty() {
+                                if let Some(selector) =
+                                    crate::live_calendar_occurrences::projection_selector_with_role(
+                                        event,
+                                        occurrence_source,
+                                        &row,
+                                        false,
+                                    )
+                                {
+                                    let organizer = crate::live_calendar_writes::initial_event(
+                                        event, access, "edit", 4,
+                                    )
+                                    .is_ok();
+                                    let attendee = crate::live_calendar_writes::initial_event(
+                                        event, access, "rsvp", 4,
+                                    )
+                                    .is_ok()
+                                        && crate::live_calendar_writes::live_self_attendee(
+                                            occurrence_source,
+                                            &actor,
+                                        )
+                                        .is_ok();
+                                    let following = organizer
+                                        && fm_calendar::recurring::validate_rule_shape(
+                                            &event.recurrence,
+                                            false,
+                                        )
+                                        .is_ok();
+                                    row["recurring_selector"] = selector;
+                                    row["recurring_scopes"] = json!({"edit":if organizer {if following{vec!["occurrence","series","following"]}else{vec!["occurrence","series"]}}else{vec![]},"delete":if organizer {if following{vec!["occurrence","series","following"]}else{vec!["occurrence","series"]}}else{vec![]},"rsvp":if attendee{vec!["occurrence","series"]}else{vec![]}});
+                                }
+                            }
                             row["can_edit"] = (available && edit).into();
                             row["can_delete"] = (available && edit).into();
                             row["can_rsvp"] = (available && rsvp).into();
@@ -241,8 +273,10 @@ impl Store {
                             row["guest_addresses"] = json!([]);
                             row["protected_attendees"] = json!([]);
                             if row["busy_only"] != true {
-                                match crate::live_calendar_writes::live_guest_actions(event, access)
-                                {
+                                match crate::live_calendar_writes::live_guest_actions(
+                                    occurrence_source,
+                                    access,
+                                ) {
                                     Ok((guests, protected)) => {
                                         row["can_edit_attendees"] = available.into();
                                         row["attendee_edit_reason"] = if available {
@@ -255,9 +289,10 @@ impl Store {
                                     }
                                     Err(error) => row["attendee_edit_reason"] = error.code.into(),
                                 }
-                                if let Ok(person) =
-                                    crate::live_calendar_writes::live_self_attendee(event, &actor)
-                                {
+                                if let Ok(person) = crate::live_calendar_writes::live_self_attendee(
+                                    occurrence_source,
+                                    &actor,
+                                ) {
                                     row["self_response"] = person["responseStatus"].clone();
                                 }
                             }
@@ -284,6 +319,7 @@ impl Store {
                             ] {
                                 row[key] = json!(false);
                             }
+                            row["recurring_scopes"] = json!({"edit":[],"delete":[],"rsvp":[]});
                             row["attendee_edit_reason"] = json!("account_removed");
                         }
                         if output.len() < fm_calendar::MAX_OCCURRENCES as usize {

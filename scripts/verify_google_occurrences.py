@@ -27,6 +27,7 @@ from verify_google_occurrence_sources import (
     verify_journals, verify_retained_occurrences, verify_window,
 )
 from verify_search_ingestion import sha256, stop_children
+import verify_google_recurring as recurring
 
 
 def digest_rows(rows):
@@ -45,13 +46,13 @@ def run(args):
     require(not report.exists() and not any(path.exists() for path in outputs.values()),
             "Use a fresh numbered occurrence evidence path")
     result = {"version": 1, "result": "failed",
-              "scenario": "isolated-google-occurrences-" + ("native" if args.gui else "cli"),
+              "scenario": ("isolated-google-recurring-" if args.recurring else "isolated-google-occurrences-") + ("native" if args.gui else "cli"),
               "commands": [], "base_unix_secs": BASE_UNIX, "limits": LIMITS,
               "limitations": ["Generated in-memory provider/vault only; no real account or notification delivery.",
                               "Functional source/journal checks; no benchmark, package or physical-input acceptance.",
                               "Cached checks keep an explicit local Watch owner; marked profiles cannot restart."]}
     accounts = expected_accounts()
-    ledger = OccurrenceLedger(accounts)
+    ledger = recurring.RecurringLedger(accounts) if args.recurring else OccurrenceLedger(accounts)
     requests, statuses, children = {}, {}, []
     started = time.monotonic()
 
@@ -215,10 +216,10 @@ def run(args):
                 require(result["initial_sources"] == {"retained_sources": 12, "active_sources": 8, "query_sources": 12, "cancelled_sources": 4}
                         and not journal_snapshot(profile), "Acquisition changed source identities or created an authored intent")
                 with closing(read_database(profile)) as db:
-                    require(db.execute("PRAGMA user_version").fetchone()[0] == 19, "Wrong shared occurrence schema")
+                    require(db.execute("PRAGMA user_version").fetchone()[0] == 20, "Wrong shared occurrence schema")
                 if args.gui:
                     pause_owners()
-                    expectation = native_expectation(accounts)
+                    expectation = recurring.native_expectation(accounts) if args.recurring else native_expectation(accounts)
                     outputs["expectation"].write_text(json.dumps(expectation, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                     gui = subprocess.Popen([str(programs["gui"]), "--profile", str(profile), "--engine", str(programs["engine"]),
                         "--google-calendar-self-test", str(outputs["gui_report"]), "--google-calendar-expectation", str(outputs["expectation"])],
@@ -228,8 +229,11 @@ def run(args):
                     require(result["gui_exit_code"] == 0, "Native occurrence walkthrough failed; inspect retained GUI evidence")
                     observed = read_json(outputs["gui_report"])
                     require(observed["gui_pid"] == gui.pid, "Native report belongs to another process")
-                    requests = validate_native(observed, expectation, accounts, ledger)
+                    requests = (recurring.validate_native if args.recurring else validate_native)(observed, expectation, accounts, ledger)
                     result["native_accounts"] = observed["accounts"]
+                elif args.recurring:
+                    requests, statuses = recurring.run_cli(accounts, params_call, cli, ledger)
+                    pause_owners()
                 else:
                     for account in accounts:
                         wrong = selector(account, 0, 0)
@@ -250,59 +254,62 @@ def run(args):
                 cutoff = time.time_ns() // 1_000_000
                 wait_for(lambda: read_json(fixture_path)["updated_unix_ms"] >= cutoff, "post-owner fixture report")
                 counters = read_json(fixture_path)["counters"]
-                result["final_sources"] = verify_retained_occurrences(profile, ledger)
-                require(result["final_sources"] == {"retained_sources": 18 if args.gui else 22,
-                        "active_sources": 12, "query_sources": 16, "cancelled_sources": 6 if args.gui else 10}, "Wrong final retained occurrence inventory")
-                frozen = journal_snapshot(profile)
-                result["journal_rows"] = verify_journals(frozen, requests)
-                require(len(frozen) == (6 if args.gui else 12), "Unexpected number of explicit occurrence mutations")
-                for row in frozen:
-                    key = row[0] + "/" + row[1]
-                    expected = requests[key]
-                    require(row[5] == "live" and row[8] == 1 and row[6] in ("acknowledged", "reconciled"),
-                            "Occurrence journal repeated an attempt or lost terminal certainty")
-                    outcome = json.loads(row[12])
-                    publication = expected["publication"]
-                    if row[6] == "reconciled" or publication["method"] == "PATCH":
-                        same(outcome["source"], publication["after"], "Exact retained provider outcome source")
-                    else:
-                        require(outcome["source_origin"] == "dispatched_occurrence_identity", "DELETE ACK lost its truthful provenance")
-                        with closing(read_database(profile)) as db:
-                            raw = db.execute("SELECT observed_json FROM calendar_event_state WHERE account=? AND calendar_id=? AND event_id=?",
-                                             (row[0], publication["calendar"], publication["event"])).fetchone()[0]
-                        same(json.loads(raw), {"kind": "acknowledged_occurrence_cancellation", "request_id": row[1],
-                                             "source": publication["after"]}, "ACK-derived cancellation observation envelope")
-                    status = cli(["google", "calendar-operation", row[1]], expected["account"])
-                    validate_status(status, expected["account"], expected["request"], row[6], ledger)
-                    if key in statuses:
-                        require(status == statuses[key], "Offline receipt changed after the owned workflow")
-                    statuses[key] = status
-                    params_call("calendar-write", expected["account"], expected["request"], "sync_not_running")
-                for account in accounts:
-                    seen, cursor = set(), None
-                    for _ in range(8):
-                        tail = ["calendar-operations", "--limit", "2"]
-                        if cursor is not None:
-                            tail += ["--cursor", json.dumps(cursor)]
-                        page = cli(tail, account)
-                        for status in page["operations"]:
-                            key = account["id"] + "/" + status["request_id"]
-                            require(key not in seen and status == statuses[key], "Activity duplicated or changed a retained receipt")
-                            seen.add(key)
-                        cursor = page["continuation"]
-                        if cursor is None:
-                            break
-                    require(cursor is None and seen == {key for key, value in requests.items() if value["account"] == account},
-                            "Activity omitted an occurrence operation")
-                result["cached_windows"] = []
-                for begin, end in ((0, 7), (61, 63)):
-                    date_from, date_to = [(BASE + timedelta(days=days)).date().isoformat() for days in (begin, end)]
-                    page = cli(["calendar", "--combined", "--from", date_from, "--to", date_to])
-                    require(page["coverage"]["complete"] is True and page["continuation"] is None,
-                            "Final cached occurrence window is incomplete")
-                    count = verify_window(page["events"], ledger, accounts, date_from, date_to)
-                    result["cached_windows"].append({"from": date_from, "to": date_to, "events": count})
-                require(journal_snapshot(profile) == frozen, "Offline queries or ownerless replay changed journal bytes")
+                if args.recurring:
+                    frozen = recurring.verify_final(result, accounts, requests, statuses, ledger, profile, cli, params_call)
+                else:
+                    result["final_sources"] = verify_retained_occurrences(profile, ledger)
+                    require(result["final_sources"] == {"retained_sources": 18 if args.gui else 22,
+                            "active_sources": 12, "query_sources": 16, "cancelled_sources": 6 if args.gui else 10}, "Wrong final retained occurrence inventory")
+                    frozen = journal_snapshot(profile)
+                    result["journal_rows"] = verify_journals(frozen, requests)
+                    require(len(frozen) == (6 if args.gui else 12), "Unexpected number of explicit occurrence mutations")
+                    for row in frozen:
+                        key = row[0] + "/" + row[1]
+                        expected = requests[key]
+                        require(row[5] == "live" and row[8] == 1 and row[6] in ("acknowledged", "reconciled"),
+                                "Occurrence journal repeated an attempt or lost terminal certainty")
+                        outcome = json.loads(row[12])
+                        publication = expected["publication"]
+                        if row[6] == "reconciled" or publication["method"] == "PATCH":
+                            same(outcome["source"], publication["after"], "Exact retained provider outcome source")
+                        else:
+                            require(outcome["source_origin"] == "dispatched_occurrence_identity", "DELETE ACK lost its truthful provenance")
+                            with closing(read_database(profile)) as db:
+                                raw = db.execute("SELECT observed_json FROM calendar_event_state WHERE account=? AND calendar_id=? AND event_id=?",
+                                                 (row[0], publication["calendar"], publication["event"])).fetchone()[0]
+                            same(json.loads(raw), {"kind": "acknowledged_occurrence_cancellation", "request_id": row[1],
+                                                 "source": publication["after"]}, "ACK-derived cancellation observation envelope")
+                        status = cli(["google", "calendar-operation", row[1]], expected["account"])
+                        validate_status(status, expected["account"], expected["request"], row[6], ledger)
+                        if key in statuses:
+                            require(status == statuses[key], "Offline receipt changed after the owned workflow")
+                        statuses[key] = status
+                        params_call("calendar-write", expected["account"], expected["request"], "sync_not_running")
+                    for account in accounts:
+                        seen, cursor = set(), None
+                        for _ in range(8):
+                            tail = ["calendar-operations", "--limit", "2"]
+                            if cursor is not None:
+                                tail += ["--cursor", json.dumps(cursor)]
+                            page = cli(tail, account)
+                            for status in page["operations"]:
+                                key = account["id"] + "/" + status["request_id"]
+                                require(key not in seen and status == statuses[key], "Activity duplicated or changed a retained receipt")
+                                seen.add(key)
+                            cursor = page["continuation"]
+                            if cursor is None:
+                                break
+                        require(cursor is None and seen == {key for key, value in requests.items() if value["account"] == account},
+                                "Activity omitted an occurrence operation")
+                    result["cached_windows"] = []
+                    for begin, end in ((0, 7), (61, 63)):
+                        date_from, date_to = [(BASE + timedelta(days=days)).date().isoformat() for days in (begin, end)]
+                        page = cli(["calendar", "--combined", "--from", date_from, "--to", date_to])
+                        require(page["coverage"]["complete"] is True and page["continuation"] is None,
+                                "Final cached occurrence window is incomplete")
+                        count = verify_window(page["events"], ledger, accounts, date_from, date_to)
+                        result["cached_windows"].append({"from": date_from, "to": date_to, "events": count})
+                    require(journal_snapshot(profile) == frozen, "Offline queries or ownerless replay changed journal bytes")
                 cutoff = time.time_ns() // 1_000_000
                 wait_for(lambda: read_json(fixture_path)["updated_unix_ms"] >= cutoff, "offline fixture report")
                 require(read_json(fixture_path)["counters"] == counters, "Offline cached inspection started provider HTTP")
@@ -313,8 +320,8 @@ def run(args):
                 require(final["status"] == "complete" and not final["errors"] and final["counters"] == counters,
                         "Final provider completion changed or failed")
                 result["provider_verification"] = verify_publications(final, ledger)
-                require(len(ledger.publications) == (6 if args.gui else 12)
-                        and counters["calendar_lost_responses"] == (0 if args.gui else 4), "Wrong provider mutation or uncertainty counts")
+                require(len(ledger.publications) == (14 if args.recurring else 6 if args.gui else 12)
+                        and counters["calendar_lost_responses"] == (0 if args.recurring or args.gui else 4), "Wrong provider mutation or uncertainty counts")
                 cases = [("feature_unflagged", "engine", [], "isolated_build_guard",
                           "fm-engine: This isolated build requires --verification-google and a new disposable live profile"),
                          ("feature_flagged", "engine", ["--verification-google"], "isolation_marker",
@@ -361,4 +368,5 @@ if __name__ == "__main__":
         parser.add_argument("--" + name, type=Path, required=True)
     parser.add_argument("--gui", type=Path)
     parser.add_argument("--qt-root", type=Path)
+    parser.add_argument("--recurring", action="store_true")
     raise SystemExit(run(parser.parse_args()))

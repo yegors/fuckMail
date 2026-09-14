@@ -225,6 +225,7 @@ void GuiAccountLifecycleSelfTest::tick() {
     const auto recordRemoval = [&] { auto operations = result["removals"].toArray(); operations.append(QJsonObject::fromVariantMap(m_backend.m_accountLifecycleUi.value(id).toMap().value("result").toMap())); result["removals"] = operations; m_results[m_account] = result; };
     switch (m_stage) {
     case 0:
+        if (const auto loader = named(m_window->contentItem(), "startupOverlay"); loader && loader->isVisible()) return;
         if (!m_backend.connected()) return;
         if (m_backend.syntheticProfile()) { finish("Lifecycle verification requires the isolated live-mode fixture."); return; }
         m_stage = 1;

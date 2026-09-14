@@ -2,13 +2,160 @@
 #include <QDate>
 #include <QJsonArray>
 #include <QTimeZone>
+#include <QJsonDocument>
+#include <QDesktopServices>
 
 namespace {
+QString reminderKey(const QVariantMap &event) {
+    return QString::fromUtf8(QJsonDocument(QJsonArray{event.value("account").toString(), event.value("calendar_id").toString(),
+        event.value("id").toString(), event.value("start").toString()}).toJson(QJsonDocument::Compact));
+}
 bool changesCalendarQuery(const QVariantMap &before, const QVariantMap &after) {
     for (const auto &key : {"week_start", "selected_calendars", "calendar_view", "calendar_date", "timeline_date", "calendar_display_time_zone"})
         if (before.value(key) != after.value(key)) return true;
     return before.isEmpty();
 }
+bool reminderReceiptMatches(const QJsonObject &receipt, const QVariantMap &event, const QString &state) {
+    const auto current = receipt["event"].toObject().toVariantMap();
+    return receipt["account"].toString() == event.value("account").toString()
+        && receipt["calendar_id"].toString() == event.value("calendar_id").toString()
+        && receipt["occurrence_id"].toString() == event.value("id").toString()
+        && receipt["start"].toString() == event.value("start").toString()
+        && receipt["state"].toString() == state && reminderKey(current) == reminderKey(event)
+        && !current.value("busy_only").toBool() && !current.value("cancelled").toBool()
+        && current.value("self_response").toString() != "declined";
+}
+QVariantList notificationAccounts(const QVariantList &accounts) {
+    QVariantList result;
+    for (const auto &value : accounts) {
+        const auto account = value.toMap(), google = account.value("google").toMap();
+        result.append(QVariantMap{{"id", account.value("id")}, {"lifecycle", account.value("lifecycle")},
+            {"connection_state", google.value("connection_state")}, {"granted_scopes", google.value("granted_scopes")}});
+    }
+    return result;
+}
+}
+
+QString MailBackend::notificationContext() const {
+    QVariantList sources;
+    for (const auto &value : m_calendarSources) {
+        const auto source = value.toMap();
+        sources.append(QVariantMap{{"account",source.value("account")}, {"calendar_id",source.value("calendar_id")},
+            {"revision",source.value("revision")}, {"permission",source.value("permission")}, {"time_zone",source.value("time_zone")}});
+    }
+    return QString::fromUtf8(QJsonDocument::fromVariant(QVariantList{notificationAccounts(m_allAccounts), sources,
+        m_preferences.value("selected_calendars"), m_preferences.value("calendar_display_time_zone")}).toJson(QJsonDocument::Compact));
+}
+
+void MailBackend::configureNotifications() {
+    const auto mode = m_preferences.value("notifications", "events").toString();
+    const auto enabled = m_connected && startupReady() && !m_shutdown && !m_syntheticProfile && mode != "off";
+    const auto mailConfig = enabled && mode == "all" ? QString::fromUtf8(QJsonDocument::fromVariant(
+        notificationAccounts(m_allAccounts)).toJson(QJsonDocument::Compact)) : QString{};
+    if (mailConfig != m_mailNotificationConfig) {
+        // Calendar-only changes do not discard the arrival cursor. Starting a
+        // new notification session samples MAX before normal background work.
+        if (mailConfig.isEmpty() || m_mailNotificationConfig.isEmpty()) {
+            m_mailNotificationCursor = -1; m_notificationsSince = QDateTime::currentDateTimeUtc();
+        }
+        m_mailNotificationConfig = mailConfig; ++m_mailNotificationGeneration; m_mailNotificationPolling = false;
+    }
+    const auto config = enabled ? mode + notificationContext() : QString{};
+    if (config == m_notificationConfig) return;
+    m_notificationConfig = config; ++m_notificationGeneration; m_notificationPolling = false;
+    if (!m_reminders.isEmpty()) { m_reminders.clear(); emit remindersChanged(); }
+    if (config.isEmpty()) m_notificationTimer.stop();
+    else { m_notificationTimer.start(); QTimer::singleShot(0, this, &MailBackend::pollNotifications); }
+}
+
+void MailBackend::pollMailNotifications() {
+    if (m_mailNotificationConfig.isEmpty() || !m_connected || m_shutdown || m_mailNotificationPolling
+        || (m_mailNotificationCursor >= 0 && (m_pending.size() > 8 || (m_queryActivity.isValid() && m_queryActivity.elapsed() < 500)))) return;
+    const int generation = m_mailNotificationGeneration;
+    QJsonObject params;
+    if (m_mailNotificationCursor >= 0) {
+        params["after"] = m_mailNotificationCursor;
+        params["since"] = m_notificationsSince.toString(Qt::ISODateWithMs);
+    }
+    m_mailNotificationPolling = true;
+    request("mail_notifications", {}, params, [this, generation](auto mail, bool loaded) {
+        if (generation != m_mailNotificationGeneration) return;
+        m_mailNotificationPolling = false;
+        if (!loaded || !m_connected || m_shutdown || !mail["after"].isDouble()
+            || mail["after"].toInteger(-1) < qMax<qint64>(0, m_mailNotificationCursor)) return;
+        m_mailNotificationCursor = mail["after"].toInteger();
+        const auto messages = mail["messages"].toArray();
+        if (messages.isEmpty()) return;
+        if (mail["total"].toInteger() == 1) {
+            const auto message = messages.first().toObject();
+            emit desktopNotification(message["sender"].toString(), message["subject"].toString());
+        } else emit desktopNotification("New mail", QString::number(mail["total"].toInteger()) + " new messages");
+    });
+}
+
+void MailBackend::pollNotifications() {
+    pollMailNotifications();
+    if (m_notificationConfig.isEmpty() || !m_connected || m_shutdown || m_notificationPolling
+        || m_pending.size() > 8 || (m_queryActivity.isValid() && m_queryActivity.elapsed() < 500)) return;
+    const int generation = m_notificationGeneration;
+    m_notificationPolling = true;
+    request("calendar_reminders", {}, {}, [this, generation](auto result, bool ok) {
+        if (generation != m_notificationGeneration) return;
+        m_notificationPolling = false;
+        if (!ok || m_shutdown) {
+            if (!m_reminders.isEmpty()) { m_reminders.clear(); emit remindersChanged(); }
+            return;
+        }
+        QVariantList retained;
+        QList<QVariantMap> fresh;
+        QSet<QString> currentKeys;
+        for (const auto &value : result["reminders"].toArray()) {
+            const auto event = value.toObject().toVariantMap(); const auto key = reminderKey(event);
+            currentKeys.insert(key);
+            if (m_remindersPresented.contains(key)) retained.append(event);
+            else if (event.value("reminder_state").isNull() && fresh.size() < 8) fresh.append(event);
+        }
+        m_remindersPresented.intersect(currentKeys);
+        if (retained != m_reminders) { m_reminders = retained; emit remindersChanged(); }
+        for (const auto &event : fresh) {
+            const auto account = event.value("account").toString();
+            const auto key = reminderKey(event);
+            const QJsonObject params{{"calendar_id",event.value("calendar_id").toString()}, {"occurrence_id",event.value("id").toString()},
+                {"start",event.value("start").toString()}, {"state","shown"}};
+            request("calendar_reminder_ack", account, params, [this, generation, event, key, account](auto receipt, bool acknowledged) {
+                if (generation != m_notificationGeneration || !acknowledged || m_shutdown || accountRemoved(account)
+                    || !reminderReceiptMatches(receipt, event, "shown") || m_remindersPresented.contains(key)) return;
+                auto current = receipt["event"].toObject().toVariantMap(); current["timing"] = event.value("timing");
+                m_remindersPresented.insert(key); m_reminders.append(current); emit remindersChanged();
+                emit desktopNotification(current.value("timing").toString() + " · " + current.value("title").toString(),
+                    current.value("account_name").toString() + " · " + current.value("calendar_name").toString());
+            });
+        }
+    });
+}
+
+void MailBackend::dismissCalendarReminder(const QVariantMap &event) { acknowledgeCalendarReminder(event, false); }
+void MailBackend::joinCalendarEvent(const QVariantMap &event) { acknowledgeCalendarReminder(event, true); }
+void MailBackend::acknowledgeCalendarReminder(const QVariantMap &event, bool join) {
+    if (!m_connected || m_shutdown) return;
+    const auto account = event.value("account").toString();
+    if (account.isEmpty() || accountRemoved(account)) return;
+    const auto lifecycle = lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong();
+    const auto context = notificationContext();
+    const QJsonObject params{{"calendar_id",event.value("calendar_id").toString()}, {"occurrence_id",event.value("id").toString()},
+        {"start",event.value("start").toString()}, {"state","dismissed"}};
+    request("calendar_reminder_ack", account, params, [this, account, lifecycle, context, event, join](auto receipt, bool ok) {
+        if (!ok || m_shutdown || accountRemoved(account)
+            || context != notificationContext() || !reminderReceiptMatches(receipt, event, "dismissed")
+            || lifecycle != lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong()) return;
+        const auto key = reminderKey(event);
+        m_reminders.removeIf([&key](const auto &row) { return reminderKey(row.toMap()) == key; }); emit remindersChanged();
+        if (join) {
+            const QUrl url(receipt["event"].toObject()["conference_url"].toString());
+            if (url.isValid() && url.scheme() == "https" && !url.host().isEmpty() && url.userInfo().isEmpty())
+                QDesktopServices::openUrl(url);
+        }
+    });
 }
 
 QDateTime MailBackend::clockNow() const {
@@ -85,6 +232,7 @@ void MailBackend::calendarWrite(const QVariantMap &values) {
 void MailBackend::loadPreferences() {
     request("preferences_get", {}, {}, [this](auto result, bool ok) {
         if (!ok || m_preferencesSaving) return;
+        if (!m_initialPreferencesLoaded) { m_initialPreferencesLoaded = true; emit startupReadyChanged(); }
         m_preferencesRevision = result["revision"].toInteger();
         auto preferences = result["preferences"].toObject().toVariantMap();
         for (auto it = m_preferencesPending.cbegin(); it != m_preferencesPending.cend(); ++it) preferences[it.key()] = it.value();

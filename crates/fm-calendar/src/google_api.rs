@@ -438,6 +438,13 @@ impl<T: HttpTransport> GoogleCalendarApi<T> {
         body["id"] = stable_id.into();
         let mut url = endpoint(&["calendars", calendar, "events"])?;
         write_parameters(&mut url, notifications);
+        match body.get("eventLabelId") {
+            None => {}
+            Some(Value::String(id)) if !id.is_empty() => {
+                url.query_pairs_mut().append_pair("eventLabelVersion", "1");
+            }
+            Some(_) => return Err(ApiError::InvalidRequest),
+        }
         let request = request(HttpMethod::Post, &url, access_token, EVENT_BYTES)?
             .body(encode_body(&body)?, "application/json")?;
         let response = self.execute(request, cancel, false).await?;

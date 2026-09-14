@@ -40,6 +40,8 @@ Canvas {
         case "trash": line([2.5,4,13.5,4]); line([6,2,10,2]); line([4,4,4.7,14,11.3,14,12,4]); line([6.5,6.5,6.8,11.5]); line([9.5,6.5,9.2,11.5]); break
         case "check": line([3.5,8,6.5,11,12.5,4.5]); break
         case "plus": line([8,3,8,13]); line([3,8,13,8]); break
+        case "minus": line([3.5,8,12.5,8]); break
+        case "combined": c.roundedRect(2.5,2.5,6.5,6.5,1,1); c.roundedRect(7,7,6.5,6.5,1,1); break
         case "filter": line([2.5,4,13.5,4]); line([5,8,11,8]); line([6.5,12,9.5,12]); break
         case "more": circle(3,8,0.7); circle(8,8,0.7); circle(13,8,0.7); break
         case "accounts": c.roundedRect(2,5,12,9,1.5,1.5); line([4.5,5,4.5,2.5,11.5,2.5,11.5,5]); break

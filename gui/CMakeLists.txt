@@ -1,5 +1,7 @@
 qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     main.cpp
+    NotificationPresenter.cpp
+    NotificationPresenter.h
     AccountLifecycleBackend.cpp
     MailBackend.cpp
     GoogleBackend.cpp
@@ -54,10 +56,10 @@ set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(fuckmail-gui
     URI FuckMail
     VERSION 1.0
-    QML_FILES Main.qml AccountLifecycleDialogs.qml Theme.qml FmButton.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmComboBox.qml MailView.qml MailFilters.qml SearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleLabelSetup.qml TodayStrip.qml
+    QML_FILES Main.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml FmButton.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmComboBox.qml MailView.qml MailFilters.qml SearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleLabelSetup.qml TodayStrip.qml
     RESOURCES fonts/Geist-Regular.ttf fonts/Geist-Medium.ttf fonts/Geist-SemiBold.ttf fonts/LICENSE-Geist.txt
 )
-target_link_libraries(fuckmail-gui PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
+target_link_libraries(fuckmail-gui PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets)
 target_compile_features(fuckmail-gui PRIVATE cxx_std_20)
 if(WIN32)
     target_link_libraries(fuckmail-gui PRIVATE advapi32)
@@ -166,6 +168,25 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME gui-calendar-occurrence COMMAND gui-calendar-occurrence-test)
     set_tests_properties(gui-calendar-occurrence PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
+    get_target_property(FM_NAVIGATION_TEST_SOURCES gui-calendar-occurrence-test SOURCES)
+    list(REMOVE_ITEM FM_NAVIGATION_TEST_SOURCES CalendarOccurrenceBackendTest.cpp)
+    add_executable(gui-mail-navigation-cache-test MailNavigationCacheTest.cpp ${FM_NAVIGATION_TEST_SOURCES})
+    target_link_libraries(gui-mail-navigation-cache-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
+    target_compile_features(gui-mail-navigation-cache-test PRIVATE cxx_std_20)
+    if(WIN32)
+        target_link_libraries(gui-mail-navigation-cache-test PRIVATE advapi32)
+    endif()
+    add_test(NAME gui-mail-navigation-cache COMMAND gui-mail-navigation-cache-test)
+    set_tests_properties(gui-mail-navigation-cache PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
+    add_executable(gui-notification-backend-test NotificationBackendTest.cpp ${FM_NAVIGATION_TEST_SOURCES})
+    target_link_libraries(gui-notification-backend-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
+    target_compile_features(gui-notification-backend-test PRIVATE cxx_std_20)
+    target_compile_definitions(gui-notification-backend-test PRIVATE FM_GUI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    if(WIN32)
+        target_link_libraries(gui-notification-backend-test PRIVATE advapi32)
+    endif()
+    add_test(NAME gui-notification-backend COMMAND gui-notification-backend-test)
+    set_tests_properties(gui-notification-backend PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
 endif()
 
 if(BUILD_TESTING)

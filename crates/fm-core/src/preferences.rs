@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
     json!({"density":"comfortable","week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
-        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"calendar_display_time_zone":null,"google_sync_limits":null})
+        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"calendar_display_time_zone":null,"google_sync_limits":null,"notifications":"events"})
 }
 impl Store {
     pub(crate) fn preferences(&self) -> Result<Value> {
@@ -83,6 +83,7 @@ impl Store {
                 "last_workspace",
                 "timeline_position",
                 "google_sync_limits",
+                "notifications",
                 "default_event_duration_minutes",
                 "calendar_display_time_zone",
             ],
@@ -122,6 +123,7 @@ impl Store {
             ("startup_view", &["mail", "calendar", "last"][..]),
             ("last_workspace", &["mail", "calendar"][..]),
             ("timeline_position", &["footer", "header"][..]),
+            ("notifications", &["all", "events", "off"][..]),
         ] {
             if !preferences[key]
                 .as_str()

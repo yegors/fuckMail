@@ -21,7 +21,7 @@ ApplicationWindow {
     property bool allowClose: false
     property var mailFocus: null
     property var calendarFocus: null
-    readonly property bool workspaceShortcutsAllowed: !accountLifecycleDialogs.popupOpen && !blocksWorkspaceShortcuts(activeFocusItem)
+    readonly property bool workspaceShortcutsAllowed: !startupOverlay.visible && !accountLifecycleDialogs.popupOpen && !blocksWorkspaceShortcuts(activeFocusItem)
     readonly property bool singleKeysAllowed: workspaceShortcutsAllowed && !typingInField(activeFocusItem)
     readonly property bool accountKeysAllowed: singleKeysAllowed && !settingsOpen && !searchPopup.opened
         && !(workspace === "mail" ? mailView.popupOpen : calendarView.popupOpen)
@@ -103,9 +103,16 @@ ApplicationWindow {
     onClosing: function(event) { if (!allowClose) { event.accepted = false; backend.shutdown() } }
     Connections { target: backend; function onShutdownReady() { window.allowClose = true; window.close() } }
     AccountLifecycleDialogs { id: accountLifecycleDialogs }
+    StartupOverlay {
+        id: startupOverlay
+        parent: Overlay.overlay
+        anchors.fill: parent
+        startupReady: backend.startupReady === true
+        startupFailed: backend.error.length > 0
+    }
     Shortcut { sequences: [StandardKey.Find, "Ctrl+K"]; enabled: window.workspaceShortcutsAllowed; onActivated: window.findMail() }
     Shortcut { sequence: "/"; enabled: window.singleKeysAllowed && !window.settingsOpen; onActivated: window.findMail() }
-    Shortcut { sequence: "C"; enabled: window.singleKeysAllowed && !window.settingsOpen; onActivated: window.navigate(window.workspace === "mail" ? "calendar" : "mail") }
+    Shortcut { sequence: "V"; enabled: window.singleKeysAllowed && !window.settingsOpen; onActivated: window.navigate(window.workspace === "mail" ? "calendar" : "mail") }
     Shortcut { sequence: ","; enabled: window.singleKeysAllowed; onActivated: window.navigate("settings") }
     Shortcut { sequence: "Ctrl+1"; enabled: window.workspaceShortcutsAllowed; onActivated: window.navigate("mail") }
     Shortcut { sequence: "Ctrl+2"; enabled: window.workspaceShortcutsAllowed; onActivated: window.navigate("calendar") }
@@ -132,8 +139,8 @@ ApplicationWindow {
                     radius: 6; color: Theme.surface
                     Row {
                         id: viewTabs; anchors.centerIn: parent; spacing: 2
-                        FmButton { objectName: "mailWorkspaceButton"; height: 28; text: "Mail"; iconName: "mail"; iconSize: 13; prominent: !window.settingsOpen && window.workspace === "mail"; tip: "Mail · c"; onClicked: window.navigate("mail") }
-                        FmButton { objectName: "calendarWorkspaceButton"; height: 28; text: "Calendar"; iconName: "calendar"; iconSize: 13; prominent: !window.settingsOpen && window.workspace === "calendar"; tip: "Calendar · c"; onClicked: window.navigate("calendar") }
+                        FmButton { objectName: "mailWorkspaceButton"; height: 28; text: "Mail"; iconName: "mail"; iconSize: 13; prominent: !window.settingsOpen && window.workspace === "mail"; tip: "Mail · v"; onClicked: window.navigate("mail") }
+                        FmButton { objectName: "calendarWorkspaceButton"; height: 28; text: "Calendar"; iconName: "calendar"; iconSize: 13; prominent: !window.settingsOpen && window.workspace === "calendar"; tip: "Calendar · v"; onClicked: window.navigate("calendar") }
                     }
                 }
                 Item { implicitWidth: 1; implicitHeight: 20; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, 0); width: Theme.ruleWidth; height: parent.height; color: Theme.line } }
@@ -285,5 +292,10 @@ ApplicationWindow {
         width: parent.width; height: implicitHeight; visible: window.timelineVisible
         headerPosition: window.timelineAtTop
         onOpenCalendar: window.navigate("calendar")
+    }
+    ReminderPopup {
+        anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 20
+        z: 200
+        visible: backend.reminders.length > 0 && !startupOverlay.visible
     }
 }

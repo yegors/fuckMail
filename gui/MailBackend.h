@@ -11,6 +11,7 @@
 #include <QVariantMap>
 #include <QSet>
 #include <QQueue>
+#include <QCache>
 #include <QUrl>
 #include <functional>
 
@@ -21,6 +22,7 @@ class GoogleOperation;
 class MailBackend final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList accounts READ accounts NOTIFY accountsChanged)
+    Q_PROPERTY(bool startupReady READ startupReady NOTIFY startupReadyChanged)
     Q_PROPERTY(QVariantList allAccounts READ allAccounts NOTIFY accountsChanged)
     Q_PROPERTY(bool accountArchived READ accountArchived NOTIFY accountLifecycleChanged)
     Q_PROPERTY(QVariantMap accountLifecycle READ accountLifecycle NOTIFY accountLifecycleChanged)
@@ -28,6 +30,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QAbstractItemModel *accountModel READ accountModel CONSTANT)
     Q_PROPERTY(QVariantList conversations READ conversations NOTIFY conversationsChanged)
     Q_PROPERTY(QAbstractItemModel *conversationModel READ conversationModel CONSTANT)
+    Q_PROPERTY(QAbstractItemModel *messageModel READ messageModel CONSTANT)
     Q_PROPERTY(QVariantList categories READ categories NOTIFY categoriesChanged)
     Q_PROPERTY(QVariantMap conversation READ conversation NOTIFY conversationChanged)
     Q_PROPERTY(QVariantMap senderCard READ senderCard NOTIFY senderCardChanged)
@@ -36,6 +39,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QVariantMap recipientInputs READ recipientInputs NOTIFY draftChanged)
     Q_PROPERTY(QVariantList events READ events NOTIFY eventsChanged)
     Q_PROPERTY(QVariantList todayEvents READ todayEvents NOTIFY eventsChanged)
+    Q_PROPERTY(QVariantList reminders READ reminders NOTIFY remindersChanged)
     Q_PROPERTY(QString account READ account NOTIFY accountChanged)
     Q_PROPERTY(QVariantMap currentAccount READ currentAccount NOTIFY currentAccountChanged)
     Q_PROPERTY(QString query READ query WRITE setQuery NOTIFY queryChanged)
@@ -104,6 +108,7 @@ public:
     ~MailBackend() override;
     QVariantList accounts() const { return m_accounts; }
     QVariantList allAccounts() const { return m_allAccounts; }
+    bool startupReady() const { return m_initialAccountsLoaded && m_initialPreferencesLoaded; }
     bool accountArchived() const;
     bool accountRemoved(const QString &account) const;
     QVariantMap accountLifecycle() const;
@@ -111,6 +116,7 @@ public:
     QAbstractItemModel *accountModel() { return &m_accountModel; }
     QVariantList conversations() const { return m_conversations; }
     QAbstractItemModel *conversationModel() { return &m_conversationModel; }
+    QAbstractItemModel *messageModel() { return &m_messageModel; }
     QVariantList categories() const { return m_categories; }
     QVariantMap conversation() const { return m_conversation; }
     QVariantMap senderCard() const { return m_senderCard; }
@@ -119,6 +125,9 @@ public:
     QVariantMap recipientInputs() const { QVariantMap values; for (auto it = m_recipientInputs.cbegin(); it != m_recipientInputs.cend(); ++it) values[it.key()] = it.value(); return values; }
     QVariantList events() const { return m_events; }
     QVariantList todayEvents() const { return m_todayEvents; }
+    QVariantList reminders() const { return m_reminders; }
+    Q_INVOKABLE void dismissCalendarReminder(const QVariantMap &event);
+    Q_INVOKABLE void joinCalendarEvent(const QVariantMap &event);
     QVariantMap currentAccount() const;
     QString account() const { return m_account; }
     QString query() const { return m_query; }
@@ -291,6 +300,9 @@ public:
     Q_INVOKABLE void remember(const QString &key, const QVariant &value);
     Q_INVOKABLE void shutdown();
 signals:
+    void remindersChanged();
+    void desktopNotification(const QString &title, const QString &body);
+    void startupReadyChanged();
     void accountsChanged();
     void accountLifecycleChanged();
     void accountRemovalReady(const QVariantMap &context);
@@ -326,6 +338,8 @@ signals:
     void ready();
     void shutdownReady();
 private:
+    friend class MailNavigationCacheTest;
+    friend class NotificationBackendTest;
     friend class GuiMailNavigationSelfTest;
     friend class GuiInteractionBenchmark;
     friend class GuiSettingsSelfTest;
@@ -377,11 +391,21 @@ private:
     bool publishAccounts(QVariantList accounts);
     void loadConversations(bool append = false, bool preserveLoaded = false);
     bool publishConversations(QVariantList rows);
+    QVariantMap mailViewScope() const;
+    void cacheMailView();
+    bool restoreMailView();
+    void cacheConversation(const QString &account, const QString &id, const QVariantMap &data, qint64 lifecycle);
+    bool restoreConversation(const QString &account, const QString &id);
     void loadConversationPage(const QString &account, int generation, QJsonObject params, QVariantList collected, int desiredCount, int cursorRetries = 0);
     void loadConversation(bool loadDraft, bool reviewOnLoad = false);
     void loadCalendar();
     void loadCalendarOperationsPage(bool append);
     void loadPreferences();
+    void configureNotifications();
+    QString notificationContext() const;
+    void pollNotifications();
+    void pollMailNotifications();
+    void acknowledgeCalendarReminder(const QVariantMap &event, bool join);
     void loadCalendarSources();
     void loadCaptures(bool append = false);
     void savePreferences();
@@ -465,7 +489,29 @@ private:
     QString m_attachmentImportActive;
     // Both projections use the same identified-row diff; account rows need only
     // rowData, with their id as the identity and no predecessor presentation.
-    ConversationListModel m_accountModel, m_conversationModel;
+    ConversationListModel m_accountModel, m_conversationModel, m_messageModel;
+    struct MailViewSnapshot {
+        QVariantMap scope, summary;
+        QVariantList rows, categories;
+        qint64 lifecycle = 0;
+        int nextOffset = -1;
+        QString nextCursor;
+    };
+    struct ReaderSnapshot { QVariantMap data; qint64 lifecycle = 0; };
+    QCache<QString, MailViewSnapshot> m_mailViewCache{8 * 1024 * 1024};
+    QCache<QPair<QString, QString>, ReaderSnapshot> m_readerCache{8 * 1024 * 1024};
+    bool m_initialAccountsLoaded = false, m_initialPreferencesLoaded = false;
+    QTimer m_notificationTimer;
+    QVariantList m_reminders;
+    QSet<QString> m_remindersPresented;
+    QString m_notificationConfig;
+    QString m_mailNotificationConfig;
+    QDateTime m_notificationsSince;
+    qint64 m_mailNotificationCursor = -1;
+    int m_notificationGeneration = 0;
+    int m_mailNotificationGeneration = 0;
+    bool m_notificationPolling = false;
+    bool m_mailNotificationPolling = false;
     QString m_profile, m_engine, m_token, m_account, m_query, m_selected, m_error, m_category;
     QString m_folder = "inbox", m_weekStart = "2026-09-07", m_fixtureToday = "2026-09-11";
     QString m_draftStatus;

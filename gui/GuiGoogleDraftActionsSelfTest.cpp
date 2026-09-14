@@ -98,6 +98,7 @@ void GuiGoogleDraftActionsSelfTest::tick() {
     const auto expected=account[action].toObject(); QString error;
     switch(m_stage) {
     case 0:
+        if (const auto loader = named(m_window->contentItem(), "startupOverlay"); loader && loader->isVisible()) return;
         if(!m_backend.connected()||m_backend.accounts().isEmpty())return;
         if(m_backend.syntheticProfile()){finish("Actions require the isolated live-mode fixture.");return;}
         m_stage=1; break;

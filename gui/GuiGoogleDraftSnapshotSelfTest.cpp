@@ -147,7 +147,7 @@ bool GuiGoogleDraftSnapshotSelfTest::verifyReadOnlyControls(MailBackend &backend
         || document->plainText() != plain || document->html() != html) {
         error = "A mutation path changed the imported snapshot or dispatched work."; return false;
     }
-    for (const auto &name : {"captureReply", "draftAttachButton", "draftDiscardButton", "discardReply"}) {
+    for (const auto &name : {"captureReply", "draftAttachButton", "discardReply"}) {
         auto control = itemNamed(root, name);
         if (control && control->isVisible()) { error = QString("Imported preview exposes authoring control %1.").arg(name); return false; }
     }
@@ -188,6 +188,7 @@ void GuiGoogleDraftSnapshotSelfTest::tick() {
     QString error;
     switch (m_stage) {
     case 0:
+        if (const auto loader = itemNamed(m_window->contentItem(), "startupOverlay"); loader && loader->isVisible()) return;
         if (!m_backend.connected() || m_backend.accounts().isEmpty()) return;
         if (m_backend.syntheticProfile()) { finish("This test requires the retained isolated live-mode fixture."); return; }
         m_stage = 1; break;

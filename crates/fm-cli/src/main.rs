@@ -12,11 +12,14 @@ use std::{
     name = "fm",
     version,
     about = "fuckMail: local mail and calendar, through the same engine as the GUI",
-    after_help = "The default profile is synthetic. Use profile-init with an explicit path for live Google accounts.\nGoogle sign-in starts only with an explicit google connect or google restore command. fm never opens the mail database directly."
+    after_help = "The default profile is an empty live profile shared with the GUI. Use --demo-profile only for synthetic examples.\nGoogle sign-in starts only with an explicit google connect or google restore command and --profile. fm never opens the mail database directly."
 )]
 struct Args {
     #[arg(long, global = true)]
     profile: Option<PathBuf>,
+    /// Explicitly open/create synthetic demo content in a separate profile.
+    #[arg(long, global = true)]
+    demo_profile: bool,
     #[arg(long, global = true)]
     engine: Option<PathBuf>,
     #[arg(long, global = true)]
@@ -52,6 +55,15 @@ enum Command {
     },
     /// Engine/schema/fixture status (starts an explicit temporary session).
     Status,
+    /// Read a bounded cursor of newly acquired incoming mail; starts at the current cache end.
+    Notifications {
+        #[arg(long, requires = "since", value_parser = clap::value_parser!(i64).range(0..))]
+        after: Option<i64>,
+        #[arg(long, requires = "after")]
+        since: Option<String>,
+        #[arg(long)]
+        now: Option<String>,
+    },
     /// Bounded conversation reading, searching and explicit user actions.
     Mail {
         #[command(subcommand)]
@@ -97,6 +109,7 @@ enum Command {
         request_id: String,
     },
     /// Read a half-open date range from the selected account or combined calendars.
+    #[command(args_conflicts_with_subcommands = true)]
     Calendar {
         #[arg(long)]
         combined: bool,
@@ -104,6 +117,8 @@ enum Command {
         from: Option<String>,
         #[arg(long)]
         to: Option<String>,
+        #[command(subcommand)]
+        command: Option<CalendarCommand>,
     },
     /// Copy a verified retained attachment to a new file, or inspect its state.
     Attachment {
@@ -122,6 +137,28 @@ enum Command {
         method: String,
         #[arg(long)]
         params_file: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
+enum CalendarCommand {
+    /// List current selected, permitted Soon/Now reminders without acknowledging them.
+    Reminders {
+        #[arg(long)]
+        now: Option<String>,
+    },
+    /// Record display/dismissal of an exact currently permitted occurrence; no provider write.
+    ReminderAck {
+        #[arg(long)]
+        calendar_id: String,
+        #[arg(long)]
+        occurrence_id: String,
+        #[arg(long)]
+        start: String,
+        #[arg(long, value_parser = ["shown", "dismissed"])]
+        state: String,
+        #[arg(long)]
+        now: Option<String>,
     },
 }
 
@@ -1050,6 +1087,61 @@ async fn main() {
     }
 }
 
+fn notification_request(command: &Command) -> Result<Option<(&'static str, Value)>, Failure> {
+    let (method, mut params, now) = match command {
+        Command::Notifications { after, since, now } => {
+            let mut params = json!({});
+            if let Some(after) = after {
+                params["after"] = json!(after);
+            }
+            if let Some(since) = since {
+                params["since"] = json!(since);
+            }
+            ("mail_notifications", params, now)
+        }
+        Command::Calendar {
+            command: Some(CalendarCommand::Reminders { now }),
+            ..
+        } => ("calendar_reminders", json!({}), now),
+        Command::Calendar {
+            command:
+                Some(CalendarCommand::ReminderAck {
+                    calendar_id,
+                    occurrence_id,
+                    start,
+                    state,
+                    now,
+                }),
+            ..
+        } => (
+            "calendar_reminder_ack",
+            json!({"calendar_id":calendar_id,"occurrence_id":occurrence_id,"start":start,"state":state}),
+            now,
+        ),
+        _ => return Ok(None),
+    };
+    if let Some(now) = now {
+        params["now"] = json!(now);
+    }
+    for (key, max) in [
+        ("calendar_id", 1024),
+        ("occurrence_id", 8192),
+        ("start", 64),
+        ("since", 64),
+        ("now", 64),
+    ] {
+        if params.get(key).is_some_and(|v| {
+            v.as_str()
+                .is_none_or(|v| v.is_empty() || v.len() > max || v.chars().any(char::is_control))
+        }) {
+            return Err(invalid(
+                "Notification identities and timestamps must be bounded text",
+            ));
+        }
+    }
+    Ok(Some((method, params)))
+}
+
 async fn run(args: &Args) -> Result<(), Failure> {
     #[cfg(feature = "verification-google")]
     if args.verification_google_auth
@@ -1066,6 +1158,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
     }
     let profile = match &args.profile {
         Some(p) => p.to_owned(),
+        None if args.demo_profile => fm_ipc::demo_profile()?,
         None => fm_ipc::default_profile()?,
     };
     let engine = args
@@ -1077,11 +1170,16 @@ async fn run(args: &Args) -> Result<(), Failure> {
         args.command,
         Command::Accounts { .. }
             | Command::Status
+            | Command::Notifications { .. }
             | Command::Watch { .. }
             | Command::Call { .. }
             | Command::Preferences { .. }
             | Command::CalendarSources
             | Command::Calendar { combined: true, .. }
+            | Command::Calendar {
+                command: Some(CalendarCommand::Reminders { .. }),
+                ..
+            }
             | Command::ProfileInit
             | Command::Google {
                 command: Google::Connect { .. }
@@ -1107,6 +1205,11 @@ async fn run(args: &Args) -> Result<(), Failure> {
     if live_command && args.profile.is_none() {
         return Err(invalid(
             "profile-init, account, Google and retained Google draft commands require an explicit --profile path",
+        ));
+    }
+    if live_command && args.demo_profile {
+        return Err(invalid(
+            "Google and account commands cannot use --demo-profile",
         ));
     }
     let google_client_path = if let Command::Google {
@@ -1143,7 +1246,10 @@ async fn run(args: &Args) -> Result<(), Failure> {
     let google_composition = google_composition_request(&args.command)?;
     let draft_source = draft_source_request(&args.command)?;
     let account_lifecycle = account_lifecycle_request(&args.command)?;
-    let mut client = if live_command {
+    let notification = notification_request(&args.command)?;
+    let mut client = if args.demo_profile {
+        Client::connect_demo(&profile, engine.as_deref()).await?
+    } else if live_command || args.profile.is_none() {
         Client::connect_live(&profile, engine.as_deref()).await?
     } else {
         Client::connect(&profile, engine.as_deref()).await?
@@ -1182,6 +1288,19 @@ async fn run(args: &Args) -> Result<(), Failure> {
             client.call(method, scope, params).await?
         }
         Command::Status | Command::ProfileInit => client.call("status", None, json!({})).await?,
+        Command::Notifications { .. }
+        | Command::Calendar {
+            command: Some(_), ..
+        } => {
+            let (method, params) =
+                notification.expect("notification request validated before connection");
+            let account = if method == "calendar_reminder_ack" {
+                scope
+            } else {
+                None
+            };
+            client.call(method, account, params).await?
+        }
         Command::Google {
             command: Google::Disconnect,
         } => client.call("google_disconnect", scope, json!({})).await?,
@@ -1825,7 +1944,12 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 client.call("draft_save", scope, params).await?
             }
         },
-        Command::Calendar { from, to, combined } => {
+        Command::Calendar {
+            from,
+            to,
+            combined,
+            command: None,
+        } => {
             let mut params = json!({});
             if let Some(from) = from {
                 params["from"] = json!(from);
@@ -1969,6 +2093,99 @@ fn emit(args: &Args, reply: &Value) -> Result<(), Failure> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn notification_commands_map_exact_cached_queries_and_local_receipts() {
+        for (args, method, expected) in [
+            (vec!["notifications"], "mail_notifications", json!({})),
+            (
+                vec![
+                    "notifications",
+                    "--after",
+                    "7",
+                    "--since",
+                    "2026-09-14T13:00:00Z",
+                ],
+                "mail_notifications",
+                json!({"after":7,"since":"2026-09-14T13:00:00Z"}),
+            ),
+            (
+                vec!["calendar", "reminders"],
+                "calendar_reminders",
+                json!({}),
+            ),
+            (
+                vec!["calendar", "reminders", "--now", "2026-09-14T13:00:00Z"],
+                "calendar_reminders",
+                json!({"now":"2026-09-14T13:00:00Z"}),
+            ),
+            (
+                vec![
+                    "calendar",
+                    "reminder-ack",
+                    "--calendar-id",
+                    "calendar",
+                    "--occurrence-id",
+                    "instance",
+                    "--start",
+                    "2026-09-14",
+                    "--state",
+                    "dismissed",
+                ],
+                "calendar_reminder_ack",
+                json!({"calendar_id":"calendar","occurrence_id":"instance","start":"2026-09-14","state":"dismissed"}),
+            ),
+        ] {
+            let mut command = vec!["fm"];
+            command.extend(args);
+            let parsed = Args::try_parse_from(command).unwrap();
+            assert_eq!(
+                notification_request(&parsed.command).unwrap(),
+                Some((method, expected))
+            );
+        }
+        let old = Args::try_parse_from([
+            "fm",
+            "calendar",
+            "--combined",
+            "--from",
+            "2026-09-14",
+            "--to",
+            "2026-09-15",
+        ])
+        .unwrap();
+        assert!(notification_request(&old.command).unwrap().is_none());
+        for args in [
+            vec!["fm", "notifications", "--after", "1"],
+            vec!["fm", "notifications", "--since", "2026-09-14T13:00:00Z"],
+            vec![
+                "fm",
+                "notifications",
+                "--after",
+                "-1",
+                "--since",
+                "2026-09-14T13:00:00Z",
+            ],
+            vec!["fm", "calendar", "--combined", "reminders"],
+            vec![
+                "fm",
+                "calendar",
+                "reminder-ack",
+                "--calendar-id",
+                "c",
+                "--occurrence-id",
+                "i",
+                "--start",
+                "2026-09-14",
+                "--state",
+                "sent",
+            ],
+        ] {
+            assert!(Args::try_parse_from(args).is_err());
+        }
+        let malformed =
+            Args::try_parse_from(["fm", "calendar", "reminders", "--now", "bad\ntime"]).unwrap();
+        assert!(notification_request(&malformed.command).is_err());
+    }
     #[test]
     fn engine_recovery_proofs_survive_failure_and_cli_json_serialization() {
         for details in [

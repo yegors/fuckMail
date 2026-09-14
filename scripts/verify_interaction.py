@@ -139,7 +139,7 @@ def run(args):
                 result["seed_message_count"] = clone_seed(seed, profile)
             try:
                 with engine_log.open("wb") as engine_stream, gui_log.open("wb") as gui_stream, (scratch / "preparation.log").open("wb") as setup_stream:
-                    engine = subprocess.Popen([str(programs["fm-engine"]), "--profile", str(profile)], cwd=scratch,
+                    engine = subprocess.Popen([str(programs["fm-engine"]), "--profile", str(profile), "--demo-profile"], cwd=scratch,
                                               env=env, stdin=subprocess.DEVNULL, stdout=engine_stream, stderr=subprocess.STDOUT)
                     children.append(engine)
                     deadline = time.monotonic() + 45

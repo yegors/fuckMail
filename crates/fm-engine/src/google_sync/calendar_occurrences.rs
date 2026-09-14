@@ -15,6 +15,15 @@ use serde_json::{json, Value};
 use std::{collections::BTreeSet, sync::Arc};
 
 pub(crate) async fn read(ctx: &SyncContext, params: Value) -> Result<Value> {
+    if params.get("scope").is_some() {
+        let (selector, scope, action) = fm_core::live_calendar_recurring::read_selector(&params)?;
+        let epoch = calendar_writes::refresh_permission(ctx, selector.calendar_id()).await?;
+        let (prepared, memory) = prepare(ctx, selector, epoch).await?;
+        return memory_core(ctx, &memory, move |store| {
+            store.calendar_live_recurring_read_finish(prepared, &scope, &action)
+        })
+        .await;
+    }
     let selector = CalendarOccurrenceSelector::parse(&params)?;
     let epoch = calendar_writes::refresh_permission(ctx, selector.calendar_id()).await?;
     let (prepared, memory) = prepare(ctx, selector, epoch).await?;

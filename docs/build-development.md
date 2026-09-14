@@ -2,6 +2,12 @@
 
 This is the shared native developer workflow. The app is Rust engine/CLI plus a C++20 Qt Quick/QML client and SQLite. Python is used only to orchestrate developer tools; the packaged app has no Python, Node.js or JavaScript build dependency. Phase 1 is complete on available hosts; [Phase 2 execution](research/phase-2-execution.md) owns current integration results. The historical host checks below retain their original source and limits.
 
+## Phase 2 feedback launch
+
+Ordinary GUI and CLI startup now use a separate, empty live profile (`fuckMail/default` under the local user-data directory). Existing `demo-v1` data is preserved. Open **Settings → Accounts → Add Google account**, choose the existing OAuth desktop-client JSON and sign in through the browser. Sign-in alone does not import. Confirm the actual Google Console quota limits in Settings, then start sync. Real data needs the agreed encrypted local disk and protected profile; keep it outside Git and cloud-sync folders. Removing an account archives its local data and removes credentials without deleting anything at Google.
+
+The September 14 prototype is the current visual reference. Native loading follows actual startup readiness, mail revisits use bounded caches, and reminder/notification preferences apply while the GUI is running. Run `fm --help` for the matching CLI workflows. This unsigned feedback build requires the current execution checks and user-driven Google account trial; the historical Phase 1 walkthrough below retains its synthetic scope.
+
 ## First setup
 
 macOS, from the checkout:
@@ -41,7 +47,7 @@ Ubuntu 24.04 uses the same `scripts/dev.sh` commands after installing a C++ comp
 | CLI help | `scripts/dev.sh cli -- --help` | `./scripts/dev.ps1 cli -- --help` |
 | Optimized development package | `scripts/dev.sh package --preset release` | `./scripts/dev.ps1 package --preset release` |
 
-GUI/CLI arguments follow `--`, for example `scripts/dev.sh run -- --profile /absolute/local/demo-profile`. Use the same profile for both clients. The engine creates a private profile directory, including missing parent directories. The normal demo is synthetic and never authenticates with a provider. Do not point test commands at a real mailbox profile.
+GUI/CLI arguments follow `--`, for example `scripts/dev.sh run -- --profile /absolute/local/demo-profile --demo-profile`. Use the same profile for both clients. The engine creates a private profile directory, including missing parent directories. Synthetic data requires explicit `--demo-profile` or a test/fixture option. Do not point test commands at a real mailbox profile.
 
 `--preset dev` is the default; `release` uses optimized Rust and C++ builds. Both use the tracked [CMake presets](../CMakePresets.json), [tool inputs](../scripts/toolchain.json), [Python dependency lock](../scripts/bootstrap-requirements.txt) and Rust toolchain/lockfile. Builds copy `fm` and `fm-engine` beside the GUI executable so engine discovery is the same as in the package. The developer launcher reads CMake’s generated executable path, including the different Windows build-directory layout. The CLI itself does not load Qt or need a display.
 

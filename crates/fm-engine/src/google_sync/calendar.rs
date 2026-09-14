@@ -16,6 +16,22 @@ use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::OwnedSemaphorePermit;
 
+#[derive(Clone, Copy)]
+pub(crate) struct ReadGrants {
+    pub(crate) catalog: bool,
+    pub(crate) events: bool,
+    pub(crate) busy: bool,
+}
+impl ReadGrants {
+    pub(crate) fn from_scopes(scopes: &fm_google::auth::ScopeSet<'_>) -> Self {
+        Self {
+            catalog: scopes.calendar_catalog_read(),
+            events: scopes.calendar_events_read(),
+            busy: scopes.calendar_free_busy(),
+        }
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct PassSummary {
     pub(crate) more: bool,
@@ -34,7 +50,7 @@ pub(crate) async fn run_pass(ctx: &SyncContext, refresh_catalog: bool) -> Result
     let checkpoint = ctx
         .core_call(move |s| s.calendar_catalog_checkpoint(&account))
         .await?;
-    if refresh_catalog || checkpoint["sync_token"].is_null() {
+    if ctx.calendar_reads.catalog && (refresh_catalog || checkpoint["sync_token"].is_null()) {
         summary.pages += sync_catalog(ctx).await?;
     }
     let mut after = None;
@@ -47,6 +63,9 @@ pub(crate) async fn run_pass(ctx: &SyncContext, refresh_catalog: bool) -> Result
         for scope in scopes["scopes"].as_array().ok_or_else(invalid_checkpoint)? {
             let calendar = text(scope, "calendar_id")?.to_owned();
             summary.calendars += 1;
+            if !ctx.calendar_reads.events {
+                continue;
+            }
             let result = event_turn(ctx, &calendar, refresh_catalog).await;
             match result {
                 Ok((pages, more)) => {
@@ -133,7 +152,7 @@ async fn event_turn(
 ) -> Result<(u64, bool)> {
     cleanup(ctx, calendar).await?;
     let initial = scope(ctx, calendar).await?;
-    if refresh_permission && initial["membership_denied"] != true {
+    if refresh_permission && ctx.calendar_reads.catalog && initial["membership_denied"] != true {
         refresh_permission_for(ctx, calendar).await?;
     }
     let current_scope = scope(ctx, calendar).await?;
@@ -469,6 +488,12 @@ async fn cleanup(ctx: &SyncContext, calendar: &str) -> Result<()> {
 /// Only the requested visible date range is acquired. Per-calendar unavailable
 /// responses remain unavailable coverage and never become empty/free time.
 pub(crate) async fn refresh_busy(ctx: &SyncContext, window: Window) -> Result<u64> {
+    if !ctx.calendar_reads.busy {
+        return Err(failure(
+            "permission_denied",
+            "Google free/busy access was not granted",
+        ));
+    }
     let mut after = None;
     let mut fetched = 0;
     loop {
@@ -479,7 +504,14 @@ pub(crate) async fn refresh_busy(ctx: &SyncContext, window: Window) -> Result<u6
             .await?;
         let mut epochs = BTreeMap::new();
         for scope in scopes["scopes"].as_array().ok_or_else(invalid_checkpoint)? {
-            if scope["access"] == "free_busy" {
+            let access = text(scope, "access")?;
+            if access == "free_busy"
+                || (!ctx.calendar_reads.events
+                    && matches!(
+                        access,
+                        "reader" | "writer" | "writer_without_private_access" | "owner"
+                    ))
+            {
                 epochs.insert(
                     text(scope, "calendar_id")?.to_owned(),
                     integer(scope, "permission_epoch")?,

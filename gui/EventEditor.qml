@@ -19,16 +19,31 @@ Popup {
     property bool unknownOutcome: false
     property string operationState: ""
     property double operationRevision: -1
+    property bool operationCanResume: false
+    property bool recurrenceTouched: false
+    readonly property int repeatRuleIndex: repeatFrequency.currentIndex - (editEvent.event_id ? 1 : 0)
     property var initialTextFields: ({})
     property var initialTimeFields: ({})
     property var submittedRequest: ({})
     property bool staleRevision: false
     property var latestEvent: ({})
     property bool timelineSource: false
-    readonly property bool occurrence: !!editEvent.occurrence
+    readonly property string recurringScope: (editEvent.recurring_context || {}).scope || ""
+    readonly property bool occurrence: !!editEvent.occurrence || recurringScope.length > 0
+    readonly property bool following: recurringScope === "following"
+    function scopeLabel() { return {occurrence:"This occurrence",series:"Entire series",following:"This and following"}[recurringScope] || "This occurrence" }
+    function recoveryAction() { return ["prepared", "ready"].indexOf(operationState) >= 0 || (operationState === "partial" && operationCanResume) ? "resume" : operationState === "unknown" ? "reconcile" : "check" }
+    function followingText() { return editEvent.following_notice || "Google resets exceptions from this occurrence onward. Earlier exceptions stay unchanged. If this event uses Google Meet, the replacement series gets a new meeting." }
+    function stepSummary(steps) {
+        return (steps || []).map(function(step) {
+            return (step.step === "trim" ? "Old series trim: " : "Replacement: ") + ({acknowledged:"accepted by Google",accepted:"accepted by Google, refreshing",reconciled:"observed; response unconfirmed",not_attempted:"not attempted",unknown:"result unconfirmed",in_flight:"in progress",prepared:"not sent",ready:"not sent",rejected:"not accepted",abandoned:"abandoned"}[step.state] || "needs attention")
+        }).join(". ")
+    }
+    function recurringRequest(confirmed) { return Object.assign({}, editEvent.recurring_context, following && confirmed ? {reset_future_exceptions:true} : {}) }
     readonly property bool occurrenceReady: !occurrence || occurrenceRead.current(editEvent.occurrence_ui_context)
     CalendarOccurrenceRead {
         id: occurrenceRead; selection: editor.editEvent; active: editor.visible; timelineSource: editor.timelineSource
+        scope: editor.recurringScope; action: editor.editEvent.recurring_action || "edit"
         onResolved: function(event) {
             editor.editEvent = event; editor.staleRevision = false; editor.requestId = ""; editor.submittedFields = ""
             editor.feedback = "Current occurrence checked. Your fields are retained; review them before saving."
@@ -45,9 +60,11 @@ Popup {
         && backend.accountCapability(targetAccount, "calendar_write") && backend.googleSyncState(targetAccount).active === true))
     readonly property bool sourceReady: backend.calendarSources.some(function(s) { return s.account === editor.targetAccount && s.calendar_id === editor.targetCalendarId && s.writable && (!editor.live || !!editor.editEvent.event_id || s.can_create === true) })
     readonly property bool formReady: accountReady && sourceReady && occurrenceReady && !occurrenceRead.busy && (!live || !editEvent.event_id || editEvent.can_edit === true)
-    readonly property bool actionReady: backend.connected && (!unknownOutcome || !live || ["prepared", "ready", "unknown"].indexOf(operationState) < 0 || accountReady)
+    readonly property bool reconciliationReady: backend.connected && backend.accounts.length >= 0 && backend.googleSync
+        && backend.accountCapability(targetAccount, "calendar_read") && backend.googleSyncState(targetAccount).active === true
+    readonly property bool actionReady: backend.connected && (!unknownOutcome || !live || recoveryAction() === "check" || (recoveryAction() === "reconcile" ? reconciliationReady : accountReady))
     readonly property bool canAbandon: live && unknownOutcome && operationRevision >= 0
-        && ["prepared", "ready", "unknown", "conflict", "rejected"].indexOf(operationState) >= 0
+        && ["prepared", "ready", "unknown", "conflict", "rejected", "partial"].indexOf(operationState) >= 0
     readonly property var preview: ({title: titleField.text || "(No title)", date: startDate.text,
         endDate: endDate.text, startHour: clockHour(startTime.text), endHour: clockHour(endTime.text),
         allDay: allDay.checked, location: locationField.text, eventId: editEvent.event_id || ""})
@@ -73,22 +90,27 @@ Popup {
         if (reason === "too_many_attendees") return "This guest list exceeds the supported limit of 50. Other event fields can still be edited."
         return "This guest list contains details that cannot be safely edited here. Other event fields can still be edited."
     }
-    function setSlot(date, hour) {
+    function setSlot(date, hour) { setSlotRange(date, hour, undefined) }
+    function setSlotRange(date, hour, endHour) {
         if (saving || unknownOutcome) return
         let duration = Math.max(.25, clockHour(endTime.text) - clockHour(startTime.text))
         if (!isFinite(duration)) duration = (backend.preferences.default_event_duration_minutes || 60) / 60
         startDate.text = date; endDate.text = date; allDay.checked = false
         function hm(value) { let minutes = Math.round(Math.min(23.9833, value) * 60); return (Math.floor(minutes / 60) < 10 ? "0" : "") + Math.floor(minutes / 60) + ":" + (minutes % 60 < 10 ? "0" : "") + minutes % 60 }
-        startTime.text = hm(hour); endTime.text = hm(hour + duration); titleField.forceActiveFocus()
+        const end = endHour === undefined ? Math.min(23.9833, hour + duration) : endHour
+        startTime.text = hm(hour)
+        if (end >= 24) { const next = new Date(date + "T12:00:00"); next.setDate(next.getDate() + 1); endDate.text = Qt.formatDate(next, "yyyy-MM-dd"); endTime.text = "00:00" }
+        else endTime.text = hm(end)
+        titleField.forceActiveFocus()
     }
     Shortcut { sequence: "Ctrl+Return"; enabled: editor.opened && editor.activeFocus && !editor.saving && editor.actionReady && (editor.unknownOutcome || (!editor.staleRevision && editor.formReady)); onActivated: editor.save() }
     Shortcut { sequence: "Meta+Return"; enabled: editor.opened && editor.activeFocus && !editor.saving && editor.actionReady && (editor.unknownOutcome || (!editor.staleRevision && editor.formReady)); onActivated: editor.save() }
     onOpened: {
         titleField.forceActiveFocus()
         formScroll.contentItem.contentY = 0
-        Qt.callLater(function() { if (editor.opened) formScroll.contentItem.contentY = 0 })
+        Qt.callLater(function() { if (editor.opened) { formScroll.contentItem.contentY = 0; if (editor.editEvent.recurring_action === "delete") deleteConfirmation.open() } })
     }
-    onAboutToHide: occurrenceRead.invalidate()
+    onAboutToHide: { occurrenceRead.invalidate(); followingConfirmation.close(); deleteConfirmation.close() }
     function openForDate(date) {
         occurrenceRead.invalidate()
         titleField.text = editEvent.title || ""
@@ -110,6 +132,8 @@ Popup {
         targetCalendarId = editEvent.calendar_id || (source ? source.calendar_id : "")
         initialTextFields = {title: titleField.text, location: locationField.text, description: notesField.text}
         initialTimeFields = timeFields()
+        recurrenceTouched = false; repeatFrequency.currentIndex = 0; repeatInterval.text = "1"; repeatCount.text = ""
+        operationCanResume = false
         saving = false; unknownOutcome = false; operationState = ""; operationRevision = -1; staleRevision = false; latestEvent = ({}); submittedRequest = ({}); feedback = ""; requestId = ""; submittedFields = ""; open()
     }
     function timeFields() { return {all_day: allDay.checked, start_date: startDate.text, end_date: endDate.text, start_time: startTime.text, end_time: endTime.text, time_zone: zoneField.text} }
@@ -135,6 +159,17 @@ Popup {
             if (!guestsEditable) { feedback = "Guest editing is no longer available. Your guest changes remain here; reopen the current event before continuing."; return null }
             fields.attendees = allGuests()
         }
+        if (live && recurrenceTouched && (!editing || recurringScope === "series")) {
+            const frequency = ["", "DAILY", "WEEKLY", "MONTHLY", "YEARLY"][repeatRuleIndex]
+            if (!frequency) { if (editing) fields.recurrence = [] }
+            else {
+                const interval = Number(repeatInterval.text), count = repeatCount.text.trim().length ? Number(repeatCount.text) : 0
+                if (!Number.isInteger(interval) || interval < 1 || interval > 99 || (repeatCount.text.trim().length && (!Number.isInteger(count) || count < 1 || count > 1000))) {
+                    feedback = "Use an interval from 1 to 99 and an optional count from 1 to 1000."; return null
+                }
+                fields.recurrence = ["RRULE:FREQ=" + frequency + (interval === 1 ? "" : ";INTERVAL=" + interval) + (count ? ";COUNT=" + count : "")]
+            }
+        }
         return fields
     }
     function resolveOperation(action) {
@@ -142,13 +177,15 @@ Popup {
         saving = true; feedback = action === "resume" ? "Resuming the recorded change…" : "Checking the recorded change…"
         backend.calendarOperationAction(submittedRequest.account, submittedRequest.request_id, action, operationRevision)
     }
-    function save() {
+    function save() { saveConfirmed(false) }
+    function saveConfirmed(followingConfirmed) {
         if (saving) return
         if (unknownOutcome) {
-            if (live) resolveOperation(["prepared", "ready"].indexOf(operationState) >= 0 ? "resume" : operationState === "unknown" ? "reconcile" : "check")
+            if (live) resolveOperation(recoveryAction())
             else { saving = true; feedback = "Checking the original operation…"; backend.calendarWrite(submittedRequest) }
             return
         }
+        if (following && followingConfirmed !== true) { followingConfirmation.open(); return }
         let source = backend.calendarSources.find(function(s) { return s.account === editor.targetAccount && s.calendar_id === editor.targetCalendarId && s.writable })
         if (!source || !formReady) { feedback = "Start sync for a supported writable calendar. Your event fields remain here."; return }
         let values = changedFields()
@@ -159,15 +196,18 @@ Popup {
         submittedFields = serialized
         let request = {account: source.account, calendar_id: source.calendar_id, kind: editEvent.event_id ? "edit" : "create", fields: values, request_id: requestId}
         if (editEvent.event_id) { request.event_id = editEvent.event_id; request.expected_etag = editEvent.etag }
-        if (occurrence) request.occurrence = editEvent.occurrence
+        if (recurringScope.length) request.recurring = recurringRequest(followingConfirmed === true)
+        else if (occurrence) request.occurrence = editEvent.occurrence
         submittedRequest = request; saving = true; feedback = live ? "Saving to Google Calendar…" : "Saving locally…"; backend.calendarWrite(request)
     }
-    function deleteEvent() {
-        if (saving || unknownOutcome || occurrenceRead.busy || !occurrenceReady || !live || !accountReady || !sourceReady || editEvent.can_delete !== true) return
+    function deleteEvent() { deleteEventConfirmed(false) }
+    function deleteEventConfirmed(confirmed) {
+        if (saving || unknownOutcome || occurrenceRead.busy || !occurrenceReady || !live || !accountReady || !sourceReady || editEvent.can_delete !== true || (following && confirmed !== true)) return
         requestId = "gui-delete-" + Date.now() + "-" + Math.floor(Math.random() * 1000000000)
         submittedRequest = {account: editEvent.account, calendar_id: editEvent.calendar_id, event_id: editEvent.event_id,
             expected_etag: editEvent.etag, kind: "delete", request_id: requestId}
-        if (occurrence) submittedRequest.occurrence = editEvent.occurrence
+        if (recurringScope.length) submittedRequest.recurring = recurringRequest(confirmed === true)
+        else if (occurrence) submittedRequest.occurrence = editEvent.occurrence
         saving = true; feedback = "Deleting from Google Calendar…"; backend.calendarWrite(submittedRequest)
     }
     Connections {
@@ -187,11 +227,12 @@ Popup {
             editor.saving = false
             if (ok) { editor.unknownOutcome = false; editor.close() }
             else if (editor.live) {
-                editor.feedback = error + " Your event fields are retained here."
+                editor.feedback = error + (result.steps && result.steps.length ? " " + editor.stepSummary(result.steps) + "." : "") + " Your event fields are retained here."
                 if (result.state === "abandoned" || (result.local_preflight === true && result.operation_action === "write") || (result.operation_action === "check" && result.code === "not_found")) {
                     editor.unknownOutcome = false; editor.operationState = ""; editor.operationRevision = -1; editor.requestId = ""
                 } else {
                     editor.operationState = result.state || editor.operationState || "unconfirmed"
+                    editor.operationCanResume = result.can_resume === true
                     if (result.revision !== undefined) editor.operationRevision = result.revision
                     editor.unknownOutcome = true
                 }
@@ -210,9 +251,9 @@ Popup {
         spacing: 0
         RowLayout {
             Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 14; Layout.preferredHeight: 56
-            Text { text: editor.occurrence ? "Edit this occurrence" : editor.editEvent.event_id ? "Edit event" : "New event"; color: Theme.text; font.pixelSize: Theme.fontSize(13); font.weight: Font.Medium }
+            Text { text: editor.occurrence ? editor.scopeLabel() : editor.editEvent.event_id ? "Edit event" : "New event"; color: Theme.text; font.pixelSize: Theme.fontSize(13); font.weight: Font.Medium }
             Item { Layout.fillWidth: true }
-            FmButton { objectName: "eventDeleteButton"; visible: editor.live && editor.editEvent.can_delete === true && !editor.unknownOutcome; text: editor.occurrence ? "Cancel occurrence" : "Delete"; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); enabled: !editor.saving && !occurrenceRead.busy && editor.occurrenceReady && editor.accountReady && editor.sourceReady; tip: editor.occurrence ? "Cancel only this occurrence on Google Calendar" : "Delete this event from Google Calendar"; onClicked: deleteConfirmation.open() }
+            FmButton { objectName: "eventDeleteButton"; visible: editor.live && editor.editEvent.can_delete === true && !editor.unknownOutcome; text: editor.occurrence ? "Cancel" : "Delete"; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); enabled: !editor.saving && !occurrenceRead.busy && editor.occurrenceReady && editor.accountReady && editor.sourceReady; tip: editor.occurrence ? "Cancel: " + editor.scopeLabel() : "Delete this event from Google Calendar"; onClicked: deleteConfirmation.open() }
             FmButton { objectName: "eventAbandonButton"; visible: editor.canAbandon; text: "Abandon"; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); enabled: !editor.saving; tip: "Abandon the recorded change and retain these form fields"; onClicked: abandonConfirmation.open() }
             FmButton { iconName: "close"; implicitWidth: 28; implicitHeight: 28; enabled: !editor.saving; tip: "Close — Esc"; onClicked: editor.close() }
         }
@@ -306,6 +347,23 @@ Popup {
                     }
                 }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+                ColumnLayout {
+                    visible: editor.live && (!editor.editEvent.event_id || editor.recurringScope === "series" || editor.following)
+                    Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.topMargin: 10; Layout.bottomMargin: 10; spacing: 8
+                    RowLayout {
+                        visible: !editor.following; Layout.fillWidth: true; spacing: 12
+                        Text { text: "Repeat"; color: Theme.subtle; font.pixelSize: Theme.fontSize(12); Layout.preferredWidth: 64 }
+                        FmComboBox { id: repeatFrequency; objectName: "eventRepeat"; Layout.fillWidth: true; implicitHeight: 30; model: (editor.editEvent.event_id ? ["Keep current rule"] : []).concat(["Does not repeat", "Daily", "Weekly", "Monthly", "Yearly"]); onActivated: editor.recurrenceTouched = !editor.editEvent.event_id || currentIndex > 0 }
+                    }
+                    RowLayout {
+                        visible: !editor.following && editor.repeatRuleIndex > 0; Layout.fillWidth: true; spacing: 8
+                        Text { text: "Every"; color: Theme.subtle; font.pixelSize: Theme.fontSize(12) }
+                        FmTextField { id: repeatInterval; objectName: "eventRepeatInterval"; text: "1"; implicitWidth: 48; implicitHeight: 30; onTextEdited: editor.recurrenceTouched = true }
+                        Text { text: ["", "days", "weeks", "months", "years"][Math.max(0, editor.repeatRuleIndex)]; color: Theme.subtle; font.pixelSize: Theme.fontSize(12) }
+                        FmTextField { id: repeatCount; objectName: "eventRepeatCount"; placeholderText: "Count (optional)"; Layout.fillWidth: true; implicitHeight: 30; onTextEdited: editor.recurrenceTouched = true }
+                    }
+                    Text { objectName: "eventRetainedRecurrence"; visible: editor.following || (!!editor.editEvent.event_id && !editor.recurrenceTouched); text: (editor.following ? "Retained repeat rule: " : "") + (editor.editEvent.recurrence || []).join(" · "); textFormat: Text.PlainText; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); wrapMode: Text.Wrap; Layout.fillWidth: true }
+                }
                 TextArea {
                     id: notesField; objectName: "eventDescription"; Layout.fillWidth: true; Layout.preferredHeight: Math.max(88, implicitHeight)
                     color: Theme.text; placeholderTextColor: Theme.subtle; placeholderText: "Notes, agenda, dial-in"; wrapMode: TextEdit.Wrap; selectByMouse: true
@@ -317,8 +375,8 @@ Popup {
         Text { visible: editor.feedback.length > 0; text: editor.feedback; color: Theme.accent; font.pixelSize: Theme.fontSize(12); wrapMode: Text.Wrap; Layout.fillWidth: true; Layout.margins: 12; textFormat: Text.PlainText }
         RowLayout {
             visible: editor.occurrence && !editor.unknownOutcome; Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.bottomMargin: 10
-            Text { text: editor.occurrenceReady ? "This occurrence only" : "The occurrence needs a fresh check."; color: Theme.muted; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
-            FmButton { objectName: "eventRefreshOccurrence"; text: occurrenceRead.busy ? "Checking…" : "Refresh occurrence"; outlined: true; font.pixelSize: Theme.fontSize(11); enabled: !editor.saving && !occurrenceRead.busy && editor.accountReady && editor.sourceReady; onClicked: occurrenceRead.read() }
+            Text { text: editor.occurrenceReady ? editor.scopeLabel() : "This recurring scope needs a fresh check."; color: Theme.muted; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            FmButton { objectName: "eventRefreshOccurrence"; text: occurrenceRead.busy ? "Checking…" : "Refresh version"; outlined: true; font.pixelSize: Theme.fontSize(11); enabled: !editor.saving && !occurrenceRead.busy && editor.accountReady && editor.sourceReady; onClicked: occurrenceRead.read() }
         }
         RowLayout {
             visible: !editor.occurrence && editor.staleRevision && !editor.unknownOutcome && !!editor.latestEvent.etag; Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.bottomMargin: 10
@@ -328,7 +386,7 @@ Popup {
         Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
         RowLayout {
             Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.topMargin: 12; spacing: 6
-            FmButton { objectName: "eventSaveButton"; text: editor.saving ? "Saving…" : editor.unknownOutcome ? !editor.live ? "Retry original" : ["prepared", "ready"].indexOf(editor.operationState) >= 0 ? "Resume" : editor.operationState === "unknown" ? "Check outcome" : "Check status" : editor.editEvent.event_id ? "Save changes" : "Add event"; prominent: true; font.pixelSize: Theme.fontSize(12); enabled: !editor.saving && editor.actionReady && (editor.unknownOutcome || (!editor.staleRevision && editor.formReady)); tip: editor.live ? "Save to Google Calendar — Ctrl+Enter" : "Save locally — Ctrl+Enter"; onClicked: editor.save() }
+            FmButton { objectName: "eventSaveButton"; text: editor.saving ? "Saving…" : editor.unknownOutcome ? !editor.live ? "Retry original" : editor.recoveryAction() === "resume" ? "Resume" : editor.recoveryAction() === "reconcile" ? "Check outcome" : "Check status" : editor.editEvent.event_id ? "Save changes" : "Add event"; prominent: true; font.pixelSize: Theme.fontSize(12); enabled: !editor.saving && editor.actionReady && (editor.unknownOutcome || (!editor.staleRevision && editor.formReady)); tip: editor.live ? "Save to Google Calendar — Ctrl+Enter" : "Save locally — Ctrl+Enter"; onClicked: editor.save() }
             FmButton { objectName: "eventCancelButton"; text: editor.live && editor.saving ? "Cancel request" : editor.unknownOutcome ? "Close" : "Discard"; outlined: true; font.pixelSize: Theme.fontSize(12); enabled: !editor.saving || editor.live; tip: editor.saving ? "Cancel this request and retain your fields" : editor.unknownOutcome ? "The operation remains in calendar activity" : "Discard unsaved event fields"; onClicked: { if (editor.live && editor.saving) backend.cancelGoogleOperation(editor.submittedRequest.account, editor.submittedRequest.request_id); else editor.close() } }
             Item { Layout.fillWidth: true }
         }
@@ -338,15 +396,26 @@ Popup {
         id: deleteConfirmation; objectName: "eventDeleteConfirmation"; parent: Overlay.overlay; anchors.centerIn: parent; modal: true
         implicitWidth: 344; width: Math.min(implicitWidth, parent.width - 32)
         implicitHeight: topPadding + bottomPadding + deleteBody.implicitHeight + (header ? header.implicitHeight + spacing : 0) + (footer ? footer.implicitHeight + spacing : 0)
-        title: editor.occurrence ? "Cancel this occurrence?" : "Delete event?"; standardButtons: Dialog.Ok | Dialog.Cancel
+        title: editor.occurrence ? "Cancel " + editor.scopeLabel().toLowerCase() + "?" : "Delete event?"; standardButtons: Dialog.Ok | Dialog.Cancel
         background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
         palette.windowText: Theme.text; palette.buttonText: Theme.text
-        onOpened: { standardButton(Dialog.Ok).text = editor.occurrence ? "Cancel occurrence" : "Delete"; standardButton(Dialog.Ok).objectName = "eventConfirmDelete" }
+        onOpened: { standardButton(Dialog.Ok).text = editor.recurringScope === "series" ? "Cancel series" : editor.following ? "Cancel following" : editor.occurrence ? "Cancel occurrence" : "Delete"; standardButton(Dialog.Ok).objectName = "eventConfirmDelete" }
         contentItem: Item {
             implicitHeight: deleteBody.implicitHeight
-            Text { id: deleteBody; width: deleteConfirmation.availableWidth; text: (editor.occurrence ? "Cancel only the occurrence of “" + (editor.editEvent.title || "this event") + "” originally scheduled for " + (editor.editEvent.occurrence.original_start.date || editor.editEvent.occurrence.original_start.instant) + "? Other occurrences remain unchanged." : "Remove “" + (editor.editEvent.title || "this event") + "” from Google Calendar?") + " Google may notify guests. Notification delivery is not confirmed here."; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; textFormat: Text.PlainText }
+            Text { id: deleteBody; width: deleteConfirmation.availableWidth; text: (editor.recurringScope.length ? "Cancel “" + (editor.editEvent.title || "this event") + "” for " + editor.scopeLabel().toLowerCase() + "? " + (editor.following ? editor.followingText() : "") : editor.occurrence ? "Cancel only the occurrence of “" + (editor.editEvent.title || "this event") + "” originally scheduled for " + (((editor.editEvent.occurrence || {}).original_start || {}).date || ((editor.editEvent.occurrence || {}).original_start || {}).instant || "") + "? Other occurrences remain unchanged." : "Remove “" + (editor.editEvent.title || "this event") + "” from Google Calendar?") + " Google may notify guests. Notification delivery is not confirmed here."; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; textFormat: Text.PlainText }
         }
-        onAccepted: editor.deleteEvent()
+        onAccepted: editor.deleteEventConfirmed(true)
+    }
+    Dialog {
+        id: followingConfirmation; objectName: "eventFollowingConfirmation"; parent: Overlay.overlay; anchors.centerIn: parent; modal: true
+        title: "Change this and following events?"; standardButtons: Dialog.Ok | Dialog.Cancel
+        width: Math.min(360, parent.width - 32)
+        implicitHeight: topPadding + bottomPadding + followingBody.implicitHeight + (header ? header.implicitHeight + spacing : 0) + (footer ? footer.implicitHeight + spacing : 0)
+        background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
+        palette.windowText: Theme.text; palette.buttonText: Theme.text
+        onOpened: { standardButton(Dialog.Ok).text = "Apply changes"; standardButton(Dialog.Ok).objectName = "eventConfirmFollowing" }
+        contentItem: Text { id: followingBody; width: followingConfirmation.availableWidth; text: editor.followingText() + " This is a two-step change, not an atomic update. Google may notify guests; delivery is unverified."; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; textFormat: Text.PlainText }
+        onAccepted: editor.saveConfirmed(true)
     }
     Dialog {
         id: abandonConfirmation; objectName: "eventAbandonConfirmation"; parent: Overlay.overlay; anchors.centerIn: parent; modal: true

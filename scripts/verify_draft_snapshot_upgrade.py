@@ -4,6 +4,7 @@
 Ordinary standalone engine/CLI executables, not a package or live-account test.
 """
 import argparse
+from contextlib import closing
 import json
 from pathlib import Path
 import tempfile
@@ -11,6 +12,7 @@ import time
 
 from dev import package_environment
 from verify_google_navigation import source_manifest as workspace_sources
+from verify_google_navigation import read_database
 from verify_upgrade import Check, contains_fields, durable_snapshot, require, sha256
 
 
@@ -83,10 +85,11 @@ def run(args):
     report.parent.mkdir(parents=True, exist_ok=True)
     # Reserve before launching anything; this report cannot replace an older run.
     with report.open("x", encoding="utf-8") as destination:
-        occurrence_upgrade = (args.old_schema, args.new_schema) == (18, 19)
+        workflows_upgrade = (args.old_schema, args.new_schema) == (19, 20)
+        occurrence_upgrade = (args.old_schema, args.new_schema) == (18, 19) or workflows_upgrade
         lifecycle_upgrade = (args.old_schema, args.new_schema) == (17, 18) or occurrence_upgrade
         calendar_upgrade = (args.old_schema, args.new_schema) == (16, 17) or lifecycle_upgrade
-        scenario = "calendar-occurrences" if occurrence_upgrade else "account-lifecycle" if lifecycle_upgrade else "calendar-intents" if calendar_upgrade else "draft-provenance"
+        scenario = "calendar-workflows" if workflows_upgrade else "calendar-occurrences" if occurrence_upgrade else "account-lifecycle" if lifecycle_upgrade else "calendar-intents" if calendar_upgrade else "draft-provenance"
         result = {"result": "failed", "scenario": f"schema-{args.old_schema}-to-{args.new_schema}-{scenario}", "version": 5,
                   "limitations": ["Generated synthetic composition/Calendar only; live journals have separate Core fixtures.",
                                   "Standalone engine/CLI source evidence; no GUI/package/performance acceptance."], "artifacts": []}
@@ -94,7 +97,7 @@ def run(args):
         try:
             old = {"fm": args.old_cli.resolve(strict=True), "fm-engine": args.old_engine.resolve(strict=True)}
             new = {"fm": args.new_cli.resolve(strict=True), "fm-engine": args.new_engine.resolve(strict=True)}
-            require((args.old_schema, args.new_schema) in ((14, 15), (15, 16), (16, 17), (17, 18), (18, 19)), "Choose a documented journal-schema upgrade")
+            require((args.old_schema, args.new_schema) in ((14, 15), (15, 16), (16, 17), (17, 18), (18, 19), (19, 20)), "Choose a documented journal-schema upgrade")
             require(old["fm-engine"] != new["fm-engine"], "Use a distinct preserved old-schema engine")
             result["executables"] = {kind: {key: {"path": str(path), "sha256": sha256(path)} for key, path in files.items()}
                                      for kind, files in (("old", old), ("new", new))}
@@ -153,6 +156,12 @@ def run(args):
                     after = durable_snapshot(check.profile, before["columns"])
                     require(before["table_digests"] == after["table_digests"], "Old persisted table/column values changed during migration")
                     require(before["retained_blobs"] == after["retained_blobs"], "Migration changed retained MIME or attachment bytes")
+                    if workflows_upgrade:
+                        with closing(read_database(check.profile)) as db:
+                            require(db.execute("SELECT COUNT(*) FROM calendar_reminder_receipts").fetchone()[0] == 0,
+                                    "Migration invented reminder receipts")
+                            require("recurring_steps_json" in {row[1] for row in db.execute("PRAGMA table_info(calendar_write_operations)")},
+                                    "Migration omitted the recurring step receipt column")
                     refusal, refusal_log = check.spawn(old["fm-engine"], "--profile", check.profile, label="old-engine-refusal")
                     require(refusal.wait(timeout=35) != 0 and check.pid() is None, "Old engine opened a schema it cannot safely interpret")
                     require("schema_mismatch" in Path(refusal_log.name).read_text(encoding="utf-8", errors="replace"),
@@ -208,7 +217,7 @@ if __name__ == "__main__":
     parser.add_argument("--old-engine", type=Path, required=True)
     parser.add_argument("--new-cli", type=Path, required=True)
     parser.add_argument("--new-engine", type=Path, required=True)
-    parser.add_argument("--old-schema", type=int, choices=(14, 15, 16, 17, 18), default=14)
-    parser.add_argument("--new-schema", type=int, choices=(15, 16, 17, 18, 19), default=15)
+    parser.add_argument("--old-schema", type=int, choices=(14, 15, 16, 17, 18, 19), default=14)
+    parser.add_argument("--new-schema", type=int, choices=(15, 16, 17, 18, 19, 20), default=15)
     parser.add_argument("--report", type=Path, required=True)
     raise SystemExit(run(parser.parse_args()))

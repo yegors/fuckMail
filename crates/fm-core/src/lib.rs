@@ -11,6 +11,7 @@ pub mod assist_store;
 #[cfg(test)]
 mod benchmark;
 mod calendar_projection;
+mod calendar_reminders;
 pub mod calendar_store;
 mod cancellation;
 mod capture;
@@ -30,6 +31,7 @@ pub mod google_store;
 pub mod live_calendar;
 mod live_calendar_invitations;
 pub mod live_calendar_occurrences;
+pub mod live_calendar_recurring;
 pub mod live_calendar_writes;
 pub mod live_profile;
 pub mod local_content;
@@ -43,7 +45,7 @@ mod queries;
 mod sender_kind_tests;
 #[cfg(test)]
 mod test_profiles;
-pub const SCHEMA_VERSION: u32 = 19;
+pub const SCHEMA_VERSION: u32 = 20;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -101,6 +103,11 @@ impl Store {
         Self::open_profile(profile, Some(live_profile::ProfileKind::Live))
     }
 
+    /// Explicit demo creation never opens or converts an existing live store.
+    pub fn open_synthetic(profile: &Path) -> Result<Self> {
+        Self::open_profile(profile, Some(live_profile::ProfileKind::Synthetic))
+    }
+
     fn open_profile(profile: &Path, requested: Option<live_profile::ProfileKind>) -> Result<Self> {
         std::fs::create_dir_all(profile)?;
         let mut options = OpenOptions::new();
@@ -120,6 +127,12 @@ impl Store {
             requested == Some(live_profile::ProfileKind::Live)
                 && !profile.join("store.sqlite3").exists(),
         )?;
+        if marker && requested == Some(live_profile::ProfileKind::Synthetic) {
+            return Err(err(
+                "profile_kind_mismatch",
+                "A live profile cannot be opened as a demo profile",
+            ));
+        }
         let requested = if marker {
             Some(live_profile::ProfileKind::Live)
         } else {
@@ -142,7 +155,7 @@ impl Store {
             if requested.is_some_and(|requested| requested != kind) {
                 return Err(err(
                     "profile_kind_mismatch",
-                    "A synthetic profile cannot be opened as a live profile",
+                    "The selected profile kind differs from the requested profile kind",
                 ));
             }
         }
@@ -355,6 +368,15 @@ impl Store {
             tx.execute_batch("PRAGMA user_version=19")?;
             tx.commit()?;
         }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 19 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-020-calendar-workflows.sql"))?;
+            tx.execute_batch("PRAGMA user_version=20")?;
+            tx.commit()?;
+        }
         store.validate_profile_identity()?;
         store.recover_account_cleanup()?;
         store.recover_captures()?;
@@ -437,6 +459,9 @@ impl Store {
                 return self.calendar_sources();
             }
             "calendar_combined" => return self.calendar_combined(&params),
+            "calendar_reminders" => return self.calendar_reminders(&params),
+            "calendar_reminder_ack" => return self.calendar_reminder_ack(account, &params),
+            "mail_notifications" => return self.mail_notifications(&params),
             _ => {}
         }
         if ![

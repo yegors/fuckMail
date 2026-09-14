@@ -120,3 +120,83 @@ pub(super) fn sources(key: &str, base: u64) -> BTreeMap<String, Value> {
 pub(super) fn initially_visible(id: &str) -> bool {
     id.starts_with("co") || matches!(id, "oi0001" | "od0001")
 }
+
+/// Extra sources are created only after an explicit POST in the isolated mode.
+/// This fixture subset intentionally stays DAILY/WEEKLY COUNT<=32 in UTC.
+pub(super) fn materialize(master: &Value) -> Result<Vec<Value>, ()> {
+    use sha2::{Digest, Sha256};
+    let rule = master["recurrence"]
+        .as_array()
+        .filter(|v| v.len() == 1)
+        .and_then(|v| v[0].as_str())
+        .and_then(|s| s.strip_prefix("RRULE:"))
+        .ok_or(())?;
+    let values = rule
+        .split(';')
+        .map(|p| p.split_once('=').ok_or(()))
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    if values
+        .keys()
+        .any(|k| !matches!(*k, "FREQ" | "COUNT" | "INTERVAL"))
+    {
+        return Err(());
+    }
+    let unit = match values.get("FREQ") {
+        Some(&"DAILY") => 1,
+        Some(&"WEEKLY") => 7,
+        _ => return Err(()),
+    };
+    let count = values
+        .get("COUNT")
+        .ok_or(())?
+        .parse::<usize>()
+        .ok()
+        .filter(|n| (1..=32).contains(n))
+        .ok_or(())?;
+    let interval = values
+        .get("INTERVAL")
+        .unwrap_or(&"1")
+        .parse::<i64>()
+        .ok()
+        .filter(|n| (1..=99).contains(n))
+        .ok_or(())?;
+    let mut output = Vec::with_capacity(count);
+    for index in 0..count {
+        let mut source = master.clone();
+        source.as_object_mut().ok_or(())?.remove("recurrence");
+        let days = chrono::Duration::days(index as i64 * unit * interval);
+        for field in ["start", "end"] {
+            if let Some(date) = master[field]["date"].as_str() {
+                let date =
+                    chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").map_err(|_| ())? + days;
+                source[field] = json!({"date":date.to_string()});
+            } else {
+                let time = chrono::DateTime::parse_from_rfc3339(
+                    master[field]["dateTime"].as_str().ok_or(())?,
+                )
+                .map_err(|_| ())?
+                    + days;
+                source[field] = json!({"dateTime":time.format("%Y-%m-%dT%H:%M:%SZ").to_string(),"timeZone":"UTC"});
+            }
+        }
+        source["originalStartTime"] = source["start"].clone();
+        let original = source["originalStartTime"]["date"]
+            .as_str()
+            .or_else(|| source["originalStartTime"]["dateTime"].as_str())
+            .ok_or(())?;
+        let hash = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&json!([master["id"], original])).map_err(|_| ())?)
+        );
+        let id = format!("fi{}", &hash[..40]);
+        source["id"] = id.clone().into();
+        source["etag"] = format!(
+            "\"{id}-{}\"",
+            master["etag"].as_str().ok_or(())?.trim_matches('"')
+        )
+        .into();
+        source["recurringEventId"] = master["id"].clone();
+        output.push(source);
+    }
+    Ok(output)
+}

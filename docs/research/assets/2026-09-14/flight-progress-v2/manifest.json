@@ -1,0 +1,21 @@
+{
+  "source": "Founder-supplied Downloads export, 2026-09-14 01:12 Toronto",
+  "version": 1,
+  "reference_only": true,
+  "prior_reference": "../../2026-09-12/flight-progress-v2-update-2",
+  "captured_at_utc": "2026-09-14T05:18:21.2773170Z",
+  "files": [
+    {
+      "name": "Flight Progress v2.dc.html",
+      "sha256": "149f9b910ce3b16046b9021cda44aa79351b16e41ea75246c024e3df69e052ef",
+      "original_last_write_utc": "2026-09-14T05:12:32.0000000Z",
+      "bytes": 269071
+    },
+    {
+      "name": "support.js",
+      "sha256": "8fe7df74405f3c55f49b7249c74ea1397e65d07dea2b1bd3b4a489bec2e28cbe",
+      "original_last_write_utc": "2026-09-14T05:12:32.0000000Z",
+      "bytes": 69150
+    }
+  ]
+}

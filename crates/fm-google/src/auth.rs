@@ -35,11 +35,83 @@ impl<'a> ScopeSet<'a> {
             .contains("https://www.googleapis.com/auth/gmail.modify")
             || self.0.contains("https://mail.google.com/")
     }
+    pub fn calendar_catalog_read(&self) -> bool {
+        self.calendar_all_read()
+            || self
+                .0
+                .contains("https://www.googleapis.com/auth/calendar.calendarlist")
+            || self
+                .0
+                .contains("https://www.googleapis.com/auth/calendar.calendarlist.readonly")
+    }
+    pub fn calendar_events_read(&self) -> bool {
+        self.calendar_all_read()
+            || self
+                .0
+                .contains("https://www.googleapis.com/auth/calendar.events")
+            || self
+                .0
+                .contains("https://www.googleapis.com/auth/calendar.events.readonly")
+    }
+    pub fn calendar_free_busy(&self) -> bool {
+        self.calendar_all_read()
+            || self
+                .0
+                .contains("https://www.googleapis.com/auth/calendar.events.freebusy")
+            || self
+                .0
+                .contains("https://www.googleapis.com/auth/calendar.freebusy")
+    }
+    pub fn calendar_events_write(&self) -> bool {
+        self.0.contains("https://www.googleapis.com/auth/calendar")
+            || self
+                .0
+                .contains("https://www.googleapis.com/auth/calendar.events")
+    }
+    fn calendar_all_read(&self) -> bool {
+        self.0.contains("https://www.googleapis.com/auth/calendar")
+            || self
+                .0
+                .contains("https://www.googleapis.com/auth/calendar.readonly")
+    }
 }
 
 #[cfg(test)]
 mod scope_tests {
     use super::*;
+
+    #[test]
+    fn calendar_grants_distinguish_catalog_details_busy_and_writes() {
+        for (scope, expected) in [
+            ("calendar", [true, true, true, true]),
+            ("calendar.readonly", [true, true, true, false]),
+            ("calendar.calendarlist", [true, false, false, false]),
+            (
+                "calendar.calendarlist.readonly",
+                [true, false, false, false],
+            ),
+            ("calendar.events", [false, true, false, true]),
+            ("calendar.events.readonly", [false, true, false, false]),
+            ("calendar.events.freebusy", [false, false, true, false]),
+            ("calendar.freebusy", [false, false, true, false]),
+            ("calendar.events.owned", [false; 4]),
+            ("calendar.events.public.readonly", [false; 4]),
+            ("gmail.readonly", [false; 4]),
+        ] {
+            let granted = BTreeSet::from([format!("https://www.googleapis.com/auth/{scope}")]);
+            let scopes = ScopeSet::new(&granted);
+            assert_eq!(
+                [
+                    scopes.calendar_catalog_read(),
+                    scopes.calendar_events_read(),
+                    scopes.calendar_free_busy(),
+                    scopes.calendar_events_write()
+                ],
+                expected,
+                "{scope}"
+            );
+        }
+    }
 
     #[test]
     fn granted_mail_scopes_distinguish_read_access_from_mutation_access() {

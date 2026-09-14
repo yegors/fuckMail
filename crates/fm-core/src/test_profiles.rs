@@ -44,7 +44,11 @@ pub(crate) fn restore_schema_seventeen(db: &Connection) {
     restore_schema_eighteen(db);
     db.execute_batch("DROP INDEX accounts_active; ALTER TABLE accounts DROP COLUMN cleanup_json; ALTER TABLE accounts DROP COLUMN lifecycle_revision; ALTER TABLE accounts DROP COLUMN lifecycle_state; PRAGMA user_version=17;").unwrap();
 }
+pub(crate) fn restore_schema_nineteen(db: &Connection) {
+    db.execute_batch("DROP TABLE IF EXISTS calendar_reminder_receipts; ALTER TABLE calendar_write_operations DROP COLUMN recurring_steps_json; PRAGMA user_version=19;").unwrap();
+}
 pub(crate) fn restore_schema_eighteen(db: &Connection) {
+    restore_schema_nineteen(db);
     db.execute_batch("DROP VIEW calendar_visible_sources; DROP VIEW calendar_published_sources;")
         .unwrap();
     let old_view = include_str!("migration-009-calendar.sql")

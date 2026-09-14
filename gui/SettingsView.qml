@@ -382,8 +382,8 @@ Item {
                         Divider {}
                         RowLayout {
                             Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
-                            PreferenceLabel { label: "Notifications"; detail: "Unavailable — desktop notifications are not implemented." }
-                            FmSegmented { model: ["All","Events only","Off"]; currentIndex: -1; enabled: false; Accessible.name: "Notifications unavailable" }
+                            PreferenceLabel { label: "Notifications"; detail: "Alerts while the app is open. Events appear five minutes before they start." }
+                            FmSegmented { model: ["All","Events only","Off"]; currentIndex: ["all","events","off"].indexOf(backend.preferences.notifications || "events"); onActivated: function(index) { backend.setPreferences({notifications:["all","events","off"][index]}); currentIndex = Qt.binding(function() { return ["all","events","off"].indexOf(backend.preferences.notifications || "events") }) }; Accessible.name: "Notifications" }
                         }
                         Divider {}
                     }
@@ -634,7 +634,7 @@ Item {
                             model: [
                                 {group:"Mail",rows:[{keys:["j","k"],action:"Next · previous conversation"},{keys:["d"],action:"Delay · undelay"},{keys:["e"],action:"Done"},{keys:["r","a","f"],action:"Reply · Reply all · Forward"},{keys:["n"],action:"New message"},{keys:["s"],action:"Inbox · Sent · Drafts"},{keys:["/",settings.modifier+"K"],action:"Search"},{keys:["Tab","⇧Tab"],action:"Next · previous mailbox"}]},
                                 {group:"Calendar",rows:[{keys:["d","w","m"],action:"Day · Week · Month"},{keys:["←","→"],action:"Previous · next"},{keys:["t"],action:"Today"},{keys:["n"],action:"New event"}]},
-                                {group:"Everywhere",rows:[{keys:["c"],action:"Mail · Calendar"},{keys:[","],action:"Settings"},{keys:["Esc"],action:"Close search, event details, the event editor or settings · minimise a draft"}]}
+                                {group:"Everywhere",rows:[{keys:["v"],action:"Mail · Calendar"},{keys:[","],action:"Settings"},{keys:["Esc"],action:"Close search, event details, the event editor or settings · minimise a draft"}]}
                             ]
                             ColumnLayout {
                                 required property var modelData

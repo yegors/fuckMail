@@ -7,7 +7,11 @@ Item {
     id: calendar
     objectName: "calendarWorkspace"
     property int dayCount: backend.calendarView === "day" ? 1 : 7
-    property var visibleEvents: backend.events
+    property bool combinedAccounts: true
+    property var visibleEvents: combinedAccounts ? backend.events : backend.events.filter(function(e) { return e.account === backend.account })
+    readonly property real workingStart: backend.preferences.timeline_start_hour === undefined ? 7 : backend.preferences.timeline_start_hour
+    readonly property real workingEnd: backend.preferences.timeline_end_hour === undefined ? 21 : backend.preferences.timeline_end_hour
+    property var rangeDrag: ({})
     property var agendaEvents: {
         let seen = {}
         return visibleEvents.filter(function(e) { if (seen[e.id]) return false; seen[e.id] = true; return true }).sort(function(a, b) {
@@ -43,12 +47,32 @@ Item {
     function openDay(index) { backend.setCalendarDate(isoAt(index)); backend.setCalendarView("day") }
     function showEvent(event, sourceItem) { if (!backend.calendarReady || !backend.connected) return; if (editor.opened) { editor.contentItem.forceActiveFocus(); return } details.openAt(event, sourceItem || calendar) }
     function createEvent() { if (editor.opened) { editor.contentItem.forceActiveFocus(); return } editor.editEvent = ({}); editor.openForDate(backend.calendarDate) }
-    function createAt(index, hour) {
+    function createAt(index, hour, endHour) {
         if (!backend.connected || !backend.calendarSources.some(function(s) { return s.writable })) return
         if (editor.opened && (editor.editEvent.event_id || editor.saving || editor.unknownOutcome || editor.staleRevision)) { editor.contentItem.forceActiveFocus(); return }
         if (!editor.opened) { editor.editEvent = ({}); editor.openForDate(isoAt(index)) }
-        editor.setSlot(isoAt(index), hour)
+        editor.setSlotRange(isoAt(index), hour, endHour)
     }
+    function cancelRange() { rangeDrag = ({}) }
+    function beginRange(index, y) {
+        if (!backend.connected || !backend.calendarSources.some(function(s) { return s.writable }) || editor.opened) return false
+        const start = Math.max(0, Math.min(23.5, Math.floor(y / hourHeight * 2) / 2))
+        rangeDrag = {index: index, account: backend.account, from: backend.calendarFrom, view: backend.calendarView, start: start, end: start + .5, y: y, moved: false}
+        return true
+    }
+    function moveRange(y) {
+        if (rangeDrag.index === undefined) return
+        rangeDrag = Object.assign({}, rangeDrag, {end: Math.max(0, Math.min(24, Math.round(y / hourHeight * 2) / 2)), moved: rangeDrag.moved || Math.abs(y - rangeDrag.y) > 3})
+    }
+    function finishRange() {
+        const range = rangeDrag
+        cancelRange()
+        if (range.index === undefined || range.account !== backend.account || range.from !== backend.calendarFrom || range.view !== backend.calendarView || !backend.connected) return
+        const low = Math.min(range.start, range.end), high = Math.max(range.start, range.end)
+        if (!range.moved || high - low < .5) createAt(range.index, range.moved ? low : range.start)
+        else createAt(range.index, low, high)
+    }
+    function hourText(hour) { const minutes = Math.round(hour * 60); return (Math.floor(minutes / 60) < 10 ? "0" : "") + Math.floor(minutes / 60) + ":" + (minutes % 60 < 10 ? "0" : "") + minutes % 60 }
     function sourceRule(event) { return event.busy_only || event.account !== backend.account ? Theme.inkAlpha(.5) : Theme.text }
     function preserveGridPosition() {
         if (gridScroll.moving || gridScroll.height <= 0) return
@@ -64,8 +88,14 @@ Item {
         if (!restoringGridPosition && laidOutHourHeight === hourHeight && laidOutGridHeight === gridScroll.height)
             retainedTopHour = Math.max(0, gridScroll.contentY) / hourHeight
     }
+    Connections {
+        target: backend
+        function onAccountChanged() { calendar.cancelRange() }
+        function onConnectedChanged() { if (!backend.connected) calendar.cancelRange() }
+        function onEventsChanged() { if (calendar.rangeDrag.index !== undefined && (calendar.rangeDrag.from !== backend.calendarFrom || calendar.rangeDrag.view !== backend.calendarView)) calendar.cancelRange() }
+    }
     onHourHeightChanged: Qt.callLater(preserveGridPosition)
-    onVisibleChanged: if (!visible) { details.close(); datePicker.close(); moreMenu.close(); allDayOverflow.close() }
+    onVisibleChanged: if (!visible) { cancelRange(); details.close(); datePicker.close(); moreMenu.close(); allDayOverflow.close() }
     Shortcut { sequence: "D"; enabled: calendar.shortcutsEnabled; onActivated: backend.setCalendarView("day") }
     Shortcut { sequence: "W"; enabled: calendar.shortcutsEnabled; onActivated: backend.setCalendarView("week") }
     Shortcut { sequence: "M"; enabled: calendar.shortcutsEnabled; onActivated: backend.setCalendarView("month") }
@@ -80,8 +110,14 @@ Item {
         RowLayout {
             Layout.fillWidth: true; Layout.topMargin: 24; Layout.bottomMargin: 16; spacing: 12
             Text { text: backend.calendarView === "week" ? "Week " + calendar.weekNumber() : backend.calendarView === "agenda" ? "Agenda" : Qt.formatDate(new Date(backend.calendarDate + "T12:00:00"), backend.calendarView === "day" ? "dddd d MMMM" : "MMMM yyyy"); color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(22); font.weight: Font.Medium }
-            Text { text: (backend.calendarView === "week" ? calendar.rangeTitle() : calendar.agendaEvents.length + " events") + " · Combined"; color: Theme.subtle; font.pixelSize: Theme.fontSize(13); visible: calendar.width > 1050; Layout.fillWidth: true; elide: Text.ElideRight }
+            Text { text: (backend.calendarView === "week" ? calendar.rangeTitle() : calendar.agendaEvents.length + " events") + (calendar.combinedAccounts ? " · Combined" : " · Selected account"); color: Theme.subtle; font.pixelSize: Theme.fontSize(13); visible: calendar.width > 1050; Layout.fillWidth: true; elide: Text.ElideRight }
             Item { Layout.fillWidth: true; visible: calendar.width <= 1050 }
+            FmButton {
+                objectName: "calendarCombinedToggle"; iconName: "combined"; iconSize: 13; implicitWidth: 30; implicitHeight: 30; outlined: true
+                foreground: calendar.combinedAccounts ? Theme.text : Theme.inkAlpha(.45)
+                tip: calendar.combinedAccounts ? "Showing selected calendars from every account. Click for this account only." : "Showing this account only. Click to combine selected calendars."
+                onClicked: { calendar.cancelRange(); details.close(); calendar.combinedAccounts = !calendar.combinedAccounts }
+            }
             Rectangle {
                 implicitWidth: views.width + 4; implicitHeight: 32; color: Theme.surface; radius: 6
                 Row { id: views; x: 2; y: 2; spacing: 2
@@ -148,7 +184,18 @@ Item {
                 onMovementEnded: { calendar.retainedTopHour = Math.max(0, contentY) / calendar.hourHeight; backend.remember("calendarY", contentY); Qt.callLater(calendar.preserveGridPosition) }
                 ScrollBar.vertical: ScrollBar {}
                 Repeater { model: 25
-                    Text { required property int index; objectName: "calendarHour-" + index; x: 0; y: Math.max(0, index * calendar.hourHeight - (index === 24 ? height : index === 0 ? 0 : height / 2)); text: (index < 10 ? "0" : "") + index + ":00"; color: Theme.subtle; font.pixelSize: Theme.fontSize(10) }
+                    Text { required property int index; objectName: "calendarHour-" + index; x: 0; y: Math.max(0, index * calendar.hourHeight - (index === 24 ? height : index === 0 ? 0 : height / 2)); text: (index < 10 ? "0" : "") + index + ":00"; color: Theme.inkAlpha(index >= calendar.workingStart && index <= calendar.workingEnd ? .5 : .3); font.pixelSize: Theme.fontSize(10) }
+                }
+                Repeater {
+                    model: [calendar.workingStart, calendar.workingEnd]
+                    Item {
+                        required property int index; required property real modelData
+                        objectName: "calendarWorkingHour-" + index
+                        x: 42; y: modelData * calendar.hourHeight - 4; width: 8; height: 8
+                        FmIcon { name: "down"; size: 8; color: Theme.inkAlpha(.35); rotation: parent.index === 0 ? 0 : 180 }
+                        HoverHandler { id: workingHover }
+                        FmToolTip { visible: workingHover.hovered; text: "Working hours " + calendar.hourText(calendar.workingStart) + " – " + calendar.hourText(calendar.workingEnd) }
+                    }
                 }
                 Item {
                     id: grid; x: 56; width: gridScroll.width - 56; height: 24 * calendar.hourHeight; property real dayWidth: width / calendar.dayCount
@@ -156,12 +203,35 @@ Item {
                         Rectangle {
                             required property int index; x: index * grid.dayWidth; width: grid.dayWidth; height: grid.height; color: calendar.isoAt(index) === backend.todayDate ? Theme.bg1 : "transparent"
                             Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, 0); width: Theme.ruleWidth; height: parent.height; color: Theme.line }
-                            MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: function(mouse) { calendar.createAt(parent.index, Math.max(0, Math.min(23.5, Math.floor(mouse.y / calendar.hourHeight * 2) / 2))) } }
+                            MouseArea {
+                                objectName: "calendarSlot-" + parent.index
+                                anchors.fill: parent; cursorShape: Qt.CrossCursor; preventStealing: calendar.rangeDrag.index !== undefined
+                                onPressed: function(mouse) { if (!calendar.beginRange(parent.index, mouse.y)) mouse.accepted = false }
+                                onPositionChanged: function(mouse) { if (pressed) calendar.moveRange(mouse.y) }
+                                onReleased: calendar.finishRange()
+                                onCanceled: calendar.cancelRange()
+                            }
                             Rectangle { visible: calendar.isoAt(index) === backend.todayDate; x: Theme.snapX(parent, 0); y: Theme.snapY(parent, backend.nowHour * calendar.hourHeight); z: 2; width: parent.width; height: Theme.ruleWidth; color: Theme.accent; Rectangle { x: -3; y: -3; width: 7; height: 7; rotation: 45; color: Theme.accent } }
                         }
                     }
                     Repeater { model: 24
                         Rectangle { required property int index; x: Theme.snapX(parent, 0); y: Theme.snapY(parent, index * calendar.hourHeight); width: grid.width; height: Theme.ruleWidth; color: Theme.bg5 }
+                    }
+                    Repeater { model: 24
+                        Rectangle { required property int index; x: Theme.snapX(parent, 0); y: Theme.snapY(parent, (index + .5) * calendar.hourHeight); width: grid.width; height: Theme.ruleWidth; color: Theme.inkAlpha(.035) }
+                    }
+                    Rectangle {
+                        objectName: "calendarRangePreview"
+                        readonly property real low: Math.min(calendar.rangeDrag.start || 0, calendar.rangeDrag.end || 0)
+                        readonly property real high: Math.max(calendar.rangeDrag.start || 0, calendar.rangeDrag.end || 0)
+                        visible: calendar.rangeDrag.index !== undefined
+                        x: (calendar.rangeDrag.index || 0) * grid.dayWidth + 4; y: low * calendar.hourHeight
+                        width: grid.dayWidth - 10; height: Math.max(calendar.hourHeight / 2, (high - low) * calendar.hourHeight)
+                        color: Theme.accentAlpha(.1); radius: 3
+                        Repeater { model: Math.max(0, Math.ceil(parent.width / 8)); Rectangle { required property int index; x: Theme.snapX(parent, index * 8); y: Theme.snapY(parent, 0); width: Math.max(0, Math.min(4, parent.width - x)); height: Theme.ruleWidth; color: Theme.accent } }
+                        Repeater { model: Math.max(0, Math.ceil(parent.width / 8)); Rectangle { required property int index; x: Theme.snapX(parent, index * 8); y: Theme.snapY(parent, parent.height - 1); width: Math.max(0, Math.min(4, parent.width - x)); height: Theme.ruleWidth; color: Theme.accent } }
+                        Rectangle { width: 2; height: parent.height; color: Theme.accent }
+                        Text { anchors.fill: parent; anchors.margins: 4; text: calendar.hourText(parent.low) + " – " + calendar.hourText(parent.high); color: Theme.accent; font.pixelSize: Theme.fontSize(11); elide: Text.ElideRight }
                     }
                     Repeater { model: calendar.visibleEvents
                         Rectangle {
@@ -243,7 +313,7 @@ Item {
         ListView {
             id: agenda; objectName: "calendarAgenda"; visible: backend.calendarView === "agenda"; Layout.fillWidth: true; Layout.fillHeight: true; Layout.bottomMargin: 16; model: calendar.agendaEvents; clip: true
             delegate: ItemDelegate {
-                required property var modelData; objectName: modelData.occurrence_selector ? "calendarAgendaOccurrence-" + modelData.id : "calendarAgendaEvent-" + modelData.account + "-" + modelData.event_id; width: agenda.width; height: 70; onClicked: calendar.showEvent(modelData, this)
+                required property var modelData; objectName: (modelData.recurring_selector || modelData.occurrence_selector) ? "calendarAgendaOccurrence-" + modelData.id : "calendarAgendaEvent-" + modelData.account + "-" + modelData.event_id; width: agenda.width; height: 70; onClicked: calendar.showEvent(modelData, this)
                 background: Rectangle { color: parent.hovered ? Theme.surface : "transparent"; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, parent.height - 1); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
                 contentItem: RowLayout { spacing: 18
                     Text { text: modelData.start_display; color: Theme.subtle; font.pixelSize: Theme.fontSize(12); Layout.preferredWidth: 200 }

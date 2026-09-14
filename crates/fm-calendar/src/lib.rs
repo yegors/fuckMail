@@ -11,6 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 pub mod edits;
 pub mod google_api;
+pub mod recurring;
 pub mod sync;
 pub use edits::*;
 pub use sync::*;
@@ -664,7 +665,11 @@ pub fn expand(
     }
     // A moved exception can enter this window from an original start outside it.
     for (original, exception) in overrides {
-        if !seen.contains(&original) {
+        if !seen.contains(&original)
+            && exception.original_start.as_ref().is_some_and(|original| {
+                recurring::within_series_end(event, original).unwrap_or(false)
+            })
+        {
             append_exception(
                 &mut output,
                 &exception.with_recurring_master(event)?,

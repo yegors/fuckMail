@@ -698,6 +698,38 @@ fn live_profile_initialization_requires_an_explicit_path() {
 }
 
 #[test]
+fn demo_selection_cannot_start_google_or_account_work() {
+    let root = tempfile::tempdir().unwrap();
+    let absent = root.path().join("not-created");
+    for command in [
+        vec!["profile-init"],
+        vec!["google", "sync-status"],
+        vec!["account", "remove-preview"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args([
+                "--demo-profile",
+                "--profile",
+                absent.to_str().unwrap(),
+                "--account",
+                "account",
+                "--json",
+            ])
+            .args(command)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2));
+        let response: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(response["error"]["code"], "invalid_request");
+        assert!(response["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("--demo-profile"));
+        assert!(!absent.exists());
+    }
+}
+
+#[test]
 fn help_and_version_are_headless_and_do_not_start_a_profile() {
     let root = tempfile::tempdir().unwrap();
     let absent = root.path().join("not-created");

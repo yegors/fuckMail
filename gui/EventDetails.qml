@@ -17,8 +17,21 @@ Popup {
     readonly property bool hasPendingResponse: !!pendingResponse.request_id && operationState.length > 0
     readonly property bool accountReady: backend.connected && (!live || (backend.accounts.length >= 0 && backend.googleSync
         && backend.accountCapability(eventData.account || "", "calendar_write") && backend.googleSyncState(eventData.account || "").active === true))
+    readonly property bool reconciliationReady: backend.connected && backend.accounts.length >= 0 && backend.googleSync
+        && backend.accountCapability(eventData.account || "", "calendar_read") && backend.googleSyncState(eventData.account || "").active === true
     property bool timelineSource: false
     property string awaitedEtag: ""
+    property string recurringScope: "occurrence"
+    property string requestedResponse: ""
+    readonly property var recurringScopes: ["occurrence", "series", "following"].filter(function(scope) {
+        return ["edit", "delete", "rsvp"].some(function(action) { return ((details.eventData.recurring_scopes || {})[action] || []).indexOf(scope) >= 0 })
+    })
+    function scopedAllowed(action) { return ((eventData.recurring_scopes || {})[action] || []).indexOf(recurringScope) >= 0 }
+    function readScoped(action) {
+        occurrenceRead.action = action
+        feedback = "Checking the selected recurring scope on Google…"
+        occurrenceRead.read()
+    }
     signal editRequested(var event)
     property real originX: parent.width / 2
     property real originY: 80
@@ -28,7 +41,11 @@ Popup {
     property var sourceEvents: timelineSource ? backend.todayEvents : backend.events
     CalendarOccurrenceRead {
         id: occurrenceRead; selection: details.eventData; active: details.visible; timelineSource: details.timelineSource
-        onResolved: function(event) { details.editRequested(event); details.close() }
+        scope: details.recurringScopes.length ? details.recurringScope : ""
+        onResolved: function(event) {
+            if (event.recurring_action === "rsvp") details.submitResponse(details.requestedResponse, event)
+            else { details.editRequested(event); details.close() }
+        }
         onFailed: function(message) { details.feedback = message }
     }
     property var conflicts: {
@@ -56,16 +73,27 @@ Popup {
         if (saving || (visible && hasPendingResponse)) return
         occurrenceRead.invalidate()
         eventData = event
+        recurringScope = recurringScopes.indexOf("occurrence") >= 0 ? "occurrence" : recurringScopes[0] || "occurrence"
+        requestedResponse = ""
         if (anchor) { let point = anchor.mapToItem(parent, anchor.width / 2, anchor.height); originX = point.x; originY = point.y }
         open()
     }
     function respond(response) {
-        if (saving || !accountReady || !eventData.can_rsvp || (live && hasPendingResponse)) return
+        if (saving || occurrenceRead.busy || !accountReady || (live && hasPendingResponse)) return
+        if (scopedAllowed("rsvp")) { requestedResponse = response; readScoped("rsvp"); return }
+        if (!eventData.can_rsvp) return
+        submitResponse(response, eventData)
+    }
+    function submitResponse(response, event) {
+        if (saving || !accountReady || !event.can_rsvp || (live && hasPendingResponse)) return
         saving = true; feedback = live ? "Saving your response to Google Calendar…" : "Saving your response locally…"
-        if (pendingResponse.response !== response || pendingResponse.expected_etag !== eventData.etag)
-            pendingResponse = {account: eventData.account, kind: "rsvp", calendar_id: eventData.calendar_id,
-                event_id: eventData.event_id, expected_etag: eventData.etag, response: response,
+        if (pendingResponse.response !== response || pendingResponse.expected_etag !== event.etag) {
+            let request = {account: event.account, kind: "rsvp", calendar_id: event.calendar_id,
+                event_id: event.event_id, expected_etag: event.etag, response: response,
                 request_id: "gui-rsvp-" + Date.now() + "-" + Math.floor(Math.random() * 1000000000)}
+            if (event.recurring_context) request.recurring = event.recurring_context
+            pendingResponse = request
+        }
         backend.calendarWrite(pendingResponse)
     }
     function resolveResponse(action) {
@@ -132,7 +160,7 @@ Popup {
             RowLayout {
                 visible: /^https?:\/\/[^\/]/.test(details.eventData.conference_url || ""); Layout.fillWidth: true; spacing: 9
                 FmIcon { name: "calendar"; size: 13; color: Theme.subtle }
-                FmButton { text: (details.eventData.conference_url || "").replace(/^https?:\/\//, "") + " · join"; font.pixelSize: Theme.fontSize(12); implicitHeight: 24; leftPadding: 0; rightPadding: 0; Layout.fillWidth: true; textAlignment: Text.AlignLeft; tip: details.eventData.conference_url || ""; onClicked: Qt.openUrlExternally(details.eventData.conference_url) }
+                FmButton { text: (details.eventData.conference_url || "").replace(/^https?:\/\//, "") + " · join"; font.pixelSize: Theme.fontSize(12); implicitHeight: 24; leftPadding: 0; rightPadding: 0; Layout.fillWidth: true; textAlignment: Text.AlignLeft; tip: details.eventData.conference_url || ""; onClicked: backend.joinCalendarEvent(details.eventData) }
             }
             Text { visible: !!details.eventData.organizer; text: "Organized by " + (details.eventData.organizer || ""); color: Theme.subtle; font.pixelSize: Theme.fontSize(11); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
             RowLayout {
@@ -153,24 +181,35 @@ Popup {
                 TextArea { id: description; text: details.eventData.description || ""; color: Theme.muted; font.pixelSize: Theme.fontSize(12); textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; readOnly: true; selectByMouse: true; background: null; padding: 0 }
             }
             Text { visible: !!details.eventData.busy_only; text: "Availability only · details are not shared."; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
-            Text { visible: !!details.eventData.occurrence_selector; text: "Changes apply to this occurrence only. Series changes are unavailable."; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            RowLayout {
+                visible: details.recurringScopes.length > 0; Layout.fillWidth: true; spacing: 8
+                Text { text: "Apply to"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11) }
+                FmComboBox {
+                    objectName: "eventRecurringScope"; Layout.fillWidth: true; implicitHeight: 30
+                    model: details.recurringScopes.map(function(scope) { return {occurrence:"This occurrence",series:"Entire series",following:"This and following"}[scope] })
+                    currentIndex: details.recurringScopes.indexOf(details.recurringScope)
+                    enabled: !details.saving && !occurrenceRead.busy && !details.hasPendingResponse
+                    onActivated: details.recurringScope = details.recurringScopes[currentIndex]
+                }
+            }
+            Text { visible: !!details.eventData.occurrence_selector && !details.recurringScopes.length; text: "Changes apply to this occurrence only."; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
             Text { visible: !!details.eventData.read_only && !details.eventData.busy_only; text: "Read-only event"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11) }
             ColumnLayout {
-                visible: !!details.eventData.can_rsvp; spacing: 5; Layout.fillWidth: true
+                visible: !!details.eventData.can_rsvp || details.scopedAllowed("rsvp"); spacing: 5; Layout.fillWidth: true
                 Text { text: "Your response"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11) }
                 RowLayout {
                     spacing: 4
                     Repeater { model: [{label: "Accept", value: "accepted"}, {label: "Maybe", value: "tentative"}, {label: "Decline", value: "declined"}]
-                        FmButton { required property var modelData; objectName: "eventRsvp-" + modelData.value; text: modelData.label; outlined: true; selected: details.eventData.self_response === modelData.value; implicitHeight: 26; font.pixelSize: Theme.fontSize(11); enabled: !details.saving && !details.awaitedEtag.length && details.accountReady && (!details.live || !details.hasPendingResponse); onClicked: details.respond(modelData.value) }
+                        FmButton { required property var modelData; objectName: "eventRsvp-" + modelData.value; text: modelData.label; outlined: true; selected: details.eventData.self_response === modelData.value; implicitHeight: 26; font.pixelSize: Theme.fontSize(11); enabled: !details.saving && !occurrenceRead.busy && !details.awaitedEtag.length && details.accountReady && (!details.live || !details.hasPendingResponse); onClicked: details.respond(modelData.value) }
                     }
                 }
             }
-            Text { visible: details.live && !!details.eventData.can_rsvp; text: "Your response is sent to Google. Google may notify the organizer; notification delivery is unverified."; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Text { visible: details.live && (!!details.eventData.can_rsvp || details.scopedAllowed("rsvp")); text: "Your response is sent to Google. Google may notify the organizer; notification delivery is unverified."; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); wrapMode: Text.Wrap; Layout.fillWidth: true }
             RowLayout {
                 visible: details.live && details.hasPendingResponse; Layout.fillWidth: true; spacing: 6
                 FmButton {
                     objectName: "eventRsvpResolve"; text: ["prepared", "ready"].indexOf(details.operationState) >= 0 ? "Resume" : details.operationState === "unknown" ? "Check outcome" : "Check status"; outlined: true
-                    enabled: !details.saving && backend.connected && (["prepared", "ready", "unknown"].indexOf(details.operationState) < 0 || details.accountReady)
+                    enabled: !details.saving && backend.connected && (["prepared", "ready", "unknown"].indexOf(details.operationState) < 0 || (details.operationState === "unknown" ? details.reconciliationReady : details.accountReady))
                     onClicked: details.resolveResponse(["prepared", "ready"].indexOf(details.operationState) >= 0 ? "resume" : details.operationState === "unknown" ? "reconcile" : "check")
                 }
                 FmButton { objectName: "eventRsvpAbandon"; text: "Abandon"; visible: details.operationRevision >= 0 && ["prepared", "ready", "unknown", "conflict", "rejected"].indexOf(details.operationState) >= 0; enabled: !details.saving && backend.connected; onClicked: responseAbandonConfirmation.open() }
@@ -179,7 +218,8 @@ Popup {
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
             RowLayout {
                 Layout.fillWidth: true; spacing: 6
-                FmButton { objectName: "eventEditButton"; visible: !!details.eventData.can_edit || details.eventData.can_resolve_occurrence === true; text: occurrenceRead.busy ? "Checking…" : details.eventData.can_resolve_occurrence === true ? "Edit this occurrence" : "Edit"; prominent: true; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); enabled: !details.saving && !occurrenceRead.busy && !details.awaitedEtag.length && details.accountReady && !details.hasPendingResponse; onClicked: { if (details.eventData.can_resolve_occurrence === true) { details.feedback = "Checking this occurrence on Google…"; occurrenceRead.read() } else { details.editRequested(details.eventData); details.close() } } }
+                FmButton { objectName: "eventEditButton"; visible: !!details.eventData.can_edit || details.scopedAllowed("edit") || (!details.recurringScopes.length && details.eventData.can_resolve_occurrence === true); text: occurrenceRead.busy ? "Checking…" : !details.recurringScopes.length && details.eventData.can_resolve_occurrence === true ? "Edit this occurrence" : "Edit"; prominent: true; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); enabled: !details.saving && !occurrenceRead.busy && !details.awaitedEtag.length && details.accountReady && !details.hasPendingResponse; onClicked: { if (details.scopedAllowed("edit") || details.eventData.can_resolve_occurrence === true) details.readScoped("edit"); else { details.editRequested(details.eventData); details.close() } } }
+                FmButton { objectName: "eventScopedCancel"; visible: details.scopedAllowed("delete"); text: "Cancel"; outlined: true; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); enabled: !details.saving && !occurrenceRead.busy && details.accountReady && !details.hasPendingResponse; onClicked: details.readScoped("delete") }
                 Item { Layout.fillWidth: true }
                 FmButton { objectName: "eventDetailsClose"; text: details.live && details.saving ? "Cancel request" : "Close"; implicitHeight: 28; font.pixelSize: Theme.fontSize(11); enabled: !details.saving || details.live; onClicked: { if (details.live && details.saving) backend.cancelGoogleOperation(details.pendingResponse.account, details.pendingResponse.request_id); else details.close() } }
             }

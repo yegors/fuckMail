@@ -23,6 +23,8 @@ Item {
     readonly property bool canMutate: { const accounts = backend.accounts; return backend.connected && backend.accountCapability(backend.account,"mail_write") }
     readonly property bool singleKeyActionsAllowed: mail.visible && !popupOpen && mail.ApplicationWindow.window && mail.ApplicationWindow.window.singleKeysAllowed
     readonly property bool draftsMode: backend.folder === "drafts"
+    readonly property bool collapsedDraftVisible: !replyOpen && backend.draftStatus !== "Draft discarded"
+        && (backend.activeDraftId.length > 0 || (backend.draft.body || "").length > 0)
     readonly property bool anyUnread: members.some(function(m) { return m.unread })
     readonly property bool anyStarred: members.some(function(m) { return m.starred })
     readonly property int rowHeight: Math.ceil((backend.preferences.density === "compact" ? Theme.compactRowHeight : Theme.comfortableRowHeight) * Theme.fontScale)
@@ -502,7 +504,7 @@ Item {
             Rectangle {
                 width: 28; height: parent.height
                 gradient: Gradient { orientation: Gradient.Horizontal; GradientStop { position: 0; color: Theme.shadow } GradientStop { position: 1; color: "transparent" } }
-                opacity: .3
+                opacity: .18
             }
             ColumnLayout {
                 anchors.fill: parent; spacing: 0
@@ -577,7 +579,7 @@ Item {
                     onMovementEnded: if (!mail.restoring) backend.remember("readerY",contentY)
                     ColumnLayout {
                         id: readerColumn
-                        x: readerPane.margin; y: 8; width: reader.width-readerPane.margin*2; spacing: 0; visible: mail.members.length>0 || mail.replyOpen
+                        x: readerPane.margin; y: 8; width: reader.width-readerPane.margin*2; spacing: 0; visible: mail.members.length>0 || mail.replyOpen || mail.collapsedDraftVisible
                         RowLayout {
                             Layout.fillWidth: true; visible: mail.members.length>1; spacing: 12; Layout.topMargin: 6; Layout.bottomMargin: 5
                             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
@@ -586,10 +588,11 @@ Item {
                         }
                         Repeater {
                             id: memberRepeater
-                            model: mail.members
+                            model: backend.messageModel
                             delegate: ColumnLayout {
                                 id: member
-                                required property var modelData
+                                required property var rowData
+                                property var modelData: rowData
                                 required property int index
                                 readonly property bool isExpanded: mail.memberIsExpanded(modelData.id,index)
                                 readonly property bool isMatch: mail.matchingIds.indexOf(modelData.id)>=0
@@ -647,6 +650,20 @@ Item {
                                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line; Layout.topMargin: 10 }
                             }
                         }
+                        Item {
+                            objectName: "minimisedDraft"
+                            visible: mail.collapsedDraftVisible
+                            Layout.fillWidth: true; Layout.topMargin: visible ? 36 : 0
+                            implicitHeight: 32
+                            Rectangle { width: 2; height: parent.height; color: Theme.accentAlpha(.35) }
+                            RowLayout {
+                                anchors.fill: parent; anchors.leftMargin: 20; spacing: 10
+                                FmIcon { name: "edit"; size: 13; color: Theme.accent }
+                                FmButton { objectName: "resumeDraftButton"; text: backend.draft.subject || "New message"; foreground: Theme.text; font.pixelSize: Theme.fontSize(13); Layout.fillWidth: true; leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft; tip: "Open the draft"; onClicked: mail.resumeDraft() }
+                                Text { text: (backend.draft.to_recipients || []).length ? "to " + (backend.draft.to_recipients[0].name || backend.draft.to_recipients[0].email) : "no recipients yet"; color: Theme.muted; font.pixelSize: Theme.fontSize(12); Layout.maximumWidth: 135; elide: Text.ElideRight }
+                                FmButton { objectName: "minimisedDraftDiscard"; visible: !reply.readOnly; iconName: "close"; iconSize: 11; implicitWidth: 28; implicitHeight: 28; leftPadding: 0; rightPadding: 0; tip: "Discard draft"; enabled: !backend.draftLocked && !backend.attachmentImport.pending; onClicked: reply.confirmDiscard() }
+                            }
+                        }
                         ReplyComposer {
                             id: reply
                             objectName: "replyPanel"
@@ -656,26 +673,12 @@ Item {
                         }
                     }
                     Column {
-                        visible: mail.members.length===0 && !mail.replyOpen; anchors.horizontalCenter: parent.horizontalCenter; y: parent.height*0.2; width: parent.width-readerPane.margin*2; spacing: 14
+                        visible: mail.members.length===0 && !mail.replyOpen && !mail.collapsedDraftVisible; anchors.horizontalCenter: parent.horizontalCenter; y: parent.height*0.2; width: parent.width-readerPane.margin*2; spacing: 14
                         Text { text: backend.loading ? "Loading conversation…" : "Select a conversation"; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(28); font.weight: Font.Medium; width: parent.width; wrapMode: Text.Wrap }
                         Text { text: "Mail stays in "+(backend.currentAccount.name||"the selected account")+". Your calendar remains in view below."; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(14); width: parent.width; wrapMode: Text.Wrap; lineHeight: 1.5 }
                     }
                 }
             }
-        }
-    }
-    Rectangle {
-        objectName: "minimisedDraft"
-        visible: !mail.replyOpen && backend.draftStatus!=="Draft discarded" && (backend.activeDraftId.length>0 || (backend.draft.body||"").length>0)
-        anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.rightMargin: 24; anchors.bottomMargin: 16
-        width: Math.min(420, readerPane.width - 48); height: Math.max(40, draftBar.implicitHeight + 8); z: 4
-        color: Theme.surface; radius: 6; border.color: Theme.controlBorder
-        RowLayout {
-            id: draftBar; anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 6; spacing: 10
-            FmIcon { name: "edit"; size: 13; color: Theme.accent }
-            FmButton { objectName: "resumeDraftButton"; text: backend.draft.subject || "New message"; foreground: Theme.text; font.pixelSize: Theme.fontSize(13); Layout.fillWidth: true; leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft; tip: "Open the draft"; onClicked: mail.resumeDraft() }
-            Text { text: (backend.draft.to_recipients || []).length ? "to " + (backend.draft.to_recipients[0].name || backend.draft.to_recipients[0].email) : "no recipients yet"; color: Theme.muted; font.pixelSize: Theme.fontSize(12); Layout.maximumWidth: 135; elide: Text.ElideRight }
-            FmButton { objectName: "minimisedDraftDiscard"; iconName: "close"; iconSize: 11; implicitWidth: 28; implicitHeight: 28; leftPadding: 0; rightPadding: 0; tip: "Discard draft"; onClicked: reply.confirmDiscard() }
         }
     }
     SenderCard { id: senderCard; formatAge: mail.relativeTime; onConversationOpened: function(id) { backend.openConversation(id) } }

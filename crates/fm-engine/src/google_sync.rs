@@ -64,6 +64,7 @@ pub(crate) struct SyncContext {
     quota: Arc<quota::QuotaGate>,
     preparation: Arc<Semaphore>,
     calendar_preparation: Arc<Semaphore>,
+    calendar_reads: calendar::ReadGrants,
     remote_drafts_wake: Arc<Notify>,
 }
 impl SyncContext {
@@ -349,6 +350,11 @@ impl SyncContext {
             quota: quota::QuotaGate::new(SchedulerConfig::new(budget, budget)).unwrap(),
             preparation: Arc::new(Semaphore::new(1)),
             calendar_preparation: Arc::new(Semaphore::new(2)),
+            calendar_reads: calendar::ReadGrants {
+                catalog: true,
+                events: true,
+                busy: true,
+            },
             remote_drafts_wake: Arc::new(Notify::new()),
         }
     }
@@ -914,7 +920,7 @@ impl Runtime {
                                 store.calendar_live_request(&account, &request_id)
                             })
                             .await?;
-                        calendar_writes::execute(&context, request).await
+                        calendar_writes::resume(&context, request).await
                     }
                     "google_labels_refresh" => {
                         if params.as_object().is_none_or(|p| !p.is_empty()) {
@@ -1044,12 +1050,8 @@ impl Runtime {
         let scopes = ScopeSet::new(&binding.scopes);
         let has_mail = scopes.mail_read();
         let has_mail_write = scopes.mail_write();
-        let has_calendar = binding
-            .scopes
-            .contains("https://www.googleapis.com/auth/calendar.calendarlist.readonly")
-            && binding
-                .scopes
-                .contains("https://www.googleapis.com/auth/calendar.events");
+        let calendar_reads = calendar::ReadGrants::from_scopes(&scopes);
+        let has_calendar = calendar_reads.catalog || calendar_reads.events || calendar_reads.busy;
         if !has_mail && !has_calendar {
             return Err(failure(
                 "permission_denied",
@@ -1117,11 +1119,30 @@ impl Runtime {
             quota,
             preparation: self.preparation.clone(),
             calendar_preparation: self.calendar_preparation.clone(),
+            calendar_reads,
             remote_drafts_wake: Arc::new(Notify::new()),
         };
         let progress = Arc::new(std::sync::Mutex::new(
             json!({"mail":if has_mail {"starting"} else {"not_granted"},"mail_mutations":if has_mail_write {"starting"} else {"not_granted"},"drafts":if has_mail_write {"starting"} else {"not_granted"},"remote_drafts":if has_mail {"starting"} else {"not_granted"},"labels":if has_mail {"starting"} else {"not_granted"},"calendar":if has_calendar {"starting"} else {"not_granted"},"mail_steps":0,"calendar_pages":0}),
         ));
+        {
+            let mut state = progress.lock().unwrap();
+            state["calendar_catalog"] = json!(if calendar_reads.catalog {
+                "starting"
+            } else {
+                "not_granted"
+            });
+            state["calendar_events"] = json!(if calendar_reads.events {
+                "starting"
+            } else {
+                "not_granted"
+            });
+            state["calendar_free_busy"] = json!(if calendar_reads.busy {
+                "on_demand"
+            } else {
+                "not_granted"
+            });
+        }
         let task_progress = progress.clone();
         let owners = Arc::new(std::sync::Mutex::new(std::collections::BTreeMap::from([(
             owner_id.to_owned(),
@@ -1406,11 +1427,25 @@ async fn calendar_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>)
                     value["calendar_pages"] = json!(pages + summary.pages);
                     value["calendar_failures"] = json!(summary.failures);
                     value["calendars"] = json!(summary.calendars);
+                    if ctx.calendar_reads.catalog {
+                        value["calendar_catalog"] = json!("waiting");
+                    }
+                    if ctx.calendar_reads.events {
+                        value["calendar_events"] = json!(if summary.more {
+                            "running"
+                        } else if summary.calendars == 0 && !ctx.calendar_reads.catalog {
+                            "catalog_not_granted"
+                        } else {
+                            "waiting"
+                        });
+                    }
                 }
                 progress_state(
                     &progress,
                     "calendar",
-                    if summary.failures > 0 {
+                    if summary.calendars == 0 && !ctx.calendar_reads.catalog {
+                        "catalog_not_granted"
+                    } else if summary.failures > 0 {
                         "partial"
                     } else if summary.more {
                         "running"

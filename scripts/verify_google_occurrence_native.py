@@ -11,7 +11,7 @@ import re
 from verify_google_calendar import calendar, same
 from verify_google_navigation import LIMITS, require
 from verify_google_occurrence_sources import (
-    check_occurrence, editor_event, native_expectation, normalized_original,
+    check_recurring_occurrence, editor_event, native_expectation, normalized_original,
     original_time, validate_resolution, validate_status, verify_window,
 )
 
@@ -24,11 +24,15 @@ def _original_from_key(row):
     return {"kind": "zoned", "instant": key["original_start"], "time_zone": "UTC"}
 
 
-def _selector(actual, account, source, *, resolved=False):
+def _selector(actual, account, source, *, resolved=False, action=None):
     required = {"calendar_id", "series_id", "original_start"}
     if resolved:
         required |= {"account", "event_id"}
         require(actual.get("account") == account["id"], "Editor selector crossed an account")
+    if action is not None:
+        required |= {"scope", "action"}
+        require(resolved and actual.get("scope") == "occurrence" and actual.get("action") == action,
+                "Native editor selector changed its explicit single-occurrence action")
     require(required <= set(actual) <= required | {"event_id"}, "Native selector lost or invented fields")
     require(actual["calendar_id"] == calendar(account)
             and actual["series_id"] == source["recurringEventId"]
@@ -66,8 +70,14 @@ def _rendered(row, account, source):
             "Expanded native row grants editing before provider resolution")
     if eligible:
         _selector(row["occurrence_selector"], account, source)
+        _selector(row["recurring_selector"], account, source)
+        require(row["recurring_scopes"] == {"edit": ["occurrence", "series", "following"],
+                "delete": ["occurrence", "series", "following"], "rsvp": ["occurrence", "series"]},
+                "Native scope choices differ from the qualified fixed organizer/self-attendee source")
     else:
         require("occurrence_selector" not in row, "Locked recurring source exposed a resolver selector")
+        require("recurring_selector" not in row and not row.get("recurring_scopes"),
+                "Locked source acquired a version-four action selector")
 
 
 def _source_for_row(row, account, ledger):
@@ -125,15 +135,22 @@ def validate_native(observed, expectation, accounts, ledger):
             _rendered(selected, account, before)
             require(selected["date"] == action["date"], "Native action selected the wrong displayed day")
             response = record["resolved_response"]
-            validate_resolution(response, account, before)
+            validate_resolution(response, account, before, version=4, action=action["kind"])
             _identity(response["event"], account, before)
             resolved = record["resolved_event"]
             _identity(resolved, account, before)
             require(resolved["id"] == selected["id"], "Resolved editor replaced its selected occurrence key")
             for field, value in response["event"].items():
                 same(resolved.get(field), value, "Native resolved editor retained field " + field)
-            check_occurrence(resolved["occurrence"], response["occurrence"])
-            _selector(resolved["occurrence_selector"], account, before, resolved=True)
+            expected_occurrence = {"series_id": before["recurringEventId"], "original_start": original_time(before),
+                                   "expected_master_etag": ledger.sources[account["id"]][before["recurringEventId"]]["etag"]}
+            require(record["scope"] == "occurrence" and resolved.get("occurrence") is None
+                    and resolved["recurring_action"] == action["kind"] and resolved["following_notice"] == "",
+                    "Native resolution mixed legacy or following context into the selected action")
+            check_recurring_occurrence(resolved["recurring_context"], expected_occurrence)
+            require(resolved["recurring_context"] == response["recurring"], "Editor changed its qualified recurring context")
+            _selector(resolved["occurrence_selector"], account, before, resolved=True, action=action["kind"])
+            _selector(resolved["recurring_selector"], account, before, resolved=True, action=action["kind"])
             require(resolved["event_id"] == before["id"] and resolved["etag"] == before["etag"],
                     "Native editor used master enrichment as the provider instance")
 
@@ -145,13 +162,11 @@ def validate_native(observed, expectation, accounts, ledger):
                     "Native action has an unexpected request identity")
             identity = account["id"] + "/" + request_id
             require(identity not in requests, "Native occurrence action reused a request identity")
-            expected_occurrence = {"series_id": before["recurringEventId"], "original_start": original_time(before),
-                                   "expected_master_etag": ledger.sources[account["id"]][before["recurringEventId"]]["etag"]}
-            check_occurrence(request["occurrence"], expected_occurrence)
-            require(request["occurrence"] == response["occurrence"], "Submitted occurrence differs from the resolved version")
+            check_recurring_occurrence(request["recurring"], expected_occurrence)
+            require(request["recurring"] == response["recurring"], "Submitted occurrence differs from the resolved version")
             wanted = {"account": account["id"], "calendar_id": calendar(account), "kind": action["kind"],
                       "event_id": event_id, "expected_etag": before["etag"], "request_id": request_id,
-                      "occurrence": deepcopy(response["occurrence"])}
+                      "recurring": deepcopy(response["recurring"])}
             if action["kind"] == "edit":
                 wanted["fields"] = deepcopy(action["fields"])
                 body = ledger.expected_patch(account, event_id, title=action["fields"]["title"])
@@ -167,6 +182,10 @@ def validate_native(observed, expectation, accounts, ledger):
                 require(record["event"]["id"] == selected["id"], "Post-edit projection lost the original occurrence identity")
             else:
                 require("event" not in record, "Native cancellation retained a visible post-action occurrence")
+            require(record["calendar_days"] == 42 and record["calendar_from"] == action["date"],
+                    "Native post-action inspection changed its Agenda window")
+            after_to = (date.fromisoformat(record["calendar_from"]) + timedelta(days=42)).isoformat()
+            verify_window(record["post_events"], ledger, [account], record["calendar_from"], after_to)
             request.pop("account")
             requests[identity] = {"account": account, "request": request, "publication": publication}
     require(len(requests) == len(ledger.publications) == 6

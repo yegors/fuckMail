@@ -147,6 +147,21 @@ struct Harness {
 }
 impl Harness {
     fn new(path: &Path) -> Self {
+        Self::with_scopes(
+            path,
+            &[
+                "https://www.googleapis.com/auth/calendar.events",
+                "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+                "https://www.googleapis.com/auth/calendar.events.freebusy",
+            ],
+        )
+    }
+    fn with_scopes(path: &Path, granted: &[&str]) -> Self {
+        let scopes: BTreeSet<String> = ["openid", "email"]
+            .into_iter()
+            .chain(granted.iter().copied())
+            .map(str::to_owned)
+            .collect();
         let path = path.to_owned();
         let (queue, mut receive) = mpsc::channel(8);
         let (ready, wait) = std::sync::mpsc::channel();
@@ -154,15 +169,6 @@ impl Harness {
             let mut store = fm_core::Store::open_live(&path).unwrap();
             let bindings = store.google_account_bindings().unwrap();
             let account = if bindings.is_empty() {
-                let scopes: BTreeSet<String> = [
-                    "openid",
-                    "email",
-                    "https://www.googleapis.com/auth/calendar.events",
-                    "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
-                    "https://www.googleapis.com/auth/calendar.events.freebusy",
-                ]
-                .map(str::to_owned)
-                .into();
                 let account = store
                     .bind_google_account(
                         "calendar-worker-subject",
@@ -176,8 +182,10 @@ impl Harness {
             } else {
                 bindings[0].account.clone()
             };
-            let generation = store.google_account_bindings().unwrap()[0].connection_generation;
-            ready.send((account, generation)).unwrap();
+            let binding = store.google_account_bindings().unwrap().remove(0);
+            ready
+                .send((account, binding.connection_generation, binding.scopes))
+                .unwrap();
             while let Some(work) = receive.blocking_recv() {
                 if let crate::Work::Provider(call) = work {
                     call.run(&mut store);
@@ -186,9 +194,9 @@ impl Harness {
                 }
             }
         });
-        let (account, generation) = wait.recv_timeout(Duration::from_secs(10)).unwrap();
+        let (account, generation, scopes) = wait.recv_timeout(Duration::from_secs(10)).unwrap();
         let http = Arc::new(Script::default());
-        let context = SyncContext::for_test(
+        let mut context = SyncContext::for_test(
             CoreBridge::new(queue, Arc::new(Semaphore::new(8))),
             AccountId::new(account).unwrap(),
             generation,
@@ -196,6 +204,7 @@ impl Harness {
             "synthetic-token".into(),
             CancellationToken::new(),
         );
+        context.calendar_reads = ReadGrants::from_scopes(&fm_google::auth::ScopeSet::new(&scopes));
         Self {
             context,
             http,
@@ -315,6 +324,149 @@ async fn initial_inventory(h: &Harness) {
         ),
     );
     assert_eq!(run_pass(&h.context, true).await.unwrap().failures, 0);
+}
+
+#[tokio::test]
+async fn readonly_grants_acquire_details_without_enabling_calendar_writes() {
+    for granted in [
+        vec!["https://www.googleapis.com/auth/calendar.readonly"],
+        vec![
+            "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+            "https://www.googleapis.com/auth/calendar.events.readonly",
+        ],
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let h = Harness::with_scopes(directory.path(), &granted);
+        initial_inventory(&h).await;
+        assert_eq!(h.view().await["total"], 1);
+        let sources = h
+            .context
+            .core_call(|s| s.handle("calendar_sources", None, json!({})))
+            .await
+            .unwrap();
+        assert_eq!(sources["calendars"][0]["permission"], "owner");
+        assert_eq!(sources["calendars"][0]["writable"], false);
+        assert_eq!(sources["calendars"][0]["can_create"], false);
+        let accounts = h
+            .context
+            .core_call(|s| s.handle("accounts", None, json!({})))
+            .await
+            .unwrap();
+        assert_eq!(
+            accounts["accounts"][0]["google"]["capabilities"]["calendar_write"],
+            false
+        );
+        h.close();
+    }
+}
+
+#[tokio::test]
+async fn catalog_only_and_busy_only_grants_never_fetch_event_details() {
+    for busy in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let mut granted = vec!["https://www.googleapis.com/auth/calendar.calendarlist.readonly"];
+        if busy {
+            granted.push("https://www.googleapis.com/auth/calendar.events.freebusy");
+        }
+        let h = Harness::with_scopes(directory.path(), &granted);
+        h.http.push(
+            "calendarList?",
+            200,
+            json!({"items":[entry("a","owner")],"nextSyncToken":"catalog"}),
+        );
+        let pass = run_pass(&h.context, true).await.unwrap();
+        assert_eq!((pass.pages, pass.calendars, pass.failures), (1, 1, 0));
+        let sources = h
+            .context
+            .core_call(|s| s.handle("calendar_sources", None, json!({})))
+            .await
+            .unwrap();
+        assert_eq!(
+            sources["calendars"][0]["permission"],
+            if busy { "free_busy" } else { "none" }
+        );
+        assert_eq!(sources["calendars"][0]["writable"], false);
+        let window = Window::from_dates(
+            "2026-09-12".parse().unwrap(),
+            "2026-09-13".parse().unwrap(),
+            "UTC",
+        )
+        .unwrap();
+        if busy {
+            h.http.push("/freeBusy", 200, json!({"timeMin":"2026-09-12T00:00:00Z","timeMax":"2026-09-13T00:00:00Z","calendars":{"a":{"busy":[{"start":"2026-09-12T09:00:00Z","end":"2026-09-12T10:00:00Z"}]}}}));
+            assert_eq!(refresh_busy(&h.context, window).await.unwrap(), 1);
+            let view = h.view().await;
+            assert_eq!(view["total"], 1);
+            assert_eq!(view["events"][0]["title"], "Busy");
+        } else {
+            assert_eq!(
+                refresh_busy(&h.context, window).await.unwrap_err().code,
+                "permission_denied"
+            );
+            assert_eq!(h.view().await["total"], 0);
+        }
+        assert!(h
+            .http
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|url| !url.contains("/events")));
+        h.close();
+    }
+}
+
+#[tokio::test]
+async fn detail_grant_without_catalog_refreshes_only_previously_discovered_calendars() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut h = Harness::new(directory.path());
+    initial_inventory(&h).await;
+    let account = h.context.account.as_str().to_owned();
+    let scopes = BTreeSet::from([
+        "openid".into(),
+        "email".into(),
+        "https://www.googleapis.com/auth/calendar.events.readonly".into(),
+    ]);
+    let grants = ReadGrants::from_scopes(&fm_google::auth::ScopeSet::new(&scopes));
+    let generation = h
+        .context
+        .core_call(move |s| {
+            s.bind_google_account(
+                "calendar-worker-subject",
+                "human@example.test",
+                &scopes,
+                Some(&account),
+            )?;
+            Ok(s.google_account_bindings()?.remove(0).connection_generation)
+        })
+        .await
+        .unwrap();
+    let old = h.context.clone();
+    h.context.connection_generation = generation;
+    h.context.calendar_reads = grants;
+    assert_eq!(
+        run_pass(&old, true).await.err().unwrap().code,
+        "stale_google_work"
+    );
+    drop(old);
+    let before = h.http.requests.lock().unwrap().len();
+    h.http.push(
+        "calendars/a/events?",
+        200,
+        events(vec![event("new", "Read-only delta")], None, Some("updated")),
+    );
+    assert_eq!(run_pass(&h.context, true).await.unwrap().pages, 1);
+    assert_eq!(h.http.requests.lock().unwrap().len(), before + 1);
+    assert_eq!(h.view().await["total"], 2);
+    h.close();
+    let empty = tempfile::tempdir().unwrap();
+    let h = Harness::with_scopes(
+        empty.path(),
+        &["https://www.googleapis.com/auth/calendar.events.readonly"],
+    );
+    assert_eq!(run_pass(&h.context, true).await.unwrap().calendars, 0);
+    assert!(h.http.requests.lock().unwrap().is_empty());
+    h.close();
 }
 
 #[tokio::test]

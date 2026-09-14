@@ -6,6 +6,8 @@ QtObject {
     property bool active: false
     property bool timelineSource: false
     property bool busy: false
+    property string scope: ""
+    property string action: "edit"
     property int generation: 0
     property string correlation: ""
     property var captured: ({})
@@ -23,10 +25,11 @@ QtObject {
         // changes cannot publish an older read or silently re-enable the form.
         return JSON.stringify(source())
     }
-    function context() { return {authority: JSON.stringify(authority), source: sourceStamp()} }
+    function permitted() { return scope.length ? ((source().recurring_scopes || {})[action] || []).indexOf(scope) >= 0 : source().can_resolve_occurrence === true }
+    function context() { return {authority: JSON.stringify(authority), source: sourceStamp(), scope: scope, action: action} }
     function current(stamp) {
-        return stamp && Object.keys(authority).length > 0 && stamp.authority === JSON.stringify(authority)
-            && stamp.source === sourceStamp() && source().can_resolve_occurrence === true
+        return !!stamp && Object.keys(authority).length > 0 && stamp.authority === JSON.stringify(authority)
+            && stamp.source === sourceStamp() && (stamp.scope || "") === scope && (stamp.action || "edit") === action && permitted()
     }
     function invalidate() { ++generation; correlation = ""; busy = false; captured = ({}) }
     function reject(message) { invalidate(); failed(message) }
@@ -36,10 +39,12 @@ QtObject {
     }
     function read() {
         if (!active || busy) return
-        if (!selection.occurrence_selector || source().can_resolve_occurrence !== true || !Object.keys(authority).length) {
+        const sourceSelector = selection.recurring_selector || selection.occurrence_selector
+        if (!sourceSelector || !permitted() || !Object.keys(authority).length) {
             failed("This occurrence is not available for editing. Start sync for its writable calendar and reopen its current details."); return
         }
-        const selector = Object.assign({}, selection.occurrence_selector, {account: selection.account, calendar_id: selection.calendar_id})
+        const selector = Object.assign({}, sourceSelector, {account: selection.account, calendar_id: selection.calendar_id})
+        if (scope.length) { selector.scope = scope; selector.action = action }
         correlation = "gui-occurrence-" + Date.now() + "-" + (++generation) + "-" + Math.floor(Math.random() * 1000000000)
         captured = {id: selection.id, selector: selector, event: Object.assign({}, selection), context: context()}
         busy = true
@@ -47,6 +52,8 @@ QtObject {
     }
     onActiveChanged: if (!active) invalidate()
     onSelectionChanged: check()
+    onScopeChanged: check()
+    onActionChanged: check()
     onAuthorityChanged: check()
     onSourceEventsChanged: check()
     property Connections replies: Connections {
@@ -60,7 +67,10 @@ QtObject {
             if (!ok) { reader.failed(error); return }
             const event = Object.assign({}, captured.event, result.event, {id: captured.id,
                 event_id: result.event_id, etag: result.etag, occurrence: result.occurrence,
-                occurrence_selector: Object.assign({}, captured.selector, {event_id: result.event_id}),
+                recurring_context: result.recurring, following_notice: result.following_notice || "",
+                recurring_action: captured.selector.action || "edit",
+                recurring_selector: captured.selector.scope ? Object.assign({}, captured.selector, captured.selector.scope === "series" ? {} : {event_id: result.event_id}) : undefined,
+                occurrence_selector: Object.assign({}, captured.selector, captured.selector.scope === "series" ? {} : {event_id: result.event_id}),
                 occurrence_ui_context: captured.context})
             reader.resolved(event)
         }

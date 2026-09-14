@@ -404,9 +404,10 @@ fn schema_eighteen_upgrade_changes_only_views_and_preserves_sources_and_legacy_i
         ]
         .into_iter()
         .map(|table| {
+            let retained_columns = if table == "calendar_write_operations" { "account,request_id,fingerprint,intent_json,result_json,execution_mode,state,operation_revision,attempt,connection_generation,permission_epoch,dispatch_json,outcome_json" } else { "*" };
             let mut query = store
                 .db
-                .prepare(&format!("SELECT * FROM {table} ORDER BY rowid"))
+                .prepare(&format!("SELECT {retained_columns} FROM {table} ORDER BY rowid"))
                 .unwrap();
             let columns = query.column_count();
             let rows = query

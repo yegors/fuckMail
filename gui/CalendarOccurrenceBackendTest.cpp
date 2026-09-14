@@ -59,8 +59,46 @@ public:
         begin("all-day"); auto dated = valid; tuple = occurrence; tuple["original_start"] = allDay; dated["occurrence"] = tuple;
         auto dateEvent = event; dateEvent["all_day"] = true; dated["event"] = dateEvent; finish(dated, true);
         fixture.expectedParams["original_start"] = original; selection["original_start"] = original.toVariantMap();
+        fixture.expectedParams["scope"] = "series"; fixture.expectedParams["action"] = "rsvp";
+        selection["scope"] = "series"; selection["action"] = "rsvp";
+        auto scoped = valid; scoped.remove("occurrence");
+        scoped["recurring"] = QJsonObject{{"scope", "series"}, {"series_id", "master"}, {"expected_master_etag", "master-v1"}};
+        scoped["event_id"] = "master"; scoped["etag"] = "master-v1";
+        auto master = event; master["event_id"] = "master"; master["etag"] = "master-v1"; master["can_edit"] = false; master["can_delete"] = false; master["can_rsvp"] = true; scoped["event"] = master;
+        begin("series-rsvp"); finish(scoped, true);
+        begin("wrong-scope"); wrong = scoped; auto wrongScope = scoped["recurring"].toObject(); wrongScope["scope"] = "occurrence"; wrong["recurring"] = wrongScope; finish(wrong, false);
+        begin("unconfirmed-reset"); wrong = scoped; wrongScope = scoped["recurring"].toObject(); wrongScope["reset_future_exceptions"] = true; wrong["recurring"] = wrongScope; finish(wrong, false);
+        begin("rsvp-denied"); wrong = scoped; auto denied = master; denied["can_rsvp"] = false; denied["can_edit"] = true; wrong["event"] = denied; finish(wrong, false);
+        begin("wrong-master-target"); wrong = scoped; wrong["event_id"] = "opaque-instance"; finish(wrong, false);
+        fixture.expectedParams.remove("scope"); fixture.expectedParams.remove("action"); selection.remove("scope"); selection.remove("action");
         begin("epoch"); account["lifecycle"] = QVariantMap{{"state", "active"}, {"revision", 3}}; backend.m_allAccounts = {account}; backend.publishAccounts({account}); finish(valid, false);
         begin("source"); source["revision"] = 2; backend.m_calendarSources = {source}; finish(valid, false);
+        // Reconciliation is a read against the exact recorded target. The
+        // shared engine remains authoritative for its current detail access.
+        fixture.customRequest = [](QLocalSocket *peer, const QJsonObject &request) {
+            if (request["method"] != "calendar_operations") return false;
+            peer->write(reply(request["id"].toString(), {{"operations", QJsonArray{}}})); return true;
+        };
+        source["writable"] = false; source["permission"] = "reader"; backend.m_calendarSources = {source};
+        account["google"] = QVariantMap{{"capabilities", QVariantMap{{"calendar_read", true}, {"calendar_write", false}}}};
+        backend.m_allAccounts = {account}; backend.publishAccounts({account});
+        const int beforeRecovery = fixture.operations;
+        backend.calendarOperationAction("fixture-account", "fixture-request", "resume", 3);
+        require(fixture.operations == beforeRecovery && backend.m_calendarWrites == 0, "Read-only grant cannot Resume a provider mutation");
+        await([&] { return !backend.m_calendarOperationsLoading; }, "refusal history refresh completes");
+        fixture.expectedMethod = "google_calendar_reconcile"; fixture.expectedParams = {{"request_id", "fixture-request"}};
+        int recoveryReplies = 0; QVariantMap recovered;
+        QObject::connect(&backend, &MailBackend::calendarWriteFinished, [&](bool, const QVariantMap &result, const QString &) { ++recoveryReplies; recovered = result; });
+        backend.calendarOperationAction("fixture-account", "fixture-request", "reconcile", 3);
+        await([&] { return fixture.operations == beforeRecovery + 1; }, "Read-only grant admits exact owned reconciliation");
+        fixture.complete({{"state", "unknown"}, {"request_id", "fixture-request"}});
+        await([&] { return recoveryReplies == 1 && backend.m_googleOperations.isEmpty() && !backend.m_calendarOperationsLoading; }, "Read-only reconciliation retains exact unknown result");
+        require(recovered["operation_action"] == "reconcile" && recovered["state"] == "unknown", "Read inspection never promotes provider certainty");
+        account["google"] = QVariantMap{{"capabilities", QVariantMap{{"calendar_read", false}, {"calendar_write", false}}}};
+        backend.m_allAccounts = {account}; backend.publishAccounts({account});
+        backend.calendarOperationAction("fixture-account", "fixture-request", "reconcile", 3);
+        require(fixture.operations == beforeRecovery + 1, "Missing detail-read grant refuses reconciliation before owned connection");
+        await([&] { return !backend.m_calendarOperationsLoading; }, "read refusal history refresh completes");
         const int readsBeforeArchive = fixture.operations;
         account["lifecycle"] = QVariantMap{{"state", "removed"}, {"revision", 4}}; backend.m_allAccounts = {account}; backend.publishAccounts({});
         backend.readCalendarOccurrence(selection, "archived");

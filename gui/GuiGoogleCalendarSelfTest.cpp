@@ -55,7 +55,8 @@ GuiGoogleCalendarSelfTest::GuiGoogleCalendarSelfTest(MailBackend &backend, QQuic
         QTimer::singleShot(0, this, [this] { finish("Missing or oversized Calendar expectation."); }); return;
     }
     const auto expected = QJsonDocument::fromJson(input.readAll()).object();
-    m_occurrenceMode = expected.value("scenario") == "occurrence";
+    m_recurringMode = expected.value("scenario") == "recurring";
+    m_occurrenceMode = m_recurringMode || expected.value("scenario") == "occurrence";
     m_expected = expected["accounts"].toArray(); m_limits = expected["limits"].toObject(); m_date = expected["calendar_date"].toString();
     if (!window || expected["version"] != 1 || m_expected.isEmpty() || m_expected.size() > 4
         || !QDate::fromString(m_date, Qt::ISODate).isValid() || m_limits.size() != quotaKeys.size()) {
@@ -76,12 +77,23 @@ GuiGoogleCalendarSelfTest::GuiGoogleCalendarSelfTest(MailBackend &backend, QQuic
             }
             for (const auto &entry : actions) {
                 const auto action = entry.toObject(), selector = action.value("selector").toObject();
-                if (!QStringList{"edit", "delete"}.contains(action.value("kind").toString()) || selector.value("calendar_id") != row.value("calendar_id")
-                    || selector.value("series_id").toString().isEmpty() || selector.value("original_start").toObject().isEmpty()
-                    || action.value("event_id").toString().isEmpty() || !QDate::fromString(action.value("date").toString(), Qt::ISODate).isValid()
-                    || (action.value("kind") == "edit" && (action.value("fields").toObject().size() != 1 || action.value("fields").toObject().value("title").toString().isEmpty()))) {
-                    QTimer::singleShot(0, this, [this] { finish("Unsupported native occurrence action expectation."); }); return;
-                }
+                const auto kind = action.value("kind").toString(), scope = action.value("scope").toString("occurrence");
+                const bool create = m_recurringMode && kind == "create", dynamic = m_recurringMode && !action.value("series_from").toString().isEmpty();
+                const auto fields = action.value("fields").toObject();
+                bool valid = QDate::fromString(action.value("date").toString(), Qt::ISODate).isValid();
+                if (create) valid = valid && !action.value("save_as").toString().isEmpty() && !fields.value("title").toString().isEmpty()
+                    && fields.value("recurrence").toArray() == QJsonArray{"RRULE:FREQ=DAILY;COUNT=3"}
+                    && QDateTime::fromString(fields.value("start").toString(), Qt::ISODate).isValid()
+                    && QDateTime::fromString(fields.value("end").toString(), Qt::ISODate).isValid()
+                    && fields.value("time_zone") == "UTC";
+                else valid = valid && QStringList{"edit", "delete", "rsvp"}.contains(kind)
+                    && (kind != "rsvp" || m_recurringMode) && QStringList{"occurrence", "series", "following"}.contains(scope)
+                    && selector.value("calendar_id") == row.value("calendar_id")
+                    && (dynamic || (!selector.value("series_id").toString().isEmpty() && !action.value("event_id").toString().isEmpty()))
+                    && !selector.value("original_start").toObject().isEmpty()
+                    && (kind != "edit" || (fields.size() == 1 && !fields.value("title").toString().isEmpty()))
+                    && (kind != "rsvp" || QStringList{"accepted", "declined", "tentative"}.contains(action.value("response").toString()));
+                if (!valid) { QTimer::singleShot(0, this, [this] { finish("Unsupported native recurring action expectation."); }); return; }
             }
             continue;
         }
@@ -102,9 +114,13 @@ GuiGoogleCalendarSelfTest::GuiGoogleCalendarSelfTest(MailBackend &backend, QQuic
         const auto account = m_expected[m_account].toObject();
         const auto actions = account.value("actions").toArray(); if (m_occurrenceIndex >= actions.size()) return;
         const auto action = actions[m_occurrenceIndex].toObject();
-        if (result.value("account").toString() == account.value("account").toString() && result.value("event_id").toString() == action.value("event_id").toString())
+        if (result.value("account").toString() == account.value("account").toString()
+            && result.value("calendar_id").toString() == account.value("calendar_id").toString()
+            && (action.value("event_id").toString().isEmpty() || result.value("event_id").toString() == action.value("event_id").toString()))
             m_occurrenceResponse = QJsonObject::fromVariantMap(result);
     });
+    if (auto details = window->findChild<QObject *>("eventDetails"))
+        connect(details, SIGNAL(pendingResponseChanged()), this, SLOT(captureResponseRequest()));
     m_timer.setInterval(50); connect(&m_timer, &QTimer::timeout, this, &GuiGoogleCalendarSelfTest::tick);
     m_watchdog.setSingleShot(true); connect(&m_watchdog, &QTimer::timeout, this, [this] {
         finish(QString("Native Calendar timed out at stage %1, account %2, action %3: %4")
@@ -152,8 +168,13 @@ bool GuiGoogleCalendarSelfTest::openEvent(const QString &account, const QString 
     return false;
 }
 bool GuiGoogleCalendarSelfTest::submit(const QString &action, int nextStage) {
+    if (action == "delete" || action == "following_edit") {
+        const auto name = action == "delete" ? "eventDeleteConfirmation" : "eventFollowingConfirmation";
+        const auto dialog = m_window->findChild<QObject *>(name);
+        if (!dialog || !dialog->property("opened").toBool()) return false;
+    }
     m_response = {}; m_responseError.clear(); m_responseOk = false;
-    if (!click(action == "delete" ? "eventConfirmDelete" : "eventSaveButton")) return false;
+    if (!click(action == "delete" ? "eventConfirmDelete" : action == "following_edit" ? "eventConfirmFollowing" : "eventSaveButton")) return false;
     m_request = object(m_window->findChild<QObject *>("eventEditor"), "submittedRequest");
     if (m_request["request_id"].toString().isEmpty()) { finish("Actual Calendar control did not submit a request."); return false; }
     m_action = action; m_nextStage = nextStage; m_stage = m_occurrenceMode ? 106 : 13; return true;
@@ -175,6 +196,7 @@ void GuiGoogleCalendarSelfTest::tick() {
     };
     switch (m_stage) {
     case 0:
+        if (const auto loader = named(m_window->contentItem(), "startupOverlay"); loader && loader->isVisible()) return;
         if (!m_backend.connected() || m_backend.accounts().isEmpty()) return;
         if (m_backend.syntheticProfile()) { finish("Calendar actions require the isolated live-mode fixture."); return; }
         m_stage = 1; break;
@@ -201,7 +223,7 @@ void GuiGoogleCalendarSelfTest::tick() {
             return;
         }
         if (QJsonObject::fromVariantMap(m_backend.googleSyncLimits()) != m_limits) { finish("Actual native limits differ from independent expectation."); return; }
-        m_accountResult = {{"account", id}, {"limits", m_limits}}; m_createdId.clear();
+        m_accountResult = {{"account", id}, {"limits", m_limits}}; m_createdId.clear(); m_createdSeries = {};
         if (click("settingsDoneButton")) { m_backend.setCalendarDate(m_date); m_stage = 6; } break;
     }
     case 6: if (click("calendarWorkspaceButton")) m_stage = 7; break;
@@ -323,10 +345,53 @@ bool GuiGoogleCalendarSelfTest::openOccurrence(const QString &account, const QJs
     }
     return false;
 }
+QJsonObject GuiGoogleCalendarSelfTest::actionSelector(const QJsonObject &action) const {
+    auto selector = action.value("selector").toObject();
+    const auto alias = action.value("series_from").toString();
+    if (!alias.isEmpty()) selector["series_id"] = m_createdSeries.value(alias);
+    return selector;
+}
+void GuiGoogleCalendarSelfTest::captureResponseRequest() {
+    if (!m_occurrenceMode || m_finished || m_stage != 102) return;
+    const auto action = m_expected[m_account].toObject().value("actions").toArray()[m_occurrenceIndex].toObject();
+    if (action.value("kind") != "rsvp") return;
+    const auto request = object(m_window->findChild<QObject *>("eventDetails"), "pendingResponse");
+    if (request.value("request_id").toString().isEmpty()) return;
+    // Capture the actual property assignment before the asynchronous write can
+    // finish and clear it. A cached status is never substituted for an action.
+    m_request = request; m_response = {}; m_responseError.clear(); m_responseOk = false; m_action = "rsvp";
+}
+bool GuiGoogleCalendarSelfTest::authorCreate(const QString &account, const QString &calendar, const QJsonObject &fields, QObject *editor) {
+    auto target = named(m_window->contentItem(), "eventTargetCalendar");
+    const auto sources = plain(editor->property("writableSources")).toList(); int selected = -1;
+    for (int index = 0; index < sources.size(); ++index) {
+        const auto source = sources[index].toMap();
+        if (source.value("account").toString() == account && source.value("calendar_id").toString() == calendar) { selected = index; break; }
+    }
+    if (!target || selected < 0) { finish("Expected recurring create calendar is unavailable."); return false; }
+    target->setProperty("currentIndex", selected); QMetaObject::invokeMethod(target, "activated", Q_ARG(int, selected));
+    const QMap<QString, QString> text{{"eventTitle", fields["title"].toString()}, {"eventStartDate", fields["start"].toString().left(10)},
+        {"eventEndDate", fields["end"].toString().left(10)}, {"eventStartTime", fields["start"].toString().mid(11, 5)},
+        {"eventEndTime", fields["end"].toString().mid(11, 5)}, {"eventTimeZone", fields["time_zone"].toString()},
+        {"eventLocation", fields["location"].toString()}, {"eventDescription", fields["description"].toString()},
+        {"eventAttendees", addresses(fields["attendees"]).join(", ")}};
+    for (auto it = text.begin(); it != text.end(); ++it) {
+        auto field = named(m_window->contentItem(), it.key());
+        if (!field || !field->setProperty("text", it.value())) { finish("Could not author native recurring field " + it.key()); return false; }
+    }
+    auto repeat = named(m_window->contentItem(), "eventRepeat"), interval = named(m_window->contentItem(), "eventRepeatInterval"), count = named(m_window->contentItem(), "eventRepeatCount");
+    if (!repeat || !interval || !count || !repeat->setProperty("currentIndex", 1)
+        || !QMetaObject::invokeMethod(repeat, "activated", Q_ARG(int, 1)) || !interval->setProperty("text", "1") || !count->setProperty("text", "3")) {
+        finish("Actual Repeat controls are unavailable."); return false;
+    }
+    return true;
+}
 void GuiGoogleCalendarSelfTest::occurrenceTick(const QJsonObject &account, QObject *editor) {
     const auto id = account.value("account").toString(), calendar = account.value("calendar_id").toString();
     const auto actions = account.value("actions").toArray(); const auto action = actions[m_occurrenceIndex].toObject();
-    const auto selector = action.value("selector").toObject();
+    const auto selector = actionSelector(action); const auto kind = action.value("kind").toString();
+    const auto scope = action.value("scope").toString("occurrence");
+    auto details = m_window->findChild<QObject *>("eventDetails");
     switch (m_stage) {
     case 100: {
         if (!m_backend.calendarReady()) return;
@@ -335,7 +400,11 @@ void GuiGoogleCalendarSelfTest::occurrenceTick(const QJsonObject &account, QObje
             bool complete = false;
             for (const auto &value : m_backend.calendarSources()) { const auto source = value.toMap(); if (source.value("account") == id && source.value("calendar_id") == calendar && source.value("coverage") == "cached") complete = true; }
             if (!complete) return;
-            for (const auto &entry : actions) if (occurrenceFor(id, entry.toObject().value("selector").toObject()).isEmpty()) return;
+            for (const auto &entry : actions) {
+                const auto initialAction = entry.toObject();
+                if (initialAction.value("kind") != "create" && initialAction.value("series_from").toString().isEmpty()
+                    && occurrenceFor(id, initialAction.value("selector").toObject()).isEmpty()) return;
+            }
             QJsonArray initial, absent;
             for (const auto &value : m_backend.events()) { const auto row = QJsonObject::fromVariantMap(value.toMap()); if (row.value("account") == id && row.value("calendar_id") == calendar) initial.append(row); }
             for (const auto &entry : account.value("absent_selectors").toArray()) {
@@ -349,46 +418,119 @@ void GuiGoogleCalendarSelfTest::occurrenceTick(const QJsonObject &account, QObje
             m_accountResult["calendar_from"] = m_backend.calendarFrom(); m_accountResult["calendar_days"] = m_backend.calendarDays();
         }
         if (m_backend.calendarDate() != action.value("date").toString()) { m_backend.setCalendarDate(action.value("date").toString()); return; }
+        if (kind == "create") { if (click("newEventButton")) { m_initial = {}; m_resolvedOccurrence = {}; m_occurrenceResponse = {}; m_stage = 108; } break; }
+        if (selector.value("series_id").toString().isEmpty()) { finish("A dynamic recurring action has no prior created series."); return; }
         m_initial = occurrenceFor(id, selector); if (m_initial.isEmpty()) return;
-        if (!m_initial.value("can_resolve_occurrence").toBool()) { finish("Expected occurrence is not eligible for provider resolution."); return; }
-        if (openOccurrence(id, selector)) { m_occurrenceResponse = {}; m_stage = 101; } break;
+        const auto scopes = m_initial.value("recurring_scopes").toObject();
+        if (!scopes.isEmpty()) {
+            if (!scopes.value(kind).toArray().contains(scope)) { finish("Selected recurring scope does not permit the expected action."); return; }
+        } else if (m_recurringMode || !m_initial.value("can_resolve_occurrence").toBool()) { finish("Expected occurrence is not eligible for provider resolution."); return; }
+        if (openOccurrence(id, selector)) { m_occurrenceResponse = {}; m_resolvedOccurrence = {}; m_request = {}; m_stage = 101; } break;
     }
-    case 101: if (click("eventEditButton")) m_stage = 102; break;
-    case 102: {
-        if (!editor || !editor->property("opened").toBool()) {
-            const auto details = m_window->findChild<QObject *>("eventDetails");
-            const auto feedback = details ? details->property("feedback").toString() : QString{};
-            if (!feedback.isEmpty() && feedback != "Checking this occurrence on Google…") finish("Native occurrence resolution failed: " + feedback);
-            return;
+    case 101: {
+        if (!details || !details->property("opened").toBool()) return;
+        if (!m_initial.value("recurring_scopes").toObject().isEmpty()) {
+            auto control = named(m_window->contentItem(), "eventRecurringScope");
+            const auto choices = plain(details->property("recurringScopes")).toStringList(); const int index = choices.indexOf(scope);
+            if (!control || index < 0 || !control->setProperty("currentIndex", index)
+                || !QMetaObject::invokeMethod(control, "activated", Q_ARG(int, index))) { finish("Actual recurring scope control is unavailable."); return; }
         }
-        m_resolvedOccurrence = object(editor, "editEvent");
-        const auto occurrence = m_resolvedOccurrence.value("occurrence").toObject();
+        const auto button = kind == "rsvp" ? "eventRsvp-" + action.value("response").toString()
+            : kind == "delete" && !m_initial.value("recurring_scopes").toObject().isEmpty() ? QString("eventScopedCancel") : QString("eventEditButton");
+        if (click(button)) m_stage = 102; break;
+    }
+    case 102: {
+        if (kind == "rsvp") {
+            if (m_occurrenceResponse.isEmpty() || m_request.isEmpty()) {
+                const auto feedback = details ? details->property("feedback").toString() : QString{};
+                if (!feedback.isEmpty() && !feedback.startsWith("Checking")) finish("Native scoped RSVP resolution failed: " + feedback);
+                return;
+            }
+            m_resolvedOccurrence = m_occurrenceResponse.value("event").toObject();
+            m_resolvedOccurrence["recurring_context"] = m_occurrenceResponse.value("recurring");
+        } else {
+            if (!editor || !editor->property("opened").toBool()) {
+                const auto feedback = details ? details->property("feedback").toString() : QString{};
+                if (!feedback.isEmpty() && !feedback.startsWith("Checking")) finish("Native occurrence resolution failed: " + feedback);
+                return;
+            }
+            m_resolvedOccurrence = object(editor, "editEvent");
+        }
+        const auto recurring = m_resolvedOccurrence.value("recurring_context").toObject();
+        const auto context = recurring.isEmpty() ? m_resolvedOccurrence.value("occurrence").toObject() : recurring;
+        const bool series = recurring.value("scope") == "series";
         if (m_occurrenceResponse.isEmpty() || m_resolvedOccurrence.value("account") != id || m_resolvedOccurrence.value("calendar_id") != calendar
-            || m_resolvedOccurrence.value("event_id") != action.value("event_id") || occurrence.value("series_id") != selector.value("series_id")
-            || occurrence.value("expected_master_etag").toString().isEmpty() || !sameOriginal(occurrence.value("original_start").toObject(), selector.value("original_start").toObject())) { finish("Native resolved occurrence has an unexpected identity."); return; }
+            || (!action.value("event_id").toString().isEmpty() && m_resolvedOccurrence.value("event_id") != action.value("event_id"))
+            || context.value("series_id") != selector.value("series_id") || context.value("expected_master_etag").toString().isEmpty()
+            || (!series && !sameOriginal(context.value("original_start").toObject(), selector.value("original_start").toObject()))
+            || (series && (m_resolvedOccurrence.value("event_id") != selector.value("series_id") || context.contains("original_start")))) {
+            finish("Native resolved recurring action has an unexpected identity."); return;
+        }
         const auto expected = action.value("event").toObject();
         for (auto it = expected.begin(); it != expected.end(); ++it) if (m_resolvedOccurrence.value(it.key()) != it.value()) { finish("Resolved native occurrence differs at " + it.key()); return; }
-        if (action.value("kind") == "delete") { if (click("eventDeleteButton")) m_stage = 104; }
-        else { auto title = named(m_window->contentItem(), "eventTitle"); if (!title || !title->setProperty("text", action.value("fields").toObject().value("title").toString())) { finish("Could not author occurrence title."); return; } m_stage = 103; }
+        if (kind == "rsvp") { m_stage = 106; break; }
+        if (kind == "delete") {
+            if (!recurring.isEmpty()) m_stage = 104; // Scoped Cancel opens its existing confirmation on resolution.
+            else if (click("eventDeleteButton")) m_stage = 104;
+        } else {
+            auto title = named(m_window->contentItem(), "eventTitle");
+            if (!title || !title->setProperty("text", action.value("fields").toObject().value("title").toString())) { finish("Could not author occurrence title."); return; }
+            m_stage = 103;
+        }
         break;
     }
-    case 103: submit("edit", 107); break;
+    case 103:
+        if (scope == "following") { if (click("eventSaveButton")) m_stage = 105; }
+        else submit("edit", 107);
+        break;
     case 104: submit("delete", 107); break;
+    case 105: submit("following_edit", 107); break;
+    case 108:
+        if (editor && editor->property("opened").toBool() && authorCreate(id, calendar, action.value("fields").toObject(), editor)) m_stage = 109;
+        break;
+    case 109: submit("create", 107); break;
     case 106: {
         if (m_response.isEmpty()) return;
-        if (!m_responseOk || !QStringList{"accepted", "acknowledged"}.contains(m_response.value("state").toString())) { finish("Expected occurrence provider acceptance: " + m_responseError); return; }
+        if (!m_responseOk || !QStringList{"accepted", "acknowledged"}.contains(m_response.value("state").toString())) { finish("Expected recurring provider acceptance: " + m_responseError); return; }
         if (editor && editor->property("visible").toBool()) return;
-        const auto current = occurrenceFor(id, selector);
-        if (action.value("kind") == "delete") { if (!current.isEmpty()) return; }
-        else {
+        QJsonObject current;
+        if (kind == "create") {
+            for (const auto &value : m_backend.events()) {
+                const auto row = QJsonObject::fromVariantMap(value.toMap());
+                if (row.value("account") == id && row.value("calendar_id") == calendar && row.value("title") == action.value("fields").toObject().value("title")) { current = row; break; }
+            }
+            if (current.isEmpty()) return;
+            const auto series = current.value("occurrence_key").toObject().value("series").toString();
+            if (series.isEmpty()) { finish("Recurring create did not produce an observed series."); return; }
+            m_createdSeries[action.value("save_as").toString()] = series;
+        } else if (scope == "following" && kind == "edit") {
+            if (m_response.value("following_complete") != true) { finish("Following edit did not confirm both provider steps."); return; }
+            QString replacement;
+            for (const auto &step : m_response.value("steps").toArray()) if (step.toObject().value("step") == "replacement") replacement = step.toObject().value("target").toString();
+            if (replacement.isEmpty()) { finish("Following receipt has no exact replacement target."); return; }
+            auto replacementSelector = selector; replacementSelector["series_id"] = replacement;
+            current = occurrenceFor(id, replacementSelector);
+            if (current.isEmpty() || !occurrenceFor(id, selector).isEmpty()) return;
+        } else current = occurrenceFor(id, selector);
+        if (kind == "delete") { if (!current.isEmpty()) return; }
+        else if (kind == "rsvp") {
+            if (current.isEmpty() || current.value("self_response") != action.value("response")) return;
+            if (details && details->property("visible").toBool()) { if (!click("eventDetailsClose")) return; }
+        } else if (kind == "edit") {
             if (current.isEmpty() || current.value("title") != action.value("fields").toObject().value("title")) return;
+            const auto before = scope == "series" ? m_initial : m_resolvedOccurrence;
             for (const auto field : {"start", "end", "all_day", "time_zone", "location", "description", "conference_url"})
-                if (current.value(field) != m_resolvedOccurrence.value(field)) { finish("Occurrence title edit changed native field " + QString(field)); return; }
+                if (current.value(field) != before.value(field)) { finish("Recurring title edit changed native field " + QString(field)); return; }
         }
+        QJsonArray postEvents;
+        for (const auto &value : m_backend.events()) { const auto row = QJsonObject::fromVariantMap(value.toMap()); if (row.value("account") == id && row.value("calendar_id") == calendar) postEvents.append(row); }
         auto observed = m_accountResult.value("actions").toArray();
         QJsonObject result{{"account", id}, {"kind", action.value("kind")}, {"selector", selector}, {"selected_occurrence", m_initial},
-            {"resolved_event", m_resolvedOccurrence}, {"resolved_response", m_occurrenceResponse}, {"request", m_request}, {"outcome", m_response}};
+            {"resolved_event", m_resolvedOccurrence}, {"resolved_response", m_occurrenceResponse}, {"request", m_request}, {"outcome", m_response},
+            {"post_events", postEvents}, {"calendar_from", m_backend.calendarFrom()}, {"calendar_days", m_backend.calendarDays()}};
         if (!current.isEmpty()) result["event"] = current;
+        if (kind == "create") { result["save_as"] = action.value("save_as"); result["created_series_id"] = m_createdSeries.value(action.value("save_as").toString()); }
+        else if (!m_resolvedOccurrence.value("recurring_context").toObject().isEmpty()) result["scope"] = scope;
         observed.append(result); m_accountResult["actions"] = observed; m_stage = 107; break;
     }
     case 107: m_stage = ++m_occurrenceIndex < actions.size() ? 100 : 28; break;
@@ -398,7 +540,7 @@ void GuiGoogleCalendarSelfTest::finish(const QString &error) {
     if (m_finished) return;
     m_finished = true; m_timer.stop(); m_watchdog.stop();
     const QJsonObject result{{"version", 1}, {"result", error.isEmpty() ? "passed" : "failed"}, {"error", error},
-        {"scenario", m_occurrenceMode ? "occurrence" : "ordinary"}, {"stage", m_stage}, {"gui_pid", QCoreApplication::applicationPid()}, {"accounts", m_observed}, {"in_progress", m_accountResult},
+        {"scenario", m_recurringMode ? "recurring" : m_occurrenceMode ? "occurrence" : "ordinary"}, {"stage", m_stage}, {"gui_pid", QCoreApplication::applicationPid()}, {"accounts", m_observed}, {"in_progress", m_accountResult},
         {"last_request", m_request}, {"last_outcome", m_response}};
     QSaveFile file(m_report);
     if (QFileInfo::exists(m_report) || !file.open(QIODevice::WriteOnly) || file.write(QJsonDocument(result).toJson()) < 0 || !file.commit()) {

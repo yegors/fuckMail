@@ -142,7 +142,7 @@ impl OperationProjection {
         if let Some(published) = self.cache_published {
             outcome["cache_published"] = published.into();
         }
-        if matches!(self.intent_version, 2 | 3) {
+        if matches!(self.intent_version, 2..=4) {
             if matches!(evidence, Some("accepted" | "deleted")) {
                 outcome["evidence_origin"] = "provider_response".into();
                 outcome["notification_delivery"] = "unverified".into();
@@ -191,6 +191,7 @@ impl Store {
                 "fields",
                 "response",
                 "occurrence",
+                "recurring",
             ],
         )?;
         let request_id = crate::string(request, "request_id")?;
@@ -216,7 +217,12 @@ impl Store {
             return self.calendar_live_status(account, request_id);
         }
         live(self, account)?;
-        let version = if request.get("occurrence").is_some() {
+        let version = if request.get("recurring").is_some()
+            || request["fields"].get("recurrence").is_some()
+        {
+            crate::live_calendar_recurring::validate_request(request)?;
+            4
+        } else if request.get("occurrence").is_some() {
             if !matches!(kind, "edit" | "delete") {
                 return Err(err(
                     "unsupported_operation",
@@ -254,7 +260,7 @@ impl Store {
             if request.get("response").is_some() {
                 return Err(err("invalid_request", "An event edit cannot include RSVP"));
             }
-            validate_fields(&request["fields"])?;
+            validate_fields_version(&request["fields"], version)?;
         } else if request.get("fields").is_some()
             || (kind == "delete" && request.get("response").is_some())
         {
@@ -276,6 +282,21 @@ impl Store {
             calendar: calendar.into(),
             event,
         };
+        if version == 4 {
+            self.calendar_recurring_assert_no_pending(
+                account,
+                request_id,
+                &serde_json::to_value(&target)?,
+                &request["recurring"],
+            )?;
+        } else {
+            self.calendar_recurring_guard_legacy(
+                account,
+                request_id,
+                &serde_json::to_value(&target)?,
+                &request["occurrence"],
+            )?;
+        }
         let intent = json!({"version":version,"request":request,"target":target});
         self.db.execute("INSERT INTO calendar_write_operations(account,request_id,fingerprint,intent_json,execution_mode,state) VALUES(?1,?2,?3,?4,'live','prepared')",params![account,request_id,hash,serde_json::to_string(&intent)?])?;
         self.calendar_live_status(account, request_id)
@@ -319,11 +340,12 @@ impl Store {
     pub fn calendar_live_status(&self, account: &str, request_id: &str) -> Result<Value> {
         crate::id(account)?;
         crate::id(request_id)?;
-        self.db.query_row(
+        let value = self.db.query_row(
             &format!("SELECT {PUBLIC_COLUMNS} FROM calendar_write_operations WHERE account=?1 AND request_id=?2 AND execution_mode='live'"),
             params![account,request_id],
             OperationProjection::read,
-        ).optional()?.map(|operation|operation.value(account)).ok_or_else(||err("not_found","Live Calendar operation does not exist"))
+        ).optional()?.map(|operation|operation.value(account)).ok_or_else(||err("not_found","Live Calendar operation does not exist"))?;
+        self.calendar_recurring_status(value, account, request_id)
     }
 
     /// Private engine input for an explicit resume. No provider source or frozen
@@ -332,12 +354,12 @@ impl Store {
         crate::id(account)?;
         crate::id(request_id)?;
         let record: Option<(String, Option<String>)> = self.db.query_row(
-            "SELECT state,CASE WHEN state IN ('prepared','ready') AND length(CAST(json_extract(intent_json,'$.request') AS BLOB))<=262144 THEN json_extract(intent_json,'$.request') END FROM calendar_write_operations WHERE account=?1 AND request_id=?2 AND execution_mode='live'",
+            "SELECT state,CASE WHEN state IN ('prepared','ready','partial') AND length(CAST(json_extract(intent_json,'$.request') AS BLOB))<=262144 THEN json_extract(intent_json,'$.request') END FROM calendar_write_operations WHERE account=?1 AND request_id=?2 AND execution_mode='live'",
             params![account,request_id],|row|Ok((row.get(0)?,row.get(1)?)),
         ).optional()?;
         let (state, request) =
             record.ok_or_else(|| err("not_found", "Live Calendar operation does not exist"))?;
-        if !matches!(state.as_str(), "prepared" | "ready") {
+        if !matches!(state.as_str(), "prepared" | "ready" | "partial") {
             return Err(err(
                 "calendar_operation_pending",
                 "Only an undispatched prepared or ready Calendar intent can resume",
@@ -386,7 +408,12 @@ impl Store {
             if has_more {
                 continuation = json!({"acknowledged":acknowledged,"before_id":row_id});
             }
-            operations.push(operation.value(account));
+            let request_id = operation.request_id.clone();
+            operations.push(self.calendar_recurring_status(
+                operation.value(account),
+                account,
+                &request_id,
+            )?);
         }
         Ok(json!({"operations":operations,"continuation":continuation}))
     }
@@ -412,7 +439,7 @@ impl Store {
         }
         if matches!(
             op.state.as_str(),
-            "prepared" | "ready" | "unknown" | "conflict" | "rejected"
+            "prepared" | "ready" | "unknown" | "conflict" | "rejected" | "partial"
         ) {
             self.db.execute("UPDATE calendar_write_operations SET state='abandoned',operation_revision=operation_revision+1 WHERE account=?1 AND request_id=?2 AND execution_mode='live' AND operation_revision=?3",params![account,request_id,expected_version])?;
         }
@@ -540,17 +567,22 @@ impl Store {
             (body, source)
         };
         let mut body = body;
-        if intent_version == 2 && kind == "rsvp" {
+        if matches!(intent_version, 2 | 4) && kind == "rsvp" {
             preserve_label(&mut body, &baseline)?;
         }
         let mut dispatch = json!({"kind":kind,"target":target,"body":body,"if_match":request.get("expected_etag"),"send_updates":"all","baseline":baseline,"base_revision":checkpoint["revision"]});
-        if intent_version == 2 {
-            dispatch["version"] = 2.into();
+        if matches!(intent_version, 2 | 4) {
+            dispatch["version"] = intent_version.into();
             dispatch["event_label_version"] = if dispatch["body"].get("eventLabelId").is_some() {
                 1.into()
             } else {
                 0.into()
             };
+        }
+        if intent_version == 4 {
+            crate::live_calendar_recurring::validate_series_dispatch(request, &dispatch)?;
+            dispatch["recurring"] = request["recurring"].clone();
+            dispatch["lifecycle_revision"] = self.require_active_account(account)?.into();
         }
         let changed=self.db.execute("UPDATE calendar_write_operations SET state='ready',operation_revision=operation_revision+1,connection_generation=?4,permission_epoch=?5,dispatch_json=?6 WHERE account=?1 AND request_id=?2 AND execution_mode='live' AND state IN ('prepared','ready') AND operation_revision=?3",params![account,request_id,expected_version,connection_generation,permission_epoch,serde_json::to_string(&dispatch)?])?;
         if changed != 1 {
@@ -664,7 +696,17 @@ impl Store {
                 "Calendar changed while waiting; the unsent intent is retained",
             ));
         }
-        if document_version(&lease.dispatch)? == 3 {
+        if document_version(&lease.dispatch)? == 4 {
+            self.calendar_recurring_check_start(&lease)?;
+        } else {
+            self.calendar_recurring_guard_legacy(
+                account,
+                request_id,
+                &lease.dispatch["target"],
+                &lease.dispatch["occurrence"],
+            )?;
+        }
+        if is_instance_dispatch(&lease.dispatch) {
             let stamp: MasterStamp =
                 serde_json::from_value(lease.dispatch["master_proof"].clone())?;
             self.check_calendar_occurrence_master(&stamp)?;
@@ -681,18 +723,27 @@ impl Store {
         lease: &CalendarWriteLease,
         outcome: CalendarWriteOutcome,
     ) -> Result<Value> {
+        if let Some(status) = self.calendar_recurring_late_prior(lease, &outcome)? {
+            return Ok(status);
+        }
         let op = self.check_calendar_write_lease(lease)?;
         // Abandoning unknown work stops recovery; it cannot erase a response
         // from that exact still-running dispatched attempt. Legacy semantics
         // and never-dispatched abandonment remain unchanged.
+        let late_partial = op.state == "partial"
+            && lease.dispatch["version"] == 4
+            && lease.dispatch["step"] == 0
+            && matches!(&outcome, CalendarWriteOutcome::Accepted(_));
         let late_abandoned = op.state == "abandoned"
             && lease.attempt > 0
-            && matches!(document_version(&lease.dispatch)?, 2 | 3)
+            && matches!(document_version(&lease.dispatch)?, 2..=4)
             && matches!(
                 &outcome,
                 CalendarWriteOutcome::Accepted(_) | CalendarWriteOutcome::Deleted
             );
-        if (!matches!(op.state.as_str(), "in_flight" | "unknown" | "reconciled") && !late_abandoned)
+        if (!matches!(op.state.as_str(), "in_flight" | "unknown" | "reconciled")
+            && !late_abandoned
+            && !late_partial)
             || (op.state == "reconciled"
                 && !matches!(
                     &outcome,
@@ -712,7 +763,7 @@ impl Store {
                 let target: EventKey = serde_json::from_value(lease.dispatch["target"].clone())?;
                 bounded_source(&source, &target)?;
                 etag(crate::string(&source, "etag")?)?;
-                if document_version(&lease.dispatch)? == 3
+                if is_instance_dispatch(&lease.dispatch)
                     && !matches_occurrence_source(&source, &lease.dispatch)?
                 {
                     return Err(err(
@@ -748,13 +799,18 @@ impl Store {
             ),
             CalendarWriteOutcome::Unknown => ("unknown", json!({"kind":"unknown"})),
         };
-        if matches!(document_version(&lease.dispatch)?, 2 | 3) && state == "accepted" {
+        if matches!(document_version(&lease.dispatch)?, 2..=4) && state == "accepted" {
             evidence["evidence_origin"] = "provider_response".into();
             evidence["notification_delivery"] = "unverified".into();
         }
-        if document_version(&lease.dispatch)? == 3 && evidence["kind"] == "deleted" {
+        if is_instance_dispatch(&lease.dispatch) && evidence["kind"] == "deleted" {
             evidence["source_origin"] = "dispatched_occurrence_identity".into();
         }
+        let state = if late_partial && state == "accepted" {
+            "partial"
+        } else {
+            state
+        };
         // A late exact response strengthens a matching observation. Its cache
         // publication is re-evaluated independently under the original fence.
         self.db.execute("UPDATE calendar_write_operations SET state=?3,outcome_json=?4,result_json=NULL,operation_revision=operation_revision+1 WHERE account=?1 AND request_id=?2 AND execution_mode='live'",params![lease.account,lease.request_id,state,serde_json::to_string(&evidence)?])?;
@@ -769,7 +825,7 @@ impl Store {
         connection_generation: i64,
     ) -> Result<CalendarReadPublicationFence> {
         self.check_calendar_write_lease(lease)?;
-        let generation = if document_version(&lease.dispatch)? == 3 {
+        let generation = if matches!(document_version(&lease.dispatch)?, 3 | 4) {
             self.calendar_occurrence_read_connection(&lease.account)?
         } else {
             live(self, &lease.account)?
@@ -829,7 +885,35 @@ impl Store {
         let target: EventKey = serde_json::from_value(lease.dispatch["target"].clone())?;
         bounded_source(&source, &target)?;
         let version = document_version(&lease.dispatch)?;
-        if version == 3 {
+        if version == 4 {
+            let current = self.calendar_sync_scope(&lease.account, &target.calendar)?;
+            if self.calendar_occurrence_read_connection(&lease.account)?
+                != fence.connection_generation
+                || current["membership_denied"] == true
+                || current["permission_epoch"] != fence.permission_epoch
+                || current["revision"] != fence.source_revision
+            {
+                return Err(err(
+                    "stale_revision",
+                    "Recurring read authority or published source changed",
+                ));
+            }
+            let access = crate::calendar_store::parse_access(crate::string(&current, "access")?)?;
+            let event = fm_calendar::normalize(
+                &lease.account,
+                &target.calendar,
+                crate::string(&current, "time_zone")?,
+                &source,
+            )
+            .map_err(crate::calendar_store::calendar_error)?;
+            if matches!(access.for_event(&event), Access::None | Access::FreeBusy) {
+                return Err(err(
+                    "permission_denied",
+                    "Recurring source details are unavailable",
+                ));
+            }
+        }
+        if is_instance_dispatch(&lease.dispatch) {
             return Err(err(
                 "invalid_request",
                 "Occurrence reconciliation requires a qualified master and instance proof",
@@ -837,7 +921,7 @@ impl Store {
         }
         let matches = if lease.dispatch["kind"] == "delete" {
             source["status"] == "cancelled"
-        } else if version == 2 {
+        } else if matches!(version, 2 | 4) {
             source["status"] != "cancelled"
                 && source["etag"]
                     .as_str()
@@ -850,7 +934,7 @@ impl Store {
         if !matches {
             return self.calendar_live_record_outcome(lease, CalendarWriteOutcome::Unknown);
         }
-        if version == 2 {
+        if matches!(version, 2 | 4) {
             let observed_etag = source["etag"].as_str().filter(|v| etag(v).is_ok());
             let evidence = json!({"kind":"observed_state","matches_intent":true,"observed_etag":observed_etag,"event_cancelled":source["status"] == "cancelled","notification_delivery":"unverified","source":source,"publication_fence":fence});
             self.db.execute("UPDATE calendar_write_operations SET state='reconciled',outcome_json=?3,operation_revision=operation_revision+1 WHERE account=?1 AND request_id=?2 AND execution_mode='live'",params![lease.account,lease.request_id,serde_json::to_string(&evidence)?])?;
@@ -871,7 +955,7 @@ impl Store {
     ) -> Result<Value> {
         let op = self.check_calendar_write_lease(lease)?;
         fence.check(lease)?;
-        if document_version(&lease.dispatch)? != 3 {
+        if !is_instance_dispatch(&lease.dispatch) {
             return Err(err("invalid_request", "This is not an occurrence dispatch"));
         }
         self.check_calendar_occurrence_master(&proof.master.stamp)?;
@@ -934,7 +1018,7 @@ impl Store {
                 f.source_revision
             });
         let current_generation =
-            if op.state == "reconciled" && document_version(&lease.dispatch)? == 3 {
+            if op.state == "reconciled" && matches!(document_version(&lease.dispatch)?, 3 | 4) {
                 self.calendar_occurrence_read_connection(&lease.account)?
             } else {
                 live(self, &lease.account)?
@@ -950,7 +1034,7 @@ impl Store {
         {
             return Ok(vec![]);
         }
-        if document_version(&lease.dispatch)? == 3
+        if is_instance_dispatch(&lease.dispatch)
             && !self.calendar_occurrence_publication_current(lease, &op.state)?
         {
             return Ok(vec![]);
@@ -993,7 +1077,7 @@ impl Store {
             return self.calendar_live_status(&lease.account, &lease.request_id);
         }
         let current_generation =
-            if op.state == "reconciled" && document_version(&lease.dispatch)? == 3 {
+            if op.state == "reconciled" && matches!(document_version(&lease.dispatch)?, 3 | 4) {
                 self.calendar_occurrence_read_connection(&lease.account)?
             } else {
                 live(self, &lease.account)?
@@ -1014,10 +1098,18 @@ impl Store {
             });
         // A completed full catalog can omit this calendar without changing its
         // event-scope stamps. That membership loss also fences cache publication.
-        let authority_unchanged = current_generation == generation
+        let lifecycle_unchanged = document_version(&lease.dispatch)? != 4
+            || lease.dispatch["lifecycle_revision"]
+                .as_i64()
+                .is_some_and(|revision| {
+                    self.check_active_account_revision(&lease.account, revision)
+                        .is_ok()
+                });
+        let authority_unchanged = lifecycle_unchanged
+            && current_generation == generation
             && scope["permission_epoch"] == permission
             && scope["membership_denied"] != true
-            && (document_version(&lease.dispatch)? != 3
+            && (!is_instance_dispatch(&lease.dispatch)
                 || self.calendar_occurrence_publication_current(lease, &op.state)?);
         if authority_unchanged {
             self.calendar_assert_no_pending(&lease.account, &target.calendar)?;
@@ -1029,7 +1121,7 @@ impl Store {
         )?;
         let outcome: Value = serde_json::from_str(&raw)?;
         let source = if outcome["kind"] == "deleted" {
-            if document_version(&lease.dispatch)? == 3 {
+            if is_instance_dispatch(&lease.dispatch) {
                 json!({"id":target.event,"status":"cancelled","recurringEventId":lease.dispatch["occurrence"]["series_id"],"originalStartTime":lease.dispatch["original_start_provider"]})
             } else {
                 json!({"id":target.event,"status":"cancelled"})
@@ -1065,8 +1157,7 @@ impl Store {
             )
             .map_err(crate::calendar_store::calendar_error)?;
             let raw = serde_json::to_string(&source)?;
-            let observed = if document_version(&lease.dispatch)? == 3
-                && outcome["kind"] == "deleted"
+            let observed = if is_instance_dispatch(&lease.dispatch) && outcome["kind"] == "deleted"
             {
                 serde_json::to_string(
                     &json!({"kind":"acknowledged_occurrence_cancellation","request_id":lease.request_id,"source":source}),
@@ -1096,7 +1187,7 @@ impl Store {
         lease: &CalendarWriteLease,
         state: &str,
     ) -> Result<Option<CalendarReadPublicationFence>> {
-        if state != "reconciled" || !matches!(document_version(&lease.dispatch)?, 2 | 3) {
+        if state != "reconciled" || !matches!(document_version(&lease.dispatch)?, 2..=4) {
             return Ok(None);
         }
         let raw: Option<String> = self.db.query_row(
@@ -1126,7 +1217,7 @@ impl Store {
         Ok(self.check_calendar_occurrence_master(&stamp).is_ok())
     }
 
-    fn check_calendar_write_lease(
+    pub(crate) fn check_calendar_write_lease(
         &self,
         lease: &CalendarWriteLease,
     ) -> Result<CalendarWriteOperation> {
@@ -1162,6 +1253,11 @@ impl CalendarReadPublicationFence {
     }
 }
 
+pub(crate) fn is_instance_dispatch(dispatch: &Value) -> bool {
+    dispatch["version"] == 3
+        || (dispatch["version"] == 4 && dispatch["recurring"]["scope"] == "occurrence")
+}
+
 fn occurrence_request(request: &Value) -> Result<CalendarOccurrenceSelector> {
     let occurrence = &request["occurrence"];
     crate::fields(
@@ -1173,7 +1269,7 @@ fn occurrence_request(request: &Value) -> Result<CalendarOccurrenceSelector> {
         &json!({"calendar_id":request["calendar_id"],"series_id":occurrence["series_id"],"original_start":occurrence["original_start"],"event_id":request["event_id"]}),
     )
 }
-fn proof_matches_selector(
+pub(crate) fn proof_matches_selector(
     proof: &PreparedCalendarOccurrence,
     selector: &CalendarOccurrenceSelector,
 ) -> bool {
@@ -1225,9 +1321,7 @@ pub(crate) fn live(store: &Store, account: &str) -> Result<i64> {
         .find(|b| b.account == account)
         .ok_or_else(|| err("not_found", "Google account is unavailable"))?;
     if binding.state != crate::live_profile::ConnectionState::Connected
-        || !binding
-            .scopes
-            .contains("https://www.googleapis.com/auth/calendar.events")
+        || !fm_google::auth::ScopeSet::new(&binding.scopes).calendar_events_write()
     {
         return Err(err(
             "permission_denied",
@@ -1248,7 +1342,7 @@ pub(crate) fn etag(value: &str) -> Result<()> {
         Ok(())
     }
 }
-fn bounded_source(source: &Value, target: &EventKey) -> Result<()> {
+pub(crate) fn bounded_source(source: &Value, target: &EventKey) -> Result<()> {
     if source["id"] != target.event
         || !source.is_object()
         || serde_json::to_vec(source)?.len() > 2 * 1024 * 1024
@@ -1296,8 +1390,8 @@ pub(crate) fn initial_event(event: &Event, access: Access, kind: &str, version: 
         return Err(err("permission_denied", "This event copy is not writable"));
     }
     if event.cancelled
-        || !event.recurrence.is_empty()
-        || (version != 3 && event.series_id.is_some())
+        || (version != 4 && !event.recurrence.is_empty())
+        || (!matches!(version, 3 | 4) && event.series_id.is_some())
         || (version == 3
             && (event.series_id.is_none()
                 || event.original_start.is_none()
@@ -1320,7 +1414,7 @@ pub(crate) fn initial_event(event: &Event, access: Access, kind: &str, version: 
             "This operation requires a supported organizer copy",
         ));
     }
-    if matches!(version, 2 | 3) && !fm_calendar::ordinary_conference_supported(&event.source) {
+    if matches!(version, 2..=4) && !fm_calendar::ordinary_conference_supported(&event.source) {
         return Err(err(
             "unsupported_operation",
             "This provider meeting cannot be safely modified",
@@ -1328,7 +1422,22 @@ pub(crate) fn initial_event(event: &Event, access: Access, kind: &str, version: 
     }
     Ok(())
 }
-fn validate_fields(fields: &Value) -> Result<()> {
+fn validate_fields_version(fields: &Value, version: u64) -> Result<()> {
+    if version == 4 {
+        let mut ordinary = fields.clone();
+        ordinary
+            .as_object_mut()
+            .ok_or_else(|| err("invalid_request", "Event fields must be an object"))?
+            .remove("recurrence");
+        if let Some(rule) = fields.get("recurrence") {
+            crate::live_calendar_recurring::validate_rule_value(rule, true)?;
+        }
+        if ordinary.as_object().is_some_and(|v| v.is_empty()) && fields.get("recurrence").is_some()
+        {
+            return Ok(());
+        }
+        return validate_fields_version(&ordinary, 2);
+    }
     crate::fields(
         fields,
         &[
@@ -1348,14 +1457,14 @@ fn validate_fields(fields: &Value) -> Result<()> {
     }
     Ok(())
 }
-fn field_patch(
+pub(crate) fn field_patch(
     fields: &Value,
     event: Option<&Event>,
     zone: &str,
     actor: &str,
     version: u64,
 ) -> Result<Value> {
-    validate_fields(fields)?;
+    validate_fields_version(fields, version)?;
     let mut body = json!({});
     for (input, provider, max) in [
         ("title", "summary", 512),
@@ -1380,7 +1489,7 @@ fn field_patch(
         }
     }
     if let Some(attendees) = fields.get("attendees") {
-        if version == 2 {
+        if matches!(version, 2 | 4) {
             if let Some(patch) = crate::live_calendar_invitations::attendee_patch(
                 attendees,
                 event.map(|e| &e.source),
@@ -1446,7 +1555,15 @@ fn field_patch(
             body["end"] = end;
         }
     }
-    if version == 2 {
+    if version == 4 {
+        if let Some(recurrence) = fields.get("recurrence") {
+            crate::live_calendar_recurring::validate_rule_value(recurrence, event.is_some())?;
+            if event.is_none_or(|e| e.source["recurrence"] != *recurrence) {
+                body["recurrence"] = recurrence.clone();
+            }
+        }
+    }
+    if matches!(version, 2 | 4) {
         if let Some(event) = event {
             preserve_label(&mut body, &event.source)?;
         }
@@ -1454,10 +1571,12 @@ fn field_patch(
     Ok(body)
 }
 
-fn document_version(document: &Value) -> Result<u64> {
+pub(crate) fn document_version(document: &Value) -> Result<u64> {
     match document.get("version") {
         None => Ok(1),
-        Some(value) if value == 1 || value == 2 || value == 3 => Ok(value.as_u64().unwrap()),
+        Some(value) if value == 1 || value == 2 || value == 3 || value == 4 => {
+            Ok(value.as_u64().unwrap())
+        }
         _ => Err(err(
             "unsupported_operation",
             "This Calendar intent version is not supported",
@@ -1465,7 +1584,7 @@ fn document_version(document: &Value) -> Result<u64> {
     }
 }
 
-fn preserve_label(body: &mut Value, source: &Value) -> Result<()> {
+pub(crate) fn preserve_label(body: &mut Value, source: &Value) -> Result<()> {
     if let Some(label) = source.get("eventLabelId") {
         let text = label
             .as_str()
@@ -1538,6 +1657,13 @@ fn matches_patch_v2_roster(source: &Value, patch: &Value, created: bool) -> bool
             None => value == "",
             Some(actual) => actual == value,
         },
+        "conferenceData" if value["createRequest"].is_object() => {
+            source["conferenceData"]["createRequest"]["requestId"]
+                == value["createRequest"]["requestId"]
+                && source["conferenceData"]["createRequest"]["conferenceSolutionKey"]
+                    == value["createRequest"]["conferenceSolutionKey"]
+                && source["conferenceData"]["createRequest"]["status"]["statusCode"] == "success"
+        }
         "attendeesOmitted" => true,
         "attendees" => {
             if created {
@@ -1550,8 +1676,11 @@ fn matches_patch_v2_roster(source: &Value, patch: &Value, created: bool) -> bool
     })
 }
 
-fn matches_intent_v2(event: &Event, intent: &Value, dispatch: &Value) -> bool {
+pub(crate) fn matches_intent_v2(event: &Event, intent: &Value, dispatch: &Value) -> bool {
     let source = &event.source;
+    if dispatch["version"] == 4 && dispatch["step"] == 0 {
+        return matches_patch_v2(source, &dispatch["body"]);
+    }
     let fields = &intent["request"]["fields"];
     let created = dispatch["kind"] == "create";
     let mut comparison = dispatch["body"].clone();
@@ -1564,6 +1693,7 @@ fn matches_intent_v2(event: &Event, intent: &Value, dispatch: &Value) -> bool {
         ("title", "summary"),
         ("location", "location"),
         ("description", "description"),
+        ("recurrence", "recurrence"),
     ] {
         if let Some(value) = fields.get(input) {
             comparison[provider] = value.clone();
@@ -1596,7 +1726,9 @@ fn matches_intent_v2(event: &Event, intent: &Value, dispatch: &Value) -> bool {
             comparison["attendees"] = people;
         }
     }
-    if created {
+    if dispatch["version"] == 4 && dispatch["kind"] == "rsvp" {
+        matches_patch(source, &comparison)
+    } else if created {
         matches_patch_v2_roster(source, &comparison, true)
     } else {
         matches_patch_v2(source, &comparison)
@@ -1630,3 +1762,7 @@ mod occurrence_tests;
 #[cfg(test)]
 #[path = "live_calendar_writes_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "live_calendar_recurring_tests.rs"]
+mod recurring_tests;

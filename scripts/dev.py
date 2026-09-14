@@ -25,6 +25,18 @@ VENV_BIN = VENV / ("Scripts" if WINDOWS else "bin")
 PYTHON = VENV_BIN / ("python.exe" if WINDOWS else "python")
 
 
+def managed_tool(name):
+    # Windows pip launchers embed the Python path at installation time. Use
+    # the installed native binaries so moving/upgrading Python cannot break
+    # CMake, CTest or Ninja in an otherwise intact project toolchain.
+    if WINDOWS:
+        package = "cmake" if name in ("cmake", "ctest", "cpack") else name
+        native = VENV / "Lib" / "site-packages" / package / "data" / "bin" / (name + SUFFIX)
+        if native.is_file():
+            return native
+    return VENV_BIN / (name + SUFFIX)
+
+
 def run(*args, env=None, cwd=ROOT, capture=False, timeout=None):
     args = [str(arg) for arg in args]
     # Windows resolves the executable before applying the child's PATH. Resolve
@@ -54,7 +66,8 @@ def environment():
     qt = Path(os.environ.get("FM_QT_ROOT", TOOLS / "Qt" / CONFIG["qt"] / target["qt_dir"]))
     env = os.environ.copy()
     local_cargo = TOOLS / "cargo" / "bin"
-    env["PATH"] = os.pathsep.join([str(VENV_BIN), str(local_cargo), str(qt / "bin"), env.get("PATH", "")])
+    tool_dirs = list(dict.fromkeys(str(managed_tool(name).parent) for name in ("cmake", "ninja")))
+    env["PATH"] = os.pathsep.join(tool_dirs + [str(VENV_BIN), str(local_cargo), str(qt / "bin"), env.get("PATH", "")])
     if (TOOLS / "rustup").exists():
         env["RUSTUP_HOME"] = str(TOOLS / "rustup")
         env["CARGO_HOME"] = str(TOOLS / "cargo")
@@ -149,11 +162,12 @@ def doctor():
         raise RuntimeError("Environment needs setup: " + ", ".join(failed) + ". Run bootstrap.")
 
 
-def configure_build(preset):
+def configure_build(preset, targets=()):
     doctor()
     env = environment()
-    run(VENV_BIN / ("cmake" + SUFFIX), "--preset", preset, env=env)
-    run(VENV_BIN / ("cmake" + SUFFIX), "--build", "--preset", preset, "--parallel", env=env)
+    run(managed_tool("cmake"), "--preset", preset, env=env)
+    target_args = ("--target", *targets) if targets else ()
+    run(managed_tool("cmake"), "--build", "--preset", preset, "--parallel", *target_args, env=env)
 
 
 def gui_binary(preset, installed=None):
@@ -238,7 +252,7 @@ def verify_package(preset, stage):
         if "mail" not in help_text or "calendar" not in help_text:
             raise RuntimeError("Packaged CLI help is incomplete")
         profile = scratch / "cli-profile"
-        reply = json.loads(run(cli, "--profile", profile, "--account", "windscribe", "--json",
+        reply = json.loads(run(cli, "--profile", profile, "--demo-profile", "--account", "windscribe", "--json",
                                "mail", "list", "--query", "Maya", "--field", "sender", "--limit", "5",
                                env=env, cwd=relocated, capture=True, timeout=45))
         rows = reply.get("result", {}).get("conversations", [])
@@ -275,24 +289,55 @@ def verify_package(preset, stage):
         verify_engine_stopped(live_profile)
         run(gui, "--self-test-live-empty", "--profile", live_profile, env=env, cwd=relocated, timeout=45)
         verify_engine_stopped(live_profile)
+        # Exercise the ordinary no-profile CLI route in an isolated user-data
+        # directory. Never use the developer's real default profile for tests.
+        default_env = env.copy()
+        user_data = scratch / "default-user-data"
+        user_data.mkdir()
+        if WINDOWS:
+            default_env["LOCALAPPDATA"] = str(user_data)
+            default_profile = user_data / "fuckMail" / "default"
+        elif HOST == "Darwin":
+            default_env["HOME"] = str(user_data)
+            default_profile = user_data / "Library" / "Application Support" / "fuckMail" / "default"
+        else:
+            default_env["XDG_DATA_HOME"] = str(user_data)
+            default_profile = user_data / "fuckMail" / "default"
+        empty = json.loads(run(cli, "--json", "accounts", env=default_env, cwd=relocated, capture=True, timeout=45))
+        if not empty.get("ok") or empty.get("result", {}).get("accounts") != [] or empty["result"].get("fixture_revision") != 0:
+            raise RuntimeError("Ordinary packaged CLI startup did not create a fresh empty live default")
+        if not (default_profile / "store.sqlite3").is_file():
+            raise RuntimeError("Ordinary packaged default used an unexpected profile path")
+        verify_engine_stopped(default_profile)
+        run(gui, "--self-test-live-empty", "--profile", default_profile, env=default_env, cwd=relocated, timeout=45)
+        verify_engine_stopped(default_profile)
         run(gui, "--self-test", env=env, cwd=relocated, timeout=180)
         print("Relocated package passed: SDK-free GUI smoke/self-test, paired empty live profile, fresh-terminal CLI help/query, final engine shutdown", flush=True)
 
 
 def package(preset):
-    configure_build(preset)
+    configure_build(preset, targets=("fm-client-runtime",))
     env = environment()
-    stage = ROOT / "dist" / (HOST.lower() + "-" + platform.machine().lower())
+    stage = ROOT.resolve() / "dist" / (HOST.lower() + "-" + platform.machine().lower())
+    if stage.resolve() != stage or (WINDOWS and stage.name != "windows-amd64"):
+        raise RuntimeError("Package stage must remain inside the workspace's expected dist directory")
     # The stage contains only build output. Profiles never live beneath dist.
     if stage.exists():
         shutil.rmtree(stage)
-    run(VENV_BIN / ("cmake" + SUFFIX), "--install", ROOT / "build" / preset, "--prefix", stage, env=env)
+    run(managed_tool("cmake"), "--install", ROOT / "build" / preset, "--prefix", stage, env=env)
     (stage / "README.txt").write_text(
-        "fuckMail Phase 1 development build (unsigned)\n\n"
-        "Contains synthetic mail only; no provider sign-in or real sending.\n"
+        "fuckMail Phase 2 feedback build (unsigned)\n\n"
+        "Starts with an empty local database. No demo accounts or mock mail.\n"
         "Launch fuckmail-gui (inside the .app on macOS, bin elsewhere).\n"
+        "Open Settings > Accounts > Add Google account and select your Google OAuth desktop-client JSON.\n"
+        "Sign in using the browser. Personal Gmail and Google Workspace use Google APIs.\n"
+        "Sign-in alone does not import: set the actual Google Console quota limits in Settings, then start sync.\n"
+        "Use an encrypted local disk before importing personal mail. Keep the profile out of cloud-sync folders.\n"
+        "Remove archives an account locally and removes its credentials; it never deletes the Google account.\n"
+        "Closing the GUI ends its sync and reminders; an explicitly running CLI has its own lifetime.\n"
         "The same directory contains the headless fm CLI and fm-engine.\n"
-        "Use fm --help for CLI commands. Profiles are stored outside the package.\n"
+        "Use fm --help for CLI commands. Ordinary startup uses fuckMail/default under your local app-data directory.\n"
+        "Existing demo-v1 profiles are preserved; --demo-profile selects synthetic data explicitly.\n"
         "Copy the folder/app to install; remove it to uninstall. User data is preserved.\n"
         "This is a development artifact, not a signed/notarized public release.\n",
         encoding="utf-8")
@@ -330,7 +375,7 @@ def main():
         configure_build(args.preset)
     elif args.command == "test":
         configure_build(args.preset)
-        run(VENV_BIN / ("ctest" + SUFFIX), "--preset", args.preset, env=environment())
+        run(managed_tool("ctest"), "--preset", args.preset, env=environment())
     elif args.command == "run":
         configure_build(args.preset)
         run(gui_binary(args.preset), *extra, env=environment())
