@@ -47,13 +47,13 @@ Popup {
                         FmButton {
                             objectName: "calendarOperationResolve-" + operationRow.modelData.request_id
                             visible: ["fake_acknowledged", "acknowledged", "reconciled", "abandoned"].indexOf(modelData.state) < 0
-                            text: !history.live ? "Retry" : history.actionFor(modelData.state) === "resume" ? "Resume" : modelData.state === "accepted" ? "Refresh" : history.actionFor(modelData.state) === "reconcile" ? "Check outcome" : "Check status"; outlined: true
-                            enabled: !backend.calendarOperationsLoading && backend.connected && (!history.live || history.actionFor(modelData.state) === "check" || history.accountReady(modelData.account))
-                            onClicked: { if (history.live) backend.calendarOperationAction(modelData.account, modelData.request_id, history.actionFor(modelData.state), modelData.revision); else backend.retryCalendarOperation(modelData.account, modelData.request_id) }
+                            text: modelData.account_archived ? "Check saved status" : !history.live ? "Retry" : history.actionFor(modelData.state) === "resume" ? "Resume" : modelData.state === "accepted" ? "Refresh" : history.actionFor(modelData.state) === "reconcile" ? "Check outcome" : "Check status"; outlined: true
+                            enabled: !backend.calendarOperationsLoading && backend.connected && (modelData.account_archived || !history.live || history.actionFor(modelData.state) === "check" || history.accountReady(modelData.account))
+                            onClicked: { if (history.live) backend.calendarOperationAction(modelData.account, modelData.request_id, modelData.account_archived ? "check" : history.actionFor(modelData.state), modelData.revision); else backend.retryCalendarOperation(modelData.account, modelData.request_id) }
                         }
                         FmButton {
                             objectName: "calendarOperationAbandon-" + operationRow.modelData.request_id
-                            visible: history.live && modelData.revision >= 0 && ["prepared", "ready", "unknown", "conflict", "rejected"].indexOf(modelData.state) >= 0; text: "Abandon"
+                            visible: !modelData.account_archived && history.live && modelData.revision >= 0 && ["prepared", "ready", "unknown", "conflict", "rejected"].indexOf(modelData.state) >= 0; text: "Abandon"
                             enabled: !backend.calendarOperationsLoading && backend.connected
                             onClicked: { history.abandonTarget = {account: modelData.account, request_id: modelData.request_id, revision: modelData.revision}; abandonConfirmation.open() }
                         }

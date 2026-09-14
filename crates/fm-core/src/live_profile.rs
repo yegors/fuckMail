@@ -167,6 +167,12 @@ impl Store {
         client_id: &str,
     ) -> Result<String> {
         let account = self.validate_google_binding(subject, email, scopes, expected_account)?;
+        self.check_binding_active(&account)?;
+        self.check_google_client_id(client_id)?;
+        Ok(account)
+    }
+
+    pub(crate) fn check_google_client_id(&self, client_id: &str) -> Result<()> {
         if client_id.is_empty() || client_id.len() > 1024 || client_id.chars().any(char::is_control)
         {
             return Err(err("invalid_client", "Invalid desktop OAuth client"));
@@ -182,7 +188,7 @@ impl Store {
                 "Use the desktop OAuth client already connected to this profile",
             ));
         }
-        Ok(account)
+        Ok(())
     }
 
     pub fn bind_google_account_with_client(
@@ -195,15 +201,7 @@ impl Store {
         config_path: &str,
     ) -> Result<String> {
         self.check_google_connection(subject, email, scopes, expected_account, client_id)?;
-        if !Path::new(config_path).is_absolute()
-            || config_path.len() > 32768
-            || config_path.chars().any(char::is_control)
-        {
-            return Err(err(
-                "invalid_client",
-                "Choose an absolute desktop OAuth configuration path",
-            ));
-        }
+        validate_client_path(config_path)?;
         self.bind_google_account_internal(
             subject,
             email,
@@ -229,7 +227,7 @@ impl Store {
             .optional()?)
     }
 
-    fn validate_google_binding(
+    pub(crate) fn validate_google_binding(
         &self,
         subject: &str,
         email: &str,
@@ -295,19 +293,23 @@ impl Store {
         client: Option<(&str, &str)>,
     ) -> Result<String> {
         let account = self.validate_google_binding(subject, email, scopes, expected_account)?;
+        self.check_binding_active(&account)?;
         let tx = self.db.unchecked_transaction()?;
-        tx.execute("INSERT INTO accounts(id,name,email,provider) VALUES(?1,?2,?2,'google') ON CONFLICT(id) DO UPDATE SET name=CASE WHEN accounts.name=accounts.email THEN excluded.email ELSE accounts.name END,email=excluded.email", params![account,email])?;
-        tx.execute(
-            "INSERT OR IGNORE INTO account_metadata(account,signature_text) VALUES(?1,'')",
-            [&account],
-        )?;
-        tx.execute("INSERT INTO google_accounts(account,google_subject,scopes_json,connection_state) VALUES(?1,?2,?3,'connected') ON CONFLICT(account) DO UPDATE SET scopes_json=excluded.scopes_json,connection_state='connected',revision=google_accounts.revision+1,connection_generation=google_accounts.connection_generation+1", params![account,subject,serde_json::to_string(scopes)?])?;
-        if let Some((client_id, config_path)) = client {
-            tx.execute("INSERT INTO google_account_clients(account,client_id,config_path) VALUES(?1,?2,?3) ON CONFLICT(account) DO UPDATE SET client_id=excluded.client_id,config_path=excluded.config_path", params![account,client_id,config_path])?;
-        }
-        tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
+        write_binding(&tx, &account, subject, email, scopes, client)?;
         tx.commit()?;
         Ok(account)
+    }
+
+    fn check_binding_active(&self, account: &str) -> Result<()> {
+        let exists: bool = self.db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM accounts WHERE id=?1)",
+            [account],
+            |r| r.get(0),
+        )?;
+        if exists {
+            self.require_active_account(account)?;
+        }
+        Ok(())
     }
 
     pub fn google_account_bindings(&self) -> Result<Vec<GoogleAccountBinding>> {
@@ -342,6 +344,7 @@ impl Store {
         account: &str,
         state: ConnectionState,
     ) -> Result<()> {
+        self.require_active_account(account)?;
         let tx = self.db.unchecked_transaction()?;
         if tx.execute(
             "UPDATE google_accounts SET connection_state=?2,revision=revision+1,connection_generation=connection_generation+1 WHERE account=?1",
@@ -368,14 +371,48 @@ impl Store {
             let scopes: BTreeSet<String> = serde_json::from_str(&scopes)?;
             let coverage=self.google_live_coverage(account)?;
             let started:bool=self.db.query_row("SELECT EXISTS(SELECT 1 FROM google_live_lanes WHERE account=?1)",[account],|row|row.get(0))?;
-            let connected=state=="connected";
-            let mail_write=fm_google::auth::ScopeSet::new(&scopes).mail_write();
+            let active=self.account_lifecycle(account)?["state"]=="active";
+            let connected=state=="connected" && active;
+            let mail_write=active && fm_google::auth::ScopeSet::new(&scopes).mail_write();
             let calendar_write=connected && scopes.contains("https://www.googleapis.com/auth/calendar.events");
             Ok(json!({"connection_state":state,"granted_scopes":scopes,
-                "capabilities":{"mail_read":true,"drafts":true,"mail_write":mail_write,"mail_delivery":mail_write && connected,"send":mail_write && connected,"calendar_read":true,"calendar_write":calendar_write},
+                "capabilities":{"mail_read":active,"drafts":active,"mail_write":mail_write,"mail_delivery":mail_write && connected,"send":mail_write && connected,"calendar_read":active,"calendar_write":calendar_write},
                 "sync":{"state":if !started {"not_started"} else if coverage.offline_complete {"caught_up"} else {"incomplete"},"inventory_complete":coverage.inventory_complete,"delta_current":coverage.delta_current,"offline_complete":coverage.offline_complete,"observed_messages":coverage.observed,"retained_sources":coverage.retained_sources,"indexed_messages":coverage.indexed,"unavailable_messages":coverage.unavailable}}))
         }).transpose()
     }
+}
+
+pub(crate) fn validate_client_path(config_path: &str) -> Result<()> {
+    if !Path::new(config_path).is_absolute()
+        || config_path.len() > 32768
+        || config_path.chars().any(char::is_control)
+    {
+        return Err(err(
+            "invalid_client",
+            "Choose an absolute desktop OAuth configuration path",
+        ));
+    }
+    Ok(())
+}
+pub(crate) fn write_binding(
+    tx: &rusqlite::Transaction<'_>,
+    account: &str,
+    subject: &str,
+    email: &str,
+    scopes: &BTreeSet<String>,
+    client: Option<(&str, &str)>,
+) -> Result<()> {
+    tx.execute("INSERT INTO accounts(id,name,email,provider) VALUES(?1,?2,?2,'google') ON CONFLICT(id) DO UPDATE SET name=CASE WHEN accounts.name=accounts.email THEN excluded.email ELSE accounts.name END,email=excluded.email",params![account,email])?;
+    tx.execute(
+        "INSERT OR IGNORE INTO account_metadata(account,signature_text) VALUES(?1,'')",
+        [account],
+    )?;
+    tx.execute("INSERT INTO google_accounts(account,google_subject,scopes_json,connection_state) VALUES(?1,?2,?3,'connected') ON CONFLICT(account) DO UPDATE SET scopes_json=excluded.scopes_json,connection_state='connected',revision=google_accounts.revision+1,connection_generation=google_accounts.connection_generation+1",params![account,subject,serde_json::to_string(scopes)?])?;
+    if let Some((client_id, config_path)) = client {
+        tx.execute("INSERT INTO google_account_clients(account,client_id,config_path) VALUES(?1,?2,?3) ON CONFLICT(account) DO UPDATE SET client_id=excluded.client_id,config_path=excluded.config_path",params![account,client_id,config_path])?;
+    }
+    tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
+    Ok(())
 }
 
 #[cfg(test)]

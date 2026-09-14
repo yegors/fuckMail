@@ -810,22 +810,62 @@ fn import_attachment_freeze_verifies_bytes_and_scope_without_writer_io() {
         )
         .unwrap();
     let p = request(&id, 2, "upload");
-    let plan = plan(&store, &scope, &p);
-    std::fs::remove_file(path).unwrap();
-    let proof = prepare_google_draft(plan, &CancellationToken::default()).unwrap();
-    let prepared = store.google_draft_finish(proof).unwrap();
-    let lease = claim(&mut store, &scope, &prepared);
-    let bytes = raw(&store, &lease);
-    let parsed = mail_parser::MessageParser::default().parse(&bytes).unwrap();
-    let parts: Vec<_> = parsed.attachments().collect();
-    assert_eq!(parts.len(), 1);
-    assert_eq!(parts[0].contents(), b"Exact attachment content");
     let mut wrong = scope.clone();
     wrong.primary_email = "other@example.test".into();
     assert_eq!(
         store.google_draft_intent(&wrong, &p).err().unwrap().code,
         "identity_mismatch"
     );
+    let plan = plan(&store, &scope, &p);
+    std::fs::remove_file(path).unwrap();
+    let proof = prepare_google_draft(plan, &CancellationToken::default()).unwrap();
+    let prepared = store.google_draft_finish(proof).unwrap();
+    assert_eq!(
+        store
+            .google_draft_claim(
+                &wrong,
+                "upload",
+                prepared["operation"]["revision"].as_i64().unwrap(),
+            )
+            .err()
+            .unwrap()
+            .code,
+        "identity_mismatch"
+    );
+    assert_eq!(
+        store.google_draft_status(&scope.account, &id).unwrap(),
+        prepared
+    );
+    let lease = claim(&mut store, &scope, &prepared);
+    let bytes = raw(&store, &lease);
+    let parsed = mail_parser::MessageParser::default().parse(&bytes).unwrap();
+    let parts: Vec<_> = parsed.attachments().collect();
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].contents(), b"Exact attachment content");
+    // Exact dispatched replay exposes the retained receipt before current
+    // admission checks. It must neither create another upload nor change bytes.
+    let journal = |store: &Store| {
+        store
+            .db
+            .query_row(
+                "SELECT json FROM capture_operations WHERE account=?1 AND id='upload'",
+                [&scope.account],
+                |r| r.get::<_, String>(0),
+            )
+            .unwrap()
+    };
+    let before_replay = journal(&store);
+    match store.google_draft_intent(&wrong, &p).unwrap() {
+        GoogleDraftIntent::Reply(reply) => {
+            assert_eq!(
+                reply,
+                store.google_draft_status(&scope.account, &id).unwrap()
+            );
+            assert_eq!(reply["operation"]["state"], "in_flight");
+        }
+        GoogleDraftIntent::Upload { .. } => panic!("dispatched replay must be status-only"),
+    }
+    assert_eq!(journal(&store), before_replay);
     let cancel = CancellationToken::default();
     cancel.cancel();
     assert_eq!(

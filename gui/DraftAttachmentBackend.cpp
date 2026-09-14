@@ -47,7 +47,7 @@ void MailBackend::importDraftAttachment(const QUrl &file, const QString &account
 }
 
 void MailBackend::retryDraftAttachment() {
-    if (draftReadOnly()) return;
+    if (draftLocked()) return;
     const auto key = attachmentImportKey();
     if (!m_attachmentImportRetry.contains(key) || attachmentImportBusy() || draftBusy() || !m_connected || m_shutdown) return;
     // Do not stat/reopen the path or regenerate the request/revision. Core
@@ -59,12 +59,15 @@ void MailBackend::startDraftAttachmentImport(const QString &key) {
     const auto intent = m_attachmentImports.value(key);
     if (intent.isEmpty() || attachmentImportBusy()) return;
     const auto account = intent["account"].toString();
+    if (accountRemoved(account) || m_unsavedAccountBuffer) return;
+    const auto lifecycle = lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong();
     auto params = intent; params.remove("account");
     m_attachmentImportActive = key; m_attachmentImportRetry.remove(key);
     m_attachmentImportStatus[key] = "Attaching file…"; emit draftChanged();
-    googleOperation("draft_attachment_import", account, params, [this, key, intent](auto result, bool ok) {
+    googleOperation("draft_attachment_import", account, params, [this, key, intent, lifecycle](auto result, bool ok) {
         m_attachmentImportActive.clear();
-        const bool current = key == attachmentImportKey();
+        const bool current = key == attachmentImportKey() && !accountArchived() && !m_unsavedAccountBuffer
+            && lifecycle == lifecycleAccount(intent["account"].toString()).value("lifecycle").toMap().value("revision").toLongLong();
         const auto draft = result["draft"].toObject();
         const auto attachment = result["attachment"].toObject();
         if (ok && (draft["account"] != intent["account"] || draft["draft_id"] != intent["draft_id"]

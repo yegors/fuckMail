@@ -238,11 +238,14 @@ impl MailChanges {
 }
 impl Store {
     pub(crate) fn accounts(&self) -> Result<Value> {
+        self.accounts_including_removed(false)
+    }
+    pub(crate) fn accounts_including_removed(&self, include_removed: bool) -> Result<Value> {
         let mut stmt = self
             .db
-            .prepare("SELECT id,name,email,provider FROM accounts ORDER BY rowid")?;
+            .prepare("SELECT id,name,email,provider FROM accounts WHERE (?1 OR lifecycle_state='active') ORDER BY rowid")?;
         let accounts = stmt
-            .query_map([], |r| {
+            .query_map([include_removed], |r| {
                 Ok((
                     r.get::<_, String>(0)?,
                     r.get::<_, String>(1)?,
@@ -272,6 +275,9 @@ impl Store {
                 |r| r.get(0),
             )?;
             out.last_mut().unwrap()["draft_count"] = json!(drafts);
+            let lifecycle = self.account_lifecycle(&account)?;
+            out.last_mut().unwrap()["read_only"] = json!(lifecycle["state"] == "removed");
+            out.last_mut().unwrap()["lifecycle"] = lifecycle;
             if let Some(status) = self.google_account_status(&account)? {
                 out.last_mut().unwrap()["google"] = status;
             }

@@ -240,7 +240,9 @@ impl Store {
                     "Deletion request freezes another source",
                 ));
             }
-            if op.state != "prepared" {
+            if op.state != "prepared"
+                || self.account_lifecycle(&scope.account)?["state"] == "removed"
+            {
                 return Ok(GoogleDraftDeleteStep::Reply(self.delete_reply(op)?));
             }
         }
@@ -255,6 +257,7 @@ impl Store {
         self.check_action_target_available(&scope.account, &source)?;
         self.check_action_work(&scope.account, &source, Some(request_id(p)?))?;
         let context = ActionContext {
+            lifecycle_revision: self.require_active_account(&scope.account)?,
             blobs: self.google_blob_store(),
             account: scope.account.clone(),
             selected: crate::string(p, "draft_id")?.into(),
@@ -292,7 +295,9 @@ impl Store {
                     "Deletion request freezes another source",
                 ));
             }
-            if op.state != "prepared" {
+            if op.state != "prepared"
+                || self.account_lifecycle(&p.scope.account)?["state"] == "removed"
+            {
                 return self.delete_reply(op);
             }
             if p.operation.as_ref().map(|v| v.revision) != Some(op.revision) {
@@ -440,6 +445,7 @@ impl Store {
         )
     }
     pub fn google_draft_delete_abandon(&mut self, account: &str, p: &Value) -> Result<Value> {
+        self.require_active_account(account)?;
         crate::fields(p, &["request_id", "expected_revision"])?;
         let mut op = self
             .delete_operation(account, request_id(p)?)?

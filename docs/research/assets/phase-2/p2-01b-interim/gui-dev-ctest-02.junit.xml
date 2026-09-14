@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="Win32-ninja"
+	tests="18"
+	failures="0"
+	disabled="0"
+	skipped="0"
+	hostname="Pee-See"
+	time="196"
+	timestamp="2026-09-13T21:53:54"
+	>
+	<testcase name="rust-test-build" classname="rust-test-build" time="0.391287" status="run">
+		<properties/>
+		<system-out>    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+  Executable unittests src\lib.rs (target\debug\deps\fm_assist-b1136fd18666e022.exe)
+  Executable unittests src\lib.rs (target\debug\deps\fm_calendar-a238c8090b1a78b1.exe)
+  Executable tests\calendar.rs (target\debug\deps\calendar-4a112ced0909e720.exe)
+  Executable tests\limited_access.rs (target\debug\deps\limited_access-6b5c5ec2c2945542.exe)
+  Executable unittests src\main.rs (target\debug\deps\fm-158d08b8ccf5184e.exe)
+  Executable tests\arguments.rs (target\debug\deps\arguments-a60ae72fe3b565b5.exe)
+  Executable unittests src\lib.rs (target\debug\deps\fm_core-c16a4300718408a8.exe)
+  Executable tests\coverage.rs (target\debug\deps\coverage-afac95ef97a8b3a6.exe)
+  Executable tests\mutations.rs (target\debug\deps\mutations-f648c4abe8f26b34.exe)
+  Executable tests\search.rs (target\debug\deps\search-e64d2f2a2861dd23.exe)
+  Executable unittests src\main.rs (target\debug\deps\fm_engine-3a2ea17661e1de87.exe)
+  Executable tests\sessions.rs (t...
+[This part of the test output was removed since it exceeds the threshold of 1024 bytes.]
+</system-out>
+	</testcase>
+	<testcase name="gui-smoke" classname="gui-smoke" time="8.39723" status="run">
+		<properties/>
+		<system-out></system-out>
+	</testcase>
+	<testcase name="gui-live-empty" classname="gui-live-empty" time="6.54085" status="run">
+		<properties/>
+		<system-out>[t=     0.000] Native empty live profile verified through preference save and repeated idle polls: no accounts, conversations or calendar events; fixture revision 0
+</system-out>
+	</testcase>
+	<testcase name="gui-integration" classname="gui-integration" time="138.25" status="run">
+		<properties/>
+		<system-out>[t=     0.000] GUI engine launch attempt 1
+[t=     0.084] GUI self-test stage 0
+[t=     1.081] GUI engine launch attempt 2
+[t=     5.301] GUI self-test stage 20
+[t=     5.999] GUI self-test stage 21
+[t=     6.528] GUI self-test stage 1
+[t=     6.699] GUI self-test stage 2
+[t=     6.737] GUI self-test stage 27
+[t=     6.990] GUI self-test stage 22
+[t=     7.084] GUI self-test stage 23
+[t=     7.218] GUI self-test stage 24
+[t=     7.704] GUI self-test stage 25
+[t=     7.830] GUI self-test stage 26
+[t=     8.588] GUI self-test stage 3
+[t=     8.738] GUI self-test stage 4
+[t=     8.824] GUI self-test stage 5
+[t=     9.562] GUI self-test stage 6
+[t=     9.957] GUI self-test stage 7
+[t=    11.324] GUI self-test stage 8
+[t=    12.135] GUI self-test stage 9
+[t=    13.184] GUI self-test stage 30
+[t=    13.363] GUI self-test stage 31
+[t=    13.806] GUI self-test stage 32
+[t=    13.899] GUI self-test stage 33
+[t=    13.993] GUI self-test stage 34
+[t=    14.087] GUI self-test stage 35
+[t=    14.180] GUI self-test stage 3...
+[This part of the test output was removed since it exceeds the threshold of 1024 bytes.]
+</system-out>
+	</testcase>
+	<testcase name="gui-attachments" classname="gui-attachments" time="16.4448" status="run">
+		<properties/>
+		<system-out>[t=     0.000] GUI engine launch attempt 1
+[t=     0.091] Native composition stage 0 mode "new"
+[t=     1.095] GUI engine launch attempt 2
+[t=     5.340] Native composition stage 70 mode "new"
+[t=     5.439] Native composition stage 71 mode "new"
+[t=     5.696] Native composition stage 72 mode "new"
+[t=     6.097] Native composition stage 73 mode "new"
+[t=     6.213] Native composition stage 74 mode "new"
+[t=     6.283] Native composition stage 75 mode "new"
+[t=     6.375] Native composition stage 93 mode "new"
+[t=     6.467] Native composition stage 76 mode "new"
+[t=     6.668] Native composition stage 77 mode "new"
+[t=     6.741] Native composition stage 78 mode "new"
+[t=     6.854] Native composition stage 79 mode "new"
+[t=     6.855] Actual cached draft projection revision 4 delivered after import/replay/save revision 6 left the clean native draft unchanged.
+[t=     7.036] Native composition stage 80 mode "new"
+[t=     7.149] Native composition stage 81 mode "new"
+[t=     7.226] DelegateModel::cancel: ind...
+[This part of the test output was removed since it exceeds the threshold of 1024 bytes.]
+</system-out>
+	</testcase>
+	<testcase name="gui-startup-recovery" classname="gui-startup-recovery" time="9.12582" status="run">
+		<properties/>
+		<system-out>    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.30s
+     Running tests\sessions.rs (target\debug\deps\sessions-e8feea43ad5a8afa.exe)
+
+running 1 test
+[t=     0.000] GUI engine launch attempt 1
+[t=     1.101] GUI engine launch attempt 2
+test gui_startup_recovers_after_writer_closes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 8.74s
+
+</system-out>
+	</testcase>
+	<testcase name="gui-ipc-trust" classname="gui-ipc-trust" time="0.0383525" status="run">
+		<properties/>
+		<system-out></system-out>
+	</testcase>
+	<testcase name="gui-composer-probe" classname="gui-composer-probe" time="0.0742777" status="run">
+		<properties/>
+		<system-out></system-out>
+	</testcase>
+	<testcase name="gui-reply-document" classname="gui-reply-document" time="0.19336" status="run">
+		<properties/>
+		<system-out></system-out>
+	</testcase>
+	<testcase name="gui-calendar-layout" classname="gui-calendar-layout" time="0.032145" status="run">
+		<properties/>
+		<system-out></system-out>
+	</testcase>
+	<testcase name="gui-conversation-list-model" classname="gui-conversation-list-model" time="0.0382309" status="run">
+		<properties/>
+		<system-out></system-out>
+	</testcase>
+	<testcase name="gui-calendar-controls" classname="gui-calendar-controls" time="3.79526" status="run">
+		<properties/>
+		<system-out>[t=     0.000] Calendar and label controls passed: partial live patches, frozen scope, recovery, sync/capability gates, delete placement, RSVP projection, cached-only labels, offline local binding, explicit remap and synthetic compatibility.
+</system-out>
+	</testcase>
+	<testcase name="gui-google-operation" classname="gui-google-operation" time="0.296139" status="run">
+		<properties/>
+		<system-out>[t=     0.000] Google operation IPC checks passed: private discovery/peer identity, independent cached query, cancellation, response bounds/order/types, one-shot callbacks and callback destruction. Synthetic local IPC only; no app latency or provider claim.
+</system-out>
+	</testcase>
+	<testcase name="gui-google-draft-controls" classname="gui-google-draft-controls" time="1.91507" status="run">
+		<properties/>
+		<system-out>[t=     0.000] Native Google draft controls passed: actual QML recovery/confirmation, private held IPC, projection revision floors, authored-text/account isolation, historical receipt isolation, exact captured unknown-update recovery, unknown/cancel readback and visible byte mismatch. Synthetic IPC only; no provider or performance claim.
+</system-out>
+	</testcase>
+	<testcase name="gui-google-send-controls" classname="gui-google-send-controls" time="2.74657" status="run">
+		<properties/>
+		<system-out>[t=     0.000] Prepared recovery geometry default checkGoogleSend QRectF(20,594 100x32) available QRectF(20,0 402x704)
+[t=     0.000] Prepared recovery geometry default resumeGoogleSend QRectF(126,594 155x32) available QRectF(20,0 402x704)
+[t=     0.000] Prepared recovery geometry default abandonGoogleSend QRectF(20,632 163x32) available QRectF(20,0 402x704)
+[t=     0.056] Prepared recovery geometry large checkGoogleSend QRectF(20,599 106x32) available QRectF(20,0 402x711)
+[t=     0.056] Prepared recovery geometry large resumeGoogleSend QRectF(132,599 165x32) available QRectF(20,0 402x711)
+[t=     0.056] Prepared recovery geometry large abandonGoogleSend QRectF(20,637 174x32) available QRectF(20,0 402x711)
+[t=     1.254] Native Send controls passed: actual QML handlers, private held save/auxiliary IPC, recipient validation, cancelled save continuation, frozen resume, revision-bound abandon, unknown evidence, historical/current metadata and account/editor isolation. Synthetic IPC only; no provider or performan...
+[This part of the test output was removed since it exceeds the threshold of 1024 bytes.]
+</system-out>
+	</testcase>
+	<testcase name="gui-google-draft-snapshot-controls" classname="gui-google-draft-snapshot-controls" time="2.32099" status="run">
+		<properties/>
+		<system-out>[t=     0.000] Source popup control graphite default "closeDraftSourceHistory" QRectF(299,535 55x32)
+[t=     0.000] Source popup control graphite default "exportDraftSource_1234567890123" QRectF(252,619 102x32)
+[t=     0.000] Source popup control graphite default "exportHistoricalDraftAttachment_1234567890123_retained-part" QRectF(36,655 78x32)
+[t=     0.000] Source popup control graphite default "showDraftSourceFolder" QRectF(36,933 138x32)
+[t=     0.000] Source popup geometry graphite default QSize(390, 1500) 1 QRectF(16,515 358x470)
+[t=     0.004] Long file chip graphite default QRectF(20,570 320x30) copy QRectF(300,573 34x24)
+[t=     0.074] Source popup control graphite large "closeDraftSourceHistory" QRectF(295,535 59x32)
+[t=     0.074] Source popup control graphite large "exportDraftSource_1234567890123" QRectF(243,623 111x32)
+[t=     0.074] Source popup control graphite large "exportHistoricalDraftAttachment_1234567890123_retained-part" QRectF(36,661 81x32)
+[t=     0.075] Source popup control graphite ...
+[This part of the test output was removed since it exceeds the threshold of 1024 bytes.]
+</system-out>
+	</testcase>
+	<testcase name="gui-google-draft-authoring-controls" classname="gui-google-draft-authoring-controls" time="2.23544" status="run">
+		<properties/>
+		<system-out>[t=     0.000] Native source actions, identity races, proof recovery and deletion evidence passed.
+</system-out>
+	</testcase>
+	<testcase name="gui-account-lifecycle-controls" classname="gui-account-lifecycle-controls" time="3.27101" status="run">
+		<properties/>
+		<system-out>[t=     0.000] Account lifecycle native handlers, archive guards, fresh confirmation, cleanup retry and unsaved callback/close/navigation fences passed.
+</system-out>
+	</testcase>
+</testsuite>

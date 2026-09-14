@@ -7,6 +7,7 @@
 #include <QUrl>
 
 bool MailBackend::accountCapability(const QString &account, const QString &name) const {
+    if (accountRemoved(account)) return false;
     for (const auto &entry : m_accounts) {
         const auto row = entry.toMap();
         if (row["id"].toString() != account) continue;
@@ -36,6 +37,9 @@ void MailBackend::googleOperation(const QString &method, const QString &account,
     };
     const bool localContent = method == "draft_attachment_import" || method == "google_draft_source"
         || method == "google_draft_authoring" || method == "google_draft_copy";
+    if (blockArchivedRequest(method, account)) {
+        refuseBeforeRequest("account_removed", "This is a read-only account archive. Restore it explicitly before making changes."); return;
+    }
     if (!m_connected || m_shutdown || (m_syntheticProfile && !localContent)) {
         refuseBeforeRequest("cancelled", "Reconnect to continue Google work."); return;
     }
@@ -154,6 +158,10 @@ void MailBackend::setGoogleAuth(const QJsonObject &status) {
 }
 
 void MailBackend::connectGoogle(const QString &configFile, const QString &account, bool reauthorize) {
+    if (accountRemoved(account)) { fail("Use Restore for this archived account."); return; }
+    beginGoogleAuth("google_auth_begin", configFile, account, reauthorize);
+}
+void MailBackend::beginGoogleAuth(const QString &method, const QString &configFile, const QString &account, bool reauthorize, qint64 expectedRevision) {
     if (!m_connected || m_shutdown || m_syntheticProfile || m_googleAuthBusy) return;
     const QUrl fileUrl(configFile);
     const auto path = fileUrl.isLocalFile() ? fileUrl.toLocalFile() : configFile;
@@ -161,7 +169,9 @@ void MailBackend::connectGoogle(const QString &configFile, const QString &accoun
     m_googleAuthAttempt.clear();
     m_googleAuthCancelRequested = false;
     setGoogleAuth({{"phase", "starting"}});
-    request("google_auth_begin", account, {{"client_config_path", path}, {"reauthorize", reauthorize}}, [this](auto result, bool ok) {
+    QJsonObject params{{"client_config_path", path}, {"reauthorize", reauthorize}};
+    if (method == "google_auth_restore_begin") params["expected_revision"] = expectedRevision;
+    request(method, account, params, [this](auto result, bool ok) {
         if (!ok) { setGoogleAuth({{"phase", "failed"}, {"error", result}}); return; }
         m_googleAuthAttempt = result["attempt_id"].toString();
         if (m_shutdown || !m_connected) return;

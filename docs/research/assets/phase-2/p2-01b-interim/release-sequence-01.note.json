@@ -1,0 +1,10 @@
+{
+  "kind": "orchestration_note",
+  "result": "failed_after_two_passing_stages",
+  "observed_exec_session": 12773,
+  "passing_reports": ["rust-production-build-01.result.json", "feature-tests-01.result.json"],
+  "failure": "Never overwrite a Release attempt",
+  "cause": "The added isolated CLI Release stage used cli-feature-tests-01, already reserved by an earlier scoped debug CLI check. Its no-overwrite guard refused before launching that stage.",
+  "correction": "Renamed this stage release-cli-feature-tests and added explicit stage selection; ran only the missing CLI stage. No earlier artifacts or passing results were overwritten.",
+  "follow_up_report": "release-cli-feature-tests-01.result.json"
+}

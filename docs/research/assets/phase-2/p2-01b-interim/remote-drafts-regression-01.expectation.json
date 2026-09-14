@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "accounts": [
+    {
+      "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+      "provider_draft_id": "rd0000",
+      "draft": {
+        "draft_id": "google-draft-59462d6e34e841fdd05525cd4386675b92235d6a61050821752f570ac2fb0d37",
+        "origin": "google_snapshot",
+        "read_only": true,
+        "from": "remote@example.test",
+        "from_name": "Remote Author",
+        "to_recipients": [
+          {
+            "email": "one@example.test",
+            "name": "Reader One"
+          },
+          {
+            "email": "two@example.test",
+            "name": "Reader Two"
+          }
+        ],
+        "cc_recipients": [
+          {
+            "email": "copy@example.test",
+            "name": "Copy"
+          }
+        ],
+        "bcc_recipients": [
+          {
+            "email": "blind@example.test",
+            "name": "Blind"
+          }
+        ],
+        "subject": "Remote personal draft 0000 version 2",
+        "body": "Remote cached draft for personal/0000, version 2.\r\nSecond authored line.",
+        "remote_source": {
+          "absence_means_sent": false,
+          "attachment_ids": [
+            "google-draft-part-d7ca5ba1c635e7ceaa34fd2cdd79639747d99dfc474b93ba9d579b6335a92404"
+          ],
+          "candidate_request_ids": [],
+          "issues": [],
+          "last_observed_at": 1789350175231,
+          "latest_scan_complete": true,
+          "latest_scan_generation": 2,
+          "linked_local_draft_id": null,
+          "message_id": "rm0000v2",
+          "observed_at": 1789350175231,
+          "possible_unknown_create": false,
+          "preview_state": "complete",
+          "provider_draft_id": "rd0000",
+          "raw_headers": {
+            "bcc": " Blind <blind@example.test>\r\n",
+            "cc": " Copy <copy@example.test>\r\n",
+            "from": " Remote Author <remote@example.test>\r\n",
+            "in_reply_to": " <prior@example.test>\r\n",
+            "message_id": " <remote-personal-0000-v2@example.test>\r\n",
+            "references": " <first@example.test> <prior@example.test>\r\n",
+            "reply_to": "",
+            "subject": " Remote personal draft 0000 version 2\r\n",
+            "to": " Reader One <one@example.test>, Reader Two <two@example.test>\r\n"
+          },
+          "seen_generation": 2,
+          "seen_in_latest_scan": true,
+          "sha256": "d6536800b7970e621bb5b825ec7196c46d11dec7a8aeeb2a242a5c2f82548466",
+          "size": 1233,
+          "source_revision": 53,
+          "source_state": "available",
+          "thread_id": "rt0000"
+        }
+      },
+      "raw_sha256": "d6536800b7970e621bb5b825ec7196c46d11dec7a8aeeb2a242a5c2f82548466",
+      "attachments": [
+        {
+          "id": "google-draft-part-d7ca5ba1c635e7ceaa34fd2cdd79639747d99dfc474b93ba9d579b6335a92404",
+          "sha256": "d63f483d9a60ac91f89de4a19d7f9391f2cd00effb06415984e856b1ac323a23"
+        }
+      ]
+    },
+    {
+      "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+      "provider_draft_id": "rd0000",
+      "draft": {
+        "draft_id": "google-draft-077ed5ff5e67cc30987f2c4fa940f1c22997657387a57caee5567a56c95c5625",
+        "origin": "google_snapshot",
+        "read_only": true,
+        "from": "remote@example.test",
+        "from_name": "Remote Author",
+        "to_recipients": [
+          {
+            "email": "one@example.test",
+            "name": "Reader One"
+          },
+          {
+            "email": "two@example.test",
+            "name": "Reader Two"
+          }
+        ],
+        "cc_recipients": [
+          {
+            "email": "copy@example.test",
+            "name": "Copy"
+          }
+        ],
+        "bcc_recipients": [
+          {
+            "email": "blind@example.test",
+            "name": "Blind"
+          }
+        ],
+        "subject": "Remote workspace draft 0000 version 2",
+        "body": "Remote cached draft for workspace/0000, version 2.\r\nSecond authored line.",
+        "remote_source": {
+          "absence_means_sent": false,
+          "attachment_ids": [
+            "google-draft-part-5668df37869c3f19d05f6c63b762ea8e4838f1bf2453b2b56db3926d5cc6e5d2"
+          ],
+          "candidate_request_ids": [],
+          "issues": [],
+          "last_observed_at": 1789350175277,
+          "latest_scan_complete": true,
+          "latest_scan_generation": 2,
+          "linked_local_draft_id": null,
+          "message_id": "rm0000v2",
+          "observed_at": 1789350175277,
+          "possible_unknown_create": false,
+          "preview_state": "complete",
+          "provider_draft_id": "rd0000",
+          "raw_headers": {
+            "bcc": " Blind <blind@example.test>\r\n",
+            "cc": " Copy <copy@example.test>\r\n",
+            "from": " Remote Author <remote@example.test>\r\n",
+            "in_reply_to": " <prior@example.test>\r\n",
+            "message_id": " <remote-workspace-0000-v2@example.test>\r\n",
+            "references": " <first@example.test> <prior@example.test>\r\n",
+            "reply_to": "",
+            "subject": " Remote workspace draft 0000 version 2\r\n",
+            "to": " Reader One <one@example.test>, Reader Two <two@example.test>\r\n"
+          },
+          "seen_generation": 2,
+          "seen_in_latest_scan": true,
+          "sha256": "dcb59f880008cdf9096bb1ba7f694afc08568c129b5d8274898495fd5c510328",
+          "size": 1245,
+          "source_revision": 53,
+          "source_state": "available",
+          "thread_id": "rt0000"
+        }
+      },
+      "raw_sha256": "dcb59f880008cdf9096bb1ba7f694afc08568c129b5d8274898495fd5c510328",
+      "attachments": [
+        {
+          "id": "google-draft-part-5668df37869c3f19d05f6c63b762ea8e4838f1bf2453b2b56db3926d5cc6e5d2",
+          "sha256": "02cc565fbe877b37c5bb265792160b1e78b515679c0a09c3d8a53e97809a8617"
+        }
+      ]
+    }
+  ]
+}

@@ -1,5 +1,28 @@
 # Phase 2 desktop authorization and native credential storage
 
+## P2-01B account lifecycle under D036 — Windows functional interim
+
+The scoped Windows functional interim is implemented and verified from the committed P2-06B checkpoint `7129129`, using Core 24/Gmail 12/Calendar 17/Platform 13/Mail UI 22/CLI 17/Quality 20 and schema 18. Search 5, fixtures 0/3 and protocol 1 remain unchanged. D036 adopts the conservative archive default as an implementation choice; it does not attribute an answer to the unanswered optional preference question. Contracts remain Draft and whole readiness stays 0/9. The earlier boundaries and read-only assessment below retain their historical scope.
+
+Core owns active/removed lifecycle, monotonic local-plan fences and bounded current credential-cleanup metadata in the shared Store. Removal first commits inactivity; an opaque cleanup lease is rechecked only after the coordinator obtains the same account lock used by refresh and verified-grant persistence. This ordering prevents a duplicate waiter from deleting a later restored grant. Completed removal operation bytes remain immutable while status separately projects current lifecycle. Explicit restore requires completed cleanup, verifies the same subject and admits native persistence under that lock. A failed/cancelled restore that may have stored a credential must retain pending cleanup rather than falsely report current absence.
+
+The implemented default-off account fixture starts without bound accounts and uses the existing public synthetic authentication material, actual owned loopback callback listener and signed identity verification. It exercises PKCE/state/nonce, granted-scope and owner cancellation paths through real native/CLI/engine processes. Provider HTTP and credential persistence are in-memory implementations; the account fixture does not access native credential entries. Only this isolated mode answers `verification_google_auth_fixture` with `{"mode":"accounts-v1","browser_stub_allowed":true}`. The feature CLI checks that exact handshake before auth begins and skips only the OS browser launcher; the native helper installs its scoped URL handler after the same probe. Ordinary builds retain system-browser behavior. Reports contain no tokens, codes or authorization URLs.
+
+The paired cases cover two-account addition and last-account removal, reduced grants and explicit reconnect, cleanup failure/retry, wrong-subject refusal, cancellation after the fixture credential record has changed, and explicit same-subject restoration with a renamed email. Independent oracles reconstruct four RAW messages and two Calendar sources, verify retained human-authored fields and CLI attachment bytes/exports, and compare archived content across lifecycle changes. Native checks preserve dirty text and unfinished recipient input, retain exact removal receipts, and guard stale previews/restoration callbacks. Both interfaces prove that restoration starts no provider work; the native proof binds a fresh pre-Restore counter sample to the final authoritative report after engine shutdown, excluding only credential counters. Final cleanup leaves no fixture credentials, callback/vault work or discovery entry. CLI startup-refusal checks require the exact isolation diagnostic and unchanged stopped-profile files.
+
+| Final evidence | Result |
+| --- | --- |
+| [CLI accounts04](assets/phase-2/p2-01b-interim/cli-accounts-04.json) | Pass, 7.282 seconds |
+| [Native accounts06](assets/phase-2/p2-01b-interim/native-accounts-06.json) | Pass, 14.265 seconds |
+| [Ordinary workspace03](assets/phase-2/p2-01b-interim/workspace-result-03.json) | 547 passed, five ignored; strict Clippy and formatting pass |
+| [Isolated engine02](assets/phase-2/p2-01b-interim/feature-tests-02.result.json) | 156 unit and four process cases pass |
+| [Feature CLI02](assets/phase-2/p2-01b-interim/release-cli-feature-tests-02.result.json) | Five unit and 15 process cases pass |
+| [Normal native CTest02](assets/phase-2/p2-01b-interim/gui-dev-ctest-02.result.json) | 18/18 pass: 17 native tests plus the Rust build fixture; CTest elapsed 196.13 seconds |
+
+The full integration case takes 138.25 seconds under D030's unchanged 180-second aggregate watchdog. Eight native notices remain recorded: seven delegate diagnostics and one teardown notice. The Rust build fixture is not a separate workspace-test rerun. The [interim archive](assets/phase-2/p2-01b-interim/logs-manifest.json) retains source/binary identities, earlier failed attempts, captures and diagnostics; no warning-free or performance claim follows from these functional passes.
+
+No real Google account, actual consent/Workspace policy, native credential entry, Send or invitation was exercised by this paired fixture. Native credential cleanup on physical hosts, protected real-account use, long-lived refresh and package acceptance remain separate required gates. D031 continues to defer performance measurement. This checkpoint authorizes no real-account action.
+
 ## P2-01 boundary — 2026-09-13 UTC
 
 Implementation starts against Platform 11, Gmail 4 and Core 14 under D020 and the [Phase 2 plan](../plans/phase-2.md). This packet owns engine-only desktop OAuth/identity verification and native credential storage. Core owns the opaque profile namespace, stable local account mapping, reconnect checks and capability publication; the HTTP packet owns bounded HTTPS transport. Existing schema 7/fresh fixture 3/protocol 1 are not changed by this packet. Deterministic **`google-p2-auth-v1`** fixtures extend the existing Google tests without live credentials or real provider requests.
@@ -44,7 +67,7 @@ All account identities, token strings, client configuration and signing keys in 
 
 ## D034 account lifecycle assessment — 2026-09-13 UTC
 
-**Proposal only; removal/restore is not implemented or verified.** D034 requires account addition and removal through both native and CLI interfaces, and distinguishes removal from disconnect, local-data deletion and OAuth revocation. This read-only source assessment follows the schema-16 B3B implementation; it changes no contract or runtime boundary and authorizes no real account action. The [Phase 2 plan](../plans/phase-2.md) still requires a recorded retention/recovery decision before implementation.
+**Historical proposal before D036; implementation and current scoped evidence are recorded above.** The following assessment describes source as it stood after schema-16 B3B, when removal/restore was absent and paired addition acceptance remained pending. D034 required account addition and removal through both native and CLI interfaces, and distinguished removal from disconnect, local-data deletion and OAuth revocation. This assessment itself changed no contract or runtime boundary and authorized no real account action; its references to required decisions and implementation gaps are historical.
 
 Current source provides much of account addition. `check_google_connection` and `bind_google_account_with_client` in [live_profile.rs](../../crates/fm-core/src/live_profile.rs) validate the verified Google subject, preserve stable account identity across reconnects, and enforce the profile's desktop-client identity. [GoogleBackend.cpp](../../gui/GoogleBackend.cpp), [SettingsView.qml](../../gui/SettingsView.qml) and the [CLI](../../crates/fm-cli/src/main.rs) expose explicit login/reconnect/disconnect. Addition still needs its paired native/CLI acceptance; existing source and earlier OAuth fixture passes do not prove that entire workflow.
 
@@ -60,7 +83,7 @@ Restoration should require explicit OAuth for the same verified subject and reat
 
 Minimum proposed tests are two-account and last-account removal; dirty GUI input and concurrent CLI saves; exact replay/conflicting IDs; held refresh/store versus cleanup; locked vault, cancellation and crash before/after each durable boundary; restart discovery of pending cleanup and retained work; prepared/in-flight/unknown/late-accepted Send, draft and Calendar receipts; exact retained RAW/attachment exports; same-subject restore and different-subject refusal; stale-generation publication refusal; and zero Google deletion/revocation requests. Addition tests should cover native/CLI cancellation, duplicate identity, partial grants and restart without implicit import. No new tests, builds, performance runs or account actions were performed for this assessment.
 
-### First-slice implementation seams
+### Historical first-slice implementation seams
 
 A further read-only review during P2-06B confirms that the existing single-client-ID restriction can remain unchanged when all accounts are removed. This preserves current behavior and avoids making client replacement part of removal. The retained-archive preference question remains unanswered; the proposed policy below is not a founder answer or authorization to remove any real account.
 

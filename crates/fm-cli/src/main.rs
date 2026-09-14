@@ -12,7 +12,7 @@ use std::{
     name = "fm",
     version,
     about = "fuckMail: local mail and calendar, through the same engine as the GUI",
-    after_help = "The default profile is synthetic. Use profile-init with an explicit path for live Google accounts.\nGoogle sign-in starts only with an explicit google connect command. fm never opens the mail database directly."
+    after_help = "The default profile is synthetic. Use profile-init with an explicit path for live Google accounts.\nGoogle sign-in starts only with an explicit google connect or google restore command. fm never opens the mail database directly."
 )]
 struct Args {
     #[arg(long, global = true)]
@@ -23,6 +23,9 @@ struct Args {
     account: Option<String>,
     #[arg(long, global = true)]
     json: bool,
+    #[cfg(feature = "verification-google")]
+    #[arg(long, global = true, hide = true)]
+    verification_google_auth: bool,
     #[command(subcommand)]
     command: Command,
 }
@@ -37,7 +40,16 @@ enum Command {
         command: Google,
     },
     /// List separate accounts and truthful coverage.
-    Accounts,
+    Accounts {
+        /// Include retained read-only archives in this cached list.
+        #[arg(long)]
+        include_removed: bool,
+    },
+    /// Explicit local removal, retained archives and credential-cleanup status.
+    Account {
+        #[command(subcommand)]
+        command: AccountCommand,
+    },
     /// Engine/schema/fixture status (starts an explicit temporary session).
     Status,
     /// Bounded conversation reading, searching and explicit user actions.
@@ -114,12 +126,42 @@ enum Command {
 }
 
 #[derive(Subcommand)]
+enum AccountCommand {
+    /// Inspect retained work and the current lifecycle revision before removal.
+    RemovePreview,
+    /// Remove from active views and clear local credentials; keep a read-only archive.
+    Remove {
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        expected_revision: i64,
+        #[arg(long)]
+        request_id: String,
+        #[arg(long, default_value = "archive", value_parser = ["archive"])]
+        retention: String,
+    },
+    /// Inspect a retained removal receipt and current credential-cleanup state.
+    RemovalStatus {
+        #[arg(long)]
+        request_id: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum Google {
     /// Open your browser and keep this CLI session until login finishes or Ctrl-C.
     /// Add --account for an identity-checked reconnect.
     Connect {
         #[arg(long)]
         client_config: PathBuf,
+        #[arg(long)]
+        reauthorize: bool,
+    },
+    /// Restore the selected archive by signing in as the same Google identity.
+    /// Retained work and sync do not start automatically.
+    Restore {
+        #[arg(long)]
+        client_config: PathBuf,
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        expected_revision: i64,
         #[arg(long)]
         reauthorize: bool,
     },
@@ -891,7 +933,43 @@ fn copy_export(reply: &Value, output: &Path) -> Result<(), Failure> {
     Ok(())
 }
 
-fn open_google_browser(url: &str) -> Result<(), Failure> {
+fn account_lifecycle_request(command: &Command) -> Result<Option<(&'static str, Value)>, Failure> {
+    let Command::Account { command } = command else {
+        return Ok(None);
+    };
+    let (method, params) = match command {
+        AccountCommand::RemovePreview => ("account_remove_preview", json!({})),
+        AccountCommand::Remove {
+            expected_revision,
+            request_id,
+            retention,
+        } => (
+            "account_remove",
+            json!({"expected_revision":expected_revision,"request_id":request_id,"retention":retention}),
+        ),
+        AccountCommand::RemovalStatus { request_id } => {
+            ("account_remove_status", json!({"request_id":request_id}))
+        }
+    };
+    if params.get("request_id").is_some_and(|value| {
+        value
+            .as_str()
+            .is_none_or(|id| id.is_empty() || id.len() > 128 || id.chars().any(char::is_control))
+    }) {
+        return Err(invalid(
+            "Choose a nonempty bounded removal request identity",
+        ));
+    }
+    Ok(Some((method, params)))
+}
+
+enum BrowserLaunch {
+    System,
+    #[cfg(feature = "verification-google")]
+    VerifiedFixture,
+}
+
+fn open_google_browser(url: &str, launch: BrowserLaunch) -> Result<(), Failure> {
     // The engine supplies one fixed HTTPS authorization endpoint. No shell
     // evaluates the query, and URLs/state are never copied to terminal logs.
     if !url.starts_with("https://accounts.google.com/o/oauth2/v2/auth?")
@@ -900,6 +978,11 @@ fn open_google_browser(url: &str) -> Result<(), Failure> {
         || url.contains('#')
     {
         return Err(invalid("The engine returned an invalid Google sign-in URL"));
+    }
+    match launch {
+        BrowserLaunch::System => {}
+        #[cfg(feature = "verification-google")]
+        BrowserLaunch::VerifiedFixture => return Ok(()),
     }
     #[cfg(windows)]
     let mut command = {
@@ -962,6 +1045,19 @@ async fn main() {
 }
 
 async fn run(args: &Args) -> Result<(), Failure> {
+    #[cfg(feature = "verification-google")]
+    if args.verification_google_auth
+        && (args.profile.is_none()
+            || args.engine.is_none()
+            || !matches!(
+                args.command,
+                Command::Google {
+                    command: Google::Connect { .. } | Google::Restore { .. }
+                }
+            ))
+    {
+        return Err(invalid("Synthetic sign-in requires explicit profile/engine paths and a Google connect or restore command"));
+    }
     let profile = match &args.profile {
         Some(p) => p.to_owned(),
         None => fm_ipc::default_profile()?,
@@ -973,7 +1069,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
     // Validate scope and local input before starting any engine work.
     if !matches!(
         args.command,
-        Command::Accounts
+        Command::Accounts { .. }
             | Command::Status
             | Command::Watch { .. }
             | Command::Call { .. }
@@ -994,6 +1090,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
         args.command,
         Command::ProfileInit
             | Command::Google { .. }
+            | Command::Account { .. }
             | Command::Draft {
                 command: Draft::Source { .. }
                     | Draft::Sources { .. }
@@ -1003,11 +1100,11 @@ async fn run(args: &Args) -> Result<(), Failure> {
     );
     if live_command && args.profile.is_none() {
         return Err(invalid(
-            "profile-init, Google and retained Google draft commands require an explicit --profile path",
+            "profile-init, account, Google and retained Google draft commands require an explicit --profile path",
         ));
     }
     let google_client_path = if let Command::Google {
-        command: Google::Connect { client_config, .. },
+        command: Google::Connect { client_config, .. } | Google::Restore { client_config, .. },
     } = &args.command
     {
         Some(
@@ -1033,14 +1130,45 @@ async fn run(args: &Args) -> Result<(), Failure> {
     let attachment_import = attachment_import_params(&args.command)?;
     let google_composition = google_composition_request(&args.command)?;
     let draft_source = draft_source_request(&args.command)?;
+    let account_lifecycle = account_lifecycle_request(&args.command)?;
     let mut client = if live_command {
         Client::connect_live(&profile, engine.as_deref()).await?
     } else {
         Client::connect(&profile, engine.as_deref()).await?
     };
     let scope = args.account.as_deref();
+    #[cfg(not(feature = "verification-google"))]
+    let browser_launch = BrowserLaunch::System;
+    #[cfg(feature = "verification-google")]
+    let browser_launch = if args.verification_google_auth {
+        let fixture = result(
+            client
+                .call("verification_google_auth_fixture", None, json!({}))
+                .await?,
+        )?;
+        if fixture != json!({"mode":"accounts-v1","browser_stub_allowed":true}) {
+            return Err(invalid(
+                "The engine did not confirm the isolated account fixture",
+            ));
+        }
+        BrowserLaunch::VerifiedFixture
+    } else {
+        BrowserLaunch::System
+    };
     let reply = match &args.command {
-        Command::Accounts => client.call("accounts", None, json!({})).await?,
+        Command::Accounts { include_removed } => {
+            let params = if *include_removed {
+                json!({"include_removed":true})
+            } else {
+                json!({})
+            };
+            client.call("accounts", None, params).await?
+        }
+        Command::Account { .. } => {
+            let (method, params) =
+                account_lifecycle.ok_or_else(|| invalid("Missing account lifecycle request"))?;
+            client.call(method, scope, params).await?
+        }
         Command::Status | Command::ProfileInit => client.call("status", None, json!({})).await?,
         Command::Google {
             command: Google::Disconnect,
@@ -1240,7 +1368,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             client.call("google_sync_release", scope, json!({})).await?
         }
         Command::Google {
-            command: Google::Connect { reauthorize, .. },
+            command: Google::Connect { reauthorize, .. } | Google::Restore { reauthorize, .. },
         } => {
             let path = google_client_path
                 .as_ref()
@@ -1248,15 +1376,22 @@ async fn run(args: &Args) -> Result<(), Failure> {
             let path = path
                 .to_str()
                 .ok_or_else(|| invalid("Desktop client path is not valid Unicode"))?;
-            let begin = result(
-                client
-                    .call(
-                        "google_auth_begin",
-                        scope,
-                        json!({"client_config_path":path,"reauthorize":reauthorize}),
-                    )
-                    .await?,
-            )?;
+            let (method, params) = match &args.command {
+                Command::Google {
+                    command:
+                        Google::Restore {
+                            expected_revision, ..
+                        },
+                } => (
+                    "google_auth_restore_begin",
+                    json!({"client_config_path":path,"reauthorize":reauthorize,"expected_revision":expected_revision}),
+                ),
+                _ => (
+                    "google_auth_begin",
+                    json!({"client_config_path":path,"reauthorize":reauthorize}),
+                ),
+            };
+            let begin = result(client.call(method, scope, params).await?)?;
             let attempt = begin["attempt_id"]
                 .as_str()
                 .ok_or_else(|| invalid("Engine omitted the sign-in attempt"))?
@@ -1264,7 +1399,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             let url = begin["authorization_url"]
                 .as_str()
                 .ok_or_else(|| invalid("Engine omitted Google sign-in"))?;
-            if let Err(error) = open_google_browser(url) {
+            if let Err(error) = open_google_browser(url, browser_launch) {
                 let _ = client
                     .call("google_auth_cancel", None, json!({"attempt_id":attempt}))
                     .await;

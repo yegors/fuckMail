@@ -222,6 +222,7 @@ void MailBackend::setDraftSignature(const QString &signature) {
     emit draftChanged(); m_draftTimer.start();
 }
 void MailBackend::reloadDraft() {
+    if (m_unsavedAccountBuffer) { accountNavigationAllowed(); return; }
     cancelPendingGoogleSend("Send cancelled before reloading the draft.");
     if (draftBusy() || attachmentImportPending() || m_draft.isEmpty()) return;
     m_draftTimer.stop(); m_resolvingDraft = true;
@@ -243,7 +244,7 @@ void MailBackend::saveMyDraftVersion() {
     // Called only after the user confirms replacement of the other saved
     // version. Fetch its revision, retaining every authored field locally, then
     // use the normal optimistic save. A concurrent edit can conflict again.
-    if (draftReadOnly() || !m_draftConflict || draftBusy() || m_draft.isEmpty()) return;
+    if (accountArchived() || m_unsavedAccountBuffer || draftReadOnly() || !m_draftConflict || draftBusy() || m_draft.isEmpty()) return;
     m_draftTimer.stop(); clearError(); m_resolvingDraft = true;
     m_draftStatus = "Checking the current saved revision…"; emit draftChanged();
     const auto account = m_account, id = draftContext();
@@ -267,14 +268,16 @@ void MailBackend::saveMyDraftVersion() {
     });
 }
 void MailBackend::discardDraft() {
-    if (draftReadOnly()) return;
+    if (accountArchived() || m_unsavedAccountBuffer || draftReadOnly()) return;
     cancelPendingGoogleSend("Send cancelled before discarding the draft.");
     if (attachmentImportPending()) return;
     if (m_draft.isEmpty() || draftBusy()) return;
     m_draftTimer.stop(); m_discarding = true; emit draftChanged();
     auto params = draftSelector(); params["request_id"] = mutation()["request_id"]; params["expected_revision"] = m_draft["revision"].toLongLong();
-    request("draft_discard", m_account, params, [this](auto result, bool ok) {
+    const auto account = m_account, context = draftContext();
+    request("draft_discard", m_account, params, [this, account, context](auto result, bool ok) {
         m_discarding = false;
+        if (account != m_account || context != draftContext() || m_unsavedAccountBuffer || accountArchived()) return;
         if (ok) { m_draft = mergedDraftProjection(result); m_recipientInputs.clear(); m_draftDirty = false; m_draftConflict = false; m_draftStatus = "Draft discarded"; remember("replyOpen", false); remember("selectedDraft", ""); loadAccounts(); if (m_folder == "drafts") loadDraftRows(false); }
         else { m_draftStatus = "Discard failed — your reply remains here"; cancelShutdown(); }
         emit draftChanged();

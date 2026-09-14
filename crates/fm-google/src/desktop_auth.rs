@@ -277,12 +277,11 @@ impl VerifiedGrant {
         account: &AccountId,
         vault: Arc<V>,
         guard: tokio::sync::OwnedMutexGuard<()>,
-    ) -> Result<(), GoogleError> {
+    ) -> Result<tokio::sync::OwnedMutexGuard<()>, GoogleError> {
         let account = account.clone();
         tokio::task::spawn_blocking(move || {
-            let result = vault.store(&account, self.token);
-            drop(guard);
-            result
+            vault.store(&account, self.token)?;
+            Ok(guard)
         })
         .await
         .map_err(|_| GoogleError::StoreUnavailable)?

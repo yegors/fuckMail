@@ -40,7 +40,11 @@ pub(crate) fn restore_schema_fifteen(db: &Connection) {
     .unwrap();
 }
 
+pub(crate) fn restore_schema_seventeen(db: &Connection) {
+    db.execute_batch("DROP INDEX accounts_active; ALTER TABLE accounts DROP COLUMN cleanup_json; ALTER TABLE accounts DROP COLUMN lifecycle_revision; ALTER TABLE accounts DROP COLUMN lifecycle_state; PRAGMA user_version=17;").unwrap();
+}
 pub(crate) fn restore_schema_sixteen(db: &Connection) {
+    restore_schema_seventeen(db);
     db.pragma_update(None, "user_version", 16).unwrap();
 }
 

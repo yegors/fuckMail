@@ -1,0 +1,36 @@
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.51s
+     Running unittests src\lib.rs (target\debug\deps\fm_core-fbf5e23cd42bc787.exe)
+
+running 10 tests
+test account_lifecycle::tests::removal_cleanup_claims_are_serial_and_old_receipts_cannot_delete_restored_grants ... ok
+test account_lifecycle::tests::held_local_and_provider_preparations_cannot_revive_after_remove_restore ... ok
+test account_lifecycle::tests::archived_prepared_replay_is_status_only_and_exact_late_send_ack_survives ... ok
+test account_lifecycle::tests::retained_source_and_attachment_exports_survive_archive_but_held_import_cannot_publish ... ok
+test account_lifecycle::tests::live_calendar_late_ack_is_retained_while_archive_blocks_cache_and_pending_replay_dispatch ... ok
+test account_lifecycle::tests::failed_cleanup_and_restore_restart_remain_truthfully_retryable ... ok
+test account_lifecycle::tests::live_schema_seventeen_preserves_unknown_upload_and_accepted_send_bytes ... ok
+test account_lifecycle::tests::archived_prepared_capture_exports_without_attempt_or_journal_transition ... ok
+test account_lifecycle::tests::schema_seventeen_upgrade_preserves_old_columns_receipts_and_future_refusal ... ok
+test account_lifecycle::tests::archive_keeps_cached_calendar_and_capture_but_blocks_new_authorship ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 238 filtered out; finished in 3.64s
+
+     Running tests\coverage.rs (target\debug\deps\coverage-d45801a9ede6c797.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests\mutations.rs (target\debug\deps\mutations-02a89e4e68fb19e7.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+
+     Running tests\search.rs (target\debug\deps\search-27805b72a5496663.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+

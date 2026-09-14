@@ -53,13 +53,13 @@ QVariantMap MailBackend::draftAuthoring() const {
     auto origin = google.value("adoption").toMap();
     if (origin.isEmpty()) origin = google.value("derivation").toMap();
     QVariantMap result{{"visible", !key.isEmpty() && draftReadOnly()}, {"loading", m_draftAuthoringLoading},
-        {"busy", ui.active}, {"retry", ui.uncertain && ui.action != "delete"},
+        {"busy", ui.active}, {"retry", !accountArchived() && !m_unsavedAccountBuffer && ui.uncertain && ui.action != "delete"},
         {"result_draft_id", ui.resultDraftId}, {"original_draft_id", origin.value("source_draft_id")},
         {"status", ui.feedback.isEmpty() ? m_draftAuthoringFeedback : ui.feedback}};
     const bool current = !key.isEmpty() && key == m_draftAuthoringKey && !m_draftAuthoring.isEmpty();
     const auto deletion = m_draft.value("google_delete").toMap().value("state").toString();
     const bool deletionPending = deletion == "prepared" || deletion == "in_flight" || deletion == "acceptance_unknown";
-    const bool ready = current && m_connected && !m_shutdown && draftReadOnly() && !m_draftDirty
+    const bool ready = current && m_connected && !m_shutdown && !accountArchived() && !m_unsavedAccountBuffer && draftReadOnly() && !m_draftDirty
         && !draftBusy() && !m_draftAuthoringLoading && !ui.active && !ui.uncertain
         && !m_draftDeletionLoading && !m_draftDeletionActive && !deletionPending;
     const bool owned = !m_syntheticProfile && googleSyncState(m_account).value("owned").toBool();
@@ -75,6 +75,7 @@ QVariantMap MailBackend::draftAuthoring() const {
 }
 
 void MailBackend::loadDraftAuthoring() {
+    if (accountArchived() || m_unsavedAccountBuffer) return;
     if (!draftReadOnly() || draftSourcesKey().isEmpty() || !m_connected || m_shutdown) return;
     resetDraftAuthoringContext();
     if (m_draftAuthoringLoading) return;
@@ -148,6 +149,7 @@ void MailBackend::confirmDraftSourceAction(const QVariantMap &context) {
 }
 
 void MailBackend::startDraftSourceAction(const QString &key) {
+    if (accountArchived() || m_unsavedAccountBuffer) return;
     if (!m_connected || m_shutdown || !m_draftSourceActions.contains(key) || m_draftSourceActions[key].active) return;
     const auto account = m_account, id = m_draft.value("draft_id").toString();
     if (key != ownerKey(account, id)) return;
@@ -248,7 +250,7 @@ QVariantMap MailBackend::draftDeletion() const {
         {"request_id", requestId}, {"can_status", connected && !busy},
         {"can_check", connected && !busy && googleSyncState(m_account).value("owned").toBool()
             && accountCapability(m_account, "mail_read") && state != "in_flight"},
-        {"can_abandon", connected && !busy && state == "prepared"},
+        {"can_abandon", !accountArchived() && !m_unsavedAccountBuffer && connected && !busy && state == "prepared"},
         {"warning", ui.uncertain || state == "acceptance_unknown" || state == "rejected"}};
 }
 

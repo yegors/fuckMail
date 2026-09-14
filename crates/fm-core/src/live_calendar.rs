@@ -456,6 +456,7 @@ impl Store {
         Ok(())
     }
     fn calendar_connection(&self, account: &str, kind: &str) -> Result<i64> {
+        self.require_active_account(account)?;
         crate::id(account)?;
         if self.profile_kind()? != crate::live_profile::ProfileKind::Live {
             return Err(err(

@@ -1,0 +1,22 @@
+   Compiling ring v0.17.14
+   Compiling libsqlite3-sys v0.30.1
+   Compiling rustls v0.23.44
+   Compiling rusqlite v0.32.1
+   Compiling rustls-webpki v0.103.15
+   Compiling jsonwebtoken v9.3.1
+   Compiling tokio-rustls v0.26.5
+   Compiling hyper-rustls v0.27.9
+   Compiling reqwest v0.12.28
+   Compiling fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+   Compiling fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+   Compiling fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.12s
+     Running unittests src\lib.rs (target\debug\deps\fm_core-fbf5e23cd42bc787.exe)
+
+running 3 tests
+test google_drafts::tests::import_attachment_freeze_verifies_bytes_and_scope_without_writer_io ... ok
+test live_calendar_writes::invitation_tests::invitation_schema_seventeen_preserves_legacy_journal_bytes_and_interpretation ... ok
+test sender_kind_tests::schema6_migration_keeps_old_profiles_receipts_and_sources_unclassified ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 245 filtered out; finished in 2.49s
+

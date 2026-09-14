@@ -178,6 +178,7 @@ impl Store {
         let row = if let Some(row) = self.stored_composition(account, p)? {
             row
         } else if legacy {
+            self.require_active_account(account)?;
             let (source, hash, routing, _) = self.legacy_routing(account, selected)?;
             let (name, signature, revision) = self.draft_identity(account)?;
             json!({"draft_id":selected,"conversation_id":selected,"mode":"reply","source_message_id":source,"source_hash":hash,
@@ -211,7 +212,9 @@ impl Store {
         row["attachment_ids"] = json!(ids);
         row["attachments"] = json!(attachments);
         row["account"] = json!(account);
-        row["read_only"] = json!(row["origin"] == "google_snapshot");
+        row["account_archived"] = json!(self.account_lifecycle(account)?["state"] == "removed");
+        row["read_only"] =
+            json!(row["origin"] == "google_snapshot" || row["account_archived"] == true);
         row["google_delete"] =
             self.google_delete_for_draft(account, row["draft_id"].as_str().unwrap())?;
         row["remote_source"] = if row["revision"].as_i64().unwrap_or(0) > 0 {
@@ -219,13 +222,14 @@ impl Store {
         } else {
             Value::Null
         };
-        row["google"] = if row["read_only"] != true && row["revision"].as_i64().unwrap_or(0) > 0 {
-            self.google_draft_status(account, row["draft_id"].as_str().unwrap())?
-        } else {
-            Value::Null
-        };
+        row["google"] =
+            if row["origin"] != "google_snapshot" && row["revision"].as_i64().unwrap_or(0) > 0 {
+                self.google_draft_status(account, row["draft_id"].as_str().unwrap())?
+            } else {
+                Value::Null
+            };
         row["google_send"] =
-            if row["read_only"] != true && row["revision"].as_i64().unwrap_or(0) > 0 {
+            if row["origin"] != "google_snapshot" && row["revision"].as_i64().unwrap_or(0) > 0 {
                 self.google_send_for_draft(account, row["draft_id"].as_str().unwrap())?
             } else {
                 Value::Null
@@ -679,6 +683,7 @@ impl Store {
     }
 
     pub(crate) fn drafts(&self, account: &str, p: &Value) -> Result<Value> {
+        let archived = self.account_lifecycle(account)?["state"] == "removed";
         fields(p, &["query", "limit", "offset"])?;
         let query = match p.get("query") {
             None => "",
@@ -754,7 +759,7 @@ impl Store {
             if total >= offset && !page_full {
                 let summary = json!({"draft_id":row.get::<_,String>(0)?,"account":account,"conversation_id":row.get::<_,Option<String>>(1)?,"mode":row.get::<_,String>(2)?,
                     "subject":routing["subject"],"body":body.chars().take(512).collect::<String>(),"snippet":body.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(180).collect::<String>(),
-                    "to_recipients":routing["to_recipients"],"updated_at":row.get::<_,i64>(5)?,"revision":row.get::<_,i64>(6)?,"origin":row.get::<_,String>(7)?,"read_only":row.get::<_,String>(7)?=="google_snapshot"});
+                    "to_recipients":routing["to_recipients"],"updated_at":row.get::<_,i64>(5)?,"revision":row.get::<_,i64>(6)?,"origin":row.get::<_,String>(7)?,"read_only":archived || row.get::<_,String>(7)?=="google_snapshot","account_archived":archived});
                 let size = serde_json::to_vec(&summary)?.len();
                 if out.len() as i64 >= limit || bytes + size > 512 * 1024 {
                     page_full = true;
@@ -802,6 +807,7 @@ impl Store {
         Ok(())
     }
     fn drafts_unfiltered(&self, account: &str, limit: i64, offset: i64) -> Result<Value> {
+        let archived = self.account_lifecycle(account)?["state"] == "removed";
         let predicate="account=?1 AND discarded=0 AND (origin='local' OR NOT EXISTS(SELECT 1 FROM google_draft_sources s WHERE s.account=d.account AND s.draft_id=d.draft_id AND s.is_current=1 AND s.linked_local_draft_id IS NOT NULL))";
         let count: i64 = self.db.query_row(
             &format!("SELECT COUNT(*) FROM drafts d WHERE {predicate}"),
@@ -818,7 +824,7 @@ impl Store {
             let origin: String = row.get(7)?;
             let value = json!({"draft_id":row.get::<_,String>(0)?,"account":account,"conversation_id":row.get::<_,Option<String>>(1)?,"mode":row.get::<_,String>(2)?,
                 "subject":routing["subject"],"body":body.chars().take(512).collect::<String>(),"snippet":body.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(180).collect::<String>(),
-                "to_recipients":routing["to_recipients"],"updated_at":row.get::<_,i64>(5)?,"revision":row.get::<_,i64>(6)?,"read_only":origin=="google_snapshot","origin":origin});
+                "to_recipients":routing["to_recipients"],"updated_at":row.get::<_,i64>(5)?,"revision":row.get::<_,i64>(6)?,"read_only":archived || origin=="google_snapshot","account_archived":archived,"origin":origin});
             let size = serde_json::to_vec(&value)?.len();
             if bytes + size > 512 * 1024 {
                 break;

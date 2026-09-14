@@ -18,7 +18,7 @@ Item {
     property string pendingReveal: ""
     property string replyRevealIdentity: ""
     readonly property string composerIdentity: backend.account + (backend.activeDraftId.length ? "/draft/" + backend.activeDraftId : "/" + backend.selectedId)
-    readonly property bool newMessageAvailable: backend.connected && backend.account.length > 0
+    readonly property bool newMessageAvailable: backend.connected && backend.account.length > 0 && !backend.accountArchived && !backend.unsavedAccountBuffer
     readonly property bool popupOpen: folderPopup.opened || filterPopup.opened || categoryPopup.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
     readonly property bool canMutate: { const accounts = backend.accounts; return backend.connected && backend.accountCapability(backend.account,"mail_write") }
     readonly property bool singleKeyActionsAllowed: mail.visible && !popupOpen && mail.ApplicationWindow.window && mail.ApplicationWindow.window.singleKeysAllowed
@@ -203,6 +203,7 @@ Item {
         replyOpen = value; backend.remember("replyOpen",value)
     }
     function openReply() {
+        if (backend.accountArchived || backend.unsavedAccountBuffer) return
         if (backend.draft.mode && backend.draft.mode !== "reply") { backend.beginDraft("reply"); return }
         resumeDraft()
     }
@@ -318,6 +319,12 @@ Item {
                 anchors.fill: parent; spacing: 0
                 ColumnLayout {
                     Layout.fillWidth: true; Layout.leftMargin: 24; Layout.rightMargin: 24; Layout.topMargin: 24; spacing: 16
+                    Text {
+                        objectName: "accountArchiveNotice"; visible: backend.accountArchived || backend.unsavedAccountBuffer
+                        Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                        text: (backend.currentAccount.email || "") + (backend.unsavedAccountBuffer ? " · unsaved edits retained in this editor" : " · read-only account archive")
+                        color: backend.unsavedAccountBuffer ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12)
+                    }
                     RowLayout {
                         Layout.fillWidth: true; spacing: 14
                         FmButton { objectName: "inboxScopeButton"; text: "Inbox"; selected: backend.folder==="inbox"; font.pixelSize: Theme.fontSize(selected ? 22 : 15); font.weight: Font.Medium; implicitWidth: contentItem.implicitWidth; foreground: selected ? Theme.text : Theme.inkAlpha(.32); leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft; background: Item {} Behavior on font.pixelSize { NumberAnimation { duration: 150 } } onClicked: backend.folder="inbox" }
@@ -518,9 +525,9 @@ Item {
                             x: Math.max(0, readerActions.width - width)
                             y: readerActions.wrapped ? readerCategoryRow.height + 12 : 0
                             height: 32; spacing: 4
-                            ReaderAction { objectName: "replyButton"; text: "Reply"; iconName: "reply"; font.pixelSize: Theme.fontSize(13); prominent: true; enabled: !backend.draftBusy; onClicked: mail.openReply() }
-                            ReaderAction { objectName: "replyAllButton"; visible: backend.draft.reply_all_available === true; text: "Reply all"; iconName: "replyAll"; font.pixelSize: Theme.fontSize(13); outlined: true; enabled: !backend.draftBusy; onClicked: backend.beginDraft("reply_all") }
-                            ReaderAction { objectName: "forwardButton"; text: "Forward"; iconName: "forward"; font.pixelSize: Theme.fontSize(13); outlined: true; enabled: !backend.draftBusy; onClicked: backend.beginDraft("forward") }
+                            ReaderAction { objectName: "replyButton"; text: "Reply"; iconName: "reply"; font.pixelSize: Theme.fontSize(13); prominent: true; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: mail.openReply() }
+                            ReaderAction { objectName: "replyAllButton"; visible: backend.draft.reply_all_available === true; text: "Reply all"; iconName: "replyAll"; font.pixelSize: Theme.fontSize(13); outlined: true; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: backend.beginDraft("reply_all") }
+                            ReaderAction { objectName: "forwardButton"; text: "Forward"; iconName: "forward"; font.pixelSize: Theme.fontSize(13); outlined: true; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: backend.beginDraft("forward") }
                             Item { width: 13; height: 32; Rectangle { x: Theme.snapX(parent, (parent.width-1)/2); y: Theme.snapY(parent, (parent.height-20)/2); width: Theme.ruleWidth; height: 20; color: Theme.controlBorder } }
                             ReaderAction { objectName: "delayConversationButton"; visible: !mail.anyStarred; text: "Delay"; iconName: "clock"; outlined: true; font.pixelSize: Theme.fontSize(13); enabled: !backend.mutationInFlight && mail.canMutate; tip: "Hold this conversation for later, without a timer · D"; onClicked: backend.setStarred(true) }
                             ReaderAction { objectName: "doneConversationButton"; visible: mail.anyStarred; text: "Done"; iconName: "check"; outlined: true; font.pixelSize: Theme.fontSize(13); enabled: !backend.mutationInFlight && mail.canMutate; tip: "Clear unread and stars on the loaded members · E"; onClicked: backend.doneConversation() }
@@ -529,7 +536,7 @@ Item {
                     }
                     Text {
                         objectName: "mailDeliveryStatus"; visible: !backend.syntheticProfile && (!mail.canMutate || text.length > 0)
-                        text: !mail.canMutate ? "Cached copy · reconnect with Mail access to mark reviewed or change labels"
+                        text: backend.accountArchived ? "Read-only account archive" : !mail.canMutate ? "Cached copy · reconnect with Mail access to mark reviewed or change labels"
                             : ({pending:"Saved locally · waiting for Google",unknown:"Saved locally · checking Google's outcome",confirmed:"Synced to Google",failed:"Google did not accept this change · check account access",superseded:"Replaced by a later change"})[backend.mailDelivery.state] || ""
                         color: backend.mailDelivery.state === "failed" ? Theme.error : Theme.subtle
                         font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) }
@@ -783,5 +790,5 @@ Item {
     Shortcut { sequence: "S"; enabled: mail.singleKeyActionsAllowed; onActivated: backend.folder=backend.folder==="inbox" ? "sent" : backend.folder==="sent" ? "drafts" : "inbox" }
     Shortcut { sequence: "J"; enabled: mail.singleKeyActionsAllowed; onActivated: mail.moveSelection(1) }
     Shortcut { sequence: "K"; enabled: mail.singleKeyActionsAllowed; onActivated: mail.moveSelection(-1) }
-    Shortcut { sequence: "Escape"; enabled: mail.visible && mail.replyOpen && !mail.popupOpen; onActivated: { backend.saveDraft(); mail.setReplyOpen(false) } }
+    Shortcut { sequence: "Escape"; enabled: mail.visible && mail.replyOpen && !mail.popupOpen; onActivated: { if (backend.accountNavigationAllowed()) { backend.saveDraft(); mail.setReplyOpen(false) } } }
 }

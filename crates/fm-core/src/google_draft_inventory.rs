@@ -214,6 +214,7 @@ fn encode<T: Serialize>(value: &T) -> Result<String> {
 
 impl Store {
     fn inventory_scope(&self, scope: &GoogleDraftReadScope) -> Result<()> {
+        self.require_active_account(&scope.account)?;
         identifier(&scope.account)?;
         let row: Option<(i64,String,String)> = self.db.query_row(
             "SELECT connection_generation,connection_state,scopes_json FROM google_accounts WHERE account=?1",
@@ -416,6 +417,7 @@ impl Store {
 
     /// Persisted provenance is authoritative; a client cannot opt into writing.
     pub(crate) fn check_draft_writable(&self, account: &str, p: &Value) -> Result<()> {
+        self.require_active_account(account)?;
         let (id, legacy) = crate::composition::selector(p)?;
         let origin:Option<String>=self.db.query_row("SELECT origin FROM drafts WHERE account=?1 AND ((?3 AND legacy_reply=1 AND conversation_id=?2) OR (NOT ?3 AND draft_id=?2))",params![account,id,legacy],|r|r.get(0)).optional()?;
         if origin.as_deref().is_some_and(|s| s != "local") {

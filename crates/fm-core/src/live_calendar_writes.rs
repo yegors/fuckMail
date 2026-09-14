@@ -26,6 +26,8 @@ pub struct CalendarReadPublicationFence {
     connection_generation: i64,
     permission_epoch: i64,
     source_revision: i64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    lifecycle_revision: Option<i64>,
 }
 #[derive(Clone, Debug)]
 pub struct CalendarWriteOperation {
@@ -152,7 +154,6 @@ impl OperationProjection {
 
 impl Store {
     pub fn calendar_live_prepare(&mut self, account: &str, request: &Value) -> Result<Value> {
-        live(self, account)?;
         if serde_json::to_vec(request)?.len() > 256 * 1024 {
             return Err(err(
                 "invalid_request",
@@ -193,6 +194,7 @@ impl Store {
             }
             return self.calendar_live_status(account, request_id);
         }
+        live(self, account)?;
         let event = if kind == "create" {
             if request.get("event_id").is_some()
                 || request.get("expected_etag").is_some()
@@ -364,6 +366,7 @@ impl Store {
         request_id: &str,
         expected_version: i64,
     ) -> Result<Value> {
+        self.require_active_account(account)?;
         let op = self.calendar_live_operation(account, request_id)?;
         if op.version != expected_version {
             return Err(err("stale_revision", "Calendar operation changed"));
@@ -664,6 +667,7 @@ impl Store {
             connection_generation,
             permission_epoch: scope["permission_epoch"].as_i64().unwrap(),
             source_revision: scope["revision"].as_i64().unwrap(),
+            lifecycle_revision: Some(self.require_active_account(&lease.account)?),
         })
     }
 
@@ -687,6 +691,11 @@ impl Store {
     ) -> Result<Value> {
         let op = self.check_calendar_write_lease(lease)?;
         fence.check(lease)?;
+        if let Some(revision) = fence.lifecycle_revision {
+            self.check_active_account_revision(&lease.account, revision)?;
+        } else {
+            self.require_active_account(&lease.account)?;
+        }
         if !matches!(op.state.as_str(), "in_flight" | "unknown") {
             return self.calendar_live_status(&lease.account, &lease.request_id);
         }
@@ -928,6 +937,7 @@ impl CalendarReadPublicationFence {
 }
 
 fn live(store: &Store, account: &str) -> Result<i64> {
+    store.require_active_account(account)?;
     crate::id(account)?;
     if store.profile_kind()? != crate::live_profile::ProfileKind::Live {
         return Err(err(

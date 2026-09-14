@@ -37,6 +37,7 @@ impl Store {
                 candidates: 0,
             });
         }
+        let archived = self.account_lifecycle(account)?["state"] == "removed";
         let live = self.profile_kind()? == crate::live_profile::ProfileKind::Live;
         let (actor, write_ready) = if live {
             self.db.query_row("SELECT a.email,c.full_generation>0 AND c.retained_errors=0 FROM calendar_sync_state c JOIN accounts a ON a.id=c.account WHERE c.account=?1 AND c.calendar_id=?2",params![account,calendar],|row|Ok((row.get::<_,String>(0)?,row.get::<_,bool>(1)?)))?
@@ -232,6 +233,15 @@ impl Store {
                                 )
                                 && !event.etag.is_empty())
                             .into();
+                        }
+                        if archived {
+                            row["account_archived"] = json!(true);
+                            row["read_only"] = json!(true);
+                            for key in ["can_edit", "can_delete", "can_rsvp", "can_edit_attendees"]
+                            {
+                                row[key] = json!(false);
+                            }
+                            row["attendee_edit_reason"] = json!("account_removed");
                         }
                         if output.len() < fm_calendar::MAX_OCCURRENCES as usize {
                             output.push(row);

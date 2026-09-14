@@ -124,7 +124,7 @@ QVariantMap MailBackend::googleSend() const {
         {"resume_label", ui.uncertain ? "Resume original request" : "Send prepared version"},
         {"can_resume", ready && !ui.active && !saving && ((!ui.uncertain && selectedCurrent && state == "prepared")
             || (ui.uncertain && ui.notFound && ui.selected.isEmpty() && !ui.request.isEmpty()))},
-        {"can_abandon", m_connected && !m_shutdown && !ui.active && !saving && !ui.uncertain && selectedCurrent && state == "prepared"}};
+        {"can_abandon", !accountArchived() && !m_unsavedAccountBuffer && m_connected && !m_shutdown && !ui.active && !saving && !ui.uncertain && selectedCurrent && state == "prepared"}};
 }
 
 QJsonObject MailBackend::googleSendAuthorSnapshot() const {
@@ -202,6 +202,7 @@ void MailBackend::refreshGoogleSendMetadata(const QString &account, const QStrin
 
 void MailBackend::startGoogleSendOperation(const QString &method, const QJsonObject &params) {
     if (draftReadOnly()) return;
+    if ((accountArchived() || m_unsavedAccountBuffer) && method != "google_send_status") return;
     const auto account = m_account, draftId = m_draft.value("draft_id").toString(), key = googleSendKey();
     auto &ui = m_googleSendUi[key];
     if (ui.active) return;

@@ -12,7 +12,8 @@ Rectangle {
     property bool bccOpen: false
     readonly property bool popupOpen: sourceActions.opened || sourceActionDialog.opened || deleteAbandonDialog.opened || sourceHistory.opened || discardDialog.opened || reloadDialog.opened || conflictDialog.opened || googleDraftDialog.opened || attachmentMenu.opened || contextMenu.opened || localAttachmentDialog.visible
     readonly property string mode: backend.draft.mode || "reply"
-    readonly property bool readOnly: backend.draftReadOnly
+    readonly property bool snapshotReadOnly: backend.draftReadOnly
+    readonly property bool readOnly: snapshotReadOnly || backend.accountArchived || backend.unsavedAccountBuffer
     property string snapshotContext: backend.account + "/" + backend.activeDraftId + "/" + ((backend.draft.remote_source || {}).source_revision || 0)
     onSnapshotContextChanged: { sourceHistory.close(); sourceActions.close(); sourceActionDialog.close(); deleteAbandonDialog.close() }
     function confirmSourceAction(action) {
@@ -23,7 +24,7 @@ Rectangle {
         sourceActionDialog.open()
     }
     function inspectDeletion(requestId) { sourceHistory.close(); backend.loadDraftDeletion(requestId) }
-    readonly property string draftTitle: readOnly ? "Google draft preview" : ({new:"New message",reply:"Reply",reply_all:"Reply all",forward:"Forward"})[mode] || "Reply"
+    readonly property string draftTitle: backend.unsavedAccountBuffer ? "Retained unsaved edits" : backend.accountArchived ? "Archived draft" : snapshotReadOnly ? "Google draft preview" : ({new:"New message",reply:"Reply",reply_all:"Reply all",forward:"Forward"})[mode] || "Reply"
     readonly property bool hasSelection: bodyEditor.selectionEnd > bodyEditor.selectionStart
     readonly property var attachmentIds: backend.draft.attachment_ids || []
     readonly property var availableAttachments: {
@@ -71,7 +72,7 @@ Rectangle {
     function syncDraft() {
         loading = true
         document.setIdentity(backend.account + "/" + (backend.activeDraftId || backend.selectedId))
-        document.load(backend.draft.body || "", root.readOnly ? "" : (backend.draft.body_html || ""))
+        document.load(backend.draft.body || "", root.snapshotReadOnly ? "" : (backend.draft.body_html || ""))
         if (signature.text !== (backend.draft.signature_text || "")) signature.text = backend.draft.signature_text || ""
         loading = false
     }
@@ -103,15 +104,22 @@ Rectangle {
             Text { text: root.draftTitle; color: Theme.text; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(15); weight: Font.Medium; letterSpacing: -0.15 } }
             Text { visible: !root.readOnly && root.mode!=="new"; text: root.mode==="forward" ? "original message quoted below" : "in this conversation"; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); Layout.fillWidth: true; elide: Text.ElideRight }
             Item { Layout.fillWidth: true }
-            FmButton { objectName: "collapseReply"; text: "Minimise"; font.pixelSize: Theme.fontSize(12); leftPadding: 0; rightPadding: 0; tip: "Keep this draft and hide the editor"; onClicked: { backend.saveDraft(); root.dismissed() } }
+            FmButton { objectName: "collapseReply"; text: "Minimise"; font.pixelSize: Theme.fontSize(12); leftPadding: 0; rightPadding: 0; tip: "Keep this draft and hide the editor"; onClicked: { if (backend.accountNavigationAllowed()) { backend.saveDraft(); root.dismissed() } } }
             FmButton { objectName: "discardReply"; visible: !root.readOnly; text: "Discard"; font.pixelSize: Theme.fontSize(12); leftPadding: 4; rightPadding: 0; enabled: !backend.draftLocked && !backend.attachmentImport.pending; onClicked: discardDialog.open() }
         }
         Item { Layout.fillWidth: true; implicitHeight: 1; Rectangle { y: Theme.snapY(parent, 0); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
+        Text {
+            objectName: "archivedDraftNotice"; visible: backend.accountArchived || backend.unsavedAccountBuffer
+            Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+            text: backend.unsavedAccountBuffer ? backend.draftStatus : "Saved account archive · selectable preview. Editing, autosave, sending and provider checks are disabled."
+            color: backend.unsavedAccountBuffer ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13)
+        }
         ColumnLayout {
             visible: root.readOnly
             Layout.fillWidth: true; Layout.bottomMargin: 12; spacing: 8
             Text {
                 objectName: "draftSnapshotNotice"
+                visible: root.snapshotReadOnly
                 Layout.fillWidth: true
                 text: ((backend.draft.remote_source || {}).source_state === "available" ? "Read-only preview · saved source " : "Earlier cached preview · latest source ") + ((backend.draft.remote_source || {}).source_revision || 0)
                     + " · " + ((backend.draft.remote_source || {}).source_state || "unavailable")
@@ -149,14 +157,15 @@ Rectangle {
                 }
             }
             RowLayout {
+                visible: root.snapshotReadOnly
                 Layout.fillWidth: true; spacing: 8
                 FmButton { objectName: "draftSourceHistoryButton"; text: "Saved sources"; outlined: true; onClicked: { backend.loadDraftSources(); sourceHistory.open() } }
-                FmButton { objectName: "draftSourceActionsButton"; text: "Actions"; outlined: true; onClicked: { backend.loadDraftAuthoring(); sourceActions.open() } }
+                FmButton { objectName: "draftSourceActionsButton"; text: "Actions"; visible: !backend.accountArchived && !backend.unsavedAccountBuffer; outlined: true; onClicked: { backend.loadDraftAuthoring(); sourceActions.open() } }
                 Text { Layout.fillWidth: true; text: "Original MIME, HTML and files are retained. This preview cannot be edited or sent."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
             }
         }
         ColumnLayout {
-            visible: !root.readOnly && (((backend.draft.remote_source || {}).source_revision || 0) > 0 || (backend.draftAuthoring.original_draft_id || "").length > 0)
+            visible: !root.snapshotReadOnly && (((backend.draft.remote_source || {}).source_revision || 0) > 0 || (backend.draftAuthoring.original_draft_id || "").length > 0)
             Layout.fillWidth: true; Layout.bottomMargin: 12; spacing: 5
             Text { Layout.fillWidth: true; text: "Original Google source retained"; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
             Flow {
@@ -245,12 +254,12 @@ Rectangle {
         }
         }
         Text {
-            visible: !root.readOnly && !root.signatureOpen && (backend.draft.signature_text || "").length > 0
+            visible: !root.snapshotReadOnly && !root.signatureOpen && (backend.draft.signature_text || "").length > 0
             Layout.fillWidth: true; Layout.bottomMargin: 12
             text: backend.draft.signature_text || ""
             textFormat: Text.PlainText; wrapMode: Text.Wrap
             color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12)
-            TapHandler { onTapped: { root.signatureOpen = true; signature.forceActiveFocus() } }
+            TapHandler { enabled: !root.readOnly; onTapped: { root.signatureOpen = true; signature.forceActiveFocus() } }
         }
         TextArea {
             id: signature
@@ -290,10 +299,10 @@ Rectangle {
                         Text { id: chipSize; text: root.attachmentSize(attachmentChip.modelData.size); color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
                         FmButton {
                             objectName: "exportDraftAttachment_" + attachmentChip.modelData.id
-                            visible: root.readOnly; text: "Copy"; implicitHeight: 24; leftPadding: 2; rightPadding: 2
-                            enabled: !backend.draftSources.exporting && (backend.draft.remote_source || {}).source_state === "available"
+                            visible: root.readOnly; text: root.snapshotReadOnly ? "Copy" : "Open"; implicitHeight: 24; leftPadding: 2; rightPadding: 2
+                            enabled: root.snapshotReadOnly ? !backend.draftSources.exporting && (backend.draft.remote_source || {}).source_state === "available" : attachmentChip.modelData.state === "available"
                             tip: (backend.draft.remote_source || {}).source_state === "available" ? "Export the exact retained file; no external content is fetched" : "Use Saved sources to export an earlier version"
-                            onClicked: { backend.exportDraftSource((backend.draft.remote_source || {}).source_revision, attachmentChip.modelData.id); sourceHistory.open() }
+                            onClicked: { if (root.snapshotReadOnly) { backend.exportDraftSource((backend.draft.remote_source || {}).source_revision, attachmentChip.modelData.id); sourceHistory.open() } else backend.openAttachment(attachmentChip.modelData.id) }
                         }
                         FmButton {
                             objectName: "removeDraftAttachment_" + attachmentChip.modelData.id

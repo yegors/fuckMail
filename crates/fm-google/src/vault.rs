@@ -86,6 +86,10 @@ impl NativeCredentialVault {
 }
 
 impl CredentialVault for NativeCredentialVault {
+    fn remove(&self, account: &AccountId) -> Result<(), GoogleError> {
+        NativeCredentialVault::remove(self, account)
+    }
+
     fn load(&self, account: &AccountId) -> Result<Option<StoredToken>, GoogleError> {
         let _guard = self
             .operations

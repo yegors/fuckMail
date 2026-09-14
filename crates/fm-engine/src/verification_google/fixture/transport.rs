@@ -227,6 +227,7 @@ pub(super) struct FixtureHttp {
     remote_version_two: Option<Arc<AtomicBool>>,
     action_version_two: Option<Arc<AtomicBool>>,
     calendar: Option<CalendarFixture>,
+    account_mode: bool,
 }
 impl FixtureHttp {
     pub(super) fn new(
@@ -249,6 +250,7 @@ impl FixtureHttp {
             remote_version_two: None,
             action_version_two: None,
             calendar: None,
+            account_mode: false,
         }
     }
     pub(super) fn enable_calendar(&mut self) {
@@ -256,6 +258,15 @@ impl FixtureHttp {
             self.accounts.clone(),
             self.base,
             self.evidence.clone(),
+        ));
+    }
+    pub(super) fn enable_accounts(&mut self) {
+        self.account_mode = true;
+        self.calendar = Some(CalendarFixture::with_count(
+            self.accounts.clone(),
+            self.base,
+            self.evidence.clone(),
+            1,
         ));
     }
     pub(super) fn enable_remote_drafts(&mut self, version_two: Arc<AtomicBool>) {
@@ -586,13 +597,15 @@ impl FixtureHttp {
             200,
             match route {
                 Route::Profile => {
-                    json!({"emailAddress":owner.email,"messagesTotal":RECENT_MESSAGES+BACKFILL_MESSAGES+state.sent.len(),"threadsTotal":RECENT_MESSAGES/2+BACKFILL_MESSAGES+state.sent.len(),"historyId":state.history.to_string()})
+                    json!({"emailAddress":owner.email,"messagesTotal":if self.account_mode {2}else{RECENT_MESSAGES+BACKFILL_MESSAGES+state.sent.len()},"threadsTotal":if self.account_mode {1}else{RECENT_MESSAGES/2+BACKFILL_MESSAGES+state.sent.len()},"historyId":state.history.to_string()})
                 }
                 Route::Labels => {
                     json!({"labels":[{"id":"INBOX","name":"INBOX","type":"system"},{"id":"UNREAD","name":"UNREAD","type":"system"}]})
                 }
                 Route::List { recent, offset } => {
-                    let base_count = if recent {
+                    let base_count = if self.account_mode {
+                        2
+                    } else if recent {
                         RECENT_MESSAGES
                     } else {
                         RECENT_MESSAGES + BACKFILL_MESSAGES
@@ -1070,7 +1083,12 @@ impl HttpTransport for FixtureHttp {
                 active.finish(false);
                 return Err(self.reject("synthetic_request_limit"));
             }
-            if let Some(calendar) = &self.calendar {
+            if let Some(calendar) = self.calendar.as_ref().filter(|_| {
+                !self.account_mode
+                    || request
+                        .url()
+                        .starts_with("https://www.googleapis.com/calendar/v3/")
+            }) {
                 let result = calendar.response(&request);
                 active.finish(result.is_ok());
                 return result;

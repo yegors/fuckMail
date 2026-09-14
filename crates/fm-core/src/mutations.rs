@@ -131,6 +131,7 @@ impl Store {
         if let Some(reply) = self.mutation_receipt(method, account, p)? {
             return Ok(reply);
         }
+        self.require_active_account(account)?;
         let request_id = string(p, "request_id")?;
         let fingerprint = fingerprint(method, p)?;
         let expected = if method == "draft_create" {

@@ -19,6 +19,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+mod accounts;
 mod calendar_invitations;
 mod draft_actions;
 mod remote_drafts;
@@ -221,6 +222,7 @@ pub(crate) struct Fixture {
     draft_actions_enabled: bool,
     action_version_two: Arc<AtomicBool>,
     calendar_enabled: bool,
+    accounts_fixture: Option<Arc<accounts::AccountsFixture>>,
 }
 impl Fixture {
     #[cfg(test)]
@@ -257,6 +259,7 @@ impl Fixture {
             None,
         )
     }
+    #[cfg(test)]
     pub(crate) fn prepare_with_calendar(
         profile: &Path,
         store: &mut Store,
@@ -265,12 +268,33 @@ impl Fixture {
         draft_actions_enabled: bool,
         calendar_base: Option<u64>,
     ) -> fm_core::Result<Self> {
+        Self::prepare_with_accounts(
+            profile,
+            store,
+            send_enabled,
+            remote_drafts_enabled,
+            draft_actions_enabled,
+            calendar_base,
+            None,
+        )
+    }
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn prepare_with_accounts(
+        profile: &Path,
+        store: &mut Store,
+        send_enabled: bool,
+        remote_drafts_enabled: bool,
+        draft_actions_enabled: bool,
+        calendar_base: Option<u64>,
+        accounts_base: Option<u64>,
+    ) -> fm_core::Result<Self> {
         let calendar_enabled = calendar_base.is_some();
         if [
             send_enabled,
             remote_drafts_enabled,
             draft_actions_enabled,
             calendar_enabled,
+            accounts_base.is_some(),
         ]
         .into_iter()
         .filter(|v| *v)
@@ -324,7 +348,7 @@ impl Fixture {
         .into_iter()
         .map(str::to_owned)
         .collect();
-        for account in accounts.iter() {
+        for account in accounts.iter().filter(|_| accounts_base.is_none()) {
             let id = store.bind_google_account_with_client(
                 &account.subject,
                 &account.email,
@@ -340,7 +364,9 @@ impl Fixture {
             }
         }
         let started_unix_ms = unix_ms();
-        let base_unix_secs = calendar_base.unwrap_or((started_unix_ms / 1000 / 60) * 60);
+        let base_unix_secs = calendar_base
+            .or(accounts_base)
+            .unwrap_or((started_unix_ms / 1000 / 60) * 60);
         let evidence = Arc::new(Mutex::new(Evidence::default()));
         let hold_raw = Arc::new(AtomicBool::new(false));
         let remote_version_two = Arc::new(AtomicBool::new(false));
@@ -361,7 +387,18 @@ impl Fixture {
         if calendar_enabled {
             http.enable_calendar();
         }
+        if accounts_base.is_some() {
+            http.enable_accounts();
+        }
         let http = Arc::new(http);
+        let accounts_fixture = accounts_base.map(|_| {
+            Arc::new(accounts::AccountsFixture::new(
+                profile.into(),
+                accounts.clone(),
+                http.clone(),
+                evidence.clone(),
+            ))
+        });
         let vault = Arc::new(FixtureVault::new(
             accounts.clone(),
             started_unix_ms / 1000 + 3600,
@@ -382,6 +419,7 @@ impl Fixture {
             draft_actions_enabled,
             action_version_two,
             calendar_enabled,
+            accounts_fixture,
         };
         fixture.persist_blocking(false)?;
         Ok(fixture)
@@ -391,7 +429,22 @@ impl Fixture {
         core: CoreBridge,
         cancel: CancellationToken,
     ) -> Arc<google_auth::Runtime> {
-        google_auth::Runtime::for_verification(core, self.http.clone(), self.vault.clone(), cancel)
+        if let Some(accounts) = &self.accounts_fixture {
+            google_auth::Runtime::for_verification_accounts(
+                core,
+                accounts.clone(),
+                accounts.clone(),
+                cancel,
+                accounts.clone(),
+            )
+        } else {
+            google_auth::Runtime::for_verification(
+                core,
+                self.http.clone(),
+                self.vault.clone(),
+                cancel,
+            )
+        }
     }
     pub(crate) fn install_writer_trace(&self) -> WriterTrace {
         WRITER_TRACE.with(|trace| {
@@ -445,18 +498,20 @@ impl Fixture {
         })
     }
     fn report(&self, final_report: bool) -> Value {
+        let accounts = self.accounts_fixture.as_ref().map(|a| a.report());
         let evidence = self.evidence.lock().unwrap();
         json!({"version":1,"scenario":"google-navigation","engine_pid":std::process::id(),"profile_kind":"live","fixture_revision":0,
             "transport":"in_memory_only","native_vault":false,"status":if !evidence.errors.is_empty(){"failed"}else if final_report{"complete"}else if evidence.counters.http_started>0{"running"}else{"ready"},
             "base_unix_secs":self.base_unix_secs,"started_unix_ms":self.started_unix_ms,"updated_unix_ms":unix_ms(),"accounts":self.accounts.iter().map(Account::value).collect::<Vec<_>>(),
-            "config":{"recent_messages_per_account":if self.calendar_enabled {0}else{RECENT_MESSAGES},"recent_threads_per_account":if self.calendar_enabled {0}else{RECENT_MESSAGES/2},"backfill_messages_per_account":if self.calendar_enabled {0}else{BACKFILL_MESSAGES},"raw_delay_ms":if self.calendar_enabled {0}else{RAW_DELAY_MS},"max_publications":MAX_PUBLICATIONS},
+            "config":{"recent_messages_per_account":if accounts.is_some(){2}else if self.calendar_enabled {0}else{RECENT_MESSAGES},"recent_threads_per_account":if accounts.is_some(){1}else if self.calendar_enabled {0}else{RECENT_MESSAGES/2},"backfill_messages_per_account":if accounts.is_some()||self.calendar_enabled {0}else{BACKFILL_MESSAGES},"raw_delay_ms":if self.calendar_enabled {0}else{RAW_DELAY_MS},"max_publications":MAX_PUBLICATIONS},
+            "account_fixture":accounts,
             "counters":evidence.counters.value(),"publication_count":evidence.publications.len(),"published_item_count":evidence.item_count,
             "publications":if final_report{evidence.publications.clone()}else{vec![]},"errors":evidence.errors,
             "draft_fixture":{"max_drafts_per_account":16,"max_mime_bytes":2097152,"max_publications":128,"publications":evidence.draft_publications},
             "send_fixture":{"enabled":self.send_enabled,"max_sends_per_account":16,"max_mime_bytes":2097152,"publications":evidence.send_publications},
             "remote_drafts_fixture":{"enabled":self.remote_drafts_enabled,"containers_per_account":remote_drafts::COUNT,"page_size":50,"version_two":self.remote_version_two.load(Ordering::Acquire),"reads":evidence.remote_draft_reads},
             "draft_actions_fixture":{"enabled":self.draft_actions_enabled,"containers_per_account":draft_actions::COUNT,"version_two":self.action_version_two.load(Ordering::Acquire),"reads":evidence.draft_action_reads,"deletions":evidence.draft_deletions},
-            "calendar_fixture":{"enabled":self.calendar_enabled,"calendars_per_account":1,"events_per_account":calendar_invitations::COUNT,"base_unix_secs":self.base_unix_secs,"reads":evidence.calendar_reads,"publications":evidence.calendar_publications},
+            "calendar_fixture":{"enabled":self.calendar_enabled||self.accounts_fixture.is_some(),"calendars_per_account":1,"events_per_account":if self.accounts_fixture.is_some(){1}else{calendar_invitations::COUNT},"base_unix_secs":self.base_unix_secs,"reads":evidence.calendar_reads,"publications":evidence.calendar_publications},
             "stop_reason":if final_report{Some("owning_sessions_or_engine_shutdown")}else{None}})
     }
     fn persist_blocking(&self, final_report: bool) -> io::Result<()> {
@@ -465,6 +520,9 @@ impl Fixture {
         std::fs::rename(temporary, self.profile.join(REPORT))
     }
     pub(crate) async fn finish(&self, writer_finished: bool) -> io::Result<()> {
+        if let Some(accounts) = &self.accounts_fixture {
+            accounts.check_drained();
+        }
         {
             let mut evidence = self.evidence.lock().unwrap();
             if !writer_finished {
@@ -495,6 +553,8 @@ fn core_error(message: &str) -> fm_core::CoreError {
     }
 }
 
+#[cfg(test)]
+mod accounts_tests;
 #[cfg(test)]
 mod calendar_tests;
 #[cfg(test)]

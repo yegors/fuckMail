@@ -845,7 +845,7 @@ fn invitation_schema_seventeen_preserves_legacy_journal_bytes_and_interpretation
             .db
             .query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
             .unwrap(),
-        17
+        crate::SCHEMA_VERSION
     );
     assert_eq!(rows(&store), before);
     assert_eq!(
@@ -860,7 +860,10 @@ fn invitation_schema_seventeen_preserves_legacy_journal_bytes_and_interpretation
         .unwrap();
     assert_eq!(result["state"], "accepted");
     assert_eq!(result["outcome"], json!({"kind":"accepted"}));
-    store.db.pragma_update(None, "user_version", 18).unwrap();
+    store
+        .db
+        .pragma_update(None, "user_version", crate::SCHEMA_VERSION + 1)
+        .unwrap();
     drop(store);
     assert_eq!(
         Store::open_live(dir.path()).err().unwrap().code,

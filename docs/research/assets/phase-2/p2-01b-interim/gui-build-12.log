@@ -1,0 +1,7 @@
+[1/58] Automatic MOC and UIC for target gui-account-lifecycle-controls-test
+[2/57] Automatic MOC and UIC for target fuckmail-gui
+[3/56] Running AUTOMOC file extraction for target fuckmail-gui
+[4/7] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\AccountLifecycleBackend.cpp.obj
+[5/7] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\AccountLifecycleBackend.cpp.obj
+[6/7] Linking CXX executable gui-account-lifecycle-controls-test.exe
+[7/7] Linking CXX executable fuckmail-gui.exe

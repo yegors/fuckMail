@@ -1,0 +1,47 @@
+[1/95] Automatic MOC and UIC for target gui-account-lifecycle-controls-test
+[2/95] Automatic MOC and UIC for target fuckmail-gui
+[3/95] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\AccountLifecycleBackend.cpp.obj
+[4/95] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\GoogleBackend.cpp.obj
+[5/95] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\MailBackend.cpp.obj
+[6/95] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\GuiGoogleDraftSnapshotSelfTest.cpp.obj
+[7/95] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\gui-account-lifecycle-controls-test_autogen\mocs_compilation.cpp.obj
+[8/95] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\AccountLifecycleControlsTest.cpp.obj
+[9/95] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\GoogleDraftBackend.cpp.obj
+[10/95] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\GoogleDraftSnapshotBackend.cpp.obj
+[11/95] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\GoogleDraftAuthoringBackend.cpp.obj
+[12/95] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\GoogleSendBackend.cpp.obj
+[13/95] Running AUTOMOC file extraction for target fuckmail-gui
+[14/95] Running moc --collect-json for target fuckmail-gui
+[15/47] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\GoogleLabels.cpp.obj
+[16/47] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\Phase1Backend.cpp.obj
+[17/47] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\CompositionBackend.cpp.obj
+[18/47] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\DraftAttachmentBackend.cpp.obj
+[19/47] Building CXX object gui\CMakeFiles\gui-account-lifecycle-controls-test.dir\CalendarOperations.cpp.obj
+[20/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\AccountLifecycleBackend.cpp.obj
+[21/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\fuckmail-gui_autogen\mocs_compilation.cpp.obj
+[22/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\main.cpp.obj
+[23/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\MailBackend.cpp.obj
+[24/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleLabels.cpp.obj
+[25/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleBackend.cpp.obj
+[26/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\Phase1Backend.cpp.obj
+[27/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\CompositionBackend.cpp.obj
+[28/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\DraftAttachmentBackend.cpp.obj
+[29/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleDraftBackend.cpp.obj
+[30/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleDraftAuthoringBackend.cpp.obj
+[31/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleDraftSnapshotBackend.cpp.obj
+[32/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GoogleSendBackend.cpp.obj
+[33/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\CalendarOperations.cpp.obj
+[34/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiSelfTest.cpp.obj
+[35/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiCalendarSelfTest.cpp.obj
+[36/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiGoogleDraftActionsSelfTest.cpp.obj
+[37/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiCompositionSelfTest.cpp.obj
+[38/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiGoogleCalendarSelfTest.cpp.obj
+[39/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiAccountLifecycleSelfTest.cpp.obj
+[40/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiGoogleDraftSnapshotSelfTest.cpp.obj
+[41/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiSettingsSelfTest.cpp.obj
+[42/47] Linking CXX executable gui-account-lifecycle-controls-test.exe
+[43/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiMailNavigationSelfTest.cpp.obj
+[44/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiSearchBenchmark.cpp.obj
+[45/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiInteractionBenchmark.cpp.obj
+[46/47] Building CXX object gui\CMakeFiles\fuckmail-gui.dir\GuiResizeBenchmark.cpp.obj
+[47/47] Linking CXX executable fuckmail-gui.exe

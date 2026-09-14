@@ -1,0 +1,23 @@
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 8.18s
+     Running unittests src\main.rs (target\debug\deps\fm_engine-bdc9187f3bef88d8.exe)
+
+running 3 tests
+test verification_google::fixture::accounts_tests::concurrent_first_add_cannot_overwrite_a_grant_before_its_metadata_binds ... ok
+test verification_google::fixture::accounts_tests::accounts_fixture_denial_and_cancel_after_store_leave_truthful_removed_cleanup ... ok
+test verification_google::fixture::accounts_tests::accounts_fixture_drives_signed_identity_grants_import_remove_and_restore_without_autostart ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 153 filtered out; finished in 0.42s
+
+     Running tests\sessions.rs (target\debug\deps\sessions-af28bb105765f6d8.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running tests\verification_profile.rs (target\debug\deps\verification_profile-64cb4cff853453cc.exe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+

@@ -97,6 +97,7 @@ impl SourceStamp {
     }
 }
 struct ActionContext {
+    lifecycle_revision: i64,
     blobs: BlobStore,
     account: String,
     selected: String,
@@ -231,6 +232,7 @@ impl Store {
         self.check_google_draft_deletion_target(account, &source.provider_draft_id, except_delete)
     }
     fn action_context(&self, account: &str, p: &Value, current: bool) -> Result<ActionContext> {
+        self.require_active_account(account)?;
         if self.profile_kind()? != crate::live_profile::ProfileKind::Live {
             return Err(err(
                 "profile_kind_mismatch",
@@ -251,6 +253,7 @@ impl Store {
         let identity = self.action_identity(account)?;
         let owner_stamp = self.action_owner_stamp(account, &source)?;
         Ok(ActionContext {
+            lifecycle_revision: self.require_active_account(account)?,
             blobs: self.google_blob_store(),
             account: account.into(),
             selected: crate::string(p, "draft_id")?.into(),
@@ -283,6 +286,7 @@ impl Store {
         current: bool,
         except_delete: Option<&str>,
     ) -> Result<()> {
+        self.check_active_account_revision(&c.account, c.lifecycle_revision)?;
         if c.blobs.profile != self.profile {
             return Err(err(
                 "scope_mismatch",

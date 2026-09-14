@@ -1,0 +1,86 @@
+{
+  "scope": "Actual Settings Accounts and removal dialog QML; Graphite/Paper/Harbour; default/large text; 1000x720 logical pixels; offscreen software renderer DPR 1; Geist fonts.",
+  "images": [
+    {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-01b\\visual-02\\accounts-graphite-default.png",
+      "reviewed": true,
+      "sha256": "c63cf24a5d1aa4d54f2a8baba76b14dfc157032d71533dcf6feb947678cabfb1",
+      "bytes": 59076
+    },
+    {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-01b\\visual-02\\accounts-graphite-large.png",
+      "reviewed": true,
+      "sha256": "a929d60908ac0a472a2ac87fcfbfd52224dbb1148fd3363f66a438f42a300256",
+      "bytes": 63912
+    },
+    {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-01b\\visual-02\\accounts-harbour-default.png",
+      "reviewed": true,
+      "sha256": "0213f7c11eae02ad662f310a12f79bbf22bdf1c44cc4f17ebcafb3be48bea26d",
+      "bytes": 60646
+    },
+    {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-01b\\visual-02\\accounts-harbour-large.png",
+      "reviewed": true,
+      "sha256": "085fc1f761aa16f4406041da23e25f92361bc995919468ead013bbbd763bb0be",
+      "bytes": 64591
+    },
+    {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-01b\\visual-02\\accounts-paper-default.png",
+      "reviewed": true,
+      "sha256": "53ea5b81c90ecf35c77accc61e2c15ca7b8842554f9c8cc4e349a3cea9876ff4",
+      "bytes": 59934
+    },
+    {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-01b\\visual-02\\accounts-paper-large.png",
+      "reviewed": true,
+      "sha256": "64a32a50375f6c2706149f52911059c41347091721e8ce85babd581ffedd5274",
+      "bytes": 63917
+    },
+    {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-01b\\visual-02\\remove-graphite-default.png",
+      "reviewed": true,
+      "sha256": "4680131ae6c1c604f9fc2c2eeb0e27d39544255c12dbc9d2575ee9607959ebee",
+      "bytes": 63013
+    },
+    {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-01b\\visual-02\\remove-graphite-large.png",
+      "reviewed": true,
+      "sha256": "01405ade7d76115bb0a8bdecd1fa485461086e30079caaa90fce96137d1178af",
+      "bytes": 68115
+    },
+    {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-01b\\visual-02\\remove-harbour-default.png",
+      "reviewed": true,
+      "sha256": "ca9a7ffdc3c3eaae3706e31ecdc87e10e415dc340dc351eff1964adf647a8d98",
+      "bytes": 63375
+    },
+    {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-01b\\visual-02\\remove-harbour-large.png",
+      "reviewed": true,
+      "sha256": "1d9738f29f7306219b37363ca5bbe2af76c80002cee9c78bdb2b1b35d46e1db6",
+      "bytes": 68235
+    },
+    {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-01b\\visual-02\\remove-paper-default.png",
+      "reviewed": true,
+      "sha256": "157f0dba904443815ac81a66c077f5e66d8fb37c3754b6aac78fff397745fae2",
+      "bytes": 63074
+    },
+    {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-01b\\visual-02\\remove-paper-large.png",
+      "reviewed": true,
+      "sha256": "482b45e718d75a70320df572d915e2dd297358785af5e27d64ed87adcc988b63",
+      "bytes": 67688
+    }
+  ],
+  "result": "passed_with_recorded_capture_limit",
+  "version": 1,
+  "source_manifest": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-01b\\gui-controls-04.source.json",
+  "review": "All 12 captures reviewed: readable account identity, wrapped long email, contained dialog/buttons and no clipped or blank button labels. Requested plain-language removal copy is present.",
+  "test_result": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\verification\\p2-01b\\gui-controls-04.result.json",
+  "limitations": [
+    "First Graphite/default Accounts frame precedes asynchronous FmIcon image completion; subsequent removal and all other Accounts captures show icons. No physical input or DPR 1.25 claim.",
+    "This focused test uses authenticated scripted IPC; actual isolated-provider lifecycle walkthrough remains separate."
+  ]
+}

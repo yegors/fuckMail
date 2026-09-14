@@ -183,14 +183,18 @@ impl Store {
             }
             None => self.prepare_capture(account, request)?,
         };
-        if record.operation.state == SendState::InFlight {
+        if record.operation.state == SendState::InFlight
+            && self.account_lifecycle(account)?["state"] == "active"
+        {
             let next = record.operation.recover();
             SqliteCaptureJournal { db: &mut self.db }
                 .transition(&record.operation, &next)
                 .map_err(capture_error)?;
             record.operation = next;
         }
-        if record.operation.state == SendState::Prepared {
+        if record.operation.state == SendState::Prepared
+            && self.account_lifecycle(account)?["state"] == "active"
+        {
             let bytes = self.capture_bytes(&record.operation.mime_sha256, record.size)?;
             submit_once(
                 &mut record.operation,
@@ -232,6 +236,7 @@ impl Store {
         account: &str,
         request: &CaptureRequest<'_>,
     ) -> Result<CaptureRecord> {
+        self.require_active_account(account)?;
         let draft = self.composition(account, &request.selector())?;
         if draft["discarded"] == true {
             return Err(err("invalid_draft", "Discarded draft cannot be captured"));
@@ -506,6 +511,7 @@ impl Store {
             }
             existing
         } else {
+            self.require_active_account(account)?;
             let record = proof.record;
             let serialized = serde_json::to_string(&record)?;
             let tx = self
@@ -541,14 +547,18 @@ impl Store {
             tx.commit()?;
             record
         };
-        if record.operation.state == SendState::InFlight {
+        if record.operation.state == SendState::InFlight
+            && self.account_lifecycle(account)?["state"] == "active"
+        {
             let next = record.operation.recover();
             SqliteCaptureJournal { db: &mut self.db }
                 .transition(&record.operation, &next)
                 .map_err(capture_error)?;
             record.operation = next;
         }
-        if record.operation.state == SendState::Prepared {
+        if record.operation.state == SendState::Prepared
+            && self.account_lifecycle(account)?["state"] == "active"
+        {
             let in_flight = SendOperation {
                 state: SendState::InFlight,
                 ..record.operation.clone()

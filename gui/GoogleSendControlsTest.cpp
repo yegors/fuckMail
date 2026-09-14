@@ -59,8 +59,15 @@ public:
         backend.m_connected = true; backend.m_account = "fixture-account";
         backend.m_enginePid = QCoreApplication::applicationPid(); backend.m_activeDraft = "draft-fixture"; backend.m_generation = 1;
         backend.m_draft = projection().toVariantMap();
-        backend.m_accounts = {QVariantMap{{"id", "fixture-account"}, {"name", "Fixture account"},
-            {"google", QVariantMap{{"capabilities", QVariantMap{{"send", true}, {"mail_delivery", true}}}}}}};
+        const QVariantList activeAccounts{QVariantMap{{"id", "fixture-account"}, {"name", "Fixture account"},
+            {"lifecycle", QVariantMap{{"state", "active"}, {"revision", 1}}},
+            {"google", QVariantMap{{"capabilities", QVariantMap{{"send", true}, {"mail_delivery", true}}}}}},
+            QVariantMap{{"id", "other-account"}, {"name", "Other active account"},
+                {"lifecycle", QVariantMap{{"state", "active"}, {"revision", 1}}}}};
+        backend.m_allAccounts = activeAccounts;
+        backend.m_allAccounts.append(QVariantMap{{"id", "archived-account"}, {"name", "Archived account"}, {"read_only", true},
+            {"lifecycle", QVariantMap{{"state", "removed"}, {"revision", 2}}}});
+        require(backend.publishAccounts(activeAccounts), "valid active mailbox inventory");
         QObject::disconnect(&backend.m_socket, SIGNAL(connected()), &backend, nullptr);
         backend.m_socket.connectToServer(fixture.server.serverName());
         await([&] { return backend.m_socket.state() == QLocalSocket::ConnectedState; }, "cached native socket connects");
@@ -75,7 +82,7 @@ public:
         int saves = 0, reads = 0, heldAuxiliary = 0;
         fixture.customRequest = [&](QLocalSocket *peer, const QJsonObject &request) {
             const auto method = request["method"].toString(), id = request["id"].toString();
-            if (method == "accounts") { peer->write(reply(id, {{"accounts", QJsonArray::fromVariantList(backend.m_accounts)}})); return true; }
+            if (method == "accounts") { peer->write(reply(id, {{"accounts", QJsonArray::fromVariantList(backend.m_allAccounts)}})); return true; }
             if (method == "view_save") { peer->write(reply(id, {{"revision", 1}})); return true; }
             require(request["account"] == "fixture-account", "explicit Send/cached request account");
             if (method == "google_send_reconcile" && request["params"].toObject()["request_id"].toString().startsWith("held-cap-")) {
@@ -297,6 +304,17 @@ ApplicationWindow { width: 900; height: 1200; visible: true
             "settled direct refusal releases only a fresh unambiguous attempt");
 
         localEdit("Navigation before save finishes"); click("captureReply"); await([&] { return saves == 5; }, "navigation test holds real save");
+        const auto pendingBeforeRefusedNavigation = backend.m_googleSendPending;
+        const auto draftBeforeRefusedNavigation = backend.m_draft;
+        const auto generationBeforeRefusedNavigation = backend.m_generation;
+        require(!pendingBeforeRefusedNavigation.isEmpty() && !backend.m_afterDraftSave, "held Send is armed before navigation checks");
+        for (const auto target : {"unknown-account", "archived-account"}) {
+            backend.selectAccount(target);
+            require(backend.account() == "fixture-account" && backend.m_generation == generationBeforeRefusedNavigation
+                && backend.m_draft == draftBeforeRefusedNavigation && backend.m_googleSendPending == pendingBeforeRefusedNavigation
+                && !backend.m_afterDraftSave && saves == 5 && fixture.operations == 10,
+                "unknown or archived mailbox selection cannot navigate, retarget or cancel the armed Send");
+        }
         backend.selectAccount("other-account");
         require(backend.m_googleSendPending.isEmpty() && bool(backend.m_afterDraftSave), "actual mailbox selection cancels Send before deferred navigation");
         // Other tests own the mailbox hydration. Keep this fixture focused on

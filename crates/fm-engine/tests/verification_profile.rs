@@ -111,6 +111,8 @@ fn ordinary_binary_has_no_verification_option_and_does_not_create_a_profile() {
         "--verification-google-draft-actions",
         "--verification-google-calendar",
         "--verification-google-calendar-base",
+        "--verification-google-accounts",
+        "--verification-google-accounts-base",
     ] {
         let profile = directory.path().join(option.trim_start_matches('-'));
         let log = profile.with_extension("log");
@@ -126,6 +128,44 @@ fn ordinary_binary_has_no_verification_option_and_does_not_create_a_profile() {
             output.contains("unexpected argument") && output.contains(option),
             "{output}"
         );
+        assert!(!profile.exists());
+    }
+}
+
+#[cfg(feature = "verification-google")]
+#[test]
+fn accounts_fixture_requires_valid_explicit_base_and_exclusive_mode_before_creation() {
+    let directory = tempfile::tempdir().unwrap();
+    for (index, extra) in [
+        vec![],
+        vec!["--verification-google-accounts-base", "1789300801"],
+        vec!["--verification-google-accounts-base", "1"],
+        vec!["--verification-google-accounts-base", "4102444800"],
+        vec![
+            "--verification-google-accounts-base",
+            "1789300800",
+            "--verification-google-send",
+        ],
+        vec![
+            "--verification-google-accounts-base",
+            "1789300800",
+            "--verification-google-calendar",
+            "--verification-google-calendar-base",
+            "1789300800",
+        ],
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let profile = directory.path().join(format!("invalid-accounts-{index}"));
+        let mut args = vec![
+            "--live-profile",
+            "--verification-google",
+            "--verification-google-accounts",
+        ];
+        args.extend(extra);
+        let mut child = spawn(&profile, &args, &profile.with_extension("log"));
+        assert_eq!(child.wait_bounded(Duration::from_secs(5)).code(), Some(2));
         assert!(!profile.exists());
     }
 }
@@ -250,15 +290,31 @@ async fn explicit_empty_fixture_serves_cached_queries_without_acquisition_and_st
     use fm_ipc::Client;
     use serde_json::{json, Value};
 
-    for (calendar_mode, args) in [
-        (false, vec!["--live-profile", "--verification-google"]),
+    for (calendar_mode, account_mode, args) in [
+        (
+            false,
+            false,
+            vec!["--live-profile", "--verification-google"],
+        ),
         (
             true,
+            false,
             vec![
                 "--live-profile",
                 "--verification-google",
                 "--verification-google-calendar",
                 "--verification-google-calendar-base",
+                "1789300800",
+            ],
+        ),
+        (
+            false,
+            true,
+            vec![
+                "--live-profile",
+                "--verification-google",
+                "--verification-google-accounts",
+                "--verification-google-accounts-base",
                 "1789300800",
             ],
         ),
@@ -309,7 +365,21 @@ async fn explicit_empty_fixture_serves_cached_queries_without_acquisition_and_st
         .unwrap()
         .unwrap();
         assert_eq!(accounts["ok"], true);
-        assert_eq!(accounts["result"]["accounts"].as_array().unwrap().len(), 2);
+        assert_eq!(
+            accounts["result"]["accounts"].as_array().unwrap().len(),
+            if account_mode { 0 } else { 2 }
+        );
+        let probe = client
+            .call("verification_google_auth_fixture", None, json!({}))
+            .await
+            .unwrap();
+        assert_eq!(probe["ok"], account_mode);
+        if account_mode {
+            assert_eq!(
+                probe["result"],
+                json!({"mode":"accounts-v1","browser_stub_allowed":true})
+            );
+        }
         drop(client);
         // Keep the current-thread Tokio I/O driver running while the dropped
         // asynchronous pipe completes its close. The synchronous helper is only
@@ -339,8 +409,11 @@ async fn explicit_empty_fixture_serves_cached_queries_without_acquisition_and_st
         assert_eq!(report["status"], "complete");
         assert_eq!(report["transport"], "in_memory_only");
         assert_eq!(report["native_vault"], false);
-        assert_eq!(report["calendar_fixture"]["enabled"], calendar_mode);
-        if calendar_mode {
+        assert_eq!(
+            report["calendar_fixture"]["enabled"],
+            calendar_mode || account_mode
+        );
+        if calendar_mode || account_mode {
             assert_eq!(report["base_unix_secs"], 1_789_300_800u64);
         }
         assert_eq!(report["counters"]["http_started"], 0);

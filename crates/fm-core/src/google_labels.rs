@@ -398,6 +398,9 @@ impl Store {
         generation: Option<i64>,
         write: bool,
     ) -> Result<(String, i64, BTreeSet<String>)> {
+        if generation.is_some() || write {
+            self.require_active_account(account)?;
+        }
         id(account)?;
         if self.profile_kind()? != crate::live_profile::ProfileKind::Live {
             return Err(err(

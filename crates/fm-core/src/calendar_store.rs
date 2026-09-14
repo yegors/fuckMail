@@ -17,7 +17,7 @@ impl Store {
         from: chrono::NaiveDate,
         to: chrono::NaiveDate,
     ) -> Result<Vec<Value>> {
-        let catalog = self.calendar_sources()?;
+        let catalog = self.calendar_sources_for(Some(account))?;
         let selected = catalog["calendars"]
             .as_array()
             .unwrap()
@@ -25,8 +25,9 @@ impl Store {
             .filter(|v| v["account"] == account)
             .map(|v| json!({"account":account,"calendar_id":v["calendar_id"]}))
             .collect::<Vec<_>>();
-        let combined = self.calendar_combined(
+        let combined = self.calendar_combined_for(
             &json!({"from":from.to_string(),"to":to.to_string(),"calendars":selected}),
+            Some(account),
         )?;
         if combined["coverage"]["incomplete_calendars"]
             .as_u64()
@@ -50,6 +51,7 @@ impl Store {
         zone: &str,
         access: Access,
     ) -> Result<Value> {
+        self.require_active_account(&scope.account)?;
         validate_scope(scope)?;
         let existing:Option<String>=self.db.query_row("SELECT query_fingerprint FROM calendar_sync_state WHERE account=?1 AND calendar_id=?2",params![scope.account,scope.calendar],|r|r.get(0)).optional()?;
         if existing
@@ -117,6 +119,7 @@ impl Store {
                 ))
             };
         }
+        self.require_active_account(account)?;
         let checkpoint = self.calendar_checkpoint(account, calendar)?;
         self.calendar_assert_no_pending(account, calendar)?;
         check_batch_scope(&checkpoint, expected_revision, &batch.scope)?;
@@ -282,6 +285,7 @@ impl Store {
                 json!({"request_id":request_id,"intent":serde_json::from_str::<Value>(&intent)?,"result":result.map(|raw|serde_json::from_str::<Value>(&raw)).transpose()?}),
             );
         }
+        self.require_active_account(&target.account)?;
         let (event, access) =
             self.stored_calendar_event(&target.account, &target.calendar, &target.event)?;
         if event.cancelled {
@@ -338,6 +342,7 @@ impl Store {
             return Ok(previous);
         }
         self.calendar_assert_no_pending(&target.account, &target.calendar)?;
+        self.require_active_account(&target.account)?;
         let (event, access) =
             self.stored_calendar_event(&target.account, &target.calendar, &target.event)?;
         let etag = intent["write"]["if_match"]

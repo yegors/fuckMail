@@ -22,12 +22,13 @@ void MailBackend::loadCalendarOperationsPage(bool append) {
     m_calendarOperationsLoading = true; emit calendarOperationsChanged();
     auto collected = std::make_shared<QVariantList>(append ? m_calendarOperations : QVariantList());
     auto remaining = std::make_shared<int>(0);
-    for (const auto &entry : m_accounts) {
+    const auto accounts = accountArchived() ? QVariantList{currentAccount()} : m_accounts;
+    for (const auto &entry : accounts) {
         if (!append || m_calendarOperationCursors.contains(entry.toMap()["id"].toString())) ++*remaining;
     }
     auto error = std::make_shared<QString>();
     if (!*remaining) { m_calendarOperations.clear(); m_calendarOperationsLoading = false; emit calendarOperationsChanged(); return; }
-    for (const auto &entry : m_accounts) {
+    for (const auto &entry : accounts) {
         const auto account = entry.toMap();
         const auto id = account["id"].toString(), name = account["name"].toString();
         if (append && !m_calendarOperationCursors.contains(id)) continue;
@@ -41,6 +42,7 @@ void MailBackend::loadCalendarOperationsPage(bool append) {
                 for (const auto &operation : result["operations"].toArray()) {
                     auto row = operation.toObject().toVariantMap();
                     row["account"] = id; row["account_name"] = name;
+                    row["account_archived"] = accountRemoved(id);
                     bool replaced = false;
                     for (auto &existing : *collected) {
                         const auto previous = existing.toMap();
@@ -90,6 +92,9 @@ void MailBackend::retryCalendarOperation(const QString &account, const QString &
 }
 
 void MailBackend::calendarOperationAction(const QString &account, const QString &requestId, const QString &action, qint64 expectedRevision) {
+    if (accountRemoved(account) && action != "check") {
+        fail("Archived Calendar receipts can be inspected, but cannot be resumed, reconciled or abandoned."); return;
+    }
     if (m_syntheticProfile) {
         if (action == "resume" || action == "check" || action == "reconcile") retryCalendarOperation(account, requestId);
         return;

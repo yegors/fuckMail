@@ -1,0 +1,15 @@
+{
+  "kind": "development-gui-only-release",
+  "build_dir": "build/p2-08a-gui-release",
+  "host": "Windows-10-10.0.26200-SP0",
+  "source_inventory": "gui-release-build-03.source.json",
+  "build_passed": true,
+  "tests_run": false,
+  "binary": {
+    "path": "build/p2-08a-gui-release/fuckmail-gui.exe",
+    "sha256": "5b89b84120cd24ad9c744d5992fc436848f68d8c0d01830e8f43a22ec5fd740a",
+    "size": 5219840
+  },
+  "elapsed_seconds": 14.515999999828637,
+  "source_unchanged": true
+}

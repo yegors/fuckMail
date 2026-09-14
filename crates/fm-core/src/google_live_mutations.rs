@@ -453,6 +453,7 @@ impl Store {
         Ok(json!({"request_id":request_id,"state":state,"counts":counts,"total":total}))
     }
     fn mutation_connection(&self, account: &str, generation: i64) -> Result<()> {
+        self.require_active_account(account)?;
         if self.profile_kind()? != ProfileKind::Live {
             return Err(err(
                 "profile_kind_mismatch",

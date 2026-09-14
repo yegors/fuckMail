@@ -65,21 +65,35 @@ def verify_calendar(check, files, retained):
                             retained["projection"]), "Migration changed the retained Calendar projection")
 
 
+def verify_account_lifecycle(check, files, retained):
+    active = check.call(files, "accounts", account=None)
+    all_accounts = check.call(files, "accounts", {"include_removed": True}, account=None)
+    require(active == all_accounts and contains_fields(active, retained),
+            "Migration hid or altered a previously active account")
+    require(len(active["accounts"]) > 0, "Expected old synthetic accounts for lifecycle migration")
+    for account in active["accounts"]:
+        require(account["lifecycle"] == {"state": "active", "revision": 1, "cleanup": None}
+                and account["read_only"] is False,
+                "Migration failed to initialize an active account without cleanup work")
+    return active
+
+
 def run(args):
     report = args.report.resolve()
     report.parent.mkdir(parents=True, exist_ok=True)
     # Reserve before launching anything; this report cannot replace an older run.
     with report.open("x", encoding="utf-8") as destination:
-        calendar_upgrade = (args.old_schema, args.new_schema) == (16, 17)
-        scenario = "calendar-intents" if calendar_upgrade else "draft-provenance"
-        result = {"result": "failed", "scenario": f"schema-{args.old_schema}-to-{args.new_schema}-{scenario}", "version": 3,
+        lifecycle_upgrade = (args.old_schema, args.new_schema) == (17, 18)
+        calendar_upgrade = (args.old_schema, args.new_schema) == (16, 17) or lifecycle_upgrade
+        scenario = "account-lifecycle" if lifecycle_upgrade else "calendar-intents" if calendar_upgrade else "draft-provenance"
+        result = {"result": "failed", "scenario": f"schema-{args.old_schema}-to-{args.new_schema}-{scenario}", "version": 4,
                   "limitations": ["Generated synthetic composition/Calendar only; live journals have separate Core fixtures.",
                                   "Standalone engine/CLI source evidence; no GUI/package/performance acceptance."], "artifacts": []}
         started = time.monotonic()
         try:
             old = {"fm": args.old_cli.resolve(strict=True), "fm-engine": args.old_engine.resolve(strict=True)}
             new = {"fm": args.new_cli.resolve(strict=True), "fm-engine": args.new_engine.resolve(strict=True)}
-            require((args.old_schema, args.new_schema) in ((14, 15), (15, 16), (16, 17)), "Choose a documented journal-schema upgrade")
+            require((args.old_schema, args.new_schema) in ((14, 15), (15, 16), (16, 17), (17, 18)), "Choose a documented journal-schema upgrade")
             require(old["fm-engine"] != new["fm-engine"], "Use a distinct preserved old-schema engine")
             result["executables"] = {kind: {key: {"path": str(path), "sha256": sha256(path)} for key, path in files.items()}
                                      for kind, files in (("old", old), ("new", new))}
@@ -114,6 +128,7 @@ def run(args):
                     captured = check.call(old, "draft_capture", capture_params)
                     current = check.call(old, "draft_get", {"draft_id": draft["draft_id"]})
                     retained_calendar = seed_calendar(check, old) if calendar_upgrade else None
+                    retained_accounts = check.call(old, "accounts", account=None) if lifecycle_upgrade else None
                     release(before_owner, before_engine)
                     before = durable_snapshot(check.profile)
                     require(before["schema"] == args.old_schema and before["record_counts"]["capture_operations"] >= 1, "Missing pre-upgrade authored receipt")
@@ -131,6 +146,8 @@ def run(args):
                     require(replay == captured, "Migration rewrote the exact immutable capture receipt")
                     if retained_calendar is not None:
                         verify_calendar(check, new, retained_calendar)
+                    if retained_accounts is not None:
+                        migrated_accounts = verify_account_lifecycle(check, new, retained_accounts)
                     release(after_owner, after_engine)
                     after = durable_snapshot(check.profile, before["columns"])
                     require(before["table_digests"] == after["table_digests"], "Old persisted table/column values changed during migration")
@@ -149,6 +166,9 @@ def run(args):
                     require(check.call(new, "draft_capture", capture_params) == captured, "Fresh engine changed immutable replay")
                     if retained_calendar is not None:
                         verify_calendar(check, new, retained_calendar)
+                    if retained_accounts is not None:
+                        require(verify_account_lifecycle(check, new, retained_accounts) == migrated_accounts,
+                                "Fresh engine changed migrated lifecycle metadata")
                     release(reopened_owner, reopened_engine)
                     result["before"] = before
                     result["after"] = after
@@ -157,6 +177,8 @@ def run(args):
                     result["capture_receipt"] = captured
                     if retained_calendar is not None:
                         result["calendar"] = retained_calendar
+                    if retained_accounts is not None:
+                        result["accounts"] = {"before": retained_accounts, "after": migrated_accounts}
                     require(source_manifest() == sources, "Sources changed during migration verification")
                     for kind, files in (("old", old), ("new", new)):
                         require(all(sha256(path) == result["executables"][kind][key]["sha256"] for key, path in files.items()),
@@ -185,7 +207,7 @@ if __name__ == "__main__":
     parser.add_argument("--old-engine", type=Path, required=True)
     parser.add_argument("--new-cli", type=Path, required=True)
     parser.add_argument("--new-engine", type=Path, required=True)
-    parser.add_argument("--old-schema", type=int, choices=(14, 15, 16), default=14)
-    parser.add_argument("--new-schema", type=int, choices=(15, 16, 17), default=15)
+    parser.add_argument("--old-schema", type=int, choices=(14, 15, 16, 17), default=14)
+    parser.add_argument("--new-schema", type=int, choices=(15, 16, 17, 18), default=15)
     parser.add_argument("--report", type=Path, required=True)
     raise SystemExit(run(parser.parse_args()))

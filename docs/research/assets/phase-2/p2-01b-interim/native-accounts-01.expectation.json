@@ -1,0 +1,40 @@
+{
+  "version": 1,
+  "calendar_date": "2026-09-13",
+  "client_config_path": "C:\\Users\\Yegor\\AppData\\Local\\Temp\\fuckmail-accounts-native-ca7occsz\\empty-live-profile\\verification-google-client.json",
+  "cli_path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\release\\fm.exe",
+  "limits": {
+    "gmail_project_units_per_minute": 1000000,
+    "gmail_account_units_per_minute": 500000,
+    "calendar_project_units_per_minute": 10000,
+    "calendar_account_units_per_minute": 5000
+  },
+  "accounts": [
+    {
+      "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+      "identity": "personal",
+      "email": "personal@example.test",
+      "renamed_email": "renamed-personal@example.test",
+      "draft": {
+        "subject": "Native retained personal — 日本語",
+        "body": "Saved human text for personal.\nUnicode café 日本語.",
+        "dirty_body": "Unsaved human changes for personal.\nKeep this exact buffer — 日本語.",
+        "recipient": "recipient-personal@example.test",
+        "pending_recipient": "unfinished-personal-address"
+      }
+    },
+    {
+      "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+      "identity": "workspace",
+      "email": "workspace@example.test",
+      "renamed_email": "renamed-workspace@example.test",
+      "draft": {
+        "subject": "Native retained workspace — 日本語",
+        "body": "Saved human text for workspace.\nUnicode café 日本語.",
+        "dirty_body": "Unsaved human changes for workspace.\nKeep this exact buffer — 日本語.",
+        "recipient": "recipient-workspace@example.test",
+        "pending_recipient": "unfinished-workspace-address"
+      }
+    }
+  ]
+}

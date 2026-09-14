@@ -7,6 +7,7 @@ Item {
     id: settings
     objectName: "settingsView"
     signal done()
+    signal archiveOpened()
     property string page: "General"
     property var accountEdits: ({})
     property var pageScroll: ({})
@@ -14,6 +15,7 @@ Item {
     property bool signaturesOpen: false
     property bool calendarDetailsOpen: false
     property string reconnectAccount: ""
+    property double restoreRevision: -1
     property string syncAccount: ""
     property var quotaValues: ({})
     readonly property var quotaFields: [
@@ -131,8 +133,8 @@ Item {
         contentItem: ColumnLayout {
             spacing: 16
             property bool blocksWorkspaceShortcuts: true
-            Heading { text: settings.reconnectAccount.length ? "Reconnect Google" : "Connect Google" }
-            Description { text: "Choose your Google desktop client JSON file, then sign in with your browser. Google will ask for Mail and Calendar access." }
+            Heading { text: settings.restoreRevision > 0 ? "Restore archived account" : settings.reconnectAccount.length ? "Reconnect Google" : "Connect Google" }
+            Description { text: settings.restoreRevision > 0 ? "Sign in as the same Google account. Your retained data stays here. Restoration does not start sync or Send." : "Choose your Google desktop client JSON file, then sign in with your browser. Google will ask for Mail and Calendar access." }
             RowLayout {
                 Layout.fillWidth: true; spacing: 8
                 FmTextField { id: googleConfigPath; objectName: "googleClientConfigPath"; Layout.fillWidth: true; placeholderText: "Desktop client JSON file"; enabled: !backend.googleAuthBusy; Accessible.name: "Google desktop client configuration file" }
@@ -151,7 +153,7 @@ Item {
                 Layout.fillWidth: true; spacing: 10
                 Item { Layout.fillWidth: true }
                 FmButton { text: "Cancel"; onClicked: googleSignIn.close() }
-                FmButton { objectName: "beginGoogleSignIn"; text: "Sign in"; prominent: true; enabled: backend.connected && !backend.googleAuthBusy && googleConfigPath.text.trim().length > 0; onClicked: { backend.clearError(); backend.connectGoogle(googleConfigPath.text.trim(), settings.reconnectAccount, renewGoogleAccess.checked) } }
+                FmButton { objectName: "beginGoogleSignIn"; text: "Sign in"; prominent: true; enabled: backend.connected && !backend.googleAuthBusy && googleConfigPath.text.trim().length > 0; onClicked: { backend.clearError(); if (settings.restoreRevision > 0) backend.restoreGoogleAccount(googleConfigPath.text.trim(), settings.reconnectAccount, settings.restoreRevision, renewGoogleAccess.checked); else backend.connectGoogle(googleConfigPath.text.trim(), settings.reconnectAccount, renewGoogleAccess.checked) } }
             }
         }
     }
@@ -389,10 +391,14 @@ Item {
                         visible: settings.page === "Accounts"; Layout.fillWidth: true; spacing: 12
                         Description { text: "Each account has its own local mail and calendar. The display name is what the top bar shows."; Layout.maximumWidth: 560; Layout.bottomMargin: 12 }
                         Repeater {
-                            model: backend.accounts
+                            model: backend.allAccounts
                             Rectangle {
                                 required property var modelData
                                 id: accountCard
+                                readonly property var lifecycle: modelData.lifecycle || {}
+                                readonly property bool archived: lifecycle.state === "removed"
+                                readonly property var cleanup: lifecycle.cleanup || {}
+                                readonly property var removal: (backend.accountLifecycle.operations || {})[modelData.id] || {}
                                 readonly property var syncState: { const changed = backend.googleSync; return backend.googleSyncState(modelData.id) }
                                 readonly property var coverage: (modelData.google || {}).sync || {}
                                 readonly property int observed: backend.syntheticProfile ? modelData.message_count : Number(coverage.observed_messages || 0)
@@ -410,6 +416,7 @@ Item {
                                             Layout.fillWidth: true; spacing: 2
                                             TextField {
                                                 id: accountName
+                                                readOnly: accountCard.archived
                                                 objectName: "accountName_" + accountCard.modelData.id
                                                 Layout.fillWidth: true; implicitHeight: 20; padding: 0
                                                 text: settings.accountValue(accountCard.modelData,"name"); maximumLength: 80
@@ -422,8 +429,8 @@ Item {
                                             }
                                             Text { text: accountCard.modelData.email + " · Mail and Calendar"; color: Theme.muted; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } elide: Text.ElideRight; Layout.fillWidth: true; textFormat: Text.PlainText }
                                         }
-                                        Row { visible: !settings.accountDirty(accountCard.modelData); spacing: 7; FmIcon { name: "refresh"; size: 13; color: Theme.subtle; anchors.verticalCenter: parent.verticalCenter } Text { text: backend.syntheticProfile ? "Local copy" : (accountCard.modelData.google || {}).connection_state === "connected" ? "Connected" : "Access paused"; color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } } }
-                                        FmButton { objectName: "saveAccount_" + accountCard.modelData.id; visible: settings.accountDirty(accountCard.modelData); text: "Save"; outlined: true; onClicked: settings.saveAccount(accountCard.modelData) }
+                                        Row { visible: !settings.accountDirty(accountCard.modelData); spacing: 7; FmIcon { name: "refresh"; size: 13; color: Theme.subtle; anchors.verticalCenter: parent.verticalCenter } Text { text: accountCard.archived ? "Archived" : backend.syntheticProfile ? "Local copy" : (accountCard.modelData.google || {}).connection_state === "connected" ? "Connected" : "Access paused"; color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } } }
+                                        FmButton { objectName: "saveAccount_" + accountCard.modelData.id; visible: !accountCard.archived && settings.accountDirty(accountCard.modelData); text: "Save"; outlined: true; onClicked: settings.saveAccount(accountCard.modelData) }
                                     }
                                     Divider {}
                                     RowLayout {
@@ -436,7 +443,7 @@ Item {
                                         Rectangle { height: parent.height; width: parent.width * Math.max(0,Math.min(1,accountCard.indexed / Math.max(1,accountCard.observed))); color: Theme.subtle; radius: 1 }
                                     }
                                     RowLayout {
-                                        visible: !backend.syntheticProfile; Layout.fillWidth: true; spacing: 10
+                                        visible: !backend.syntheticProfile && !accountCard.archived; Layout.fillWidth: true; spacing: 10
                                         Caption {
                                             text: accountCard.syncState.changing ? "Updating sync…" : accountCard.syncState.active
                                                 ? accountCard.syncState.owned ? "Syncing while this app is open" : "Sync active in another session"
@@ -452,15 +459,30 @@ Item {
                                     }
                                     Caption { visible: !backend.syntheticProfile && text.length > 0; text: settings.syncProgress(accountCard.syncState) }
                                     RowLayout {
-                                        visible: !backend.syntheticProfile; Layout.fillWidth: true; spacing: 10
+                                        visible: !backend.syntheticProfile && !accountCard.archived; Layout.fillWidth: true; spacing: 10
                                         Caption { text: ((accountCard.modelData.google || {}).connection_state === "reauthorization_required") ? "Sign in again to restore Google access." : (accountCard.modelData.coverage || {}).text || "Your downloaded copy stays on this machine." }
-                                        FmButton { objectName: "reconnectGoogle_" + accountCard.modelData.id; text: "Reconnect"; outlined: true; enabled: backend.connected && !backend.googleAuthBusy; onClicked: { settings.reconnectAccount = accountCard.modelData.id; renewGoogleAccess.checked = true; googleSignIn.open() } }
+                                        FmButton { objectName: "reconnectGoogle_" + accountCard.modelData.id; text: "Reconnect"; outlined: true; enabled: backend.connected && !backend.googleAuthBusy; onClicked: { settings.restoreRevision = -1; settings.reconnectAccount = accountCard.modelData.id; renewGoogleAccess.checked = true; googleSignIn.open() } }
                                         FmButton { objectName: "disconnectGoogle_" + accountCard.modelData.id; text: "Disconnect"; enabled: backend.connected && !backend.googleAuthBusy && (accountCard.modelData.google || {}).connection_state !== "disconnected"; onClicked: backend.disconnectGoogle(accountCard.modelData.id) }
+                                    }
+                                    ColumnLayout {
+                                        visible: !backend.syntheticProfile; Layout.fillWidth: true; spacing: 8
+                                        Caption { visible: accountCard.archived; text: "Read-only archive · saved mail, drafts, files and history" }
+                                        Caption { visible: accountCard.cleanup.state !== undefined; text: "Local credential cleanup: " + (accountCard.cleanup.state || "") + (accountCard.cleanup.code ? " · " + accountCard.cleanup.code : "") }
+                                        Caption { visible: (accountCard.removal.status || "").length > 0; text: accountCard.removal.status || "" }
+                                        Flow {
+                                            Layout.fillWidth: true; spacing: 8
+                                            FmButton { objectName: "removeAccount_" + accountCard.modelData.id; text: "Remove…"; visible: !accountCard.archived; enabled: backend.connected && !backend.googleAuthBusy && !accountCard.removal.busy; onClicked: backend.previewAccountRemoval(accountCard.modelData.id) }
+                                            FmButton { objectName: "openAccountArchive_" + accountCard.modelData.id; text: "Open archive"; visible: accountCard.archived; outlined: true; onClicked: { backend.openAccountArchive(accountCard.modelData.id); if (!backend.unsavedAccountBuffer) settings.archiveOpened() } }
+                                            FmButton { objectName: "retryAccountCleanup_" + accountCard.modelData.id; text: "Retry cleanup"; visible: accountCard.archived && (accountCard.cleanup.state === "pending" || accountCard.cleanup.state === "failed"); enabled: backend.connected && !accountCard.removal.busy; onClicked: backend.retryAccountCleanup(accountCard.modelData.id) }
+                                            FmButton { objectName: "checkAccountRemoval_" + accountCard.modelData.id; text: "Check saved result"; visible: accountCard.removal.uncertain || false; enabled: backend.connected && !accountCard.removal.busy; onClicked: backend.checkAccountRemoval(accountCard.modelData.id, accountCard.removal.request_id) }
+                                            FmButton { objectName: "retryAccountRemoval_" + accountCard.modelData.id; text: "Retry same removal"; visible: accountCard.removal.uncertain || false; enabled: backend.connected && !accountCard.removal.busy; onClicked: backend.retryAccountCleanup(accountCard.modelData.id) }
+                                            FmButton { objectName: "restoreAccount_" + accountCard.modelData.id; text: "Restore…"; visible: accountCard.archived; enabled: backend.connected && !backend.googleAuthBusy && !accountCard.removal.busy && accountCard.cleanup.state === "complete"; onClicked: { settings.reconnectAccount = accountCard.modelData.id; settings.restoreRevision = accountCard.lifecycle.revision; renewGoogleAccess.checked = false; googleSignIn.open() } }
+                                        }
                                     }
                                 }
                             }
                         }
-                        FmButton { objectName: "connectGoogleButton"; visible: !backend.syntheticProfile; text: "Connect Google account"; iconName: "plus"; outlined: true; enabled: backend.connected && !backend.googleAuthBusy; onClicked: { settings.reconnectAccount = ""; renewGoogleAccess.checked = false; googleSignIn.open() } }
+                        FmButton { objectName: "connectGoogleButton"; visible: !backend.syntheticProfile; text: "Connect Google account"; iconName: "plus"; outlined: true; enabled: backend.connected && !backend.googleAuthBusy; onClicked: { settings.restoreRevision = -1; settings.reconnectAccount = ""; renewGoogleAccess.checked = false; googleSignIn.open() } }
                         Caption { visible: !backend.syntheticProfile && (backend.googleAuth.message || "").length > 0; text: backend.googleAuth.message || "" }
                         Caption { Layout.topMargin: 4; visible: backend.syntheticProfile; text: "Open a separate live profile to connect your Google accounts." }
                     }

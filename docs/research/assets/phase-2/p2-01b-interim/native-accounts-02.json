@@ -1,0 +1,324 @@
+{
+  "version": 1,
+  "result": "failed",
+  "scenario": "isolated-google-account-lifecycle-native",
+  "base_unix_secs": 1789257600,
+  "limits": {
+    "gmail_project_units_per_minute": 1000000,
+    "gmail_account_units_per_minute": 500000,
+    "calendar_project_units_per_minute": 10000,
+    "calendar_account_units_per_minute": 5000
+  },
+  "commands": [
+    {
+      "command": [
+        "accounts",
+        "--include-removed"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "preferences",
+        "show"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "preferences",
+        "save"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "preferences",
+        "show"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "accounts"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "accounts",
+        "--include-removed"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar",
+        "--combined"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "sync-status"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar",
+        "--from"
+      ],
+      "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "mail",
+        "list"
+      ],
+      "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "list"
+      ],
+      "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "calendar",
+        "--from"
+      ],
+      "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "mail",
+        "list"
+      ],
+      "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "list"
+      ],
+      "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+      "exit_code": 0,
+      "error": null
+    }
+  ],
+  "limitations": [
+    "Generated in-memory provider/vault; no real account, token, invitation or Send.",
+    "Programmatic native controls and independent readback; no physical-input or performance acceptance.",
+    "Development executables only; no package or populated isolated-engine restart acceptance."
+  ],
+  "executables": {
+    "engine": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\verification-google\\release\\fm-engine.exe",
+      "sha256": "8e5e4eb3e0ebea183357a09f2307a93b22d31412e559cb1e75bfa6e0434e8da2"
+    },
+    "cli": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\release\\fm.exe",
+      "sha256": "e279d69afa368b98c97e81f89a827a968b3ee860cf1fc2ec340786b7f77b50e5"
+    },
+    "gui": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\build\\p2-08a-gui-release\\fuckmail-gui.exe",
+      "sha256": "1f2a2ee22a7a6a5c96b2ea64be56041fb72a8018a78c76069940122e9f54ad47"
+    }
+  },
+  "display_zone_setup": {
+    "preferences": {
+      "calendar_date": null,
+      "calendar_display_time_zone": "UTC",
+      "calendar_end_hour": 22,
+      "calendar_start_hour": 7,
+      "calendar_view": "week",
+      "default_event_duration_minutes": 60,
+      "density": "comfortable",
+      "google_sync_limits": null,
+      "last_workspace": "mail",
+      "selected_calendars": null,
+      "startup_view": "mail",
+      "text_size": "default",
+      "theme": "graphite",
+      "timeline_date": null,
+      "timeline_end_hour": 22,
+      "timeline_position": "footer",
+      "timeline_start_hour": 7,
+      "week_start": "monday"
+    },
+    "revision": 1
+  },
+  "gui_exit_code": 0,
+  "native": {
+    "removal_operations": 4,
+    "retained_drafts": 2,
+    "accounts": 2
+  },
+  "sources_checked": {
+    "messages": [
+      {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "remote_id": "vr0000",
+        "source_sha256": "b350555241cb9664f52f741755c64a8d98a031165c4f205bd30902d4cdc4cfaf",
+        "source_size": 1516,
+        "conversation_id": "gmail-thread-e21a99cc2363cb86583ae9ae644c09e8a0173984167388ff08427b4a0cd67b2e"
+      },
+      {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "remote_id": "vr0001",
+        "source_sha256": "dbfb2f33cd2e959f0e67458eb9a1f5bb817f3535ffbd80a1ded97fd42d808ef1",
+        "source_size": 1516,
+        "conversation_id": "gmail-thread-e21a99cc2363cb86583ae9ae644c09e8a0173984167388ff08427b4a0cd67b2e"
+      },
+      {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "remote_id": "vr0000",
+        "source_sha256": "360c9ffceb36a9b94708ac22540e5a523349994bac1a2b5b9ba38e8dd82f1430",
+        "source_size": 1520,
+        "conversation_id": "gmail-thread-e6ff97cadc788430d5de5fd2c184d0c4dab8f465fd4135bbd1529ba4d5045c2f"
+      },
+      {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "remote_id": "vr0001",
+        "source_sha256": "6c85a0a079d550efa3219071a74b5962890e9f22dda105bae1cf64e6f614f78c",
+        "source_size": 1520,
+        "conversation_id": "gmail-thread-e6ff97cadc788430d5de5fd2c184d0c4dab8f465fd4135bbd1529ba4d5045c2f"
+      }
+    ],
+    "calendar_sources": 2,
+    "threads": 2
+  },
+  "retained_content": {
+    "tables": {
+      "messages": {
+        "rows": 4,
+        "sha256": "a4e63dbe5aa934ab4185be1620ac6fb9cf0c479b29b60fc2fa1bbbba49be8a36"
+      },
+      "conversations": {
+        "rows": 2,
+        "sha256": "011c74da1e3deb3e3a31d49e12733ca2b70262b709889cf8072cec8a6c0e6597"
+      },
+      "attachments": {
+        "rows": 0,
+        "sha256": "512e12e881b8aa31b728cad9c18282d686b7a25113a08a22f7f1480c5514cdb6"
+      },
+      "drafts": {
+        "rows": 2,
+        "sha256": "ccb32477fc89efa15b305b3be5b4e0ed67f9184e433d50baf8ddeb48f9beadd3"
+      },
+      "capture_operations": {
+        "rows": 0,
+        "sha256": "0829c70378460a730a0a3354c999e3a4cf9e6a8deada05deaa2ae02eb237a191"
+      },
+      "calendar_sources": {
+        "rows": 2,
+        "sha256": "88ca72c298e96bb01a2ffb7a56a9b395e5650c54de387a08ef149b7c3631db73"
+      },
+      "calendar_visible_sources": {
+        "rows": 2,
+        "sha256": "52588010e53058f3d3231db5c54fb5d9deeb0a0545a39bc0bca673bad9a5d617"
+      },
+      "google_draft_sources": {
+        "rows": 0,
+        "sha256": "a96c9d7b54ca3dd7a25d64b2c81fce8794449beaccb0a4ec8df372f56ac56f15"
+      },
+      "google_message_state": {
+        "rows": 4,
+        "sha256": "4e659e3534aa35352fab0f8b9ae960dfc324b110ca4d8988b3dad4eb47c1580c"
+      },
+      "google_mail_coverage": {
+        "rows": 4,
+        "sha256": "a7af8d2e6b4ffacae45f5189a356bea414945618b67bff02f6ab017ad371f8c3"
+      },
+      "calendar_write_operations": {
+        "rows": 0,
+        "sha256": "e33f4e3546307c8a52f31f58c5aacc1f5ad0dcc46bab2d2b011b737c122323e2"
+      },
+      "non_removal_operations": {
+        "rows": 7,
+        "sha256": "32d7c784dc65479d079913a7fef87ffc94bfa11c94a0a98c75635b8df8541a49"
+      }
+    },
+    "blobs": {
+      "360c9ffceb36a9b94708ac22540e5a523349994bac1a2b5b9ba38e8dd82f1430": {
+        "sha256": "360c9ffceb36a9b94708ac22540e5a523349994bac1a2b5b9ba38e8dd82f1430",
+        "size": 1520
+      },
+      "6c85a0a079d550efa3219071a74b5962890e9f22dda105bae1cf64e6f614f78c": {
+        "sha256": "6c85a0a079d550efa3219071a74b5962890e9f22dda105bae1cf64e6f614f78c",
+        "size": 1520
+      },
+      "b350555241cb9664f52f741755c64a8d98a031165c4f205bd30902d4cdc4cfaf": {
+        "sha256": "b350555241cb9664f52f741755c64a8d98a031165c4f205bd30902d4cdc4cfaf",
+        "size": 1516
+      },
+      "dbfb2f33cd2e959f0e67458eb9a1f5bb817f3535ffbd80a1ded97fd42d808ef1": {
+        "sha256": "dbfb2f33cd2e959f0e67458eb9a1f5bb817f3535ffbd80a1ded97fd42d808ef1",
+        "size": 1516
+      }
+    }
+  },
+  "offline_queries_preserved_content_and_provider": true,
+  "error": "Native lifecycle left credentials/work active or reported a fixture error",
+  "elapsed_seconds": 12.390000000130385,
+  "artifacts": {
+    "engine": {
+      "name": "native-accounts-02.engine.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "watch": {
+      "name": "native-accounts-02.watch.log",
+      "sha256": "5c4dedf12b273a6fcbc31f9d9a279373ba467b1346271e556b8b74bf4cc1bfd9"
+    },
+    "gui": {
+      "name": "native-accounts-02.gui.log",
+      "sha256": "45d5303d5afef53832101a25519e8282f5fd88e0d51228982e6b6d386b7f2594"
+    },
+    "fixture": {
+      "name": "native-accounts-02.fixture.json",
+      "sha256": "8c815dd941e7732215ed54cd490a53a24de5a745278398fc54845f92efacdeef"
+    },
+    "gui_report": {
+      "name": "native-accounts-02.gui.json",
+      "sha256": "3cbd2edaedaa92435338c46686887592fa33c26bddb611d4febdb254fd62d887"
+    },
+    "expectation": {
+      "name": "native-accounts-02.expectation.json",
+      "sha256": "f1b2e3abab5fc25cbbf7f95a817b46b0da3b6630aa88246868b80c8527ce8d35"
+    },
+    "sources": {
+      "name": "native-accounts-02.source.json",
+      "sha256": "c1d0433a1f44c619983d657cafae3f7549001e61cdcef6a11a376ee2a7ebc0fd"
+    }
+  }
+}

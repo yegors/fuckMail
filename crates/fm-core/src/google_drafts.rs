@@ -331,7 +331,6 @@ impl Store {
                     "Conflict replacement requires action replace_local and its Google revision",
                 )),
             };
-        self.draft_scope(scope)?;
         if let Some(op) = self.google_draft_operation(&scope.account, request)? {
             if op.params != *p {
                 return Err(err(
@@ -339,7 +338,10 @@ impl Store {
                     "Request ID already freezes another draft revision",
                 ));
             }
-            return if op.state == "prepared" {
+            return if op.state == "prepared"
+                && self.account_lifecycle(&scope.account)?["state"] == "active"
+            {
+                self.draft_scope(scope)?;
                 self.check_google_send_draft_write(&scope.account, draft_id)?;
                 Ok(GoogleDraftIntent::Upload {
                     provider_draft_id: op.target,
@@ -348,6 +350,7 @@ impl Store {
                 Ok(GoogleDraftIntent::Reply(self.google_operation_reply(&op)?))
             };
         }
+        self.draft_scope(scope)?;
         self.check_google_send_draft_write(&scope.account, draft_id)?;
         let (current_revision, twin) = self.google_twin(&scope.account, draft_id)?;
         if current_revision != revision {
@@ -475,7 +478,6 @@ impl Store {
         cancelled(&proof.cancel)?;
         let plan = proof.plan;
         let request = request_id(&plan.params)?;
-        self.draft_scope(&plan.scope)?;
         if let Some(op) = self.google_draft_operation(&plan.scope.account, request)? {
             if op.params != plan.params {
                 return Err(err(
@@ -485,6 +487,7 @@ impl Store {
             }
             return self.google_operation_reply(&op);
         }
+        self.draft_scope(&plan.scope)?;
         self.check_retained_draft(&plan.retained)?;
         let draft_id = string(&plan.params, "draft_id")?;
         self.check_google_send_draft_write(&plan.scope.account, draft_id)?;
@@ -1098,6 +1101,7 @@ impl Store {
     }
 
     pub(crate) fn draft_connection(&self, account: &str, generation: i64) -> Result<()> {
+        self.require_active_account(account)?;
         id(account)?;
         if self.profile_kind()? != crate::live_profile::ProfileKind::Live {
             return Err(err(

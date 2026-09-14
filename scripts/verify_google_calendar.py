@@ -489,7 +489,7 @@ def run(args):
                 result["journal_rows"] = len(frozen_journal)
                 result["journal_sha256"] = hashlib.sha256(json.dumps(frozen_journal, ensure_ascii=False).encode()).hexdigest()
                 with closing(read_database(profile)) as db:
-                    require(db.execute("PRAGMA user_version").fetchone()[0] == 17, "Wrong shared schema")
+                    require(db.execute("PRAGMA user_version").fetchone()[0] == 18, "Wrong shared schema")
                     for publication in ledger.publications:
                         if publication["method"] == "DELETE":
                             require(db.execute("SELECT COUNT(*) FROM calendar_sources WHERE account=?1 AND calendar_id=?2 AND event_id=?3",

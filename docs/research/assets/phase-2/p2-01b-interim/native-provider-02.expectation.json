@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "limits": {
+    "gmail_project_units_per_minute": 1000000,
+    "gmail_account_units_per_minute": 500000,
+    "calendar_project_units_per_minute": 10000,
+    "calendar_account_units_per_minute": 5000
+  },
+  "calendar_date": "2026-09-13",
+  "accounts": [
+    {
+      "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+      "event": {
+        "calendar_id": "calendar-personal@example.test",
+        "event_id": "ci0000",
+        "etag": "\"ci0000-v1\"",
+        "title": "Invitation personal 0000",
+        "description": "Preserved generated invitation details",
+        "location": "Fixture room",
+        "conference_url": "https://meet.example.test/fixture",
+        "guest_addresses": [
+          "alpha@example.test",
+          "beta@example.test"
+        ],
+        "protected_attendees": [
+          {
+            "email": "personal@example.test",
+            "organizer": true,
+            "self": true,
+            "responseStatus": "accepted"
+          }
+        ]
+      },
+      "add_guest": "native-added-personal@example.test",
+      "new_event": {
+        "title": "Native invitation personal",
+        "start": "2026-09-13T12:00:00+00:00",
+        "end": "2026-09-13T12:45:00+00:00",
+        "time_zone": "UTC",
+        "location": "Native fixture room",
+        "description": "Native Calendar guest verification.\nUnicode café 日本語.",
+        "attendees": [
+          "native-created-personal@example.test"
+        ]
+      }
+    },
+    {
+      "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+      "event": {
+        "calendar_id": "calendar-workspace@example.test",
+        "event_id": "ci0000",
+        "etag": "\"ci0000-v1\"",
+        "title": "Invitation workspace 0000",
+        "description": "Preserved generated invitation details",
+        "location": "Fixture room",
+        "conference_url": "https://meet.example.test/fixture",
+        "guest_addresses": [
+          "alpha@example.test",
+          "beta@example.test"
+        ],
+        "protected_attendees": [
+          {
+            "email": "workspace@example.test",
+            "organizer": true,
+            "self": true,
+            "responseStatus": "accepted"
+          }
+        ]
+      },
+      "add_guest": "native-added-workspace@example.test",
+      "new_event": {
+        "title": "Native invitation workspace",
+        "start": "2026-09-13T12:00:00+00:00",
+        "end": "2026-09-13T12:45:00+00:00",
+        "time_zone": "UTC",
+        "location": "Native fixture room",
+        "description": "Native Calendar guest verification.\nUnicode café 日本語.",
+        "attendees": [
+          "native-created-workspace@example.test"
+        ]
+      }
+    }
+  ]
+}

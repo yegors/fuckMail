@@ -1,0 +1,35 @@
+    Checking ring v0.17.14
+    Checking libsqlite3-sys v0.30.1
+    Checking fm-cli v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-cli)
+    Checking rusqlite v0.32.1
+    Checking rustls-webpki v0.103.15
+    Checking jsonwebtoken v9.3.1
+    Checking rustls v0.23.44
+    Checking tokio-rustls v0.26.5
+    Checking hyper-rustls v0.27.9
+    Checking reqwest v0.12.28
+    Checking fm-google v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-google)
+    Checking fm-calendar v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-calendar)
+    Checking fm-mail v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-mail)
+    Checking fm-core v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-core)
+    Checking fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+error: this async expression only awaits a single future
+   --> crates\fm-engine\src\google_auth.rs:519:29
+    |
+519 |               let operation = async {
+    |  _____________________________^
+520 | |                 #[cfg(feature = "verification-google")]
+521 | |                 if let Some(observer) = runtime.inner.verification_login.clone() {
+522 | |                     let (result, ()) =
+...   |
+526 | |                 login.await
+527 | |             };
+    | |_____________^ help: you can reduce it to: `login`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#redundant_async_block
+    = note: `-D clippy::redundant-async-block` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::redundant_async_block)]`
+
+error: could not compile `fm-engine` (bin "fm-engine") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `fm-engine` (bin "fm-engine" test) due to 1 previous error

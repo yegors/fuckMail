@@ -1,0 +1,3 @@
+{"id":"2","ok":true,"result":{"account":"google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343","active":true,"started":true},"version":1}
+{"id":"3","ok":true,"result":{"accounts":[],"configured":true,"limits":{"calendar_account_units_per_minute":5000,"calendar_project_units_per_minute":10000,"gmail_account_units_per_minute":500000,"gmail_project_units_per_minute":1000000}},"version":1}
+{"id":"4","ok":true,"result":{"account":"google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343","active":false,"session_stopped":true},"version":1}

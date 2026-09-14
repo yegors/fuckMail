@@ -199,7 +199,6 @@ impl Store {
         p: &Value,
     ) -> Result<GoogleSendIntent> {
         validate_request(p)?;
-        self.draft_scope(scope)?;
         let request = request_id(p)?;
         if let Some(op) = self.google_send_operation(&scope.account, request)? {
             if op.request != *p {
@@ -208,7 +207,10 @@ impl Store {
                     "Request ID already freezes another submission",
                 ));
             }
-            if op.state == "prepared" {
+            if op.state == "prepared"
+                && self.account_lifecycle(&scope.account)?["state"] == "active"
+            {
+                self.draft_scope(scope)?;
                 self.check_send_resume(scope, &op)?;
                 return Ok(GoogleSendIntent::Submit {
                     provider_draft_id: op.provider_draft_id,
@@ -216,6 +218,7 @@ impl Store {
             }
             return Ok(GoogleSendIntent::Reply(self.send_reply(&op)?));
         }
+        self.draft_scope(scope)?;
         let draft_id = string(p, "draft_id")?;
         let twin = self.google_draft_status(&scope.account, draft_id)?;
         let local_revision = twin["local_revision"].as_i64().ok_or_else(invalid)?;
@@ -486,6 +489,7 @@ impl Store {
         }
     }
     pub fn google_send_abandon(&mut self, account: &str, p: &Value) -> Result<Value> {
+        self.require_active_account(account)?;
         fields(p, &["request_id", "expected_revision"])?;
         id(account)?;
         let mut op = self

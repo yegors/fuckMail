@@ -21,7 +21,7 @@ ApplicationWindow {
     property bool allowClose: false
     property var mailFocus: null
     property var calendarFocus: null
-    readonly property bool workspaceShortcutsAllowed: !blocksWorkspaceShortcuts(activeFocusItem)
+    readonly property bool workspaceShortcutsAllowed: !accountLifecycleDialogs.popupOpen && !blocksWorkspaceShortcuts(activeFocusItem)
     readonly property bool singleKeysAllowed: workspaceShortcutsAllowed && !typingInField(activeFocusItem)
     readonly property bool accountKeysAllowed: singleKeysAllowed && !settingsOpen && !searchPopup.opened
         && !(workspace === "mail" ? mailView.popupOpen : calendarView.popupOpen)
@@ -56,9 +56,9 @@ ApplicationWindow {
     Connections { target: backend; function onPreferencesChanged() { window.applyStartupPreference() } }
     function cycleAccount(direction) {
         const accounts = backend.accounts
-        if (accounts.length < 2) return
+        if (!accounts.length) return
         const index = accounts.findIndex(function(account) { return account.id === backend.account })
-        backend.selectAccount(accounts[(index + direction + accounts.length) % accounts.length].id)
+        backend.selectAccount(accounts[index < 0 ? (direction > 0 ? 0 : accounts.length - 1) : (index + direction + accounts.length) % accounts.length].id)
     }
     function belongsTo(item, view) {
         while (item) { if (item === view) return true; item = item.parent }
@@ -80,6 +80,7 @@ ApplicationWindow {
         else if (belongsTo(activeFocusItem, calendarView)) calendarFocus = activeFocusItem
     }
     function navigate(target) {
+        if (!backend.accountNavigationAllowed()) return
         searchPopup.close()
         settingsOpen = target === "settings"
         if (!settingsOpen) workspace = target
@@ -101,6 +102,7 @@ ApplicationWindow {
     }
     onClosing: function(event) { if (!allowClose) { event.accepted = false; backend.shutdown() } }
     Connections { target: backend; function onShutdownReady() { window.allowClose = true; window.close() } }
+    AccountLifecycleDialogs { id: accountLifecycleDialogs }
     Shortcut { sequences: [StandardKey.Find, "Ctrl+K"]; enabled: window.workspaceShortcutsAllowed; onActivated: window.findMail() }
     Shortcut { sequence: "/"; enabled: window.singleKeysAllowed && !window.settingsOpen; onActivated: window.findMail() }
     Shortcut { sequence: "C"; enabled: window.singleKeysAllowed && !window.settingsOpen; onActivated: window.navigate(window.workspace === "mail" ? "calendar" : "mail") }
@@ -273,7 +275,7 @@ ApplicationWindow {
             currentIndex: window.settingsOpen ? 2 : window.workspace === "mail" ? 0 : 1
             MailView { id: mailView }
             CalendarView { id: calendarView }
-            SettingsView { id: settingsView; onDone: window.navigate(window.workspace) }
+            SettingsView { id: settingsView; onDone: window.navigate(window.workspace); onArchiveOpened: window.navigate("mail") }
         }
         Item { id: timelineFooterSlot; visible: window.timelineVisible && !window.timelineAtTop; Layout.fillWidth: true; implicitHeight: visible ? timeline.implicitHeight : 0 }
     }

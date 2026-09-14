@@ -188,6 +188,11 @@ pub trait CredentialVault: Send + Sync {
     /// The coordinator propagates that failure without another credential source.
     fn load(&self, account: &AccountId) -> Result<Option<StoredToken>, GoogleError>;
     fn store(&self, account: &AccountId, token: StoredToken) -> Result<(), GoogleError>;
+    /// Explicit local cleanup. Unsupported vaults fail rather than pretend that
+    /// credentials were removed. An already absent exact entry is success.
+    fn remove(&self, _: &AccountId) -> Result<(), GoogleError> {
+        Err(GoogleError::StoreUnavailable)
+    }
 }
 
 pub trait RefreshTransport: Send + Sync {
@@ -216,16 +221,58 @@ pub struct TokenCoordinator {
     accounts: Mutex<BTreeMap<AccountId, Arc<tokio::sync::Mutex<()>>>>,
 }
 
-impl TokenCoordinator {
-    /// A newly verified login shares refresh finalization's account mutex. The
-    /// native store owns the guard even if its awaiting owner is cancelled.
-    pub async fn persist_verified_grant<V: CredentialVault + 'static>(
-        &self,
-        account: &AccountId,
+/// Engine lifecycle admission is rechecked while this exact-account lock is
+/// held. Native finalization takes ownership so cancellation cannot release it
+/// while a queued or running credential operation can still change the vault.
+pub struct CredentialAccountGuard {
+    account: AccountId,
+    guard: tokio::sync::OwnedMutexGuard<()>,
+}
+impl CredentialAccountGuard {
+    pub async fn remove<V: CredentialVault + 'static>(
+        self,
+        vault: Arc<V>,
+    ) -> Result<(), GoogleError> {
+        tokio::task::spawn_blocking(move || {
+            let result = vault.remove(&self.account);
+            drop(self.guard);
+            result
+        })
+        .await
+        .map_err(|_| GoogleError::StoreUnavailable)?
+    }
+
+    pub async fn persist<V: CredentialVault + 'static>(
+        self,
         grant: crate::desktop_auth::VerifiedGrant,
         vault: Arc<V>,
-        cancel: &CancellationToken,
     ) -> Result<(), GoogleError> {
+        self.persist_retaining(grant, vault).await.map(drop)
+    }
+
+    /// Keep the native account lock through the caller's final metadata commit.
+    /// An aborted native store still owns the lock until its actual return.
+    pub async fn persist_retaining<V: CredentialVault + 'static>(
+        self,
+        grant: crate::desktop_auth::VerifiedGrant,
+        vault: Arc<V>,
+    ) -> Result<Self, GoogleError> {
+        let guard = grant
+            .persist_guarded(&self.account, vault, self.guard)
+            .await?;
+        Ok(Self {
+            account: self.account,
+            guard,
+        })
+    }
+}
+
+impl TokenCoordinator {
+    pub async fn account_guard(
+        &self,
+        account: &AccountId,
+        cancel: &CancellationToken,
+    ) -> Result<CredentialAccountGuard, GoogleError> {
         let guard = {
             let mut accounts = self
                 .accounts
@@ -240,7 +287,25 @@ impl TokenCoordinator {
         if cancel.is_cancelled() {
             return Err(GoogleError::TransportInterrupted);
         }
-        grant.persist_guarded(account, vault, guard).await
+        Ok(CredentialAccountGuard {
+            account: account.clone(),
+            guard,
+        })
+    }
+
+    /// A newly verified login shares refresh finalization's account mutex. The
+    /// native store owns the guard even if its awaiting owner is cancelled.
+    pub async fn persist_verified_grant<V: CredentialVault + 'static>(
+        &self,
+        account: &AccountId,
+        grant: crate::desktop_auth::VerifiedGrant,
+        vault: Arc<V>,
+        cancel: &CancellationToken,
+    ) -> Result<(), GoogleError> {
+        self.account_guard(account, cancel)
+            .await?
+            .persist(grant, vault)
+            .await
     }
 
     pub fn access_token<V: CredentialVault, T: RefreshTransport>(
@@ -365,3 +430,7 @@ impl TokenCoordinator {
         Ok(access)
     }
 }
+
+#[cfg(test)]
+#[path = "auth_cleanup_tests.rs"]
+mod cleanup_tests;

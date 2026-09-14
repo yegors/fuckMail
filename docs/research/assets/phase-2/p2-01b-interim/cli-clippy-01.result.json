@@ -1,0 +1,25 @@
+{
+  "command": [
+    "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\.tools\\cargo\\bin\\cargo.EXE",
+    "clippy",
+    "--locked",
+    "-p",
+    "fm-cli",
+    "--all-targets",
+    "--all-features",
+    "--",
+    "-D",
+    "warnings"
+  ],
+  "scope": "fm-cli,fm-ipc",
+  "dependency_test_sources_excluded": [
+    "fm-ipc"
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 1.5159999998286366,
+  "source_count": 19,
+  "source_changes": [],
+  "status": "passed",
+  "source_sha256": "f0b3a860be991435e47ab7f4430126733d1f0d67cf5d924ba18cc4ea557f3b41",
+  "log_sha256": "9fb12b366ac098a7a82cb60aa6c3c64fb286c926d43aefd0ea70c7f45c803ad0"
+}

@@ -69,6 +69,12 @@ struct Args {
     #[cfg(feature = "verification-google")]
     #[arg(long, hide = true, requires = "verification_google_calendar", value_parser = calendar_fixture_base)]
     verification_google_calendar_base: Option<u64>,
+    #[cfg(feature = "verification-google")]
+    #[arg(long, hide = true, requires_all = ["verification_google", "verification_google_accounts_base"], conflicts_with_all = ["verification_google_send", "verification_google_drafts", "verification_google_draft_actions", "verification_google_calendar"])]
+    verification_google_accounts: bool,
+    #[cfg(feature = "verification-google")]
+    #[arg(long, hide = true, requires = "verification_google_accounts", value_parser = calendar_fixture_base)]
+    verification_google_accounts_base: Option<u64>,
 }
 
 #[cfg(feature = "verification-google")]
@@ -424,8 +430,9 @@ async fn session_inner(
                     request.account.as_deref(),
                     request.params,
                 );
+                let finish_on_close = request.method == "account_remove";
                 let Some(result) =
-                    await_sync_reply(work, &mut stream, &owner_cancel, false).await?
+                    await_sync_reply(work, &mut stream, &owner_cancel, finish_on_close).await?
                 else {
                     return Ok(());
                 };
@@ -712,13 +719,14 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
     let google_fixture = args
         .verification_google
         .then(|| {
-            verification_google::Fixture::prepare_with_calendar(
+            verification_google::Fixture::prepare_with_accounts(
                 &profile,
                 &mut store,
                 args.verification_google_send,
                 args.verification_google_drafts,
                 args.verification_google_draft_actions,
                 args.verification_google_calendar_base,
+                args.verification_google_accounts_base,
             )
         })
         .transpose()?;
@@ -987,7 +995,8 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
             "view_get","view_save","preferences_get","preferences_save","calendar_sources",
             "calendar_combined","account_update","draft_discard","capture_history","calendar_write",
             "calendar_write_ack","calendar_operations","drafts","draft_create","sender_summary",
-            "google_auth_begin","google_auth_status","google_auth_cancel","google_disconnect",
+            "google_auth_begin","google_auth_restore_begin","google_auth_status","google_auth_cancel","google_disconnect",
+            "accounts_archived","account_remove_preview","account_remove","account_remove_status",
             "google_sync_start","google_sync_stop","google_sync_release","google_sync_status","google_sync_busy",
             "mail_filing","google_mail_mutation_status","google_calendar_write","google_calendar_reconcile","google_calendar_operation",
             "google_calendar_resume","google_calendar_abandon","google_labels","google_labels_refresh","google_category_bind",

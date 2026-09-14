@@ -1,0 +1,152 @@
+qt.scenegraph.general: threaded render loop
+qt.scenegraph.general: Using sg animation driver
+qt.scenegraph.general: Animation Driver: using vsync: 4.17 ms
+qt.scenegraph.general: Animation Driver: using vsync: 4.17 ms
+qt.scenegraph.general: Creating QRhi with backend D3D11 for window 0x1e467cfca10 (wflags 0x1)
+  Graphics API debug/validation layers: 0
+  Debug markers: 0
+  Timestamps: 0
+  Prefer software device: 0
+  Shader/pipeline cache collection: 1
+qt.rhi.general: FLIP_* swapchain supported = true, ALLOW_TEARING supported = true, use legacy (non-FLIP) model = false, max frame latency = 2
+qt.rhi.general: Adapter 0: 'NVIDIA GeForce RTX 5090' (vendor 0x10DE device 0x2B85 flags 0x0)
+qt.rhi.general:   using this adapter
+qt.rhi.general: Adapter 1: 'AMD Radeon(TM) Graphics' (vendor 0x1002 device 0x13C0 flags 0x0)
+qt.rhi.general: Adapter 2: 'Microsoft Basic Render Driver' (vendor 0x1414 device 0x8C flags 0x2)
+qt.scenegraph.general: Created QRhi 0x1e46b76aa70 for window 0x1e467cfca10
+qt.scenegraph.general: MSAA sample count for the swapchain is 1. Alpha channel requested = no.
+qt.scenegraph.general: rhi texture atlas dimensions: 2048x2048
+Native account lifecycle stage 0 account 0
+qt.scenegraph.general: animation driver switched to timer mode
+Native account lifecycle stage 2 account 0
+qt.scenegraph.general: animation driver switched to vsync mode
+Native account lifecycle stage 3 account 0
+Native account lifecycle stage 4 account 0
+Native account lifecycle stage 5 account 0
+Native account lifecycle stage 6 account 0
+qt.scenegraph.general: animation driver switched to timer mode
+Native account lifecycle stage 7 account 0
+Native account lifecycle stage 8 account 0
+Native account lifecycle stage 9 account 0
+Native account lifecycle stage 10 account 0
+Native account lifecycle stage 11 account 0
+Native account lifecycle stage 12 account 0
+Native account lifecycle stage 13 account 0
+Native account lifecycle stage 14 account 0
+Native account lifecycle stage 2 account 1
+Native account lifecycle stage 3 account 1
+Native account lifecycle stage 4 account 1
+Native account lifecycle stage 5 account 1
+Native account lifecycle stage 6 account 1
+Native account lifecycle stage 7 account 1
+Native account lifecycle stage 8 account 1
+Native account lifecycle stage 9 account 1
+Native account lifecycle stage 10 account 1
+Native account lifecycle stage 11 account 1
+Native account lifecycle stage 12 account 1
+Native account lifecycle stage 13 account 1
+Native account lifecycle stage 14 account 1
+Native account lifecycle stage 20 account 0
+Native account lifecycle stage 21 account 0
+qt.scenegraph.general: animation driver switched to vsync mode
+Native account lifecycle stage 22 account 0
+Native account lifecycle stage 23 account 0
+Native account lifecycle stage 24 account 0
+Native account lifecycle stage 25 account 0
+Native account lifecycle stage 26 account 0
+Native account lifecycle stage 27 account 0
+qt.scenegraph.general: animation driver switched to timer mode
+qt.scenegraph.general: animation driver switched to vsync mode
+Native account lifecycle stage 28 account 0
+qt.scenegraph.general: animation driver switched to timer mode
+Native account lifecycle stage 29 account 0
+Native account lifecycle stage 30 account 0
+Native account lifecycle stage 31 account 0
+qt.scenegraph.general: animation driver switched to vsync mode
+Native account lifecycle stage 32 account 0
+Native account lifecycle stage 33 account 0
+Native account lifecycle stage 34 account 0
+Native account lifecycle stage 36 account 0
+Native account lifecycle stage 37 account 0
+Native account lifecycle stage 38 account 0
+Native account lifecycle stage 39 account 0
+Native account lifecycle stage 40 account 0
+Native account lifecycle stage 41 account 0
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+Native account lifecycle stage 42 account 0
+Native account lifecycle stage 43 account 0
+Native account lifecycle stage 44 account 0
+Native account lifecycle stage 50 account 1
+Native account lifecycle stage 51 account 1
+Native account lifecycle stage 52 account 1
+Native account lifecycle stage 53 account 1
+Native account lifecycle stage 54 account 1
+Native account lifecycle stage 55 account 1
+Native account lifecycle stage 56 account 1
+Native account lifecycle stage 57 account 1
+Native account lifecycle stage 58 account 1
+Native account lifecycle stage 59 account 1
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Retrying to obtain clipboard.
+qt.qpa.mime: Unable to obtain clipboard.
+Native account lifecycle stage 60 account 1
+Native account lifecycle stage 61 account 1
+Native account lifecycle stage 62 account 1
+Native account lifecycle stage 63 account 1
+Native account lifecycle stage 64 account 1
+Native account lifecycle stage 65 account 1
+Native account lifecycle stage 66 account 1
+Native account lifecycle stage 68 account 1
+Native account lifecycle stage 69 account 1
+Native account addition, removal, archive, restoration and dirty-buffer lifecycle passed.
+qt.scenegraph.general: Total time spent on pipeline creation during the lifetime of the QRhi 0x1e46b76aa70 was 0 ms

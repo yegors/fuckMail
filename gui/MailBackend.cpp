@@ -207,6 +207,9 @@ void MailBackend::attemptConnection() {
 }
 
 void MailBackend::request(const QString &method, const QString &account, const QJsonObject &params, Callback callback) {
+    if (blockArchivedRequest(method, account)) {
+        callback({{"code", "account_removed"}, {"message", "This account is a read-only archive. Restore it explicitly before making changes."}}, false); return;
+    }
     const bool automaticRead = m_automaticReadScope && (method == "accounts" || method == "preferences_get"
         || method == "categories" || method == "conversation" || method == "draft_get" || method == "capture_history"
         || method == "google_sync_status" || method == "google_mail_mutation_status");
@@ -310,18 +313,28 @@ void MailBackend::receive() {
 void MailBackend::fail(const QString &message) { m_error = message; emit errorChanged(); }
 void MailBackend::clearError() { m_error.clear(); emit errorChanged(); }
 QVariantMap MailBackend::currentAccount() const {
-    for (const auto &entry : m_accounts) if (entry.toMap()["id"].toString() == m_account) return entry.toMap();
-    return {};
+    return lifecycleAccount(m_account);
 }
 
 void MailBackend::loadAccounts() {
-    request("accounts", {}, {}, [this](auto result, bool ok) {
+    request("accounts", {}, {{"include_removed", true}}, [this](auto result, bool ok) {
         if (!ok) return;
-        const auto accounts = result["accounts"].toArray().toVariantList();
+        const auto all = result["accounts"].toArray().toVariantList();
+        const bool changed = all != m_allAccounts;
+        bool lifecycleChanged = false;
+        for (const auto &entry : all) {
+            const auto row = entry.toMap(), previous = lifecycleAccount(row.value("id").toString());
+            if (!previous.isEmpty() && row.value("lifecycle") != previous.value("lifecycle")) lifecycleChanged = true;
+        }
+        m_allAccounts = all;
+        QVariantList accounts;
+        for (const auto &entry : all)
+            if (entry.toMap().value("lifecycle").toMap().value("state").toString() != "removed") accounts.append(entry);
         if (accounts != m_accounts) {
             if (!publishAccounts(accounts)) return;
-            emit accountsChanged(); emit currentAccountChanged();
         }
+        if (changed) { emit accountsChanged(); emit currentAccountChanged(); reconcileAccountLifecycle(); }
+        if (lifecycleChanged) { loadCalendarSources(); loadCalendar(); }
         if (m_account.isEmpty() && !m_accounts.isEmpty()) selectAccount(m_accounts.first().toMap()["id"].toString());
     });
 }
@@ -342,6 +355,8 @@ void MailBackend::selectAccount(const QString &id) {
     m_lastAccountSelectionDirty = m_draftDirty;
     m_lastAccountSelectionBusy = draftBusy();
     if (id == m_account) return;
+    if (m_unsavedAccountBuffer) { m_afterAccountDisposition = [this, id] { selectAccount(id); }; accountNavigationAllowed(); return; }
+    if (id.isEmpty() || lifecycleAccount(id).isEmpty() || (accountRemoved(id) && m_archiveSelection != id)) return;
     cancelPendingGoogleSend("Send cancelled by mailbox navigation. Press Send again after reviewing the draft.");
     if (m_draftDirty || draftBusy()) { m_afterDraftSave = [this, id] { selectAccount(id); }; saveDraft(); return; }
     clearSenderCard();
@@ -350,17 +365,21 @@ void MailBackend::selectAccount(const QString &id) {
     m_afterConversationMutation = {}; m_captureNextOffset = -1;
     m_collapsedGroups.clear();
     ++m_generation; const int generation = m_generation;
+    m_accountViewRestorationGeneration = generation;
+    ++m_draftSaveGeneration;
+    if (!accountRemoved(id)) m_archiveSelection.clear();
     m_account = id; m_conversation.clear(); m_draft.clear(); m_activeDraft.clear(); m_recipientInputs.clear(); m_selected.clear(); m_draftStatus.clear(); m_pinnedRow.clear(); m_pinnedIndex = -1;
     m_query.clear(); m_category.clear(); m_filters.clear(); m_querySummary.clear(); m_captureStatus.clear(); m_folder = "inbox"; publishConversations({}); m_categories.clear(); m_captures.clear(); m_nextOffset = -1; m_nextCursor.clear(); m_loading = false;
-    emit accountChanged(); emit currentAccountChanged(); emit categoriesChanged(); emit queryChanged(); emit conversationChanged(); emit draftChanged(); emit conversationsChanged(); emit capturesChanged(); emit mailDeliveryChanged();
+    emit accountChanged(); emit currentAccountChanged(); emit accountLifecycleChanged(); emit categoriesChanged(); emit queryChanged(); emit conversationChanged(); emit draftChanged(); emit conversationsChanged(); emit capturesChanged(); emit mailDeliveryChanged();
     request("view_get", id, {}, [this, id, generation](auto result, bool ok) {
+        if (m_accountViewRestorationGeneration == generation) m_accountViewRestorationGeneration = -1;
         if (ok) {
             auto latest = result["view"].toObject().toVariantMap();
             const auto pending = m_viewPending.value(id);
             for (auto it = pending.cbegin(); it != pending.cend(); ++it) latest[it.key()] = it.value();
             m_views[id] = latest; m_viewRevisions[id] = result["revision"].toInteger();
         }
-        if (generation != m_generation) return;
+        if (generation != m_generation) { resumeAccountRemovalAfterView(id, generation, false); return; }
         auto view = m_views.value(id).toMap();
         m_query = view["query"].toString(); m_selected = view["selected"].toString();
         m_folder = view.value("folder", "inbox").toString();
@@ -371,6 +390,7 @@ void MailBackend::selectAccount(const QString &id) {
         const auto restoredDraft = view.value("selectedDraft").toString();
         if (!restoredDraft.isEmpty()) openDraft(restoredDraft, true);
         else if (!m_selected.isEmpty()) loadConversation(true);
+        resumeAccountRemovalAfterView(id, generation, ok);
         // Combined calendar scope is independent of the selected mailbox. Its
         // initial preference load, calendar changes and polling own refreshes.
         // Hydrate the restored reader before account metadata and captures.
@@ -385,6 +405,7 @@ void MailBackend::setQuery(const QString &value) {
     m_query = value; m_pinnedRow.clear(); m_pinnedIndex = -1; ++m_listGeneration; remember("query", value); emit queryChanged(); m_searchTimer.start();
 }
 void MailBackend::setFolder(const QString &value) {
+    if (!accountNavigationAllowed()) return;
     if (value != "inbox" && value != "sent" && value != "all" && value != "drafts" && value != "trash") return;
     if (m_folder == value) return;
     m_queryActivity.start();
@@ -513,6 +534,7 @@ void MailBackend::selectConversation(const QString &id) {
     selectConversationInternal(id, false);
 }
 void MailBackend::selectConversationInternal(const QString &id, bool review, QVariantMap clickedRow, int clickedIndex) {
+    if (m_unsavedAccountBuffer) { m_afterAccountDisposition = [this, id, review, clickedRow, clickedIndex] { selectConversationInternal(id, review, clickedRow, clickedIndex); }; accountNavigationAllowed(); return; }
     if (id != m_selected || !m_activeDraft.isEmpty()) cancelPendingGoogleSend("Send cancelled by draft navigation.");
     // Capture the visible navigation intent before waiting for durable work.
     // A preceding read can move this row outside the filtered/page result while
@@ -638,6 +660,14 @@ void MailBackend::editDraft(const QString &body) {
 }
 void MailBackend::saveDraft() {
     m_draftTimer.stop();
+    if (m_unsavedAccountBuffer) { m_afterDraftSave = {}; finishGoogleSendSave(false); cancelShutdown(); emit draftChanged(); return; }
+    if (accountArchived()) {
+        finishGoogleSendSave(false);
+        if (m_draftDirty) { freezeRemovedAccountBuffer(); return; }
+        if (m_afterDraftSave) { auto callback = std::move(m_afterDraftSave); m_afterDraftSave = {}; callback(); }
+        if (m_shutdown) finishShutdown();
+        return;
+    }
     if (draftReadOnly()) {
         // Preview/open/close may share this continuation with local editors.
         // Imported source is never turned into an authored save implicitly.
@@ -684,8 +714,12 @@ void MailBackend::saveDraft() {
     }
     m_savingDraft = true;
     const auto account = m_account;
-    request("draft_save", account, params, [this, account, body, html, attachments, signature, headers](auto result, bool ok) {
+    const auto context = draftContext();
+    const auto saveGeneration = ++m_draftSaveGeneration;
+    request("draft_save", account, params, [this, account, context, saveGeneration, body, html, attachments, signature, headers](auto result, bool ok) {
+        if (saveGeneration != m_draftSaveGeneration || account != m_account || context != draftContext() || m_unsavedAccountBuffer) return;
         m_savingDraft = false;
+        if (accountRemoved(account) || (!ok && result["code"] == "account_removed")) { freezeRemovedAccountBuffer(); loadAccounts(); return; }
         if (!ok) {
             finishGoogleSendSave(false);
             m_draftConflict = result["code"].toString() == "stale_revision";
@@ -827,16 +861,20 @@ void MailBackend::remember(const QString &key, const QVariant &value) {
     if (m_account.isEmpty()) return;
     auto view = m_views.value(m_account).toMap();
     if (view.value(key) == value) return;
-    view[key] = value; m_views[m_account] = view; m_viewPending[m_account][key] = value;
+    view[key] = value; m_views[m_account] = view;
+    if (accountArchived() || m_unsavedAccountBuffer) return;
+    m_viewPending[m_account][key] = value;
     m_viewDirty.insert(m_account); m_viewTimer.start();
 }
 void MailBackend::saveView(const QString &account) {
+    if (accountRemoved(account)) { m_viewDirty.remove(account); m_viewPending.remove(account); return; }
     if (!m_connected || account.isEmpty() || m_viewSaving.contains(account) || !m_viewDirty.contains(account)) return;
     m_viewDirty.remove(account); m_viewSaving.insert(account);
     const auto submitted = m_viewPending.value(account);
     auto params = mutation(); params["view"] = QJsonObject::fromVariantMap(m_views.value(account).toMap()); params["expected_revision"] = m_viewRevisions.value(account);
     request("view_save", account, params, [this, account, submitted](auto result, bool ok) {
         m_viewSaving.remove(account);
+        if (accountRemoved(account)) { m_viewDirty.remove(account); m_viewPending.remove(account); if (m_shutdown) finishShutdown(); return; }
         if (ok) {
             m_viewRevisions[account] = result["revision"].toInteger();
             auto &pending = m_viewPending[account];
@@ -869,6 +907,7 @@ void MailBackend::cancelShutdown() {
 }
 void MailBackend::shutdown() {
     if (m_shutdown) return;
+    if (m_unsavedAccountBuffer) { m_afterAccountDisposition = [this] { shutdown(); }; accountNavigationAllowed(); return; }
     cancelPendingGoogleSend("Send cancelled before closing.");
     m_shutdown = true; m_resumeSearch = m_searchTimer.isActive(); m_searchTimer.stop(); m_viewTimer.stop();
     // The poll timer still enforces request timeouts while closing; its status

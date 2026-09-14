@@ -71,11 +71,19 @@ impl CalendarFixture {
         base: u64,
         evidence: Arc<Mutex<Evidence>>,
     ) -> Self {
+        Self::with_count(accounts, base, evidence, COUNT)
+    }
+    pub(super) fn with_count(
+        accounts: Arc<Vec<Account>>,
+        base: u64,
+        evidence: Arc<Mutex<Evidence>>,
+        count: usize,
+    ) -> Self {
         let states = accounts
             .iter()
             .map(|a| {
                 Mutex::new(State {
-                    events: (0..COUNT)
+                    events: (0..count)
                         .map(|i| (format!("ci{i:04}"), source(a.key, i, base)))
                         .collect(),
                     version: 1,

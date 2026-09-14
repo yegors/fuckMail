@@ -21,6 +21,10 @@ class GoogleOperation;
 class MailBackend final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QVariantList accounts READ accounts NOTIFY accountsChanged)
+    Q_PROPERTY(QVariantList allAccounts READ allAccounts NOTIFY accountsChanged)
+    Q_PROPERTY(bool accountArchived READ accountArchived NOTIFY accountLifecycleChanged)
+    Q_PROPERTY(QVariantMap accountLifecycle READ accountLifecycle NOTIFY accountLifecycleChanged)
+    Q_PROPERTY(bool unsavedAccountBuffer READ unsavedAccountBuffer NOTIFY accountLifecycleChanged)
     Q_PROPERTY(QAbstractItemModel *accountModel READ accountModel CONSTANT)
     Q_PROPERTY(QVariantList conversations READ conversations NOTIFY conversationsChanged)
     Q_PROPERTY(QAbstractItemModel *conversationModel READ conversationModel CONSTANT)
@@ -99,6 +103,11 @@ public:
     explicit MailBackend(QString profile, QString engine, QObject *parent = nullptr, bool fixtureClock = false, bool liveProfile = false);
     ~MailBackend() override;
     QVariantList accounts() const { return m_accounts; }
+    QVariantList allAccounts() const { return m_allAccounts; }
+    bool accountArchived() const;
+    bool accountRemoved(const QString &account) const;
+    QVariantMap accountLifecycle() const;
+    bool unsavedAccountBuffer() const { return m_unsavedAccountBuffer; }
     QAbstractItemModel *accountModel() { return &m_accountModel; }
     QVariantList conversations() const { return m_conversations; }
     QAbstractItemModel *conversationModel() { return &m_conversationModel; }
@@ -144,8 +153,8 @@ public:
     QString captureStatus() const { return m_captureStatus; }
     bool capturesMore() const { return m_captureNextOffset >= 0; }
     bool draftBusy() const { return m_savingDraft || m_capturing || m_discarding || m_resolvingDraft; }
-    bool draftReadOnly() const { return m_draft.value("read_only").toBool() || m_draft.value("origin").toString() == "google_snapshot"; }
-    bool draftLocked() const { return draftReadOnly() || m_capturing || m_discarding || m_resolvingDraft; }
+    bool draftReadOnly() const { return m_draft.value("origin").toString() == "google_snapshot" || (m_draft.value("read_only").toBool() && !m_draft.value("account_archived").toBool()); }
+    bool draftLocked() const { return accountArchived() || m_unsavedAccountBuffer || draftReadOnly() || m_capturing || m_discarding || m_resolvingDraft; }
     bool draftConflict() const { return m_draftConflict; }
     QVariantList calendarSources() const { return m_calendarSources; }
     QString calendarView() const { return m_calendarView; }
@@ -179,6 +188,14 @@ public:
     Q_INVOKABLE void connectGoogle(const QString &configFile, const QString &account = {}, bool reauthorize = false);
     Q_INVOKABLE void cancelGoogleAuth();
     Q_INVOKABLE void disconnectGoogle(const QString &account);
+    Q_INVOKABLE void previewAccountRemoval(const QString &account);
+    Q_INVOKABLE void confirmAccountRemoval(const QVariantMap &context);
+    Q_INVOKABLE void retryAccountCleanup(const QString &account);
+    Q_INVOKABLE void checkAccountRemoval(const QString &account, const QString &requestId);
+    Q_INVOKABLE void openAccountArchive(const QString &account);
+    Q_INVOKABLE void restoreGoogleAccount(const QString &configFile, const QString &account, qint64 expectedRevision, bool reauthorize = false);
+    Q_INVOKABLE bool accountNavigationAllowed();
+    Q_INVOKABLE void resolveUnsavedAccountBuffer(bool discard);
     Q_INVOKABLE bool accountCapability(const QString &account, const QString &name) const;
     Q_INVOKABLE QVariantMap googleSyncState(const QString &account) const;
     Q_INVOKABLE void startGoogleSync(const QString &account, const QVariantMap &limits);
@@ -273,6 +290,9 @@ public:
     Q_INVOKABLE void shutdown();
 signals:
     void accountsChanged();
+    void accountLifecycleChanged();
+    void accountRemovalReady(const QVariantMap &context);
+    void accountBufferDispositionRequired();
     void googleAuthChanged();
     void googleSyncChanged();
     void mailDeliveryChanged();
@@ -312,6 +332,8 @@ private:
     friend class GoogleDraftAuthoringControlsTest;
     friend class GuiGoogleDraftSnapshotSelfTest;
     friend class GoogleSendControlsTest;
+    friend class AccountLifecycleControlsTest;
+    friend class GuiAccountLifecycleSelfTest;
     using Callback = std::function<void(const QJsonObject &, bool)>;
     struct Pending {
         Callback callback; qint64 started;
@@ -336,6 +358,15 @@ private:
     void loadAccounts();
     void pollGoogleAuth();
     void setGoogleAuth(const QJsonObject &status);
+    void beginGoogleAuth(const QString &method, const QString &configFile, const QString &account, bool reauthorize, qint64 expectedRevision = -1);
+    QVariantMap lifecycleAccount(const QString &account) const;
+    bool archivedRequestAllowed(const QString &method) const;
+    bool blockArchivedRequest(const QString &method, const QString &account) const;
+    void reconcileAccountLifecycle();
+    void freezeRemovedAccountBuffer();
+    void clearAccountSelection();
+    void submitAccountRemoval(const QString &account, const QJsonObject &params);
+    void resumeAccountRemovalAfterView(const QString &account, int generation, bool restored);
     void refreshState(bool refreshList, bool refreshCalendar, bool automatic = false);
     void selectConversationInternal(const QString &id, bool review, QVariantMap clickedRow = {}, int clickedIndex = -1);
     void loadCategories();
@@ -462,6 +493,19 @@ private:
     QVariantMap m_senderCard;
     int m_senderCardGeneration = 0;
     QVariantList m_accounts, m_conversations, m_events, m_todayEvents, m_categories;
+    QVariantList m_allAccounts;
+    QVariantMap m_accountLifecycleUi;
+    QJsonObject m_accountRemovalConfirmation;
+    QJsonObject m_deferredAccountRemovalPreview;
+    int m_accountViewRestorationGeneration = -1;
+    QHash<QString, QJsonObject> m_accountRemovalRequests;
+    QSet<QString> m_accountRemovalBusy;
+    QHash<QString, qint64> m_accountLifecycleRevisions;
+    bool m_unsavedAccountBuffer = false;
+    QString m_unsavedAccountEmail;
+    QString m_archiveSelection;
+    quint64 m_draftSaveGeneration = 0;
+    std::function<void()> m_afterAccountDisposition;
     QVariantMap m_conversation, m_draft, m_views;
     QVariantMap m_preferences, m_preferencesPending, m_diagnostics, m_filters, m_querySummary;
     QStringList m_collapsedGroups;

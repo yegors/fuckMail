@@ -1,0 +1,737 @@
++ C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\bootstrap\Scripts\ctest.exe --test-dir build/dev -R ^gui- -V --output-on-failure --output-junit C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\verification\p2-01b\gui-dev-ctest-02.junit.xml
+Internal ctest changing into directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+UpdateCTestConfiguration  from :C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/DartConfiguration.tcl
+Parse Config file:C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/DartConfiguration.tcl
+UpdateCTestConfiguration  from :C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/DartConfiguration.tcl
+Parse Config file:C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/DartConfiguration.tcl
+Test project C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+Constructing a list of tests
+Done constructing a list of tests
+Updating test list for fixtures
+Added setup test rust-test-build required by fixture rust_test_binaries
+Added 1 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 1
+      Start  1: rust-test-build
+
+1: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.exe "test" "--workspace" "--locked" "--no-run" "--target-dir" "C:/Users/Yegor/Projects/Fuckaround/fuckMail/target"
+1: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail
+1: Test timeout computed to be: 900
+1:     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+1:   Executable unittests src\lib.rs (target\debug\deps\fm_assist-b1136fd18666e022.exe)
+1:   Executable unittests src\lib.rs (target\debug\deps\fm_calendar-a238c8090b1a78b1.exe)
+1:   Executable tests\calendar.rs (target\debug\deps\calendar-4a112ced0909e720.exe)
+1:   Executable tests\limited_access.rs (target\debug\deps\limited_access-6b5c5ec2c2945542.exe)
+1:   Executable unittests src\main.rs (target\debug\deps\fm-158d08b8ccf5184e.exe)
+1:   Executable tests\arguments.rs (target\debug\deps\arguments-a60ae72fe3b565b5.exe)
+1:   Executable unittests src\lib.rs (target\debug\deps\fm_core-c16a4300718408a8.exe)
+1:   Executable tests\coverage.rs (target\debug\deps\coverage-afac95ef97a8b3a6.exe)
+1:   Executable tests\mutations.rs (target\debug\deps\mutations-f648c4abe8f26b34.exe)
+1:   Executable tests\search.rs (target\debug\deps\search-e64d2f2a2861dd23.exe)
+1:   Executable unittests src\main.rs (target\debug\deps\fm_engine-3a2ea17661e1de87.exe)
+1:   Executable tests\sessions.rs (target\debug\deps\sessions-e8feea43ad5a8afa.exe)
+1:   Executable tests\verification_profile.rs (target\debug\deps\verification_profile-fe647fe5df0088b4.exe)
+1:   Executable unittests src\lib.rs (target\debug\deps\fm_google-2a69ce3ca8eb9fe0.exe)
+1:   Executable tests\feasibility.rs (target\debug\deps\feasibility-595524b5e1c7c724.exe)
+1:   Executable unittests src\lib.rs (target\debug\deps\fm_ipc-62aad3fa7bef9bf0.exe)
+1:   Executable unittests src\lib.rs (target\debug\deps\fm_mail-f8cdd7ddf24e3529.exe)
+1:   Executable tests\roundtrip.rs (target\debug\deps\roundtrip-4bca662b54205c7c.exe)
+ 1/18 Test  #1: rust-test-build .......................   Passed    0.39 sec
+test 3
+      Start  3: gui-smoke
+
+3: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\fuckmail-gui.exe "--smoke"
+3: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+3: Environment variables: 
+3:  QT_QPA_PLATFORM=offscreen
+3:  QT_QUICK_BACKEND=software
+3:  QT_FORCE_STDERR_LOGGING=1
+3:  QT_QPA_FONTDIR=C:\Windows/Fonts
+3: Test timeout computed to be: 45
+ 2/18 Test  #3: gui-smoke .............................   Passed    8.40 sec
+test 4
+      Start  4: gui-live-empty
+
+4: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\fuckmail-gui.exe "--self-test-live-empty"
+4: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+4: Environment variables: 
+4:  QT_QPA_PLATFORM=offscreen
+4:  QT_QUICK_BACKEND=software
+4:  QT_FORCE_STDERR_LOGGING=1
+4:  QT_QPA_FONTDIR=C:\Windows/Fonts
+4: Test timeout computed to be: 45
+4: [t=     0.000] Native empty live profile verified through preference save and repeated idle polls: no accounts, conversations or calendar events; fixture revision 0
+ 3/18 Test  #4: gui-live-empty ........................   Passed    6.54 sec
+test 5
+      Start  5: gui-integration
+
+5: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\fuckmail-gui.exe "--self-test"
+5: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+5: Environment variables: 
+5:  QT_QPA_PLATFORM=offscreen
+5:  QT_QUICK_BACKEND=software
+5:  QT_FORCE_STDERR_LOGGING=1
+5:  QT_QPA_FONTDIR=C:\Windows/Fonts
+5:  FM_GUI_TEST_TRACE=1
+5: Test timeout computed to be: 180
+5: [t=     0.000] GUI engine launch attempt 1
+5: [t=     0.084] GUI self-test stage 0
+5: [t=     1.081] GUI engine launch attempt 2
+5: [t=     5.301] GUI self-test stage 20
+5: [t=     5.999] GUI self-test stage 21
+5: [t=     6.528] GUI self-test stage 1
+5: [t=     6.699] GUI self-test stage 2
+5: [t=     6.737] GUI self-test stage 27
+5: [t=     6.990] GUI self-test stage 22
+5: [t=     7.084] GUI self-test stage 23
+5: [t=     7.218] GUI self-test stage 24
+5: [t=     7.704] GUI self-test stage 25
+5: [t=     7.830] GUI self-test stage 26
+5: [t=     8.588] GUI self-test stage 3
+5: [t=     8.738] GUI self-test stage 4
+5: [t=     8.824] GUI self-test stage 5
+5: [t=     9.562] GUI self-test stage 6
+5: [t=     9.957] GUI self-test stage 7
+5: [t=    11.324] GUI self-test stage 8
+5: [t=    12.135] GUI self-test stage 9
+5: [t=    13.184] GUI self-test stage 30
+5: [t=    13.363] GUI self-test stage 31
+5: [t=    13.806] GUI self-test stage 32
+5: [t=    13.899] GUI self-test stage 33
+5: [t=    13.993] GUI self-test stage 34
+5: [t=    14.087] GUI self-test stage 35
+5: [t=    14.180] GUI self-test stage 36
+5: [t=    14.303] GUI self-test stage 37
+5: [t=    14.392] GUI self-test stage 38
+5: [t=    14.495] GUI self-test stage 39
+5: [t=    14.613] GUI self-test stage 40
+5: [t=    14.706] GUI self-test stage 41
+5: [t=    14.804] GUI self-test stage 42
+5: [t=    15.002] GUI self-test stage 48
+5: [t=    15.147] GUI self-test stage 90
+5: [t=    15.215] GUI self-test stage 91
+5: [t=    15.480] GUI self-test stage 92
+5: [t=    15.772] GUI self-test stage 93
+5: [t=    15.945] GUI self-test stage 49
+5: [t=    16.085] GUI self-test stage 94
+5: [t=    16.136] Native Sent/local-capture/Inspect passed: original conversation, operation identity, MIME bytes and non-delivery status verified by CLI.
+5: [t=    16.266] GUI self-test stage 95
+5: [t=    16.380] GUI self-test stage 96
+5: [t=    16.522] GUI self-test stage 97
+5: [t=    16.663] GUI self-test stage 98
+5: [t=    16.865] GUI self-test stage 99
+5: [t=    16.942] GUI self-test stage 100
+5: [t=    17.034] GUI self-test stage 101
+5: [t=    17.127] GUI self-test stage 102
+5: [t=    17.237] GUI self-test stage 103
+5: [t=    17.330] GUI self-test stage 104
+5: [t=    17.468] GUI self-test stage 105
+5: [t=    17.552] GUI self-test stage 106
+5: [t=    17.804] GUI self-test stage 107
+5: [t=    17.936] GUI self-test stage 108
+5: [t=    18.078] GUI self-test stage 109
+5: [t=    18.219] GUI self-test stage 110
+5: [t=    18.411] GUI self-test stage 111
+5: [t=    18.574] GUI self-test stage 112
+5: [t=    18.575] Native Discard confirmation passed: opening/Cancel preserved the exact draft; confirmation cleared only its authored fields, preserving source messages, another draft and capture history.
+5: [t=    18.666] GUI self-test stage 50
+5: [t=    18.851] GUI self-test stage 51
+5: [t=    18.978] GUI self-test stage 52
+5: [t=    19.071] GUI self-test stage 53
+5: [t=    19.157] GUI self-test stage 54
+5: [t=    19.269] GUI self-test stage 55
+5: [t=    19.389] GUI self-test stage 56
+5: [t=    19.520] GUI self-test stage 57
+5: [t=    19.613] GUI self-test stage 58
+5: [t=    20.297] GUI self-test stage 59
+5: [t=    20.642] GUI self-test stage 70
+5: [t=    20.749] GUI self-test stage 71
+5: [t=    20.843] GUI self-test stage 72
+5: [t=    20.936] GUI self-test stage 73
+5: [t=    21.107] GUI self-test stage 74
+5: [t=    21.973] GUI engine launch attempt 1
+5: [t=    22.070] GUI self-test stage 75
+5: [t=    22.163] GUI self-test stage 76
+5: [t=    22.258] GUI self-test stage 77
+5: [t=    22.382] GUI self-test stage 78
+5: [t=    22.505] GUI self-test stage 79
+5: [t=    22.598] GUI self-test stage 80
+5: [t=    22.691] Native Settings stage 0
+5: [t=    23.001] Native Settings stage 1
+5: [t=    23.645] Native Settings stage 2
+5: [t=    24.479] Settings programmatic viewport setup: list= QVariant(double, 240) reader= QVariant(double, 160) editorFocus= true active= "replyComposer" stored list/reader= QVariant(double, 240) QVariant(double, 160)
+5: [t=    24.615] Native Settings stage 3
+5: [t=    24.709] Native Settings stage 4
+5: [t=    24.803] Native Settings stage 5
+5: [t=    24.928] Native Settings stage 6
+5: [t=    25.098] Native Settings stage 7
+5: [t=    25.488] Native Settings stage 8
+5: [t=    25.695] Native Settings stage 9
+5: [t=    25.978] Native Settings stage 10
+5: [t=    26.170] Native Settings stage 11
+5: [t=    26.561] Native Settings stage 12
+5: [t=    26.936] Native Settings stage 13
+5: [t=    27.005] Native Settings stage 14
+5: [t=    28.674] Native Settings stage 15
+5: [t=    29.608] Native Settings stage 16
+5: [t=    30.147] Native Settings stage 17
+5: [t=    30.347] Native Settings stage 18
+5: [t=    31.490] Native Settings stage 19
+5: [t=    31.747] Native Settings stage 20
+5: [t=    33.568] Native Settings stage 21
+5: [t=    34.042] Native Settings stage 22
+5: [t=    34.164] Native Settings stage 30
+5: [t=    34.258] Native Settings stage 31
+5: [t=    34.800] Native Settings stage 32
+5: [t=    36.893] Native Settings stage 33
+5: [t=    37.933] Native Settings stage 34
+5: [t=    39.130] Native Settings stage 35
+5: [t=    39.747] Native Settings stage 36
+5: [t=    39.886] Native Settings stage 37
+5: [t=    39.980] Native Settings stage 38
+5: [t=    40.074] Native Settings stage 39
+5: [t=    40.199] Native Settings stage 23
+5: [t=    40.328] Native Settings stage 24
+5: [t=    40.482] Native Settings passed: all three palettes and text sizes, saved startup/placement/duration, validation retention, account metadata, unchanged authored draft, independent calendar preferences and Mail viewport/focus restoration (programmatic viewport setup; physical wheel input unverified).
+5: [t=    40.571] GUI self-test stage 81
+5: [t=    40.664] Native mail search stage 0 case 0
+5: [t=    40.978] Native mail search stage 80 case 0
+5: [t=    41.054] Native mail search stage 81 case 0
+5: [t=    41.318] Native mail search stage 82 case 0
+5: [t=    41.319] Native request ordering passed: real explicit queries preceded unsent automatic reads, retained manual-read/write barriers and delivered polling after four bypasses; stored preferences unchanged.
+5: [t=    41.411] Native mail search stage 90 case 0
+5: [t=    41.622] Native mail search stage 91 case 0
+5: [t=    41.927] Native mail search stage 92 case 0
+5: [t=    42.043] Native mail search stage 93 case 0
+5: [t=    42.300] Native mail delegate retained through actual read-on-open: identical item, current row fields and nonzero viewport 240
+5: [t=    42.420] Native mail search stage 94 case 0
+5: [t=    42.587] Native mail search stage 95 case 0
+5: [t=    42.705] Native mail search stage 96 case 0
+5: [t=    43.043] Native mail search stage 97 case 0
+5: [t=    43.043] Native deferred reader click passed: a real pending flag receipt preserved the clicked row through a real filtered-page exclusion; exact reader body, account, review state and serial write barrier retained.
+5: [t=    43.329] Native mail search stage 98 case 0
+5: [t=    43.440] Native mail search stage 99 case 0
+5: [t=    43.448] DelegateModel::cancel: index out range 22 0
+5: [t=    43.531] Native mail search stage 100 case 0
+5: [t=    43.899] Native mail search stage 99 case 0
+5: [t=    43.975] Native mail search stage 100 case 0
+5: [t=    44.410] Native mail search stage 99 case 0
+5: [t=    44.712] Native mail search stage 100 case 0
+5: [t=    44.827] Native mail search stage 99 case 0
+5: [t=    44.832] DelegateModel::cancel: index out range 16 0
+5: [t=    44.910] Native mail search stage 100 case 0
+5: [t=    45.296] Native mail search stage 99 case 0
+5: [t=    45.380] Native mail search stage 100 case 0
+5: [t=    45.844] Native mail search stage 99 case 0
+5: [t=    45.945] Native mail search stage 100 case 0
+5: [t=    46.377] Native mail search stage 101 case 0
+5: [t=    46.377] Native compact account keys passed: three Tab and three Shift+Tab events at 1000x650 retained the complete selected tab and matching account reader; original window size and account restored.
+5: [t=    46.491] Native mail search stage 1 case 0
+5: [t=    46.617] DelegateModel::cancel: index out range 23 1
+5: [t=    46.632] Native mail search stage 2 case 0
+5: [t=    46.744] Native mail search stage 3 case 0
+5: [t=    47.256] Native mail search stage 1 case 1
+5: [t=    47.356] Native mail search stage 2 case 1
+5: [t=    47.469] Native mail search stage 3 case 1
+5: [t=    47.914] Native mail search stage 1 case 2
+5: [t=    48.006] Native mail search stage 2 case 2
+5: [t=    48.114] Native mail search stage 3 case 2
+5: [t=    48.482] Native mail search stage 1 case 3
+5: [t=    48.571] Native mail search stage 2 case 3
+5: [t=    49.081] Native mail search stage 3 case 3
+5: [t=    49.508] Native mail search stage 4 case 4
+5: [t=    49.818] Native mail search stage 10 case 4
+5: [t=    49.944] Native mail search stage 11 case 4
+5: [t=    49.986] Native mail search stage 12 case 4
+5: [t=    50.083] DelegateModel::cancel: index out range 23 1
+5: [t=    50.098] Native mail search stage 13 case 4
+5: [t=    50.163] Native mail search stage 14 case 4
+5: [t=    50.264] Native mail search stage 15 case 4
+5: [t=    50.357] Native mail search stage 16 case 4
+5: [t=    50.450] Native mail search stage 17 case 4
+5: [t=    50.635] Native mail search stage 18 case 4
+5: [t=    50.934] Native mail search stage 19 case 4
+5: [t=    51.022] Native mail search stage 20 case 4
+5: [t=    51.348] DelegateModel::cancel: index out range 24 1
+5: [t=    51.519] Native mail search stage 21 case 4
+5: [t=    52.115] Native mail filters passed valid/date/UTF-8 error/correction/clear controls. Real response "535" from generation 83 was held across a native account switch; forty superseding real queries were admitted; obsolete queued query "536" never reached transport and final query "575" returned the expected member.
+5: [t=    52.132] Native mail search stage 22 case 4
+5: [t=    52.240] Native mail search stage 23 case 4
+5: [t=    52.980] Native mail search stage 24 case 4
+5: [t=    53.065] Native mail search stage 25 case 4
+5: [t=    53.205] Native mail search stage 26 case 4
+5: [t=    53.664] Native mail search stage 27 case 4
+5: [t=    53.758] Native mail search stage 28 case 4
+5: [t=    53.947] Native mail search stage 29 case 4
+5: [t=    54.068] Native mail search stage 30 case 4
+5: [t=    54.365] Native mail search stage 31 case 4
+5: [t=    54.645] Native mail search stage 32 case 4
+5: [t=    54.846] Native mail search stage 33 case 4
+5: [t=    54.969] Native mail search stage 34 case 4
+5: [t=    55.209] Native mail search stage 35 case 4
+5: [t=    55.434] Native mail search stage 36 case 4
+5: [t=    55.558] Native mail search stage 37 case 4
+5: [t=    55.681] Native mail search stage 38 case 4
+5: [t=    55.804] Native mail search stage 39 case 4
+5: [t=    55.927] Native mail search stage 40 case 4
+5: [t=    56.485] Native mail search stage 41 case 4
+5: [t=    57.709] Native mail search stage 42 case 4
+5: [t=    58.659] Native snapshot arrival passed: real Done receipt targets the two original members; provider arrival remains unread/unstarred; exact GUI/CLI counts, selected reader and Unicode draft retained. Counts: {"conversation_count":111,"done_conversation_count":82,"held_conversation_count":10,"message_count":146,"starred_count":25,"unread_conversation_count":20,"unread_count":20}
+5: [t=    58.660] Idle native polling passed: separate CLI hold/unhold converged in the actual list and reader without GUI query, refresh or navigation; original counts, unread arrival and authored draft restored.
+5: [t=    58.660] Native mail delegate retained through independent CLI hold/unhold: identical item, current row fields and unchanged viewport.
+5: [t=    58.660] Native account tab retained across two actual account payload changes: unchanged item/geometry, native press survived refresh, original-center release opened the exact mailbox and normal return retained the origin draft.
+5: [t=    58.945] Native mail search stage 5 case 4
+5: [t=    59.524] Native mail search stage 6 case 4
+5: [t=    59.932] Native mail search stage 60 case 4
+5: [t=    60.125] Native mail search stage 61 case 4
+5: [t=    60.196] Native mail search stage 62 case 4
+5: [t=    60.344] Native mail search stage 63 case 4
+5: [t=    60.739] Native mail search stage 64 case 4
+5: [t=    61.180] Native mail search stage 65 case 4
+5: [t=    61.410] Native mail search stage 66 case 4
+5: [t=    61.506] Native mail search stage 67 case 4
+5: [t=    61.599] Native mail search stage 68 case 4
+5: [t=    61.700] Native mail search stage 69 case 4
+5: [t=    61.815] Native mail search stage 70 case 4
+5: [t=    61.908] Native mail search stage 71 case 4
+5: [t=    62.112] Native mail search stage 72 case 4
+5: [t=    62.318] Native mail search stage 73 case 4
+5: [t=    62.502] Native mail search stage 74 case 4
+5: [t=    62.595] Native mail search stage 75 case 4
+5: [t=    62.795] Native mail search stage 76 case 4
+5: [t=    62.881] Native mail search stage 77 case 4
+5: [t=    63.090] Native mail search stage 78 case 4
+5: [t=    63.476] Native mail search stage 79 case 4
+5: [t=    63.476] Native Update2 mail passed: complete CLI group counts, collapse retention, source-backed People/Automated toggles, account-scoped sender hover without review, explicit Open, exact Filter and durable Write recipient.
+5: [t=    63.611] Native mail search stage 5 case 4
+5: [t=    64.179] Native mail search stage 6 case 4
+5: [t=    64.269] GUI self-test stage 82
+5: [t=    64.363] Native composition stage 0 mode "new"
+5: [t=    64.663] Native composition stage 1 mode "new"
+5: [t=    64.788] Native composition stage 2 mode "new"
+5: [t=    65.090] Native composition stage 42 mode "new"
+5: [t=    65.228] Native composition stage 43 mode "new"
+5: [t=    65.307] Native composition stage 44 mode "new"
+5: [t=    65.425] Native composition stage 45 mode "new"
+5: [t=    65.896] Incomplete native recipient retained exact input and saved revision; correcting the same field created its chip.
+5: [t=    65.960] Native composition stage 3 mode "new"
+5: [t=    66.053] Native composition stage 4 mode "new"
+5: [t=    66.146] Native composition stage 5 mode "new"
+5: [t=    66.332] Native composition stage 6 mode "new"
+5: [t=    66.893] Native composition stage 7 mode "new"
+5: [t=    66.987] Native composition stage 8 mode "new"
+5: [t=    67.079] Native composition stage 40 mode "new"
+5: [t=    67.173] Native composition stage 41 mode "new"
+5: [t=    67.267] Native composition stage 9 mode "new"
+5: [t=    67.353] DelegateModel::cancel: index out range 24 4
+5: [t=    67.422] Native composition stage 10 mode "new"
+5: [t=    67.473] Native composition stage 11 mode "new"
+5: [t=    67.652] Native composition stage 12 mode "new"
+5: [t=    68.351] Native composition stage 13 mode "new"
+5: [t=    68.623] Native composition stage 14 mode "new"
+5: [t=    68.769] Native composition stage 15 mode "new"
+5: [t=    74.239] Native composition stage 16 mode "new"
+5: [t=    74.488] Native composition stage 20 mode "reply_all"
+5: [t=    74.614] Native composition stage 21 mode "reply_all"
+5: [t=    74.822] Native composition stage 6 mode "reply_all"
+5: [t=    75.243] Native composition stage 7 mode "reply_all"
+5: [t=    75.343] Native composition stage 8 mode "reply_all"
+5: [t=    75.430] Native composition stage 40 mode "reply_all"
+5: [t=    75.517] Native composition stage 41 mode "reply_all"
+5: [t=    75.614] Native composition stage 22 mode "reply_all"
+5: [t=    75.708] Native composition stage 20 mode "forward"
+5: [t=    75.804] Native composition stage 21 mode "forward"
+5: [t=    75.938] Native composition stage 6 mode "forward"
+5: [t=    76.467] Native composition stage 7 mode "forward"
+5: [t=    76.560] Native composition stage 8 mode "forward"
+5: [t=    76.651] Native composition stage 40 mode "forward"
+5: [t=    76.745] Native composition stage 41 mode "forward"
+5: [t=    76.837] Native composition stage 22 mode "forward"
+5: [t=    76.928] Native composition stage 20 mode "reply"
+5: [t=    77.060] Native composition stage 21 mode "reply"
+5: [t=    77.266] Native composition stage 6 mode "reply"
+5: [t=    77.686] Native composition stage 7 mode "reply"
+5: [t=    77.784] Native composition stage 8 mode "reply"
+5: [t=    77.872] Native composition stage 40 mode "reply"
+5: [t=    77.965] Native composition stage 41 mode "reply"
+5: [t=    78.056] Native composition stage 22 mode "reply"
+5: [t=    78.149] Native composition stage 50 mode "source-conflict"
+5: [t=    78.262] Native composition stage 51 mode "source-conflict"
+5: [t=    79.357] Native composition stage 52 mode "source-conflict"
+5: [t=    79.559] Native composition stage 53 mode "source-conflict"
+5: [t=    79.781] Native composition stage 54 mode "source-conflict"
+5: [t=    79.934] Native composition stage 55 mode "source-conflict"
+5: [t=    80.023] Native composition stage 56 mode "source-conflict"
+5: [t=    80.120] Native composition stage 57 mode "source-conflict"
+5: [t=    80.205] Native composition stage 58 mode "source-conflict"
+5: [t=    80.300] Native composition stage 59 mode "source-conflict"
+5: [t=    80.300] Native frozen-source conflict passed: virtual member A/revision 0, independent first save of B/revision 1, stale authoring, actual Save my version confirmation refused, all local fields and both source/revision identities unchanged; explicit Reload cleanup selected B.
+5: [t=    80.469] Native composition stage 23 mode "source-conflict"
+5: [t=    80.649] Native composition stage 24 mode "source-conflict"
+5: [t=    81.271] Native composition passed: new/reply/reply-all/forward, recipient chips/subject/rich text, Drafts/account restoration, fresh GUI auto-restoration, four exact local MIME captures and unchanged received flags.
+5: [t=    81.432] GUI self-test stage 43
+5: [t=    82.385] Native calendar form stage 0
+5: [t=    82.460] Native calendar form stage 0
+5: [t=    82.919] Native calendar form stage 0
+5: [t=    83.301] Native calendar form stage 1
+5: [t=    83.389] Native calendar form stage 1
+5: [t=    83.508] Native calendar form stage 2
+5: [t=    83.813] Native calendar form stage 2
+5: [t=    84.076] Native calendar form stage 3
+5: [t=    84.352] Native calendar form stage 3
+5: [t=    84.756] Native calendar form stage 3
+5: [t=    85.172] Native calendar form stage 4
+5: [t=    85.459] Native calendar form stage 4
+5: [t=    85.760] Native calendar form stage 4
+5: [t=    85.821] Native calendar form stage 5
+5: [t=    86.088] Native calendar form stage 5
+5: [t=    86.102] Native calendar form stage 5
+5: [t=    86.423] Native calendar form stage 50
+5: [t=    86.701] Native calendar form stage 50
+5: [t=    86.767] Native calendar form stage 51
+5: [t=    87.158] Native calendar form stage 51
+5: [t=    87.566] Native calendar form stage 51
+5: [t=    87.848] Native calendar form stage 51
+5: [t=    88.182] Native calendar form stage 52
+5: [t=    88.455] Native calendar form stage 6
+5: [t=    88.710] Native calendar form stage 6
+5: [t=    88.970] Native calendar form stage 6
+5: [t=    89.241] Native calendar form stage 6
+5: [t=    89.535] Native calendar form stage 6
+5: [t=    89.586] Native calendar form stage 6
+5: [t=    89.978] Native calendar form stage 6
+5: [t=    90.404] Native calendar form stage 7
+5: [t=    90.435] Native calendar form stage 8
+5: [t=    90.699] Native calendar form stage 8
+5: [t=    90.970] Native calendar form stage 8
+5: [t=    91.001] Native calendar form stage 8
+5: [t=    91.258] Native calendar form stage 8
+5: [t=    91.278] Native calendar form stage 8
+5: [t=    91.685] Native calendar form stage 8
+5: [t=    92.617] Native calendar form stage 9
+5: [t=    92.676] Native calendar form stage 9
+5: [t=    93.190] Native calendar form stage 9
+5: [t=    94.083] Native calendar form stage 9
+5: [t=    94.713] Native calendar form stage 9
+5: [t=    95.408] Native calendar form stage 9
+5: [t=    95.487] Native calendar form stage 9
+5: [t=    95.989] Native calendar form stage 9
+5: [t=    96.704] Native calendar form stage 9
+5: [t=    97.174] Native calendar form stage 9
+5: [t=    97.298] Native calendar form stage 10
+5: [t=    98.402] Native calendar form stage 11
+5: [t=    98.685] Native calendar form stage 11
+5: [t=    99.034] Native calendar form stage 11
+5: [t=    99.049] Native calendar form stage 11
+5: [t=    99.151] Native calendar form stage 11
+5: [t=    99.606] Native calendar form stage 12
+5: [t=    99.740] Native calendar form stage 12
+5: [t=    99.864] Native calendar form stage 12
+5: [t=   100.268] Native calendar form stage 13
+5: [t=   100.564] Native calendar form stage 13
+5: [t=   100.923] Native calendar form stage 14
+5: [t=   101.055] Native calendar form stage 14
+5: [t=   101.195] Native calendar form stage 14
+5: [t=   101.601] Native calendar form stage 15
+5: [t=   101.896] Native calendar form stage 15
+5: [t=   102.019] Native calendar form stage 17
+5: [t=   102.070] Native calendar form stage 17
+5: [t=   102.150] Native calendar form stage 17
+5: [t=   102.245] Native calendar form stage 17
+5: [t=   102.331] Native calendar form stage 18
+5: [t=   102.431] Native calendar form stage 18
+5: [t=   102.518] Native calendar form stage 18
+5: [t=   102.614] Native calendar form stage 19
+5: [t=   103.672] Native calendar form stage 16
+5: [t=   104.137] Native calendar form stage 16
+5: [t=   104.248] Native calendar form stage 16
+5: [t=   104.519] Native calendar form stage 16
+5: [t=   104.579] Native calendar form stage 16
+5: [t=   104.579] Native timeline passed: Previous/Next/Today preserve the independent Calendar date; Header details/editor retain exact permitted source below the strip; 45-minute create default leaves existing edit duration intact; starting state restored.
+5: [t=   104.676] GUI self-test stage 46
+5: [t=   104.799] GUI self-test stage 47
+5: [t=   104.920] GUI self-test stage 60
+5: [t=   105.046] GUI self-test stage 61
+5: [t=   105.246] GUI self-test stage 62
+5: [t=   105.587] GUI self-test stage 63
+5: [t=   106.470] GUI self-test passed: native mail/reply/calendar controls, independent CLI readback, retained validation errors, and stale-close recovery with continued polling and merged view persistence.
+5: [t=   112.246] GUI process restart preserved exact edited calendar identity, ETag, all authored fields and accepted self RSVP; visible GUI projection and independent CLI agree without duplicates.
+5: [t=   112.366] GUI process restart preserved native Settings preferences and account metadata without changing the saved draft snapshot.
+5: [t=   112.600] Independent final CLI verified all four native composition drafts, exact retained MIME hashes/content, one-attempt capture identities and unchanged source flags after process restart.
+5: [t=   134.994] Four fresh GUI processes verified Mail, Calendar and both last-workspace choices; appearance persisted and shutdown saved the resulting workspace.
+5: [t=   134.994] GUI process restart passed: exact authored fields and capture journal identities/attempt count preserved.
+5: [t=   135.746] "There are still \"2\" items in the process of being created at engine destruction."
+ 4/18 Test  #5: gui-integration .......................   Passed  138.25 sec
+test 6
+      Start  6: gui-attachments
+
+6: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\fuckmail-gui.exe "--self-test" "--self-test-attachments"
+6: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev
+6: Environment variables: 
+6:  QT_QPA_PLATFORM=offscreen
+6:  QT_QUICK_BACKEND=software
+6:  QT_FORCE_STDERR_LOGGING=1
+6:  QT_QPA_FONTDIR=C:\Windows/Fonts
+6:  FM_GUI_TEST_TRACE=1
+6: Test timeout computed to be: 90
+6: [t=     0.000] GUI engine launch attempt 1
+6: [t=     0.091] Native composition stage 0 mode "new"
+6: [t=     1.095] GUI engine launch attempt 2
+6: [t=     5.340] Native composition stage 70 mode "new"
+6: [t=     5.439] Native composition stage 71 mode "new"
+6: [t=     5.696] Native composition stage 72 mode "new"
+6: [t=     6.097] Native composition stage 73 mode "new"
+6: [t=     6.213] Native composition stage 74 mode "new"
+6: [t=     6.283] Native composition stage 75 mode "new"
+6: [t=     6.375] Native composition stage 93 mode "new"
+6: [t=     6.467] Native composition stage 76 mode "new"
+6: [t=     6.668] Native composition stage 77 mode "new"
+6: [t=     6.741] Native composition stage 78 mode "new"
+6: [t=     6.854] Native composition stage 79 mode "new"
+6: [t=     6.855] Actual cached draft projection revision 4 delivered after import/replay/save revision 6 left the clean native draft unchanged.
+6: [t=     7.036] Native composition stage 80 mode "new"
+6: [t=     7.149] Native composition stage 81 mode "new"
+6: [t=     7.226] DelegateModel::cancel: index out range 16 0
+6: [t=     7.314] Native composition stage 82 mode "new"
+6: [t=     8.201] Native composition stage 83 mode "new"
+6: [t=     8.337] Native composition stage 84 mode "new"
+6: [t=     8.805] Native composition stage 85 mode "new"
+6: [t=     8.898] Native composition stage 86 mode "new"
+6: [t=     9.009] Native composition stage 87 mode "new"
+6: [t=     9.431] Native composition stage 95 mode "new"
+6: [t=     9.572] Native composition stage 96 mode "new"
+6: [t=     9.748] Native composition stage 97 mode "new"
+6: [t=     9.933] Native composition stage 98 mode "new"
+6: [t=    10.058] Native composition stage 99 mode "new"
+6: [t=    10.120] Native composition stage 88 mode "new"
+6: [t=    10.683] Native composition stage 89 mode "new"
+6: [t=    10.774] Native composition stage 90 mode "new"
+6: [t=    10.866] Native composition stage 91 mode "new"
+6: [t=    10.960] Native composition stage 92 mode "new"
+6: [t=    11.182] Native composition stage 100 mode "new"
+6: [t=    11.828] Native composition stage 101 mode "new"
+6: [t=    12.014] Native composition stage 102 mode "new"
+6: [t=    12.237] Native composition stage 103 mode "new"
+6: [t=    12.375] Native composition stage 104 mode "new"
+6: [t=    12.463] Native composition stage 23 mode "new"
+6: [t=    12.571] Native composition stage 24 mode "new"
+6: [t=    12.746] Native attachment handlers passed: flush, chips/removal, cached queries during held auxiliary response, provider-pause cancellation isolation, late cached-read/text/account retention, exact retry after source deletion, discarded-reply revival and synthetic capture. Physical OS picker and live provider pause unverified.
+6: [t=    13.590] Independent CLI after actual GUI/engine close verified three draft identities including the reopened legacy reply, exact binary bytes, one synthetic capture receipt and authored text. No real send/upload or physical picker claim.
+ 5/18 Test  #6: gui-attachments .......................   Passed   16.44 sec
+test 7
+      Start  7: gui-startup-recovery
+
+7: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\.tools\cargo\bin\cargo.exe "test" "-p" "fm-engine" "--test" "sessions" "--locked" "--target-dir" "C:/Users/Yegor/Projects/Fuckaround/fuckMail/target" "gui_startup_recovers_after_writer_closes" "--" "--ignored" "--exact" "--nocapture"
+7: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail
+7: Environment variables: 
+7:  QT_QPA_PLATFORM=offscreen
+7:  QT_QUICK_BACKEND=software
+7:  QT_FORCE_STDERR_LOGGING=1
+7:  QT_QPA_FONTDIR=C:\Windows/Fonts
+7:  FM_GUI_TEST_EXECUTABLE=C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/fuckmail-gui.exe
+7: Test timeout computed to be: 90
+7:     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.30s
+7:      Running tests\sessions.rs (target\debug\deps\sessions-e8feea43ad5a8afa.exe)
+7: 
+7: running 1 test
+7: [t=     0.000] GUI engine launch attempt 1
+7: [t=     1.101] GUI engine launch attempt 2
+7: test gui_startup_recovers_after_writer_closes ... ok
+7: 
+7: test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 8.74s
+7: 
+ 6/18 Test  #7: gui-startup-recovery ..................   Passed    9.13 sec
+test 8
+      Start  8: gui-ipc-trust
+
+8: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\gui-ipc-trust-test.exe
+8: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+8: Test timeout computed to be: 10
+ 7/18 Test  #8: gui-ipc-trust .........................   Passed    0.04 sec
+test 9
+      Start  9: gui-composer-probe
+
+9: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\gui-composer-probe.exe
+9: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+9: Environment variables: 
+9:  QT_QPA_PLATFORM=offscreen
+9: Test timeout computed to be: 10
+ 8/18 Test  #9: gui-composer-probe ....................   Passed    0.07 sec
+test 10
+      Start 10: gui-reply-document
+
+10: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\gui-reply-document-test.exe
+10: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+10: Environment variables: 
+10:  QT_QPA_PLATFORM=offscreen
+10: Test timeout computed to be: 10
+ 9/18 Test #10: gui-reply-document ....................   Passed    0.19 sec
+test 11
+      Start 11: gui-calendar-layout
+
+11: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\gui-calendar-layout-test.exe
+11: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+11: Test timeout computed to be: 10
+10/18 Test #11: gui-calendar-layout ...................   Passed    0.03 sec
+test 12
+      Start 12: gui-conversation-list-model
+
+12: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\gui-conversation-list-model-test.exe
+12: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+12: Test timeout computed to be: 15
+11/18 Test #12: gui-conversation-list-model ...........   Passed    0.04 sec
+test 13
+      Start 13: gui-calendar-controls
+
+13: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\gui-calendar-controls-test.exe
+13: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+13: Environment variables: 
+13:  QT_QPA_PLATFORM=offscreen
+13:  QT_QUICK_BACKEND=software
+13:  QT_FORCE_STDERR_LOGGING=1
+13:  QT_QPA_FONTDIR=C:\Windows/Fonts
+13: Test timeout computed to be: 30
+13: [t=     0.000] Calendar and label controls passed: partial live patches, frozen scope, recovery, sync/capability gates, delete placement, RSVP projection, cached-only labels, offline local binding, explicit remap and synthetic compatibility.
+12/18 Test #13: gui-calendar-controls .................   Passed    3.80 sec
+test 14
+      Start 14: gui-google-operation
+
+14: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\gui-google-operation-test.exe
+14: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+14: Environment variables: 
+14:  QT_FORCE_STDERR_LOGGING=1
+14: Test timeout computed to be: 30
+14: [t=     0.000] Google operation IPC checks passed: private discovery/peer identity, independent cached query, cancellation, response bounds/order/types, one-shot callbacks and callback destruction. Synthetic local IPC only; no app latency or provider claim.
+13/18 Test #14: gui-google-operation ..................   Passed    0.30 sec
+test 15
+      Start 15: gui-google-draft-controls
+
+15: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\gui-google-draft-controls-test.exe
+15: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+15: Environment variables: 
+15:  QT_QPA_PLATFORM=offscreen
+15:  QT_QUICK_BACKEND=software
+15:  QT_FORCE_STDERR_LOGGING=1
+15:  QT_QPA_FONTDIR=C:\Windows/Fonts
+15: Test timeout computed to be: 30
+15: [t=     0.000] Native Google draft controls passed: actual QML recovery/confirmation, private held IPC, projection revision floors, authored-text/account isolation, historical receipt isolation, exact captured unknown-update recovery, unknown/cancel readback and visible byte mismatch. Synthetic IPC only; no provider or performance claim.
+14/18 Test #15: gui-google-draft-controls .............   Passed    1.92 sec
+test 16
+      Start 16: gui-google-send-controls
+
+16: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\gui-google-send-controls-test.exe
+16: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+16: Environment variables: 
+16:  QT_QPA_PLATFORM=offscreen
+16:  QT_QUICK_BACKEND=software
+16:  QT_FORCE_STDERR_LOGGING=1
+16:  QT_QPA_FONTDIR=C:\Windows/Fonts
+16: Test timeout computed to be: 30
+16: [t=     0.000] Prepared recovery geometry default checkGoogleSend QRectF(20,594 100x32) available QRectF(20,0 402x704)
+16: [t=     0.000] Prepared recovery geometry default resumeGoogleSend QRectF(126,594 155x32) available QRectF(20,0 402x704)
+16: [t=     0.000] Prepared recovery geometry default abandonGoogleSend QRectF(20,632 163x32) available QRectF(20,0 402x704)
+16: [t=     0.056] Prepared recovery geometry large checkGoogleSend QRectF(20,599 106x32) available QRectF(20,0 402x711)
+16: [t=     0.056] Prepared recovery geometry large resumeGoogleSend QRectF(132,599 165x32) available QRectF(20,0 402x711)
+16: [t=     0.056] Prepared recovery geometry large abandonGoogleSend QRectF(20,637 174x32) available QRectF(20,0 402x711)
+16: [t=     1.254] Native Send controls passed: actual QML handlers, private held save/auxiliary IPC, recipient validation, cancelled save continuation, frozen resume, revision-bound abandon, unknown evidence, historical/current metadata and account/editor isolation. Synthetic IPC only; no provider or performance claim.
+15/18 Test #16: gui-google-send-controls ..............   Passed    2.75 sec
+test 17
+      Start 17: gui-google-draft-snapshot-controls
+
+17: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\gui-google-draft-snapshot-controls-test.exe
+17: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+17: Environment variables: 
+17:  QT_QPA_PLATFORM=offscreen
+17:  QT_QUICK_BACKEND=software
+17:  QT_FORCE_STDERR_LOGGING=1
+17:  QT_QPA_FONTDIR=C:\Windows/Fonts
+17: Test timeout computed to be: 30
+17: [t=     0.000] Source popup control graphite default "closeDraftSourceHistory" QRectF(299,535 55x32)
+17: [t=     0.000] Source popup control graphite default "exportDraftSource_1234567890123" QRectF(252,619 102x32)
+17: [t=     0.000] Source popup control graphite default "exportHistoricalDraftAttachment_1234567890123_retained-part" QRectF(36,655 78x32)
+17: [t=     0.000] Source popup control graphite default "showDraftSourceFolder" QRectF(36,933 138x32)
+17: [t=     0.000] Source popup geometry graphite default QSize(390, 1500) 1 QRectF(16,515 358x470)
+17: [t=     0.004] Long file chip graphite default QRectF(20,570 320x30) copy QRectF(300,573 34x24)
+17: [t=     0.074] Source popup control graphite large "closeDraftSourceHistory" QRectF(295,535 59x32)
+17: [t=     0.074] Source popup control graphite large "exportDraftSource_1234567890123" QRectF(243,623 111x32)
+17: [t=     0.074] Source popup control graphite large "exportHistoricalDraftAttachment_1234567890123_retained-part" QRectF(36,661 81x32)
+17: [t=     0.075] Source popup control graphite large "showDraftSourceFolder" QRectF(36,933 148x32)
+17: [t=     0.075] Source popup geometry graphite large QSize(390, 1500) 1 QRectF(16,515 358x470)
+17: [t=     0.078] Long file chip graphite large QRectF(20,598 320x30) copy QRectF(296,601 38x24)
+17: [t=     0.157] Source popup control paper default "closeDraftSourceHistory" QRectF(299,535 55x32)
+17: [t=     0.157] Source popup control paper default "exportDraftSource_1234567890123" QRectF(252,619 102x32)
+17: [t=     0.158] Source popup control paper default "exportHistoricalDraftAttachment_1234567890123_retained-part" QRectF(36,655 78x32)
+17: [t=     0.158] Source popup control paper default "showDraftSourceFolder" QRectF(36,933 138x32)
+17: [t=     0.158] Source popup geometry paper default QSize(390, 1500) 1 QRectF(16,515 358x470)
+17: [t=     0.162] Long file chip paper default QRectF(20,570 320x30) copy QRectF(300,573 34x24)
+17: [t=     0.234] Source popup control paper large "closeDraftSourceHistory" QRectF(295,535 59x32)
+17: [t=     0.234] Source popup control paper large "exportDraftSource_1234567890123" QRectF(243,623 111x32)
+17: [t=     0.234] Source popup control paper large "exportHistoricalDraftAttachment_1234567890123_retained-part" QRectF(36,661 81x32)
+17: [t=     0.235] Source popup control paper large "showDraftSourceFolder" QRectF(36,933 148x32)
+17: [t=     0.235] Source popup geometry paper large QSize(390, 1500) 1 QRectF(16,515 358x470)
+17: [t=     0.239] Long file chip paper large QRectF(20,598 320x30) copy QRectF(296,601 38x24)
+17: [t=     0.317] Source popup control harbour default "closeDraftSourceHistory" QRectF(299,535 55x32)
+17: [t=     0.317] Source popup control harbour default "exportDraftSource_1234567890123" QRectF(252,619 102x32)
+17: [t=     0.318] Source popup control harbour default "exportHistoricalDraftAttachment_1234567890123_retained-part" QRectF(36,655 78x32)
+17: [t=     0.318] Source popup control harbour default "showDraftSourceFolder" QRectF(36,933 138x32)
+17: [t=     0.318] Source popup geometry harbour default QSize(390, 1500) 1 QRectF(16,515 358x470)
+17: [t=     0.322] Long file chip harbour default QRectF(20,570 320x30) copy QRectF(300,573 34x24)
+17: [t=     0.400] Source popup control harbour large "closeDraftSourceHistory" QRectF(295,535 59x32)
+17: [t=     0.401] Source popup control harbour large "exportDraftSource_1234567890123" QRectF(243,623 111x32)
+17: [t=     0.401] Source popup control harbour large "exportHistoricalDraftAttachment_1234567890123_retained-part" QRectF(36,661 81x32)
+17: [t=     0.401] Source popup control harbour large "showDraftSourceFolder" QRectF(36,933 148x32)
+17: [t=     0.402] Source popup geometry harbour large QSize(390, 1500) 1 QRectF(16,515 358x470)
+17: [t=     0.405] Long file chip harbour large QRectF(20,598 320x30) copy QRectF(296,601 38x24)
+17: [t=     0.464] Google draft snapshot controls passed: real selectable preview and mutation guards, all themes/narrow fonts, cached source revision/account floors, history/export handlers and provider-Pause isolation. Synthetic local IPC; no provider or latency claim.
+16/18 Test #17: gui-google-draft-snapshot-controls ....   Passed    2.32 sec
+test 18
+      Start 18: gui-google-draft-authoring-controls
+
+18: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\gui-google-draft-authoring-controls-test.exe
+18: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+18: Environment variables: 
+18:  QT_QPA_PLATFORM=offscreen
+18:  QT_QUICK_BACKEND=software
+18:  QT_FORCE_STDERR_LOGGING=1
+18:  QT_QPA_FONTDIR=C:\Windows/Fonts
+18: Test timeout computed to be: 30
+18: [t=     0.000] Native source actions, identity races, proof recovery and deletion evidence passed.
+17/18 Test #18: gui-google-draft-authoring-controls ...   Passed    2.24 sec
+test 19
+      Start 19: gui-account-lifecycle-controls
+
+19: Test command: C:\Users\Yegor\Projects\Fuckaround\fuckMail\build\dev\gui-account-lifecycle-controls-test.exe
+19: Working Directory: C:/Users/Yegor/Projects/Fuckaround/fuckMail/build/dev/gui
+19: Environment variables: 
+19:  QT_QPA_PLATFORM=offscreen
+19:  QT_QUICK_BACKEND=software
+19:  QT_FORCE_STDERR_LOGGING=1
+19:  QT_QPA_FONTDIR=C:\Windows/Fonts
+19: Test timeout computed to be: 30
+19: [t=     0.000] Account lifecycle native handlers, archive guards, fresh confirmation, cleanup retry and unsaved callback/close/navigation fences passed.
+18/18 Test #19: gui-account-lifecycle-controls ........   Passed    3.27 sec
+
+The following tests passed:
+	rust-test-build
+	gui-smoke
+	gui-live-empty
+	gui-integration
+	gui-attachments
+	gui-startup-recovery
+	gui-ipc-trust
+	gui-composer-probe
+	gui-reply-document
+	gui-calendar-layout
+	gui-conversation-list-model
+	gui-calendar-controls
+	gui-google-operation
+	gui-google-draft-controls
+	gui-google-send-controls
+	gui-google-draft-snapshot-controls
+	gui-google-draft-authoring-controls
+	gui-account-lifecycle-controls
+
+100% tests passed, 0 tests failed out of 18
+
+Total Test time (real) = 196.13 sec

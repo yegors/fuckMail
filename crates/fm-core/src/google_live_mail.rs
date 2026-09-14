@@ -129,6 +129,7 @@ fn hash(bytes: &[u8]) -> String {
     format!("{:x}", Sha256::digest(bytes))
 }
 fn active_account(db: &Connection, account: &str) -> Result<(u64, u64)> {
+    crate::account_lifecycle::active(db, account)?;
     let row: Option<(u64, u64, String, String)> = db.query_row(
         "SELECT mail_generation,connection_generation,connection_state,scopes_json FROM google_accounts WHERE account=?1",
         [account], |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)),

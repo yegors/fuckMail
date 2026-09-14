@@ -1,0 +1,34 @@
+{
+  "status": "failed",
+  "recorded_at_utc": "2026-09-14T00:28:08.542025+00:00",
+  "scope": "Ordinary Rust workspace; feature-only, native, provider and navigation checks are separate.",
+  "checks": [
+    {
+      "name": "tests",
+      "exit_code": 101,
+      "wall_clock_seconds": 96.76599999982864
+    }
+  ],
+  "logs": {
+    "tests": {
+      "path": "workspace-tests-01.log",
+      "sha256": "a45a7014d08537b210a7e844058c6ca76031736c262f8160914e21726ebb141f"
+    }
+  },
+  "summary": {
+    "passed": 299,
+    "failed": 3,
+    "ignored": 2,
+    "summed_test_suite_seconds": 71.21000000000001,
+    "test_targets": 7,
+    "doc_test_targets": 0,
+    "wall_clock_seconds": 96.76599999982864
+  },
+  "source_check": {
+    "manifest_sha256": "28caee0aaa23a7eb4788cf90c5d4d49bc4f15a8260e6eda787a5639effdeec4b",
+    "changed_sources": [],
+    "changed_rust_sources": [],
+    "rust_sources_checked": 230
+  },
+  "exit_code": 101
+}

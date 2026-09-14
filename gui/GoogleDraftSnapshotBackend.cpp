@@ -82,14 +82,14 @@ void MailBackend::refreshGoogleDraftInventory() {
 }
 
 QVariantList MailBackend::draftSnapshotHeaders() const {
-    if (!draftReadOnly()) return {};
+    if (!draftReadOnly() && !accountArchived() && !m_unsavedAccountBuffer) return {};
     const auto headers = m_draft.value("remote_source").toMap().value("raw_headers").toMap();
     QVariantList rows;
     for (const auto &entry : {qMakePair("from", "From"), qMakePair("to", "To"), qMakePair("cc", "Cc"),
              qMakePair("bcc", "Bcc"), qMakePair("reply_to", "Reply-To")}) {
         auto text = headers.value(entry.first).toString();
         if (QString::fromLatin1(entry.first) == "from"
-            && m_draft.value("remote_source").toMap().value("source_state").toString() != "available") {
+            && (text.isEmpty() || m_draft.value("remote_source").toMap().value("source_state").toString() != "available")) {
             const auto name = m_draft.value("from_name").toString(), address = m_draft.value("from").toString();
             text = name.isEmpty() ? address : name + " <" + address + ">";
         }
@@ -104,6 +104,8 @@ QVariantList MailBackend::draftSnapshotHeaders() const {
                 addresses.append(name.isEmpty() ? email : name + " <" + email + ">");
             }
             if (!addresses.isEmpty()) text = addresses.join("\n");
+            const auto pending = m_recipientInputs.value(field + "_recipients");
+            if (!pending.isEmpty()) text += (text.isEmpty() ? QString{} : "\n") + pending + " (not saved)";
         }
         if (!text.isEmpty() || QString::fromLatin1(entry.first) == "from" || QString::fromLatin1(entry.first) == "to")
             rows.append(QVariantMap{{"label", entry.second}, {"value", text}});

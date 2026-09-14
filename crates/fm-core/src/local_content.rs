@@ -23,6 +23,7 @@ pub struct LocalContentPlan(Box<PlanContents>);
 struct PlanContents {
     blobs: content::BlobStore,
     account: String,
+    lifecycle_revision: i64,
     method: String,
     params: Value,
     snapshot: Option<DraftSnapshot>,
@@ -64,6 +65,7 @@ struct AttachmentRef {
 pub(crate) struct RetainedDraft {
     pub(crate) blobs: content::BlobStore,
     account: String,
+    lifecycle_revision: i64,
     params: Value,
     snapshot: DraftSnapshot,
     attachments: Vec<AttachmentRef>,
@@ -122,6 +124,7 @@ impl Store {
         Ok(RetainedDraft {
             blobs: self.google_blob_store(),
             account: account.into(),
+            lifecycle_revision: self.require_active_account(account)?,
             params,
             snapshot,
             attachments,
@@ -135,6 +138,7 @@ impl Store {
                 "Draft proof belongs to another profile",
             ));
         }
+        self.check_active_account_revision(&retained.account, retained.lifecycle_revision)?;
         self.check_draft_writable(&retained.account, &retained.params)?;
         let current = self.local_draft_snapshot(&retained.account, &retained.params)?;
         if current.stamp != retained.snapshot.stamp
@@ -257,6 +261,9 @@ impl Store {
             PlanContents {
                 blobs: self.google_blob_store(),
                 account: account.into(),
+                lifecycle_revision: self.account_lifecycle(account)?["revision"]
+                    .as_i64()
+                    .ok_or_else(invalid_proof)?,
                 method: method.into(),
                 params,
                 snapshot,
@@ -303,6 +310,7 @@ impl Store {
                 None => self.local_content_begin(&plan.method, &plan.account, plan.params),
             };
         }
+        self.check_active_account_revision(&plan.account, plan.lifecycle_revision)?;
         self.check_draft_writable(&plan.account, &plan.params)?;
         let snapshot = plan.snapshot.as_ref().ok_or_else(invalid_proof)?;
         let current = self.local_draft_snapshot(&plan.account, &plan.params)?;

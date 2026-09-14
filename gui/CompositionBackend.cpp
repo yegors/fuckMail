@@ -11,7 +11,8 @@ QJsonObject MailBackend::draftSelector() const {
                                    : QJsonObject{{"draft_id", m_activeDraft}};
 }
 QString MailBackend::draftContext() const {
-    return m_activeDraft.isEmpty() ? "conversation:" + m_selected : "draft:" + m_activeDraft;
+    const auto identity = m_activeDraft.isEmpty() ? "conversation:" + m_selected : "draft:" + m_activeDraft;
+    return identity + "/lifecycle:" + QString::number(lifecycleAccount(m_account).value("lifecycle").toMap().value("revision").toLongLong());
 }
 
 bool MailBackend::olderDraftProjection(const QJsonObject &result) const {
@@ -36,6 +37,7 @@ bool MailBackend::olderDraftProjection(const QJsonObject &result) const {
 }
 
 void MailBackend::acceptDraft(const QJsonObject &result, bool restoreView) {
+    if (m_unsavedAccountBuffer) return;
     if (olderDraftProjection(result)) {
         if (!draftReadOnly()) m_draftStatus = m_draftDirty ? "Saving…" : "Saved on this machine";
         emit draftChanged(); return;
@@ -62,7 +64,7 @@ void MailBackend::writeToSender(const QString &email, const QString &name) {
     beginDraftWithRecipient("new", address, name);
 }
 void MailBackend::beginDraftWithRecipient(const QString &mode, const QString &email, const QString &name) {
-    if (!m_connected || m_account.isEmpty()) return;
+    if (!m_connected || m_account.isEmpty() || accountArchived() || m_unsavedAccountBuffer) return;
     if (mode != "new" && mode != "reply" && mode != "reply_all" && mode != "forward") return;
     cancelPendingGoogleSend("Send cancelled by draft navigation.");
     if (m_draftDirty || draftBusy()) {
@@ -86,7 +88,7 @@ void MailBackend::beginDraftWithRecipient(const QString &mode, const QString &em
     const auto account = m_account;
     request("draft_create", account, m_draftCreation, [this, account, email, name](auto result, bool ok) {
         m_resolvingDraft = false;
-        if (account != m_account) return;
+        if (account != m_account || accountRemoved(account) || m_unsavedAccountBuffer) return;
         if (ok) {
             ++m_generation; m_draftCreation = {}; m_draftCreationEmail.clear(); acceptDraft(result);
             if (!email.isEmpty()) {
@@ -107,6 +109,7 @@ void MailBackend::beginDraftWithRecipient(const QString &mode, const QString &em
 }
 
 void MailBackend::openDraft(const QString &draftId, bool restoreView) {
+    if (m_unsavedAccountBuffer) { m_afterAccountDisposition = [this, draftId, restoreView] { openDraft(draftId, restoreView); }; accountNavigationAllowed(); return; }
     if (draftId.isEmpty() || !m_connected) return;
     cancelPendingGoogleSend("Send cancelled by draft navigation.");
     if (m_draftDirty || draftBusy()) { m_afterDraftSave = [this, draftId, restoreView] { openDraft(draftId, restoreView); }; saveDraft(); return; }
@@ -124,6 +127,7 @@ void MailBackend::openDraft(const QString &draftId, bool restoreView) {
 }
 
 void MailBackend::loadActiveDraft() {
+    if (m_unsavedAccountBuffer) return;
     if (m_activeDraft.isEmpty() || (m_syntheticProfile && (m_draftDirty || draftBusy()))) return;
     const auto account = m_account, id = m_activeDraft;
     const int generation = m_generation;

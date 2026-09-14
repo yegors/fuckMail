@@ -18,6 +18,7 @@ pub enum AssistanceStart {
 
 /// Constructed only after Core has resolved the account, policy and retained sources.
 pub struct PreparedAssistance {
+    lifecycle_revision: i64,
     account: String,
     conversation: String,
     request_id: String,
@@ -100,6 +101,7 @@ impl Store {
             );
             return Ok(serde_json::from_str(&result)?);
         }
+        self.check_active_account_revision(&pending.account, pending.lifecycle_revision)?;
         let current = self.assistance_snapshot(&pending.account, &pending.conversation, false)?;
         let accepted = boundary
             .finish(pending.job_id, &current.policy, &current.sources(), raw)
@@ -197,6 +199,7 @@ impl Store {
 
     /// Diagnostic policy configuration, not a settings/IPC surface or runner installer.
     pub fn configure_fake_assistance(&self, policy: &Policy, expected_revision: u64) -> Result<()> {
+        self.require_active_account(&policy.account)?;
         id(&policy.account)?;
         if policy.categories.len() > 64
             || policy.revision
@@ -256,6 +259,7 @@ impl Store {
             if previous != fingerprint { return Err(err("request_id_conflict","Assistance request ID already identifies another scope")); }
             return Ok(AssistanceStart::Completed(serde_json::from_str(&result)?));
         }
+        let lifecycle_revision = self.require_active_account(account)?;
         let policy = load_policy(&self.db, account)?;
         if policy.mode == Mode::Off && !policy.summaries {
             return Err(err("assistance_disabled", "Local assistance is off"));
@@ -266,6 +270,7 @@ impl Store {
             .map_err(assist_error)?;
         Ok(AssistanceStart::Pending(PreparedAssistance {
             account: account.into(),
+            lifecycle_revision,
             conversation: conversation.into(),
             request_id: request_id.into(),
             fingerprint,

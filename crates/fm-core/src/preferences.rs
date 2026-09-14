@@ -242,6 +242,7 @@ impl Store {
             }
             return Ok(serde_json::from_str(&response)?);
         }
+        self.require_active_account(account)?;
         let name = p["name"]
             .as_str()
             .filter(|v| {

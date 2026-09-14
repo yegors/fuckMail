@@ -1,0 +1,1456 @@
+{
+  "result": "passed",
+  "scenario": "isolated-google-draft-actions",
+  "version": 1,
+  "executables": {
+    "cli": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\release\\fm.exe",
+      "sha256": "e279d69afa368b98c97e81f89a827a968b3ee860cf1fc2ec340786b7f77b50e5"
+    },
+    "engine": {
+      "path": "C:\\Users\\Yegor\\Projects\\Fuckaround\\fuckMail\\target\\verification-google\\release\\fm-engine.exe",
+      "sha256": "8e5e4eb3e0ebea183357a09f2307a93b22d31412e559cb1e75bfa6e0434e8da2"
+    }
+  },
+  "commands": [
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "list"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "authoring"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-adopt"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "save"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "authoring"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-adopt"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "draft_source_unsupported"
+    },
+    {
+      "command": [
+        "draft",
+        "copy"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "copy"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "authoring"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-adopt"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "draft_source_unsupported"
+    },
+    {
+      "command": [
+        "draft",
+        "copy"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "copy"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete-reconcile"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "copy"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "google_draft_delete_pending"
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete-abandon"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "stale_google_work"
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "drafts-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "list"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "authoring"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-adopt"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "send"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "authoring"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-adopt"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "draft_source_unsupported"
+    },
+    {
+      "command": [
+        "draft",
+        "copy"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "copy"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "authoring"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-adopt"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "draft_source_unsupported"
+    },
+    {
+      "command": [
+        "draft",
+        "copy"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "copy"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete-reconcile"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "copy"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "google_draft_delete_pending"
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete-abandon"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "stale_google_work"
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-adopt"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "stale_source_revision"
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete"
+      ],
+      "account": "personal",
+      "exit_code": 1,
+      "error": "stale_source_revision"
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete-status"
+      ],
+      "account": "personal",
+      "exit_code": 5,
+      "error": "not_found"
+    },
+    {
+      "command": [
+        "draft",
+        "sources"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-adopt"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "stale_source_revision"
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete"
+      ],
+      "account": "workspace",
+      "exit_code": 1,
+      "error": "stale_source_revision"
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete-status"
+      ],
+      "account": "workspace",
+      "exit_code": 5,
+      "error": "not_found"
+    },
+    {
+      "command": [
+        "draft",
+        "sources"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "sync-status"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "sync-status"
+      ],
+      "account": null,
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "draft",
+        "source"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete-status"
+      ],
+      "account": "personal",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    },
+    {
+      "command": [
+        "google",
+        "draft-delete-status"
+      ],
+      "account": "workspace",
+      "exit_code": 0,
+      "error": null
+    }
+  ],
+  "accounts": [
+    {
+      "account": "personal",
+      "receipts": [
+        {
+          "request_id": "delete-4",
+          "state": "acceptance_unknown"
+        },
+        {
+          "request_id": "delete-5",
+          "state": "deleted"
+        }
+      ]
+    },
+    {
+      "account": "workspace",
+      "receipts": [
+        {
+          "request_id": "delete-4",
+          "state": "acceptance_unknown"
+        },
+        {
+          "request_id": "delete-5",
+          "state": "deleted"
+        }
+      ]
+    }
+  ],
+  "limits": {
+    "gmail_project_units_per_minute": 1000000,
+    "gmail_account_units_per_minute": 500000,
+    "calendar_project_units_per_minute": 10000,
+    "calendar_account_units_per_minute": 5000
+  },
+  "limitations": [
+    "Generated in-memory provider and vault only; no real mail or delivery.",
+    "Functional CLI/source and optional native checks; no performance, package or engine-restart acceptance."
+  ],
+  "expected_provider_publications": {
+    "drafts": [
+      {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "draft_id": "ra0000",
+        "message_id": "vmd0001",
+        "thread_id": "rat0000",
+        "size": 826,
+        "sha256": "df8981814174c008e558e3dbf5877e981946a5901862c38bcfb6109b8927a812",
+        "kind": "update"
+      },
+      {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "draft_id": "vd0001",
+        "message_id": "vmd0002",
+        "thread_id": "vdt-vd0001",
+        "size": 1154,
+        "sha256": "1f1566faa134c7019c1b9fbb949607085cd53b2c15ef2dae58d45369406f0760",
+        "kind": "create"
+      },
+      {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "draft_id": "vd0002",
+        "message_id": "vmd0003",
+        "thread_id": "vdt-vd0002",
+        "size": 772,
+        "sha256": "86d76cd89a5f65f00b93f5f3d457697d3f6fe10bb43f296d4927658434c37ebe",
+        "kind": "create"
+      },
+      {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "draft_id": "vd0001",
+        "message_id": "vmd0001",
+        "thread_id": "vdt-vd0001",
+        "size": 1164,
+        "sha256": "b1a26dcf192d03e5ac91d72b50ddddcd82dabb7db17f210cd4a527295f95f326",
+        "kind": "create"
+      },
+      {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "draft_id": "vd0002",
+        "message_id": "vmd0002",
+        "thread_id": "vdt-vd0002",
+        "size": 782,
+        "sha256": "5e2f3f04b975ccd9da14e4624b6ed2273703a8afe3949b0f7f34505cd4b3ff6e",
+        "kind": "create"
+      }
+    ],
+    "sends": [
+      {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "provider_draft_id": "ra0000",
+        "message_id": "vms0001",
+        "thread_id": "rat0000",
+        "rfc_message_id": "send-240ad0c683cb3859aa5177729a1eec2fae1579fb93b2545e2c04d04034c13396@fuckmail.invalid",
+        "size": 843,
+        "sha256": "a5d438fbd86f64c16fb6bbc33d4b637f1843b5d4c0cadd910a05b38cc7c7b9fc",
+        "kind": "draft_send"
+      }
+    ],
+    "deletions": [
+      {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "draft_id": "ra0004",
+        "existed": true,
+        "response": "lost_response"
+      },
+      {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "draft_id": "ra0005",
+        "existed": true,
+        "response": "acknowledged"
+      },
+      {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "draft_id": "ra0004",
+        "existed": true,
+        "response": "lost_response"
+      },
+      {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "draft_id": "ra0005",
+        "existed": true,
+        "response": "acknowledged"
+      }
+    ]
+  },
+  "provider_counters": {
+    "calendar_acknowledged": 0,
+    "calendar_lost_responses": 0,
+    "calendar_mutation_attempts": 0,
+    "calendar_mutations": 0,
+    "calendar_reads": 0,
+    "draft_created": 4,
+    "draft_delete_attempts": 4,
+    "draft_delete_unknown": 2,
+    "draft_deleted": 2,
+    "draft_list": 2,
+    "draft_read": 33,
+    "draft_updated": 1,
+    "http_cancelled": 1,
+    "http_completed": 292,
+    "http_rejected": 2,
+    "http_started": 295,
+    "modify_completed": 0,
+    "raw_active": 0,
+    "raw_cancelled": 1,
+    "raw_completed": 225,
+    "raw_held_active": 0,
+    "raw_started": 226,
+    "send_completed": 1,
+    "sent_read": 0,
+    "vault_loads": 295,
+    "vault_stores": 0
+  },
+  "retained_source_count": 12,
+  "retained_changed_source_count": 2,
+  "verified_provider_publications": {
+    "drafts": [
+      {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "draft_id": "ra0000",
+        "message_id": "vmd0001",
+        "thread_id": "rat0000",
+        "size": 826,
+        "sha256": "df8981814174c008e558e3dbf5877e981946a5901862c38bcfb6109b8927a812",
+        "kind": "update"
+      },
+      {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "draft_id": "vd0001",
+        "message_id": "vmd0002",
+        "thread_id": "vdt-vd0001",
+        "size": 1154,
+        "sha256": "1f1566faa134c7019c1b9fbb949607085cd53b2c15ef2dae58d45369406f0760",
+        "kind": "create"
+      },
+      {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "draft_id": "vd0002",
+        "message_id": "vmd0003",
+        "thread_id": "vdt-vd0002",
+        "size": 772,
+        "sha256": "86d76cd89a5f65f00b93f5f3d457697d3f6fe10bb43f296d4927658434c37ebe",
+        "kind": "create"
+      },
+      {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "draft_id": "vd0001",
+        "message_id": "vmd0001",
+        "thread_id": "vdt-vd0001",
+        "size": 1164,
+        "sha256": "b1a26dcf192d03e5ac91d72b50ddddcd82dabb7db17f210cd4a527295f95f326",
+        "kind": "create"
+      },
+      {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "draft_id": "vd0002",
+        "message_id": "vmd0002",
+        "thread_id": "vdt-vd0002",
+        "size": 782,
+        "sha256": "5e2f3f04b975ccd9da14e4624b6ed2273703a8afe3949b0f7f34505cd4b3ff6e",
+        "kind": "create"
+      }
+    ],
+    "sends": [
+      {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "provider_draft_id": "ra0000",
+        "message_id": "vms0001",
+        "thread_id": "rat0000",
+        "rfc_message_id": "send-240ad0c683cb3859aa5177729a1eec2fae1579fb93b2545e2c04d04034c13396@fuckmail.invalid",
+        "size": 843,
+        "sha256": "a5d438fbd86f64c16fb6bbc33d4b637f1843b5d4c0cadd910a05b38cc7c7b9fc",
+        "kind": "draft_send"
+      }
+    ],
+    "deletions": [
+      {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "draft_id": "ra0004",
+        "existed": true,
+        "response": "lost_response"
+      },
+      {
+        "account": "google-1a79d54fa8a1a8a1c69978d3b642f182219e213f8aa284a5f14e8771bda45343",
+        "draft_id": "ra0005",
+        "existed": true,
+        "response": "acknowledged"
+      },
+      {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "draft_id": "ra0004",
+        "existed": true,
+        "response": "lost_response"
+      },
+      {
+        "account": "google-ceaee462f9fc1f2451e3801d257c9835d81812a70127976b14f29a9781c424dd",
+        "draft_id": "ra0005",
+        "existed": true,
+        "response": "acknowledged"
+      }
+    ]
+  },
+  "elapsed_seconds": 8.546999999787658,
+  "outputs_sha256": {
+    "engine": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "watch": "dafd2b7d8ba76071bf8d0fe1e6e0fa1a52338de4c51afbab90a815d5ce554e9f",
+    "personal": "e757d40ed12477b25ed72f99bc78ff7efe8d34ea19e9a2a3ad37b0f32a1ba095",
+    "workspace": "353a64c0353b84c3078956ba2100a09be4ffc2d35ff502aa137e57a20a051825",
+    "fixture": "63dfae6f33470c29792d226148eb896c9ad404345350718ca2485cb1310f1605",
+    "sources": "3418ba233057120feabbb076e40c62f10c7cd887ddc27c93b931f85ba331635a"
+  }
+}

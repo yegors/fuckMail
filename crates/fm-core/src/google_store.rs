@@ -58,6 +58,9 @@ impl<'a> GooglePageStore<'a> {
     }
 
     fn ensure_checkpoint(&self, expected: &Checkpoint) -> std::result::Result<(), GoogleError> {
+        self.store
+            .require_active_account(expected.account.as_str())
+            .map_err(storage_error)?;
         if self
             .store
             .google_checkpoint(expected.account.as_str())
@@ -78,6 +81,7 @@ impl Store {
         category: &str,
         provider_label: &str,
     ) -> Result<()> {
+        self.require_active_account(account)?;
         crate::id(account)?;
         crate::id(category)?;
         crate::id(provider_label)?;
@@ -107,6 +111,7 @@ impl Store {
     /// Start a synthetic provider import only for an existing local account.
     /// Repeated setup cannot reset an existing checkpoint or overwrite intent.
     pub fn google_begin_full(&mut self, account: &str, baseline: &str) -> Result<Checkpoint> {
+        self.require_active_account(account)?;
         if let Some(checkpoint) = self.google_checkpoint(account)? {
             return Ok(checkpoint);
         }

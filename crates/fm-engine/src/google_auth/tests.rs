@@ -11,6 +11,8 @@ use tokio::{
 };
 
 const CLIENT: &str = "synthetic-client.apps.googleusercontent.com";
+#[path = "account_lifecycle_tests.rs"]
+mod lifecycle_tests;
 #[derive(Default)]
 struct FixtureHttp {
     calls: AtomicUsize,
@@ -66,6 +68,9 @@ struct FixtureVault {
     tokens: StdMutex<BTreeMap<AccountId, StoredToken>>,
     stores: AtomicUsize,
     pause: StdMutex<Option<StorePause>>,
+    removals: AtomicUsize,
+    remove_failure: AtomicBool,
+    remove_pause: StdMutex<Option<StorePause>>,
 }
 struct StorePause {
     entered: tokio::sync::oneshot::Sender<()>,
@@ -80,6 +85,18 @@ impl Drop for StoreRelease {
     }
 }
 impl CredentialVault for FixtureVault {
+    fn remove(&self, account: &AccountId) -> std::result::Result<(), GoogleError> {
+        self.removals.fetch_add(1, Ordering::SeqCst);
+        if let Some(pause) = self.remove_pause.lock().unwrap().take() {
+            let _ = pause.entered.send(());
+            pause.release.recv_timeout(Duration::from_secs(10)).unwrap();
+        }
+        if self.remove_failure.load(Ordering::SeqCst) {
+            return Err(GoogleError::StoreUnavailable);
+        }
+        self.tokens.lock().unwrap().remove(account);
+        Ok(())
+    }
     fn load(&self, account: &AccountId) -> std::result::Result<Option<StoredToken>, GoogleError> {
         Ok(self.tokens.lock().unwrap().get(account).cloned())
     }
@@ -199,13 +216,18 @@ impl Harness {
             )
             .await
             .unwrap();
+        self.signed_callback(&reply, "expired-subject", "renamed@example.invalid", scopes)
+            .await;
+        reply
+    }
+    async fn signed_callback(&self, reply: &Value, subject: &str, email: &str, scopes: &[&str]) {
         let url = reply["authorization_url"].as_str().unwrap();
         let nonce = url_field(url, "nonce");
         let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
         header.kid = Some("synthetic-rsa-v1".into());
         let now = now_secs();
-        let claims = json!({"iss":"https://accounts.google.com", "aud":CLIENT, "sub":"expired-subject",
-            "iat":now-10, "exp":now+600, "nonce":nonce, "email":"renamed@example.invalid", "email_verified":true});
+        let claims = json!({"iss":"https://accounts.google.com", "aud":CLIENT, "sub":subject,
+            "iat":now-10, "exp":now+600, "nonce":nonce, "email":email, "email_verified":true});
         let id_token = jsonwebtoken::encode(
             &header,
             &claims,
@@ -218,8 +240,7 @@ impl Harness {
             "access_token":"new-fixture-access", "refresh_token":"new-fixture-refresh", "expires_in":600,
             "token_type":"Bearer", "scope":scopes.join(" "), "id_token":id_token
         })).unwrap());
-        callback(&reply).await;
-        reply
+        callback(reply).await;
     }
     async fn close(self) {
         self.runtime.shutdown().await;

@@ -29,6 +29,7 @@ use tokio::{sync::Mutex, task::JoinHandle};
 const LOGIN_SECONDS: u64 = 300;
 const RETAINED_ATTEMPTS: usize = 16;
 const CONFIG_BYTES: u64 = 64 * 1024;
+mod account_lifecycle;
 
 struct SharedHttp(Arc<dyn HttpTransport>);
 impl HttpTransport for SharedHttp {
@@ -42,6 +43,10 @@ impl HttpTransport for SharedHttp {
 }
 struct SharedVault(Arc<dyn CredentialVault>);
 impl CredentialVault for SharedVault {
+    fn remove(&self, account: &AccountId) -> std::result::Result<(), GoogleError> {
+        self.0.remove(account)
+    }
+
     fn load(&self, account: &AccountId) -> std::result::Result<Option<StoredToken>, GoogleError> {
         self.0.load(account)
     }
@@ -88,12 +93,22 @@ struct State {
 struct Inner {
     #[cfg(feature = "verification-google")]
     verification: bool,
+    #[cfg(feature = "verification-google")]
+    verification_login: Option<Arc<dyn VerificationLogin>>,
     core: CoreBridge,
     http: Arc<SharedHttp>,
     vault: Arc<SharedVault>,
     coordinator: TokenCoordinator,
     cancel: CancellationToken,
     state: Mutex<State>,
+}
+#[cfg(feature = "verification-google")]
+pub(crate) trait VerificationLogin: Send + Sync {
+    fn callback<'a>(
+        &'a self,
+        authorization_url: String,
+        cancel: CancellationToken,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'a>>;
 }
 #[derive(Clone)]
 pub(crate) struct Runtime {
@@ -158,6 +173,20 @@ impl Runtime {
         Arc::get_mut(&mut runtime.inner).unwrap().verification = true;
         Arc::new(runtime)
     }
+    #[cfg(feature = "verification-google")]
+    pub(crate) fn for_verification_accounts(
+        core: CoreBridge,
+        http: Arc<dyn HttpTransport>,
+        vault: Arc<dyn CredentialVault>,
+        cancel: CancellationToken,
+        observer: Arc<dyn VerificationLogin>,
+    ) -> Arc<Self> {
+        let mut runtime = Self::with_services(core, http, vault, cancel);
+        let inner = Arc::get_mut(&mut runtime.inner).unwrap();
+        inner.verification = true;
+        inner.verification_login = Some(observer);
+        Arc::new(runtime)
+    }
     fn with_services(
         core: CoreBridge,
         http: Arc<dyn HttpTransport>,
@@ -168,6 +197,8 @@ impl Runtime {
             inner: Arc::new(Inner {
                 #[cfg(feature = "verification-google")]
                 verification: false,
+                #[cfg(feature = "verification-google")]
+                verification_login: None,
                 core,
                 http: Arc::new(SharedHttp(http)),
                 vault: Arc::new(SharedVault(vault)),
@@ -180,8 +211,13 @@ impl Runtime {
     pub(crate) fn handles(method: &str) -> bool {
         matches!(
             method,
-            "google_auth_begin" | "google_auth_status" | "google_auth_cancel" | "google_disconnect"
-        )
+            "google_auth_begin"
+                | "google_auth_restore_begin"
+                | "google_auth_status"
+                | "google_auth_cancel"
+                | "google_disconnect"
+                | "account_remove"
+        ) || (cfg!(feature = "verification-google") && method == "verification_google_auth_fixture")
     }
     /// Mail and Calendar reuse the engine's bounded pooled HTTPS transport.
     #[allow(dead_code)] // Used when the provider worker module is connected.
@@ -197,7 +233,10 @@ impl Runtime {
         params: Value,
     ) -> Result<Value> {
         #[cfg(feature = "verification-google")]
-        if self.inner.verification && method == "google_auth_begin" {
+        if self.inner.verification
+            && self.inner.verification_login.is_none()
+            && matches!(method, "google_auth_begin" | "google_auth_restore_begin")
+        {
             return Err(error(
                 "verification_refused",
                 "OAuth is unavailable in the isolated provider fixture",
@@ -211,8 +250,48 @@ impl Runtime {
             return Err(cancelled());
         }
         match method {
-            "google_auth_begin" => {
-                fields(&params, &["client_config_path", "reauthorize"])?;
+            #[cfg(feature = "verification-google")]
+            "verification_google_auth_fixture" => {
+                fields(&params, &[])?;
+                if account.is_some() || self.inner.verification_login.is_none() {
+                    return Err(error(
+                        "verification_refused",
+                        "Account verification is unavailable in this profile",
+                    ));
+                }
+                Ok(json!({"mode":"accounts-v1","browser_stub_allowed":true}))
+            }
+            "google_auth_begin" | "google_auth_restore_begin" => {
+                let restore = method == "google_auth_restore_begin";
+                fields(
+                    &params,
+                    if restore {
+                        &["client_config_path", "reauthorize", "expected_revision"]
+                    } else {
+                        &["client_config_path", "reauthorize"]
+                    },
+                )?;
+                let restore_revision = if restore {
+                    if account.is_none() {
+                        return Err(error(
+                            "account_required",
+                            "Choose an archived account to restore",
+                        ));
+                    }
+                    Some(
+                        params["expected_revision"]
+                            .as_i64()
+                            .filter(|v| *v > 0)
+                            .ok_or_else(|| {
+                                error(
+                                    "invalid_request",
+                                    "A current lifecycle revision is required",
+                                )
+                            })?,
+                    )
+                } else {
+                    None
+                };
                 let path = params["client_config_path"]
                     .as_str()
                     .ok_or_else(invalid_config)?
@@ -228,8 +307,14 @@ impl Runtime {
                     account.map(str::to_owned),
                     path,
                     reauthorize,
+                    restore_revision,
                 )
                 .await
+            }
+            "account_remove" => {
+                let account = account
+                    .ok_or_else(|| error("account_required", "Choose an account to remove"))?;
+                self.remove_account(account, params, &owner_cancel).await
             }
             "google_auth_status" | "google_auth_cancel" => {
                 fields(&params, &["attempt_id"])?;
@@ -298,6 +383,7 @@ impl Runtime {
         account: Option<String>,
         path: String,
         reauthorize: bool,
+        restore_revision: Option<i64>,
     ) -> Result<Value> {
         let id = fm_ipc::random_token();
         let cancel = self.inner.cancel.child_token();
@@ -345,6 +431,13 @@ impl Runtime {
                         ));
                     }
                     let bindings = store.google_account_bindings()?;
+                    if let Some(account) = expected.as_deref() {
+                        if let Some(revision) = restore_revision {
+                            store.google_restore_check(account, revision)?;
+                        } else {
+                            store.require_active_account(account)?;
+                        }
+                    }
                     if expected
                         .as_ref()
                         .is_some_and(|id| !bindings.iter().any(|b| &b.account == id))
@@ -408,12 +501,32 @@ impl Runtime {
         let runtime = self.clone();
         let task_id = id.clone();
         let task_cancel = cancel.clone();
+        #[cfg(feature = "verification-google")]
+        let fixture_url = url.clone();
         let mut state = self.inner.state.lock().await;
         if owner_cancel.is_cancelled() || cancel.is_cancelled() || state.stopping {
             return Err(cancelled());
         }
         let task = tokio::spawn(async move {
-            let operation = runtime.complete_login(&task_id, login, client, account, &task_cancel);
+            let login = runtime.complete_login(
+                &task_id,
+                login,
+                client,
+                account,
+                restore_revision,
+                &task_cancel,
+            );
+            #[cfg(not(feature = "verification-google"))]
+            let operation = login;
+            #[cfg(feature = "verification-google")]
+            let operation = async {
+                if let Some(observer) = runtime.inner.verification_login.clone() {
+                    let (result, ()) =
+                        tokio::join!(login, observer.callback(fixture_url, task_cancel.clone()));
+                    return result;
+                }
+                login.await
+            };
             tokio::pin!(operation);
             let result = tokio::select! {
                 result = &mut operation => result,
@@ -433,6 +546,7 @@ impl Runtime {
         login: DesktopLogin,
         client: Arc<LoadedClient>,
         expected: Option<String>,
+        restore_revision: Option<i64>,
         cancel: &CancellationToken,
     ) -> Result<String> {
         let code = login
@@ -447,6 +561,20 @@ impl Runtime {
             .map_err(google_error)?;
         if cancel.is_cancelled() {
             return Err(cancelled());
+        }
+        if let Some(revision) = restore_revision {
+            return self
+                .complete_restore(
+                    id,
+                    client,
+                    expected.as_deref().ok_or_else(|| {
+                        error("account_required", "Choose an archived account to restore")
+                    })?,
+                    revision,
+                    grant,
+                    cancel,
+                )
+                .await;
         }
         let subject = grant.identity.sub.clone();
         let email = grant.identity.email.clone();
@@ -493,6 +621,14 @@ impl Runtime {
         // Vault and SQLite cannot commit together. Persist a fail-closed state
         // before replacing an existing grant so cancellation, disk failure or
         // process exit cannot reopen new tokens against old Connected/scopes.
+        // Recheck the generation only after acquiring the same native credential
+        // lock as removal. A completed removal must never precede this store.
+        let credential_guard = self
+            .inner
+            .coordinator
+            .account_guard(&account_id, cancel)
+            .await
+            .map_err(google_error)?;
         let selected = account.clone();
         let persist_cancel = cancel.clone();
         let generation = self
@@ -529,9 +665,8 @@ impl Runtime {
             })
             .await?;
         // Fence any old refresh's final native store, including an aborted caller.
-        self.inner
-            .coordinator
-            .persist_verified_grant(&account_id, grant, self.inner.vault.clone(), cancel)
+        let _credential_guard = credential_guard
+            .persist_retaining(grant, self.inner.vault.clone())
             .await
             .map_err(google_error)?;
         let mut state = self.inner.state.lock().await;

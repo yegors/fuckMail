@@ -1,6 +1,196 @@
 use std::process::Command;
 
 #[test]
+fn account_removal_refuses_missing_scope_and_unsafe_requests_before_storage() {
+    let root = tempfile::tempdir().unwrap();
+    let profile = root.path().join("not-created");
+    let oversized = "r".repeat(129);
+    let cases = vec![
+        vec!["account", "remove-preview"],
+        vec!["account", "removal-status", "--request-id", "remove-1"],
+        vec![
+            "account",
+            "remove",
+            "--expected-revision",
+            "1",
+            "--request-id",
+            "remove-1",
+        ],
+        vec!["--account", "chosen", "account", "remove"],
+        vec![
+            "--account",
+            "chosen",
+            "account",
+            "remove",
+            "--expected-revision",
+            "0",
+            "--request-id",
+            "remove-1",
+        ],
+        vec![
+            "--account",
+            "chosen",
+            "account",
+            "remove",
+            "--expected-revision",
+            "9223372036854775808",
+            "--request-id",
+            "remove-1",
+        ],
+        vec![
+            "--account",
+            "chosen",
+            "account",
+            "remove",
+            "--expected-revision",
+            "1",
+            "--request-id",
+            "",
+        ],
+        vec![
+            "--account",
+            "chosen",
+            "account",
+            "remove",
+            "--expected-revision",
+            "1",
+            "--request-id",
+            "unsafe\nidentity",
+        ],
+        vec![
+            "--account",
+            "chosen",
+            "account",
+            "remove",
+            "--expected-revision",
+            "1",
+            "--request-id",
+            oversized.as_str(),
+        ],
+        vec![
+            "--account",
+            "chosen",
+            "account",
+            "remove",
+            "--expected-revision",
+            "1",
+            "--request-id",
+            "remove-1",
+            "--retention",
+            "delete",
+        ],
+        vec![
+            "--account",
+            "chosen",
+            "account",
+            "removal-status",
+            "--request-id",
+            "",
+        ],
+    ];
+    for tail in cases {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args(["--profile", profile.to_str().unwrap()])
+            .args(&tail)
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{tail:?}");
+        assert!(!profile.exists(), "Created storage for {tail:?}");
+    }
+}
+
+#[test]
+fn restore_requires_account_revision_and_configuration_before_storage() {
+    let root = tempfile::tempdir().unwrap();
+    let profile = root.path().join("not-created");
+    let config = root.path().join("synthetic-client.json");
+    std::fs::write(&config, b"{}").unwrap();
+    for tail in [
+        vec![
+            "google",
+            "restore",
+            "--client-config",
+            config.to_str().unwrap(),
+            "--expected-revision",
+            "1",
+        ],
+        vec![
+            "--account",
+            "chosen",
+            "google",
+            "restore",
+            "--client-config",
+            config.to_str().unwrap(),
+        ],
+        vec![
+            "--account",
+            "chosen",
+            "google",
+            "restore",
+            "--client-config",
+            config.to_str().unwrap(),
+            "--expected-revision",
+            "0",
+        ],
+        vec![
+            "--account",
+            "chosen",
+            "google",
+            "restore",
+            "--client-config",
+            "absent-client.json",
+            "--expected-revision",
+            "1",
+        ],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args(["--profile", profile.to_str().unwrap()])
+            .args(&tail)
+            .output()
+            .unwrap();
+        assert!(!output.status.success(), "{tail:?}");
+        assert!(!profile.exists(), "Created storage for {tail:?}");
+    }
+}
+
+#[test]
+fn synthetic_browser_flag_cannot_silently_apply_to_ordinary_commands() {
+    let root = tempfile::tempdir().unwrap();
+    let profile = root.path().join("not-created");
+    for tail in [vec!["status"], vec!["account", "remove-preview"]] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args([
+                "--profile",
+                profile.to_str().unwrap(),
+                "--verification-google-auth",
+            ])
+            .args(&tail)
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(!profile.exists());
+    }
+    // Even the opt-in build needs explicit engine selection before a sign-in
+    // attempt can reach the fixture handshake. Ordinary builds reject the flag.
+    let config = root.path().join("synthetic-client.json");
+    std::fs::write(&config, b"{}").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+        .args([
+            "--profile",
+            profile.to_str().unwrap(),
+            "--verification-google-auth",
+            "google",
+            "connect",
+            "--client-config",
+            config.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(!profile.exists());
+}
+
+#[test]
 fn google_preflight_does_not_start_storage_for_missing_scope_or_setup() {
     let root = tempfile::tempdir().unwrap();
     let absent = root.path().join("not-created");

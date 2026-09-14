@@ -8,10 +8,13 @@ use std::collections::BTreeSet;
 
 impl Store {
     pub(crate) fn calendar_sources(&self) -> Result<Value> {
+        self.calendar_sources_for(None)
+    }
+    pub(crate) fn calendar_sources_for(&self, archive_account: Option<&str>) -> Result<Value> {
         let live = self.profile_kind()? == crate::live_profile::ProfileKind::Live;
-        let mut statement = self.db.prepare("SELECT c.account,c.calendar_id,a.name,a.email,c.time_zone,c.access,c.revision,c.sync_token,k.json,COALESCE(k.deleted,0),COALESCE(k.observed_epoch,0),COALESCE(cs.full_generation,0),COALESCE(cs.complete,0),c.published_generation,c.retained_errors,c.full_generation FROM calendar_sync_state c JOIN accounts a ON a.id=c.account LEFT JOIN calendar_catalog k USING(account,calendar_id) LEFT JOIN calendar_catalog_state cs ON cs.account=c.account ORDER BY a.name,c.calendar_id LIMIT 101")?;
+        let mut statement = self.db.prepare("SELECT c.account,c.calendar_id,a.name,a.email,c.time_zone,c.access,c.revision,c.sync_token,k.json,COALESCE(k.deleted,0),COALESCE(k.observed_epoch,0),COALESCE(cs.full_generation,0),COALESCE(cs.complete,0),c.published_generation,c.retained_errors,c.full_generation,a.lifecycle_state FROM calendar_sync_state c JOIN accounts a ON a.id=c.account LEFT JOIN calendar_catalog k USING(account,calendar_id) LEFT JOIN calendar_catalog_state cs ON cs.account=c.account WHERE (a.lifecycle_state='active' OR a.id=?1) ORDER BY a.name,c.calendar_id LIMIT 101")?;
         let mut calendars = Vec::new();
-        let mut rows = statement.query([])?;
+        let mut rows = statement.query([archive_account])?;
         while let Some(row) = rows.next()? {
             let mut permission: String = row.get(5)?;
             let calendar: String = row.get(1)?;
@@ -38,7 +41,8 @@ impl Store {
                     _ => calendar.as_str(),
                 });
             let writable =
-                crate::live_calendar_writes::live_source_writable(parse_access(&permission)?);
+                crate::live_calendar_writes::live_source_writable(parse_access(&permission)?)
+                    && row.get::<_, String>(16)? == "active";
             calendars.push(json!({"account":row.get::<_,String>(0)?,"calendar_id":calendar,"name":name,"account_name":row.get::<_,String>(2)?,"account_email":row.get::<_,String>(3)?,"time_zone":row.get::<_,String>(4)?,"permission":permission,"writable":writable,"can_create":writable && (!live || complete),"revision":row.get::<_,i64>(6)?,"primary":metadata["primary"]==true,"hidden":metadata["hidden"]==true,"provider_selected":metadata["selected"],"color":metadata["backgroundColor"],"coverage":if permission=="none"{"denied"}else if complete{"cached"}else{"incomplete"}}));
         }
         let truncated = calendars.len() > 100;
@@ -47,6 +51,13 @@ impl Store {
     }
 
     pub(crate) fn calendar_combined(&self, p: &Value) -> Result<Value> {
+        self.calendar_combined_for(p, None)
+    }
+    pub(crate) fn calendar_combined_for(
+        &self,
+        p: &Value,
+        archive_account: Option<&str>,
+    ) -> Result<Value> {
         fields(p, &["from", "to", "calendars"])?;
         let from = parse_date(string(p, "from")?)?;
         let to = parse_date(string(p, "to")?)?;
@@ -84,10 +95,13 @@ impl Store {
             }
             Some(selected)
         };
-        let catalog = self.calendar_sources()?;
+        let catalog = self.calendar_sources_for(archive_account)?;
         let sources = catalog["calendars"].as_array().unwrap();
         if let Some(selected) = &selected {
             for (account, calendar) in selected {
+                if self.account_lifecycle(account)?["state"] == "removed" {
+                    continue;
+                }
                 if !sources
                     .iter()
                     .any(|v| v["account"] == *account && v["calendar_id"] == *calendar)
@@ -112,7 +126,7 @@ impl Store {
         let mut budgets = 0;
         let mut details = Vec::new();
         if live && selected.is_none() {
-            let pending:i64=self.db.query_row("SELECT COUNT(*) FROM google_accounts g LEFT JOIN calendar_catalog_state c ON c.account=g.account WHERE COALESCE(c.complete,0)=0",[],|r|r.get(0))?;
+            let pending:i64=self.db.query_row("SELECT COUNT(*) FROM google_accounts g JOIN accounts a ON a.id=g.account LEFT JOIN calendar_catalog_state c ON c.account=g.account WHERE a.lifecycle_state='active' AND COALESCE(c.complete,0)=0",[],|r|r.get(0))?;
             incomplete += pending as usize;
             if sources.is_empty() && pending == 0 {
                 incomplete += 1;
@@ -273,7 +287,9 @@ impl Store {
             if receipt.is_some() {
                 return self.calendar_write_ack(account, &json!({"request_id":request_id}));
             }
+            self.require_active_account(account)?;
         } else {
+            self.require_active_account(account)?;
             let checkpoint = self.calendar_checkpoint(account, calendar)?;
             let access = parse_access(checkpoint["access"].as_str().unwrap())?;
             if kind == "create" {
@@ -413,6 +429,7 @@ impl Store {
             result["local_only"] = true.into();
             return Ok(result);
         }
+        self.require_active_account(account)?;
         let target: EventKey = serde_json::from_value(intent["write"]["target"].clone())?;
         let result = self.commit_local_calendar_write(&target, request_id, &intent);
         if let Err(error) = &result {

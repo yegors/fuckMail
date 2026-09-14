@@ -1,0 +1,32 @@
+   Compiling fm-engine v0.1.0 (C:\Users\Yegor\Projects\Fuckaround\fuckMail\crates\fm-engine)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 19.32s
+     Running unittests src\main.rs (target\debug\deps\fm_engine-bdc9187f3bef88d8.exe)
+
+running 3 tests
+test verification_google::fixture::accounts_tests::accounts_fixture_denial_and_cancel_after_store_leave_truthful_removed_cleanup ... FAILED
+test verification_google::fixture::accounts_tests::accounts_fixture_drives_signed_identity_grants_import_remove_and_restore_without_autostart ... ok
+test verification_google::fixture::accounts_tests::concurrent_first_add_cannot_overwrite_a_grant_before_its_metadata_binds ... FAILED
+
+failures:
+
+---- verification_google::fixture::accounts_tests::accounts_fixture_denial_and_cancel_after_store_leave_truthful_removed_cleanup stdout ----
+
+thread 'verification_google::fixture::accounts_tests::accounts_fixture_denial_and_cancel_after_store_leave_truthful_removed_cleanup' panicked at crates\fm-engine\src\verification_google\fixture\accounts_tests.rs:315:5:
+assertion `left == right` failed
+  left: String("restore_in_flight")
+ right: "pending"
+
+---- verification_google::fixture::accounts_tests::concurrent_first_add_cannot_overwrite_a_grant_before_its_metadata_binds stdout ----
+
+thread 'verification_google::fixture::accounts_tests::concurrent_first_add_cannot_overwrite_a_grant_before_its_metadata_binds' panicked at crates\fm-engine\src\verification_google\fixture\accounts_tests.rs:81:14:
+called `Result::unwrap()` on an `Err` value: CoreError { code: "login_in_progress", message: "Finish or cancel the current Google login first", details: Null }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    verification_google::fixture::accounts_tests::accounts_fixture_denial_and_cancel_after_store_leave_truthful_removed_cleanup
+    verification_google::fixture::accounts_tests::concurrent_first_add_cannot_overwrite_a_grant_before_its_metadata_binds
+
+test result: FAILED. 1 passed; 2 failed; 0 ignored; 0 measured; 153 filtered out; finished in 20.15s
+
+error: test failed, to rerun pass `-p fm-engine --bin fm-engine`

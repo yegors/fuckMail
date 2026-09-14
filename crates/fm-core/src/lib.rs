@@ -6,6 +6,7 @@ use std::{
     fs::{File, OpenOptions},
     path::{Path, PathBuf},
 };
+pub mod account_lifecycle;
 pub mod assist_store;
 #[cfg(test)]
 mod benchmark;
@@ -41,7 +42,7 @@ mod queries;
 mod sender_kind_tests;
 #[cfg(test)]
 mod test_profiles;
-pub const SCHEMA_VERSION: u32 = 17;
+pub const SCHEMA_VERSION: u32 = 18;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -335,7 +336,17 @@ impl Store {
             tx.execute_batch("PRAGMA user_version=17")?;
             tx.commit()?;
         }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 17 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-018-account-lifecycle.sql"))?;
+            tx.execute_batch("PRAGMA user_version=18")?;
+            tx.commit()?;
+        }
         store.validate_profile_identity()?;
+        store.recover_account_cleanup()?;
         store.recover_captures()?;
         store.recover_google_drafts()?;
         store.recover_google_sends()?;
@@ -388,8 +399,13 @@ impl Store {
             };
         }
         if method == "accounts" {
-            fields(&params, &[])?;
-            return self.accounts();
+            fields(&params, &["include_removed"])?;
+            let include_removed = match params.get("include_removed") {
+                None => false,
+                Some(Value::Bool(v)) => *v,
+                _ => return Err(err("invalid_request", "include_removed must be boolean")),
+            };
+            return self.accounts_including_removed(include_removed);
         }
         if method == "status" {
             fields(&params, &[])?;
@@ -414,6 +430,8 @@ impl Store {
             _ => {}
         }
         if ![
+            "account_remove_preview",
+            "account_remove_status",
             "conversations",
             "conversation",
             "flag",
@@ -461,6 +479,14 @@ impl Store {
             return Err(err("not_found", "Account does not exist in this profile"));
         }
         match method {
+            "account_remove_preview" => {
+                fields(&params, &[])?;
+                self.account_remove_preview(account)
+            }
+            "account_remove_status" => {
+                fields(&params, &["request_id"])?;
+                self.account_remove_status(account, string(&params, "request_id")?)
+            }
             "conversations" => self.conversations(account, &params),
             "sender_summary" => self.sender_summary(account, &params),
             "conversation" => {
