@@ -1,5 +1,7 @@
 # Development plan
 
+**September 14 handoff:** continue from runtime `618e8a0` on the next computer. The rendering correction and final native 22/22 pass; Package03 was interrupted, so finish package verification and unchanged performance checks before claiming acceptance. See [current handoff](status.md#computer-handoff--start-here). The founder requested commit/push and no further work on the departing host.
+
 Updated 2026-09-14 under [D009–D039](decisions.md). **Phases 0 and 1 are complete on available hosts. Phase 2 has a D039 Windows feedback package at `61a212a`; Google-first readiness remains 0/9 whole areas verified.**
 
 Current boundary: Core 27 / Gmail 12 / Calendar 20 / Platform 14 / Mail UI 25 / CLI 20 / Quality 23 / Search 5 / schema 20; fixtures 0/3 and protocol 1 unchanged. Account lifecycle, Google mail/Drafts/Send, supported Calendar recurrence/invitations/RSVP, running-app reminders, partial grants and bounded cached Calendar search are implemented with scoped Windows evidence. Package02 and final native CTest02 pass. [Status](status.md) summarizes the exact tested scope; [execution](research/phase-2-execution.md) retains failures and source identities.

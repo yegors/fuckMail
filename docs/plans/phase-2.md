@@ -1,5 +1,7 @@
 # Phase 2 — Google mail and calendar together
 
+**September 14 handoff:** runtime `618e8a0` includes the tested list-rendering correction, with final native 22/22. Package03 was interrupted; package/performance and actual-account gates remain open. Continue on the next computer from the [handoff record](../status.md#computer-handoff--start-here), preserving the unchanged budgets and prior failures.
+
 **D038/D039 Windows feedback package: `61a212a`, schema 20.** Current revisions are Core 27, Gmail 12, Calendar 20, Platform 14, Mail UI 25, CLI 20, Quality 23 and Search 5; fixtures 0/3 and protocol 1 are unchanged. Account lifecycle, mail/Drafts/Send, supported Calendar recurrence/invitations/RSVP, reminders, partial grants and bounded Calendar search have scoped Windows tests. Package02 and final native CTest02 pass. [Status](../status.md) and [execution](../research/phase-2-execution.md) retain exact source, binaries and limitations.
 
 **Final performance is pending.** Generated-sync navigation01 passes all four 100-ms p95 targets; the separate large-navigation01 fails `visible_snapshot` with duplicate stale delegates. Diagnose that correctness failure before final acceptance. Actual Google accounts, sustained authorization, complete agreed offline inventory, backup/retention admission and current other-host CI remain required. Whole Google-first readiness stays **0/9**.

@@ -2,13 +2,15 @@
 
 A personal mail and calendar client for separate Google accounts, with a native GUI and CLI sharing one local store. Human correspondence comes first: unread means unreviewed, stars hold work for later, and only the user chooses Done/Delayed. Humans write replies.
 
+**September 14 computer handoff:** latest runtime source is `618e8a0` on `codex/phase-2`. The mail-list rendering fix and final native **22/22** suite pass. Package03 was interrupted; final packaging and performance reruns remain unfinished. Start with the [handoff and next steps](docs/status.md#computer-handoff--start-here). Source, reference assets and verification evidence are committed; local SDKs, binaries, profiles and credentials are not transferred by Git.
+
 ## Current Windows feedback build
 
 **D038/D039 at `61a212a` has a verified Windows development package.** Normal startup opens an empty live profile. Settings supports Google account setup, local removal with a retained archive and explicit restoration. Mail includes cached reading/search, composition, attachments, Google Drafts and explicit Send with recovery. Calendar includes permitted combined views, invitations, supported recurrence scopes/self-RSVP, running-app reminders and cached search in the displayed date range. The September 14 reference guides the native design.
 
 The current boundary is **Core 27 / Gmail 12 / Calendar 20 / Platform 14 / Mail UI 25 / CLI 20 / Quality 23 / Search 5 / schema 20**, with fixtures 0/3 and protocol 1 unchanged. Package02 passes relocated GUI/CLI and empty-live startup checks on its exact source. Final native CTest02 passes **22/22**; the [execution record](docs/research/phase-2-execution.md) distinguishes these results from earlier scoped tests and failures.
 
-**Final performance acceptance is pending.** Generated-sync navigation01 passes the four 100 ms p95 targets at **66.1764 / 69.0417 / 67.8952 / 29.6932 ms** for mailbox click/Tab/Shift+Tab/reader. The separate large-navigation01 run fails its `visible_snapshot` correctness check with duplicate stale delegates and is under investigation. This pass does not erase that failure or earlier measurements.
+**Final performance acceptance is pending.** Generated-sync navigation01 on Package02 passes the four 100 ms p95 targets at **66.1764 / 69.0417 / 67.8952 / 29.6932 ms** for mailbox click/Tab/Shift+Tab/reader. Large-navigation01 found stale delegate text/geometry, now corrected at `618e8a0` with native regressions. The packaged repeat has not run; earlier results keep their original source scope.
 
 **Google-first readiness remains 0/9 whole areas verified.** Generated-provider workflows and a Windows package do not establish actual Google account behavior, sustained authorization, complete offline coverage, protected backup/restore, current other-host CI or trusted distribution.
 
@@ -33,7 +35,7 @@ The implementation uses Rust, C++20/Qt Quick/QML, private local IPC and SQLite/F
 
 ## Next work
 
-Resolve the large-navigation correctness failure and finish packaged performance checks. Then use the [Phase 2 admission and comparison gates](docs/plans/phase-2.md#builds-the-founder-can-test) for controlled personal Gmail and Workspace testing, actual provider reconciliation, sustained refresh and complete agreed source coverage. Verify backup/restore and protection on the real profile volume. Current Mac/Linux CI, native vault/input behavior and distribution qualification remain separate.
+On the next computer, finish package verification and packaged performance checks for `618e8a0` or its successor. Then use the [Phase 2 admission and comparison gates](docs/plans/phase-2.md#builds-the-founder-can-test) for controlled personal Gmail and Workspace testing, actual provider reconciliation, sustained refresh and complete agreed source coverage. Verify backup/restore and protection on the real profile volume. Current Mac/Linux CI, native vault/input behavior and distribution qualification remain separate.
 
 IMAP, SMTP and external iCalendar subscriptions stay deferred until the founder has dogfooded the Google GUI and CLI. CalDAV and a broad public launch have separate scope.
 
