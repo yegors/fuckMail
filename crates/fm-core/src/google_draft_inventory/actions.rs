@@ -201,7 +201,10 @@ impl Store {
             || source.sha256 != expected["sha256"].as_str().unwrap_or("")
             || Some(source.size) != expected["size"].as_u64()
         {
-            return Err(err("stale_source_revision","The linked Google draft changed; its newer version is preserved"));
+            return Err(err(
+                "stale_source_revision",
+                "The linked Google draft changed; its newer version is preserved",
+            ));
         }
         Ok(p)
     }

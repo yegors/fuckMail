@@ -22,7 +22,7 @@ QString reminderKey(const QVariantMap &event) {
         event.value("id").toString(), event.value("start").toString()}).toJson(QJsonDocument::Compact));
 }
 bool changesCalendarQuery(const QVariantMap &before, const QVariantMap &after) {
-    for (const auto &key : {"week_start", "selected_calendars", "calendar_view", "calendar_date", "timeline_date", "calendar_display_time_zone"})
+    for (const auto &key : {"week_start", "selected_calendars", "calendar_account_visibility", "calendar_view", "calendar_date", "timeline_date", "calendar_display_time_zone"})
         if (before.value(key) != after.value(key)) return true;
     return before.isEmpty();
 }
@@ -224,12 +224,14 @@ void MailBackend::loadCalendarSources() {
         if (!ok) return;
         const auto sources = result["calendars"].toArray().toVariantList();
         if (m_calendarSources == sources) return;
+        const auto previousSelection = effectiveCalendarSelection();
         // A successful permission recheck advances the store's general source
         // revision. Only an observed authority change should invalidate the
         // very occurrence lookup that performed that recheck. Keep a local
         // epoch so a revoke/restore cycle still fences older UI callbacks.
         if (calendarPolicies(m_calendarSources) != calendarPolicies(sources)) ++m_calendarAuthorityEpoch;
         m_calendarSources = sources; emit eventsChanged();
+        if (previousSelection != effectiveCalendarSelection()) loadCalendar();
     });
 }
 void MailBackend::calendarWrite(const QVariantMap &values) {
@@ -277,7 +279,9 @@ void MailBackend::loadPreferences() {
 }
 void MailBackend::setPreferences(const QVariantMap &patch) {
     if (patch.isEmpty() && m_preferencesPending.isEmpty()) return;
+    const auto previousVisibility = m_preferences.value("calendar_account_visibility");
     for (auto it = patch.cbegin(); it != patch.cend(); ++it) { m_preferences[it.key()] = it.value(); m_preferencesPending[it.key()] = it.value(); }
+    if (previousVisibility != m_preferences.value("calendar_account_visibility")) emit eventsChanged();
     m_preferencesStatus = "Saving…"; emit preferencesChanged(); savePreferences();
 }
 void MailBackend::savePreferences() {
@@ -301,7 +305,7 @@ void MailBackend::savePreferences() {
             if (m_preferencesPending.value(it.key()) == it.value()) m_preferencesPending.remove(it.key());
         m_preferencesStatus = m_preferencesPending.isEmpty() ? "Saved on this machine" : "Saving…";
         emit preferencesChanged();
-        for (const auto &key : {"week_start", "selected_calendars", "calendar_display_time_zone"})
+        for (const auto &key : {"week_start", "selected_calendars", "calendar_account_visibility", "calendar_display_time_zone"})
             if (submitted.contains(key)) { loadCalendar(); break; }
         if (!m_preferencesPending.isEmpty()) savePreferences();
         if (m_shutdown) finishShutdown();
@@ -339,6 +343,20 @@ void MailBackend::setCalendarSelected(const QString &account, const QString &cal
     }
     if (selected && !found) next.append(QVariantMap{{"account", account}, {"calendar_id", calendar}});
     setPreferences({{"selected_calendars", next}});
+}
+
+QJsonValue MailBackend::effectiveCalendarSelection() const {
+    auto selection = QJsonValue::fromVariant(m_preferences.value("selected_calendars"));
+    if (selection.isUndefined()) selection = QJsonValue::Null;
+    if (m_preferences.value("calendar_account_visibility").toString() != "current") return selection;
+    const auto candidates = selection.isArray() ? selection.toArray() : QJsonArray::fromVariantList(m_calendarSources);
+    QJsonArray selected;
+    for (const auto &value : candidates) {
+        const auto source = value.toObject();
+        if (source["account"].toString() == m_account)
+            selected.append(QJsonObject{{"account",m_account},{"calendar_id",source["calendar_id"]}});
+    }
+    return selected;
 }
 
 bool MailBackend::validFilterSender(const QString &sender) const {

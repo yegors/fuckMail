@@ -35,7 +35,7 @@ Record scoped Rust query/settings/Calendar tests, native keyboard/selection/form
 
 ### Still required for the active goal
 
-The areas above now have scoped checks and a configured Windows candidate. The active goal is not complete: remote cleanup of linked discarded drafts and remaining Settings/search/timeline interactions still need implementation or verification. D065 delivers local draft-discard Undo; D066 delivers Calendar deletion Undo; D067 delivers pending Sent rows and reply bubbles. Composer sender-account selection is delivered under D063; D064 below covers Send Undo. Account removal currently retains a read-only local archive, while the prototype describes local deletion; reconcile that product boundary before claiming parity. The prototype’s simulated oversized-attachment download-link behavior is not implemented. Source comparison and native captures do not establish rendered reference parity.
+D070–D071 implement the remaining identified Calendar selector and timeline drag gaps. Source/native review covers the surfaces listed above; rendered reference comparison remains blocked by the browser restriction. Account removal keeps the common confirmation style and truthful archive wording. D068 remote cleanup and the prototype’s simulated oversized-attachment link service remain outside the narrowed GUI/UX pass. Earlier scoped evidence retains its recorded source/host limits.
 
 ### Connection and reader continuation
 
@@ -206,3 +206,43 @@ Verification and limits:
 - Pending reader text remains bounded and explicitly reports truncation/read failures. Attachment metadata is shown before acquisition; files open through the acquired Sent copy. The current thread lookup is bounded to 100 outstanding replies, and Sent provides paged loading. Unknown outcomes remain unknown; only exact acknowledged provider acquisition suppresses accepted previews. No real mailbox/provider/model, broad workspace/performance or other-host qualification is claimed. Rendered reference parity and the broader goal remain open.
 
 Final source manifest164 records 528 authored files after documentation updates. Hygiene164 passes with 5,247,418 bytes of curated supplied assets; generated evidence remains ignored. The configured package164 is the current candidate.
+
+
+## D069 — focused UI continuation (2026-09-15)
+
+The founder narrowed the goal to GUI/UX alignment and requested commit/push when complete. D068 provider-draft cleanup is preserved at ignored `build/verification/ui3-cleanup-parked168/` (13 exact source files plus the turn patch); its incomplete module registration and schema29 migration were removed from the active build. No schema29 package or actual-profile migration was performed. The configured candidate continues using schema28 and the established local discard/Undo behavior.
+
+Search now follows the compact prototype sections with real quick-filter actions, filled selected chips, scope-specific Sent dates, hidden empty categories, a compact advanced-filter control and the shared shadow treatment. Filters remain visible/removable across scopes. Existing typed UTC bounds implement Today, Yesterday and Earlier; search words remain unchanged. Examples use cached account metadata. Settings uses the prototype's date-group label and On/Off control. The Settings walkthrough and contextual search captures now target Terminal instead of the historical Harbour theme.
+
+Verification:
+
+- Native search172 passes in **7.04s**, covering actual Main controls, filter toggle/query routing, date boundaries, unchanged search words, keyboard focus/Escape, Calendar query isolation, and Graphite/Paper/Terminal plus narrow large-text captures. Native171 also passes; its test-only category metadata omitted counts, producing `undefined` in the background rail. Fixture172 supplies the real count shape. Production category data was unchanged.
+- Native Calendar controls172 passes **12.30s**; mail selection172 passes **3.30s**, each in a separate invocation.
+- Strict all-target scoped Rust lint172 passes. The three Core draft-discard/Undo tests pass in **3.67s**, including restart/exact replay, account/revision guards and unfinished recipients. D068's early lint166 failure and later preliminary lint167 remain preserved; neither establishes provider-cleanup acceptance.
+- Configured build/install173 and relocated package173 pass SDK-free CLI/empty-live GUI, app Google registration availability, schema28 reopen and final engine shutdown. Earlier package164 remains preserved at `ui3-relocated164`. No actual user profile was opened.
+
+Mail UI46/Quality46; Core40/Gmail21/Calendar23/CLI35/schema28, fixtures0/3 and protocol1. No real Google/model/mailbox operations, performance sweep, other-host or rendered-reference acceptance is claimed. The narrowed goal remains active until the outstanding UI comparison and final commit/push are complete.
+
+Final UI refinement: Main repositions an already-open search popup when the window or header layout changes, preserving the text field's focus. Native search175 passes in **6.33s**, including a 1400→1000px resize with the popup remaining inside the viewport. Search174 failed a test-only assumption that the wide field must be past x=900;175 waits for the actual rendered frame and checks the popup's real edge against the smaller viewport instead. The original failure and teardown diagnostics remain preserved. Native production build174, install176 and configured SDK-free relocation176 pass; package173 and package164 remain preserved. Final hygiene176 passes with 528 authored source files and 5,247,418 curated-asset bytes. Final hashes are in ignored `ui3-source-manifest176.json`. The existing unrelated `build/dev` GUI/engine processes were left untouched.
+
+
+## D070–D071 — Calendar visibility and adjacent timeline days (2026-09-15)
+
+Calendar Settings now starts with Other accounts’ events, Show/Hide. The saved choice follows the current mailbox while preserving individual calendar selections. Calendar, the Mail timeline and contextual search share that selection; sync and reminders remain independent. Individual calendars and the display zone are available in collapsed details at the bottom.
+
+The timeline paints three real date projections during a drag. One existing cached Calendar query supplies preceding/current/following days, clipped in the display zone. Navigation reuses the arriving day while refreshing the next range; selection/zone changes invalidate incompatible cache entries. Neighbor panels cannot receive focus or open events. Lost mouse capture or leaving Mail cancels an unfinished gesture. Deletion Undo filters all projections.
+
+Evidence:
+
+- Core preferences177: **8 passed in 6.73s**, including default/value validation, atomic refusal, exact replay, restart and preserved unrelated/individual settings. Strict scoped all-target lint177 passes.
+- Actual CLI round-trip179: a new engine saves `current`; preserved package176 reads it, edits the theme and retains it; the new engine reopens both settings at schema28. Every isolated CLI owner shuts down. No actual mailbox is opened.
+- Native visibility/search179: **6.54s**, including production Settings Show/Hide and expandable details, account switching with delayed earlier replies, original calendar selection and unchanged reminders. Calendar controls179: **12.24s**.
+- Native timeline/search180: **7.15s**; final181: **7.07s**. These use actual Main/QML, real mouse drag and accessible event activation, distinct previous/selected/next events, overnight clipping, bounded retained dates, cached arrival, zone invalidation and late reply rejection. Existing search/filter/focus/resize checks remain in the same scoped test. Calendar Undo180 passes **7.03s**.
+- Settings and dragged-timeline captures180/181 cover Graphite, Paper and Terminal. Source/native review also rechecked the retained reader44 and Accounts45 captures, common confirmation dimensions, the two-line list structure and the settings section order against the supplied source. Earlier editor, connection, composer, model and label captures/tests retain their recorded scope. No additional discrepancy was identified in this review; this is not a rendered prototype comparison.
+- Build182 and configured install/relocation182 pass SDK-free CLI, empty-live GUI startup/preference save/polling, Google app registration availability, schema28 reopen and clean test-owner shutdown. Candidate: `dist/ui3-windows-amd64`; exact preserved relocation: `build/verification/ui3-relocated182`.
+
+Retained failures: build177 used an ambiguous test-only QJson comparison; native178 waited for two held requests on the deliberately serialized socket. Corrected179 checks the same late-response behavior while draining requests in production order. Neither failure is hidden or counted as a product pass. Earlier package176, all logs and parked D068 work remain ignored local evidence.
+
+Boundary: Core41/Gmail21/Calendar25/Mail UI48/CLI36/Quality48, schema28/fixtures0,3/protocol1. No actual mailbox/provider/model, external send/invitation, broad workspace/performance or other-host verification was performed. The unrelated running `build/dev` app and engine were left untouched. The remaining visual acceptance limit is the browser restriction on rendering the supplied prototype; source/native review cannot establish pixel-for-pixel equivalence.
+
+Final hygiene182 passes: 528 authored files and 5,247,418 curated-asset bytes. `git diff --check` reports no whitespace errors. Final source hashes are recorded in ignored `ui3-source-manifest182.json`; generated profiles, packages, captures, logs and app registration stay outside Git.

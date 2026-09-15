@@ -22,7 +22,6 @@ mod composition;
 mod composition_tests;
 mod content;
 mod draft_discard;
-pub mod draft_discard_cleanup;
 pub mod draft_transfer;
 mod fixture;
 pub mod google_draft_inventory;
@@ -55,7 +54,7 @@ mod queries;
 mod sender_kind_tests;
 #[cfg(test)]
 mod test_profiles;
-pub const SCHEMA_VERSION: u32 = 29;
+pub const SCHEMA_VERSION: u32 = 28;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -501,13 +500,6 @@ impl Store {
             let tx = store.db.unchecked_transaction()?;
             tx.execute_batch(include_str!("migration-028-draft-discard.sql"))?;
             tx.execute_batch("PRAGMA user_version=28")?;
-            tx.commit()?;
-        }
-        let version: u32 = store.db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 28 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-029-draft-discard-cleanup.sql"))?;
-            tx.execute_batch("PRAGMA user_version=29")?;
             tx.commit()?;
         }
         store.validate_profile_identity()?;

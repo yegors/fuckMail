@@ -103,6 +103,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QString timelineCoverage READ timelineCoverage NOTIFY eventsChanged)
     Q_PROPERTY(bool calendarReady READ calendarReady NOTIFY eventsChanged)
     Q_PROPERTY(bool timelineReady READ timelineReady NOTIFY eventsChanged)
+    Q_PROPERTY(QVariantList timelinePanels READ timelinePanels NOTIFY eventsChanged)
     Q_PROPERTY(QVariantList calendarOperations READ calendarOperations NOTIFY calendarOperationsChanged)
     Q_PROPERTY(bool calendarOperationsLoading READ calendarOperationsLoading NOTIFY calendarOperationsChanged)
     Q_PROPERTY(bool calendarOperationsHasMore READ calendarOperationsHasMore NOTIFY calendarOperationsChanged)
@@ -133,7 +134,8 @@ public:
     QVariantMap recipientInputs() const { QVariantMap values; for (auto it = m_recipientInputs.cbegin(); it != m_recipientInputs.cend(); ++it) values[it.key()] = it.value(); return values; }
     QVariantList events() const { return visibleCalendarEvents(m_events, true); }
     QVariantList todayEvents() const { return visibleCalendarEvents(m_todayEvents, true); }
-    QVariantList reminders() const { return visibleCalendarEvents(m_reminders); }
+    QVariantList timelinePanels() const;
+    QVariantList reminders() const { return visibleCalendarEvents(m_reminders, false, false); }
     Q_INVOKABLE void dismissCalendarReminder(const QVariantMap &event);
     Q_INVOKABLE void joinCalendarEvent(const QVariantMap &event);
     QVariantMap currentAccount() const;
@@ -441,7 +443,7 @@ private:
     QHash<QString, CalendarDeletion> m_calendarDeletions;
     int m_calendarUndoMs = 6000;
     QVariantMap currentCalendarSource(const QVariantMap &event) const;
-    QVariantList visibleCalendarEvents(const QVariantList &rows, bool reflow = false) const;
+    QVariantList visibleCalendarEvents(const QVariantList &rows, bool reflow = false, bool filterByAccount = true) const;
     bool calendarEventHidden(const QVariantMap &event) const;
     void advanceCalendarDeletions();
     void undoCalendarDeletion(const QString &key);
@@ -505,6 +507,7 @@ private:
     QJsonObject draftSelector() const;
     QString draftContext() const;
     void loadDraftRows(bool append, bool preserveLoaded = true);
+    QJsonValue effectiveCalendarSelection() const;
     void loadDraftPage(const QString &account, int generation, int offset, QVariantList collected, int desiredCount);
     void loadActiveDraft();
     void acceptDraft(const QJsonObject &result, bool restoreView = false);
@@ -726,6 +729,8 @@ private:
     int m_captureNextOffset = -1, m_captureGeneration = 0;
     QString m_calendarView = "week", m_calendarDate, m_timelineDate, m_calendarCoverage;
     QString m_timelineCoverage, m_calendarScope, m_timelineScope;
+    QString m_timelineCacheContext;
+    QVariantMap m_timelineDayEvents;
     bool m_calendarReady = false, m_timelineReady = false;
     QVariantList m_calendarOperations;
     QHash<QString, QJsonObject> m_calendarOperationCursors;

@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
     json!({"density":"comfortable","mail_date_grouping":"grouped","sync_every_minutes":1,"week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
-        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"calendar_display_time_zone":null,"google_sync_limits":null,"google_sync_services":{},"notifications":"events"})
+        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"calendar_display_time_zone":null,"calendar_account_visibility":"all","google_sync_limits":null,"google_sync_services":{},"notifications":"events"})
 }
 impl Store {
     pub fn google_service_sync_enabled(&self, account: &str, service: &str) -> Result<bool> {
@@ -96,6 +96,7 @@ impl Store {
                 "timeline_start_hour",
                 "timeline_end_hour",
                 "selected_calendars",
+                "calendar_account_visibility",
                 "calendar_view",
                 "calendar_date",
                 "timeline_date",
@@ -174,6 +175,7 @@ impl Store {
         }
         for (key, allowed) in [
             ("mail_date_grouping", &["grouped", "plain"][..]),
+            ("calendar_account_visibility", &["all", "current"][..]),
             ("theme", &["graphite", "paper", "terminal", "harbour"][..]),
             ("text_size", &["small", "default", "large"][..]),
             ("startup_view", &["mail", "calendar", "last"][..]),
@@ -371,6 +373,47 @@ pub(crate) fn required_revision(p: &Value) -> Result<i64> {
 #[cfg(test)]
 mod appearance_tests {
     use super::*;
+    #[test]
+    fn calendar_account_visibility_is_additive_typed_and_durable() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        let original = store.preferences().unwrap();
+        assert_eq!(
+            original["preferences"]["calendar_account_visibility"],
+            "all"
+        );
+        let request = json!({"preferences":{"calendar_account_visibility":"current"},"expected_revision":0,"request_id":"calendar-visibility"});
+        let saved = store
+            .handle("preferences_save", None, request.clone())
+            .unwrap();
+        let mut expected = original["preferences"].clone();
+        expected["calendar_account_visibility"] = json!("current");
+        assert_eq!(saved["preferences"], expected);
+        for invalid in [json!("hidden"), json!(false), json!(null), json!(1)] {
+            assert_eq!(store.handle("preferences_save",None,json!({"preferences":{"calendar_account_visibility":invalid},"expected_revision":1,"request_id":"bad-visibility"})).unwrap_err().code,"invalid_request");
+            assert_eq!(store.preferences().unwrap(), saved);
+        }
+        drop(store);
+        let mut store = Store::open(dir.path()).unwrap();
+        assert_eq!(store.preferences().unwrap(), saved);
+        assert_eq!(
+            store.handle("preferences_save", None, request).unwrap(),
+            saved
+        );
+        let changed=store.handle("preferences_save",None,json!({"preferences":{"theme":"paper"},"expected_revision":1,"request_id":"unrelated-appearance"})).unwrap();
+        assert_eq!(
+            changed["preferences"]["calendar_account_visibility"],
+            "current"
+        );
+        assert_eq!(
+            changed["preferences"]["selected_calendars"],
+            original["preferences"]["selected_calendars"]
+        );
+        assert_eq!(
+            changed["preferences"]["notifications"],
+            original["preferences"]["notifications"]
+        );
+    }
     #[test]
     fn account_service_switches_are_independent_durable_and_validated() {
         let dir = tempfile::tempdir().unwrap();

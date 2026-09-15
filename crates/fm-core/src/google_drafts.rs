@@ -659,19 +659,6 @@ impl Store {
         )
     }
 
-    pub(crate) fn cancel_discarded_draft_preparation(&mut self, account: &str, draft: &str) -> Result<()> {
-        self.require_active_account(account)?;
-        let discarded: bool = self.db.query_row("SELECT discarded FROM drafts WHERE account=?1 AND draft_id=?2", params![account,draft], |r| r.get(0))?;
-        if !discarded { return Err(err("stale_revision", "The discarded draft was restored")); }
-        let (_, mut twin) = self.google_twin(account, draft)?;
-        if twin.state != "prepared" { return Ok(()); }
-        let mut op = self.google_draft_operation(account, twin.operation_id.as_deref().ok_or_else(invalid)?)?.ok_or_else(invalid)?;
-        if op.state != "prepared" { return Err(err("google_draft_pending", "The upload has already started")); }
-        op.state = "failed".into(); op.revision += 1; op.error = Some("draft_discarded".into());
-        twin.state = "failed".into(); twin.failed_draft_revision = Some(op.draft_revision); twin.retry = None;
-        self.persist_google_draft(&op, Some(&mut twin), false)
-    }
-
     pub fn google_draft_observe_begin(
         &self,
         scope: &GoogleDraftScope,

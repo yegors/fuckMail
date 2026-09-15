@@ -725,3 +725,27 @@ Discard of a locally owned draft also removes its linked Google draft after the 
 Wait for earlier owned uploads, reconcile acknowledged versions, and cancel only proven-undispatched preparation. Delete only an exact linked source whose own acknowledged/adopted identity still matches; preserve external changes and unknown ownership. An unknown DELETE is read-only reconciled, never automatically repeated. Pending or blocked removal must be visible from Drafts and inspectable/retryable through the same Core/CLI boundary. Existing receipts and local snapshot bytes stay unchanged. Historical discards acquire no new provider intent during migration.
 
 Core41/Gmail22/Mail UI46/CLI36/Quality46/schema29; fixtures0/3 and protocol1 unchanged. Required evidence: exact target/deadline/Undo/claim fences, late upload and source-change handling, unknown/rejected deletion recovery, restart/account lifecycle, native confirmation/activity/Undo, actual migration/refusal/readback and configured package. Preserve package164. The full prototype goal remains active; all verification uses isolated generated data/providers.
+
+## D069 — P2-UI3 visual and interaction scope
+
+2026-09-15T11:04:12-04:00
+
+The founder narrowed the active objective to matching the latest prototype's GUI and UX, followed by commit and push. Set aside D068's unfinished provider cleanup; it is not a condition of this UI pass. Preserve its exact work in ignored `build/verification/ui3-cleanup-parked168/`, including the untracked module and this turn's patch. Remove the incomplete migration and module registration from the active build, retaining the verified schema28 behavior. D068 was never delivered or exercised against a real profile.
+
+Mail UI46/Quality46 cover the source-based UI comparison: search quick-filter chips, selected-chip colors, Sent date filters, current theme coverage and Settings wording. Existing typed filters own the query; shortcut examples use the account's real categories/senders and real date bounds rather than simulated query syntax. Core40/Gmail21/Calendar23/CLI35/schema28, fixtures0/3 and protocol1 remain the delivered boundary. Scoped native interaction checks, theme/resize captures and a configured relocated package count as evidence. The earlier browser restriction still prevents rendered reference comparison; do not equate source inspection with visual acceptance. Account retention wording must remain truthful to the existing archive behavior.
+
+## D070 — P2-UI3 Calendar visibility
+
+2026-09-15
+
+Add the prototype's Show/Hide control for other accounts' events. A typed `calendar_account_visibility` preference defaults to `all`; `current` intersects the existing individual calendar selection with the currently selected mailbox. Calendar, timeline and contextual Calendar search use the same effective selection and invalidate stale reads after account/catalog changes. Preserve explicit calendar selection, sync and reminder settings. Move individual calendar and display-zone controls into the existing expandable details so the default Settings layout follows the prototype.
+
+Core41/Calendar24/Mail UI47/CLI36/Quality47; Gmail21/schema28/fixtures0,3/protocol1 unchanged. This additive presentation preference uses the existing extensible JSON preferences store and generic CLI patch command. Verify typed saves/replay/restart, exact old-engine round-trip retention, native account-switch and late-response guards, visible Settings controls and the configured package. No new provider workflow is required.
+
+## D071 — P2-UI3 adjacent timeline days
+
+2026-09-15
+
+Render the preceding, selected and following days while dragging the Mail timeline, matching the supplied prototype. Use one bounded three-day cached Calendar query through the existing shared method. Retain only those three day projections; re-use a cached adjacent day when navigation finishes, and invalidate them when calendar selection or display zone changes. All projections respect account visibility and pending deletion Undo. Only the selected day's controls can receive focus or open details. No new provider acquisition or schema is needed.
+
+Calendar25/Mail UI48/Quality48; Core41/Gmail21/CLI36/schema28/fixtures0,3/protocol1 unchanged. Verify three distinct day projections, cached navigation, stale-response and scope guards, native drag/click/keyboard behavior and theme captures. This completes the remaining identified interaction gap before the final UI audit and package.

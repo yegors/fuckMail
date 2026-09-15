@@ -32,6 +32,9 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
     initializeCalendarSearch();
     initializeSendUndo();
     connect(this, &MailBackend::accountChanged, this, [this] { loadOutgoing(); });
+    connect(this, &MailBackend::accountChanged, this, [this] {
+        if (m_preferences.value("calendar_account_visibility").toString() == "current") loadCalendar();
+    });
     connect(this, &MailBackend::conversationChanged, this, [this] {
         const auto scope = QJsonDocument(QJsonArray{m_account, m_selected}).toJson(QJsonDocument::Compact);
         if (!m_messageModel.replace(QString::fromUtf8(scope), conversation().value("messages").toList())) {
@@ -1038,21 +1041,41 @@ void MailBackend::publishCalendarWindow(const QJsonObject &result, const QString
     m_events = calendarPresentation(result["events"].toArray(), QDate::fromString(from, Qt::ISODate), days, QTimeZone(result["time_zone"].toString().toUtf8()));
     m_calendarReady = true; m_calendarCoverage = calendarCoverageText(result["coverage"].toObject());
 }
+QVariantList MailBackend::timelinePanels() const {
+    QVariantList panels;
+    const auto center = QDate::fromString(m_timelineDate, Qt::ISODate);
+    for (int offset = -1; offset <= 1; ++offset) {
+        const auto date = center.addDays(offset).toString(Qt::ISODate);
+        panels.append(QVariantMap{{"date", date},
+            {"events", offset == 0 ? todayEvents() : visibleCalendarEvents(m_timelineDayEvents.value(date).toList(), true)},
+            {"ready", offset == 0 ? m_timelineReady : m_timelineDayEvents.contains(date)}});
+    }
+    return panels;
+}
 void MailBackend::loadCalendar() {
     const auto from = calendarFrom(), timeline = m_timelineDate;
     const int days = calendarDays(), generation = ++m_calendarGeneration;
     m_weekStart = from;
-    const auto selection = QJsonValue::fromVariant(m_preferences.value("selected_calendars"));
+    const auto selection = effectiveCalendarSelection();
     const QJsonObject calendarParams{{"from", from}, {"to", QDate::fromString(from, Qt::ISODate).addDays(days).toString(Qt::ISODate)}, {"calendars", selection}};
-    const QJsonObject timelineParams{{"from", timeline}, {"to", QDate::fromString(timeline, Qt::ISODate).addDays(1).toString(Qt::ISODate)}, {"calendars", selection}};
+    const auto timelineDay = QDate::fromString(timeline, Qt::ISODate);
+    const QJsonObject timelineParams{{"from", timelineDay.addDays(-1).toString(Qt::ISODate)}, {"to", timelineDay.addDays(2).toString(Qt::ISODate)}, {"calendars", selection}};
     const auto displayZone = m_preferences.value("calendar_display_time_zone").toString();
+    const auto timelineContext = QString::fromUtf8(QJsonDocument(QJsonArray{selection}).toJson(QJsonDocument::Compact)) + "/" + displayZone;
+    if (timelineContext != m_timelineCacheContext) {
+        m_timelineCacheContext = timelineContext; m_timelineDayEvents.clear();
+    }
     const auto calendarScope = QString::fromUtf8(QJsonDocument(calendarParams).toJson(QJsonDocument::Compact)) + "/" + displayZone;
     const auto timelineScope = QString::fromUtf8(QJsonDocument(timelineParams).toJson(QJsonDocument::Compact)) + "/" + displayZone;
     if (calendarScope != m_calendarScope) {
         m_calendarScope = calendarScope; m_events.clear(); m_calendarReady = false;
     }
     if (timelineScope != m_timelineScope) {
-        m_timelineScope = timelineScope; m_todayEvents.clear(); m_timelineReady = false;
+        m_timelineScope = timelineScope;
+        m_todayEvents = m_timelineDayEvents.value(timeline).toList();
+        m_timelineReady = m_timelineDayEvents.contains(timeline);
+        for (const auto &date : m_timelineDayEvents.keys())
+            if (qAbs(timelineDay.daysTo(QDate::fromString(date, Qt::ISODate))) > 1) m_timelineDayEvents.remove(date);
     }
     const bool hadCalendarSnapshot = m_calendarReady, hadTimelineSnapshot = m_timelineReady;
     if (!m_connected) {
@@ -1085,11 +1108,18 @@ void MailBackend::loadCalendar() {
             if (!ok) {
                 m_timelineReady = false;
                 const auto code = result["code"].toString();
-                if (!hadTimelineSnapshot || code == "permission_denied" || code == "not_found" || code == "scope_mismatch") m_todayEvents.clear();
+                if (!hadTimelineSnapshot || code == "permission_denied" || code == "not_found" || code == "scope_mismatch") {
+                    m_todayEvents.clear(); m_timelineDayEvents.clear();
+                }
                 m_timelineCoverage = (m_todayEvents.isEmpty() ? "Timeline unavailable: " : "Cached timeline is stale: ") + result["message"].toString();
                 emit eventsChanged(); return;
             }
-            m_todayEvents = calendarPresentation(result["events"].toArray(), QDate::fromString(timeline, Qt::ISODate), 1, QTimeZone(result["time_zone"].toString().toUtf8()));
+            m_timelineDayEvents.clear();
+            const auto day = QDate::fromString(timeline, Qt::ISODate);
+            const auto zone = QTimeZone(result["time_zone"].toString().toUtf8());
+            for (int offset = -1; offset <= 1; ++offset)
+                m_timelineDayEvents[day.addDays(offset).toString(Qt::ISODate)] = calendarPresentation(result["events"].toArray(), day.addDays(offset), 1, zone);
+            m_todayEvents = m_timelineDayEvents.value(timeline).toList();
             m_timelineReady = true; m_timelineCoverage = coverageText(result["coverage"].toObject()); emit eventsChanged();
         });
 }

@@ -480,9 +480,9 @@ Item {
                         Divider {}
                         RowLayout {
                             Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
-                            PreferenceLabel { label: "Date groups"; detail: "Group Sent and Drafts by day. Inbox keeps its review states." }
+                            PreferenceLabel { label: "Group Sent and Drafts by date"; detail: "Today, yesterday, weekdays, then months. Off shows one plain list." }
                             FmSegmented {
-                                objectName: "mailDateGroupingPreference"; model: ["Grouped","Plain list"]
+                                objectName: "mailDateGroupingPreference"; model: ["On","Off"]
                                 currentIndex: backend.preferences.mail_date_grouping === "plain" ? 1 : 0
                                 onActivated: function(index) { backend.setPreferences({mail_date_grouping:index === 1 ? "plain" : "grouped"}); currentIndex = Qt.binding(function() { return backend.preferences.mail_date_grouping === "plain" ? 1 : 0 }) }
                                 Accessible.name: "Sent and Drafts date grouping"
@@ -518,33 +518,15 @@ Item {
                     }
                     ColumnLayout {
                         visible: settings.page === "Calendar"; Layout.fillWidth: true; spacing: 0
-                        RowLayout {
-                            visible: !backend.syntheticProfile; Layout.fillWidth: true; Layout.bottomMargin: 20; spacing: 12
-                            PreferenceLabel { label: "Display time zone"; detail: "Used for calendar grids, the Mail timeline and Today." }
-                            FmTextField { id: displayTimeZone; objectName: "calendarDisplayTimeZone"; Layout.preferredWidth: 200; text: backend.preferences.calendar_display_time_zone || ""; placeholderText: "America/Toronto"; Accessible.name: "Calendar display time zone" }
-                            FmButton { text: "Save"; outlined: true; enabled: displayTimeZone.text.trim().length > 0 && displayTimeZone.text.trim() !== backend.preferences.calendar_display_time_zone; onClicked: backend.setPreferences({calendar_display_time_zone:displayTimeZone.text.trim()}) }
-                        }
                         Description { text: "One combined feed across your selected calendars. Events keep their account name and the details you have permission to see."; Layout.maximumWidth: 560; Layout.bottomMargin: 16 }
                         RowLayout {
                             Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
-                            PreferenceLabel { label: "Visible calendars"; detail: "Selected independently of the mailbox you are reading." }
-                            FmButton { objectName: "calendarDisplayButton"; text: "Calendars"; iconName: settings.calendarDetailsOpen ? "down" : "next"; outlined: true; onClicked: settings.calendarDetailsOpen = !settings.calendarDetailsOpen }
-                        }
-                        ColumnLayout {
-                            visible: settings.calendarDetailsOpen; Layout.fillWidth: true; spacing: 12
-                            RowLayout { Layout.fillWidth: true; Caption { text: "Visible calendars" } FmButton { objectName: "showAllCalendars"; text: "Show all"; onClicked: backend.setPreferences({selected_calendars:null}) } FmButton { objectName: "hideAllCalendars"; text: "Hide all"; onClicked: backend.setPreferences({selected_calendars:[]}) } }
-                            Repeater {
-                                model: backend.calendarSources
-                                CheckBox {
-                                    required property var modelData
-                                    id: calendarCheck
-                                    objectName: "calendarSelected_" + modelData.account + "_" + modelData.calendar_id
-                                    Layout.fillWidth: true; implicitHeight: 46; spacing: 12; leftPadding: 28; rightPadding: 0
-                                    checked: settings.sourceSelected(modelData); onClicked: backend.setCalendarSelected(modelData.account,modelData.calendar_id,checked)
-                                    indicator: Rectangle { x: 0; y: (parent.height-height)/2; width: 16; height: 16; radius: 3; color: calendarCheck.checked ? Theme.text : "transparent"; border.color: calendarCheck.activeFocus ? Theme.focusBorder : calendarCheck.checked ? Theme.text : Theme.controlBorder; FmIcon { anchors.centerIn: parent; name: "check"; size: 13; color: Theme.canvas; visible: calendarCheck.checked } }
-                                    contentItem: Column { spacing: 4; Text { text: modelData.name; color: Theme.text; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(13) } } Text { text: modelData.account_name + " · " + settings.calendarPermissionLabel(modelData.permission); color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } } }
-                                    Accessible.name: modelData.name + " from " + modelData.account_name
-                                }
+                            PreferenceLabel { label: "Other accounts' events"; detail: "Show everything on one feed, or only the account you are in." }
+                            FmSegmented {
+                                objectName: "calendarAccountVisibility"; model: ["Show","Hide"]; optionNames: ["calendarAccounts_all","calendarAccounts_current"]
+                                currentIndex: backend.preferences.calendar_account_visibility === "current" ? 1 : 0
+                                onActivated: function(index) { backend.setPreferences({calendar_account_visibility:index === 1 ? "current" : "all"}); currentIndex = Qt.binding(function(){return backend.preferences.calendar_account_visibility === "current" ? 1 : 0}) }
+                                Accessible.name: "Other accounts' events"
                             }
                         }
                         Divider { }
@@ -589,6 +571,30 @@ Item {
                             FmSegmented { objectName: "weekStartPreference"; model: ["Monday","Sunday"]; currentIndex: backend.preferences.week_start === "sunday" ? 1 : 0; onActivated: function(index) { backend.setPreferences({week_start:index === 1 ? "sunday" : "monday"}); currentIndex = Qt.binding(function() { return backend.preferences.week_start === "sunday" ? 1 : 0 }) } Accessible.name: "Week starts on" }
                         }
                         Divider {}
+                        FmButton { objectName: "calendarDisplayButton"; Layout.topMargin: 20; text: "Calendars and time zone"; iconName: settings.calendarDetailsOpen ? "down" : "next"; textAlignment: Text.AlignLeft; leftPadding: 0; onClicked: settings.calendarDetailsOpen = !settings.calendarDetailsOpen }
+                        ColumnLayout {
+                            visible: settings.calendarDetailsOpen; Layout.fillWidth: true; spacing: 12
+                            RowLayout { Layout.fillWidth: true; Caption { text: "Visible calendars" } FmButton { objectName: "showAllCalendars"; text: "Show all"; onClicked: backend.setPreferences({selected_calendars:null}) } FmButton { objectName: "hideAllCalendars"; text: "Hide all"; onClicked: backend.setPreferences({selected_calendars:[]}) } }
+                            Repeater {
+                                model: backend.calendarSources
+                                CheckBox {
+                                    required property var modelData
+                                    id: calendarCheck
+                                    objectName: "calendarSelected_" + modelData.account + "_" + modelData.calendar_id
+                                    Layout.fillWidth: true; implicitHeight: 46; spacing: 12; leftPadding: 28; rightPadding: 0
+                                    checked: settings.sourceSelected(modelData); onClicked: backend.setCalendarSelected(modelData.account,modelData.calendar_id,checked)
+                                    indicator: Rectangle { x: 0; y: (parent.height-height)/2; width: 16; height: 16; radius: 3; color: calendarCheck.checked ? Theme.text : "transparent"; border.color: calendarCheck.activeFocus ? Theme.focusBorder : calendarCheck.checked ? Theme.text : Theme.controlBorder; FmIcon { anchors.centerIn: parent; name: "check"; size: 13; color: Theme.canvas; visible: calendarCheck.checked } }
+                                    contentItem: Column { spacing: 4; Text { text: modelData.name; color: Theme.text; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(13) } } Text { text: modelData.account_name + " · " + settings.calendarPermissionLabel(modelData.permission); color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } } }
+                                    Accessible.name: modelData.name + " from " + modelData.account_name
+                                }
+                            }
+                        }
+                        RowLayout {
+                            visible: settings.calendarDetailsOpen && !backend.syntheticProfile; Layout.fillWidth: true; Layout.topMargin: 12; spacing: 12
+                            PreferenceLabel { label: "Display time zone"; detail: "Used for calendar grids, the Mail timeline and Today." }
+                            FmTextField { id: displayTimeZone; objectName: "calendarDisplayTimeZone"; Layout.preferredWidth: 200; text: backend.preferences.calendar_display_time_zone || ""; placeholderText: "America/Toronto"; Accessible.name: "Calendar display time zone" }
+                            FmButton { text: "Save"; outlined: true; enabled: displayTimeZone.text.trim().length > 0 && displayTimeZone.text.trim() !== backend.preferences.calendar_display_time_zone; onClicked: backend.setPreferences({calendar_display_time_zone:displayTimeZone.text.trim()}) }
+                        }
                     }
                     ColumnLayout {
                         visible: settings.page === "Shortcuts"; Layout.fillWidth: true; spacing: 0

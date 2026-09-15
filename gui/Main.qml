@@ -18,6 +18,8 @@ ApplicationWindow {
     readonly property bool timelineAtTop: backend.preferences.timeline_position === "header"
     readonly property bool timelineVisible: workspace === "mail" && !settingsOpen
     readonly property bool searchPopupOpen: searchPopup.opened || calendarSearchPopup.opened
+    onWidthChanged: if (searchPopupOpen) Qt.callLater(positionSearchPopup)
+    onHeightChanged: if (searchPopupOpen) Qt.callLater(positionSearchPopup)
     property bool allowClose: false
     property var mailFocus: null
     property var calendarFocus: null
@@ -98,11 +100,19 @@ ApplicationWindow {
     function openSearch() {
         if (settingsOpen) return
         if (workspace === "calendar" && !calendarView.prepareSearch()) return
+        const popup = workspace === "calendar" ? calendarSearchPopup : searchPopup
+        positionSearchPopup()
+        popup.open()
+    }
+    function positionSearchPopup() {
         const point = searchBox.mapToItem(Overlay.overlay, 0, searchBox.height + 8)
         const popup = workspace === "calendar" ? calendarSearchPopup : searchPopup
         popup.x = Math.max(12, Math.min(point.x, Overlay.overlay.width - popup.width - 12))
         popup.y = point.y
-        popup.open()
+    }
+    Connections {
+        target: searchBox
+        function onXChanged() { if (window.searchPopupOpen) Qt.callLater(window.positionSearchPopup) }
     }
     function findMail() {
         if (settingsOpen) navigate(workspace)

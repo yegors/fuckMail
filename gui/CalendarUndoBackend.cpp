@@ -53,10 +53,11 @@ bool MailBackend::calendarEventHidden(const QVariantMap &event) const {
     for (const auto &pending : m_calendarDeletions) if (matchesDeletion(pending.request, event)) return true;
     return false;
 }
-QVariantList MailBackend::visibleCalendarEvents(const QVariantList &rows, bool reflow) const {
-    if (m_calendarDeletions.isEmpty()) return rows;
+QVariantList MailBackend::visibleCalendarEvents(const QVariantList &rows, bool reflow, bool filterByAccount) const {
+    const bool currentOnly = filterByAccount && m_preferences.value("calendar_account_visibility").toString() == "current";
+    if (m_calendarDeletions.isEmpty() && !currentOnly) return rows;
     QVariantList result;
-    for (const auto &row : rows) if (!calendarEventHidden(row.toMap())) result.append(row);
+    for (const auto &row : rows) if ((!currentOnly || row.toMap().value("account").toString() == m_account) && !calendarEventHidden(row.toMap())) result.append(row);
     return reflow && result.size() != rows.size() ? reflowCalendarPresentation(result) : result;
 }
 void MailBackend::calendarDeletionVisibilityChanged() { emit eventsChanged(); emit calendarSearchChanged(); emit remindersChanged(); }
