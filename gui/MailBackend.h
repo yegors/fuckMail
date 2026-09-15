@@ -202,6 +202,7 @@ public:
     Q_INVOKABLE void clearSenderCard();
     Q_INVOKABLE void writeToSender(const QString &email, const QString &name);
     Q_INVOKABLE void loadMore();
+    Q_INVOKABLE QString assistanceRequest(const QString &method, const QVariantMap &params, const QString &account = QString());
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void prepareGoogleSignIn();
     Q_INVOKABLE void connectGoogle(const QString &email, const QString &account = {}, bool reauthorize = false);
@@ -216,6 +217,7 @@ public:
     Q_INVOKABLE bool accountNavigationAllowed();
     Q_INVOKABLE void resolveUnsavedAccountBuffer(bool discard);
     Q_INVOKABLE bool accountCapability(const QString &account, const QString &name) const;
+    Q_INVOKABLE void refreshGoogleSync(const QString &account);
     Q_INVOKABLE QVariantMap googleSyncState(const QString &account) const;
     Q_INVOKABLE void startGoogleSync(const QString &account, const QVariantMap &limits);
     Q_INVOKABLE void pauseGoogleSync(const QString &account);
@@ -224,6 +226,12 @@ public:
     Q_INVOKABLE void refreshGoogleLabels(const QString &account);
     Q_INVOKABLE void bindGoogleLabel(const QString &account, const QString &labelId, const QString &categoryId, const QString &createName, const QVariant &expectedProviderLabelId, qint64 expectedCatalogRevision);
     Q_INVOKABLE void retryGoogleLabelBinding(const QString &account);
+    Q_INVOKABLE QVariantList snapshotMailRows(const QStringList &ids) const;
+    Q_INVOKABLE void applyMailSelection(const QVariantList &rows, const QString &action, const QString &categoryId = {});
+    Q_PROPERTY(int mailScopeCount READ mailScopeCount NOTIFY conversationsChanged)
+    int mailScopeCount() const { return m_mailScopeCount; }
+    Q_PROPERTY(QString mailSelectionStatus READ mailSelectionStatus NOTIFY mutationChanged)
+    QString mailSelectionStatus() const { return m_mailSelectionStatus; }
     Q_INVOKABLE void setRead(bool read);
     Q_INVOKABLE void setStarred(bool starred);
     Q_INVOKABLE void doneConversation();
@@ -310,6 +318,7 @@ public:
     Q_INVOKABLE void remember(const QString &key, const QVariant &value);
     Q_INVOKABLE void shutdown();
 signals:
+    void assistanceReply(const QString &ticket, const QString &method, const QVariantMap &result, bool ok);
     void calendarSearchChanged();
     void calendarSearchResultReady(const QVariantMap &event);
     void remindersChanged();
@@ -352,6 +361,7 @@ signals:
 private:
     friend class CalendarSearchTest;
     friend class MailNavigationCacheTest;
+    friend class MailSelectionTest;
     friend class NotificationBackendTest;
     friend class GuiMailNavigationSelfTest;
     friend class GuiInteractionBenchmark;
@@ -630,6 +640,12 @@ private:
     bool m_listRefreshPending = false;
     bool m_automaticReadScope = false;
     bool m_mutatingConversation = false;
+    int m_mailScopeCount = 0;
+    QString m_mailSelectionStatus, m_bulkAccount;
+    qint64 m_bulkLifecycle = 0;
+    QList<QJsonObject> m_bulkCommands;
+    int m_bulkIndex = 0;
+    void runMailSelection();
     bool m_draftDirty = false, m_savingDraft = false, m_shutdown = false;
     bool m_draftConflict = false, m_resolvingDraft = false;
     bool m_resumeSearch = false;

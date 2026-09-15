@@ -338,7 +338,7 @@ def package(preset):
         "Open Settings > Accounts > Connect Google account, enter your email, and continue with Google in your browser.\n"
         "Google sign-in requires the app registration included by the build's developer. No per-account JSON file is needed.\n"
         "Sign in using the browser. Personal Gmail and Google Workspace use Google APIs.\n"
-        "Sign-in alone does not import: set the actual Google Console quota limits in Settings, then start sync.\n"
+        "Sign-in alone does not import: choose Start sync for each account. Google API limits are built in.\n"
         "Use an encrypted local disk before importing personal mail. Keep the profile out of cloud-sync folders.\n"
         "Remove archives an account locally and removes its credentials; it never deletes the Google account.\n"
         "Closing the GUI ends its sync and reminders; an explicitly running CLI has its own lifetime.\n"

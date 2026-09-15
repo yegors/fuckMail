@@ -85,11 +85,12 @@ def run(args):
     report.parent.mkdir(parents=True, exist_ok=True)
     # Reserve before launching anything; this report cannot replace an older run.
     with report.open("x", encoding="utf-8") as destination:
-        workflows_upgrade = (args.old_schema, args.new_schema) == (19, 20)
+        model_upgrade = (args.old_schema, args.new_schema) == (20, 21)
+        workflows_upgrade = (args.old_schema, args.new_schema) == (19, 20) or model_upgrade
         occurrence_upgrade = (args.old_schema, args.new_schema) == (18, 19) or workflows_upgrade
         lifecycle_upgrade = (args.old_schema, args.new_schema) == (17, 18) or occurrence_upgrade
         calendar_upgrade = (args.old_schema, args.new_schema) == (16, 17) or lifecycle_upgrade
-        scenario = "calendar-workflows" if workflows_upgrade else "calendar-occurrences" if occurrence_upgrade else "account-lifecycle" if lifecycle_upgrade else "calendar-intents" if calendar_upgrade else "draft-provenance"
+        scenario = "local-model" if model_upgrade else "calendar-workflows" if workflows_upgrade else "calendar-occurrences" if occurrence_upgrade else "account-lifecycle" if lifecycle_upgrade else "calendar-intents" if calendar_upgrade else "draft-provenance"
         result = {"result": "failed", "scenario": f"schema-{args.old_schema}-to-{args.new_schema}-{scenario}", "version": 5,
                   "limitations": ["Generated synthetic composition/Calendar only; live journals have separate Core fixtures.",
                                   "Standalone engine/CLI source evidence; no GUI/package/performance acceptance."], "artifacts": []}
@@ -97,7 +98,7 @@ def run(args):
         try:
             old = {"fm": args.old_cli.resolve(strict=True), "fm-engine": args.old_engine.resolve(strict=True)}
             new = {"fm": args.new_cli.resolve(strict=True), "fm-engine": args.new_engine.resolve(strict=True)}
-            require((args.old_schema, args.new_schema) in ((14, 15), (15, 16), (16, 17), (17, 18), (18, 19), (19, 20)), "Choose a documented journal-schema upgrade")
+            require((args.old_schema, args.new_schema) in ((14, 15), (15, 16), (16, 17), (17, 18), (18, 19), (19, 20), (20, 21)), "Choose a documented journal-schema upgrade")
             require(old["fm-engine"] != new["fm-engine"], "Use a distinct preserved old-schema engine")
             result["executables"] = {kind: {key: {"path": str(path), "sha256": sha256(path)} for key, path in files.items()}
                                      for kind, files in (("old", old), ("new", new))}
@@ -105,6 +106,7 @@ def run(args):
             result["sources"] = sources
             with tempfile.TemporaryDirectory(prefix="fuckmail-draft-upgrade-") as temporary:
                 check = Check(Path(temporary).resolve(), package_environment())
+                check.demo_profile = model_upgrade
 
                 def release(owner, engine):
                     require(owner.poll() is None, "Local owner ended before assertions completed")
@@ -217,7 +219,7 @@ if __name__ == "__main__":
     parser.add_argument("--old-engine", type=Path, required=True)
     parser.add_argument("--new-cli", type=Path, required=True)
     parser.add_argument("--new-engine", type=Path, required=True)
-    parser.add_argument("--old-schema", type=int, choices=(14, 15, 16, 17, 18, 19), default=14)
-    parser.add_argument("--new-schema", type=int, choices=(15, 16, 17, 18, 19, 20), default=15)
+    parser.add_argument("--old-schema", type=int, choices=(14, 15, 16, 17, 18, 19, 20), default=14)
+    parser.add_argument("--new-schema", type=int, choices=(15, 16, 17, 18, 19, 20, 21), default=15)
     parser.add_argument("--report", type=Path, required=True)
     raise SystemExit(run(parser.parse_args()))

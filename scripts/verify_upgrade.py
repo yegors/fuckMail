@@ -80,7 +80,7 @@ class Check:
             return None
 
     def start_engine(self, files, label):
-        child, _ = self.spawn(files["fm-engine"], "--profile", self.profile, label=label)
+        child, _ = self.spawn(files["fm-engine"], "--profile", self.profile, *(("--demo-profile",) if getattr(self, "demo_profile", False) else ()), label=label)
         deadline = time.monotonic() + 35
         while self.pid() != child.pid:
             require(child.poll() is None, label + " exited before discovery")

@@ -51,8 +51,8 @@ class CalendarSearchTest {
             backend.m_preferencesSaving = false;
             for (const auto &id : {"personal", "workspace"}) {
                 backend.m_allAccounts.append(QVariantMap{{"id", id}, {"name", id}, {"email", QString(id) + "@example.test"},
-                    {"lifecycle", QVariantMap{{"state", "active"}, {"revision", 1}}},
-                    {"google", QVariantMap{{"connection_state", "connected"}, {"capabilities", QVariantMap{{"calendar_read", true}}}}}});
+                    {"message_count",0},{"lifecycle", QVariantMap{{"state", "active"}, {"revision", 1}}},
+                    {"google", QVariantMap{{"connection_state", "connected"}, {"capabilities", QVariantMap{{"calendar_read", true}, {"mail_read", true}}}}}});
                 backend.m_calendarSources.append(QVariantMap{{"account", id}, {"calendar_id", "same-calendar"},
                     {"name", "Saved team calendar"}, {"revision", 1}, {"permission", "reader"}, {"writable", false}});
             }
@@ -63,7 +63,16 @@ class CalendarSearchTest {
                 if (method == "calendar_search" || (method == "calendar_combined" && holdWindow)) requests.append({peer, request});
                 else {
                     QJsonObject result;
-                    if (method == "calendar_combined") result = response(request, current);
+                    if (method == "assist_settings_get") result = {{"revision",1},{"settings",QJsonObject{}},{"defaults",QJsonObject{}}};
+                    else if (method == "assist_results") result = {{"items",QJsonArray{}}};
+                    else if (method == "assist_watch") result = {{"watching",false}};
+                    else if (method == "assist_jobs") result = {{"jobs",QJsonArray{}}};
+                    else if (method == "google_sync_refresh") {
+                        require(request["account"] == "personal" && request["params"].toObject().isEmpty(), "header uses exact account and built-in limits");
+                        result = {{"active", true}};
+                    }
+                    else if (method == "google_sync_status") result = {{"accounts", QJsonArray::fromVariantList(hSyncRows())}};
+                    else if (method == "calendar_combined") result = response(request, current);
                     else if (method == "preferences_save") result = {{"revision", 2}};
                     else if (method == "calendar_sources") result = {{"calendars", catalog}};
                     else if (method == "accounts") result = {{"accounts", QJsonArray::fromVariantList(backend.m_allAccounts)}};
@@ -84,6 +93,7 @@ class CalendarSearchTest {
             await([&] { return hello; }, "authenticated cached framing");
             backend.m_connected = true; backend.m_initialAccountsLoaded = true; backend.m_initialPreferencesLoaded = true;
         }
+        QVariantList hSyncRows() const { QVariantList rows; for (const auto &v : backend.m_googleSync) rows.append(v); return rows; }
         ~Harness() { backend.m_shutdown = true; backend.m_calendarSearchTimer.stop(); backend.m_connected = false; backend.m_socket.abort(); }
         static QJsonObject response(const QJsonObject &request, const QJsonArray &events) {
             const auto params = request["params"].toObject();
@@ -223,6 +233,26 @@ class CalendarSearchTest {
         if (QGuiApplication::platformName() != "offscreen") { window->raise(); window->requestActivate(); }
         await([&] { return window->isExposed(); }, "native Main window is exposed");
         await([&] { return !named(window, "startupOverlay")->property("visible").toBool(); }, "actual startup overlay finishes before search input");
+        auto *sync = named(window, "headerSyncButton");
+        require(sync && sync->property("text").toString() == "Sync", "header has a real Sync control");
+        h.backend.m_syntheticProfile = false; emit h.backend.connectedChanged();
+        await([&]{return sync->property("enabled").toBool();}, "live account can sync");
+        h.backend.m_googleSync = {{"personal", QVariantMap{{"account","personal"},{"active",true},{"last_mail_sync_at",1789408800LL},
+            {"credential_access_required",true},{"progress",QVariantMap{{"mail","paused"}}}}}};
+        emit h.backend.googleSyncChanged();
+        require(sync->property("text").toString().startsWith("Retry sync · "), "denial has explicit retry and keeps last success");
+        auto *syncAccessible=QAccessible::queryAccessibleInterface(sync);
+        require(syncAccessible && syncAccessible->actionInterface(), "sync accessible activation");
+        syncAccessible->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
+        await([&]{return h.methods.contains("google_sync_refresh") && !h.backend.m_googleSyncChanging.contains("personal");}, "real button sends refresh RPC");
+        auto row=h.backend.m_googleSync["personal"].toMap(); row["credential_access_required"]=false;
+        row["progress"]=QVariantMap{{"mail","running"}}; h.backend.m_googleSync["personal"]=row; emit h.backend.googleSyncChanged();
+        require(sync->property("text").toString().startsWith("Syncing… · "), "running keeps previous successful time");
+        h.backend.m_account="workspace"; emit h.backend.accountChanged();
+        require(sync->property("lastSync").toDouble()==0, "sync timestamp cannot cross accounts");
+        h.backend.m_account="personal"; emit h.backend.accountChanged();
+        h.backend.m_syntheticProfile=true; emit h.backend.connectedChanged();
+        require(!sync->property("enabled").toBool(), "synthetic profile cannot start sync");
         auto *field = named(window, "searchField"); auto *calendar = named(window, "calendarWorkspace");
         require(field && calendar, "actual top search and Calendar workspace exist");
         auto *searchField = qobject_cast<QQuickItem *>(field);

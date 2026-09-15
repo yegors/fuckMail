@@ -21,7 +21,8 @@ import time
 from dev import package_environment
 from verify_google_calendar import (BASE, BASE_UNIX, WINDOW, Ledger, calendar, expected_source,
                                     journal_snapshot, same, validate_status, verify_publications, verify_retained_sources)
-from verify_google_navigation import LIMITS, expected_accounts, read_database, require, source_manifest
+from verify_google_limits import LIMITS
+from verify_google_navigation import expected_accounts, read_database, require, source_manifest
 from verify_google_drafts import read_json
 from verify_search_ingestion import sha256, stop_children
 
@@ -223,7 +224,7 @@ def run(args):
                     owners.append(owner)
                 wait_for(acquired, "all fourteen independent Calendar sources")
                 with closing(read_database(profile)) as db:
-                    require(db.execute("PRAGMA user_version").fetchone()[0] == 20, "Wrong shared Calendar schema")
+                    require(db.execute("PRAGMA user_version").fetchone()[0] == 21, "Wrong shared Calendar schema")
                 result["initial_sources"] = verify_retained_sources(profile, ledger)
                 require(not journal_snapshot(profile), "Acquisition unexpectedly created authored Calendar operations")
                 for owner in owners:

@@ -26,6 +26,7 @@ Canvas {
         function circle(x,y,r) { c.moveTo(x+r,y); c.arc(x,y,r,0,Math.PI*2) }
         c.beginPath()
         switch (name) {
+        case "summary": line([8,1.5,8,4.7]); line([8,11.3,8,14.5]); line([2.4,4.75,5.2,6.35]); line([10.8,9.65,13.6,11.25]); line([2.4,11.25,5.2,9.65]); line([10.8,6.35,13.6,4.75]); circle(8,8,1.6); break
         case "mail": c.roundedRect(2,3.5,12,9,1.3,1.3); line([2.5,4.5,8,8.7,13.5,4.5]); break
         case "calendar": c.roundedRect(2.5,3.5,11,10,1,1); line([2.5,7,13.5,7]); line([5.5,2,5.5,5]); line([10.5,2,10.5,5]); break
         case "search": circle(7,7,4.5); line([10.5,10.5,14,14]); break

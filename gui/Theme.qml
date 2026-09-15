@@ -64,6 +64,7 @@ QtObject {
     readonly property color secondary: inkAlpha(0.72)
     readonly property color faint: inkAlpha(0.35)
     readonly property color accent: current.accent
+    readonly property color ai: themeId === "paper" ? "#4F6C86" : themeId === "harbour" ? "#A7BBD0" : "#9BB0C4"
     readonly property color amber: accent
     readonly property color warn: current.warn
     readonly property color error: current.red

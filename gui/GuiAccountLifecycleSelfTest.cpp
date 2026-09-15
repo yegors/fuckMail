@@ -251,18 +251,14 @@ void GuiAccountLifecycleSelfTest::tick() {
     case 6:
         if (m_backend.googleAuthBusy() || m_backend.googleAuth().value("phase") != "connected" || row.isEmpty()) return;
         if (row["email"] != expected["email"] || row["lifecycle"].toObject()["state"] != "active") { finish("Native Add bound a different account."); return; }
-        result["add_lifecycle"] = row["lifecycle"]; m_results.append(result); m_backend.setCalendarDate(m_date); m_quotaFilled = false; m_stage = 7; break;
+        result["add_lifecycle"] = row["lifecycle"]; m_results.append(result); m_backend.setCalendarDate(m_date); m_stage = 7; break;
     case 7: if (click("googleSync_" + id)) m_stage = 8; break;
     case 8: {
-        auto dialog = m_window->findChild<QObject *>("googleSyncLimitsDialog");
-        if (dialog && dialog->property("visible").toBool()) {
-            if (!m_quotaFilled) {
-                for (const auto &key : quotaKeys) { auto field = named(m_window->contentItem(), key); if (!field) return; field->setProperty("text", QString::number(m_limits[key].toInteger())); QMetaObject::invokeMethod(field, "textEdited"); }
-                m_quotaFilled = true;
-            }
-            click("saveGoogleSyncLimits"); return;
+        if (m_window->findChild<QObject *>("googleSyncLimitsDialog")) { finish("Removed quota setup is still present."); return; }
+        if (m_backend.googleSyncState(id).value("owned").toBool()) {
+            if (QJsonObject::fromVariantMap(m_backend.googleSyncLimits()) != m_limits) { finish("Built-in sync limits differ from independent expectation."); return; }
+            m_stage = 9;
         }
-        if (m_backend.googleSyncState(id).value("owned").toBool()) m_stage = 9;
         break;
     }
     case 9: {

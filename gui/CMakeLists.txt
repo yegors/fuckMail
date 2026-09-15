@@ -56,7 +56,7 @@ set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(fuckmail-gui
     URI FuckMail
     VERSION 1.0
-    QML_FILES Main.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml FmButton.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmComboBox.qml MailView.qml MailFilters.qml SearchPopup.qml CalendarSearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleLabelSetup.qml TodayStrip.qml
+    QML_FILES Main.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml FmButton.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmComboBox.qml MailView.qml MailFilters.qml SearchPopup.qml CalendarSearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml LocalModelSettings.qml MailAssistance.qml SummaryCard.qml MessageAssistance.qml GoogleLabelSetup.qml TodayStrip.qml
     RESOURCES fonts/Geist-Regular.ttf fonts/Geist-Medium.ttf fonts/Geist-SemiBold.ttf fonts/LICENSE-Geist.txt
 )
 target_link_libraries(fuckmail-gui PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets)
@@ -170,6 +170,15 @@ if(BUILD_TESTING)
     set_tests_properties(gui-calendar-occurrence PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
     get_target_property(FM_NAVIGATION_TEST_SOURCES gui-calendar-occurrence-test SOURCES)
     list(REMOVE_ITEM FM_NAVIGATION_TEST_SOURCES CalendarOccurrenceBackendTest.cpp)
+    add_executable(gui-mail-selection-test MailSelectionTest.cpp ${FM_NAVIGATION_TEST_SOURCES})
+    target_link_libraries(gui-mail-selection-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
+    target_compile_features(gui-mail-selection-test PRIVATE cxx_std_20)
+    target_compile_definitions(gui-mail-selection-test PRIVATE FM_GUI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    if(WIN32)
+        target_link_libraries(gui-mail-selection-test PRIVATE advapi32)
+    endif()
+    add_test(NAME gui-mail-selection COMMAND gui-mail-selection-test)
+    set_tests_properties(gui-mail-selection PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
     add_executable(gui-mail-navigation-cache-test MailNavigationCacheTest.cpp ${FM_NAVIGATION_TEST_SOURCES})
     target_link_libraries(gui-mail-navigation-cache-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network)
     target_compile_features(gui-mail-navigation-cache-test PRIVATE cxx_std_20)
@@ -235,4 +244,12 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME gui-account-lifecycle-controls COMMAND gui-account-lifecycle-controls-test)
     set_tests_properties(gui-account-lifecycle-controls PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
+endif()
+
+if(BUILD_TESTING)
+    add_executable(gui-local-model-test LocalModelTest.cpp)
+    target_link_libraries(gui-local-model-test PRIVATE Qt6::Quick Qt6::QuickControls2)
+    target_compile_definitions(gui-local-model-test PRIVATE FM_GUI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME gui-local-model COMMAND gui-local-model-test)
+    set_tests_properties(gui-local-model PROPERTIES TIMEOUT 30 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
 endif()

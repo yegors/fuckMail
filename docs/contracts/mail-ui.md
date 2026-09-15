@@ -1,6 +1,10 @@
 # Mail UI, reader and human composer
 
-State: Draft · Revision: 28 · Updated: 2026-09-14 · Implementation: D043–D045 repairs are exercised on the founder’s real Gmail test account. Native regressions cover catalog/authority/focus and accessible event activation; scoped Mail/Calendar outcomes are in the Phase 2 execution record. Core 27/Gmail 13/Calendar 21/Platform 15/Mail UI 28/CLI 21/Quality 26/Search 5/schema 20, fixtures 0/3 and protocol 1. Whole-area readiness remains 0/9; historical evidence retains its original source scope.
+State: Draft · Revision: 32 · Updated: 2026-09-14 · Implementation: D043–D045 repairs are exercised on the founder’s real Gmail test account. Native regressions cover catalog/authority/focus and accessible event activation; scoped Mail/Calendar outcomes are in the Phase 2 execution record. Core 27/Gmail 13/Calendar 21/Platform 15/Mail UI 28/CLI 21/Quality 26/Search 5/schema 20, fixtures 0/3 and protocol 1. Whole-area readiness remains 0/9; historical evidence retains its original source scope.
+
+D054 replaces the top Local copy status with account-scoped Sync and the last successful Gmail check time. Clicking starts/wakes sync using built-in budgets; progress, failure and never-synced states remain truthful. Disable when disconnected, synthetic, removed or mail permission is unavailable. Failed checks preserve the previous successful timestamp.
+
+Revision 29: D049/P2-UI adopts the September 14 second export: stable 20-pixel Inbox/Sent/Drafts headings, reader spacing, context menus and modifier/range multi-selection. Inbox displays the existing non-Trash all-mail query, with actual imported category labels. All counts describe this same account scope. Selecting or right-clicking does not mark read; explicit opening retains read-on-open. Bulk state/category/filing commands retain exact member snapshots and account lifecycle, execute serially through the existing journal, and stop with an explicit partial result on failure. Later arrivals are never added, and provider acknowledgment remains distinct from local completion.
 
 D045 search dismissal: the search text field handles Escape while retaining its query. Deliberate mouse/Tab/back-Tab focus, typing and Find may open the contextual popup; restoration of focus after another popup or window must not reopen a dismissed search. Keep Mail and Calendar query/filter state independent. Consumers: Mail UI 28/Quality 26; Calendar 21 and other shared boundaries unchanged. Verify against actual Main input and popup-focus restoration.
 
@@ -165,3 +169,16 @@ The composer exposes no model-generated writing, rewrite, autocomplete or send p
 ## Open before affected behavior ships
 
 Validate the P1-08 composer and updated native layout at reference/compact sizes and on required platforms. Phase 1 remains local and synthetic: no real Google connection, model execution, legacy protocols, received HTML renderer, new-file import, aliases or timed hold. New/Reply all/Forward/Drafts and bounded recipient editing are confirmed current scope; their source-freezing, migration, conflict, restart and MIME evidence remains required. Provider-synchronized drafts and live delivery come later. Preserve earlier passes and failed attempts without treating either source presence or an isolated compile as acceptance. See [Slint](../research/slint-ui.md) for retained candidate-specific history.
+
+## D052 / P2-LLM consumer boundary
+
+Revision 30 consumes [Local assistance 6](local-ai.md#d052--p2-llm-implementation-boundary): shared discovery/settings/jobs/results/correction commands, schema-21 storage and manual precedence, bounded owned Ollama work, native/CLI parity and scoped acceptance. Runtime implementation/verification is in progress; fixtures 0/3 and protocol 1 remain unchanged. Earlier evidence retains its original revisions.
+
+
+## D053 summary presentation and control repair
+
+The reader follows Update 2’s bounded Summary card below thread metadata: 6-pixel radius, subtle assistance-colored outline, 2-pixel left accent, 14/18/15-pixel padding, compact uppercase heading and right-aligned model attribution. A message summary appears beside that message. Source/provenance and re-summarize controls are secondary; long output remains scrollable without displacing all original mail. All model output remains escaped/plain text. Empty, busy, failed, stale and partial states are distinct.
+
+Summary enablement alone exposes both thread and individual-message actions, including retained sent messages. Classification/correction targets only received messages. Requests carry current account/conversation and generation identity; late start replies are canceled, old polls cannot overwrite a newer job, start/cancel admission is immediate, and disconnect ends the local busy state. Source navigation reuses the reader’s exact member expansion/scroll mechanism. Settings preserves edits on refresh/conflict, offers explicit saved-settings reload, ignores obsolete discovery/sample responses and displays readable sample results. Existing session ownership and on-demand summary semantics remain unchanged.
+
+Verify these with native controls and rendered frames, focused engine/CLI tests and the actual local runner; retain original failures. This packet does not expand automatic inference or change schema 21, fixtures 0/3 or protocol 1.

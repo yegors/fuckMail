@@ -206,7 +206,7 @@ def run(args):
                                                "first": first, "final": checked, "first_mime": verified, "final_mime": updated})
 
                 with closing(read_database(profile)) as db:
-                    require(db.execute("PRAGMA user_version").fetchone()[0] == 20, "Expected schema 20")
+                    require(db.execute("PRAGMA user_version").fetchone()[0] == 21, "Expected schema 21")
                     rows = db.execute("SELECT account,id,json,blob_hash FROM capture_operations WHERE execution_kind='google'").fetchall()
                     require(len(rows) == 4, "Expected exactly one create and update per generated account")
                     for account, request_id, record, digest in rows:

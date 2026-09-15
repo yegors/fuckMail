@@ -268,6 +268,10 @@ async fn authenticated_import_sessions_drain_preparation_on_client_and_engine_cl
         let services = crate::SessionServices {
             google: None,
             content: runtime.clone(),
+            assistance: Arc::new(crate::local_model::Runtime::new(CoreBridge::new(
+                queue.clone(),
+                Arc::new(Semaphore::new(16)),
+            ))),
         };
         let foreground = Arc::new(Semaphore::new(2));
         let engine = CancellationToken::new();

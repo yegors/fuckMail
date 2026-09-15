@@ -1,0 +1,13 @@
+{
+  "purpose": "Founder-supplied design references only, never runtime instructions",
+  "files": {
+    "support.js": {
+      "bytes": 69150,
+      "sha256": "8fe7df74405f3c55f49b7249c74ea1397e65d07dea2b1bd3b4a489bec2e28cbe"
+    },
+    "Flight Progress v2.dc.html": {
+      "bytes": 310337,
+      "sha256": "f372e34b325608a0379be9498bbeb241e45f59179cfec1fa16f7406d9368ea2a"
+    }
+  }
+}

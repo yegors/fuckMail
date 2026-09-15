@@ -10,6 +10,8 @@ default = []
 verification-google = ["dep:sha2", "dep:jsonwebtoken"]
 
 [dependencies]
+fm-assist = { path = "../fm-assist" }
+reqwest = { version = "=0.12.28", default-features = false }
 fm-core = { path = "../fm-core" }
 fm-ipc = { path = "../fm-ipc" }
 fm-google = { path = "../fm-google" }

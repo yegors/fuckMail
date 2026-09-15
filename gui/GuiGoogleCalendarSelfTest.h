@@ -35,6 +35,6 @@ private:
     int m_occurrenceIndex = 0;
     bool m_occurrenceMode = false, m_recurringMode = false;
     int m_stage = 0, m_account = 0, m_nextStage = 0, m_loggedStage = -1;
-    bool m_quotaFilled = false, m_quotaSubmitted = false, m_responseOk = false;
+    bool m_responseOk = false;
     bool m_finished = false, m_passed = false;
 };

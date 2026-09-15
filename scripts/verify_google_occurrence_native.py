@@ -9,7 +9,8 @@ import json
 import re
 
 from verify_google_calendar import calendar, same
-from verify_google_navigation import LIMITS, require
+from verify_google_limits import LIMITS
+from verify_google_navigation import require
 from verify_google_occurrence_sources import (
     check_recurring_occurrence, editor_event, native_expectation, normalized_original,
     original_time, validate_resolution, validate_status, verify_window,

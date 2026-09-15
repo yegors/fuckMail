@@ -114,12 +114,21 @@ void MailBackend::pollMailDelivery() {
 void MailBackend::startGoogleSync(const QString &account, const QVariantMap &limits) {
     if (!m_connected || m_shutdown || m_syntheticProfile || account.isEmpty() || m_googleSyncChanging.contains(account)) return;
     m_googleSyncChanging.insert(account); ++m_accountWrites; emit googleSyncChanged();
-    request("google_sync_start", account, QJsonObject::fromVariantMap(limits), [this, account, limits](auto result, bool ok) {
+    request("google_sync_start", account, QJsonObject::fromVariantMap(limits), [this, account](auto result, bool ok) {
         m_googleSyncChanging.remove(account); --m_accountWrites; emit googleSyncChanged();
         if (!ok) { if (!m_shutdown) fail(result["message"].toString("Google sync could not start.")); finishShutdown(); return; }
-        // Retain only limits that the engine validated. This preference does not
-        // start an account on launch; ownership always comes from this action.
-        setPreferences({{"google_sync_limits", limits}});
+        pollGoogleSync(); loadAccounts();
+        if (m_shutdown) finishShutdown();
+    });
+}
+
+void MailBackend::refreshGoogleSync(const QString &account) {
+    if (!m_connected || m_shutdown || m_syntheticProfile || !accountCapability(account, "mail_read")
+        || m_googleSyncChanging.contains(account)) return;
+    m_googleSyncChanging.insert(account); ++m_accountWrites; emit googleSyncChanged();
+    request("google_sync_refresh", account, {}, [this, account](auto result, bool ok) {
+        m_googleSyncChanging.remove(account); --m_accountWrites; emit googleSyncChanged();
+        if (!ok && !m_shutdown) fail(result["message"].toString("Mail could not sync."));
         pollGoogleSync(); loadAccounts();
         if (m_shutdown) finishShutdown();
     });

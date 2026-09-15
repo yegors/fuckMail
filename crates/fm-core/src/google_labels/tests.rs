@@ -454,3 +454,161 @@ fn duplicate_or_oversized_catalogs_fail_before_store_publication() {
             <= CHUNK_BYTES
     );
 }
+
+#[test]
+fn linking_after_import_projects_saved_labels_without_inbox_or_remote_writes() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut store, account) = setup(directory.path());
+    publish(
+        &store,
+        &account,
+        &labels(&[
+            ("A", "Imported folder", "user"),
+            ("B", "Other folder", "user"),
+        ]),
+    );
+    let staged = crate::google_store::StagedMessage {
+        remote_id: "already-imported".into(),
+        remote_thread_id: "outside-inbox".into(),
+        history_id: "100".into(),
+        labels: vec!["A".into(), "UNREAD".into(), "STARRED".into()],
+        sender_name: "Human".into(),
+        sender_email: "human@example.test".into(),
+        recipient: "reader@example.test".into(),
+        subject: "Previously hidden".into(),
+        body: "Preserved source".into(),
+        sent_at: "2026-09-14T10:00:00Z".into(),
+        attachments: vec![],
+    };
+    crate::google_store::publish_message(&store.db, &account, &staged, "source").unwrap();
+    let (mid, cid, before_labels): (String,String,String) = store.db.query_row(
+        "SELECT m.id,m.conversation_id,s.provider_labels_json FROM messages m JOIN google_message_state s ON s.account=m.account AND s.message_id=m.id WHERE m.account=?1", [&account], |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap();
+    let before = store.conversation(&account, &cid).unwrap();
+    let request = create("link-after-import", 1, "imported", "A");
+    let receipt = store.google_category_bind(&account, &request).unwrap();
+    let after = store.conversation(&account, &cid).unwrap();
+    assert_eq!(after["categories"][0]["id"], "imported");
+    assert_eq!(after["messages"][0]["text"], before["messages"][0]["text"]);
+    assert_eq!(after["messages"][0]["unread"], true);
+    assert_eq!(after["messages"][0]["starred"], true);
+    assert_eq!(
+        after["revision"].as_i64().unwrap(),
+        before["revision"].as_i64().unwrap() + 1
+    );
+    let all = store
+        .handle(
+            "conversations",
+            Some(&account),
+            json!({"folder":"all","category":"imported"}),
+        )
+        .unwrap();
+    assert_eq!(all["filtered_conversation_count"], 1);
+    let inbox = store
+        .handle(
+            "conversations",
+            Some(&account),
+            json!({"folder":"inbox","category":"imported"}),
+        )
+        .unwrap();
+    assert_eq!(inbox["filtered_conversation_count"], 0);
+    assert_eq!(
+        store.google_category_bind(&account, &request).unwrap(),
+        receipt
+    );
+    assert_eq!(store.conversation(&account, &cid).unwrap(), after);
+    assert_eq!(
+        store
+            .db
+            .query_row("SELECT COUNT(*) FROM google_manual_intents", [], |r| r
+                .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+    assert_eq!(store.db.query_row("SELECT provider_labels_json FROM google_message_state WHERE account=?1 AND message_id=?2",params![account,mid],|r|r.get::<_,String>(0)).unwrap(),before_labels);
+
+    // Simulate a pre-fix live store: linked labels never populated membership.
+    store
+        .db
+        .execute(
+            "DELETE FROM message_categories WHERE account=?1",
+            [&account],
+        )
+        .unwrap();
+    store
+        .db
+        .execute(
+            "DELETE FROM meta WHERE key='google_category_projection_v1'",
+            [],
+        )
+        .unwrap();
+    drop(store);
+    let recovered = Store::open_live(directory.path()).unwrap();
+    let repaired = recovered.conversation(&account, &cid).unwrap();
+    assert_eq!(repaired["categories"][0]["id"], "imported");
+    assert_eq!(repaired["messages"][0]["unread"], true);
+    assert_eq!(repaired["messages"][0]["starred"], true);
+    assert_eq!(
+        recovered
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        20
+    );
+    drop(recovered);
+    let reopened = Store::open_live(directory.path()).unwrap();
+    assert_eq!(
+        reopened.conversation(&account, &cid).unwrap(),
+        repaired,
+        "repair is restart-idempotent"
+    );
+}
+
+#[test]
+fn saved_manual_category_choice_wins_during_projection_repair() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut store, account) = setup(directory.path());
+    publish(
+        &store,
+        &account,
+        &labels(&[("A", "Imported folder", "user")]),
+    );
+    store
+        .google_category_bind(&account, &create("bind", 1, "mine", "A"))
+        .unwrap();
+    let staged = crate::google_store::StagedMessage {
+        remote_id: "manual-source".into(),
+        remote_thread_id: "manual-thread".into(),
+        history_id: "100".into(),
+        labels: vec!["A".into()],
+        sender_name: "Human".into(),
+        sender_email: "human@example.test".into(),
+        recipient: "reader@example.test".into(),
+        subject: "Manual choice".into(),
+        body: "Retained".into(),
+        sent_at: "2026-09-14T10:00:00Z".into(),
+        attachments: vec![],
+    };
+    crate::google_store::publish_message(&store.db, &account, &staged, "source").unwrap();
+    let (mid, cid): (String, String) = store
+        .db
+        .query_row(
+            "SELECT id,conversation_id FROM messages WHERE account=?1",
+            [&account],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    let before = store.conversation(&account, &cid).unwrap();
+    store.handle("set_category",Some(&account),json!({"id":cid,"message_ids":[mid],"expected_revision":before["revision"],"request_id":"manual-clear","category_id":"mine","present":false})).unwrap();
+    let saved = store.conversation(&account, &cid).unwrap();
+    store
+        .db
+        .execute(
+            "DELETE FROM meta WHERE key='google_category_projection_v1'",
+            [],
+        )
+        .unwrap();
+    drop(store);
+    let recovered = Store::open_live(directory.path()).unwrap();
+    assert_eq!(recovered.conversation(&account, &cid).unwrap(), saved);
+    assert!(!recovered.db.query_row("SELECT value FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field='category' AND category_id='mine'",params![account,mid],|r|r.get::<_,bool>(0)).unwrap());
+}

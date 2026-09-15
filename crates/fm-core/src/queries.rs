@@ -275,6 +275,8 @@ impl Store {
                 |r| r.get(0),
             )?;
             out.last_mut().unwrap()["draft_count"] = json!(drafts);
+            out.last_mut().unwrap()["last_mail_sync_at"] =
+                json!(self.google_last_mail_sync(&account)?);
             let lifecycle = self.account_lifecycle(&account)?;
             out.last_mut().unwrap()["read_only"] = json!(lifecycle["state"] == "removed");
             out.last_mut().unwrap()["lifecycle"] = lifecycle;
@@ -470,8 +472,11 @@ impl Store {
         let unread = states.values().filter(|s| s.unread).count();
         let held = states.values().filter(|s| s.starred).count();
         let done = states.values().filter(|s| !s.unread && !s.starred).count();
+        let folders: (i64, i64, i64, i64) = self.db.query_row(
+            "SELECT count(DISTINCT CASE WHEN trashed=0 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=0 AND inbox=1 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=0 AND sent=1 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=1 THEN conversation_id END) FROM messages WHERE account=?1", [account],
+            |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)))?;
         Ok(
-            json!({"conversation_count":states.len(),"unread_conversation_count":unread,"held_conversation_count":held,"done_conversation_count":done,"scope":"all_account_mail_including_archive","held_includes_unread":true}),
+            json!({"folder_conversation_counts":{"all":folders.0,"inbox":folders.1,"sent":folders.2,"trash":folders.3},"conversation_count":states.len(),"unread_conversation_count":unread,"held_conversation_count":held,"done_conversation_count":done,"scope":"all_account_mail_including_archive","held_includes_unread":true}),
         )
     }
     fn coverage(&self, account: &str) -> Result<Value> {
@@ -1032,7 +1037,7 @@ impl Store {
             };
             out.push(json!({"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if expression.is_empty() && category.is_empty() && sender.is_empty() && exact_sender.is_empty() && after.is_empty() && before.is_empty() && attachment.is_none(){Vec::<String>::new()}else{matching}}));
         }
-        let result = json!({"conversations":out,"expanded_conversation_count":expanded_count,"filtered_group_counts":{"review":group_counts[0],"held":group_counts[1],"done":group_counts[2]},"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(next_cursor(offset+limit)?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?});
+        let result = json!({"conversations":out,"folder_conversation_count":self.account_counts(account)?["folder_conversation_counts"][folder],"expanded_conversation_count":expanded_count,"filtered_group_counts":{"review":group_counts[0],"held":group_counts[1],"done":group_counts[2]},"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(next_cursor(offset+limit)?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?});
         if cache_first_page {
             self.projection_cache.borrow_mut().insert(
                 first_page_key,
@@ -1326,6 +1331,46 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
 #[cfg(test)]
 mod projection_tests {
     use super::*;
+    #[test]
+    fn folder_totals_ignore_search_filters_and_refresh_after_trash() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let all = store
+            .conversations("windscribe", &json!({"folder":"all","limit":100}))
+            .unwrap();
+        let count = all["filtered_conversation_count"].as_i64().unwrap();
+        let empty = store
+            .conversations(
+                "windscribe",
+                &json!({"folder":"all","query":"no-such-subject-982764"}),
+            )
+            .unwrap();
+        assert_eq!(empty["filtered_conversation_count"], 0);
+        assert_eq!(empty["folder_conversation_count"], count);
+        let cid = all["conversations"][0]["id"].as_str().unwrap();
+        store
+            .db
+            .execute(
+                "UPDATE messages SET trashed=1 WHERE account='windscribe' AND conversation_id=?1",
+                [cid],
+            )
+            .unwrap();
+        let changed = store
+            .conversations(
+                "windscribe",
+                &json!({"folder":"all","query":"no-such-subject-982764"}),
+            )
+            .unwrap();
+        assert_eq!(changed["folder_conversation_count"], count - 1);
+        let trash = store
+            .conversations("windscribe", &json!({"folder":"trash","limit":100}))
+            .unwrap();
+        assert_eq!(
+            trash["folder_conversation_count"],
+            trash["filtered_conversation_count"]
+        );
+    }
+
     #[test]
     fn trash_folder_is_explicit_and_restoration_does_not_invent_inbox_membership() {
         let temp = tempfile::tempdir().unwrap();

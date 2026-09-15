@@ -35,6 +35,11 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Optional local Ollama summaries and label/sender-kind classification.
+    Assist {
+        #[command(subcommand)]
+        command: Assist,
+    },
     /// Initialize a separate empty live profile; requires an explicit --profile.
     ProfileInit,
     /// Explicit Google sign-in and retained-account connection management.
@@ -224,16 +229,19 @@ enum Google {
     /// Stop Google access while retaining downloaded content, drafts and credentials.
     Disconnect,
     /// Download mail and Calendar while this explicit CLI session remains open.
-    /// Supply the four actual Google Console per-minute quota limits.
+    /// Uses built-in Google API limits. Optional developer overrides must supply all four.
     Sync {
+        /// Fetch new mail immediately and retry denied credential access.
+        #[arg(long)]
+        refresh: bool,
         #[arg(long, value_parser=clap::value_parser!(u32).range(100..=100_000_000))]
-        gmail_project_units_per_minute: u32,
+        gmail_project_units_per_minute: Option<u32>,
         #[arg(long, value_parser=clap::value_parser!(u32).range(100..=100_000_000))]
-        gmail_account_units_per_minute: u32,
+        gmail_account_units_per_minute: Option<u32>,
         #[arg(long, value_parser=clap::value_parser!(u32).range(100..=100_000_000))]
-        calendar_project_units_per_minute: u32,
+        calendar_project_units_per_minute: Option<u32>,
         #[arg(long, value_parser=clap::value_parser!(u32).range(100..=100_000_000))]
-        calendar_account_units_per_minute: u32,
+        calendar_account_units_per_minute: Option<u32>,
         #[arg(long)]
         seconds: Option<u64>,
     },
@@ -500,6 +508,65 @@ enum Mail {
         #[arg(long)]
         request_id: Option<String>,
     },
+}
+
+#[derive(Subcommand)]
+enum Assist {
+    /// Discover the same-machine Ollama service and installed models.
+    Discover {
+        #[arg(long)]
+        endpoint: Option<String>,
+    },
+    /// Show saved settings, defaults and their revision.
+    Settings,
+    /// Save a settings JSON object with compare-and-swap revision checking.
+    Configure {
+        #[arg(long)]
+        settings_file: PathBuf,
+        #[arg(long)]
+        expected_revision: u64,
+    },
+    /// Test a chosen task on built-in synthetic mail without changing settings.
+    Test {
+        #[arg(value_parser=["summary","classification"])]
+        task: String,
+        #[arg(long, default_value = "personal")]
+        sample_case: String,
+        #[arg(long)]
+        settings_file: Option<PathBuf>,
+    },
+    /// Summarize retained mail without marking it read.
+    Summarize {
+        conversation_id: String,
+        #[arg(long)]
+        message_id: Option<String>,
+    },
+    /// Classify received messages without applying provider labels.
+    Classify {
+        conversation_id: String,
+        #[arg(long)]
+        message_id: Option<String>,
+    },
+    Results {
+        conversation_id: String,
+    },
+    Correct {
+        conversation_id: String,
+        message_id: String,
+        #[arg(value_parser=["human","automated","unknown","reset"])]
+        kind: String,
+        #[arg(long)]
+        expected_revision: u64,
+    },
+    Accept {
+        conversation_id: String,
+        message_id: String,
+        category_id: String,
+        #[arg(long)]
+        request_id: String,
+    },
+    /// Classify new arrivals for enabled accounts until Ctrl-C; no backfill sweep.
+    Watch,
 }
 
 #[derive(Subcommand)]
@@ -1218,6 +1285,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             | Command::Watch { .. }
             | Command::Call { .. }
             | Command::Preferences { .. }
+            | Command::Assist { .. }
             | Command::CalendarSources
             | Command::Calendar { combined: true, .. }
             | Command::Calendar {
@@ -1540,6 +1608,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
         Command::Google {
             command:
                 Google::Sync {
+                    refresh,
                     gmail_project_units_per_minute,
                     gmail_account_units_per_minute,
                     calendar_project_units_per_minute,
@@ -1547,7 +1616,35 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     seconds,
                 },
         } => {
-            let reply=client.call("google_sync_start",scope,json!({"gmail_project_units_per_minute":gmail_project_units_per_minute,"gmail_account_units_per_minute":gmail_account_units_per_minute,"calendar_project_units_per_minute":calendar_project_units_per_minute,"calendar_account_units_per_minute":calendar_account_units_per_minute})).await?;
+            let limits = if [
+                gmail_project_units_per_minute,
+                gmail_account_units_per_minute,
+                calendar_project_units_per_minute,
+                calendar_account_units_per_minute,
+            ]
+            .iter()
+            .all(|value| value.is_none())
+            {
+                json!({})
+            } else {
+                json!({"gmail_project_units_per_minute":gmail_project_units_per_minute,"gmail_account_units_per_minute":gmail_account_units_per_minute,"calendar_project_units_per_minute":calendar_project_units_per_minute,"calendar_account_units_per_minute":calendar_account_units_per_minute})
+            };
+            if *refresh && limits != json!({}) {
+                return Err(invalid(
+                    "--refresh uses the existing shared limits; omit quota overrides",
+                ));
+            }
+            let reply = client
+                .call(
+                    if *refresh {
+                        "google_sync_refresh"
+                    } else {
+                        "google_sync_start"
+                    },
+                    scope,
+                    limits,
+                )
+                .await?;
             result(reply.clone())?;
             emit(args, &reply)?;
             if !args.json {
@@ -1676,6 +1773,108 @@ async fn run(args: &Args) -> Result<(), Failure> {
                         recovery: RecoveryProofs::default(),
                     });
                 }
+            }
+        }
+        Command::Assist { command } => {
+            let (method, params) = match command {
+                Assist::Discover { endpoint } => (
+                    "assist_discover",
+                    endpoint
+                        .as_ref()
+                        .map(|e| json!({"endpoint":e}))
+                        .unwrap_or(json!({})),
+                ),
+                Assist::Settings => ("assist_settings_get", json!({})),
+                Assist::Configure {
+                    settings_file,
+                    expected_revision,
+                } => {
+                    let settings: Value =
+                        serde_json::from_slice(&read_input(settings_file, 48 * 1024)?)
+                            .map_err(|_| invalid("Settings must be JSON"))?;
+                    (
+                        "assist_settings_save",
+                        json!({"settings":settings,"expected_revision":expected_revision}),
+                    )
+                }
+                Assist::Test {
+                    task,
+                    sample_case,
+                    settings_file,
+                } => {
+                    let mut p = json!({"task":task,"sample":true,"sample_case":sample_case});
+                    if let Some(path) = settings_file {
+                        p["settings"] = serde_json::from_slice(&read_input(path, 48 * 1024)?)
+                            .map_err(|_| invalid("Settings must be JSON"))?;
+                    }
+                    ("assist_start", p)
+                }
+                Assist::Summarize {
+                    conversation_id,
+                    message_id,
+                }
+                | Assist::Classify {
+                    conversation_id,
+                    message_id,
+                } => {
+                    account(args)?;
+                    (
+                        "assist_start",
+                        json!({"task":if matches!(command,Assist::Summarize{..}){"summary"}else{"classification"},"conversation_id":conversation_id,"message_id":message_id}),
+                    )
+                }
+                Assist::Results { conversation_id } => {
+                    ("assist_results", json!({"conversation_id":conversation_id}))
+                }
+                Assist::Correct {
+                    conversation_id,
+                    message_id,
+                    kind,
+                    expected_revision,
+                } => (
+                    "assist_correct",
+                    json!({"conversation_id":conversation_id,"message_id":message_id,"kind":kind,"expected_revision":expected_revision}),
+                ),
+                Assist::Accept {
+                    conversation_id,
+                    message_id,
+                    category_id,
+                    request_id,
+                } => (
+                    "assist_accept",
+                    json!({"conversation_id":conversation_id,"message_id":message_id,"category_id":category_id,"request_id":request_id}),
+                ),
+                Assist::Watch => ("assist_watch", json!({})),
+            };
+            let mut result = client.call(method, scope, params).await?;
+            if matches!(command, Assist::Watch) {
+                tokio::signal::ctrl_c().await?;
+                json!({"version":1,"ok":true,"result":{"status":"canceled"}})
+            } else if method == "assist_start" {
+                self::result(result.clone())?;
+                let job = result["result"]["job_id"].clone();
+                loop {
+                    tokio::select! {_=tokio::signal::ctrl_c()=>{result=client.call("assist_cancel",None,json!({"job_id":job})).await?;break;},_=tokio::time::sleep(Duration::from_millis(250))=>{}}
+                    result = client
+                        .call("assist_job", None, json!({"job_id":job}))
+                        .await?;
+                    self::result(result.clone())?;
+                    if !["queued", "running"]
+                        .contains(&result["result"]["status"].as_str().unwrap_or_default())
+                    {
+                        break;
+                    }
+                }
+                if result["result"]["status"] == "failed" {
+                    return Err(invalid(
+                        result["result"]["error"]["message"]
+                            .as_str()
+                            .unwrap_or("Local inference failed"),
+                    ));
+                }
+                result
+            } else {
+                result
             }
         }
         Command::Preferences { command } => match command {
@@ -2173,6 +2372,43 @@ fn emit(args: &Args, reply: &Value) -> Result<(), Failure> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn google_sync_accepts_no_quota_setup() {
+        let args = Args::try_parse_from([
+            "fm",
+            "--account",
+            "test",
+            "google",
+            "sync",
+            "--seconds",
+            "1",
+        ])
+        .unwrap();
+        match args.command {
+            Command::Google {
+                command:
+                    Google::Sync {
+                        gmail_project_units_per_minute,
+                        gmail_account_units_per_minute,
+                        calendar_project_units_per_minute,
+                        calendar_account_units_per_minute,
+                        ..
+                    },
+            } => {
+                assert_eq!(
+                    [
+                        gmail_project_units_per_minute,
+                        gmail_account_units_per_minute,
+                        calendar_project_units_per_minute,
+                        calendar_account_units_per_minute
+                    ],
+                    [None; 4]
+                );
+            }
+            _ => panic!("expected sync"),
+        }
+    }
+
     #[test]
     fn calendar_search_routes_global_explicit_range_without_notification_or_provider_work() {
         let args = Args::try_parse_from([

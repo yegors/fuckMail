@@ -1,6 +1,10 @@
 # CLI and external agent interface
 
-State: Draft · Revision: 21 · Updated: 2026-09-14 · Implementation: D040/P2-01C email-first Google setup is implemented; Mac native/package and generated account checks pass. D042 supplies the app registration; actual-account acceptance remains open. Core 27/Calendar 20/Search 5/schema 20, fixtures 0/3 and protocol 1 stay unchanged. Whole readiness remains 0/9; historical evidence retains its original source scope.
+State: Draft · Revision: 24 · Updated: 2026-09-14 · Implementation: D040/P2-01C email-first Google setup is implemented; Mac native/package and generated account checks pass. D042 supplies the app registration; actual-account acceptance remains open. Core 27/Calendar 20/Search 5/schema 20, fixtures 0/3 and protocol 1 stay unchanged. Whole readiness remains 0/9; historical evidence retains its original source scope.
+
+D054 exposes google sync --refresh --account through the shared google_sync_refresh command; it starts/wakes the explicit session, and status includes persisted last_mail_sync_at. Existing sync ownership and bounded --seconds remain the CLI lifetime boundary.
+
+D050 makes `google sync` use built-in Google limits with no quota flags. Complete optional four-value overrides remain for verification and older clients. Default and explicit equivalent budgets share engine ownership. Generic preferences commands expose validated `mail_date_grouping` (`grouped`/`plain`).
 
 D040 adds `google connect --email ADDRESS` and an optional `--email` on restore, sharing the app registration and native engine flow. `--client-config` remains an optional developer override; users of configured builds do not need it. `google setup-status` reports registration availability without opening a browser or accessing Google/vault credentials. Existing explicit live-profile/account/revision requirements remain. JSON status never contains credentials or authorization URLs; existing cancellation, restoration and browser isolation behavior is preserved. Consumers: Platform 15/Gmail 13/Mail UI 26/CLI 21/Quality 24 with Core 27/Calendar 20/Search 5/schema 20 and fixtures 0/3/protocol 1 unchanged.
 
@@ -123,3 +127,7 @@ Use a private authenticated local transport with OS-appropriate access checks, p
 - Close the GUI during an independent CLI command, end all clients and verify lifecycle behavior. Ordinary installation must make the CLI discoverable from the terminal.
 
 Related: [Core](core-storage.md), [Platform](platform.md), [quality](quality.md), [CLI research](../research/cli-and-local-engine.md). Open: executable/command naming, first schema/version, stream protocol, auth provisioning for unattended use and packaging-specific command discovery.
+
+## D052 / P2-LLM consumer boundary
+
+Revision 23 consumes [Local assistance 6](local-ai.md#d052--p2-llm-implementation-boundary): shared discovery/settings/jobs/results/correction commands, schema-21 storage and manual precedence, bounded owned Ollama work, native/CLI parity and scoped acceptance. Runtime implementation/verification is in progress; fixtures 0/3 and protocol 1 remain unchanged. Earlier evidence retains its original revisions.

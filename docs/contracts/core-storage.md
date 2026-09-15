@@ -1,6 +1,10 @@
 # Core and storage
 
-State: Draft · Revision: 27 · Updated: 2026-09-14 · Implementation: D038/D039 Windows feedback verification is active under Core 27/Calendar 20/Mail UI 25/CLI 20/Platform 14/Quality 23/schema 20. Gmail 12/Search 5, fixtures 0/3/protocol 1 unchanged. Package01 at 513a5af passes its source-specific relocated checks; the final cached Calendar search, native and performance checks are in progress. Actual-account acceptance and whole readiness remain open.
+State: Draft · Revision: 30 · Updated: 2026-09-14 · Implementation: D038/D039 Windows feedback verification is active under Core 27/Calendar 20/Mail UI 25/CLI 20/Platform 14/Quality 23/schema 20. Gmail 12/Search 5, fixtures 0/3/protocol 1 unchanged. Package01 at 513a5af passes its source-specific relocated checks; the final cached Calendar search, native and performance checks are in progress. Actual-account acceptance and whole readiness remain open.
+
+D054 records account-scoped last successful Gmail history completion in existing local metadata only after the final page and all its parts are applied; expose it in accounts/status without changing schema 21 or legacy receipts.
+
+D050 repairs existing Google category projections transactionally on first live reopen and on label binding, preserving manual/assist precedence, original sources, flags and receipts. Only changed conversation revisions and derived category membership advance. Account count projections add cached `folder_conversation_counts`; conversation queries return `folder_conversation_count` for the selected folder before search/category filters, excluding Trash appropriately. This avoids a competing GUI count query. Adds durable `mail_date_grouping` (`grouped`/`plain`, default `grouped`) shared by GUI and CLI. Schema 20 and fixtures 0/3/protocol 1 are unchanged.
 
 D039 adds read-only calendar_search through the existing permitted combined projection. It creates no index, schema, receipt or provider work. The explicit 1–42-day range and selected-calendar semantics remain unchanged. Query text is at most 512 UTF-8 bytes and 32 whitespace-separated case-insensitive AND substring terms over permitted title, organizer, attendees, location and description. Busy-only rows are excluded; split-day rows deduplicate by account/calendar/occurrence identity. Return at most 100 results with has_more plus inherited range, revision and coverage. Existing projection limits remain explicit. Consumers: Core 27/Calendar 20/Mail UI 25/CLI 20/Quality 23; schema 20, Platform 14/Gmail 12/Search 5, fixtures 0/3 and protocol 1 unchanged.
 
@@ -219,3 +223,7 @@ The same migration adds `calendar_reminder_receipts`, keyed by account/calendar/
 ## Open before implementation
 
 Choose storage/schema and language after evidence; finalize shared IDs, revision/cursor types and error states with consumers. Resolve trash/spam scope, provider-deletion retention, backup/export and account-removal handling for unsent work before those behaviors ship. Actual account/provider counts and complete storage size are unmeasured. [Quality](quality.md) owns workload evidence and targets.
+
+## D052 / P2-LLM consumer boundary
+
+Revision 29 consumes [Local assistance 6](local-ai.md#d052--p2-llm-implementation-boundary): shared discovery/settings/jobs/results/correction commands, schema-21 storage and manual precedence, bounded owned Ollama work, native/CLI parity and scoped acceptance. Runtime implementation/verification is in progress; fixtures 0/3 and protocol 1 remain unchanged. Earlier evidence retains its original revisions.

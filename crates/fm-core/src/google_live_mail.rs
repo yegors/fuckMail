@@ -476,10 +476,31 @@ impl Store {
                 [&page.account],
             )?;
         }
+        if page.lane == MailLane::Delta
+            && lane_complete
+            && matches!(
+                record.plan.expected.phase,
+                Phase::Delta { .. } | Phase::CatchUp { .. }
+            )
+        {
+            // Only a completed provider history response, never begin_delta or replay.
+            tx.execute("INSERT INTO meta(key,value) VALUES(?1,unixepoch()) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [format!("last_mail_sync:{}", page.account)])?;
+        }
         tx.execute("UPDATE google_live_pages SET complete=1 WHERE account=?1 AND lane=?2 AND generation=?3 AND expected_revision=?4",params![page.account,page.lane.key(),page.generation,page.expected_revision])?;
         tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
         tx.commit()?;
         Ok(record.plan.next)
+    }
+
+    pub fn google_last_mail_sync(&self, account: &str) -> Result<Option<i64>> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT value FROM meta WHERE key=?1",
+                [format!("last_mail_sync:{account}")],
+                |r| r.get(0),
+            )
+            .optional()?)
     }
 
     pub fn google_live_coverage(&self, account: &str) -> Result<GoogleMailCoverage> {

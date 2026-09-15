@@ -22,6 +22,7 @@ mod composition_tests;
 mod content;
 mod fixture;
 pub mod google_draft_inventory;
+pub mod local_model;
 pub use google_draft_inventory::actions as google_draft_actions;
 pub mod google_drafts;
 pub mod google_labels;
@@ -46,7 +47,7 @@ mod queries;
 mod sender_kind_tests;
 #[cfg(test)]
 mod test_profiles;
-pub const SCHEMA_VERSION: u32 = 20;
+pub const SCHEMA_VERSION: u32 = 21;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -378,7 +379,17 @@ impl Store {
             tx.execute_batch("PRAGMA user_version=20")?;
             tx.commit()?;
         }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 20 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-021-ollama.sql"))?;
+            tx.execute_batch("PRAGMA user_version=21")?;
+            tx.commit()?;
+        }
         store.validate_profile_identity()?;
+        store.recover_google_category_projections()?;
         store.recover_account_cleanup()?;
         store.recover_captures()?;
         store.recover_google_drafts()?;
@@ -431,6 +442,9 @@ impl Store {
                 )),
             };
         }
+        if method.starts_with("assist_") {
+            return self.local_model_handle(method, account, &params);
+        }
         if method == "accounts" {
             fields(&params, &["include_removed"])?;
             let include_removed = match params.get("include_removed") {
@@ -446,7 +460,7 @@ impl Store {
             // These describe callable local interfaces. Account grants and
             // connectivity independently gate provider delivery and writes.
             return Ok(
-                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"calendar_generation":self.mail_changes.calendar_generation(),"synthetic":synthetic,"profile_kind":if synthetic {"synthetic"} else {"live"},"fixture_today":if synthetic {Some(FIXTURE_TODAY)} else {None},"capabilities":{"mail":true,"drafts":true,"calendar_read":true,"phase1":synthetic,"typed_filters":true,"preferences":true,"capture_history":synthetic,"calendar_write_local":synthetic,"send":!synthetic,"models":false,"google_auth":!synthetic,"google_sync":!synthetic}}),
+                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"calendar_generation":self.mail_changes.calendar_generation(),"synthetic":synthetic,"profile_kind":if synthetic {"synthetic"} else {"live"},"fixture_today":if synthetic {Some(FIXTURE_TODAY)} else {None},"capabilities":{"mail":true,"drafts":true,"calendar_read":true,"phase1":synthetic,"typed_filters":true,"preferences":true,"capture_history":synthetic,"calendar_write_local":synthetic,"send":!synthetic,"models":true,"google_auth":!synthetic,"google_sync":!synthetic}}),
             );
         }
         match method {

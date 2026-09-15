@@ -4,7 +4,7 @@ use rusqlite::params;
 use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
-    json!({"density":"comfortable","week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
+    json!({"density":"comfortable","mail_date_grouping":"grouped","week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
         "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"calendar_display_time_zone":null,"google_sync_limits":null,"notifications":"events"})
 }
 impl Store {
@@ -68,6 +68,7 @@ impl Store {
             patch,
             &[
                 "density",
+                "mail_date_grouping",
                 "week_start",
                 "calendar_start_hour",
                 "calendar_end_hour",
@@ -118,6 +119,7 @@ impl Store {
                 .map_err(crate::calendar_store::calendar_error)?;
         }
         for (key, allowed) in [
+            ("mail_date_grouping", &["grouped", "plain"][..]),
             ("theme", &["graphite", "paper", "harbour"][..]),
             ("text_size", &["small", "default", "large"][..]),
             ("startup_view", &["mail", "calendar", "last"][..]),
@@ -315,6 +317,21 @@ pub(crate) fn required_revision(p: &Value) -> Result<i64> {
 #[cfg(test)]
 mod appearance_tests {
     use super::*;
+
+    #[test]
+    fn mail_date_grouping_is_shared_durable_and_validated() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        let before = store.preferences().unwrap();
+        assert_eq!(before["preferences"]["mail_date_grouping"], "grouped");
+        let request = json!({"request_id":"date-groups","expected_revision":before["revision"],"preferences":{"mail_date_grouping":"plain"}});
+        store.handle("preferences_save", None, request).unwrap();
+        drop(store);
+        let mut reopened = Store::open(dir.path()).unwrap();
+        let saved = reopened.preferences().unwrap();
+        assert_eq!(saved["preferences"]["mail_date_grouping"], "plain");
+        assert!(reopened.handle("preferences_save", None, json!({"request_id":"bad-date-group","expected_revision":saved["revision"],"preferences":{"mail_date_grouping":true}})).is_err());
+    }
 
     #[test]
     fn confirmed_google_limits_are_durable_atomic_preferences_without_accounts() {

@@ -1,6 +1,15 @@
 # fuckMail
 
-**D047 CI gate:** further Phase 2 feedback work waits for green macOS, Windows and Ubuntu native/package pipelines. [CI repairs and verification](docs/research/phase-2-execution.md#d047--p2-ci--september-14-hosted-verification-repairs) preserve the original failures. D048 expands the workspace aggregate allowance; individual watchdogs and product performance targets stay unchanged.
+**Updated summary UI (D053):** prototype-aligned Summary cards, independent message/thread actions, working source links and repaired cancellation/Settings state. The verified combined D053+D054 Mac app is `dist/ollama-ui-darwin-arm64/fuckmail-gui.app`. [Verification and limits](docs/research/local-assistance-execution.md#d053-summary-ui-and-lifecycle-repair-2026-09-14).
+
+**D054 / header sync and credential denial:** implemented on the current branch. Deny blocks automatic repeated vault attempts until explicit Sync/reconnect; the header fetches new mail and shows the last successful check. Focused engine/Core/Google/native checks and final configured Mac package pass. On-screen Sync → Retry sync behavior after credential refusal is verified; cached messages/drafts are unchanged. The final user build combines D053/D054. Successful real fetch after granting Keychain access remains unverified in this check. Schema 21 is unchanged. See the [execution record](docs/research/phase-2-execution.md).
+
+
+**Ollama support implemented (D052):** local model discovery, independent summary/classification models, editable prompts, existing account label suggestions and human/automated annotations. Open Settings → Local model to configure it; assistance defaults off. The separate verified Mac candidate is `dist/ollama-darwin-arm64/fuckmail-gui.app`. [Setup and database-version notes](docs/build-development.md#ollama-feedback-build-d052) · [Tests and model-quality limits](docs/research/local-assistance-execution.md#d052--p2-llm-mac-implementation-2026-09-14).
+
+**P2-UI / D049–D050:** active on `codex/phase-2-ui-alignment` from merged `a5bec7f`. Updated reference alignment, context menus and multi-selection, Sent/Drafts date groups, visible splash, complete non-Trash Inbox browsing, retained-label repair and automatic Google limits are implemented and verified in an isolated schema-20 Mac package: 23/23 native checks, generated-account UI/readback and configured relocation checks pass. The package is published at `dist/darwin-arm64/fuckmail-gui.app`; final real on-screen readback awaits macOS unlock. The parallel D052 Ollama/schema-21 work is excluded from this package.
+
+**D047 CI gate cleared on the baseline:** branch `55e9848` and PR merge `1d7dc8b` passed all six macOS/Windows/Ubuntu jobs and relocated packages; merged main has the same tree. New P2-UI changes still need their own hosted verification. Original failures remain recorded.
 
 **D046 repository cleanup:** raw execution evidence is preserved outside the tracked tree; reports and design references remain in Git. See [archive recovery and storage rules](docs/research/evidence-archive.md). Application behavior and Phase 2 acceptance are unchanged.
 
@@ -14,7 +23,7 @@ A personal mail and calendar client for separate Google accounts, with a native 
 
 The Mac Release build, **22/22 native checks**, final focused search check, relocated UI Package03, and generated-provider CLI/native account walkthroughs pass. The package is `dist/fuckmail-darwin-arm64.tar.gz`; launch `dist/darwin-arm64/fuckmail-gui.app`. D042 bundles the supplied Desktop registration, and relocated setup reports Google sign-in available. Follow the [one-time setup and launch guide](docs/build-development.md#email-first-google-setup-d040).
 
-The current boundary is **Core 27 / Gmail 13 / Calendar 21 / Platform 15 / Mail UI 28 / CLI 21 / Quality 26 / Search 5 / schema 20**; fixtures 0/3 and protocol 1 are unchanged. Mail composition, Google Drafts/Send, supported Calendar recurrence/invitations/RSVP, reminders, partial grants and cached search retain their existing implementation.
+The packaged UI/mail boundary is **Core 28 / Gmail 14 / Calendar 21 / Platform 16 / Mail UI 29 / CLI 22 / Quality 29 / Search 5 / schema 20**; fixtures 0/3 and protocol 1 are unchanged. Mail composition, Google Drafts/Send, supported Calendar recurrence/invitations/RSVP, reminders, partial grants and cached search retain their existing implementation.
 
 The real test-account walkthrough verifies Calendar create/edit, invitations, all-day and recurring operations, plus mail sending, Reply all, forwarding, attachments, search and triage. All outbound test recipients were explicitly authorized. The Calendar and search repairs have focused native regressions; see [status](docs/status.md) and the [execution record](docs/research/phase-2-execution.md#d043d045--real-test-mailbox-ui-walkthrough).
 

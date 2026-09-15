@@ -11,7 +11,8 @@ import hashlib
 import json
 
 from verify_google_calendar import BASE, Ledger, calendar, expected_source, same
-from verify_google_navigation import LIMITS, read_database, require
+from verify_google_limits import LIMITS
+from verify_google_navigation import read_database, require
 
 
 MASTER_COUNTS = (6, 3, 2, 2)

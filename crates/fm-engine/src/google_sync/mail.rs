@@ -46,6 +46,11 @@ impl MailWorker {
         }
     }
 
+    pub(crate) fn request_refresh(&mut self) {
+        self.next_delta_ms = 0;
+        self.non_delta_parts = PARTS_BEFORE_DELTA;
+    }
+
     pub(crate) async fn step(&mut self, ctx: &SyncContext, now_ms: u64) -> Result<Step> {
         if ctx.account != self.account {
             return Err(failure("stale_google_work", "Google account work changed"));

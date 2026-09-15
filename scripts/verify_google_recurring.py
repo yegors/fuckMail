@@ -10,7 +10,8 @@ import hashlib
 import json
 
 from verify_google_calendar import BASE, Ledger, calendar, journal_snapshot, same
-from verify_google_navigation import LIMITS, read_database, require
+from verify_google_limits import LIMITS
+from verify_google_navigation import read_database, require
 from verify_google_occurrence_sources import (
     OccurrenceLedger, normalized_original, original_time, selector,
     utc_text, verify_retained_occurrences,

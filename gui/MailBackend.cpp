@@ -552,8 +552,8 @@ void MailBackend::loadConversations(bool append, bool preserveLoaded) {
     const int offset = append ? m_nextOffset : 0;
     if (offset < 0) return;
     m_loading = true; emit loadingChanged();
-    QJsonObject params{{"query", m_query}, {"folder", m_folder}, {"limit", 50}, {"offset", offset}};
-    params["grouped"] = true;
+    QJsonObject params{{"query", m_query}, {"folder", m_folder == "inbox" ? "all" : m_folder}, {"limit", 50}, {"offset", offset}};
+    params["grouped"] = m_folder != "sent";
     for (auto it = m_filters.cbegin(); it != m_filters.cend(); ++it) params[it.key()] = QJsonValue::fromVariant(it.value());
     if (m_folder == "inbox" && !m_collapsedGroups.isEmpty()) params["collapsed_groups"] = QJsonArray::fromStringList(m_collapsedGroups);
     if (append && !m_nextCursor.isEmpty()) { params.remove("offset"); params["cursor"] = m_nextCursor; }
@@ -568,6 +568,7 @@ void MailBackend::loadConversationPage(const QString &account, int generation, Q
     request("conversations", account, params,
         [this, generation, account, params, collected = std::move(collected), desiredCount, cursorRetries](auto result, bool ok) mutable {
             if (generation != m_listGeneration || account != m_account) return;
+            if (ok) m_mailScopeCount = result["folder_conversation_count"].toInt();
             if (!ok && result["code"].toString() == "stale_cursor") {
                 if (cursorRetries >= 3) { m_loading = false; emit loadingChanged(); fail("Mail kept changing during pagination. Retry loading more."); return; }
                 params.remove("cursor"); params["offset"] = 0;
@@ -738,6 +739,124 @@ void MailBackend::setCategoryMembership(const QString &categoryId, bool present)
 void MailBackend::fileConversation(const QString &action) {
     if (m_syntheticProfile || (action != "archive" && action != "trash" && action != "restore")) return;
     mutateConversation("mail_filing", {{"action", action}});
+}
+
+QVariantList MailBackend::snapshotMailRows(const QStringList &ids) const {
+    QVariantList result;
+    if (ids.size() > 200 || m_account.isEmpty()) return result;
+    for (const auto &id : ids) {
+        auto found = std::find_if(m_conversations.cbegin(), m_conversations.cend(), [&id](const auto &row) { return row.toMap().value("id").toString() == id; });
+        QVariantMap row;
+        if (id == m_selected && !m_conversation.isEmpty() && m_folder != "drafts") {
+            row = m_conversation;
+            const auto messages = row.value("messages").toList();
+            row["unread"] = std::any_of(messages.begin(), messages.end(), [](const auto &m) { return m.toMap().value("unread").toBool(); });
+            row["starred"] = std::any_of(messages.begin(), messages.end(), [](const auto &m) { return m.toMap().value("starred").toBool(); });
+        } else if (found != m_conversations.cend()) row = found->toMap();
+        if (row.isEmpty()) return {};
+        row["selection_account"] = m_account;
+        row["selection_lifecycle"] = lifecycleAccount(m_account).value("lifecycle").toMap().value("revision");
+        result.append(row);
+    }
+    return result;
+}
+
+void MailBackend::applyMailSelection(const QVariantList &rows, const QString &action, const QString &categoryId) {
+    if (m_mutatingConversation || rows.isEmpty() || rows.size() > 200 || !m_connected || m_shutdown) return;
+    if (!accountCapability(m_account, "mail_write")) { fail("Reconnect Google with Mail access to change selected mail."); return; }
+    const auto lifecycle = lifecycleAccount(m_account).value("lifecycle").toMap().value("revision").toLongLong();
+    QList<QJsonObject> commands;
+    QSet<QString> seen;
+    for (const auto &value : rows) {
+        const auto row = value.toMap();
+        const auto id = row.value("id").toString();
+        if (row.value("selection_account").toString() != m_account || row.value("selection_lifecycle").toLongLong() != lifecycle
+            || id.isEmpty() || seen.contains(id) || !row.contains("revision")) {
+            fail("The selection changed account or is no longer valid. Select the messages again."); return;
+        }
+        seen.insert(id);
+        QJsonObject params{{"request_id", uuid()}, {"expected_revision", row.value("revision").toLongLong()}};
+        QString method;
+        if (action == "discard") {
+            // Remote source previews and unresolved sends require their existing
+            // explicit recovery controls; bulk discard must never bypass them.
+            if (!row.value("is_draft").toBool() || !row.value("remote_source").toMap().isEmpty()
+                || row.value("read_only").toBool() || (id == m_activeDraft && (m_draftDirty || draftBusy()))) {
+                fail("Open this draft to resolve its saved content or Google state before discarding it."); return;
+            }
+            method = "draft_discard"; params["draft_id"] = id;
+        } else {
+            if (row.value("is_draft").toBool() || row.value("message_ids").toList().isEmpty()) { fail("Select received or sent conversations for this action."); return; }
+            params["id"] = id; params["message_ids"] = QJsonArray::fromVariantList(row.value("message_ids").toList());
+            method = "flag";
+            if (action == "read" || action == "unread") params["read"] = action == "read";
+            else if (action == "delay" || action == "undelay") params["starred"] = action == "delay";
+            else if (action == "done") { params["read"] = true; params["starred"] = false; }
+            else if (action == "label_add" || action == "label_remove") {
+                method = "set_category"; params["category_id"] = categoryId; params["present"] = action == "label_add";
+            } else if (action == "trash" || action == "restore" || action == "archive") {
+                if (m_syntheticProfile) return;
+                method = "mail_filing"; params["action"] = action;
+            } else return;
+        }
+        commands.append(QJsonObject{{"method", method}, {"params", params}});
+    }
+    m_bulkCommands = std::move(commands); m_bulkIndex = 0; m_bulkAccount = m_account; m_bulkLifecycle = lifecycle;
+    m_mutatingConversation = true; m_mailSelectionStatus = "Applying to " + QString::number(rows.size()) + " selected conversations…";
+    emit mutationChanged(); runMailSelection();
+}
+
+void MailBackend::runMailSelection() {
+    const bool valid = !m_shutdown && m_connected && m_account == m_bulkAccount && !accountRemoved(m_bulkAccount)
+        && accountCapability(m_bulkAccount, "mail_write")
+        && lifecycleAccount(m_bulkAccount).value("lifecycle").toMap().value("revision").toLongLong() == m_bulkLifecycle;
+    if (!valid || m_bulkIndex >= m_bulkCommands.size()) {
+        m_mailSelectionStatus = QString::number(m_bulkIndex) + " of " + QString::number(m_bulkCommands.size())
+            + (valid ? (m_syntheticProfile ? " updated locally." : " saved locally. Google sync reports delivery separately.") : " updated. Remaining actions stopped after the account or session changed.");
+        m_bulkCommands.clear(); m_mutatingConversation = false; emit mutationChanged();
+        if (m_shutdown) finishShutdown();
+        else if (m_connected) { loadAccounts(); loadCategories(); loadConversations(false, true); }
+        return;
+    }
+    const auto command = m_bulkCommands[m_bulkIndex];
+    const auto params = command["params"].toObject();
+    const auto account = m_bulkAccount;
+    request(command["method"].toString(), account, params, [this, account, params](auto result, bool ok) {
+        if (!ok) {
+            m_mailSelectionStatus = QString::number(m_bulkIndex) + " of " + QString::number(m_bulkCommands.size())
+                + " updated. Stopped: " + result["message"].toString("selection changed or response was lost") + ". Refresh and inspect before selecting again.";
+            m_bulkCommands.clear(); m_mutatingConversation = false; emit mutationChanged(); cancelShutdown();
+            if (m_connected) { loadAccounts(); loadCategories(); loadConversations(false, true); }
+            return;
+        }
+        ++m_bulkIndex;
+        const bool currentLifecycle = lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong() == m_bulkLifecycle;
+        const auto id = params["id"].toString();
+        if (!id.isEmpty()) {
+            cacheConversation(account, id, result.toVariantMap(), m_bulkLifecycle);
+            const auto key = qMakePair(account, id);
+            if (result["delivery"].isObject()) {
+                m_mailDelivery[key] = result["delivery"].toObject().toVariantMap();
+                m_mailDeliveryOrder.removeAll(key); m_mailDeliveryOrder.append(key);
+                while (m_mailDeliveryOrder.size() > 128) m_mailDelivery.remove(m_mailDeliveryOrder.takeFirst());
+                if (key == qMakePair(m_account, m_selected)) emit mailDeliveryChanged();
+            }
+            if (currentLifecycle && account == m_account && id == m_selected) {
+                m_conversation = result.toVariantMap();
+                if (m_pinnedRow["id"].toString() == id) {
+                    m_pinnedRow["revision"] = result["revision"].toVariant();
+                    bool unread = false, starred = false;
+                    for (const auto &member : result["messages"].toArray()) { unread |= member.toObject()["unread"].toBool(); starred |= member.toObject()["starred"].toBool(); }
+                    m_pinnedRow["unread"] = unread; m_pinnedRow["starred"] = starred;
+                }
+                emit conversationChanged();
+            }
+        }
+        if (currentLifecycle && account == m_account && params["draft_id"].toString() == m_activeDraft && !m_activeDraft.isEmpty()) {
+            m_draft = mergedDraftProjection(result); m_draftStatus = "Draft discarded"; emit draftChanged();
+        }
+        runMailSelection();
+    });
 }
 
 void MailBackend::editDraft(const QString &body) {
@@ -1016,4 +1135,20 @@ void MailBackend::finishShutdown() {
     m_shutdownEmitted = true;
     m_pollTimer.stop();
     m_socket.disconnectFromServer(); emit shutdownReady();
+}
+
+QString MailBackend::assistanceRequest(const QString &method, const QVariantMap &params, const QString &account) {
+    const QString ticket = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    if (!method.startsWith("assist_")) return {};
+    // Queue dispatch so even immediate refusal reaches QML after it stores the ticket.
+    QTimer::singleShot(0, this, [this, method, params, account, ticket] {
+        request(method, account, QJsonObject::fromVariantMap(params), [this, ticket, method, account](auto result, bool ok) {
+            emit assistanceReply(ticket, method, result.toVariantMap(), ok);
+            if (ok && method == "assist_settings_save") request("assist_watch", {}, {}, [](auto, bool) {});
+            if (ok && (method == "assist_correct" || method == "assist_accept") && account == m_account) {
+                loadConversation(false, false); loadConversations(false, true);
+            }
+        });
+    });
+    return ticket;
 }

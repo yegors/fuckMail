@@ -285,6 +285,10 @@ pub struct RefreshResult {
 }
 
 pub trait CredentialVault: Send + Sync {
+    /// Explicit user retry only; ordinary reads must never clear a denial.
+    fn retry_access(&self, _: &AccountId) -> Result<(), GoogleError> {
+        Ok(())
+    }
     /// Locked/unavailable storage returns StoreUnavailable, not Ok(None).
     /// The coordinator propagates that failure without another credential source.
     fn load(&self, account: &AccountId) -> Result<Option<StoredToken>, GoogleError>;

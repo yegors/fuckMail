@@ -1,5 +1,9 @@
 # Development plan
 
+**D054:** finish the founder-reported credential denial loop and header Sync/time controls, with scoped native/engine checks and a configured Mac feedback package. Schema 21 is unchanged; D053 summary presentation proceeds independently. [Current execution](research/phase-2-execution.md#d054--keychain-denial-and-header-sync-2026-09-15-utc).
+
+**D052 / P2-LLM:** Ollama discovery/settings, bounded summaries, per-message classification/corrections and native/CLI controls are implemented under Local assistance 6/Core 29/schema 21. [Scoped Mac evidence](research/local-assistance-execution.md#d052--p2-llm-mac-implementation-2026-09-14) records passing checks and model-quality misses. vLLM, broad historical inference and automatic label application remain deferred; remaining acceptance and readiness 0/9 stay explicit.
+
 D046 moves raw evidence to [ignored local/CI artifact storage](research/evidence-archive.md) before commit/merge preparation. Quality 27 adds repository hygiene checks; product sequence and acceptance gates are unchanged.
 
 **D043–D045 — real-mailbox UI repairs:** the founder has signed into the configured Mac app. Real UI testing found and fixed Calendar creation after first sync, recurring editor invalidation, accessible event activation and search-popup focus/dismissal. Mail and Calendar walkthrough results are recorded below. Performance and the broad workspace sweep remain deferred under D041; this is not full Phase 2 acceptance.
@@ -77,7 +81,7 @@ The remaining execution is final packaged correctness/performance, protected-pro
 
 Refine this phase from actual use. Finish the agreed Google GUI/CLI workflows, calendar edge cases, navigation/settings, human composition and failure/recovery screens. Full Google workflow access is the intended CLI outcome; command completeness evolves with the product, not ahead of it.
 
-Add optional local classification/summaries through the proven manual labeling path. Classify human correspondence, bots/lists and user-defined noise/category/scope; preserve manual precedence and explicit user Done/Delayed. Assistance stays off by default and does not block initial manual use.
+D051 advances the first Ollama classification/summary implementation into P2-LLM. Phase 3 retains broader quality/platform qualification and any later adapter expansion. Classify human correspondence, bots/lists and user-defined noise/category/scope through the proven manual labeling path; preserve manual precedence and explicit user Done/Delayed. Assistance stays off by default and does not block manual use.
 
 Add best-effort received HTML display in this later phase. Evaluate a limited document renderer against real reading needs before adding a browser engine. Preserve original content, useful links/images and text fallback; visual fidelity is not a browser conformance exercise. Isolation and resource policy remain required. HTML composition and received-content rendering are separate components.
 

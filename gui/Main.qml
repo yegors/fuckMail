@@ -84,6 +84,7 @@ ApplicationWindow {
         else if (belongsTo(activeFocusItem, calendarView)) calendarFocus = activeFocusItem
     }
     function navigate(target) {
+        if (settingsOpen && target !== "settings" && settingsView.modelDirty) { settingsView.confirmLeave(function(){window.navigate(target)}); return }
         if (!backend.accountNavigationAllowed()) return
         searchPopup.close()
         calendarSearchPopup.close()
@@ -230,15 +231,27 @@ ApplicationWindow {
             RowLayout {
                 Layout.fillWidth: true; spacing: 12
                 Item { Layout.fillWidth: true; Layout.minimumWidth: 0 }
-                Item {
-                    implicitWidth: statusContent.implicitWidth; implicitHeight: statusContent.implicitHeight
-                    Row {
-                        id: statusContent; spacing: 7
-                        FmIcon { anchors.verticalCenter: parent.verticalCenter; name: "refresh"; size: 13; color: Theme.subtle }
-                        Text { text: backend.connected ? "Local copy" : "Connecting…"; color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } }
-                    }
-                    FmToolTip { visible: statusHover.containsMouse; text: !backend.connected ? "Connecting to the local engine." : backend.syntheticProfile ? "Mail and calendar are read from this machine. No live provider sync is configured." : "Mail and calendar are read from this machine. Manage Google sync in Settings > Accounts." }
-                    MouseArea { id: statusHover; anchors.fill: parent; acceptedButtons: Qt.NoButton; hoverEnabled: true }
+                FmButton {
+                    id: syncButton
+                    objectName: "headerSyncButton"
+                    // Explicit property reads keep invokable-derived state reactive.
+                    readonly property var syncState: { const states = backend.googleSync; return backend.googleSyncState(backend.account) }
+                    readonly property var accountRow: backend.accounts.find(a => a.id === backend.account) || ({})
+                    readonly property var progress: syncState.progress || ({})
+                    readonly property bool blocked: syncState.credential_access_required === true
+                    readonly property bool syncing: !blocked && (syncState.changing === true || syncState.refresh_requested === true
+                        || (syncState.active === true && (progress.mail === "starting" || progress.mail === "running")))
+                    readonly property double lastSync: syncState.last_mail_sync_at || accountRow.last_mail_sync_at || 0
+                    readonly property string lastTime: lastSync > 0 ? Qt.formatDateTime(new Date(lastSync * 1000), new Date(lastSync * 1000).toDateString() === new Date().toDateString() ? "HH:mm" : "MMM d HH:mm") : ""
+                    text: (blocked || (syncState.active && progress.mail === "paused") ? "Retry sync" : syncing ? "Syncing…" : "Sync") + (lastTime.length ? " · " + lastTime : "")
+                    iconName: "refresh"; iconSize: 13
+                    height: 30
+                    enabled: backend.connected && !backend.syntheticProfile && !syncState.changing
+                        && (accountRow.google || {}).capabilities?.mail_read === true && !accountRow.read_only
+                    Accessible.name: text
+                    tip: (blocked ? "Keychain access was denied or is locked. Click to try again. macOS may ask for your login keychain password. " : "Fetch new mail for this account. ")
+                        + (lastSync > 0 ? "Last successful sync: " + new Date(lastSync * 1000).toLocaleString() : "No successful mail sync yet.")
+                    onClicked: backend.refreshGoogleSync(backend.account)
                 }
                 Rectangle {
                     id: searchBox

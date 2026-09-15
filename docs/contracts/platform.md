@@ -1,6 +1,10 @@
 # Platform, lifecycle and release
 
-State: Draft · Revision: 15 · Updated: 2026-09-14 · Implementation: D040/P2-01C email-first Google setup is implemented; Mac native/package and generated account checks pass. D042 supplies the app registration; actual-account acceptance remains open. Core 27/Calendar 20/Search 5/schema 20, fixtures 0/3 and protocol 1 stay unchanged. Whole readiness remains 0/9; historical evidence retains its original source scope.
+State: Draft · Revision: 18 · Updated: 2026-09-14 · Implementation: D040/P2-01C email-first Google setup is implemented; Mac native/package and generated account checks pass. D042 supplies the app registration; actual-account acceptance remains open. Core 27/Calendar 20/Search 5/schema 20, fixtures 0/3 and protocol 1 stay unchanged. Whole readiness remains 0/9; historical evidence retains its original source scope.
+
+D054 respects native credential denial: serialize native access, latch failures across account workers, and retry only after explicit Sync/reconnect. Preserve OS access controls, secrets and existing credential references; no trust changes or plaintext fallback. Updated unsigned development binaries can still require one OS approval.
+
+Revision 16: D049/P2-UI keeps the startup overlay fully visible for at least 1,750 ms before a 350-ms fade, and waits longer when startup is not ready. Startup failure bypasses the hold so errors remain accessible. The lettering animation remains native QML. Consumers: Main, StartupOverlay and native UI acceptance; schema/fixtures/protocol unchanged.
 
 Mac verification additionally requires provider-operation completion callbacks to run after the socket notification returns; a callback may immediately destroy its operation. Cancellation must fence queued handshakes and preserve one-shot results. This implements the existing lifecycle requirement without changing any command, receipt or timeout.
 
@@ -135,3 +139,7 @@ Proposed baseline: credentials in the OS credential store, account-scoped record
 ## Open before affected behavior ships
 
 Pin OS/version/architecture support, the Rust/Qt/renderer/toolchain versions, package formats and trusted signing/update routes after the prototype and clean-install evidence. Finalize headless credential provisioning, local transport access checks and engine/client lifetime rules. Decide mail-store encryption, remote images and backup/export expectations. License/dependency review and deliverable installation are MVP work; app-store listings and a broad public launch remain optional later scope.
+
+## D052 / P2-LLM consumer boundary
+
+Revision 17 consumes [Local assistance 6](local-ai.md#d052--p2-llm-implementation-boundary): shared discovery/settings/jobs/results/correction commands, schema-21 storage and manual precedence, bounded owned Ollama work, native/CLI parity and scoped acceptance. Runtime implementation/verification is in progress; fixtures 0/3 and protocol 1 remain unchanged. Earlier evidence retains its original revisions.

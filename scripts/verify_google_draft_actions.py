@@ -20,7 +20,8 @@ import tempfile
 import time
 
 from dev import package_environment
-from verify_google_navigation import LIMITS, expected_accounts, read_database, read_json, require, source_manifest
+from verify_google_limits import LIMITS
+from verify_google_navigation import expected_accounts, read_database, read_json, require, source_manifest
 from verify_google_remote_drafts import expected_source, verify_projection
 from verify_search_ingestion import sha256, stop_children
 
@@ -449,7 +450,7 @@ def run(args):
                         require(cli(["google", "draft-delete-status", "--request-id", receipt["request_id"]], account)["state"] == receipt["state"], "Offline receipt changed")
                 require(read_json(fixture_path)["counters"] == before, "Offline inspection started provider work")
                 with closing(read_database(profile)) as db:
-                    require(db.execute("PRAGMA user_version").fetchone()[0] == 20, "Wrong schema")
+                    require(db.execute("PRAGMA user_version").fetchone()[0] == 21, "Wrong schema")
                     rows = db.execute("SELECT json FROM capture_operations WHERE execution_kind='google' AND json_extract(json,'$.kind')='draft_delete'").fetchall()
                     require(len(rows) == (2 if args.gui else 4), "Missing or fabricated deletion journals")
                 watch.terminate()

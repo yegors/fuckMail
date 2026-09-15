@@ -386,11 +386,85 @@ impl Store {
             ));
         }
         self.google_map_category(account, category, label)?;
+        self.project_google_category(account, category, label)?;
         let result = json!({"request_id":request,"category":{"id":category,"name":name,"provider_label_id":label,"label_name":label_name},"catalog_revision":state.revision,"local_only":true});
         tx.execute("INSERT INTO operations(account,request_id,fingerprint,result_json) VALUES(?1,?2,?3,?4)",params![account,request,fingerprint,serde_json::to_string(&result)?])?;
         tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
         tx.commit()?;
         Ok(result)
+    }
+
+    /// Materialize a newly linked label from already retained provider state.
+    /// Only derived membership changes: never rewrite flags, sources, pending
+    /// intent or provider receipts, and never schedule a Google write.
+    fn project_google_category(&self, account: &str, category: &str, label: &str) -> Result<usize> {
+        if crate::google_store::is_system_label(label) {
+            return Err(err(
+                "invalid_google_response",
+                "Category targets a system label",
+            ));
+        }
+        let desired = "WITH desired AS (
+            SELECT s.message_id,m.conversation_id,
+                COALESCE(i.value,a.value,EXISTS(SELECT 1 FROM json_each(s.provider_labels_json) j WHERE j.value=?3)) AS present,
+                (c.message_id IS NOT NULL) AS previous
+            FROM google_message_state s JOIN messages m ON m.account=s.account AND m.id=s.message_id
+            LEFT JOIN google_manual_intents i ON i.account=s.account AND i.message_id=s.message_id AND i.field='category' AND i.category_id=?2
+            LEFT JOIN assist_category_intents a ON a.account=s.account AND a.message_id=s.message_id AND a.category_id=?2
+            LEFT JOIN message_categories c ON c.account=s.account AND c.message_id=s.message_id AND c.category_id=?2
+            WHERE s.account=?1 AND s.deleted=0) ";
+        let changed = self.db.execute(
+            &format!("{desired} UPDATE conversations SET revision=revision+1 WHERE account=?1 AND id IN (SELECT conversation_id FROM desired WHERE present!=previous)"),
+            params![account, category, label],
+        )?;
+        self.db.execute(
+            &format!("{desired} INSERT OR IGNORE INTO message_categories(account,message_id,category_id) SELECT ?1,message_id,?2 FROM desired WHERE present=1 AND previous=0"),
+            params![account, category, label],
+        )?;
+        self.db.execute(
+            &format!("{desired} DELETE FROM message_categories WHERE account=?1 AND category_id=?2 AND message_id IN (SELECT message_id FROM desired WHERE present=0 AND previous=1)"),
+            params![account, category, label],
+        )?;
+        Ok(changed)
+    }
+
+    pub(crate) fn recover_google_category_projections(&self) -> Result<()> {
+        if self.profile_kind()? != crate::live_profile::ProfileKind::Live {
+            return Ok(());
+        }
+        let repaired: bool = self.db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM meta WHERE key='google_category_projection_v1')",
+            [],
+            |r| r.get(0),
+        )?;
+        if repaired {
+            return Ok(());
+        }
+        let tx = self.db.unchecked_transaction()?;
+        let mut statement = tx.prepare("SELECT account,category_id,provider_label_id FROM google_category_labels ORDER BY account,category_id")?;
+        let mappings = statement
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, String>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        drop(statement);
+        let mut changed = 0;
+        for (account, category, label) in mappings {
+            changed += self.project_google_category(&account, &category, &label)?;
+        }
+        if changed > 0 {
+            tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
+        }
+        tx.execute(
+            "INSERT INTO meta(key,value) VALUES('google_category_projection_v1',1)",
+            [],
+        )?;
+        tx.commit()?;
+        Ok(())
     }
     fn labels_connection(
         &self,

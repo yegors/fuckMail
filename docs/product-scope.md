@@ -1,6 +1,6 @@
 # Product scope
 
-Updated 2026-09-11. This is the high-level scope established by the brief, interviews and subsequent founder decisions. [North star](north-star.md) explains why; [contracts](contracts/README.md) hold the moving behavior and engineering specifications. [Status](status.md) distinguishes planned from built.
+Updated 2026-09-14. This is the high-level scope established by the brief, interviews and subsequent founder decisions. [North star](north-star.md) explains why; [contracts](contracts/README.md) hold the moving behavior and engineering specifications. [Status](status.md) distinguishes planned from built.
 
 ## Required Google-first MVP
 
@@ -14,7 +14,7 @@ Updated 2026-09-11. This is the high-level scope established by the brief, inter
 | Interaction | Mouse-first GUI and a real CLI from the first usable milestone; grow both together to cover Google workflows before legacy protocols |
 | Daily triage | Read-on-open; user-selected Done clears unread and stars; Delay is an untimed hold. Aim for zero unread/starred through actual review and work |
 | Organization | User-defined Gmail category/scope labels for human correspondence, bots, lists and personal definitions of noise; IMAP folder mappings later |
-| Local AI | Optionally configured Ollama/vLLM classification of incoming mail and summaries of messages/conversations; no AI email writing, rewriting, autocompletion or sending |
+| Local AI | Optional Ollama classification of incoming mail and summaries of messages/conversations, with discovered models and editable Settings prompts; vLLM deferred under D051; no AI email writing, rewriting, autocompletion or sending |
 | Integration | Gmail API and Google Calendar API for all current consumer/Workspace accounts; durable OAuth and Workspace restrictions are required setup. IMAP/SMTP follow founder dogfooding |
 | Search | Lightning-fast local search by sender name/address and keywords in subject/body |
 | Offline | All messages and attachments, not just a recent window |
@@ -37,7 +37,7 @@ The first usable milestone has both a small CLI and a GUI. Later iterations add 
 
 Work in separate accounts and browse conversations. Review unread mail, use a star when leaving action for later, then remove it when that action is complete. The UI should make the deferral and remaining work clear. The desired end-of-day state is zero unread and zero starred across the agreed scope of each account. Filing, filtering and summaries cannot disguise outstanding work or incomplete synchronization.
 
-Configure categories using Gmail labels first; IMAP folder mappings are later work. Apply them manually, accept a local model's suggestions or enable a defined auto-apply policy. Optional local Ollama/vLLM summaries support reading; humans write email for humans. All manual work remains available with assistance absent or disabled.
+Configure categories using Gmail labels first; IMAP folder mappings are later work. Apply them manually, accept a local model's suggestions or enable a qualified auto-apply policy. D052's first delivery uses Ollama with independent summary/classification models and editable prompts, existing account labels and Human/Automated/Unknown classification; vLLM remains deferred. Optional summaries support reading; humans write email for humans. All manual work remains available with assistance absent or disabled.
 
 Find old conversations by sender or source-text keywords and open fully synchronized messages and attachments offline. Google Calendar correctness includes ordinary meetings, recurrence, invitations and shared permissions. Read-only URL feeds are later work. Closing quits the GUI and stops its jobs/reminders; explicitly invoked CLI sessions can operate independently. Full offline storage is not automatically an independent archival backup.
 

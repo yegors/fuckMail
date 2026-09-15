@@ -756,6 +756,11 @@ ApplicationWindow { width: 1100; height: 850; visible: true
         QElapsedTimer animation; animation.start(); while (animation.elapsed() < 1500) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
         for (const auto theme : {"graphite", "paper", "harbour"}) { visualRoot->setProperty("testTheme", theme); retainVisual(QString("startup-%1").arg(theme)); }
     }
+    // Readiness no longer skips the first-frame splash hold. Let the actual
+    // animation progress before applying the existing transition watchdog.
+    QElapsedTimer splashHold; splashHold.start();
+    while (splashHold.elapsed() < 1600) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+    require(loader->property("visible").toBool(), "Slow hydration retains splash after animation");
     loader->setProperty("startupReady", true); settle([&] { return !loader->property("visible").toBool(); });
     loader->setProperty("startupReady", false); require(!loader->property("visible").toBool(), "Later queries cannot replay startup animation");
     auto calendar = named(visualRoot, "calendarWorkspace");
