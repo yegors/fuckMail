@@ -18,10 +18,28 @@ pub async fn request(
     body: Option<Value>,
     cancel: &CancellationToken,
 ) -> Result<Value> {
+    request_local(
+        endpoint,
+        &format!("/api/{path}"),
+        "Ollama",
+        path == "chat",
+        body,
+        cancel,
+    )
+    .await
+}
+pub(crate) async fn request_local(
+    endpoint: &str,
+    path: &str,
+    service: &str,
+    generation: bool,
+    body: Option<Value>,
+    cancel: &CancellationToken,
+) -> Result<Value> {
     if !ollama::valid_endpoint(endpoint) {
         return Err(failure(
             "invalid_request",
-            "Only same-machine Ollama endpoints are supported",
+            "Only same-machine model endpoints are supported",
         ));
     }
     let endpoint = endpoint.replace("localhost:", "127.0.0.1:");
@@ -29,7 +47,7 @@ pub async fn request(
         .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(3))
-        .timeout(Duration::from_secs(if path == "chat" { 120 } else { 5 }))
+        .timeout(Duration::from_secs(if generation { 120 } else { 5 }))
         .build()
         .map_err(|_| failure("assistance_unavailable", "Cannot initialize local HTTP"))?;
     let mut req = client.request(
@@ -38,7 +56,7 @@ pub async fn request(
         } else {
             Method::GET
         },
-        format!("{endpoint}/api/{path}"),
+        format!("{endpoint}{path}"),
     );
     if let Some(body) = body {
         req = req.header("Content-Type", "application/json").body(
@@ -50,31 +68,36 @@ pub async fn request(
         let mut response = req.send().await.map_err(|_| {
             failure(
                 "assistance_unavailable",
-                "Ollama is unavailable or timed out",
+                &format!("{service} is unavailable or timed out"),
             )
         })?;
         if !response.status().is_success() {
             return Err(failure(
                 "assistance_unavailable",
-                &format!("Ollama returned HTTP {}", response.status().as_u16()),
+                &format!("{service} returned HTTP {}", response.status().as_u16()),
             ));
         }
         let mut bytes = Vec::new();
-        while let Some(chunk) = response
-            .chunk()
-            .await
-            .map_err(|_| failure("assistance_unavailable", "Ollama response was interrupted"))?
-        {
+        while let Some(chunk) = response.chunk().await.map_err(|_| {
+            failure(
+                "assistance_unavailable",
+                &format!("{service} response was interrupted"),
+            )
+        })? {
             if bytes.len() + chunk.len() > 256 * 1024 {
                 return Err(failure(
                     "assistance_limit",
-                    "Ollama response exceeds 256 KiB",
+                    "Local model response exceeds 256 KiB",
                 ));
             }
             bytes.extend_from_slice(&chunk);
         }
-        serde_json::from_slice(&bytes)
-            .map_err(|_| failure("invalid_assistance_result", "Ollama returned invalid JSON"))
+        serde_json::from_slice(&bytes).map_err(|_| {
+            failure(
+                "invalid_assistance_result",
+                &format!("{service} returned invalid JSON"),
+            )
+        })
     };
     tokio::select! {biased;_=cancel.cancelled()=>Err(failure("assistance_canceled","Local model request canceled")),v=work=>v}
 }
@@ -150,40 +173,59 @@ pub async fn infer(
     sources: &[String],
     cancel: &CancellationToken,
 ) -> Result<Value> {
+    if !settings.provider.is_ollama() {
+        return crate::openai_local::infer(settings, task, payload, categories, sources, cancel)
+            .await;
+    }
     let model = settings
         .model(task)
         .ok_or_else(|| failure("assistance_unavailable", "Select a model for this task"))?;
     qualify(&settings.endpoint, model, cancel).await?;
-    let schema = ollama::schema(task, categories, sources);
-    let system = format!(
-        "{}\nTask instructions:\n{}",
-        ollama::ENVELOPE,
-        settings.prompt(task)
-    );
-    let user = serde_json::to_string(&payload)
-        .map_err(|_| failure("invalid_request", "Invalid source context"))?;
-    if system.len() + user.len() + serde_json::to_vec(&schema).unwrap().len() > 12000 {
+    let body = ollama::render_request(settings.prompt(task), &payload, &model.name, sources)
+        .map_err(|s| failure("invalid_request", &s))?;
+    if serde_json::to_vec(&body).unwrap().len() > 12000 {
         return Err(failure(
             "assistance_limit",
-            "Instructions, labels and text exceed the context budget",
+            "Expanded request exceeds the context budget",
         ));
     }
-    let result=request(&settings.endpoint,"chat",Some(json!({"model":model.name,"messages":[{"role":"system","content":system},{"role":"user","content":user}],"format":schema,"stream":false,"options":{"temperature":0,"num_ctx":16384,"num_predict":1024}})),cancel).await?;
-    if result["model"] != model.name
-        || result["done"] != true
-        || result["done_reason"] == "length"
-        || result["message"]
-            .get("tool_calls")
-            .is_some_and(|v| v.as_array().is_none_or(|a| !a.is_empty()))
+    let result = request(&settings.endpoint, "chat", Some(body), cancel).await?;
+    if result["model"] != model.name {
+        return Err(failure(
+            "invalid_assistance_result",
+            "Ollama responded with a different model",
+        ));
+    }
+    if result["message"]
+        .get("tool_calls")
+        .is_some_and(|v| !v.is_null() && v.as_array().is_none_or(|a| !a.is_empty()))
     {
         return Err(failure(
             "invalid_assistance_result",
-            "Model returned an incomplete result or a tool call",
+            "The model requested a tool; mail analysis cannot use tools",
+        ));
+    }
+    if result["done_reason"] == "length" {
+        return Err(failure(
+            "assistance_output_limit",
+            "The model reached its response limit before finishing. Try again.",
+        ));
+    }
+    if result["done"] != true {
+        return Err(failure(
+            "invalid_assistance_result",
+            "Ollama stopped before completing the response. Try again.",
         ));
     }
     let content = result["message"]["content"]
         .as_str()
-        .ok_or_else(|| failure("invalid_assistance_result", "Model returned no text"))?;
+        .filter(|s| !s.trim().is_empty())
+        .ok_or_else(|| {
+            failure(
+                "invalid_assistance_result",
+                "The model returned no analysis text. Try again.",
+            )
+        })?;
     // A tag may have been replaced while generation was running.
     let list = discover(&settings.endpoint, cancel).await?;
     if !list["models"]
@@ -197,6 +239,22 @@ pub async fn infer(
             "Selected model changed during generation",
         ));
     }
-    ollama::validate(task, content, categories, sources)
-        .map_err(|s| failure("invalid_assistance_result", &s))
+    validate_output(task, content, categories, sources)
+}
+pub(crate) fn validate_output(
+    task: &str,
+    content: &str,
+    categories: &[String],
+    sources: &[String],
+) -> Result<Value> {
+    let mut output = ollama::validate("message", content, categories, sources)
+        .map_err(|s| failure("invalid_assistance_result", &s))?;
+    // Legacy CLI operations project the same combined analysis after validation.
+    if task == "summary" {
+        output = json!({"summary":output["summary"],"source_ids":output["source_ids"]});
+    } else if task == "classification" {
+        output.as_object_mut().unwrap().remove("summary");
+        output.as_object_mut().unwrap().remove("source_ids");
+    }
+    Ok(output)
 }

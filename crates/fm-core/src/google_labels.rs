@@ -397,7 +397,12 @@ impl Store {
     /// Materialize a newly linked label from already retained provider state.
     /// Only derived membership changes: never rewrite flags, sources, pending
     /// intent or provider receipts, and never schedule a Google write.
-    fn project_google_category(&self, account: &str, category: &str, label: &str) -> Result<usize> {
+    pub(crate) fn project_google_category(
+        &self,
+        account: &str,
+        category: &str,
+        label: &str,
+    ) -> Result<usize> {
         if crate::google_store::is_system_label(label) {
             return Err(err(
                 "invalid_google_response",

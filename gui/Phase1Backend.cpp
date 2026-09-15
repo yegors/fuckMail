@@ -1,4 +1,5 @@
 #include "MailBackend.h"
+#include "CalendarLayout.h"
 #include <QDate>
 #include <QJsonArray>
 #include <QTimeZone>
@@ -123,7 +124,7 @@ void MailBackend::pollNotifications() {
             const auto event = value.toObject().toVariantMap(); const auto key = reminderKey(event);
             currentKeys.insert(key);
             if (m_remindersPresented.contains(key)) retained.append(event);
-            else if (event.value("reminder_state").isNull() && fresh.size() < 8) fresh.append(event);
+            else if (!calendarEventHidden(event) && event.value("reminder_state").isNull() && fresh.size() < 8) fresh.append(event);
         }
         m_remindersPresented.intersect(currentKeys);
         if (retained != m_reminders) { m_reminders = retained; emit remindersChanged(); }
@@ -137,6 +138,7 @@ void MailBackend::pollNotifications() {
                     || !reminderReceiptMatches(receipt, event, "shown") || m_remindersPresented.contains(key)) return;
                 auto current = receipt["event"].toObject().toVariantMap(); current["timing"] = event.value("timing");
                 m_remindersPresented.insert(key); m_reminders.append(current); emit remindersChanged();
+                if (calendarEventHidden(current)) return;
                 emit desktopNotification(current.value("timing").toString() + " · " + current.value("title").toString(),
                     current.value("account_name").toString() + " · " + current.value("calendar_name").toString());
             });
@@ -185,6 +187,10 @@ QString MailBackend::calendarDateTime(const QString &date, const QString &time, 
     return value.toString(Qt::ISODate);
 }
 double MailBackend::nowHour() const { const auto t = clockNow().time(); return t.hour() + t.minute() / 60.0; }
+QVariantList MailBackend::calendarPreview(const QVariantMap &event) const {
+    const QTimeZone zone(m_preferences.value("calendar_display_time_zone").toString().toUtf8());
+    return calendarPresentation({QJsonObject::fromVariantMap(event)}, QDate::fromString(calendarFrom(), Qt::ISODate), calendarDays(), zone);
+}
 int MailBackend::calendarDays() const { return m_calendarView == "day" ? 1 : m_calendarView == "week" ? 7 : 42; }
 QString MailBackend::calendarFrom() const {
     auto day = QDate::fromString(m_calendarDate, Qt::ISODate);
@@ -308,13 +314,14 @@ void MailBackend::updateAccountPreferences(const QString &account, const QString
     auto params = mutation(); params["expected_revision"] = revision; params["name"] = name; params["signature_text"] = signature;
     m_preferencesStatus = "Saving…"; emit preferencesChanged();
     ++m_accountWrites;
-    request("account_update", account, params, [this](auto result, bool ok) {
+    request("account_update", account, params, [this, account](auto result, bool ok) {
         --m_accountWrites;
         if (!ok) cancelShutdown();
         m_preferencesStatus = ok ? "Saved on this machine — existing replies keep their saved signature" : "Not saved — " + result["message"].toString();
         emit preferencesChanged();
         if (ok || result["code"].toString() == "stale_revision") loadAccounts();
         if (ok) loadCalendarSources();
+        emit accountPreferencesFinished(account, ok);
         if (m_shutdown) finishShutdown();
     });
 }
@@ -397,7 +404,7 @@ void MailBackend::reloadDraft() {
         m_resolvingDraft = false;
         if (account != m_account || id != draftContext()) return;
         if (ok && !olderDraftProjection(result)) {
-            m_draft = mergedDraftProjection(result); m_recipientInputs.clear(); m_draftDirty = false; m_draftConflict = false;
+            m_draft = mergedDraftProjection(result); restoreRecipientInputs(m_draft); m_draftDirty = false; m_draftConflict = false;
             m_afterDraftSave = {}; m_draftStatus = draftReadOnly() ? "Read-only Google draft preview" : "Saved on this machine";
         } else if (!ok) { m_draftStatus = "Not saved — could not reload. Your version remains here."; cancelShutdown(); }
         else if (draftReadOnly()) m_draftStatus = "Read-only Google draft preview";
@@ -430,24 +437,6 @@ void MailBackend::saveMyDraftVersion() {
         mergeGoogleSendStatus(result["google_send"].toObject(), account, result["draft_id"].toString());
         m_draftConflict = false; m_draftDirty = true; m_draftStatus = "Saving your version…"; emit draftChanged();
         saveDraft();
-    });
-}
-void MailBackend::discardDraft() {
-    if (accountArchived() || m_unsavedAccountBuffer || draftReadOnly()) return;
-    cancelPendingGoogleSend("Send cancelled before discarding the draft.");
-    if (attachmentImportPending()) return;
-    if (m_draft.isEmpty() || draftBusy()) return;
-    m_draftTimer.stop(); m_discarding = true; emit draftChanged();
-    auto params = draftSelector(); params["request_id"] = mutation()["request_id"]; params["expected_revision"] = m_draft["revision"].toLongLong();
-    const auto account = m_account, context = draftContext();
-    request("draft_discard", m_account, params, [this, account, context](auto result, bool ok) {
-        m_discarding = false;
-        if (account != m_account || context != draftContext() || m_unsavedAccountBuffer || accountArchived()) return;
-        if (ok) { m_draft = mergedDraftProjection(result); m_recipientInputs.clear(); m_draftDirty = false; m_draftConflict = false; m_draftStatus = "Draft discarded"; remember("replyOpen", false); remember("selectedDraft", ""); loadAccounts(); if (m_folder == "drafts") loadDraftRows(false); }
-        else { m_draftStatus = "Discard failed — your reply remains here"; cancelShutdown(); }
-        emit draftChanged();
-        if (ok) saveDraft();
-        if (m_shutdown) finishShutdown();
     });
 }
 void MailBackend::loadCaptures(bool append) {

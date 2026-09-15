@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{collections::HashSet, io::Read};
 
-const MAX_BODY: usize = 256 * 1024;
+pub(crate) const MAX_BODY: usize = 256 * 1024;
 const MAX_SUBJECT: usize = 8192;
 
 pub(crate) fn compose_request(
@@ -14,6 +14,15 @@ pub(crate) fn compose_request(
     message_id: String,
     timestamp_secs: u64,
 ) -> Result<(fm_mail::ComposeRequest, fm_mail::AccountIdentity)> {
+    if draft["recipient_inputs"]
+        .as_object()
+        .is_some_and(|inputs| !inputs.is_empty())
+    {
+        return Err(err(
+            "invalid_draft",
+            "Finish the recipient addresses before capturing or sending this draft",
+        ));
+    }
     Ok((
         fm_mail::ComposeRequest {
             account_id: account.into(),
@@ -54,7 +63,7 @@ pub(crate) fn selector(p: &Value) -> Result<(&str, bool)> {
     }
 }
 
-fn now() -> Result<i64> {
+pub(crate) fn now() -> Result<i64> {
     i64::try_from(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -163,13 +172,13 @@ impl Store {
     pub(crate) fn stored_composition(&self, account: &str, p: &Value) -> Result<Option<Value>> {
         let (selected, legacy) = selector(p)?;
         let row:Option<Value>=self.db.query_row(
-            "SELECT draft_id,conversation_id,mode,source_message_id,source_hash,routing_json,body,revision,body_html,attachments_json,discarded,signature_text,from_name,identity_revision,created_at,updated_at,legacy_reply,origin FROM drafts WHERE account=?1 AND ((?3 AND legacy_reply=1 AND conversation_id=?2) OR (NOT ?3 AND draft_id=?2))",
+            "SELECT draft_id,conversation_id,mode,source_message_id,source_hash,routing_json,body,revision,body_html,attachments_json,discarded,signature_text,from_name,identity_revision,created_at,updated_at,legacy_reply,origin,recipient_inputs_json FROM drafts WHERE account=?1 AND ((?3 AND legacy_reply=1 AND conversation_id=?2) OR (NOT ?3 AND draft_id=?2))",
             params![account,selected,legacy],|r|Ok(json!({"draft_id":r.get::<_,String>(0)?,"conversation_id":r.get::<_,Option<String>>(1)?,
                 "mode":r.get::<_,String>(2)?,"source_message_id":r.get::<_,Option<String>>(3)?,"source_hash":r.get::<_,Option<String>>(4)?,
                 "routing_json":r.get::<_,String>(5)?,"body":r.get::<_,String>(6)?,"revision":r.get::<_,i64>(7)?,"body_html":r.get::<_,Option<String>>(8)?,
                 "attachments_json":r.get::<_,String>(9)?,"discarded":r.get::<_,bool>(10)?,"signature_text":r.get::<_,String>(11)?,
                 "from_name":r.get::<_,String>(12)?,"identity_revision":r.get::<_,i64>(13)?,"created_at":r.get::<_,i64>(14)?,
-                "updated_at":r.get::<_,i64>(15)?,"legacy_reply":r.get::<_,bool>(16)?,"origin":r.get::<_,String>(17)?}))).optional()?;
+                "updated_at":r.get::<_,i64>(15)?,"legacy_reply":r.get::<_,bool>(16)?,"origin":r.get::<_,String>(17)?,"recipient_inputs_json":r.get::<_,String>(18)?}))).optional()?;
         Ok(row)
     }
 
@@ -192,6 +201,10 @@ impl Store {
     }
 
     pub(crate) fn project_composition(&self, account: &str, mut row: Value) -> Result<Value> {
+        row["recipient_inputs"] = crate::draft_discard::recipient_inputs(&serde_json::from_str(
+            row["recipient_inputs_json"].as_str().unwrap_or("{}"),
+        )?)?;
+        row.as_object_mut().unwrap().remove("recipient_inputs_json");
         let routing: Value = serde_json::from_str(row["routing_json"].as_str().unwrap())?;
         for (key, value) in routing
             .as_object()
@@ -215,6 +228,13 @@ impl Store {
         row["account_archived"] = json!(self.account_lifecycle(account)?["state"] == "removed");
         row["read_only"] =
             json!(row["origin"] == "google_snapshot" || row["account_archived"] == true);
+        row["transferred"] =
+            json!(self.draft_transferred(account, row["draft_id"].as_str().unwrap())?);
+        row["account_transfer"] =
+            self.draft_account_transfer(account, row["draft_id"].as_str().unwrap())?;
+        if row["transferred"] == true {
+            row["read_only"] = json!(true);
+        }
         row["google_delete"] =
             self.google_delete_for_draft(account, row["draft_id"].as_str().unwrap())?;
         row["remote_source"] = if row["revision"].as_i64().unwrap_or(0) > 0 {
@@ -528,6 +548,22 @@ impl Store {
         }
         let was_discarded = draft["discarded"] == true;
         let original_signature = draft["signature_text"].clone();
+        let pending = if discard {
+            json!({})
+        } else if let Some(inputs) = p.get("recipient_inputs") {
+            crate::draft_discard::recipient_inputs(inputs)?
+        } else {
+            let mut inputs = draft
+                .get("recipient_inputs")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
+            for field in ["to_recipients", "cc_recipients", "bcc_recipients"] {
+                if p.get(field).is_some() {
+                    inputs.as_object_mut().unwrap().remove(field);
+                }
+            }
+            inputs
+        };
         let body = if discard {
             ""
         } else {
@@ -608,6 +644,11 @@ impl Store {
         }
         validate_routing(&routing)?;
         let unchanged = !discard
+            && draft
+                .get("recipient_inputs")
+                .cloned()
+                .unwrap_or_else(|| json!({}))
+                == pending
             && draft["body"] == body
             && draft["body_html"] == html
             && draft["attachment_ids"] == attachments
@@ -630,6 +671,14 @@ impl Store {
             .ok_or_else(|| err("limit_exceeded", "Draft revision exhausted"))?;
         self.db.execute("INSERT INTO drafts(account,draft_id,conversation_id,legacy_reply,mode,source_message_id,source_hash,routing_json,body,revision,body_html,attachments_json,discarded,signature_text,from_name,identity_revision,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18) ON CONFLICT(account,draft_id) DO UPDATE SET body=excluded.body,revision=excluded.revision,body_html=excluded.body_html,attachments_json=excluded.attachments_json,discarded=excluded.discarded,signature_text=excluded.signature_text,from_name=excluded.from_name,identity_revision=excluded.identity_revision,routing_json=excluded.routing_json,updated_at=excluded.updated_at",
             params![account,draft["draft_id"].as_str(),draft["conversation_id"].as_str(),draft["legacy_reply"].as_bool().unwrap(),draft["mode"].as_str(),draft["source_message_id"].as_str(),draft["source_hash"].as_str(),serde_json::to_string(&routing)?,body,next,html.as_str(),serde_json::to_string(&attachments)?,discard,draft["signature_text"].as_str(),draft["from_name"].as_str(),draft["identity_revision"].as_i64(),if expected==0 {timestamp} else {draft["created_at"].as_i64().unwrap()},timestamp])?;
+        self.db.execute(
+            "UPDATE drafts SET recipient_inputs_json=?3 WHERE account=?1 AND draft_id=?2",
+            params![
+                account,
+                draft["draft_id"].as_str(),
+                serde_json::to_string(&pending)?
+            ],
+        )?;
         if unchanged {
             self.advance_unchanged_adoption(
                 account,

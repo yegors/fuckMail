@@ -1024,3 +1024,161 @@ fn provider_byte_limit_is_checked_after_real_mime_encoding_before_journal_public
     );
     assert_eq!(body(&mut store, &scope, &id)["revision"], 3);
 }
+
+#[test]
+fn outgoing_read_preserves_frozen_content_restarts_and_suppresses_acquired_messages() {
+    let temp = tempfile::tempdir().unwrap();
+    let (mut store, scope, draft) = setup(temp.path());
+    let params = request(&store, &scope, &draft, "outgoing-read");
+    let frozen = freeze(&mut store, &scope, &params);
+    let lease = claim(&mut store, &scope, &frozen);
+    accepted(&mut store, &lease, "accepted-provider-id");
+    let before = store
+        .google_send_status(&scope.account, "outgoing-read")
+        .unwrap();
+    save(
+        &mut store,
+        &scope,
+        &draft,
+        2,
+        "Later words must never enter the sent reader",
+    );
+    let page = store
+        .handle("google_sent", Some(&scope.account), json!({}))
+        .unwrap();
+    assert_eq!(page["outgoing"].as_array().unwrap().len(), 1);
+    assert_eq!(page["outgoing"][0]["state"], "accepted");
+    assert_eq!(page["outgoing"][0]["request"], params);
+    assert_eq!(
+        page["outgoing"][0]["headers"]["preview"],
+        "original authored text"
+    );
+    drop(store);
+    let store = Store::open_live(temp.path()).unwrap();
+    let read = |store: &Store| {
+        outgoing::read(
+            store
+                .google_sent_message_begin(&scope.account, &json!({"request_id":"outgoing-read"}))
+                .unwrap(),
+            &CancellationToken::new(),
+        )
+        .unwrap()
+    };
+    let content = read(&store);
+    assert!(content["text"]
+        .as_str()
+        .unwrap()
+        .contains("original authored text"));
+    assert_eq!(
+        content["text"]
+            .as_str()
+            .unwrap()
+            .matches("Exact signature once")
+            .count(),
+        1
+    );
+    assert!(!content["text"].as_str().unwrap().contains("Later words"));
+    assert_eq!(
+        content["headers"]["bcc_recipients"][0]["email"],
+        "private@example.test"
+    );
+    assert_eq!(content["text_truncated"], false);
+    assert_eq!(
+        store
+            .google_send_status(&scope.account, "outgoing-read")
+            .unwrap(),
+        before
+    );
+    assert!(store
+        .google_sent_message_begin("wrong-account", &json!({"request_id":"outgoing-read"}))
+        .is_err());
+    assert!(store
+        .google_sent(&scope.account, &json!({"limit":101}))
+        .is_err());
+    assert!(store
+        .google_sent(&scope.account, &json!({"offset":-1}))
+        .is_err());
+    let cancel = CancellationToken::new();
+    cancel.cancel();
+    assert!(outgoing::read(
+        store
+            .google_sent_message_begin(&scope.account, &json!({"request_id":"outgoing-read"}))
+            .unwrap(),
+        &cancel
+    )
+    .is_err());
+    store.db.execute("INSERT INTO conversations(account,id,subject) VALUES(?1,'acquired-conversation','Frozen submission')", [&scope.account]).unwrap();
+    store.db.execute("INSERT INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash) VALUES(?1,'acquired-message','acquired-conversation','accepted-provider-id','Author','author@example.test','reader@example.test','Frozen submission','Provider body','2026-09-15T12:00:00Z',0,0,0,1,?2)",params![scope.account,content["source_version"].as_str().unwrap()]).unwrap();
+    assert!(
+        store.google_sent(&scope.account, &json!({})).unwrap()["outgoing"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        read(&store)["observed_conversation_id"],
+        "acquired-conversation"
+    );
+    store
+        .db
+        .execute(
+            "UPDATE messages SET sent=0 WHERE account=?1",
+            [&scope.account],
+        )
+        .unwrap();
+    assert!(
+        store.google_sent(&scope.account, &json!({})).unwrap()["outgoing"]
+            .as_array()
+            .unwrap()
+            .is_empty(),
+        "later deletion cannot revive a local preview"
+    );
+    let hash = content["source_version"].as_str().unwrap();
+    std::fs::write(temp.path().join("blobs").join(hash), b"changed").unwrap();
+    assert!(outgoing::read(
+        store
+            .google_sent_message_begin(&scope.account, &json!({"request_id":"outgoing-read"}))
+            .unwrap(),
+        &CancellationToken::new()
+    )
+    .is_err());
+}
+
+#[test]
+fn outgoing_pages_keep_uncertainty_and_exclude_rejected_abandoned_submissions() {
+    let temp = tempfile::tempdir().unwrap();
+    let (mut store, scope, draft) = setup(temp.path());
+    let p = request(&store, &scope, &draft, "prepared");
+    freeze(&mut store, &scope, &p);
+    let original = store
+        .google_send_operation(&scope.account, "prepared")
+        .unwrap()
+        .unwrap();
+    for (request, state) in [
+        ("unknown", "acceptance_unknown"),
+        ("rejected", "rejected"),
+        ("abandoned", "abandoned"),
+    ] {
+        let mut op = original.clone();
+        op.request_id = request.into();
+        op.request["request_id"] = request.into();
+        op.state = state.into();
+        store.db.execute("INSERT INTO capture_operations(account,id,json,blob_hash,execution_kind) VALUES(?1,?2,?3,?4,'google')",params![scope.account,request,serde_json::to_string(&op).unwrap(),op.upload_sha256]).unwrap();
+    }
+    let page = store
+        .google_sent(&scope.account, &json!({"limit":1}))
+        .unwrap();
+    assert_eq!(page["outgoing"][0]["state"], "acceptance_unknown");
+    assert_eq!(page["next_offset"], 1);
+    let next = store
+        .google_sent(&scope.account, &json!({"offset":1,"limit":1}))
+        .unwrap();
+    assert_eq!(next["outgoing"][0]["state"], "prepared");
+    assert!(next["next_offset"].is_null());
+    assert!(store
+        .google_sent(&scope.account, &json!({"conversation_id":"not-the-source"}))
+        .unwrap()["outgoing"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+}

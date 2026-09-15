@@ -3,6 +3,7 @@ pub(crate) mod calendar;
 pub(crate) mod calendar_occurrences;
 pub(crate) mod calendar_writes;
 pub(crate) mod draft_actions;
+mod draft_transfers;
 pub(crate) mod drafts;
 pub(crate) mod labels;
 pub(crate) mod mail;
@@ -120,6 +121,7 @@ impl SyncContext {
                 GmailMethod::MessageModify
                     | GmailMethod::MessageTrash
                     | GmailMethod::MessageRestore
+                    | GmailMethod::LabelCreate
             )
         {
             return Err(GoogleError::PermissionDenied);
@@ -492,6 +494,9 @@ fn mutation_request_matches(work: &Work, request: &HttpRequest) -> bool {
             if work.class != WorkClass::StateMutation {
                 return false;
             }
+            if request.url() == "https://gmail.googleapis.com/gmail/v1/users/me/labels" {
+                return request.method() == HttpMethod::Post && work.units == 5;
+            }
             let Some(tail) =
                 path.strip_prefix("https://gmail.googleapis.com/gmail/v1/users/me/messages/")
             else {
@@ -562,6 +567,7 @@ impl Drop for OperationOwner {
 struct RuntimeState {
     quota: Option<(Value, Arc<quota::QuotaGate>)>,
     jobs: std::collections::BTreeMap<String, Job>,
+    label_jobs: std::collections::BTreeMap<String, labels::SyncJob>,
     stopping: bool,
 }
 pub(crate) struct Runtime {
@@ -573,6 +579,20 @@ pub(crate) struct Runtime {
     state: tokio::sync::Mutex<RuntimeState>,
 }
 impl Runtime {
+    pub(crate) async fn cadence_changed(&self) {
+        let state = self.state.lock().await;
+        for job in state.jobs.values() {
+            if job.cancel.is_cancelled() {
+                continue;
+            }
+            job.context
+                .mail_refresh_requested
+                .store(true, Ordering::Release);
+            job.context
+                .refresh
+                .send_modify(|generation| *generation = generation.wrapping_add(1));
+        }
+    }
     pub(crate) fn new(
         core: CoreBridge,
         auth: Arc<google_auth::Runtime>,
@@ -587,6 +607,7 @@ impl Runtime {
             state: tokio::sync::Mutex::new(RuntimeState {
                 quota: None,
                 jobs: Default::default(),
+                label_jobs: Default::default(),
                 stopping: false,
             }),
         })
@@ -607,6 +628,9 @@ impl Runtime {
                 | "google_calendar_resume"
                 | "google_calendar_abandon"
                 | "google_labels_refresh"
+                | "google_labels_sync"
+                | "google_labels_sync_status"
+                | "google_labels_sync_cancel"
                 | "google_drafts_refresh"
                 | "google_draft_sync"
                 | "google_draft_status"
@@ -728,6 +752,84 @@ impl Runtime {
                 }
             })?
             .to_owned();
+        if matches!(
+            method,
+            "google_labels_sync_status" | "google_labels_sync_cancel"
+        ) {
+            let job_id = labels::request_parameter(&params, "job_id")?;
+            let state = self.state.lock().await;
+            let job = state
+                .label_jobs
+                .get(job_id)
+                .filter(|job| job.owner == owner_id && job.account == account)
+                .ok_or_else(|| {
+                    failure(
+                        "not_found",
+                        "This label sync belongs to another session or has ended",
+                    )
+                })?;
+            if method == "google_labels_sync_cancel" {
+                job.cancel.cancel();
+            }
+            return Ok(job.snapshot(job_id));
+        }
+        if method == "google_labels_sync" {
+            let request = labels::request_parameter(&params, "request_id")?.to_owned();
+            let (context, operation_owner) = self
+                .operation_context(&account, owner_id, owner_cancel.clone())
+                .await?;
+            let mut state = self.state.lock().await;
+            if state.stopping || self.cancel.is_cancelled() || owner_cancel.is_cancelled() {
+                return Err(failure("cancelled", "Label sync stopped"));
+            }
+            if let Some((id, job)) = state.label_jobs.iter().find(|(_, job)| {
+                job.owner == owner_id && job.account == account && job.request == request
+            }) {
+                return Ok(job.snapshot(id));
+            }
+            if state
+                .label_jobs
+                .values()
+                .any(|job| job.account == account && !job.task.is_finished())
+            {
+                return Err(failure(
+                    "busy",
+                    "Labels are already syncing for this account",
+                ));
+            }
+            // Bound retained results without dropping any running task or its shutdown join.
+            if state.label_jobs.len() >= 64 {
+                let finished: Vec<_> = state
+                    .label_jobs
+                    .iter()
+                    .filter(|(_, job)| job.task.is_finished())
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                for id in finished {
+                    state.label_jobs.remove(&id);
+                }
+            }
+            if state
+                .label_jobs
+                .values()
+                .filter(|job| !job.task.is_finished())
+                .count()
+                >= 8
+            {
+                return Err(failure("busy", "Wait for another label sync to finish"));
+            }
+            let job_id = fm_ipc::random_token();
+            let job = labels::SyncJob::start(
+                context,
+                operation_owner,
+                owner_id.to_owned(),
+                owner_cancel,
+                request,
+            );
+            let reply = job.snapshot(&job_id);
+            state.label_jobs.insert(job_id, job);
+            return Ok(reply);
+        }
         if method == "google_drafts_refresh" {
             if params.as_object().is_none_or(|object| !object.is_empty()) {
                 return Err(failure(
@@ -1267,13 +1369,22 @@ impl Runtime {
         Ok(json!({"account":account,"started":true,"active":true}))
     }
     pub(crate) async fn shutdown(&self) {
-        let jobs = {
+        let (jobs, label_jobs) = {
             let mut state = self.state.lock().await;
             state.stopping = true;
-            std::mem::take(&mut state.jobs)
+            (
+                std::mem::take(&mut state.jobs),
+                std::mem::take(&mut state.label_jobs),
+            )
         };
         for job in jobs.values() {
             job.cancel.cancel();
+        }
+        for job in label_jobs.values() {
+            job.cancel.cancel();
+        }
+        for (_, job) in label_jobs {
+            let _ = job.task.await;
         }
         for (_, job) in jobs {
             let _ = job.task.await;
@@ -1334,12 +1445,41 @@ fn retry_wait(error: &CoreError, attempt: u32) -> Option<Duration> {
         .subsec_millis();
     Some(Duration::from_secs(provider.max(base)) + Duration::from_millis(u64::from(jitter)))
 }
+async fn service_ready(
+    ctx: &SyncContext,
+    progress: &Arc<Mutex<Value>>,
+    service: &'static str,
+    progress_key: &str,
+    refresh: &mut watch::Receiver<u64>,
+) -> bool {
+    let account = ctx.account.as_str().to_owned();
+    match ctx
+        .core_call(move |store| store.google_service_sync_enabled(&account, service))
+        .await
+    {
+        Ok(true) => true,
+        result => {
+            progress_state(
+                progress,
+                progress_key,
+                "paused",
+                result.as_ref().err().map(|error| error.code.as_str()),
+            );
+            wait_sync(ctx, refresh, Some(Duration::from_secs(30))).await;
+            false
+        }
+    }
+}
+
 async fn mail_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
     let mut worker = mail::MailWorker::new(ctx.account.clone());
     let clock = std::time::Instant::now();
     let mut failures = 0;
     let mut refresh = ctx.refresh.subscribe();
     while !ctx.cancel.is_cancelled() {
+        if !service_ready(&ctx, &progress, "mail", "mail", &mut refresh).await {
+            continue;
+        }
         if ctx.credential_blocked.load(Ordering::Acquire) {
             progress_state(&progress, "mail", "paused", Some("vault_unavailable"));
             if !wait_sync(&ctx, &mut refresh, None).await {
@@ -1412,6 +1552,9 @@ async fn labels_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>) {
     let mut failures = 0;
     let mut refresh = ctx.refresh.subscribe();
     while !ctx.cancel.is_cancelled() {
+        if !service_ready(&ctx, &progress, "mail", "labels", &mut refresh).await {
+            continue;
+        }
         if ctx.credential_blocked.load(Ordering::Acquire) {
             progress_state(&progress, "labels", "paused", Some("vault_unavailable"));
             if !wait_sync(&ctx, &mut refresh, None).await {
@@ -1542,6 +1685,9 @@ async fn calendar_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>)
     let mut failures = 0;
     let mut refresh_signal = ctx.refresh.subscribe();
     while !ctx.cancel.is_cancelled() {
+        if !service_ready(&ctx, &progress, "calendar", "calendar", &mut refresh_signal).await {
+            continue;
+        }
         if ctx.credential_blocked.load(Ordering::Acquire) {
             progress_state(&progress, "calendar", "paused", Some("vault_unavailable"));
             if !wait_sync(&ctx, &mut refresh_signal, None).await {
@@ -1589,13 +1735,20 @@ async fn calendar_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>)
                     },
                     summary.first_failure.as_deref(),
                 );
+                let interval = match ctx.core_call(|store| store.google_sync_interval_ms()).await {
+                    Ok(value) => Duration::from_millis(value),
+                    Err(error) => {
+                        progress_state(&progress, "calendar", "paused", Some(&error.code));
+                        return;
+                    }
+                };
                 if !wait_sync(
                     &ctx,
                     &mut refresh_signal,
                     Some(if summary.more {
                         Duration::from_millis(1)
                     } else {
-                        Duration::from_secs(60)
+                        interval
                     }),
                 )
                 .await

@@ -24,6 +24,7 @@ mod google_sync;
 mod local_content;
 mod local_model;
 mod ollama;
+mod openai_local;
 mod verification_fixture;
 mod verification_google;
 
@@ -620,6 +621,10 @@ async fn session_inner(
             session_write(stream.get_mut(), &reply, &engine_cancel).await?;
             continue;
         }
+        let cadence_changed = request.method == "preferences_save"
+            && ["sync_every_minutes", "google_sync_services"]
+                .iter()
+                .any(|key| request.params["preferences"].get(key).is_some());
         let id = request.id.clone();
         let Ok(permit) = foreground_slots.clone().try_acquire_owned() else {
             session_write(
@@ -663,6 +668,11 @@ async fn session_inner(
                 return Err(io::Error::new(io::ErrorKind::InvalidData, "only one request may be in flight per connection"));
             }
         };
+        if cadence_changed && reply["ok"] == true {
+            if let Some(provider) = &services.google {
+                provider.sync.cadence_changed().await;
+            }
+        }
         let reply = if serde_json::to_vec(&reply)?.len() + 1 > fm_ipc::MAX_FRAME {
             error(
                 &id,
@@ -1039,26 +1049,117 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 
 fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
     let status = store.handle("status", None, json!({}))?;
+    let methods = [
+        "assist_jobs",
+        "assist_catalog",
+        "assist_settings_get",
+        "assist_settings_save",
+        "assist_discover",
+        "assist_start",
+        "assist_job",
+        "assist_cancel",
+        "assist_watch",
+        "assist_results",
+        "assist_correct",
+        "assist_accept",
+        "accounts",
+        "status",
+        "conversations",
+        "conversation",
+        "flag",
+        "draft_get",
+        "message_source",
+        "google_sent",
+        "google_sent_message",
+        "draft_save",
+        "draft_capture",
+        "draft_attachment_import",
+        "calendar",
+        "attachment",
+        "categories",
+        "label_catalog",
+        "label_create",
+        "label_describe",
+        "label_remove",
+        "set_category",
+        "view_get",
+        "view_save",
+        "preferences_get",
+        "preferences_save",
+        "calendar_sources",
+        "calendar_reminders",
+        "calendar_reminder_ack",
+        "mail_notifications",
+        "calendar_combined",
+        "calendar_search",
+        "account_update",
+        "draft_discard",
+        "capture_history",
+        "calendar_write",
+        "calendar_write_ack",
+        "calendar_operations",
+        "drafts",
+        "draft_create",
+        "sender_summary",
+        "recipient_suggestions",
+        "draft_transfer",
+        "draft_transfer_status",
+        "draft_transfer_retry",
+        "google_auth_configuration",
+        "google_auth_begin",
+        "google_auth_restore_begin",
+        "google_auth_status",
+        "google_auth_cancel",
+        "google_disconnect",
+        "accounts_archived",
+        "account_remove_preview",
+        "account_remove",
+        "account_remove_status",
+        "google_sync_start",
+        "google_sync_refresh",
+        "google_sync_stop",
+        "google_sync_release",
+        "google_sync_status",
+        "google_sync_busy",
+        "mail_filing",
+        "google_mail_mutation_status",
+        "google_calendar_write",
+        "google_calendar_reconcile",
+        "google_calendar_operation",
+        "google_calendar_resume",
+        "google_calendar_abandon",
+        "google_calendar_occurrence_read",
+        "google_labels",
+        "google_labels_refresh",
+        "google_labels_sync",
+        "google_labels_sync_status",
+        "google_labels_sync_cancel",
+        "google_category_bind",
+        "google_draft_sync",
+        "google_draft_status",
+        "google_draft_reconcile",
+        "google_draft_resolve",
+        "google_send",
+        "google_send_status",
+        "google_send_reconcile",
+        "google_send_abandon",
+        "google_drafts_refresh",
+        "google_drafts_status",
+        "google_draft_sources",
+        "google_draft_source",
+        "google_draft_authoring",
+        "google_draft_copy",
+        "google_draft_adopt",
+        "google_draft_delete",
+        "google_draft_delete_status",
+        "google_draft_delete_reconcile",
+        "google_draft_delete_abandon",
+    ];
     Ok(
         json!({"protocol":PROTOCOL_VERSION,"schema_version":status["schema_version"],
         "fixture_revision":status["fixture_revision"],"capabilities":status["capabilities"],
         "mode":status["profile_kind"],"max_frame_bytes":fm_ipc::MAX_FRAME,"max_page_size":100,
-        "methods":["assist_jobs","assist_catalog","assist_settings_get","assist_settings_save","assist_discover","assist_start","assist_job","assist_cancel","assist_watch","assist_results","assist_correct","assist_accept","accounts","status","conversations","conversation","flag","draft_get",
-            "draft_save","draft_capture","draft_attachment_import","calendar","attachment","categories","set_category",
-            "view_get","view_save","preferences_get","preferences_save","calendar_sources",
-            "calendar_reminders","calendar_reminder_ack","mail_notifications",
-            "calendar_combined","calendar_search","account_update","draft_discard","capture_history","calendar_write",
-            "calendar_write_ack","calendar_operations","drafts","draft_create","sender_summary",
-            "google_auth_configuration","google_auth_begin","google_auth_restore_begin","google_auth_status","google_auth_cancel","google_disconnect",
-            "accounts_archived","account_remove_preview","account_remove","account_remove_status",
-            "google_sync_start","google_sync_refresh","google_sync_stop","google_sync_release","google_sync_status","google_sync_busy",
-            "mail_filing","google_mail_mutation_status","google_calendar_write","google_calendar_reconcile","google_calendar_operation",
-            "google_calendar_resume","google_calendar_abandon","google_calendar_occurrence_read","google_labels","google_labels_refresh","google_category_bind",
-            "google_draft_sync","google_draft_status","google_draft_reconcile","google_draft_resolve",
-            "google_send","google_send_status","google_send_reconcile","google_send_abandon",
-            "google_drafts_refresh","google_drafts_status","google_draft_sources","google_draft_source",
-            "google_draft_authoring","google_draft_copy","google_draft_adopt","google_draft_delete",
-            "google_draft_delete_status","google_draft_delete_reconcile","google_draft_delete_abandon"]}),
+        "methods":methods.as_slice()}),
     )
 }
 

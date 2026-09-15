@@ -21,9 +21,9 @@ bool MailBackend::archivedRequestAllowed(const QString &method) const {
     // Only cached queries/verified exports and the explicit lifecycle workflow.
     // In particular, provider reconciliation and local abandon are mutations.
     static const QSet<QString> cached{
-        "accounts", "view_get", "categories", "conversations", "conversation", "drafts", "draft_get",
+        "accounts", "view_get", "categories", "conversations", "conversation", "message_source", "drafts", "draft_get",
         "sender_summary", "attachment", "capture_history", "draft_capture", "google_drafts_status",
-        "google_draft_sources", "google_draft_source", "google_draft_status", "google_send_status",
+        "google_draft_sources", "google_draft_source", "google_draft_status", "google_send_status", "google_sent", "google_sent_message",
         "google_draft_delete_status", "google_mail_mutation_status", "calendar_operations", "google_calendar_operation",
         "calendar_combined", "calendar_sources", "calendar", "account_remove_preview", "account_remove",
         "account_remove_status", "google_auth_restore_begin"};
@@ -219,11 +219,11 @@ void MailBackend::openAccountArchive(const QString &account) {
     if (m_unsavedAccountBuffer) { m_afterAccountDisposition = [this, account] { openAccountArchive(account); }; accountNavigationAllowed(); return; }
     m_archiveSelection = account; selectAccount(account);
 }
-void MailBackend::restoreGoogleAccount(const QString &email, const QString &account, qint64 revision, bool reauthorize) {
+void MailBackend::restoreGoogleAccount(const QString &email, const QString &account, qint64 revision, bool reauthorize, const QVariantMap &access) {
     const auto lifecycle = lifecycleAccount(account).value("lifecycle").toMap();
     if (!accountRemoved(account) || lifecycle.value("revision").toLongLong() != revision
         || lifecycle.value("cleanup").toMap().value("state").toString() != "complete") {
         fail("Restoration needs the current archived account and completed credential cleanup."); return;
     }
-    beginGoogleAuth("google_auth_restore_begin", email, account, reauthorize, revision);
+    beginGoogleAuth("google_auth_restore_begin", email, account, reauthorize, revision, access);
 }

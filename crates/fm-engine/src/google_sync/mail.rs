@@ -18,7 +18,6 @@ use serde_json::{json, Value};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const RECENT_SECONDS: u64 = 30 * 24 * 60 * 60;
-const DELTA_POLL_MS: u64 = 60_000;
 const PARTS_BEFORE_DELTA: u8 = 4;
 // IDs are cheap, but a smaller page makes the initial useful result independent
 // of an account's total history. History records can still fan out to 5,000 IDs.
@@ -136,7 +135,10 @@ impl MailWorker {
         if page.lane == MailLane::Delta {
             self.non_delta_parts = 0;
             if completed.is_some_and(|checkpoint| checkpoint.phase == Phase::Idle) {
-                self.next_delta_ms = now_ms.saturating_add(DELTA_POLL_MS);
+                let interval = ctx
+                    .core_call(|store| store.google_sync_interval_ms())
+                    .await?;
+                self.next_delta_ms = now_ms.saturating_add(interval);
             }
         } else {
             self.non_delta_parts = self.non_delta_parts.saturating_add(1);

@@ -1,4 +1,6 @@
 #include <QCoreApplication>
+#include "CalendarLayout.h"
+#include <QJsonObject>
 #include <QDebug>
 #include <QElapsedTimer>
 #include <QEventLoop>
@@ -97,7 +99,9 @@ public:
     Q_INVOKABLE bool accountCapability(const QString &account, const QString &name) const { return (capability || (readCapability && name == "calendar_read")) && account == "alpha" && (name == "calendar_read" || name == "calendar_write" || name == "mail_read" || name == "mail_write"); }
     Q_INVOKABLE QVariantMap googleSyncState(const QString &account) const { return {{"active", active && account == "alpha"}}; }
     Q_INVOKABLE QString calendarDateTime(const QString &date, const QString &time, const QString &) const { return date + "T" + time + ":00-04:00"; }
+    Q_INVOKABLE QVariantList calendarPreview(const QVariantMap &event) const { return calendarPresentation({QJsonObject::fromVariantMap(event)}, QDate::fromString(calendarFrom, Qt::ISODate), calendarView == "day" ? 1 : 7, QTimeZone("America/Toronto")); }
     Q_INVOKABLE void calendarWrite(const QVariantMap &value) { lastWrite = value; ++writes; }
+    Q_INVOKABLE QString queueCalendarDeletion(const QVariantMap &value, const QVariantMap &) { lastWrite = value; ++writes; return {}; }
     Q_INVOKABLE QVariantMap calendarOccurrenceContext(const QString &account, const QString &calendar) const {
         return capability && active && connected && account == "alpha" && calendar == "primary"
             ? QVariantMap{{"account", account}, {"calendar_id", calendar}, {"epoch", occurrenceEpoch}} : QVariantMap{};
@@ -178,7 +182,7 @@ int main(int argc, char **argv) {
         require(QFontDatabase::addApplicationFont(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/fonts/" + font) >= 0, "Load actual bundled UI fonts");
     app.setFont(QFont("Geist", 10));
     QTemporaryDir copy; require(copy.isValid(), "Temporary QML directory");
-    for (const auto name : {"Theme.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "FmTextField.qml", "CalendarOccurrenceRead.qml", "EventEditor.qml", "EventDetails.qml", "CalendarOperations.qml", "GoogleLabelSetup.qml", "CalendarView.qml", "CalendarEventList.qml", "StartupOverlay.qml"})
+    for (const auto name : {"Theme.qml", "FmDialog.qml", "FmConfirmDialog.qml", "FmDateField.qml", "FmSwitch.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "FmTextField.qml", "CalendarOccurrenceRead.qml", "EventEditor.qml", "EventDetails.qml", "CalendarOperations.qml", "GoogleLabelSetup.qml", "CalendarView.qml", "CalendarEventList.qml", "StartupOverlay.qml"})
         require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/" + name, copy.filePath(name)), "Copy actual QML control");
     QFile module(copy.filePath("qmldir")); require(module.open(QIODevice::WriteOnly), "QML singleton directory");
     module.write("singleton Theme 1.0 Theme.qml\n"); module.close();
@@ -240,7 +244,7 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     require(deleteButton && deleteButton->isVisible() && deleteButton->mapToScene({0, 0}).y() < 112, "Delete remains in the editor header");
     call(deleteButton, "clicked");
     auto deleteDialog = named(root, "eventDeleteConfirmation"); settle([&] { return deleteDialog->property("opened").toBool(); });
-    require(deleteDialog->property("width").toInt() == 344 && deleteDialog->property("height").toDouble() > 0, "Delete dialog has bounded width and wrapped content height");
+    require(deleteDialog->property("width").toInt() == 360 && deleteDialog->property("height").toDouble() > 0, "Delete dialog uses the prototype width and wrapped content height");
     call(deleteDialog, "reject");
     require(named(root, "eventAttendees")->property("readOnly").toBool() && named(root, "eventConference")->property("readOnly").toBool(), "Live unsupported fields retain their displayed values");
     title->setProperty("text", "Changed title"); call(editor, "save");
@@ -288,6 +292,20 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     call(editor, "deleteEvent"); frozen = backend.lastWrite;
     require(frozen["kind"] == "delete" && frozen["expected_etag"] == "v1" && !frozen.contains("fields"), "Delete submits scoped etag and no invented field patch");
     backend.complete(true, resultFor(frozen, "acknowledged")); settle([&] { return !editor->property("visible").toBool(); });
+
+    call(details, "openAt", original, QVariant{}); settle([&] {return details->property("opened").toBool();});
+    const auto beforeDirectDelete=backend.writes;
+    call(named(root,"eventScopedCancel"),"clicked");
+    auto directDeleteDialog=named(root,"eventDetailsDeleteConfirmation");
+    settle([&] {return directDeleteDialog->property("opened").toBool();});
+    require(backend.writes==beforeDirectDelete&&!editor->property("visible").toBool(),"Details deletion opens only its confirmation before any write");
+    call(directDeleteDialog,"reject");require(backend.writes==beforeDirectDelete,"Cancel leaves event unchanged");
+    settle([&] {return !directDeleteDialog->property("visible").toBool();});
+    call(named(root,"eventScopedCancel"),"clicked");settle([&] {return directDeleteDialog->property("opened").toBool();});
+    call(named(root,"confirmDetailsDelete"),"clicked");frozen=backend.lastWrite;
+    require(backend.writes==beforeDirectDelete+1&&frozen["kind"]=="delete"&&frozen["event_id"]==original["event_id"]&&frozen["expected_etag"]=="v1","Details delete retains exact event identity and revision");
+    settle([&]{return !details->property("visible").toBool();});
+    call(details,"deleteEvent",QString{});require(backend.writes==beforeDirectDelete+1,"Closed popup cannot queue a second deletion");
 
     auto invitation = original; invitation["can_edit"] = false; invitation["can_delete"] = false; invitation["can_rsvp"] = true; invitation["self_response"] = "needsAction";
     invitation["attendees"] = QVariantList{QVariantMap{{"email", "self@example.test"}, {"self", true}}};
@@ -431,7 +449,7 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     if (!captureDir.isEmpty()) {
         require(QDir().mkpath(captureDir), "Create calendar capture directory");
         auto window = qobject_cast<QQuickWindow *>(root); window->resize(390, 720);
-        for (const auto theme : {"graphite", "paper", "harbour"}) for (const auto size : {"default", "large"}) {
+        for (const auto theme : {"graphite", "paper", "terminal"}) for (const auto size : {"default", "large"}) {
             root->setProperty("testTheme", theme); root->setProperty("testTextSize", size); backend.events = {roster}; openEditor(roster);
             attendeeInput->setProperty("text", "long.guest.address.for.layout@example.test"); call(attendeeInput, "accepted");
             auto scroll = named(root, "eventFormScroll")->property("contentItem").value<QObject *>();
@@ -584,7 +602,7 @@ ApplicationWindow { width: 1100; height: 850; visible: true
             require(QRectF(0, 0, window->width(), window->height()).contains(item->mapRectToScene(item->boundingRect()))
                 && item->width() + .5 >= item->implicitWidth(), "occurrence action remains contained with its full label");
         };
-        for (const auto theme : {"graphite", "paper", "harbour"}) for (const auto size : {"default", "large"}) {
+        for (const auto theme : {"graphite", "paper", "terminal"}) for (const auto size : {"default", "large"}) {
             root->setProperty("testTheme", theme); root->setProperty("testTextSize", size);
             call(details, "openAt", recurring, QVariant{}); settle([&] { return details->property("opened").toBool(); });
             retain(QString("occurrence-details-%1-%2").arg(theme, size)); contained("eventEditButton");
@@ -673,6 +691,13 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     call(editor, "save"); require(backend.lastAction["action"] == "reconcile" && backend.writes == beforeFollowing + 1, "Unknown replacement only performs read reconciliation");
     backend.capability = true; backend.readCapability = false; emit backend.accountsChanged();
     backend.complete(true, resultFor(frozen, "acknowledged", 43)); settle([&] { return !editor->property("visible").toBool(); });
+    openScope("series", "eventDeleteSeries");
+    emit backend.calendarOccurrenceReadFinished(backend.lastOccurrenceCorrelation,true,scopedResult("series","delete"),{});
+    settle([&]{return directDeleteDialog->property("opened").toBool();});
+    require(!editor->property("visible").toBool(),"Series deletion confirms directly in event details");
+    call(named(root,"confirmDetailsDelete"),"clicked");frozen=backend.lastWrite;
+    require(frozen["kind"]=="delete"&&frozen["event_id"]=="series"&&frozen["expected_etag"]=="master-v4"&&frozen["recurring"].toMap()["scope"]=="series","Delete series uses freshly resolved master identity");
+    backend.complete(true,resultFor(frozen,"acknowledged"));settle([&]{return !details->property("visible").toBool();});
     openScope("following", "eventScopedCancel");
     require(backend.lastOccurrenceSelector["action"] == "delete", "Cancellation resolves its own permitted action");
     emit backend.calendarOccurrenceReadFinished(backend.lastOccurrenceCorrelation, true, scopedResult("following", "delete"), {});
@@ -698,13 +723,46 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     require(frozen["fields"].toMap()["recurrence"].toStringList() == QStringList{"RRULE:FREQ=DAILY;INTERVAL=2;COUNT=5"}, "Repeat control emits the shared common-rule array");
     backend.complete(true, resultFor(frozen, "acknowledged")); settle([&] { return !editor->property("visible").toBool(); });
 
+    openEditor({}); title->setProperty("text", "Custom weekday series");
+    named(root, "eventReminder")->setProperty("currentIndex", 6);
+    named(root, "eventAvailability")->setProperty("currentIndex", 1);
+    call(named(root, "eventAddMeet"), "clicked");
+    repeat->setProperty("currentIndex", 5); require(QMetaObject::invokeMethod(repeat, "activated", Q_ARG(int, 5)), "Choose custom recurrence");
+    call(named(root, "eventRepeatDay_MO"), "clicked"); call(named(root, "eventRepeatDay_WE"), "clicked"); call(named(root, "eventRepeatDay_SU"), "clicked");
+    named(root, "eventRepeatInterval")->setProperty("text", "2");
+    named(root, "eventRepeatEnd")->setProperty("currentIndex", 1);
+    named(root, "eventRepeatUntil")->setProperty("text", "2026-10-31");
+    call(editor, "save"); frozen = backend.lastWrite;
+    require(frozen["fields"].toMap()["recurrence"].toStringList() == QStringList{"RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE;UNTIL=20261101T035959Z"}, "Custom weekdays and inclusive local end date become a bounded UTC RRULE");
+    require(frozen["fields"].toMap()["reminder_minutes"] == 30 && frozen["fields"].toMap()["availability"] == "free" && frozen["fields"].toMap()["conference"] == "google_meet", "Visible reminder, availability and Meet controls enter the same frozen request");
+    backend.complete(true, resultFor(frozen, "acknowledged")); settle([&] { return !editor->property("visible").toBool(); });
+
+    openEditor({}); title->setProperty("text", "Three days away");
+    named(root, "eventAllDay")->setProperty("checked", true);
+    named(root, "eventStartDate")->setProperty("text", "2026-09-13"); named(root, "eventEndDate")->setProperty("text", "2026-09-15");
+    repeat->setProperty("currentIndex", 2); require(QMetaObject::invokeMethod(repeat, "activated", Q_ARG(int, 2)), "Choose weekdays preset");
+    named(root, "eventRepeatEnd")->setProperty("currentIndex", 1); named(root, "eventRepeatUntil")->setProperty("text", "2026-09-30");
+    call(editor, "save"); frozen = backend.lastWrite;
+    require(frozen["fields"].toMap()["start"] == "2026-09-13" && frozen["fields"].toMap()["end"] == "2026-09-16", "All-day Ends includes the selected day and sends Google's exclusive endpoint");
+    require(frozen["fields"].toMap()["recurrence"].toStringList() == QStringList{"RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR;UNTIL=20260930"}, "All-day weekday recurrence retains DATE end semantics");
+    backend.complete(true, resultFor(frozen, "acknowledged")); settle([&] { return !editor->property("visible").toBool(); });
+    auto multiDay = event(); multiDay["all_day"] = true; multiDay["start"] = "2026-09-13"; multiDay["end"] = "2026-09-16";
+    openEditor(multiDay); require(named(root, "eventEndDate")->property("text") == "2026-09-15", "Existing multi-day end date opens inclusively");
+    title->setProperty("text", "Only the title changes"); call(editor, "save"); frozen = backend.lastWrite;
+    require(!frozen["fields"].toMap().contains("end"), "Title-only edit preserves exact existing all-day endpoints");
+    backend.complete(true, resultFor(frozen, "acknowledged")); settle([&] { return !editor->property("visible").toBool(); });
+    openEditor({}); title->setProperty("text", "Invalid date stays editable");
+    named(root, "eventStartDate")->setProperty("text", "2026-02-29"); const auto beforeInvalidDate = backend.writes; call(editor, "save");
+    require(backend.writes == beforeInvalidDate && named(root, "eventStartDate")->property("text") == "2026-02-29", "Invalid leap date is retained without submitting");
+    call(editor, "close"); settle([&] { return !editor->property("visible").toBool(); });
+
     if (!captureDir.isEmpty()) {
         auto window = qobject_cast<QQuickWindow *>(root); window->resize(390, 720);
         const auto retainNew = [&](const QString &name) {
             QElapsedTimer paint; paint.start(); while (paint.elapsed() < 120) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
             const auto file = QDir(captureDir).filePath(name + ".png"); require(!QFile::exists(file) && window->grabWindow().save(file), "Preserve new reference controls without overwrite");
         };
-        for (const auto theme : {"graphite", "paper", "harbour"}) for (const auto size : {"default", "large"}) {
+        for (const auto theme : {"graphite", "paper", "terminal"}) for (const auto size : {"default", "large"}) {
             root->setProperty("testTheme", theme); root->setProperty("testTextSize", size);
             call(details, "openAt", scopedSource, QVariant{}); settle([&] { return details->property("opened").toBool(); });
             details->setProperty("recurringScope", "following"); retainNew(QString("recurring-scope-%1-%2").arg(theme, size));
@@ -754,7 +812,7 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     };
     if (!captureDir.isEmpty()) {
         QElapsedTimer animation; animation.start(); while (animation.elapsed() < 1500) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-        for (const auto theme : {"graphite", "paper", "harbour"}) { visualRoot->setProperty("testTheme", theme); retainVisual(QString("startup-%1").arg(theme)); }
+        for (const auto theme : {"graphite", "paper", "terminal"}) { visualRoot->setProperty("testTheme", theme); retainVisual(QString("startup-%1").arg(theme)); }
     }
     // Readiness no longer skips the first-frame splash hold. Let the actual
     // animation progress before applying the existing transition watchdog.
@@ -782,7 +840,7 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     nativeMouse(QEvent::MouseButtonPress, startPoint, Qt::LeftButton, Qt::LeftButton);
     nativeMouse(QEvent::MouseMove, endPoint, Qt::NoButton, Qt::LeftButton);
     require(named(visualRoot, "calendarRangePreview")->property("visible").toBool(), "Native empty-grid drag paints range before opening editor");
-    if (!captureDir.isEmpty()) for (const auto theme : {"graphite", "paper", "harbour"}) { visualRoot->setProperty("testTheme", theme); retainVisual(QString("calendar-range-%1").arg(theme)); }
+    if (!captureDir.isEmpty()) for (const auto theme : {"graphite", "paper", "terminal"}) { visualRoot->setProperty("testTheme", theme); retainVisual(QString("calendar-range-%1").arg(theme)); }
     nativeMouse(QEvent::MouseButtonRelease, endPoint, Qt::LeftButton, Qt::NoButton);
     settle([&] { return gridEditor->property("opened").toBool(); });
     require(named(visualRoot, "eventStartTime")->property("text") == "12:00" && named(visualRoot, "eventEndTime")->property("text") == "13:30", "Actual range drag transfers snapped start and end to native editor");
@@ -791,6 +849,16 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     require(!gridEditor->property("opened").toBool(), "Account change cancels range intent before editor creation");
     require(QMetaObject::invokeMethod(gridEditor, "setSlotRange", Q_ARG(QVariant, "2026-09-13"), Q_ARG(QVariant, 23.5), Q_ARG(QVariant, 24.)), "Set explicit midnight range");
     require(named(visualRoot, "eventEndDate")->property("text") == "2026-09-14" && named(visualRoot, "eventEndTime")->property("text") == "00:00", "Midnight drag creates a real next-day endpoint");
+    backend.account = "alpha"; emit backend.accountChanged(); backend.calendarView = "week"; emit backend.eventsChanged();
+    named(visualRoot, "eventEndDate")->setProperty("text", "2026-09-15");
+    named(visualRoot, "eventEndTime")->setProperty("text", "01:30");
+    call(gridEditor, "open");
+    settle([&] { return plain(calendar->property("previewRows")).toList().size() == 3; });
+    const auto previews = plain(calendar->property("previewRows")).toList();
+    require(previews[0].toMap()["duration_hours"].toDouble() == .5 && previews[1].toMap()["duration_hours"].toDouble() == 24 && previews[2].toMap()["duration_hours"].toDouble() == 1.5, "Native editor preview uses all covered civil days");
+    require(named(visualRoot, "calendarEditorPreview-2"), "Last multi-day preview segment exists");
+    if (!captureDir.isEmpty()) retainVisual("calendar-multiday-preview");
+    call(gridEditor, "close");
     visualWindow->close();
     require(!qmlError, "Actual controls run without QML binding errors");
     qInfo() << "Calendar and label controls passed: partial live patches, frozen scope, recovery, sync/capability gates, delete placement, RSVP projection, cached-only labels, offline local binding, explicit remap and synthetic compatibility.";

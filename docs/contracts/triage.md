@@ -1,6 +1,9 @@
 # Daily triage and mailbox categories
 
-State: Draft · Revision: 7 · Updated: 2026-09-14 · Implementation: Existing local actions and sender-kind projections retain their recorded evidence; P2-LLM integration is planned. Whole area remains Draft.
+State: Draft · Revision: 8 · Updated: 2026-09-14 · Implementation: Existing local actions and sender-kind projections retain their recorded evidence; P2-LLM integration is planned. Whole area remains Draft.
+
+D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages}}`, `{{partial}}`), combined per-message output, default-on prospective summaries/automatic single-label classification, manual precedence, and summary list previews. Schema 22 fences settings and assisted delivery; fixtures 0/3/protocol 1 unchanged. This supersedes conflicting D051–D053 delivery defaults below; historical evidence remains scoped to its original version. See the D055 decision and Local assistance 8.
+
 
 Revision 7 records D051's planned Ollama producer for the existing sender-kind projection and account category catalog. Human/Automated/Unknown is a source-bound, user-correctable annotation, not an address heuristic or provider label. Classification uses each received message separately; existing newest-incoming-member conversation semantics remain. Optional category descriptions refine the existing taxonomy. Suggest acceptance uses the existing snapshot/manual category path; Auto-apply remains gated. Manual corrections, later provider state, read/stars and category mappings retain precedence. Consumers: Local assistance 5, Core, Gmail, Mail UI, Search and CLI. No schema, fixture or runtime change is made by this revision; detailed target behavior and prompts belong to [Local assistance](local-ai.md).
 

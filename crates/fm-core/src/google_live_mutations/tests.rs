@@ -605,7 +605,7 @@ fn epochs_stale_readbacks_and_missing_targets_never_allow_blind_retry() {
 }
 
 #[test]
-fn missing_scope_or_mapping_rolls_back_local_change_and_journal() {
+fn missing_scope_blocks_provider_flags_and_local_labels_queue_only_after_linking() {
     let mut f = Fixture::new();
     f.store
         .db
@@ -640,17 +640,26 @@ fn missing_scope_or_mapping_rolls_back_local_change_and_journal() {
             [&f.account],
         )
         .unwrap();
+    f.command(
+        "set_category",
+        "category",
+        json!({"category_id":"category","present":true}),
+    )
+    .unwrap();
+    assert_eq!(f.count("operations"), 1);
+    assert_eq!(f.count("google_mail_mutations"), 0);
+    f.store
+        .google_map_category(&f.account, "category", "Label_local")
+        .unwrap();
     assert_eq!(
-        f.command(
-            "set_category",
-            "category",
-            json!({"category_id":"category","present":true})
-        )
-        .unwrap_err()
-        .code,
-        "label_mapping_required"
+        f.store.google_label_memberships_queue(&f.account).unwrap(),
+        1
     );
-    assert_eq!(f.count("operations"), 0);
+    assert_eq!(
+        f.store.google_label_memberships_queue(&f.account).unwrap(),
+        0
+    );
+    assert_eq!(f.count("google_mail_mutations"), 1);
 }
 
 #[test]
@@ -715,4 +724,154 @@ fn confirming_identical_visible_state_does_not_invalidate_navigation_or_fts() {
         )
         .unwrap();
     assert_eq!(fts, 1);
+}
+
+#[test]
+fn assisted_single_label_delivery_acknowledgement_and_manual_override() {
+    let mut f = Fixture::new();
+    f.store
+        .db
+        .execute(
+            "INSERT INTO categories(account,id,name) VALUES(?1,'category','Category')",
+            [&f.account],
+        )
+        .unwrap();
+    f.store
+        .google_map_category(&f.account, "category", "Label_one")
+        .unwrap();
+    let flags = f.flags();
+    {
+        let tx = f.store.db.unchecked_transaction().unwrap();
+        assert_eq!(
+            enqueue_assisted_category(&tx, &f.account, &f.message, "category").unwrap(),
+            "pending"
+        );
+        tx.commit().unwrap();
+    }
+    let work = f.next(0);
+    assert!(work.desired[0].assisted);
+    let attempt = submit(
+        f.store
+            .google_mail_mutation_observe(
+                &work,
+                observation(&["INBOX", "UNREAD", "STARRED", "Label_unrelated"], "100"),
+            )
+            .unwrap(),
+    );
+    assert_eq!(attempt.add_labels, vec!["Label_one"]);
+    assert!(attempt.remove_labels.is_empty());
+    f.store
+        .google_mail_mutation_attempt_result(&attempt, MailMutationAttemptOutcome::Submitted)
+        .unwrap();
+    let work = f.next(0);
+    assert!(matches!(
+        f.store
+            .google_mail_mutation_observe(
+                &work,
+                observation(
+                    &["INBOX", "UNREAD", "STARRED", "Label_unrelated", "Label_one"],
+                    "101"
+                )
+            )
+            .unwrap(),
+        MailMutationDecision::Finished
+    ));
+    assert_eq!(f.count("assist_category_intents"), 0);
+    assert_eq!(f.flags(), flags);
+    f.command(
+        "set_category",
+        "human-removal",
+        json!({"category_id":"category","present":false}),
+    )
+    .unwrap();
+    {
+        let tx = f.store.db.unchecked_transaction().unwrap();
+        assert_eq!(
+            enqueue_assisted_category(&tx, &f.account, &f.message, "category").unwrap(),
+            "manual_override"
+        );
+    }
+}
+#[test]
+fn assisted_label_yields_to_new_provider_category_before_submission() {
+    let mut f = Fixture::new();
+    for (category, label) in [("one", "Label_one"), ("two", "Label_two")] {
+        f.store
+            .db
+            .execute(
+                "INSERT INTO categories(account,id,name) VALUES(?1,?2,?2)",
+                params![f.account, category],
+            )
+            .unwrap();
+        f.store
+            .google_map_category(&f.account, category, label)
+            .unwrap();
+    }
+    {
+        let tx = f.store.db.unchecked_transaction().unwrap();
+        enqueue_assisted_category(&tx, &f.account, &f.message, "one").unwrap();
+        tx.commit().unwrap();
+    }
+    let work = f.next(0);
+    assert!(matches!(
+        f.store
+            .google_mail_mutation_observe(
+                &work,
+                observation(&["INBOX", "UNREAD", "STARRED", "Label_two"], "101")
+            )
+            .unwrap(),
+        MailMutationDecision::Finished
+    ));
+    assert_eq!(f.count("assist_category_intents"), 0);
+}
+
+#[test]
+fn assisted_local_label_waits_for_explicit_link_and_keeps_manual_precedence() {
+    let mut f = Fixture::new();
+    f.store
+        .db
+        .execute(
+            "INSERT INTO categories(account,id,name) VALUES(?1,'local','Local label')",
+            [&f.account],
+        )
+        .unwrap();
+    let flags = f.flags();
+    {
+        let tx = f.store.db.unchecked_transaction().unwrap();
+        assert_eq!(
+            enqueue_assisted_category(&tx, &f.account, &f.message, "local").unwrap(),
+            "local_only"
+        );
+        tx.commit().unwrap();
+    }
+    assert_eq!(f.count("google_mail_mutations"), 0);
+    f.store
+        .google_map_category(&f.account, "local", "Label_local")
+        .unwrap();
+    assert_eq!(
+        f.store.google_label_memberships_queue(&f.account).unwrap(),
+        1
+    );
+    assert_eq!(
+        f.store.google_label_memberships_queue(&f.account).unwrap(),
+        0
+    );
+    let work = f.next(0);
+    assert!(work.desired[0].assisted);
+    f.command(
+        "set_category",
+        "manual-before-linked-delivery",
+        json!({"category_id":"local","present":false}),
+    )
+    .unwrap();
+    assert!(matches!(
+        f.store
+            .google_mail_mutation_observe(
+                &work,
+                observation(&["INBOX", "UNREAD", "STARRED"], "102")
+            )
+            .unwrap(),
+        MailMutationDecision::Finished
+    ));
+    assert_eq!(f.flags(), flags);
 }

@@ -419,6 +419,13 @@ impl Store {
     pub(crate) fn check_draft_writable(&self, account: &str, p: &Value) -> Result<()> {
         self.require_active_account(account)?;
         let (id, legacy) = crate::composition::selector(p)?;
+        let transferred:bool=self.db.query_row("SELECT EXISTS(SELECT 1 FROM drafts d JOIN draft_transfers t ON t.account=d.account AND t.source_draft_id=d.draft_id WHERE d.account=?1 AND ((?3 AND d.legacy_reply=1 AND d.conversation_id=?2) OR (NOT ?3 AND d.draft_id=?2)) AND t.keep_original=0)",params![account,id,legacy],|r|r.get(0))?;
+        if transferred {
+            return Err(err(
+                "draft_read_only",
+                "This draft moved to another account; open its destination to edit it",
+            ));
+        }
         let origin:Option<String>=self.db.query_row("SELECT origin FROM drafts WHERE account=?1 AND ((?3 AND legacy_reply=1 AND conversation_id=?2) OR (NOT ?3 AND draft_id=?2))",params![account,id,legacy],|r|r.get(0)).optional()?;
         if origin.as_deref().is_some_and(|s| s != "local") {
             return Err(err(

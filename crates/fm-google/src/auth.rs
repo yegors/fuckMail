@@ -18,6 +18,52 @@ pub const GOOGLE_SCOPES: [&str; 6] = [
     "https://www.googleapis.com/auth/calendar.events.freebusy",
 ];
 
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RequestedMode {
+    None,
+    Read,
+    #[default]
+    Write,
+}
+#[derive(Clone, Copy, Debug, Default, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RequestedAccess {
+    #[serde(default)]
+    pub mail: RequestedMode,
+    #[serde(default)]
+    pub calendar: RequestedMode,
+}
+impl RequestedAccess {
+    pub fn scopes(self) -> Result<Vec<&'static str>, GoogleError> {
+        use RequestedMode::*;
+        let mut scopes = vec!["openid", "email"];
+        match self.mail {
+            None => {}
+            Read => scopes.push("https://www.googleapis.com/auth/gmail.readonly"),
+            Write => scopes.push("https://www.googleapis.com/auth/gmail.modify"),
+        }
+        match self.calendar {
+            None => {}
+            mode => {
+                scopes.push(if matches!(mode, Read) {
+                    "https://www.googleapis.com/auth/calendar.events.readonly"
+                } else {
+                    "https://www.googleapis.com/auth/calendar.events"
+                });
+                scopes.push("https://www.googleapis.com/auth/calendar.calendarlist.readonly");
+                scopes.push("https://www.googleapis.com/auth/calendar.events.freebusy");
+            }
+        }
+        if scopes.len() == 2 {
+            return Err(GoogleError::InvalidResponse(
+                "Choose Mail or Calendar access",
+            ));
+        }
+        Ok(scopes)
+    }
+}
+
 /// Shared interpretation of granted scopes for cached and live mail workflows.
 pub struct ScopeSet<'a>(&'a BTreeSet<String>);
 impl<'a> ScopeSet<'a> {
@@ -79,6 +125,62 @@ impl<'a> ScopeSet<'a> {
 #[cfg(test)]
 mod scope_tests {
     use super::*;
+
+    #[test]
+    fn requested_access_changes_consent_scopes_without_overstating_grants() {
+        assert_eq!(RequestedAccess::default().scopes().unwrap(), GOOGLE_SCOPES);
+        for mail in [
+            RequestedMode::None,
+            RequestedMode::Read,
+            RequestedMode::Write,
+        ] {
+            for calendar in [
+                RequestedMode::None,
+                RequestedMode::Read,
+                RequestedMode::Write,
+            ] {
+                let access = RequestedAccess { mail, calendar };
+                if matches!(mail, RequestedMode::None) && matches!(calendar, RequestedMode::None) {
+                    assert!(access.scopes().is_err());
+                    continue;
+                }
+                let login = DesktopAuthorization::with_access(
+                    "synthetic-client".into(),
+                    42001,
+                    false,
+                    Some("human@example.test"),
+                    access,
+                )
+                .unwrap();
+                let url = reqwest::Url::parse(&login.url).unwrap();
+                let parameters: BTreeMap<_, _> = url.query_pairs().into_owned().collect();
+                let requested: BTreeSet<String> = parameters["scope"]
+                    .split_whitespace()
+                    .map(str::to_owned)
+                    .collect();
+                let scopes = ScopeSet::new(&requested);
+                assert_eq!(scopes.mail_read(), !matches!(mail, RequestedMode::None));
+                assert_eq!(scopes.mail_write(), matches!(mail, RequestedMode::Write));
+                assert_eq!(
+                    scopes.calendar_events_read(),
+                    !matches!(calendar, RequestedMode::None)
+                );
+                assert_eq!(
+                    scopes.calendar_events_write(),
+                    matches!(calendar, RequestedMode::Write)
+                );
+                assert_eq!(parameters["code_challenge_method"], "S256");
+                assert_eq!(parameters["login_hint"], "human@example.test");
+            }
+        }
+        assert!(
+            serde_json::from_value::<RequestedAccess>(serde_json::json!({"mail":"all"})).is_err()
+        );
+        assert!(
+            serde_json::from_value::<RequestedAccess>(serde_json::json!({"other":"write"}))
+                .is_err()
+        );
+    }
 
     #[test]
     fn calendar_grants_distinguish_catalog_details_busy_and_writes() {
@@ -168,6 +270,23 @@ impl DesktopAuthorization {
         reconsent: bool,
         login_hint: Option<&str>,
     ) -> Result<Self, GoogleError> {
+        Self::with_access(
+            client_id,
+            loopback_port,
+            reconsent,
+            login_hint,
+            RequestedAccess::default(),
+        )
+    }
+
+    pub fn with_access(
+        client_id: String,
+        loopback_port: u16,
+        reconsent: bool,
+        login_hint: Option<&str>,
+        access: RequestedAccess,
+    ) -> Result<Self, GoogleError> {
+        let scopes = access.scopes()?;
         if let Some(email) = login_hint {
             validate_login_hint(email)?;
         }
@@ -191,7 +310,7 @@ impl DesktopAuthorization {
                     .map_err(|_| GoogleError::InvalidResponse("OAuth redirect invalid"))?,
             );
         let (challenge, verifier) = PkceCodeChallenge::new_random_sha256();
-        let request = GOOGLE_SCOPES.iter().fold(
+        let request = scopes.iter().fold(
             client.authorize_url(CsrfToken::new_random),
             |request, scope| request.add_scope(Scope::new((*scope).to_owned())),
         );

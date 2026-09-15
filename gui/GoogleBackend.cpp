@@ -36,7 +36,7 @@ void MailBackend::googleOperation(const QString &method, const QString &account,
         callback(error, false);
     };
     const bool localContent = method == "draft_attachment_import" || method == "google_draft_source"
-        || method == "google_draft_authoring" || method == "google_draft_copy";
+        || method == "google_draft_authoring" || method == "google_draft_copy" || method == "draft_transfer";
     if (blockArchivedRequest(method, account)) {
         refuseBeforeRequest("account_removed", "This is a read-only account archive. Restore it explicitly before making changes."); return;
     }
@@ -178,17 +178,18 @@ void MailBackend::prepareGoogleSignIn() {
     });
 }
 
-void MailBackend::connectGoogle(const QString &email, const QString &account, bool reauthorize) {
+void MailBackend::connectGoogle(const QString &email, const QString &account, bool reauthorize, const QVariantMap &access) {
     if (accountRemoved(account)) { fail("Use Restore for this archived account."); return; }
-    beginGoogleAuth("google_auth_begin", email, account, reauthorize);
+    beginGoogleAuth("google_auth_begin", email, account, reauthorize, -1, access);
 }
-void MailBackend::beginGoogleAuth(const QString &method, const QString &email, const QString &account, bool reauthorize, qint64 expectedRevision) {
+void MailBackend::beginGoogleAuth(const QString &method, const QString &email, const QString &account, bool reauthorize, qint64 expectedRevision, const QVariantMap &access) {
     if (!m_connected || m_shutdown || m_syntheticProfile || m_googleAuthBusy) return;
     if (email.trimmed().isEmpty()) { fail("Enter your Gmail or Google Workspace email address."); return; }
     m_googleAuthAttempt.clear();
     m_googleAuthCancelRequested = false;
     setGoogleAuth({{"phase", "starting"}});
     QJsonObject params{{"email", email.trimmed()}, {"reauthorize", reauthorize}};
+    if (!access.isEmpty()) params["access"] = QJsonObject::fromVariantMap(access);
     if (method == "google_auth_restore_begin") params["expected_revision"] = expectedRevision;
     request(method, account, params, [this](auto result, bool ok) {
         if (!ok) { setGoogleAuth({{"phase", "failed"}, {"error", result}}); return; }

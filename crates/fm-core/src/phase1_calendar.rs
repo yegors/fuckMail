@@ -616,6 +616,8 @@ fn calendar_fields(value: &Value) -> Result<Value> {
             "location",
             "description",
             "conference_url",
+            "reminder_minutes",
+            "availability",
             "attendees",
         ],
     )?;
@@ -642,6 +644,12 @@ fn calendar_fields(value: &Value) -> Result<Value> {
         }
     };
     let mut body = json!({"summary":title,"start":times(start),"end":times(end)});
+    for (key, value) in crate::calendar_editor_options::patch(value, "synthetic-editor")?
+        .as_object()
+        .unwrap()
+    {
+        body[key] = value.clone();
+    }
     for (field, bound) in [("location", 2048), ("description", 32768)] {
         let text = value
             .get(field)

@@ -73,7 +73,7 @@ public:
 
         QTemporaryDir copy; require(copy.isValid(), "private QML source copy");
         const auto modulePath = copy.filePath("DraftTest"); require(QDir().mkpath(modulePath), "native draft test module");
-        for (const auto name : {"Theme.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "RecipientField.qml", "ReplyComposer.qml"})
+        for (const auto name : {"Theme.qml", "FmDialog.qml", "FmConfirmDialog.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "RecipientField.qml", "ReplyComposer.qml"})
             require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + '/' + name, modulePath + '/' + name), "copy unchanged production QML");
         QFile module(modulePath + "/qmldir"); require(module.open(QIODevice::WriteOnly), "draft test QML registration");
         module.write("module DraftTest\nsingleton Theme 1.0 Theme.qml\nReplyComposer 1.0 ReplyComposer.qml\nFmButton 1.0 FmButton.qml\nFmToolTip 1.0 FmToolTip.qml\nFmIcon 1.0 FmIcon.qml\nRecipientField 1.0 RecipientField.qml\n"); module.close();

@@ -8,6 +8,8 @@ Item {
     objectName: "calendarWorkspace"
     property int dayCount: backend.calendarView === "day" ? 1 : 7
     property bool combinedAccounts: true
+    readonly property var previewRows: { backend.calendarDate; backend.calendarView; backend.preferences; return editor.opened ? backend.calendarPreview(editor.preview) : [] }
+    function editingEvent(event) { return editor.opened && editor.preview.eventId === event.event_id && editor.preview.account === event.account && editor.preview.calendar_id === event.calendar_id }
     function prepareSearch() {
         if (editor.opened || operationHistory.opened) return false
         cancelRange(); details.close()
@@ -48,7 +50,7 @@ Item {
     function weekNumber() { let date = dateAt(3); let utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())); utc.setUTCDate(utc.getUTCDate() + 4 - (utc.getUTCDay() || 7)); return Math.ceil((((utc - new Date(Date.UTC(utc.getUTCFullYear(), 0, 1))) / 86400000) + 1) / 7) }
     function rangeTitle() { return Qt.formatDate(dateAt(0), dateAt(0).getMonth() === dateAt(6).getMonth() ? "d" : "d MMM") + " – " + Qt.formatDate(dateAt(6), "d MMMM") }
     function eventsAt(index) { return visibleEvents.filter(function(e) { return e.all_day ? index >= e.day_index && index < e.day_index + e.span_days : e.day_index === index }) }
-    function allDayAt(index) { return eventsAt(index).filter(function(e) { return e.all_day }) }
+    function allDayAt(index) { return eventsAt(index).filter(function(e) { return e.all_day && !calendar.editingEvent(e) }) }
     function openDay(index) { backend.setCalendarDate(isoAt(index)); backend.setCalendarView("day") }
     function showEvent(event, sourceItem) { if (!backend.calendarReady || !backend.connected) return; if (editor.opened) { editor.contentItem.forceActiveFocus(); return } details.openAt(event, sourceItem || calendar) }
     function createEvent() { if (editor.opened) { editor.contentItem.forceActiveFocus(); return } editor.editEvent = ({}); editor.openForDate(backend.calendarDate) }
@@ -181,6 +183,14 @@ Item {
                             MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: calendar.showEvent(parent.modelData, parent) }
                         }
                     }
+                    Repeater {
+                        model: calendar.previewRows.filter(function(event) { return event.all_day && event.day_index <= dayHeader.index && event.day_index + event.span_days > dayHeader.index })
+                        Rectangle {
+                            required property var modelData; objectName: "calendarAllDayPreview-" + dayHeader.index
+                            Layout.fillWidth: true; implicitHeight: 22; Layout.leftMargin: 3; Layout.rightMargin: 4; radius: 3; color: Theme.accentAlpha(0.125); border.color: Theme.accent
+                            Text { anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 4; text: modelData.title; color: Theme.accent; font.pixelSize: Theme.fontSize(11); verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; textFormat: Text.PlainText }
+                        }
+                    }
                     FmButton { visible: dayHeader.allDay.length > 2; text: "+ " + (dayHeader.allDay.length - 2) + " all day"; implicitHeight: 20; font.pixelSize: Theme.fontSize(10); onClicked: { allDayOverflow.eventRows = dayHeader.allDay; allDayOverflow.open() } }
                     Item { Layout.fillHeight: true }
                     Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: calendar.isoAt(dayHeader.index) === backend.todayDate ? Theme.accent : Theme.line }
@@ -254,7 +264,7 @@ Item {
                             Keys.onReturnPressed: calendar.showEvent(modelData, eventBox)
                             Keys.onSpacePressed: calendar.showEvent(modelData, eventBox)
                             border.width: activeFocus ? 1 : 0; border.color: Theme.accent
-                            visible: !modelData.all_day && modelData.day_index >= 0 && modelData.day_index < calendar.dayCount && !(editor.opened && editor.preview.eventId === modelData.event_id)
+                            visible: !modelData.all_day && modelData.day_index >= 0 && modelData.day_index < calendar.dayCount && !calendar.editingEvent(modelData)
                             x: modelData.day_index * grid.dayWidth + 3 + (modelData.column || 0) * (grid.dayWidth - 7) / (modelData.columns || 1); y: modelData.start_hour * calendar.hourHeight
                             width: (grid.dayWidth - 7) / (modelData.columns || 1) - ((modelData.columns || 1) > 1 ? 3 : 0); height: Math.max(20, modelData.duration_hours * calendar.hourHeight - 1)
                             radius: 3; color: eventMouse.containsMouse ? Theme.hover : Theme.selected; clip: true
@@ -270,15 +280,18 @@ Item {
                             Accessible.onPressAction: calendar.showEvent(modelData, eventBox)
                         }
                     }
-                    Rectangle {
-                        property int day: Math.round((new Date(editor.preview.date + "T12:00:00") - calendar.dateAt(0)) / 86400000)
-                        visible: editor.opened && !editor.preview.allDay && day >= 0 && day < calendar.dayCount && isFinite(editor.preview.startHour) && isFinite(editor.preview.endHour)
-                        x: day * grid.dayWidth + 3; y: editor.preview.startHour * calendar.hourHeight; width: grid.dayWidth - 7
-                        height: Math.max(20, (editor.preview.endHour - editor.preview.startHour) * calendar.hourHeight); color: Theme.accentAlpha(.125); radius: 3
-                        Repeater { model: Math.max(0, Math.ceil(parent.width / 10)); Rectangle { required property int index; x: Theme.snapX(parent, index * 10); y: Theme.snapY(parent, 0); width: Math.max(0, Math.min(5, parent.width - x)); height: Theme.ruleWidth; color: Theme.accent } }
-                        Repeater { model: Math.max(0, Math.ceil(parent.width / 10)); Rectangle { required property int index; x: Theme.snapX(parent, index * 10); y: Theme.snapY(parent, parent.height - 1); width: Math.max(0, Math.min(5, parent.width - x)); height: Theme.ruleWidth; color: Theme.accent } }
-                        Rectangle { width: 2; height: parent.height; color: Theme.accent }
-                        Text { anchors.fill: parent; anchors.margins: 7; text: editor.preview.title; color: Theme.accent; font.pixelSize: Theme.fontSize(12); elide: Text.ElideRight; textFormat: Text.PlainText }
+                    Repeater {
+                        model: calendar.previewRows.filter(function(event) { return !event.all_day })
+                        Rectangle {
+                            required property var modelData
+                            objectName: "calendarEditorPreview-" + modelData.day_index
+                            x: modelData.day_index * grid.dayWidth + 3; y: modelData.start_hour * calendar.hourHeight; width: grid.dayWidth - 7
+                            height: Math.max(20, modelData.duration_hours * calendar.hourHeight); color: Theme.accentAlpha(.125); radius: 3
+                            Repeater { model: Math.max(0, Math.ceil(parent.width / 10)); Rectangle { required property int index; x: Theme.snapX(parent, index * 10); y: Theme.snapY(parent, 0); width: Math.max(0, Math.min(5, parent.width - x)); height: Theme.ruleWidth; color: Theme.accent } }
+                            Repeater { model: Math.max(0, Math.ceil(parent.width / 10)); Rectangle { required property int index; x: Theme.snapX(parent, index * 10); y: Theme.snapY(parent, parent.height - 1); width: Math.max(0, Math.min(5, parent.width - x)); height: Theme.ruleWidth; color: Theme.accent } }
+                            Rectangle { width: 2; height: parent.height; color: Theme.accent }
+                            Text { anchors.fill: parent; anchors.margins: 7; text: editor.preview.title; color: Theme.accent; font.pixelSize: Theme.fontSize(12); elide: Text.ElideRight; textFormat: Text.PlainText }
+                        }
                     }
                 }
             }

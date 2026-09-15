@@ -338,4 +338,12 @@ ApplicationWindow {
         z: 200
         visible: backend.reminders.length > 0 && !startupOverlay.visible
     }
+    ActionToast {
+        anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom
+        anchors.bottomMargin: 16 + (window.workspace === "mail" && window.timelineVisible && !window.timelineAtTop ? timeline.height : 0)
+        maximumWidth: window.width * 0.7; z: 210
+    }
+    CalendarOperations { id: toastCalendarActivity }
+    Connections { target: backend; function onCalendarActivityRequested() { toastCalendarActivity.open() } }
+
 }

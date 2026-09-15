@@ -24,8 +24,8 @@ Item {
     property var changeErrors: ({})
     readonly property bool busy: starting || job.length > 0
     readonly property var policy: (settings.accounts || {})[accountId] || {}
-    readonly property bool summariesEnabled: policy.summaries === true
-    readonly property bool classificationEnabled: policy.classification === true
+    readonly property bool summariesEnabled: settingsRevision >= 0 && policy.summaries !== false
+    readonly property bool classificationEnabled: settingsRevision >= 0 && policy.classification !== false
     signal openSource(string messageId)
 
     function send(method, params, kind, extra) {
@@ -36,10 +36,10 @@ Item {
         return ticket
     }
     function resultFor(task, target) {
-        return items.find(item => item.task === task && item.target === target) || null
+        return items.find(item => item.task === task && item.target === target && !(task === "summary" && item.format_outdated)) || null
     }
-    function workingOn(task, target) { return busy && jobTask === task && jobTarget === target }
-    function errorFor(task, target) { return (jobTask === task && jobTarget === target ? error : "") || (task === "classification" ? changeErrors[target] || "" : "") }
+    function workingOn(task, target) { return busy && (jobTask === task || jobTask === "message") && jobTarget === target }
+    function errorFor(task, target) { return ((jobTask === task || jobTask === "message") && jobTarget === target ? error : "") || (task === "classification" ? changeErrors[target] || "" : "") }
     function refresh() {
         if (backend.connected && accountId && conversationId)
             latestResults = send("assist_results", {conversation_id: conversationId}, "results")
@@ -59,11 +59,11 @@ Item {
         if (busy || !backend.connected || !conversationId) return
         ++operation
         starting = true
-        jobTask = task
+        jobTask = "message"
         jobTarget = target || ""
         status = "Queued"
         error = ""
-        send("assist_start", {task: task, conversation_id: conversationId, message_id: jobTarget}, "start")
+        send("assist_start", {task: jobTask, conversation_id: conversationId, message_id: jobTarget}, "start")
     }
     function cancel() {
         ++operation
@@ -87,10 +87,6 @@ Item {
     function correct(member, kind) {
         send("assist_correct", {conversation_id: conversationId, message_id: member.id,
              kind: kind, expected_revision: member.revision}, "changed", {target: member.id})
-    }
-    function accept(member, categoryId) {
-        send("assist_accept", {conversation_id: conversationId, message_id: member.id,
-             category_id: categoryId, request_id: "assist-" + Date.now() + "-" + Math.random().toString(36).slice(2)}, "changed", {target: member.id})
     }
     onConversationIdChanged: current()
     onAccountIdChanged: current()

@@ -217,6 +217,7 @@ void MailBackend::finishCalendarOperation(const QString &account, const QString 
     else message = "The calendar outcome needs review in activity.";
     if (!confirmed && state != "abandoned" && !(m_shutdown && result["code"].toString() == "cancelled")) cancelShutdown();
     m_calendarOperationStatus = message;
+    finishQueuedCalendarDeletion(account, requestId, confirmed, message);
     m_calendarOperationsLoading = false;
     emit calendarWriteFinished(confirmed, result.toVariantMap(), confirmed ? QString{} : message);
     emit calendarOperationsChanged();

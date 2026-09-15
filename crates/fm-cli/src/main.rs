@@ -132,6 +132,11 @@ enum Command {
         output: Option<PathBuf>,
     },
     Categories,
+    /// Manage account labels and their local classification instructions.
+    Labels {
+        #[command(subcommand)]
+        command: Labels,
+    },
     /// Explicit foreground session; report changes until Ctrl-C or --seconds.
     Watch {
         #[arg(long)]
@@ -204,6 +209,10 @@ enum Google {
     /// Open your browser and keep this CLI session until login finishes or Ctrl-C.
     /// Add --account for an identity-checked reconnect.
     Connect {
+        #[arg(long, default_value="write", value_parser=["none","read","write"])]
+        mail_access: String,
+        #[arg(long, default_value="write", value_parser=["none","read","write"])]
+        calendar_access: String,
         /// Gmail or Workspace email to prefill in Google's browser sign-in.
         #[arg(long)]
         email: Option<String>,
@@ -216,6 +225,10 @@ enum Google {
     /// Restore the selected archive by signing in as the same Google identity.
     /// Retained work and sync do not start automatically.
     Restore {
+        #[arg(long, default_value="write", value_parser=["none","read","write"])]
+        mail_access: String,
+        #[arg(long, default_value="write", value_parser=["none","read","write"])]
+        calendar_access: String,
         #[arg(long)]
         email: Option<String>,
         /// Developer override; configured builds do not need this file.
@@ -352,9 +365,26 @@ enum Google {
         expected_google_revision: i64,
         #[arg(long)]
         request_id: String,
+        /// Wait six seconds before connecting; Ctrl+C keeps the draft unsent.
+        #[arg(long)]
+        undo: bool,
     },
     /// Inspect one retained submission outcome without contacting Google.
     SendStatus {
+        #[arg(long)]
+        request_id: String,
+    },
+    /// List retained outgoing messages awaiting acquisition, without contacting Google.
+    Sent {
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long, default_value_t = 50, value_parser=clap::value_parser!(u64).range(1..=100))]
+        limit: u64,
+        #[arg(long)]
+        conversation_id: Option<String>,
+    },
+    /// Read the exact retained submission content, without contacting Google.
+    SentMessage {
         #[arg(long)]
         request_id: String,
     },
@@ -424,7 +454,7 @@ enum Mail {
         query: Option<String>,
         #[arg(long,default_value="all",value_parser=["all","sender","subject","body"])]
         field: String,
-        #[arg(long,default_value="inbox",value_parser=["inbox","sent","all","trash"])]
+        #[arg(long,default_value="inbox",value_parser=["inbox","received","sent","all","trash"])]
         folder: String,
         #[arg(long)]
         category: Option<String>,
@@ -453,8 +483,22 @@ enum Mail {
     },
     /// Query only; this does not mark mail reviewed.
     Read { id: String },
+    /// Inspect retained message headers, HTML and source without marking reviewed.
+    Source {
+        id: String,
+        #[arg(long)]
+        source_version: String,
+    },
     /// Exact sender history in this account; querying never marks mail reviewed.
     Sender { address: String },
+    /// Suggest addresses from recent cached mail and drafts; never changes routing.
+    Recipients {
+        query: String,
+        #[arg(long)]
+        exclude: Vec<String>,
+        #[arg(long, default_value_t = 6)]
+        limit: u8,
+    },
     /// Mark the loaded snapshot read.
     Review {
         id: String,
@@ -511,11 +555,46 @@ enum Mail {
 }
 
 #[derive(Subcommand)]
+enum Labels {
+    List,
+    Create {
+        name: String,
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        request_id: String,
+    },
+    Describe {
+        id: String,
+        description: String,
+        #[arg(long)]
+        expected_description: String,
+        #[arg(long)]
+        request_id: String,
+    },
+    Remove {
+        id: String,
+        #[arg(long)]
+        expected_name: String,
+        #[arg(long)]
+        expected_provider_label_id: Option<String>,
+        #[arg(long)]
+        request_id: String,
+    },
+    Sync {
+        #[arg(long)]
+        request_id: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum Assist {
-    /// Discover the same-machine Ollama service and installed models.
+    /// Discover models from the configured same-machine service.
     Discover {
         #[arg(long)]
         endpoint: Option<String>,
+        #[arg(long, value_parser = ["ollama", "openai_compatible"])]
+        provider: Option<String>,
     },
     /// Show saved settings, defaults and their revision.
     Settings,
@@ -528,7 +607,7 @@ enum Assist {
     },
     /// Test a chosen task on built-in synthetic mail without changing settings.
     Test {
-        #[arg(value_parser=["summary","classification"])]
+        #[arg(value_parser=["summary","classification","message"])]
         task: String,
         #[arg(long, default_value = "personal")]
         sample_case: String,
@@ -541,7 +620,13 @@ enum Assist {
         #[arg(long)]
         message_id: Option<String>,
     },
-    /// Classify received messages without applying provider labels.
+    /// Analyze each received message once: summary, sender kind and automatic label.
+    Analyze {
+        conversation_id: String,
+        #[arg(long)]
+        message_id: Option<String>,
+    },
+    /// Classify received messages and automatically apply the matching label.
     Classify {
         conversation_id: String,
         #[arg(long)]
@@ -585,6 +670,33 @@ enum Preferences {
 
 #[derive(Subcommand)]
 enum Draft {
+    /// Change the owning From account while preserving this saved composition.
+    Transfer {
+        #[arg(long)]
+        draft_id: String,
+        #[arg(long)]
+        target_account: String,
+        #[arg(long)]
+        expected_revision: i64,
+        #[arg(long)]
+        expected_google_revision: i64,
+        #[arg(long)]
+        request_id: String,
+        #[arg(long)]
+        keep_original: bool,
+    },
+    /// Inspect a recorded account change without repeating provider work.
+    TransferRetry {
+        #[arg(long)]
+        transfer_request_id: String,
+        #[arg(long)]
+        request_id: String,
+    },
+    /// Inspect a recorded account change without repeating provider work
+    TransferStatus {
+        #[arg(long)]
+        request_id: String,
+    },
     /// Inspect exact retained-source conversion and editing eligibility without Google access.
     Authoring {
         #[arg(long)]
@@ -666,12 +778,31 @@ enum Draft {
         #[arg(long, default_value_t = 0)]
         offset: u64,
     },
-    /// Explicitly clear saved body, HTML, signature and attachment selection.
+    /// Discard a local draft, retaining its exact state for revision-bound Undo.
     Discard {
         #[command(flatten)]
         target: DraftTarget,
         #[arg(long)]
         expected_revision: u64,
+        #[arg(long)]
+        request_id: String,
+        /// Optional authored editor fields and unfinished recipients to preserve for Undo.
+        #[arg(long)]
+        buffer_file: Option<PathBuf>,
+    },
+    /// Inspect the original discard receipt and whether its exact revision can be restored.
+    DiscardStatus {
+        #[arg(long)]
+        request_id: String,
+    },
+    /// Restore the exact draft snapshot from a prior discard; never overwrites newer edits.
+    UndoDiscard {
+        #[arg(long)]
+        draft_id: String,
+        #[arg(long)]
+        discard_request_id: String,
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        expected_revision: i64,
         #[arg(long)]
         request_id: String,
     },
@@ -940,6 +1071,7 @@ fn google_composition_request(command: &Command) -> Result<Option<(&'static str,
             expected_revision,
             expected_google_revision,
             request_id,
+            ..
         } => (
             "google_send",
             json!({"draft_id":draft_id,"expected_revision":expected_revision,
@@ -947,6 +1079,20 @@ fn google_composition_request(command: &Command) -> Result<Option<(&'static str,
         ),
         Google::SendStatus { request_id } => {
             ("google_send_status", json!({"request_id":request_id}))
+        }
+        Google::Sent {
+            offset,
+            limit,
+            conversation_id,
+        } => {
+            let mut params = json!({"offset":offset,"limit":limit});
+            if let Some(id) = conversation_id {
+                params["conversation_id"] = id.as_str().into();
+            }
+            ("google_sent", params)
+        }
+        Google::SentMessage { request_id } => {
+            ("google_sent_message", json!({"request_id":request_id}))
         }
         Google::SendReconcile { request_id } => {
             ("google_send_reconcile", json!({"request_id":request_id}))
@@ -1367,11 +1513,67 @@ async fn run(args: &Args) -> Result<(), Failure> {
         None
     };
     let attachment_import = attachment_import_params(&args.command)?;
+    let discard_buffer = if let Command::Draft {
+        command: Draft::Discard {
+            buffer_file: Some(path),
+            ..
+        },
+    } = &args.command
+    {
+        let value: Value = serde_json::from_slice(&read_input(path, 768 * 1024)?)
+            .map_err(|_| invalid("Draft buffer must be JSON"))?;
+        if !value.is_object() {
+            return Err(invalid("Draft buffer must be a JSON object"));
+        }
+        Some(value)
+    } else {
+        None
+    };
     let google_composition = google_composition_request(&args.command)?;
     let draft_source = draft_source_request(&args.command)?;
     let account_lifecycle = account_lifecycle_request(&args.command)?;
     let notification = notification_request(&args.command)?;
     let calendar_search = calendar_search_request(&args.command)?;
+    if matches!(
+        &args.command,
+        Command::Google {
+            command: Google::Send { undo: true, .. }
+        }
+    ) {
+        if args.account.is_none() {
+            return Err(invalid(
+                "Choose an account before starting the Send undo interval",
+            ));
+        }
+        #[cfg(windows)]
+        let mut interrupt = {
+            let unavailable = || Failure {
+                code: "io".into(),
+                message: "Cannot listen for Send Undo. Nothing was submitted.".into(),
+                recovery: RecoveryProofs::default(),
+            };
+            let signal = tokio::signal::windows::ctrl_c().map_err(|_| unavailable())?;
+            // Launchers can pass down the per-process attribute that ignores
+            // Ctrl+C. Register the listener first, then enable delivery only
+            // for this CLI process, before advertising the Undo interval.
+            if unsafe { windows_sys::Win32::System::Console::SetConsoleCtrlHandler(None, 0) } == 0 {
+                return Err(unavailable());
+            }
+            signal
+        };
+        eprintln!("Sending in six seconds. Press Ctrl+C to keep the draft.");
+        #[cfg(windows)]
+        let cancelled = tokio::select! { biased; _=interrupt.recv()=>true, _=tokio::time::sleep(Duration::from_secs(6))=>false };
+        #[cfg(not(windows))]
+        let cancelled = tokio::select! { biased; _=tokio::signal::ctrl_c()=>true, _=tokio::time::sleep(Duration::from_secs(6))=>false };
+        if cancelled {
+            return Err(Failure {
+                code: "cancelled".into(),
+                message: "Send undone before connecting. Your saved draft is kept.".into(),
+                recovery: RecoveryProofs::default(),
+            });
+        }
+    }
     let mut client = if args.demo_profile {
         Client::connect_demo(&profile, engine.as_deref()).await?
     } else if live_command || args.profile.is_none() {
@@ -1481,6 +1683,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 | Google::DraftReplace { .. }
                 | Google::Send { .. }
                 | Google::SendStatus { .. }
+                | Google::Sent { .. }
+                | Google::SentMessage { .. }
                 | Google::SendReconcile { .. }
                 | Google::SendAbandon { .. },
         } => {
@@ -1685,13 +1889,21 @@ async fn run(args: &Args) -> Result<(), Failure> {
         Command::Google {
             command:
                 Google::Connect {
-                    reauthorize, email, ..
+                    reauthorize,
+                    email,
+                    mail_access,
+                    calendar_access,
+                    ..
                 }
                 | Google::Restore {
-                    reauthorize, email, ..
+                    reauthorize,
+                    email,
+                    mail_access,
+                    calendar_access,
+                    ..
                 },
         } => {
-            let mut params = json!({"reauthorize":reauthorize});
+            let mut params = json!({"reauthorize":reauthorize,"access":{"mail":mail_access,"calendar":calendar_access}});
             if let Some(path) = &google_client_path {
                 params["client_config_path"] = json!(path
                     .to_str()
@@ -1777,13 +1989,16 @@ async fn run(args: &Args) -> Result<(), Failure> {
         }
         Command::Assist { command } => {
             let (method, params) = match command {
-                Assist::Discover { endpoint } => (
-                    "assist_discover",
-                    endpoint
-                        .as_ref()
-                        .map(|e| json!({"endpoint":e}))
-                        .unwrap_or(json!({})),
-                ),
+                Assist::Discover { endpoint, provider } => {
+                    let mut params = json!({});
+                    if let Some(endpoint) = endpoint {
+                        params["endpoint"] = json!(endpoint);
+                    }
+                    if let Some(provider) = provider {
+                        params["provider"] = json!(provider);
+                    }
+                    ("assist_discover", params)
+                }
                 Assist::Settings => ("assist_settings_get", json!({})),
                 Assist::Configure {
                     settings_file,
@@ -1813,6 +2028,10 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     conversation_id,
                     message_id,
                 }
+                | Assist::Analyze {
+                    conversation_id,
+                    message_id,
+                }
                 | Assist::Classify {
                     conversation_id,
                     message_id,
@@ -1820,7 +2039,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     account(args)?;
                     (
                         "assist_start",
-                        json!({"task":if matches!(command,Assist::Summarize{..}){"summary"}else{"classification"},"conversation_id":conversation_id,"message_id":message_id}),
+                        json!({"task":if matches!(command,Assist::Summarize{..}){"summary"}else{"message"},"conversation_id":conversation_id,"message_id":message_id}),
                     )
                 }
                 Assist::Results { conversation_id } => {
@@ -1931,6 +2150,62 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 .await?
         }
         Command::Categories => client.call("categories", scope, json!({})).await?,
+        Command::Labels { command } => {
+            let (method, params) = match command {
+                Labels::List => ("label_catalog", json!({})),
+                Labels::Create {
+                    name,
+                    id,
+                    request_id,
+                } => (
+                    "label_create",
+                    json!({"name":name,"id":id,"request_id":request_id}),
+                ),
+                Labels::Describe {
+                    id,
+                    description,
+                    expected_description,
+                    request_id,
+                } => (
+                    "label_describe",
+                    json!({"id":id,"description":description,"expected_description":expected_description,"request_id":request_id}),
+                ),
+                Labels::Remove {
+                    id,
+                    expected_name,
+                    expected_provider_label_id,
+                    request_id,
+                } => (
+                    "label_remove",
+                    json!({"id":id,"expected_name":expected_name,"expected_provider_label_id":expected_provider_label_id,"request_id":request_id}),
+                ),
+                Labels::Sync { request_id } => {
+                    ("google_labels_sync", json!({"request_id":request_id}))
+                }
+            };
+            let mut reply = client.call(method, scope, params).await?;
+            if method == "google_labels_sync" {
+                let job = result(reply.clone())?["job_id"].clone();
+                while result(reply.clone())?["state"] == "running" {
+                    let interrupted = tokio::select! { _=tokio::signal::ctrl_c()=>true, _=tokio::time::sleep(Duration::from_millis(250))=>false };
+                    reply = client
+                        .call(
+                            if interrupted {
+                                "google_labels_sync_cancel"
+                            } else {
+                                "google_labels_sync_status"
+                            },
+                            scope,
+                            json!({"job_id":job}),
+                        )
+                        .await?;
+                    if interrupted {
+                        break;
+                    }
+                }
+            }
+            reply
+        }
         Command::Mail { command } => match command {
             Mail::List {
                 query,
@@ -1980,9 +2255,31 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 client.call("conversations", scope, params).await?
             }
             Mail::Read { id } => client.call("conversation", scope, json!({"id":id})).await?,
+            Mail::Source { id, source_version } => {
+                client
+                    .call(
+                        "message_source",
+                        scope,
+                        json!({"id":id,"source_version":source_version}),
+                    )
+                    .await?
+            }
             Mail::Sender { address } => {
                 client
                     .call("sender_summary", scope, json!({"email":address}))
+                    .await?
+            }
+            Mail::Recipients {
+                query,
+                exclude,
+                limit,
+            } => {
+                client
+                    .call(
+                        "recipient_suggestions",
+                        scope,
+                        json!({"query":query,"exclude":exclude,"limit":limit}),
+                    )
                     .await?
             }
             Mail::Review {
@@ -2069,6 +2366,9 @@ async fn run(args: &Args) -> Result<(), Failure> {
             }
         },
         Command::Draft { command } => match command {
+            Draft::Transfer { draft_id,target_account,expected_revision,expected_google_revision,request_id,keep_original } => client.call("draft_transfer",scope,json!({"draft_id":draft_id,"target_account":target_account,"expected_revision":expected_revision,"expected_google_revision":expected_google_revision,"request_id":request_id,"keep_original":keep_original})).await?,
+            Draft::TransferRetry { transfer_request_id, request_id } => client.call("draft_transfer_retry",scope,json!({"transfer_request_id":transfer_request_id,"request_id":request_id})).await?,
+            Draft::TransferStatus { request_id } => client.call("draft_transfer_status",scope,json!({"request_id":request_id})).await?,
             Draft::Sources { .. }
             | Draft::Source { .. }
             | Draft::Authoring { .. }
@@ -2133,12 +2433,16 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 target,
                 expected_revision,
                 request_id,
+                ..
             } => {
                 let mut params = target.params();
                 params["expected_revision"] = json!(expected_revision);
                 params["request_id"] = json!(request_id);
+                if let Some(buffer) = discard_buffer { params["buffer"] = buffer; }
                 client.call("draft_discard", scope, params).await?
             }
+            Draft::DiscardStatus { request_id } => client.call("draft_discard_status",scope,json!({"request_id":request_id})).await?,
+            Draft::UndoDiscard { draft_id,discard_request_id,expected_revision,request_id } => client.call("draft_undo_discard",scope,json!({"draft_id":draft_id,"discard_request_id":discard_request_id,"expected_revision":expected_revision,"request_id":request_id})).await?,
             Draft::Attach { .. } => {
                 client
                     .call(
@@ -2372,6 +2676,47 @@ fn emit(args: &Args, reply: &Value) -> Result<(), Failure> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn send_undo_preserves_exact_submission_request() {
+        let input = [
+            "fm",
+            "--account",
+            "original-account",
+            "google",
+            "send",
+            "--draft-id",
+            "original-draft",
+            "--expected-revision",
+            "7",
+            "--expected-google-revision",
+            "11",
+            "--request-id",
+            "exact-send",
+        ];
+        let immediate = Args::try_parse_from(input).unwrap();
+        let delayed = Args::try_parse_from(input.into_iter().chain(["--undo"])).unwrap();
+        assert!(matches!(
+            &delayed.command,
+            Command::Google {
+                command: Google::Send { undo: true, .. }
+            }
+        ));
+        assert_eq!(
+            google_composition_request(&immediate.command).unwrap(),
+            google_composition_request(&delayed.command).unwrap()
+        );
+        assert_eq!(
+            google_composition_request(&delayed.command)
+                .unwrap()
+                .unwrap(),
+            (
+                "google_send",
+                json!({"draft_id":"original-draft", "expected_revision":7,
+                "expected_google_revision":11, "request_id":"exact-send"})
+            )
+        );
+    }
+
     #[test]
     fn google_sync_accepts_no_quota_setup() {
         let args = Args::try_parse_from([

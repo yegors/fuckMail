@@ -45,6 +45,48 @@ fn setup() -> (Arc<Fake>, GmailApi<Fake>) {
 }
 
 #[tokio::test]
+async fn label_creation_has_exact_cost_body_and_rejection_certainty() {
+    let (fake, api) = setup();
+    let cancel = CancellationToken::new();
+    let call = || GmailCall::create_label(&account("a"), "Research / Papers").unwrap();
+    assert_eq!(call().work.units, 5);
+    assert_eq!(call().work.class, WorkClass::StateMutation);
+    fake.respond(
+        200,
+        json!({"id":"Label_new","name":"Research / Papers","type":"user"}),
+    );
+    assert!(
+        matches!(api.execute(call(), "token", &cancel).await.unwrap(), GmailReply::Label(label) if label.id=="Label_new")
+    );
+    {
+        let calls = fake.calls.lock().unwrap();
+        assert_eq!(calls[0].method(), HttpMethod::Post);
+        assert_eq!(
+            calls[0].url(),
+            "https://gmail.googleapis.com/gmail/v1/users/me/labels"
+        );
+        assert_eq!(
+            serde_json::from_slice::<Value>(calls[0].body_bytes()).unwrap(),
+            json!({"name":"Research / Papers","labelListVisibility":"labelShow","messageListVisibility":"show"})
+        );
+    }
+    for status in [400, 409] {
+        fake.respond(status, json!({"error":{"code":status}}));
+        assert!(matches!(
+            api.execute(call(), "token", &cancel).await.unwrap(),
+            GmailReply::LabelCreateRejected
+        ));
+    }
+    fake.respond(200, json!({"id":"Label_new"}));
+    assert!(
+        api.execute(call(), "token", &cancel).await.is_err(),
+        "malformed success is not a known rejection"
+    );
+    assert!(GmailCall::create_label(&account("a"), "bad\nname").is_err());
+    assert!(GmailCall::create_label(&account("a"), &"x".repeat(257)).is_err());
+}
+
+#[tokio::test]
 async fn rejected_draft_continuation_is_a_read_restart_only_for_a_supplied_token() {
     let (fake, api) = setup();
     let cancel = CancellationToken::new();

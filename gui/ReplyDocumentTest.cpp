@@ -160,6 +160,9 @@ int main(int argc, char **argv) {
     require(limited.contains("https://example.test/meeting"), "An explicit ordinary link survives without extra attributes");
 
     const auto rejectedLink = ReplyDocument::limitedHtml("<p><a href=\"file:///local/example.txt\">label</a></p>");
+    const auto received = ReplyDocument::limitedHtml("<table><tr><td><b>Flight</b></td></tr></table><img src=\"https://images.example.test/logo\" alt=\"Logo\"><p style=\"background-image:url(https://images.example.test/bg)\">Details</p>", true);
+    require(received.contains("<table>") && received.contains("<b>Flight</b>") && received.contains("[Logo]"), "received formatting retains content and image descriptions");
+    require(!received.contains("<img") && !received.contains("images.example.test") && !received.contains("background-image"), "received formatting excludes resource loads");
     require(!rejectedLink.contains("href="), "Unsupported link schemes are absent from the saved formatting");
     reopened.reply.load("Authoritative words", "<p>Different stale words</p>");
     require(reopened.reply.plainText() == "Authoritative words", "A stale HTML alternative cannot replace authoritative authored text");

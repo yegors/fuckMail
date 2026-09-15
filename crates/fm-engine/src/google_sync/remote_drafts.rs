@@ -180,6 +180,9 @@ pub(super) async fn run(ctx: SyncContext, progress: Arc<Mutex<Value>>) {
     let mut failures = 0;
     let mut refresh = ctx.refresh.subscribe();
     while !ctx.cancel.is_cancelled() {
+        if !super::service_ready(&ctx, &progress, "mail", "remote_drafts", &mut refresh).await {
+            continue;
+        }
         if ctx
             .credential_blocked
             .load(std::sync::atomic::Ordering::Acquire)

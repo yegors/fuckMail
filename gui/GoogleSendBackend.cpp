@@ -78,7 +78,7 @@ bool MailBackend::mergeGoogleSendStatus(const QJsonObject &status, const QString
 bool MailBackend::googleSendBlocksDraftSync() const {
     const auto current = m_draft.value("google_send").toMap();
     const auto ui = m_googleSendUi.value(googleSendKey());
-    return !m_googleSendPending.isEmpty() || ui.active || ui.uncertain
+    return sendQueued() || !m_googleSendPending.isEmpty() || ui.active || ui.uncertain
         || pendingSend(current.value("state").toString()) || current.value("last_accepted_draft_revision").toLongLong() > 0;
 }
 
@@ -91,8 +91,11 @@ QVariantMap MailBackend::googleSend() const {
     const auto selected = ui.selected.isEmpty() ? (otherRequest ? QJsonObject{} : current) : ui.selected;
     const auto state = selected["state"].toString();
     const bool saving = !m_googleSendPending.isEmpty();
+    bool hasRecipients = !m_recipientInputs.isEmpty();
+    for (const auto field : {"to_recipients", "cc_recipients", "bcc_recipients"})
+        hasRecipients = hasRecipients || !m_draft.value(field).toList().isEmpty();
     const bool ready = !m_syntheticProfile && m_connected && !m_shutdown && accountCapability(m_account, "send");
-    const bool cleanTarget = !m_draft.isEmpty() && !m_draft.value("discarded").toBool() && !m_draftConflict
+    const bool cleanTarget = !draftLocked() && !m_draft.isEmpty() && !m_draft.value("discarded").toBool() && !m_draftConflict
         && !draftBusy() && !attachmentImportPending() && m_googleDraftOperationId.isEmpty();
     const auto accepted = current["last_accepted_draft_revision"].toInteger();
     const bool newer = m_draftDirty || !m_recipientInputs.isEmpty() || m_draft.value("revision").toLongLong() > accepted;
@@ -109,16 +112,17 @@ QVariantMap MailBackend::googleSend() const {
     if (!selected.isEmpty() && !current.isEmpty() && selected["request_id"] != current["request_id"])
         text += " This is an earlier request. Current submission: " + sendSummary(current);
     if (accepted > 0 && newer) text += " An earlier version was accepted. Sending these newer edits creates another email.";
-    if (saving) text += " Saving the version selected by Send…";
+    if (sendQueued()) text = "Sending shortly. Undo keeps this saved draft.";
+    else if (saving) text += " Saving the version selected by Send…";
     else if (ui.active) text += ui.method == "google_send" ? " Submitting the frozen version…" : " Checking or updating the saved submission…";
     if (!ui.feedback.isEmpty()) text += " " + ui.feedback;
     return {{"visible", !m_syntheticProfile && (!text.isEmpty() || !current.isEmpty())}, {"status", text.trimmed()},
         {"warning", ui.uncertain || state == "acceptance_unknown" || state == "rejected" || (accepted > 0 && newer)},
-        {"busy", ui.active || saving}, {"request_id", selected["request_id"].toString(ui.request["request_id"].toString())},
-        {"can_cancel", saving || (ui.active && ui.method != "google_send_status")},
+        {"busy", ui.active || saving || sendQueued()}, {"request_id", selected["request_id"].toString(ui.request["request_id"].toString())},
+        {"can_cancel", sendQueued() || saving || (ui.active && ui.method != "google_send_status")},
         {"can_select_current", !ui.active && !saving && !ui.uncertain && validSend(current, m_account, id) && !selected.isEmpty() && current["request_id"] != selected["request_id"]},
         {"check_label", !ui.uncertain && state == "acceptance_unknown" && ready ? "Check Google" : "Check status"},
-        {"state", state}, {"can_send", ready && cleanTarget && !saving && !ui.active && !ui.uncertain && !deletionBlocked && (accepted > 0 || !draftBlocked)
+        {"state", state}, {"can_send", ready && hasRecipients && cleanTarget && !saving && !ui.active && !ui.uncertain && !deletionBlocked && (accepted > 0 || !draftBlocked)
             && !pendingSend(current["state"].toString()) && (accepted == 0 || newer)},
         {"can_check", m_connected && !m_shutdown && !ui.active && !saving && (!selected.isEmpty() || !ui.request.isEmpty())},
         {"resume_label", ui.uncertain ? "Resume original request" : "Send prepared version"},
@@ -186,7 +190,7 @@ void MailBackend::finishGoogleSendSave(bool ok) {
              m_draft.value("google_send").toMap().value("current_google_revision").toLongLong())},
         {"request_id", mutation()["request_id"]}};
     m_googleSendUi[googleSendKey()].selected = {};
-    startGoogleSendOperation("google_send", params);
+    queueGoogleSend(params);
 }
 
 void MailBackend::refreshGoogleSendMetadata(const QString &account, const QString &draftId) {
@@ -203,7 +207,11 @@ void MailBackend::refreshGoogleSendMetadata(const QString &account, const QStrin
 void MailBackend::startGoogleSendOperation(const QString &method, const QJsonObject &params) {
     if (draftReadOnly()) return;
     if ((accountArchived() || m_unsavedAccountBuffer) && method != "google_send_status") return;
-    const auto account = m_account, draftId = m_draft.value("draft_id").toString(), key = googleSendKey();
+    startGoogleSendForDraft(method, params, m_account, m_draft.value("draft_id").toString());
+}
+
+void MailBackend::startGoogleSendForDraft(const QString &method, const QJsonObject &params, const QString &account, const QString &draftId) {
+    const auto key = account + '\n' + draftId;
     auto &ui = m_googleSendUi[key];
     if (ui.active) return;
     const bool freshAttempt = method == "google_send" && !ui.uncertain && ui.selected.isEmpty();
@@ -237,6 +245,13 @@ void MailBackend::startGoogleSendOperation(const QString &method, const QJsonObj
             if (!ok && method == "google_send_status" && result["code"] == "not_found") saved.notFound = true;
             saved.feedback = "Result not confirmed. " + result["message"].toString("Check the exact saved request.");
         }
+        if (method == "google_send") finishQueuedSendNotice(key, result, valid);
+        const auto previewKey = account + '\n' + params.value("request_id").toString();
+        if (m_transientOutgoing.contains(previewKey)) {
+            if ((valid && (result["state"] == "rejected" || result["state"] == "abandoned")) || (!valid && !saved.uncertain)) m_transientOutgoing.remove(previewKey);
+            else m_transientOutgoing[previewKey]["state"] = valid ? result["state"].toString() : "acceptance_unknown";
+        }
+        refreshOutgoingPresentation(); loadOutgoing();
         if (account == m_account && draftId == m_draft.value("draft_id").toString()) {
             if (valid) mergeGoogleSendStatus(result, account, draftId);
             if (valid && !result["operation_is_current"].toBool()) refreshGoogleSendMetadata(account, draftId);
@@ -285,6 +300,7 @@ void MailBackend::abandonGoogleSend() {
 }
 
 void MailBackend::cancelGoogleSend() {
+    if (sendQueued()) { cancelQueuedSend(googleSendKey(), true); return; }
     if (!m_googleSendPending.isEmpty()) { cancelPendingGoogleSend("Send cancelled before submission."); return; }
     const auto ui = m_googleSendUi.value(googleSendKey());
     if (!ui.active) return;

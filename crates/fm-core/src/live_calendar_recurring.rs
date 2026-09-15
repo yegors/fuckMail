@@ -113,7 +113,9 @@ pub(crate) fn validate_series_dispatch(request: &Value, dispatch: &Value) -> Res
         dispatch["baseline"].clone()
     };
     if request["kind"] != "delete"
-        && (request["kind"] == "create" || request["fields"].get("recurrence").is_some())
+        && (request["kind"] == "create"
+            || request["fields"].get("recurrence").is_some()
+            || request["fields"]["convert_time_kind"] == true)
     {
         if let Some(patch) = dispatch["body"].as_object() {
             for (k, v) in patch {
@@ -121,6 +123,7 @@ pub(crate) fn validate_series_dispatch(request: &Value, dispatch: &Value) -> Res
             }
         }
         candidate["id"] = dispatch["target"]["event"].clone();
+        crate::calendar_editor_options::clear_endpoint_nulls(&mut candidate);
         let event = fm_calendar::normalize("validate", "validate", "UTC", &candidate)
             .map_err(calendar_error)?;
         if let Some(start) = event.start.as_ref() {
@@ -240,6 +243,7 @@ impl Store {
             ));
         }
         let mut event = rows.remove(0);
+        crate::calendar_editor_options::project(&mut event, &chosen.source);
         event["account"] = stamp.account.clone().into();
         event["calendar_id"] = stamp.calendar.clone().into();
         event["event_id"] = chosen.key.event.clone().into();
@@ -328,6 +332,7 @@ impl Store {
                 })?;
         let mut body = match kind {
             "edit" => writes::field_patch(
+                request_id,
                 &request["fields"],
                 Some(&proof.event),
                 &stamp.zone,
@@ -362,6 +367,7 @@ impl Store {
             }
             let mut candidate = replacement.clone();
             candidate["id"] = id.clone().into();
+            crate::calendar_editor_options::clear_endpoint_nulls(&mut candidate);
             let event = fm_calendar::normalize(account, &stamp.calendar, &stamp.zone, &candidate)
                 .map_err(calendar_error)?;
             fm_calendar::recurring::validate_rule(&event.recurrence, event.start.as_ref().unwrap())

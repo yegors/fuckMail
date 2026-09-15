@@ -8,7 +8,7 @@
 #include <QTextDocument>
 #include <QUrl>
 
-QString ReplyDocument::limitedHtml(const QString &input) {
+QString ReplyDocument::limitedHtml(const QString &input, bool received) {
     // Reconstruct every tag/attribute, keeping only the formatting we expose.
     // Resource tags, image URLs, CSS URLs and event attributes cannot survive.
     QString body = input;
@@ -28,7 +28,13 @@ QString ReplyDocument::limitedHtml(const QString &input) {
         const auto parsed = name.match(token);
         if (!parsed.hasMatch()) continue;
         const auto tag = parsed.captured(2).toLower(); const bool closing = !parsed.captured(1).isEmpty();
-        if (tag != "p" && tag != "div" && tag != "br" && tag != "span" && tag != "b" && tag != "strong" && tag != "i" && tag != "em" && tag != "u" && tag != "ul" && tag != "ol" && tag != "li" && tag != "a") continue;
+        if (received && tag == "img" && !closing) {
+            const auto alt = QRegularExpression("\\balt\\s*=\\s*[\"']([^\"']*)[\"']", QRegularExpression::CaseInsensitiveOption).match(token);
+            if (alt.hasMatch() && !alt.captured(1).isEmpty()) output += "[" + alt.captured(1).toHtmlEscaped() + "]";
+            continue;
+        }
+        const bool receivedTag = received && QStringList{"table","tr","td","th","thead","tbody","h1","h2","h3","h4","blockquote","hr","pre","code"}.contains(tag);
+        if (!receivedTag && tag != "p" && tag != "div" && tag != "br" && tag != "span" && tag != "b" && tag != "strong" && tag != "i" && tag != "em" && tag != "u" && tag != "ul" && tag != "ol" && tag != "li" && tag != "a") continue;
         if (closing) { if (tag != "br") output += "</" + tag + ">"; continue; }
         output += "<" + tag;
         if (tag == "p" || tag == "li") {

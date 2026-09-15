@@ -1,5 +1,15 @@
 # Visual design and interaction brief
 
+**D059–D064 / P2-UI3 active:** implement the September 15 prototype across reader, list actions, Settings, event editing, shared confirmations and composer account/recipient/file controls, plus six-second Send Undo and a shared action toast. [Coverage and verification](research/prototype-september-15.md). Prior D058 package and evidence remain intact; scoped UI3 checks pass; complete prototype alignment remains open.
+
+**D058 / P2-LLM2D:** incoming-only assistance fixes the missing reader sent flag, hides sent summaries and removes duplicate errors. Model response failures are distinguished and the default response allowance grows to 4,096 tokens. Schema 24 retains prior settings/history. Scoped Rust/native checks, strict lint, 16 engine/CLI checks, actual settings migration/refusal and relocated configured package pass. Use `dist/llm2d-windows-amd64/bin/fuckmail-gui.exe`; close the old app first. Readiness remains 0/9.
+
+**D057 / P2-LLM2C:** Settings now shows only editable System/User message content with normal line breaks. Native editing/preservation and relocated package checks pass. Use `dist/llm2c-windows-amd64/bin/fuckmail-gui.exe`; schema 23 and the verified engine/CLI are unchanged.
+
+**D056 / P2-LLM2B:** the Local model editor now contains the complete Ollama JSON request, including system instructions, response schema, options and all variables. Inference sends its expansion without hidden additions. Schema 23 preserves saved instructions and account choices. Scoped Rust/native tests, strict lint, 15 engine/CLI checks including exact HTTP request comparison, actual settings upgrade/refusal and relocated Windows launch pass. The configured app is `dist/llm2b-windows-amd64/bin/fuckmail-gui.exe`; close the older app first. The installed model has a recorded label-quality miss. Readiness remains 0/9.
+
+D055 / P2-LLM2 is the current local-assistance packet: one model/prompt, default-on prospective summaries and automatic single-label classification, per-message cards and summary list previews. Remove the sample/default-reset buttons and top thread summary. Complete the scoped Windows, migration, delivery and installed-model checks before handing back the candidate; broad performance remains deferred. The D055 decision and Local assistance 8 supersede older delivery defaults below.
+
 D054: the header beside search is a real account Sync button with last successful Gmail history check time. Show Syncing during the request and Retry sync after credential refusal; keep the prior successful time on failure. The OS keychain password is never entered into the app.
 
 **D051 planned Local model page:** automatic Ollama/model discovery, independent summary/classification selectors, editable prompt buffers with Save/Cancel/Restore default and a synthetic sample test. Account enablement is independent; labels remain in the existing account label settings. Reader summaries retain originals and source/partial/stale context; sender-kind annotations are correctable. [Local assistance 5](contracts/local-ai.md) owns target behavior. No controls are implemented by this planning update.

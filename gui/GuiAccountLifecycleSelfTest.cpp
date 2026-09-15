@@ -112,6 +112,10 @@ void GuiAccountLifecycleSelfTest::acceptBrowserUrl(const QUrl &url) {
 bool GuiAccountLifecycleSelfTest::click(const QString &name) {
     if (!m_window) return false;
     auto item = named(m_window->contentItem(), name);
+    if (name.startsWith("removeAccount_") && (!item || !item->isVisible())) {
+        click("accountOptions_" + name.mid(QString("removeAccount_").size()));
+        return false;
+    }
     if (!item || !item->isVisible() || !item->isEnabled() || item->width() <= 0 || item->height() <= 0) return false;
     for (auto ancestor = item->parentItem(); ancestor; ancestor = ancestor->parentItem()) {
         if (!ancestor->property("contentY").isValid()) continue;
@@ -252,7 +256,7 @@ void GuiAccountLifecycleSelfTest::tick() {
         if (m_backend.googleAuthBusy() || m_backend.googleAuth().value("phase") != "connected" || row.isEmpty()) return;
         if (row["email"] != expected["email"] || row["lifecycle"].toObject()["state"] != "active") { finish("Native Add bound a different account."); return; }
         result["add_lifecycle"] = row["lifecycle"]; m_results.append(result); m_backend.setCalendarDate(m_date); m_stage = 7; break;
-    case 7: if (click("googleSync_" + id)) m_stage = 8; break;
+    case 7: if (click("finishGoogleConnection")) m_stage = 8; break;
     case 8: {
         if (m_window->findChild<QObject *>("googleSyncLimitsDialog")) { finish("Removed quota setup is still present."); return; }
         if (m_backend.googleSyncState(id).value("owned").toBool()) {
@@ -326,7 +330,9 @@ void GuiAccountLifecycleSelfTest::tick() {
     case 41:
         if (m_backend.googleAuthBusy() || row["lifecycle"].toObject()["state"] != "active" || row["email"] != expected["renamed_email"]) return;
         if (m_backend.googleSyncState(id).value("owned").toBool() || m_backend.googleSyncState(id).value("active").toBool()) { finish("Restore started provider work."); return; }
-        result["restore_lifecycle"] = row["lifecycle"]; result["restored_email"] = row["email"]; m_results[m_account] = result; m_confirmation = {}; m_stage = 42; break;
+        result["restore_lifecycle"] = row["lifecycle"]; result["restored_email"] = row["email"]; m_results[m_account] = result; m_confirmation = {};
+        if (auto connection = m_window->findChild<QObject *>("googleSignInDialog")) QMetaObject::invokeMethod(connection, "close");
+        m_stage = 42; break;
     case 42: if (click("removeAccount_" + id)) m_stage = 43; break;
     case 43: if (m_confirmation["account"] == id && click("confirmAccountRemoval")) m_stage = 44; break;
     case 44: if (cleanup == "complete" && m_backend.accountRemoved(id) && !m_backend.m_accountRemovalBusy.contains(id)) { recordRemoval(); m_account = 1; m_stage = 50; } break;

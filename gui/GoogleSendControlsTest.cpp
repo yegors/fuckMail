@@ -56,6 +56,7 @@ public:
                 + "/fonts/Geist-" + weight + ".ttf") >= 0, "load the same bundled Geist fonts as the app");
         Engine fixture;
         MailBackend backend(fixture.profile, "unused-fixture-engine", nullptr, false, true);
+        backend.m_sendUndoMs = 0; // The separate SendUndoTest verifies the real six-second window.
         backend.m_connected = true; backend.m_account = "fixture-account";
         backend.m_enginePid = QCoreApplication::applicationPid(); backend.m_activeDraft = "draft-fixture"; backend.m_generation = 1;
         backend.m_draft = projection().toVariantMap();
@@ -84,6 +85,10 @@ public:
             const auto method = request["method"].toString(), id = request["id"].toString();
             if (method == "accounts") { peer->write(reply(id, {{"accounts", QJsonArray::fromVariantList(backend.m_allAccounts)}})); return true; }
             if (method == "view_save") { peer->write(reply(id, {{"revision", 1}})); return true; }
+            if (method == "google_sent") {
+                require(!request["account"].toString().isEmpty(), "outgoing read keeps its selected account");
+                peer->write(reply(id, {{"account",request["account"]},{"outgoing",QJsonArray{}},{"next_offset",QJsonValue::Null}})); return true;
+            }
             require(request["account"] == "fixture-account", "explicit Send/cached request account");
             if (method == "google_send_reconcile" && request["params"].toObject()["request_id"].toString().startsWith("held-cap-")) {
                 ++heldAuxiliary; peer->setProperty("operation", true); return true;
@@ -98,7 +103,7 @@ public:
         };
         QTemporaryDir copy; require(copy.isValid(), "private QML source copy");
         const auto modulePath = copy.filePath("SendTest"); require(QDir().mkpath(modulePath), "native send test module");
-        for (const auto name : {"Theme.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "RecipientField.qml", "ReplyComposer.qml"})
+        for (const auto name : {"Theme.qml", "FmDialog.qml", "FmConfirmDialog.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "RecipientField.qml", "ReplyComposer.qml"})
             require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + '/' + name, modulePath + '/' + name), "copy unchanged production QML");
         QFile module(modulePath + "/qmldir"); require(module.open(QIODevice::WriteOnly), "send test QML registration");
         module.write("module SendTest\nsingleton Theme 1.0 Theme.qml\nReplyComposer 1.0 ReplyComposer.qml\nFmButton 1.0 FmButton.qml\nFmToolTip 1.0 FmToolTip.qml\nFmIcon 1.0 FmIcon.qml\nRecipientField 1.0 RecipientField.qml\n"); module.close();

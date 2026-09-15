@@ -1,5 +1,95 @@
 # Local assistance execution
 
+## D058 incoming-only analysis and response errors (2026-09-15)
+
+The founder reports absent labels/sender kinds after summarizing and the same generic error twice, then clarifies that sent mail must never be summarized. Read-only profile metadata confirmed both policies enabled: recent received analysis had a saved Human classification and no matching label; the two recent summary-only records belonged to sent messages. No mailbox content or credential data was printed or imported into this report. Source inspection found the reader query omitted `sent`, so the GUI displayed received-message controls for sent messages while the engine excluded classification for them.
+
+P2-LLM2D adds the true sent flag to each reader message, rejects sent inference targets, excludes sent members from batch/thread source selection, hides historical sent results and removes their previews/controls without deleting stored history. Incoming combined analysis still atomically records the enabled summary/kind and at most one matching label with manual/provider precedence. Zero matching labels is valid.
+
+The old generic failure combined model mismatch, unfinished responses, length truncation and tool requests; it also wrongly treated a nullable `tool_calls` field as a tool request. The new handling accepts null/empty tool lists, rejects actual/malformed tool requests, and reports each failure distinctly. Combined job errors appear once. The default generation allowance increases from 1,024 to 4,096 tokens, retaining the 120-second and byte bounds with no automatic retry. Schema 24 archives old settings and updates only the former default allowance, preserving system/user text, model and account choices.
+
+The installed Ollama 0.33.3 reports thinking capability for `gemma4:e4b`. A synthetic short acknowledgment probe consumed 769 tokens with thinking enabled and completed; this does not reproduce the exact screenshot failure. Disabling thinking reduced the run to 108 tokens but produced an inappropriate Work label, so thinking remains unchanged. See [Ollama thinking controls](https://docs.ollama.com/capabilities/thinking). The original generic error cannot establish which condition occurred in that particular screenshot.
+
+### Scoped Windows evidence
+
+Ignored files under `build/verification/llm2d-*` contain the actual evidence:
+
+- `assist-final`, `core-final`, `labels-final` logs: 10 validator, six Core and 14 Google-mutation tests pass. New Core checks cover received/sent query flags, sent rejection, hidden-but-preserved old results and exact settings migration. Existing received classification/single-label application remains covered.
+- `lint01.log`: strict all-targets fm-assist/Core/Engine/CLI Clippy passes.
+- `native02.log`: native Settings/assistance test passes in 2.98 seconds, including hidden sent controls and an error on the actual message summary with no duplicate inline text.
+- `integration01.log`: 16 engine/CLI checks pass, 13 inference requests, including exact template-to-HTTP equality, successful null tool lists, separate truncation/tool errors, combined classification/label behavior, cancellation and independent owners.
+- `build01.log` and `gui02.log`: final production binaries. The configured candidate is `dist/llm2d-windows-amd64/bin/fuckmail-gui.exe`.
+- `package01.log`: relocated SDK-free CLI, Google registration, empty-live GUI, schema-24 reopen and engine shutdown pass.
+- `upgrade01.log`: the previous package creates/configures schema 23; the new package preserves message content/model/policies and expands the allowance; the old engine refuses and the new package reopens schema 24.
+- `probe01.log`: the three synthetic thinking/budget comparison runs above. No real email was submitted for inference by this task.
+
+`quality01.log`: 8/8 installed-model cases return valid complete outputs, 8/8 sender kinds match and 7/8 label sets match. The operational-alert sample still over-selects Work; language preference and occasional summary filler remain model-quality limits. This correction does not establish arbitrary-mail labeling quality, real Google delivery, other-host acceptance, sustained inference or whole Phase 2 readiness. Broad workspace and performance work remain deferred; readiness stays 0/9.
+
+
+## D057 readable prompt content (2026-09-15)
+
+The founder wants only system and user content, with normal newlines. P2-LLM2C / Local assistance 10 / Mail UI 35 / Quality 35 changes only presentation. Settings decodes each stored message into a plain-text editor, labeled by its role and retaining order. Editing one message serializes only its new content into the existing request; schema/options/model variables and other messages remain intact. The complete request remains available to the unchanged CLI/engine. Schema 23, fixtures 0/3 and protocol 1 are unchanged.
+
+`build/verification/llm2c-native01.log` passes the native test in 3.02 seconds: decoded message-only content, real paragraph breaks, native edits with quotes/backslashes, exact preservation of every other request field for both user and system edits, save/reload/conflict handling and existing assistance lifecycle coverage. `llm2c-settings.png` was visually inspected for readable system/user sections without the JSON wrapper. `llm2c-gui01.log` built the delivered GUI. The configured candidate is `dist/llm2c-windows-amd64/bin/fuckmail-gui.exe`; its engine/CLI hashes match D056. `llm2c-package01.log` passes relocated SDK-free CLI/Google registration/empty-live GUI and schema-23 reopen/shutdown. No Rust, model-quality, broad workspace or real-mailbox checks were rerun for this presentation-only change. D056 quality and other-host limits remain.
+
+
+## D056 complete request visibility (2026-09-15)
+
+The founder found that D055’s “complete” prompt excluded the fixed system message and structured response schema. P2-LLM2B corrects that mismatch. Local assistance 9/Core 32/Mail UI 34/CLI 26/Quality 34 use schema 23, unchanged fixtures 0/3/protocol 1.
+
+`message-request.json` is the actual default request template. Settings shows and edits its system/user messages, response schema, model variable, stream flag and bounded generation options in a single expanded JSON editor. Label descriptions enter only through the labels variable. The engine parses and substitutes model/labels/messages/partial/source_ids exactly once, then sends that object directly without adding or replacing prompt fields. The previous fixed envelope and schema generator are removed from inference. Validation of allowed outputs, source/category identity, manual precedence and mail actions remains application code, not hidden model instructions. The app request is distinct from Ollama’s subsequent model-specific chat template/tokenization.
+
+Schema 23 archives the exact schema-22 settings before wrapping the saved prompt. Model choice, account opt-outs and label instructions survive. The schema-21 path also preserves earlier separate prompt preferences. Existing complete templates are recognized by full request validation rather than a superficial JSON-key check.
+
+### Verification
+
+Ignored logs/captures are under `build/verification/llm2b-*`. The final source/binary manifest excludes credentials. The separate candidate is `dist/llm2b-windows-amd64/bin/fuckmail-gui.exe`; the previous package remains intact.
+
+- `llm2b-assist-final.log`: 10 tests pass, including literal quotes/backslashes/newlines and template-like content in source data, exact edited system/schema/options, typed ID arrays, unknown/duplicate variables, prohibited fields and option bounds.
+- `llm2b-core-final.log`: four tests pass, including exact prior prompt/settings history and schema-22 migration/reopen, existing settings/staleness and combined message persistence.
+- `llm2b-labels-final.log`: all 14 scoped Google-mutation tests pass.
+- `llm2b-lint-final.log`: strict all-targets lint passes for fm-assist/Core/Engine/CLI.
+- `llm2b-native03.log`: native Settings/assistance test passes (2.99 seconds). The actual editor is compared against the entire stored request; both message roles, schema and options are present, separate rules absent, native editing/save/conflict behavior retained. `llm2b-settings-final.png` shows the request editor with its variables and system/user content.
+- `llm2b-integration01.log`: 15 engine/CLI checks pass. An independent template expander at the fake HTTP endpoint compares the received JSON object with the edited template, including a replacement system message, modified schema limit and temperature. No hidden defaults may appear. Existing cancellation, separate owners, summary-only, automatic-label and invalid-output checks pass.
+- `llm2b-quality01.log`: installed `gemma4:e4b` produced eight complete valid combined outputs with correct sender kinds; seven of eight expected label sets match. The production-outage sample is incorrectly labeled Work despite its narrower human-project description. The Spanish example remains summarized in English and some summary filler persists. These are recorded quality limits, not an eight-case classification pass.
+
+The first native assertion failed because Qt normalizes Windows line endings; the comparison now normalizes only CRLF to LF. The next failure was an obsolete assertion expecting the old prose-only edit; it now checks the complete edited request. Both failed logs remain. No inference or model-quality result was fabricated or silently repaired.
+
+`llm2b-build03.log` and `llm2b-gui04.log` produced the final release binaries. `llm2b-integration-final.log` repeats all 15 checks against the packaged engine, including exact request equality. `llm2b-package-final.log` passes relocated SDK-free CLI, configured Google registration, empty-live GUI, schema-23 reopen and shutdown. `llm2b-upgrade02.log` passes an actual schema-22 profile created/configured with the previous package, exact prompt/model/account preservation, direct old-engine refusal and new-package reopen. The first upgrade fixture tried a label description absent from its account; the old CLI correctly rejected it (`llm2b-upgrade-final.log`), and the fixture was corrected. No production code changed for that fixture error. No real mailbox inference, provider action, broad workspace test or performance run was performed for this correction. Other-host builds and whole-product readiness remain open (0/9).
+
+## D055 unified message analysis (2026-09-15)
+
+This Windows delivery implements Local assistance 8, Core 31, Triage 8, Gmail 16, Mail UI 33, CLI 25 and Quality 33, with schema 22 and unchanged fixtures 0/3/protocol 1. The user requested one model/prompt, automatic single-label classification, useful prose summaries, summary list previews and removal of duplicate/ineffective controls.
+
+Settings now exposes one installed model and the whole editable template, including label descriptions, email JSON and partial-source variables. Missing account preferences default to summaries and Auto-label new mail enabled; saved opt-outs remain. A combined result supplies a 1–2 sentence summary, sender kind and at most one existing label. Invalid output is rejected atomically. Manual category/sender choices win. Eligible Google label changes use the existing durable delivery journal, mapped-label permissions and provider reconciliation. Summaries never mark mail reviewed. Source-matched summaries replace list snippets with the Summary icon; only message-level cards remain. Old malformed summaries retain their stored bytes but are hidden pending regeneration.
+
+Schema 21 upgrades preserve the exact prior settings JSON in history, carry forward the selected model, explicit flags and custom instructions, and add durable manual-label overrides. No credential material is added to Git.
+
+### Verification
+
+Ignored evidence is under `build/verification/llm2-*`; the configured portable app is `dist/llm2-windows-amd64/bin/fuckmail-gui.exe`.
+
+| Check | Final evidence | Result |
+| --- | --- | --- |
+| Validator/template/prose | `llm2-assist-final.log` | 9 tests pass |
+| Combined persistence, previews, manual precedence, settings migration | `llm2-core-final.log` | 3 tests pass |
+| Google mutation/reconciliation, including assisted delivery and manual/provider precedence | `llm2-labels-final.log` | 14 tests pass |
+| Scoped all-targets strict Clippy | `llm2-lint03.log` | Pass |
+| Engine/CLI fake-provider integration | `llm2-integration-final.log` | 14 checks pass, 10 inference requests |
+| Actual MailView summary/icon/fallback and duplicate-card removal | `llm2-selection07.log` | Pass |
+| Settings defaults, summary-only, correction, cancellation, disconnection and themes | `llm2-native-settings05.log` | Pass |
+| Installed `gemma4:e4b`, final default prompt | `llm2-quality02.log` | 8/8 synthetic cases pass format, expected kind and label checks |
+| Actual old CLI creates schema 21; new package upgrades; old engine refuses; new package reopens | `llm2-upgrade02.log` | Pass |
+| Relocated package without development SDK paths: CLI, registered Google setup, empty-live GUI and shutdown/reopen | `llm2-package-final.log` | Pass |
+
+Release Rust build `llm2-build04.log` and native build `llm2-gui10.log` produced the delivered binaries. `llm2-settings-final.png` and `llm2-mail-final.png` were visually inspected: readable expanded Settings, one summary card beside its message and matching list preview/icon. Screenshots contain synthetic data. The relocated offscreen run reports Qt's missing default font-directory notice; the GUI embeds Geist, and visual checks use that font.
+
+Earlier failed attempts remain scoped: stale shared-prompt expectations, missing operation-journal receipt, premature Settings assertions, incomplete native test stubs/date-header lookup, compiler/tool-path mistakes and two strict-lint errors were corrected before final checks. Most earlier logs are retained; the initial label-test log was overwritten during its retry, so it is not an exact preserved failure artifact. The old CLI status probe timed out on the upgraded schema; the direct old-engine refusal and subsequent new-package reopen provide the final migration evidence. Initial model-quality output contained filler; the refined prompt improved it.
+
+### Limits
+
+These checks use synthetic mail and generated provider observations, not automated actions on the founder's mailbox. New-mail processing retains the existing prospective session/date window; it does not sweep historical mail. Existing explicit opt-outs remain off. A model must be selected and Ollama available. Eight examples are a small quality sample: the Spanish case still summarized in English despite the prompt, and some output retains unnecessary no-action phrasing. Real Gmail label delivery, sustained workload/model quality, physical input and current Mac/Linux packages remain separate acceptance gates. No broad workspace or performance run was made under D041. Whole-product readiness remains 0/9.
+
 ## D053 summary UI and lifecycle repair (2026-09-14)
 
 The founder’s review found D052’s summary UI unlike the latest prototype. D053 uses the supplied Update 2 Summary card: a 6-pixel radius, quiet 30%-opacity outline and 2-pixel left rule in the theme’s assistance color, compact uppercase heading, right-aligned model attribution, and a readable body. Thread summaries sit below reader metadata; individual summaries sit beside their message. Re-summarize, source access and timestamps are secondary actions. Output stays plain text; long summaries and source lists use a bounded scrollable popover. The shipped font and the prototype’s Graphite/Paper/Harbour assistance colors are used.

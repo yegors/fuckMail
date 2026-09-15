@@ -35,7 +35,49 @@ Popup {
     property bool operationCanResume: false
     property bool recurrenceTouched: false
     readonly property int repeatRuleIndex: repeatFrequency.currentIndex - (editEvent.event_id ? 1 : 0)
+    property var repeatDays: []
+    readonly property var weekDays: ["SU", "MO", "TU", "WE", "TH", "FR", "SA"]
+    readonly property var weekDayNames: ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+    readonly property var dayOrder: backend.preferences.week_start === "sunday" ? [0,1,2,3,4,5,6] : [1,2,3,4,5,6,0]
+    function shiftDate(value, amount) {
+        const date = startDate.parseDate(value)
+        if (!date) return ""
+        date.setDate(date.getDate() + amount)
+        return Qt.formatDate(date, "yyyy-MM-dd")
+    }
+    function recurrenceRule() {
+        const kind = repeatRuleIndex
+        if (kind <= 0) return []
+        const interval = Number(repeatInterval.text), count = repeatCount.text.trim().length ? Number(repeatCount.text) : 0
+        if (!Number.isInteger(interval) || interval < 1 || interval > 99 || (repeatCount.text.trim().length && (!Number.isInteger(count) || count < 1 || count > 1000))) {
+            feedback = "Use an interval from 1 to 99 and a count from 1 to 1000."; return null
+        }
+        const day = new Date(startDate.text + "T12:00:00").getDay()
+        let rule = "RRULE:FREQ=" + (kind === 1 ? "DAILY" : kind === 4 ? "MONTHLY" : "WEEKLY")
+        if (interval !== 1) rule += ";INTERVAL=" + interval
+        if (kind === 2) rule += ";BYDAY=MO,TU,WE,TH,FR"
+        else if (kind === 3 || kind === 5) {
+            const days = kind === 3 ? [day] : repeatDays
+            if (!days.length) { feedback = "Choose at least one repeat day."; return null }
+            rule += ";BYDAY=" + dayOrder.filter(function(d) { return days.indexOf(d) >= 0 }).map(function(d) { return editor.weekDays[d] }).join(",")
+        } else if (kind === 4) rule += ";BYMONTHDAY=" + Number(startDate.text.slice(8, 10))
+        if (repeatEnd.currentIndex === 1) {
+            if (!repeatUntil.validDate || repeatUntil.text < startDate.text) { feedback = "The repeat end date must be on or after the start."; return null }
+            if (allDay.checked) rule += ";UNTIL=" + repeatUntil.text.replace(/-/g, "")
+            else {
+                const last = backend.calendarDateTime(repeatUntil.text, "23:59", zoneField.text)
+                if (!last || isNaN(new Date(last).getTime())) { feedback = "Check the repeat end date and time zone."; return null }
+                rule += ";UNTIL=" + new Date(new Date(last).getTime() + 59000).toISOString().slice(0,19).replace(/[-:]/g, "") + "Z"
+            }
+        } else if (count) rule += ";COUNT=" + count
+        return [rule]
+    }
     property var initialTextFields: ({})
+    property string conferenceChange: "keep"
+    property var initialReminder: undefined
+    property string initialAvailability: "busy"
+    readonly property var reminderChoices: [{text:"Keep existing",value:-2},{text:"Never",value:null},{text:"At start",value:0},{text:"5 minutes before",value:5},{text:"10 minutes before",value:10},{text:"15 minutes before",value:15},{text:"30 minutes before",value:30},{text:"1 hour before",value:60},{text:"1 day before",value:1440}].concat(initialReminder !== undefined && initialReminder !== null && [0,5,10,15,30,60,1440].indexOf(initialReminder) < 0 ? [{text:initialReminder + " minutes before",value:initialReminder}] : [])
+    readonly property bool conferencePresent: conferenceChange === "google_meet" || (conferenceChange === "keep" && (editEvent.has_conference || !!editEvent.conference_url))
     property var initialTimeFields: ({})
     property var submittedRequest: ({})
     property bool staleRevision: false
@@ -80,11 +122,14 @@ Popup {
         && ["prepared", "ready", "unknown", "conflict", "rejected", "partial"].indexOf(operationState) >= 0
     readonly property var preview: ({title: titleField.text || "(No title)", date: startDate.text,
         endDate: endDate.text, startHour: clockHour(startTime.text), endHour: clockHour(endTime.text),
-        allDay: allDay.checked, location: locationField.text, eventId: editEvent.event_id || ""})
+        allDay: allDay.checked, location: locationField.text, eventId: editEvent.event_id || "",
+        account: targetAccount, calendar_id: targetCalendarId, id: "editor-preview", all_day: allDay.checked,
+        start: allDay.checked ? startDate.text : backend.calendarDateTime(startDate.text, startTime.text, zoneField.text),
+        end: allDay.checked ? shiftDate(endDate.text, 1) : backend.calendarDateTime(endDate.text, endTime.text, zoneField.text)})
     width: Math.min(440, parent.width); height: Math.max(200, parent.height - 56 - timelineInset); padding: 0
     x: parent.width - width; y: 56 + (timelineAtTop ? timelineInset : 0); modal: false; dim: false; focus: true
     closePolicy: saving ? Popup.NoAutoClose : Popup.CloseOnEscape
-    background: Rectangle { color: Theme.surface; layer.enabled: true; layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.45); shadowBlur: .8; shadowHorizontalOffset: -12 } Rectangle { width: 1; height: parent.height; color: Theme.controlBorder } }
+    background: Rectangle { color: Theme.surface; layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software; layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.45); shadowBlur: .8; shadowHorizontalOffset: -12 } Rectangle { width: 1; height: parent.height; color: Theme.controlBorder } }
     enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 160 } }
     function clockHour(text) { let parts = text.split(":"); return parts.length === 2 ? Number(parts[0]) + Number(parts[1]) / 60 : NaN }
     function allGuests() {
@@ -130,13 +175,18 @@ Popup {
         titleField.text = editEvent.title || ""
         allDay.checked = !!editEvent.all_day
         startDate.text = editEvent.start ? editEvent.start.slice(0, 10) : date
-        endDate.text = editEvent.end ? editEvent.end.slice(0, 10) : date
+        endDate.text = editEvent.end ? (editEvent.all_day ? shiftDate(editEvent.end.slice(0, 10), -1) : editEvent.end.slice(0, 10)) : date
         startTime.text = editEvent.start && !editEvent.all_day ? editEvent.start.slice(11, 16) : "09:00"
         const duration = backend.preferences.default_event_duration_minutes || 60
         endTime.text = editEvent.end && !editEvent.all_day ? editEvent.end.slice(11, 16) : (duration === 60 ? "10:00" : "09:" + duration)
         zoneField.text = editEvent.time_zone || backend.preferences.calendar_display_time_zone || ""
         locationField.text = editEvent.location || ""
         conferenceField.text = editEvent.conference_url || ""
+        conferenceChange = "keep"
+        initialReminder = editEvent.event_id ? editEvent.reminder_minutes : 10
+        reminderField.currentIndex = reminderChoices.findIndex(function(choice) { return choice.value === (editor.initialReminder === undefined ? -2 : editor.initialReminder) })
+        initialAvailability = editEvent.availability || "busy"
+        availabilityField.currentIndex = initialAvailability === "free" ? 1 : 0
         notesField.text = editEvent.description || ""
         guestAddresses = live ? (editEvent.guest_addresses || []).slice() : (editEvent.attendees || []).map(function(a) { return a.email })
         initialGuestAddresses = guestAddresses.slice(); attendeeField.text = ""
@@ -147,6 +197,7 @@ Popup {
         initialTextFields = {title: titleField.text, location: locationField.text, description: notesField.text}
         initialTimeFields = timeFields()
         recurrenceTouched = false; repeatFrequency.currentIndex = 0; repeatInterval.text = "1"; repeatCount.text = ""
+        repeatDays = [new Date(startDate.text + "T12:00:00").getDay()]; repeatEnd.currentIndex = 0; repeatUntil.text = shiftDate(startDate.text, 84)
         operationCanResume = false
         saving = false; unknownOutcome = false; operationState = ""; operationRevision = -1; staleRevision = false; latestEvent = ({}); submittedRequest = ({}); feedback = ""; requestId = ""; submittedFields = ""; open()
     }
@@ -158,8 +209,9 @@ Popup {
         for (const name of ["title", "location", "description"])
             if (!live || !editing || text[name] !== initialTextFields[name]) fields[name] = text[name]
         if (!live || !editing || JSON.stringify(timeFields()) !== JSON.stringify(initialTimeFields)) {
+            if (!startDate.validDate || !endDate.validDate || endDate.text < startDate.text) { feedback = "Choose valid start and end dates, with the end on or after the start."; return null }
             let start = allDay.checked ? startDate.text : backend.calendarDateTime(startDate.text, startTime.text, zoneField.text)
-            let end = allDay.checked ? endDate.text : backend.calendarDateTime(endDate.text, endTime.text, zoneField.text)
+            let end = allDay.checked ? shiftDate(endDate.text, 1) : backend.calendarDateTime(endDate.text, endTime.text, zoneField.text)
             // Keep untouched offset-bearing endpoints exact through repeated DST hours.
             if (!allDay.checked && !editEvent.all_day && editEvent.start && zoneField.text === editEvent.time_zone) {
                 if (startDate.text === editEvent.start.slice(0, 10) && startTime.text === editEvent.start.slice(11, 16)) start = editEvent.start
@@ -167,23 +219,24 @@ Popup {
             }
             if (!start || !end) { feedback = "Check the dates, times and time zone. That local time may not exist during a daylight-saving change."; return null }
             fields.start = start; fields.end = end; fields.all_day = allDay.checked; fields.time_zone = zoneField.text
+            if (live && editing && allDay.checked !== !!editEvent.all_day) fields.convert_time_kind = true
         }
+        const reminder = reminderChoices[reminderField.currentIndex]
+        if (reminder && reminder.value !== -2 && (!editing || reminder.value !== initialReminder)) fields.reminder_minutes = reminder.value
+        const availability = availabilityField.currentIndex === 1 ? "free" : "busy"
+        if (!editing || availability !== initialAvailability) fields.availability = availability
+        if (live && conferenceChange !== "keep") fields.conference = conferenceChange
         if (!live) { fields.conference_url = conferenceField.text; fields.attendees = allGuests() }
         else if (guestSet(allGuests()) !== guestSet(initialGuestAddresses)) {
             if (!guestsEditable) { feedback = "Guest editing is no longer available. Your guest changes remain here; reopen the current event before continuing."; return null }
             fields.attendees = allGuests()
         }
         if (live && recurrenceTouched && (!editing || recurringScope === "series")) {
-            const frequency = ["", "DAILY", "WEEKLY", "MONTHLY", "YEARLY"][repeatRuleIndex]
-            if (!frequency) { if (editing) fields.recurrence = [] }
-            else {
-                const interval = Number(repeatInterval.text), count = repeatCount.text.trim().length ? Number(repeatCount.text) : 0
-                if (!Number.isInteger(interval) || interval < 1 || interval > 99 || (repeatCount.text.trim().length && (!Number.isInteger(count) || count < 1 || count > 1000))) {
-                    feedback = "Use an interval from 1 to 99 and an optional count from 1 to 1000."; return null
-                }
-                fields.recurrence = ["RRULE:FREQ=" + frequency + (interval === 1 ? "" : ";INTERVAL=" + interval) + (count ? ";COUNT=" + count : "")]
-            }
+            const recurrence = recurrenceRule()
+            if (recurrence === null) return null
+            if (editing || recurrence.length) fields.recurrence = recurrence
         }
+
         return fields
     }
     function resolveOperation(action) {
@@ -215,14 +268,16 @@ Popup {
         submittedRequest = request; saving = true; feedback = live ? "Saving to Google Calendar…" : "Saving locally…"; backend.calendarWrite(request)
     }
     function deleteEvent() { deleteEventConfirmed(false) }
-    function deleteEventConfirmed(confirmed) {
+    function deleteEventConfirmed(confirmed, capturedEvent) {
+        if (capturedEvent && JSON.stringify(capturedEvent) !== JSON.stringify(editEvent)) { feedback = "The event changed. Review it before deleting."; return }
         if (saving || unknownOutcome || occurrenceRead.busy || !occurrenceReady || !live || !accountReady || !sourceReady || editEvent.can_delete !== true || (following && confirmed !== true)) return
         requestId = "gui-delete-" + Date.now() + "-" + Math.floor(Math.random() * 1000000000)
         submittedRequest = {account: editEvent.account, calendar_id: editEvent.calendar_id, event_id: editEvent.event_id,
             expected_etag: editEvent.etag, kind: "delete", request_id: requestId}
         if (recurringScope.length) submittedRequest.recurring = recurringRequest(confirmed === true)
         else if (occurrence) submittedRequest.occurrence = editEvent.occurrence
-        saving = true; feedback = "Deleting from Google Calendar…"; backend.calendarWrite(submittedRequest)
+        const error = backend.queueCalendarDeletion(submittedRequest, editEvent)
+        if (error.length) feedback = error; else close()
     }
     Connections {
         target: backend
@@ -297,35 +352,32 @@ Popup {
                 }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {
-                    Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.topMargin: 8; Layout.bottomMargin: 10; spacing: 12
-                    Text { text: "When"; color: Theme.subtle; font.pixelSize: Theme.fontSize(12); Layout.preferredWidth: 64; Layout.alignment: Qt.AlignTop; topPadding: 8 }
-                    ColumnLayout {
-                        Layout.fillWidth: true; spacing: 8
-                        RowLayout {
-                            Layout.fillWidth: true; spacing: 8
-                            TextField { id: startDate; objectName: "eventStartDate"; Layout.preferredWidth: 125; implicitHeight: 30; font.pixelSize: Theme.fontSize(12); color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; placeholderText: "YYYY-MM-DD"; background: Rectangle { color: Theme.canvas; radius: 5; border.color: Theme.controlBorder } }
-                            Text { text: Qt.formatDate(new Date(startDate.text + "T12:00:00"), "dddd"); color: Theme.subtle; font.pixelSize: Theme.fontSize(12); Layout.fillWidth: true; elide: Text.ElideRight }
-                        }
-                        RowLayout {
-                            visible: !allDay.checked; spacing: 8
-                            TextField { id: startTime; objectName: "eventStartTime"; Layout.preferredWidth: 75; implicitHeight: 30; font.pixelSize: Theme.fontSize(12); color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; placeholderText: "HH:mm"; background: Rectangle { color: Theme.canvas; radius: 5; border.color: Theme.controlBorder } }
-                            Text { text: "–"; color: Theme.subtle }
-                            TextField { id: endTime; objectName: "eventEndTime"; Layout.preferredWidth: 75; implicitHeight: 30; font.pixelSize: Theme.fontSize(12); color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; placeholderText: "HH:mm"; background: Rectangle { color: Theme.canvas; radius: 5; border.color: Theme.controlBorder } }
-                            Text { property real minutes: Math.round((editor.clockHour(endTime.text) - editor.clockHour(startTime.text)) * 60); text: minutes > 0 ? minutes + " min" : "Check times"; color: minutes > 0 ? Theme.subtle : Theme.accent; font.pixelSize: Theme.fontSize(11) }
-                        }
-                        RowLayout {
-                            spacing: 8
-                            Text { text: allDay.checked ? "Ends before" : "End date"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11) }
-                            TextField { id: endDate; objectName: "eventEndDate"; Layout.preferredWidth: 125; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; placeholderText: "YYYY-MM-DD"; background: Rectangle { color: Theme.canvas; radius: 5; border.color: Theme.controlBorder } }
-                        }
-                        CheckBox {
-                            id: allDay; objectName: "eventAllDay"; text: "All day"; font.pixelSize: Theme.fontSize(12); palette.windowText: Theme.text
-                            onToggled: if (checked && endDate.text <= startDate.text) { let date = new Date(startDate.text + "T12:00:00"); date.setDate(date.getDate() + 1); endDate.text = Qt.formatDate(date, "yyyy-MM-dd") }
-                        }
-                        TextField { id: zoneField; objectName: "eventTimeZone"; visible: !allDay.checked; Layout.fillWidth: true; implicitHeight: 27; font.pixelSize: Theme.fontSize(11); color: Theme.subtle; placeholderTextColor: Theme.subtle; selectByMouse: true; placeholderText: "Time zone"; background: null; leftPadding: 0 }
-                        Text { visible: allDay.checked; text: "The end date is exclusive."; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); Layout.fillWidth: true; wrapMode: Text.Wrap }
+                    Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
+                    Text { text: "All day"; color: Theme.inkAlpha(0.45); font.pixelSize: Theme.fontSize(12.5); Layout.preferredWidth: 64 }
+                    FmSwitch { id: allDay; objectName: "eventAllDay"; Accessible.name: "All day"; onToggled: if (endDate.text < startDate.text) endDate.text = startDate.text }
+                    Text {
+                        readonly property int days: Math.round((new Date(endDate.text + "T12:00:00") - new Date(startDate.text + "T12:00:00")) / 86400000) + 1
+                        text: allDay.checked ? (days > 1 ? days + " days" : "Whole day") : ""
+                        color: Theme.inkAlpha(0.45); font.pixelSize: Theme.fontSize(12); Layout.fillWidth: true
                     }
                 }
+                Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+                RowLayout {
+                    Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
+                    Text { text: "Starts"; color: Theme.inkAlpha(0.45); font.pixelSize: Theme.fontSize(12.5); Layout.preferredWidth: 64 }
+                    FmDateField { weekStartsMonday: backend.preferences.week_start !== "sunday"; id: startDate; objectName: "eventStartDate"; Layout.preferredWidth: 138; Accessible.name: "Event start date"; onTextEdited: if (validDate && endDate.text < text) endDate.text = text }
+                    FmTextField { id: startTime; objectName: "eventStartTime"; visible: !allDay.checked; Layout.preferredWidth: 80; implicitHeight: Math.max(30, contentHeight + 8); padding: 4; leftPadding: 6; rightPadding: 6; placeholderText: "HH:mm"; Accessible.name: "Event start time" }
+                    Item { Layout.fillWidth: true }
+                }
+                Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+                RowLayout {
+                    Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
+                    Text { text: "Ends"; color: Theme.inkAlpha(0.45); font.pixelSize: Theme.fontSize(12.5); Layout.preferredWidth: 64 }
+                    FmDateField { weekStartsMonday: backend.preferences.week_start !== "sunday"; id: endDate; objectName: "eventEndDate"; Layout.preferredWidth: 138; Accessible.name: "Event end date" }
+                    FmTextField { id: endTime; objectName: "eventEndTime"; visible: !allDay.checked; Layout.preferredWidth: 80; implicitHeight: Math.max(30, contentHeight + 8); padding: 4; leftPadding: 6; rightPadding: 6; placeholderText: "HH:mm"; Accessible.name: "Event end time" }
+                    Item { Layout.fillWidth: true }
+                }
+                FmTextField { id: zoneField; objectName: "eventTimeZone"; visible: !allDay.checked; Layout.fillWidth: true; Layout.leftMargin: 96; Layout.rightMargin: 20; implicitHeight: 27; padding: 4; font.pixelSize: Theme.fontSize(11); color: Theme.subtle; placeholderText: "Time zone"; background: null; Accessible.name: "Event time zone" }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
@@ -336,7 +388,12 @@ Popup {
                 RowLayout {
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
                     Text { text: "Call"; color: Theme.subtle; font.pixelSize: Theme.fontSize(12); Layout.preferredWidth: 64 }
-                    TextField { id: conferenceField; objectName: "eventConference"; Layout.fillWidth: true; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; readOnly: editor.live; placeholderText: editor.live ? "Meeting link changes unavailable" : "Paste a meeting link"; font.pixelSize: Theme.fontSize(13); background: null; leftPadding: 0 }
+                    ColumnLayout {
+                        Layout.fillWidth: true; spacing: 2
+                        FmButton { objectName: "eventAddMeet"; visible: editor.live && !editor.conferencePresent; text: "Add Google Meet"; iconName: "plus"; leftPadding: 0; enabled: editor.formReady; onClicked: editor.conferenceChange = "google_meet" }
+                        TextField { id: conferenceField; objectName: "eventConference"; visible: !editor.live || editor.conferencePresent; Layout.fillWidth: true; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; readOnly: editor.live; placeholderText: editor.live ? (editor.conferenceChange === "google_meet" ? "Google Meet · link added when saved" : editor.editEvent.conference_status === "failure" ? "Google Meet could not be created" : "Google Meet · preparing link…") : "Paste a meeting link"; font.pixelSize: Theme.fontSize(13); background: null; leftPadding: 0 }
+                    }
+                    FmButton { objectName: "eventRemoveMeet"; visible: editor.live && editor.conferencePresent; iconName: "close"; tip: "Remove meeting"; implicitWidth: 26; implicitHeight: 26; leftPadding: 5; rightPadding: 5; enabled: editor.formReady; onClicked: { editor.conferenceChange = editor.editEvent.has_conference || !!editor.editEvent.conference_url ? "none" : "keep"; conferenceField.text = "" } }
                 }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {
@@ -368,17 +425,68 @@ Popup {
                     RowLayout {
                         visible: !editor.following; Layout.fillWidth: true; spacing: 12
                         Text { text: "Repeat"; color: Theme.subtle; font.pixelSize: Theme.fontSize(12); Layout.preferredWidth: 64 }
-                        FmComboBox { id: repeatFrequency; objectName: "eventRepeat"; Layout.fillWidth: true; implicitHeight: 30; model: (editor.editEvent.event_id ? ["Keep current rule"] : []).concat(["Does not repeat", "Daily", "Weekly", "Monthly", "Yearly"]); onActivated: editor.recurrenceTouched = !editor.editEvent.event_id || currentIndex > 0 }
+                        FmComboBox {
+                            id: repeatFrequency; objectName: "eventRepeat"; Layout.fillWidth: true; implicitHeight: 30
+                            model: (editor.editEvent.event_id ? ["Keep current rule"] : []).concat(["Does not repeat", "Every day", "Every weekday", "Weekly on " + editor.weekDayNames[new Date(startDate.text + "T12:00:00").getDay()], "Monthly on day " + Number(startDate.text.slice(8,10)), "Custom…"])
+                            onActivated: editor.recurrenceTouched = !editor.editEvent.event_id || currentIndex > 0
+                        }
+                    }
+                    ColumnLayout {
+                        visible: !editor.following && editor.repeatRuleIndex === 5; Layout.fillWidth: true; Layout.leftMargin: 76; spacing: 10
+                        Row {
+                            spacing: 5
+                            Repeater {
+                                model: editor.dayOrder
+                                FmButton {
+                                    required property int modelData
+                                    objectName: "eventRepeatDay_" + editor.weekDays[modelData]
+                                    implicitWidth: 30; implicitHeight: 30; leftPadding: 0; rightPadding: 0
+                                    text: editor.weekDayNames[modelData].slice(0,1); tip: editor.weekDayNames[modelData]
+                                    prominent: editor.repeatDays.indexOf(modelData) >= 0; outlined: !prominent
+                                    Accessible.role: Accessible.CheckBox; Accessible.checked: prominent
+                                    onClicked: {
+                                        if (prominent && editor.repeatDays.length === 1) return
+                                        editor.repeatDays = prominent ? editor.repeatDays.filter(function(d) { return d !== modelData }) : editor.repeatDays.concat([modelData])
+                                        editor.recurrenceTouched = true
+                                    }
+                                }
+                            }
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: 8
+                            Text { text: "Every"; color: Theme.subtle; font.pixelSize: Theme.fontSize(12) }
+                            FmTextField { id: repeatInterval; objectName: "eventRepeatInterval"; text: "1"; Layout.preferredWidth: 48; implicitHeight: Math.max(30, contentHeight + 8); padding: 4; leftPadding: 6; rightPadding: 6; validator: IntValidator { bottom: 1; top: 99 } onTextEdited: editor.recurrenceTouched = true; Accessible.name: "Repeat interval in weeks" }
+                            Text { text: "weeks"; color: Theme.subtle; font.pixelSize: Theme.fontSize(12) }
+                            Item { Layout.fillWidth: true }
+                        }
                     }
                     RowLayout {
-                        visible: !editor.following && editor.repeatRuleIndex > 0; Layout.fillWidth: true; spacing: 8
-                        Text { text: "Every"; color: Theme.subtle; font.pixelSize: Theme.fontSize(12) }
-                        FmTextField { id: repeatInterval; objectName: "eventRepeatInterval"; text: "1"; implicitWidth: 48; implicitHeight: 30; onTextEdited: editor.recurrenceTouched = true }
-                        Text { text: ["", "days", "weeks", "months", "years"][Math.max(0, editor.repeatRuleIndex)]; color: Theme.subtle; font.pixelSize: Theme.fontSize(12) }
-                        FmTextField { id: repeatCount; objectName: "eventRepeatCount"; placeholderText: "Count (optional)"; Layout.fillWidth: true; implicitHeight: 30; onTextEdited: editor.recurrenceTouched = true }
+                        visible: !editor.following && editor.repeatRuleIndex > 0; Layout.fillWidth: true; Layout.leftMargin: 76; spacing: 8
+                        Text { text: "Ends"; color: Theme.subtle; font.pixelSize: Theme.fontSize(12) }
+                        FmComboBox { id: repeatEnd; objectName: "eventRepeatEnd"; model: ["Never", "On date", "After count"]; Layout.preferredWidth: 112; implicitHeight: 30; onActivated: { editor.recurrenceTouched = true; if (currentIndex !== 2) repeatCount.text = "" } }
+                        FmDateField { weekStartsMonday: backend.preferences.week_start !== "sunday"; id: repeatUntil; objectName: "eventRepeatUntil"; visible: repeatEnd.currentIndex === 1; Layout.fillWidth: true; onTextEdited: editor.recurrenceTouched = true; Accessible.name: "Repeat end date" }
+                        FmTextField { id: repeatCount; objectName: "eventRepeatCount"; visible: repeatEnd.currentIndex === 2; placeholderText: "Count"; Layout.fillWidth: true; implicitHeight: Math.max(30, contentHeight + 8); padding: 4; leftPadding: 6; rightPadding: 6; onTextEdited: editor.recurrenceTouched = true; Accessible.name: "Number of occurrences" }
+                        Item { visible: repeatEnd.currentIndex === 0; Layout.fillWidth: true }
+                    }
+                    Text {
+                        visible: !editor.following && editor.repeatRuleIndex === 5; Layout.fillWidth: true; Layout.leftMargin: 76
+                        text: "Every " + (Number(repeatInterval.text) > 1 ? repeatInterval.text + " weeks" : "week") + " on " + editor.dayOrder.filter(function(d) { return editor.repeatDays.indexOf(d) >= 0 }).map(function(d) { return editor.weekDayNames[d] }).join(", ") + (repeatEnd.currentIndex === 1 ? ", until " + repeatUntil.text : "") + "."
+                        color: Theme.subtle; font.pixelSize: Theme.fontSize(12); wrapMode: Text.Wrap
                     }
                     Text { objectName: "eventRetainedRecurrence"; visible: editor.following || (!!editor.editEvent.event_id && !editor.recurrenceTouched); text: (editor.following ? "Retained repeat rule: " : "") + (editor.editEvent.recurrence || []).join(" · "); textFormat: Text.PlainText; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); wrapMode: Text.Wrap; Layout.fillWidth: true }
                 }
+                RowLayout {
+                    Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
+                    Text { text: "Remind"; color: Theme.inkAlpha(0.45); font.pixelSize: Theme.fontSize(12.5); Layout.preferredWidth: 64 }
+                    FmComboBox { id: reminderField; objectName: "eventReminder"; model: editor.reminderChoices; textRole: "text"; Layout.fillWidth: true; implicitHeight: 30; Accessible.name: "Event reminder" }
+                }
+                Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+                RowLayout {
+                    Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.minimumHeight: 44; spacing: 12
+                    Text { text: "Show as"; color: Theme.inkAlpha(0.45); font.pixelSize: Theme.fontSize(12.5); Layout.preferredWidth: 64 }
+                    FmComboBox { id: availabilityField; objectName: "eventAvailability"; model: ["Busy", "Free"]; Layout.fillWidth: true; implicitHeight: 30; Accessible.name: "Calendar availability" }
+                }
+                Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 TextArea {
                     id: notesField; objectName: "eventDescription"; Layout.fillWidth: true; Layout.preferredHeight: Math.max(88, implicitHeight)
                     color: Theme.text; placeholderTextColor: Theme.subtle; placeholderText: "Notes, agenda, dial-in"; wrapMode: TextEdit.Wrap; selectByMouse: true
@@ -407,43 +515,29 @@ Popup {
         }
         Text { objectName: "eventNotificationExplanation"; text: editor.live ? "Google may notify guests when you save or delete. Notification delivery is not confirmed here." : "Saved on this machine · no invitations sent"; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); wrapMode: Text.Wrap; Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.topMargin: 7; Layout.bottomMargin: 10 }
     }
-    Dialog {
-        id: deleteConfirmation; objectName: "eventDeleteConfirmation"; parent: Overlay.overlay; anchors.centerIn: parent; modal: true
-        implicitWidth: 344; width: Math.min(implicitWidth, parent.width - 32)
-        implicitHeight: topPadding + bottomPadding + deleteBody.implicitHeight + (header ? header.implicitHeight + spacing : 0) + (footer ? footer.implicitHeight + spacing : 0)
-        title: editor.occurrence ? "Cancel " + editor.scopeLabel().toLowerCase() + "?" : "Delete event?"; standardButtons: Dialog.Ok | Dialog.Cancel
-        background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
-        palette.windowText: Theme.text; palette.buttonText: Theme.text
-        onOpened: { standardButton(Dialog.Ok).text = editor.recurringScope === "series" ? "Cancel series" : editor.following ? "Cancel following" : editor.occurrence ? "Cancel occurrence" : "Delete"; standardButton(Dialog.Ok).objectName = "eventConfirmDelete" }
-        contentItem: Item {
-            implicitHeight: deleteBody.implicitHeight
-            Text { id: deleteBody; width: deleteConfirmation.availableWidth; text: (editor.recurringScope.length ? "Cancel “" + (editor.editEvent.title || "this event") + "” for " + editor.scopeLabel().toLowerCase() + "? " + (editor.following ? editor.followingText() : "") : editor.occurrence ? "Cancel only the occurrence of “" + (editor.editEvent.title || "this event") + "” originally scheduled for " + (((editor.editEvent.occurrence || {}).original_start || {}).date || ((editor.editEvent.occurrence || {}).original_start || {}).instant || "") + "? Other occurrences remain unchanged." : "Remove “" + (editor.editEvent.title || "this event") + "” from Google Calendar?") + " Google may notify guests. Notification delivery is not confirmed here."; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; textFormat: Text.PlainText }
-        }
-        onAccepted: editor.deleteEventConfirmed(true)
+    FmConfirmDialog {
+        id: deleteConfirmation; objectName: "eventDeleteConfirmation"
+        property var capturedEvent: ({})
+        onAboutToShow: capturedEvent = Object.assign({}, editor.editEvent)
+        title: editor.occurrence ? "Cancel " + editor.scopeLabel().toLowerCase() + "?" : "Delete event?"
+        message: (editor.recurringScope.length ? "Cancel “" + (editor.editEvent.title || "this event") + "” for " + editor.scopeLabel().toLowerCase() + "? " + (editor.following ? editor.followingText() : "") : editor.occurrence ? "Cancel only the occurrence of “" + (editor.editEvent.title || "this event") + "” originally scheduled for " + (((editor.editEvent.occurrence || {}).original_start || {}).date || ((editor.editEvent.occurrence || {}).original_start || {}).instant || "") + "? Other occurrences remain unchanged." : "Remove “" + (editor.editEvent.title || "this event") + "” from Google Calendar?") + " Google may notify guests. You can undo for a few seconds afterwards."
+        destructive: true
+        actionText: editor.recurringScope === "series" ? "Cancel series" : editor.following ? "Cancel following" : editor.occurrence ? "Cancel occurrence" : "Delete"
+        actionObjectName: "eventConfirmDelete"
+        onAccepted: editor.deleteEventConfirmed(true, capturedEvent)
     }
-    Dialog {
-        id: followingConfirmation; objectName: "eventFollowingConfirmation"; parent: Overlay.overlay; anchors.centerIn: parent; modal: true
-        title: "Change this and following events?"; standardButtons: Dialog.Ok | Dialog.Cancel
-        width: Math.min(360, parent.width - 32)
-        implicitHeight: topPadding + bottomPadding + followingBody.implicitHeight + (header ? header.implicitHeight + spacing : 0) + (footer ? footer.implicitHeight + spacing : 0)
-        background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
-        palette.windowText: Theme.text; palette.buttonText: Theme.text
-        onOpened: { standardButton(Dialog.Ok).text = "Apply changes"; standardButton(Dialog.Ok).objectName = "eventConfirmFollowing" }
-        contentItem: Text { id: followingBody; width: followingConfirmation.availableWidth; text: editor.followingText() + " This is a two-step change, not an atomic update. Google may notify guests; delivery is unverified."; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; textFormat: Text.PlainText }
+    FmConfirmDialog {
+        id: followingConfirmation; objectName: "eventFollowingConfirmation"
+        title: "Change this and following events?"
+        message: editor.followingText() + " Google may notify guests. If only part of the change succeeds, you can review and recover it here."
+        actionText: "Apply changes"; actionObjectName: "eventConfirmFollowing"
         onAccepted: editor.saveConfirmed(true)
     }
-    Dialog {
-        id: abandonConfirmation; objectName: "eventAbandonConfirmation"; parent: Overlay.overlay; anchors.centerIn: parent; modal: true
-        implicitWidth: 344; width: Math.min(implicitWidth, parent.width - 32)
-        implicitHeight: topPadding + bottomPadding + abandonBody.implicitHeight + (header ? header.implicitHeight + spacing : 0) + (footer ? footer.implicitHeight + spacing : 0)
-        title: "Abandon recorded change?"; standardButtons: Dialog.Ok | Dialog.Cancel
-        background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
-        palette.windowText: Theme.text; palette.buttonText: Theme.text
-        onOpened: standardButton(Dialog.Ok).text = "Abandon"
-        contentItem: Item {
-            implicitHeight: abandonBody.implicitHeight
-            Text { id: abandonBody; width: abandonConfirmation.availableWidth; text: "Keep these form fields and abandon the recorded change. This does not undo a change already accepted by Google."; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; textFormat: Text.PlainText }
-        }
+    FmConfirmDialog {
+        id: abandonConfirmation; objectName: "eventAbandonConfirmation"
+        title: "Abandon recorded change?"
+        message: "Keep these form fields and abandon the recorded change. This does not undo a change already accepted by Google."
+        actionText: "Abandon"
         onAccepted: editor.resolveOperation("abandon")
     }
 }

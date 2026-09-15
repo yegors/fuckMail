@@ -26,7 +26,7 @@ Popup {
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     background: Rectangle {
         color: Theme.surface; radius: 8; border.color: Theme.controlBorder
-        layer.enabled: true
+        layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
         layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.6); shadowBlur: 0.8; shadowVerticalOffset: 12 }
     }
     enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 } }

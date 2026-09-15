@@ -9,12 +9,15 @@ ColumnLayout {
     readonly property var summary: controller.resultFor("summary", message.id)
     readonly property var classification: controller.resultFor("classification", message.id)
     readonly property bool canClassify: controller.classificationEnabled && !message.sent
+    property bool showKindControl: true
+    function correctSender() { correction.open() }
     readonly property bool popupOpen: correction.opened || summaryCard.popupOpen
-    readonly property var suggestions: classification ? (classification.output.category_ids || []).filter(id => (message.categories || []).indexOf(id) < 0) : []
+
     spacing: 8
-    visible: controller.summariesEnabled || canClassify || !!summary || !!classification
+    visible: !message.sent && (controller.summariesEnabled || canClassify || !!summary || !!classification)
     Flow {
         Layout.fillWidth: true; spacing: 6
+        visible: (panel.controller.summariesEnabled && !panel.summary && !panel.controller.workingOn("summary", panel.message.id)) || (panel.canClassify && panel.showKindControl) || panel.controller.workingOn("classification", panel.message.id)
         FmButton {
             objectName: "summarizeMessage_" + panel.message.id
             visible: panel.controller.summariesEnabled && !panel.summary && !panel.controller.workingOn("summary", panel.message.id)
@@ -25,7 +28,7 @@ ColumnLayout {
         }
         FmButton {
             id: kind; objectName: "correctSender_" + panel.message.id
-            visible: panel.canClassify
+            visible: panel.canClassify && panel.showKindControl
             text: ({people: "Human", automated: "Automated", unknown: "Unknown sender kind"})[panel.message.kind] || "Unknown sender kind"
             iconName: "down"; iconSize: 10; font.pixelSize: Theme.fontSize(11)
             tip: "Correct sender kind or classify this message"; onClicked: correction.open()
@@ -35,30 +38,18 @@ ColumnLayout {
             text: "Classifying… Cancel"; font.pixelSize: Theme.fontSize(11)
             onClicked: panel.controller.cancel()
         }
-        Repeater {
-            model: panel.suggestions
-            FmButton {
-                required property string modelData
-                objectName: "acceptSuggestion_" + panel.message.id + "_" + modelData
-                text: (backend.categories.find(c => c.id === modelData) || {}).name || modelData
-                iconName: "plus"; iconSize: 10; foreground: Theme.ai
-                enabled: !panel.classification.stale && backend.connected
-                font.pixelSize: Theme.fontSize(11)
-                tip: panel.classification.stale ? "Suggestion is out of date. Classify again." : "Apply suggested label to this message"
-                background: Rectangle { radius: 4; color: parent.hovered ? Theme.withAlpha(Theme.ai, 0.08) : "transparent"; border.color: Theme.withAlpha(Theme.ai, 0.3) }
-                onClicked: panel.controller.accept(panel.message, modelData)
-            }
-        }
+
     }
     Text {
-        visible: panel.controller.errorFor("classification", panel.message.id).length > 0
+        objectName: "classificationError_" + panel.message.id
+        visible: panel.controller.errorFor("classification", panel.message.id).length > 0 && (!panel.controller.summariesEnabled || panel.controller.errorFor("classification", panel.message.id) !== panel.controller.errorFor("summary", panel.message.id))
         text: panel.controller.errorFor("classification", panel.message.id)
         Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: Theme.error
         font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12)
     }
     SummaryCard {
         id: summaryCard; objectName: "messageSummary_" + panel.message.id
-        Layout.fillWidth: true; title: "Message summary"
+        Layout.fillWidth: true; title: "Summary"
         result: panel.summary; members: [panel.message]
         busy: panel.controller.workingOn("summary", panel.message.id)
         error: panel.controller.errorFor("summary", panel.message.id)
@@ -91,7 +82,7 @@ ColumnLayout {
             }
             Text {
                 visible: !!panel.classification; Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
-                text: panel.classification ? (panel.classification.stale ? "Out-of-date suggestion. " : "") + panel.classification.output.reason : ""
+                text: panel.classification ? (panel.classification.stale ? "Out-of-date classification. " : "") + panel.classification.output.reason : ""
                 color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11)
             }
         }

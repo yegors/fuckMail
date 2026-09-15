@@ -19,18 +19,17 @@ Rectangle {
     signal regenerate()
     signal cancelRequested()
     signal openSource(string messageId)
-    implicitHeight: content.implicitHeight + 29
-    color: Theme.canvas
+    implicitHeight: content.implicitHeight + 21
+    color: Theme.withAlpha(Theme.ai, busy ? 0.04 : 0.06)
     radius: 6
-    border.width: 1
-    border.color: Theme.withAlpha(Theme.ai, 0.3)
+    border.width: 0
     visible: !!result || busy || error.length > 0
     readonly property string resultIdentity: result ? [result.conversation_id || "", result.target || "", result.created_at || ""].join("/") : ""
     onResultIdentityChanged: details = false
-    Rectangle { x: 0; y: 5; width: 2; height: parent.height - 10; color: Theme.ai }
+    Rectangle { x: 0; y: 0; width: 2; height: parent.height; color: Theme.ai }
     ColumnLayout {
         id: content
-        x: 18; y: 14; width: parent.width - 36; spacing: 7
+        x: 16; y: 10; width: parent.width - 30; spacing: 5
         RowLayout {
             Layout.fillWidth: true; spacing: 7
             FmIcon { name: "summary"; size: 11; color: Theme.ai }
@@ -68,11 +67,11 @@ Rectangle {
             TextEdit {
                 id: summaryBody; objectName: "summaryBody"
                 width: Math.max(0, summaryScroll.width - 8)
-                text: card.summaryText
-                textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap
+                text: Theme.proseMarkup(card.summaryText, 1.5)
+                textFormat: TextEdit.RichText; wrapMode: TextEdit.Wrap
                 readOnly: true; selectByMouse: true; color: Theme.text
                 selectionColor: Theme.selection; selectedTextColor: Theme.selectedText
-                font { family: Theme.fontFamily; pixelSize: Theme.fontSize(16); letterSpacing: -0.08 }
+                font { family: Theme.fontFamily; pixelSize: Theme.fontSize(14.5); letterSpacing: 0 }
                 Accessible.name: card.title
             }
         }

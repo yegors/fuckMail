@@ -277,6 +277,14 @@ impl Store {
             out.last_mut().unwrap()["draft_count"] = json!(drafts);
             out.last_mut().unwrap()["last_mail_sync_at"] =
                 json!(self.google_last_mail_sync(&account)?);
+            out.last_mut().unwrap()["cached_since"] = self
+                .db
+                .query_row(
+                    "SELECT min(sent_at) FROM messages WHERE account=?1",
+                    [&account],
+                    |r| r.get::<_, Option<String>>(0),
+                )?
+                .into();
             let lifecycle = self.account_lifecycle(&account)?;
             out.last_mut().unwrap()["read_only"] = json!(lifecycle["state"] == "removed");
             out.last_mut().unwrap()["lifecycle"] = lifecycle;
@@ -472,11 +480,11 @@ impl Store {
         let unread = states.values().filter(|s| s.unread).count();
         let held = states.values().filter(|s| s.starred).count();
         let done = states.values().filter(|s| !s.unread && !s.starred).count();
-        let folders: (i64, i64, i64, i64) = self.db.query_row(
-            "SELECT count(DISTINCT CASE WHEN trashed=0 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=0 AND inbox=1 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=0 AND sent=1 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=1 THEN conversation_id END) FROM messages WHERE account=?1", [account],
-            |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?)))?;
+        let folders: (i64, i64, i64, i64, i64) = self.db.query_row(
+            "SELECT count(DISTINCT CASE WHEN trashed=0 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=0 AND inbox=1 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=0 AND sent=1 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=1 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=0 AND sent=0 THEN conversation_id END) FROM messages WHERE account=?1", [account],
+            |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)))?;
         Ok(
-            json!({"folder_conversation_counts":{"all":folders.0,"inbox":folders.1,"sent":folders.2,"trash":folders.3},"conversation_count":states.len(),"unread_conversation_count":unread,"held_conversation_count":held,"done_conversation_count":done,"scope":"all_account_mail_including_archive","held_includes_unread":true}),
+            json!({"folder_conversation_counts":{"all":folders.0,"inbox":folders.1,"sent":folders.2,"trash":folders.3,"received":folders.4},"conversation_count":states.len(),"unread_conversation_count":unread,"held_conversation_count":held,"done_conversation_count":done,"scope":"all_account_mail_including_archive","held_includes_unread":true}),
         )
     }
     fn coverage(&self, account: &str) -> Result<Value> {
@@ -781,7 +789,7 @@ impl Store {
             return Err(err("invalid_request", "Unknown search field"));
         }
         let folder = optional_string(p, "folder", "inbox")?;
-        if !["all", "inbox", "sent", "trash"].contains(&folder) {
+        if !["all", "inbox", "received", "sent", "trash"].contains(&folder) {
             return Err(err("invalid_request", "Unknown folder"));
         }
         let category = optional_string(p, "category", "")?;
@@ -1035,7 +1043,8 @@ impl Store {
             } else {
                 "done"
             };
-            out.push(json!({"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if expression.is_empty() && category.is_empty() && sender.is_empty() && exact_sender.is_empty() && after.is_empty() && before.is_empty() && attachment.is_none(){Vec::<String>::new()}else{matching}}));
+            let summary = self.local_model_preview(account, cid, selected)?;
+            out.push(json!({"summary":summary,"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if expression.is_empty() && category.is_empty() && sender.is_empty() && exact_sender.is_empty() && after.is_empty() && before.is_empty() && attachment.is_none(){Vec::<String>::new()}else{matching}}));
         }
         let result = json!({"conversations":out,"folder_conversation_count":self.account_counts(account)?["folder_conversation_counts"][folder],"expanded_conversation_count":expanded_count,"filtered_group_counts":{"review":group_counts[0],"held":group_counts[1],"done":group_counts[2]},"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(next_cursor(offset+limit)?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?});
         if cache_first_page {
@@ -1076,8 +1085,8 @@ impl Store {
             )
             .optional()?
             .ok_or_else(|| err("not_found", "Conversation not found in this account"))?;
-        let mut stmt=self.db.prepare("SELECT m.id,sender_name,sender_email,recipient,subject,sent_at,body,unread,starred,revision,m.source_hash,COALESCE(k.kind,'unknown') FROM messages m LEFT JOIN message_sender_kinds k ON k.account=m.account AND k.message_id=m.id AND k.source_hash=m.source_hash WHERE m.account=?1 AND conversation_id=?2 ORDER BY julianday(sent_at),m.id LIMIT 201")?;
-        let mut messages=stmt.query_map(params![account,cid],|r|Ok(json!({"id":r.get::<_,String>(0)?,"sender_name":r.get::<_,String>(1)?,"sender_email":r.get::<_,String>(2)?,"to":r.get::<_,String>(3)?,"subject":r.get::<_,String>(4)?,"sent_at":r.get::<_,String>(5)?,"text":r.get::<_,String>(6)?,"unread":r.get::<_,bool>(7)?,"starred":r.get::<_,bool>(8)?,"revision":r.get::<_,i64>(9)?,"source_hash":r.get::<_,String>(10)?,"kind":r.get::<_,String>(11)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;
+        let mut stmt=self.db.prepare("SELECT m.id,sender_name,sender_email,recipient,subject,sent_at,body,unread,starred,revision,m.source_hash,COALESCE(k.kind,'unknown'),m.sent FROM messages m LEFT JOIN message_sender_kinds k ON k.account=m.account AND k.message_id=m.id AND k.source_hash=m.source_hash WHERE m.account=?1 AND conversation_id=?2 ORDER BY julianday(sent_at),m.id LIMIT 201")?;
+        let mut messages=stmt.query_map(params![account,cid],|r|Ok(json!({"id":r.get::<_,String>(0)?,"sender_name":r.get::<_,String>(1)?,"sender_email":r.get::<_,String>(2)?,"to":r.get::<_,String>(3)?,"subject":r.get::<_,String>(4)?,"sent_at":r.get::<_,String>(5)?,"text":r.get::<_,String>(6)?,"unread":r.get::<_,bool>(7)?,"starred":r.get::<_,bool>(8)?,"revision":r.get::<_,i64>(9)?,"source_hash":r.get::<_,String>(10)?,"kind":r.get::<_,String>(11)?,"sent":r.get::<_,bool>(12)?})))?.collect::<std::result::Result<Vec<_>,_>>()?;
         if messages.is_empty() || messages.len() > 200 {
             return Err(err(
                 "limit_exceeded",
@@ -1087,8 +1096,9 @@ impl Store {
         let mut categories = std::collections::BTreeSet::new();
         for message in &mut messages {
             let mid = message["id"].as_str().unwrap().to_owned();
-            let hash = message["source_hash"].as_str().unwrap();
-            message["source_available"] = self.blob_present(hash).into();
+            let hash = message["source_hash"].as_str().unwrap().to_owned();
+            message["source_available"] = self.blob_present(&hash).into();
+            message["source_version"] = hash.into();
             message.as_object_mut().unwrap().remove("source_hash");
             let mut stmt=self.db.prepare("SELECT id,name,mime_type,size,state FROM attachments WHERE account=?1 AND message_id=?2 ORDER BY id")?;
             message["attachments"]=stmt.query_map(params![account,mid],|r|Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"mime_type":r.get::<_,String>(2)?,"size":r.get::<_,i64>(3)?,"state":r.get::<_,String>(4)?})))?.collect::<std::result::Result<Vec<_>,_>>()?.into();
@@ -1278,6 +1288,7 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
     let mut predicate = "m.account=?1".to_owned();
     match p["folder"].as_str().unwrap_or("inbox") {
         "inbox" => predicate.push_str(" AND m.inbox=1 AND m.trashed=0"),
+        "received" => predicate.push_str(" AND m.sent=0 AND m.trashed=0"),
         "sent" => predicate.push_str(" AND m.sent=1 AND m.trashed=0"),
         "trash" => predicate.push_str(" AND m.trashed=1"),
         _ => predicate.push_str(" AND m.trashed=0"),
@@ -1331,6 +1342,72 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
 #[cfg(test)]
 mod projection_tests {
     use super::*;
+    #[test]
+    fn received_scope_excludes_sent_only_and_trashed_members_but_keeps_full_threads() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        let (cid, received): (String, String) = store.db.query_row(
+            "SELECT conversation_id,id FROM messages WHERE account='windscribe' AND conversation_id IN (SELECT conversation_id FROM messages WHERE account='windscribe' GROUP BY conversation_id HAVING count(*)>1) LIMIT 1",
+            [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        store
+            .db
+            .execute(
+                "UPDATE messages SET sent=1,trashed=0,inbox=1 WHERE account='windscribe'",
+                [],
+            )
+            .unwrap();
+        store.db.execute("UPDATE messages SET sent=0,inbox=0,body='Incoming detail for UI3' WHERE account='windscribe' AND id=?1", [&received]).unwrap();
+        let result = store
+            .conversations(
+                "windscribe",
+                &json!({"folder":"received","grouped":true,"limit":100}),
+            )
+            .unwrap();
+        assert_eq!(result["folder_conversation_count"], 1);
+        assert_eq!(result["conversations"].as_array().unwrap().len(), 1);
+        assert_eq!(result["conversations"][0]["id"], cid);
+        assert_eq!(
+            result["conversations"][0]["snippet"],
+            "Incoming detail for UI3"
+        );
+        let thread = store.conversation("windscribe", &cid).unwrap();
+        assert!(thread["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["sent"] == true));
+        assert!(thread["messages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|m| m["sent"] == false));
+        // Receiving a conversation does not invent Google INBOX membership.
+        let google_inbox = store
+            .conversations("windscribe", &json!({"folder":"inbox","limit":100}))
+            .unwrap();
+        assert!(google_inbox["folder_conversation_count"].as_i64().unwrap() > 1);
+        store
+            .db
+            .execute(
+                "UPDATE messages SET trashed=1 WHERE account='windscribe' AND id=?1",
+                [&received],
+            )
+            .unwrap();
+        drop(store);
+        let store = Store::open(dir.path()).unwrap();
+        let empty = store
+            .conversations("windscribe", &json!({"folder":"received"}))
+            .unwrap();
+        assert_eq!(empty["folder_conversation_count"], 0);
+        assert!(empty["conversations"].as_array().unwrap().is_empty());
+        assert!(!store
+            .conversations("windscribe", &json!({"folder":"sent"}))
+            .unwrap()["conversations"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+    }
+
     #[test]
     fn folder_totals_ignore_search_filters_and_refresh_after_trash() {
         let dir = tempfile::tempdir().unwrap();

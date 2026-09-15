@@ -80,6 +80,8 @@ class CalendarSearchTest {
                     else if (method == "view_save") result = {{"revision", 1}};
                     else if (method == "conversations") result = {{"conversations", QJsonArray{}}, {"revision", 1}};
                     else if (method == "categories") result = {{"categories", QJsonArray{}}};
+                    else if (method == "label_catalog") result = {{"account", request["account"]}, {"labels", QJsonArray{}}};
+                    else if (method == "google_sent") result = {{"account", request["account"]}, {"outgoing", QJsonArray{}}, {"next_offset", QJsonValue::Null}};
                     else require(false, qPrintable("unexpected cached test method: " + method));
                     peer->write(reply(request["id"].toString(), result));
                 }

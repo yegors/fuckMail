@@ -21,11 +21,16 @@ struct Http {
     hold: AtomicBool,
     started: Notify,
     release: Notify,
+    creates: AtomicUsize,
+    lose_create: AtomicBool,
 }
 impl HttpTransport for Http {
-    fn execute<'a>(&'a self, request: HttpRequest, _: &'a CancellationToken) -> HttpFuture<'a> {
+    fn execute<'a>(
+        &'a self,
+        request: HttpRequest,
+        cancel: &'a CancellationToken,
+    ) -> HttpFuture<'a> {
         Box::pin(async move {
-            assert_eq!(request.method(), HttpMethod::Get);
             assert_eq!(
                 request.url(),
                 "https://gmail.googleapis.com/gmail/v1/users/me/labels"
@@ -37,8 +42,29 @@ impl HttpTransport for Http {
             self.requests.fetch_add(1, Ordering::SeqCst);
             self.started.notify_one();
             if self.hold.load(Ordering::SeqCst) {
-                self.release.notified().await;
+                tokio::select! { _=self.release.notified()=>{}, _=cancel.cancelled()=>return Err(fm_google::transport::TransportError::Cancelled) }
             }
+            if request.method() == HttpMethod::Post {
+                let body: Value = serde_json::from_slice(request.body_bytes()).unwrap();
+                assert_eq!(body["labelListVisibility"], "labelShow");
+                let ordinal = self.creates.fetch_add(1, Ordering::SeqCst) + 1;
+                let label =
+                    json!({"id":format!("Created_{ordinal}"),"name":body["name"],"type":"user"});
+                self.body.lock().unwrap()["labels"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(label.clone());
+                if self.lose_create.swap(false, Ordering::SeqCst) {
+                    return Err(fm_google::transport::TransportError::Network);
+                }
+                return Ok(HttpResponse {
+                    status: 200,
+                    body: serde_json::to_vec(&label).unwrap(),
+                    retry_after_secs: None,
+                    etag: None,
+                });
+            }
+            assert_eq!(request.method(), HttpMethod::Get);
             Ok(HttpResponse {
                 status: 200,
                 body: serde_json::to_vec(&*self.body.lock().unwrap()).unwrap(),
@@ -88,6 +114,8 @@ impl Harness {
             hold: AtomicBool::new(false),
             started: Notify::new(),
             release: Notify::new(),
+            creates: AtomicUsize::new(0),
+            lose_create: AtomicBool::new(false),
         });
         let ctx = SyncContext::for_test(
             CoreBridge::new(sender, Arc::new(Semaphore::new(8))),
@@ -116,6 +144,124 @@ impl Harness {
         drop(self.ctx);
         self.writer.join().unwrap();
     }
+}
+
+#[tokio::test]
+async fn explicit_name_sync_imports_creates_and_reconciles_an_interrupted_create() {
+    let h = Harness::new();
+    let account = h.ctx.account.as_str().to_owned();
+    h.ctx
+        .core
+        .call(move |s| {
+            s.label_edit(
+                &account,
+                "label_create",
+                &json!({"id":"local","name":"Research","request_id":"new-local"}),
+            )
+        })
+        .await
+        .unwrap();
+    h.http.lose_create.store(true, Ordering::SeqCst);
+    let first = sync_names(&h.ctx, json!({"request_id":"sync-first"}))
+        .await
+        .unwrap_err();
+    assert_eq!(first.code, "google_transport_interrupted");
+    assert_eq!(h.http.creates.load(Ordering::SeqCst), 1);
+    let second = sync_names(&h.ctx, json!({"request_id":"sync-check"}))
+        .await
+        .unwrap();
+    assert_eq!(second["created"], 0);
+    assert_eq!(second["unresolved"], 0);
+    assert_eq!(
+        h.http.creates.load(Ordering::SeqCst),
+        1,
+        "checking an unknown create must not submit another POST"
+    );
+    let account = h.ctx.account.as_str().to_owned();
+    let catalog = h
+        .ctx
+        .core
+        .call(move |s| s.label_catalog(&account))
+        .await
+        .unwrap();
+    assert_eq!(catalog["categories"].as_array().unwrap().len(), 2);
+    let local = catalog["categories"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == "local")
+        .unwrap();
+    assert_eq!(local["provider_label_id"], "Created_1");
+    assert_eq!(local["creation_state"], "created");
+    let account = h.ctx.account.as_str().to_owned();
+    h.ctx.core.call(move|s|s.label_edit(&account,"label_describe",&json!({"id":"local","expected_description":"","description":"Papers and findings","request_id":"describe-local"}))).await.unwrap();
+    h.http.body.lock().unwrap()["labels"][2]["name"] = json!("Renamed research");
+    assert_eq!(
+        sync_names(&h.ctx, json!({"request_id":"sync-rename"}))
+            .await
+            .unwrap()["renamed"],
+        1
+    );
+    let account = h.ctx.account.as_str().to_owned();
+    let catalog = h
+        .ctx
+        .core
+        .call(move |s| s.label_catalog(&account))
+        .await
+        .unwrap();
+    let local = catalog["categories"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == "local")
+        .unwrap();
+    assert_eq!(local["name"], "Renamed research");
+    assert_eq!(local["description"], "Papers and findings");
+    h.close();
+}
+
+#[tokio::test]
+async fn label_job_is_nonblocking_and_stops_with_its_owner() {
+    let h = Harness::new();
+    h.http.hold.store(true, Ordering::SeqCst);
+    let owner_cancel = CancellationToken::new();
+    let owners = Arc::new(Mutex::new(std::collections::BTreeMap::from([(
+        "owner".to_owned(),
+        owner_cancel.clone(),
+    )])));
+    let owner = super::super::OperationOwner {
+        owners: owners.clone(),
+        key: "owner".to_owned(),
+    };
+    let job = SyncJob::start(
+        h.ctx.clone(),
+        owner,
+        "gui".to_owned(),
+        owner_cancel.clone(),
+        "background-sync".to_owned(),
+    );
+    h.http.started.notified().await;
+    assert_eq!(job.snapshot("job")["state"], "running");
+    assert_eq!(
+        tokio::time::timeout(Duration::from_secs(1), h.cached())
+            .await
+            .unwrap()["available"],
+        false,
+        "cached queries stay available while HTTP is held"
+    );
+    owner_cancel.cancel();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !job.task.is_finished() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(job.snapshot("job")["state"], "cancelled");
+    assert!(owners.lock().unwrap().is_empty());
+    assert_eq!(h.http.creates.load(Ordering::SeqCst), 0);
+    job.task.await.unwrap();
+    h.close();
 }
 
 #[tokio::test]

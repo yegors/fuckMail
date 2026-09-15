@@ -74,6 +74,11 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QVariantList captures READ captures NOTIFY capturesChanged)
     Q_PROPERTY(QString captureStatus READ captureStatus NOTIFY capturesChanged)
     Q_PROPERTY(bool capturesMore READ capturesMore NOTIFY capturesChanged)
+    Q_PROPERTY(QVariantMap actionToast READ actionToast NOTIFY actionToastChanged)
+    Q_PROPERTY(bool sendQueued READ sendQueued NOTIFY draftChanged)
+    Q_PROPERTY(int sendingCount READ sendingCount NOTIFY conversationsChanged)
+    Q_PROPERTY(QVariantMap draftTransfer READ draftTransfer NOTIFY draftChanged)
+    Q_PROPERTY(QVariantMap draftDiscard READ draftDiscard NOTIFY draftChanged)
     Q_PROPERTY(bool draftBusy READ draftBusy NOTIFY draftChanged)
     Q_PROPERTY(bool draftLocked READ draftLocked NOTIFY draftChanged)
     Q_PROPERTY(bool draftReadOnly READ draftReadOnly NOTIFY draftChanged)
@@ -117,18 +122,18 @@ public:
     QVariantMap accountLifecycle() const;
     bool unsavedAccountBuffer() const { return m_unsavedAccountBuffer; }
     QAbstractItemModel *accountModel() { return &m_accountModel; }
-    QVariantList conversations() const { return m_conversations; }
+    QVariantList conversations() const;
     QAbstractItemModel *conversationModel() { return &m_conversationModel; }
     QAbstractItemModel *messageModel() { return &m_messageModel; }
     QVariantList categories() const { return m_categories; }
-    QVariantMap conversation() const { return m_conversation; }
+    QVariantMap conversation() const;
     QVariantMap senderCard() const { return m_senderCard; }
     QVariantMap draft() const { return m_draft; }
     QString activeDraftId() const { return m_activeDraft; }
     QVariantMap recipientInputs() const { QVariantMap values; for (auto it = m_recipientInputs.cbegin(); it != m_recipientInputs.cend(); ++it) values[it.key()] = it.value(); return values; }
-    QVariantList events() const { return m_events; }
-    QVariantList todayEvents() const { return m_todayEvents; }
-    QVariantList reminders() const { return m_reminders; }
+    QVariantList events() const { return visibleCalendarEvents(m_events, true); }
+    QVariantList todayEvents() const { return visibleCalendarEvents(m_todayEvents, true); }
+    QVariantList reminders() const { return visibleCalendarEvents(m_reminders); }
     Q_INVOKABLE void dismissCalendarReminder(const QVariantMap &event);
     Q_INVOKABLE void joinCalendarEvent(const QVariantMap &event);
     QVariantMap currentAccount() const;
@@ -151,7 +156,7 @@ public:
     QVariantMap googleLabelState() const;
     bool loading() const { return m_loading; }
     bool mutationInFlight() const { return m_mutatingConversation; }
-    bool hasMore() const { return m_nextOffset >= 0; }
+    bool hasMore() const { return m_nextOffset >= 0 || (m_folder == "sent" && m_outgoingNext.value(m_account, -1) >= 0); }
     QString weekStart() const { return m_weekStart; }
     QString fixtureToday() const { return m_fixtureToday; }
     QVariantMap presentation() const { return m_views.value(m_account).toMap(); }
@@ -165,9 +170,9 @@ public:
     QVariantList captures() const { return m_captures; }
     QString captureStatus() const { return m_captureStatus; }
     bool capturesMore() const { return m_captureNextOffset >= 0; }
-    bool draftBusy() const { return m_savingDraft || m_capturing || m_discarding || m_resolvingDraft; }
+    bool draftBusy() const { return m_savingDraft || m_capturing || m_discarding || m_undoingDiscards || draftDiscardActive() || m_resolvingDraft || !m_draftTransferActive.isEmpty(); }
     bool draftReadOnly() const { return m_draft.value("origin").toString() == "google_snapshot" || (m_draft.value("read_only").toBool() && !m_draft.value("account_archived").toBool()); }
-    bool draftLocked() const { return accountArchived() || m_unsavedAccountBuffer || draftReadOnly() || m_capturing || m_discarding || m_resolvingDraft; }
+    bool draftLocked() const { return accountArchived() || m_unsavedAccountBuffer || draftReadOnly() || draftTransferPending() || draftDiscardPending() || m_undoingDiscards || sendQueued() || m_capturing || m_discarding || m_resolvingDraft; }
     bool draftConflict() const { return m_draftConflict; }
     QVariantList calendarSources() const { return m_calendarSources; }
     QString calendarSearchQuery() const { return m_calendarSearchQuery; }
@@ -203,9 +208,14 @@ public:
     Q_INVOKABLE void writeToSender(const QString &email, const QString &name);
     Q_INVOKABLE void loadMore();
     Q_INVOKABLE QString assistanceRequest(const QString &method, const QVariantMap &params, const QString &account = QString());
+    Q_INVOKABLE QString labelRequest(const QString &method, const QVariantMap &params, const QString &account);
+    Q_INVOKABLE QString requestMessageSource(const QString &id, const QString &version);
+    Q_INVOKABLE QString receivedHtml(const QString &html) const;
+    Q_INVOKABLE QString fixedFontFamily() const;
+    Q_INVOKABLE void copyText(const QString &text);
     Q_INVOKABLE void refresh();
     Q_INVOKABLE void prepareGoogleSignIn();
-    Q_INVOKABLE void connectGoogle(const QString &email, const QString &account = {}, bool reauthorize = false);
+    Q_INVOKABLE void connectGoogle(const QString &email, const QString &account = {}, bool reauthorize = false, const QVariantMap &access = {});
     Q_INVOKABLE void cancelGoogleAuth();
     Q_INVOKABLE void disconnectGoogle(const QString &account);
     Q_INVOKABLE void previewAccountRemoval(const QString &account);
@@ -213,7 +223,7 @@ public:
     Q_INVOKABLE void retryAccountCleanup(const QString &account);
     Q_INVOKABLE void checkAccountRemoval(const QString &account, const QString &requestId);
     Q_INVOKABLE void openAccountArchive(const QString &account);
-    Q_INVOKABLE void restoreGoogleAccount(const QString &email, const QString &account, qint64 expectedRevision, bool reauthorize = false);
+    Q_INVOKABLE void restoreGoogleAccount(const QString &email, const QString &account, qint64 expectedRevision, bool reauthorize = false, const QVariantMap &access = {});
     Q_INVOKABLE bool accountNavigationAllowed();
     Q_INVOKABLE void resolveUnsavedAccountBuffer(bool discard);
     Q_INVOKABLE bool accountCapability(const QString &account, const QString &name) const;
@@ -239,15 +249,30 @@ public:
     Q_INVOKABLE void fileConversation(const QString &action);
     Q_INVOKABLE void editDraft(const QString &body);
     Q_INVOKABLE void beginDraft(const QString &mode);
+    QVariantMap actionToast() const;
+    bool sendQueued() const;
+    Q_INVOKABLE void activateActionToast();
+    Q_INVOKABLE void outgoingAction(const QString &id, bool undo = false);
+    int sendingCount() const;
+    QVariantMap draftTransfer() const;
+    bool draftTransferPending() const;
+    Q_INVOKABLE void changeDraftAccount(const QString &account);
+    Q_INVOKABLE void retryDraftTransfer();
+    Q_INVOKABLE void retryDraftTransferCleanup();
+    Q_INVOKABLE void openDraftTransferDestination();
     Q_INVOKABLE void openDraft(const QString &draftId, bool restoreView = false);
     Q_INVOKABLE bool addDraftRecipient(const QString &field, const QString &text);
+    Q_INVOKABLE bool addDraftAddress(const QString &field, const QString &email, const QString &name);
+    Q_INVOKABLE QString recipientSuggestions(const QString &query, const QStringList &exclude);
     Q_INVOKABLE void stageDraftRecipient(const QString &field, const QString &text);
     Q_INVOKABLE void removeDraftRecipient(const QString &field, int index);
     Q_INVOKABLE void setDraftSubject(const QString &subject);
     Q_INVOKABLE void editFormattedDraft(const QString &body, const QString &html);
     Q_INVOKABLE void setDraftAttachment(const QString &id, bool selected);
     Q_INVOKABLE void importDraftAttachment(const QUrl &file, const QString &account, const QString &draftId);
+    Q_INVOKABLE void importDraftAttachments(const QList<QUrl> &files, const QString &account, const QString &draftId);
     Q_INVOKABLE void retryDraftAttachment();
+    Q_INVOKABLE void skipQueuedDraftAttachments();
     QVariantMap attachmentImport() const;
     bool attachmentImportBusy() const { return !m_attachmentImportActive.isEmpty(); }
     QVariantMap googleDraft() const;
@@ -282,7 +307,11 @@ public:
     Q_INVOKABLE void abandonGoogleSend();
     Q_INVOKABLE void cancelGoogleSend();
     Q_INVOKABLE void setDraftSignature(const QString &signature);
-    Q_INVOKABLE void discardDraft();
+    Q_INVOKABLE void discardDraft(const QVariantMap &context = {});
+    Q_INVOKABLE QVariantMap draftDiscardContext() const;
+    Q_INVOKABLE void checkDraftDiscard();
+    Q_INVOKABLE void retryDraftDiscard();
+    QVariantMap draftDiscard() const;
     Q_INVOKABLE void captureDraft();
     Q_INVOKABLE void inspectCapture(const QString &operationId);
     Q_INVOKABLE void loadMoreCaptures();
@@ -301,6 +330,7 @@ public:
     Q_INVOKABLE void moveTimeline(int delta);
     Q_INVOKABLE void showTimelineToday();
     Q_INVOKABLE void calendarWrite(const QVariantMap &values);
+    Q_INVOKABLE QString queueCalendarDeletion(const QVariantMap &values, const QVariantMap &event);
     Q_INVOKABLE QVariantMap calendarOccurrenceContext(const QString &account, const QString &calendar) const;
     Q_INVOKABLE void readCalendarOccurrence(const QVariantMap &selector, const QString &correlation);
     Q_INVOKABLE void loadCalendarOperations();
@@ -308,6 +338,7 @@ public:
     Q_INVOKABLE void retryCalendarOperation(const QString &account, const QString &requestId);
     Q_INVOKABLE void calendarOperationAction(const QString &account, const QString &requestId, const QString &action, qint64 expectedRevision = -1);
     Q_INVOKABLE QString calendarDateTime(const QString &date, const QString &time, const QString &zone) const;
+    Q_INVOKABLE QVariantList calendarPreview(const QVariantMap &event) const;
     Q_INVOKABLE void saveDraft();
     Q_INVOKABLE void openAttachment(const QString &id);
     Q_INVOKABLE void openLink(const QString &url);
@@ -318,7 +349,9 @@ public:
     Q_INVOKABLE void remember(const QString &key, const QVariant &value);
     Q_INVOKABLE void shutdown();
 signals:
+    void recipientSuggestionsReply(const QString &ticket, const QVariantMap &result, bool ok);
     void assistanceReply(const QString &ticket, const QString &method, const QVariantMap &result, bool ok);
+    void messageSourceReady(const QString &ticket, const QVariantMap &result, bool ok);
     void calendarSearchChanged();
     void calendarSearchResultReady(const QVariantMap &event);
     void remindersChanged();
@@ -332,6 +365,7 @@ signals:
     void googleSyncChanged();
     void mailDeliveryChanged();
     void googleLabelsChanged();
+    void labelReply(const QString &ticket, const QString &method, const QVariantMap &result, bool ok);
     void googleLabelBindingFinished(const QString &account, bool ok, const QVariantMap &result, const QString &error);
     void currentAccountChanged();
     void categoriesChanged();
@@ -340,6 +374,7 @@ signals:
     void mutationChanged();
     void conversationChanged();
     void senderCardChanged();
+    void actionToastChanged();
     void draftChanged();
     void googleDraftInventoryChanged();
     void draftSourcesChanged();
@@ -347,8 +382,10 @@ signals:
     void draftDeletionChanged();
     void eventsChanged();
     void preferencesChanged();
+    void accountPreferencesFinished(const QString &account, bool ok);
     void capturesChanged();
     void calendarWriteFinished(bool ok, const QVariantMap &result, const QString &error);
+    void calendarActivityRequested();
     void calendarOccurrenceReadFinished(const QString &correlation, bool ok, const QVariantMap &result, const QString &error);
     void calendarOperationsChanged();
     void accountChanged();
@@ -360,6 +397,7 @@ signals:
     void shutdownReady();
 private:
     friend class CalendarSearchTest;
+    friend class CalendarUndoTest;
     friend class MailNavigationCacheTest;
     friend class MailSelectionTest;
     friend class NotificationBackendTest;
@@ -372,6 +410,10 @@ private:
     friend class GoogleDraftAuthoringControlsTest;
     friend class GuiGoogleDraftSnapshotSelfTest;
     friend class GoogleSendControlsTest;
+    friend class ComposerInputTest;
+    friend class DraftTransferControlsTest;
+    friend class SendUndoTest;
+    friend class DraftDiscardTest;
     friend class CalendarOccurrenceBackendTest;
     friend class AccountLifecycleControlsTest;
     friend class GuiAccountLifecycleSelfTest;
@@ -391,6 +433,21 @@ private:
     void pollMailDelivery();
     void submitGoogleLabelBinding(const QString &account);
     void finishCalendarOperation(const QString &account, const QString &requestId, QJsonObject result, bool ok);
+    struct CalendarDeletion {
+        QVariantMap request, source, authority;
+        qint64 deadline = 0;
+        bool dispatched = false;
+    };
+    QHash<QString, CalendarDeletion> m_calendarDeletions;
+    int m_calendarUndoMs = 6000;
+    QVariantMap currentCalendarSource(const QVariantMap &event) const;
+    QVariantList visibleCalendarEvents(const QVariantList &rows, bool reflow = false) const;
+    bool calendarEventHidden(const QVariantMap &event) const;
+    void advanceCalendarDeletions();
+    void undoCalendarDeletion(const QString &key);
+    void cancelQueuedCalendarDeletions();
+    void calendarDeletionVisibilityChanged();
+    void finishQueuedCalendarDeletion(const QString &account, const QString &id, bool confirmed, const QString &message);
     void attemptConnection();
     void sendNext();
     void pruneSupersededQueries();
@@ -399,7 +456,7 @@ private:
     void loadAccounts();
     void pollGoogleAuth();
     void setGoogleAuth(const QJsonObject &status);
-    void beginGoogleAuth(const QString &method, const QString &email, const QString &account, bool reauthorize, qint64 expectedRevision = -1);
+    void beginGoogleAuth(const QString &method, const QString &email, const QString &account, bool reauthorize, qint64 expectedRevision = -1, const QVariantMap &access = {});
     QVariantMap lifecycleAccount(const QString &account) const;
     bool archivedRequestAllowed(const QString &method) const;
     bool blockArchivedRequest(const QString &method, const QString &account) const;
@@ -464,6 +521,7 @@ private:
     void cancelPendingGoogleSend(const QString &reason = {});
     void finishGoogleSendSave(bool ok);
     void startGoogleSendOperation(const QString &method, const QJsonObject &params);
+    void startGoogleSendForDraft(const QString &method, const QJsonObject &params, const QString &account, const QString &draftId);
     void refreshGoogleSendMetadata(const QString &account, const QString &draftId);
     struct SendUi {
         QJsonObject selected, current, request;
@@ -472,6 +530,67 @@ private:
     };
     QHash<QString, SendUi> m_googleSendUi;
     QJsonObject m_googleSendPending;
+    struct QueuedSend {
+        QJsonObject params;
+        QVariantMap preview;
+        QString account, recipientNames, from;
+        qint64 lifecycle = 0, deadline = 0, nextCheck = 0;
+        bool checking = false;
+    };
+    QHash<QString, QueuedSend> m_queuedSends;
+    QHash<QString, QString> m_sendNoticeRecipients;
+    QHash<QString, QVariantList> m_outgoingPreviews;
+    QVariantList m_outgoingThread;
+    QString m_outgoingThreadKey;
+    QHash<QString, QVariantMap> m_outgoingBodies, m_transientOutgoing;
+    QHash<QString, int> m_outgoingNext, m_outgoingGeneration;
+    QSet<QString> m_outgoingReads;
+    QVariantMap queuedOutgoing(const QJsonObject &params) const;
+    QVariantList outgoingMessages() const;
+    QVariantMap outgoingMessage(const QVariantMap &value) const;
+    void refreshOutgoingPresentation();
+    void loadOutgoing(bool more = false);
+    void loadOutgoingThread();
+    void loadOutgoingPage(const QString &account, const QVariant &lifecycle, int generation, int offset, int desired, QVariantList rows);
+    void loadOutgoingMessage(const QVariantMap &value);
+    QElapsedTimer m_actionClock;
+    QTimer m_actionTimer;
+    int m_sendUndoMs = 6000;
+    QVariantMap m_actionToast;
+    QList<QVariantMap> m_deferredActionToasts;
+    qint64 m_actionToastDeadline = 0;
+    void initializeSendUndo();
+    void queueGoogleSend(const QJsonObject &params);
+    void advanceSendUndo();
+    void dispatchQueuedSend(const QString &key);
+    void cancelQueuedSend(const QString &key, bool restore);
+    void cancelQueuedSends(const QString &reason);
+    void showActionToast(const QString &text, const QString &action = {}, const QVariantMap &context = {}, int duration = 2800, bool preserveUndo = false);
+    void finishQueuedSendNotice(const QString &key, const QJsonObject &result, bool valid);
+    struct DiscardUi {
+        QString method, feedback;
+        QJsonObject params;
+        qint64 lifecycle = 0, issuedAt = 0;
+        bool active = false, notFound = false, reopen = false;
+    };
+    QHash<QString, DiscardUi> m_draftDiscardUi;
+    QSet<QString> m_bulkDiscardTargets;
+    QVariantList m_bulkDiscardUndo;
+    qint64 m_bulkIssuedAt = 0;
+    QList<QJsonObject> m_undoDiscardCommands;
+    QVariantMap m_undoDiscardReopen;
+    bool m_undoingDiscards = false;
+    int m_undoDiscardCompleted = 0, m_undoDiscardTotal = 0;
+    bool draftDiscardPending() const;
+    bool draftDiscardActive() const;
+    QJsonObject discardEditorBuffer() const;
+    QVariantMap discardUndoToken(const QString &account, const QJsonObject &result, bool reopen) const;
+    void startDraftDiscardRequest(const QString &method, const QString &account, const QJsonObject &params, qint64 issuedAt, bool reopen, Callback done);
+    void offerDiscardUndo(const QVariantList &tokens, qint64 issuedAt);
+    void finishBulkDiscardUndo();
+    void undoDraftDiscards(const QVariantList &tokens);
+    void runDiscardUndo();
+
     QJsonObject m_googleDraftReplacement;
     QString m_googleDraftOperationAccount, m_googleDraftOperationId, m_googleDraftOperationMethod;
     QString m_googleDraftFeedbackAccount, m_googleDraftFeedbackId, m_googleDraftFeedback;
@@ -513,6 +632,10 @@ private:
     QString attachmentImportKey() const;
     bool attachmentImportPending() const;
     void startDraftAttachmentImport(const QString &key);
+    void advanceDraftAttachments();
+    QHash<QString, QList<QUrl>> m_attachmentQueues;
+    QHash<QString, qint64> m_attachmentQueueLifecycle;
+    QSet<QString> m_attachmentQueuePaused;
     QHash<QString, QJsonObject> m_attachmentImports;
     QHash<QString, QString> m_attachmentImportStatus;
     QSet<QString> m_attachmentImportRetry;
@@ -568,6 +691,7 @@ private:
     bool m_googleAuthCancelRequested = false;
     QString m_activeDraft;
     QMap<QString, QString> m_recipientInputs;
+    void restoreRecipientInputs(const QVariantMap &draft);
     QJsonObject m_draftCreation;
     QString m_draftCreationAccount;
     QString m_draftCreationEmail;
@@ -650,6 +774,13 @@ private:
     bool m_draftConflict = false, m_resolvingDraft = false;
     bool m_resumeSearch = false;
     bool m_shutdownEmitted = false;
+    QHash<QString, QJsonObject> m_draftTransferIntents;
+    QHash<QString, QString> m_draftTransferMessages;
+    QString m_draftTransferActive;
+    QJsonObject m_draftTransferDestination;
+    bool m_draftTransferCleanupBusy = false;
+    void startDraftTransfer(const QString &key);
+    void openDraftInAccount(const QString &account, const QString &draft);
     std::function<void()> m_afterDraftSave;
     std::function<void()> m_afterConversationMutation;
     QSet<QString> m_viewSaving, m_viewDirty;

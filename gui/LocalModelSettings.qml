@@ -8,63 +8,70 @@ ColumnLayout {
     signal saveCompleted()
     property var saved: ({})
     property var draft: ({})
-    property var defaults: ({})
     property int revision: -1
     property var models: []
     property var labels: []
     property var requests: ({})
     property string accountId: backend.account
     property string status: ""
-    property var sampleResult: null
-    property string sampleTask: ""
-    property bool startingSample: false
-    property bool pollingSample: false
-    property int sampleVersion: 0
     property bool conflict: false
     property string discoveryTicket: ""
-    readonly property bool sampleBusy: startingSample || job.length > 0
     enabled: !saving
     property string jobErrors: ""
-    property string job: ""
     property bool saving: false
+    readonly property string provider: draft.provider || "ollama"
+    readonly property var providers: [{name:"Ollama",id:"ollama"},{name:"OpenAI-compatible · local",id:"openai_compatible"}]
     readonly property bool dirty: revision >= 0 && JSON.stringify(saved) !== JSON.stringify(draft)
     readonly property var choices: [{name:"Choose a model",digest:""}].concat(models.filter(m => m.eligible))
-    readonly property var policy: (draft.accounts || {})[accountId] || {classification:false,summaries:false,descriptions:{}}
+    readonly property var policy: (draft.accounts || {})[accountId] || {classification:true,summaries:true,descriptions:{}}
+    readonly property var requestTemplate: {
+        try { return JSON.parse(draft.prompt || "{}") } catch (e) { return ({}) }
+    }
+    readonly property var promptMessages: requestTemplate.messages || []
+    function editMessage(index, content) {
+        if (!promptMessages[index] || promptMessages[index].content === content) return
+        const request = copy(requestTemplate)
+        request.messages[index].content = content
+        edit("prompt", JSON.stringify(request, null, 2))
+    }
     function copy(v) { return JSON.parse(JSON.stringify(v)) }
     function send(method, params, kind, account, extra) {
         const ticket = backend.assistanceRequest(method, params || {}, account || "")
-        const r = Object.assign({}, requests); r[ticket] = Object.assign({kind:kind || method,account:account || "",sampleVersion:sampleVersion},extra || {}); requests = r
+        const r = Object.assign({}, requests); r[ticket] = Object.assign({kind:kind || method,account:account || ""},extra || {}); requests = r
         return ticket
     }
     function edit(key,value) { if(JSON.stringify(draft[key])===JSON.stringify(value))return; const d=copy(draft); d[key]=value; draft=d }
     function accountEdit(key,value) { const d=copy(draft); if (!d.accounts) d.accounts={}; const a=copy(policy); a[key]=value; d.accounts[accountId]=a; draft=d }
     function describe(id,value) { const descriptions=copy(policy.descriptions || {}); descriptions[id]=value; accountEdit("descriptions",descriptions) }
-    function indexFor(task) { const selected=draft[task+"_model"]; return selected ? choices.findIndex(m=>m.name===selected.name && m.digest===selected.digest) : 0 }
+    function indexFor(task) { const selected=draft.model; return selected ? choices.findIndex(m=>m.name===selected.name && m.digest===selected.digest) : 0 }
+    function changeProvider(value) {
+        if (value === provider) return
+        const d = copy(draft)
+        if (value === "ollama") delete d.provider; else d.provider = value
+        d.endpoint = value === "ollama" ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234"
+        d.model = null; draft = d
+        models = []; discoveryTicket = ""; status = "Enter the server address, then Detect."
+    }
+    function editEndpoint(value) {
+        if (value === draft.endpoint) return
+        edit("endpoint",value); edit("model",null)
+        models = []; discoveryTicket = ""; status = "Server address changed. Detect models to continue."
+    }
     function refresh() {
         const endpoint = draft.endpoint || "http://127.0.0.1:11434"
-        models = []; status = "Looking for Ollama…"
-        discoveryTicket = send("assist_discover", {endpoint:endpoint}, "discover", "", {endpoint:endpoint})
+        models = []; status = "Looking for models…"
+        discoveryTicket = send("assist_discover", {endpoint:endpoint,provider:provider}, "discover", "", {endpoint:endpoint,provider:provider})
     }
     function save() { if(saving)return; saving=true; send("assist_settings_save",{expected_revision:revision,settings:draft},"save") }
-    function discard() { cancelSample(); draft=copy(saved); status="Changes discarded" }
-    function reloadSaved() { cancelSample(); send("assist_settings_get",{},"reload") }
-    function cancelSample() {
-        ++sampleVersion
-        if(job && backend.connected)send("assist_cancel",{job_id:job},"ignore")
-        job=""; startingSample=false; pollingSample=false
-    }
-    function sample(task) {
-        if(sampleBusy || !backend.connected)return
-        ++sampleVersion; sampleTask=task; sampleResult=null; startingSample=true; status="Testing synthetic mail…"
-        send("assist_start",{task:task,sample:true,settings:draft},"sample",accountId,{model:copy(draft[task+"_model"])})
-    }
-    onVisibleChanged: { if (visible && backend.connected) send("assist_settings_get",{},"load"); else if(!visible)cancelSample() }
-    onAccountIdChanged: { cancelSample(); sampleResult=null; labels=[]; if (accountId && visible && backend.connected) send("assist_catalog",{},"labels",accountId) }
+    function discard() { draft=copy(saved); status="Changes discarded" }
+    function reloadSaved() { send("assist_settings_get",{},"reload") }
+    onVisibleChanged: { if (visible && backend.connected) send("assist_settings_get",{},"load"); }
+    onAccountIdChanged: { labels=[]; if (accountId && visible && backend.connected) send("assist_catalog",{},"labels",accountId) }
     Component.onCompleted: if (visible && backend.connected) send("assist_settings_get",{},"load")
     Connections {
         target: backend
         function onConnectedChanged() {
-            if (!backend.connected) {panel.cancelSample();panel.requests=({});panel.saving=false}
+            if (!backend.connected) {panel.requests=({});panel.saving=false}
             else if (panel.visible) panel.send("assist_settings_get",{},"load")
         }
         function onAssistanceReply(ticket,method,result,ok) {
@@ -72,102 +79,77 @@ ColumnLayout {
             const kind=req.kind
             const r=Object.assign({},panel.requests); delete r[ticket]; panel.requests=r
             if(kind==="ignore")return
-            if(kind==="sample" && req.sampleVersion!==panel.sampleVersion){
-                if(ok && result.job_id)panel.send("assist_cancel",{job_id:result.job_id},"ignore")
-                return
-            }
-            if(kind==="job" && (req.sampleVersion!==panel.sampleVersion || req.job!==panel.job))return
             if(kind==="labels" && req.account!==panel.accountId)return
-            if(kind==="discover" && (ticket!==panel.discoveryTicket || req.endpoint!==panel.draft.endpoint))return
-            if(kind==="sample")panel.startingSample=false
-            if(kind==="job")panel.pollingSample=false
+            if(kind==="discover" && (ticket!==panel.discoveryTicket || req.endpoint!==panel.draft.endpoint || req.provider!==panel.provider))return
             if (kind==="save") panel.saving=false
             if (!ok) {
                 panel.status=result.message || "Local model request failed"
                 if(kind==="save")panel.conflict=true
-                if(kind==="sample" || kind==="job")panel.cancelSample()
                 return
             }
             if (kind==="load" || kind==="save" || kind==="reload") {
                 if (kind!=="load" || !panel.dirty) { panel.saved=panel.copy(result.settings); panel.draft=panel.copy(result.settings); panel.revision=result.revision }
-                panel.defaults=result.defaults
                 if (kind!=="load")panel.conflict=false
-                if (kind==="save") { panel.cancelSample(); panel.status="Saved"; panel.saveCompleted() }
+                if (kind==="save") { panel.status="Saved"; panel.saveCompleted() }
                 if (panel.visible) { panel.refresh(); panel.send("assist_jobs",{},"jobs"); if(panel.accountId)panel.send("assist_catalog",{},"labels",panel.accountId) }
-            } else if (kind==="discover") { panel.models=result.models || []; panel.status="Ollama "+result.version+" · "+panel.models.length+" models" }
+            } else if (kind==="discover") { panel.models=result.models || []; panel.status=(panel.provider === "ollama" ? "Ollama "+(result.version || "") : "Local server")+" · "+panel.models.length+(panel.models.length === 1 ? " model" : " models") }
             else if (kind==="labels") panel.labels=result.categories || []
             else if (kind==="jobs") panel.jobErrors=(result.items || []).filter(j=>j.error).map(j=>j.error.message).join("\n")
-            else if (kind==="sample") {panel.job=result.job_id; panel.sampleResult={model:req.model}; panel.status="Testing synthetic mail…"}
-            else if (kind==="job") {
-                if (["running","queued"].indexOf(result.status)>=0) return
-                panel.job=""; panel.status=result.error ? result.error.message : result.status
-                panel.sampleResult=result.items && result.items.length ? Object.assign({},result.items[0],{model:(panel.sampleResult || {}).model}) : null
-            }
         }
     }
-    Timer { interval: 350; running: panel.job.length>0 && backend.connected; repeat: true
-        onTriggered: if(!panel.pollingSample){panel.pollingSample=true;panel.send("assist_job",{job_id:panel.job},"job","",{job:panel.job})}
+    Text { Layout.fillWidth:true; Layout.maximumWidth:560; text:"Summarizes messages, labels new mail, and tells people from automated senders. Mail is sent to the local server you choose."; wrapMode:Text.Wrap; lineHeight:1.5; color:Theme.muted; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(13.5) }
+    Text { text:"Provider"; Layout.topMargin:14; color:Theme.inkAlpha(0.45); font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(11.5) }
+    FmComboBox { objectName:"localModelProvider"; Layout.fillWidth:true; Layout.maximumWidth:360; textRole:"name"; model:panel.providers; currentIndex:panel.providers.findIndex(p=>p.id===panel.provider); onActivated:panel.changeProvider(panel.providers[currentIndex].id); Accessible.name:"Local model provider" }
+    Text { Layout.fillWidth:true; Layout.maximumWidth:560; text:panel.provider === "ollama" ? "Connect to Ollama running on this machine to list its installed models." : "Connect to LM Studio, vLLM, or another local compatible server. Its configuration controls where the model runs and its context size."; wrapMode:Text.Wrap; lineHeight:1.5; color:Theme.muted; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(13.5) }
+    RowLayout {
+        Layout.fillWidth:true; spacing:10
+        FmTextField { objectName:"ollamaEndpoint"; Layout.fillWidth:true; Layout.maximumWidth:360; text:panel.draft.endpoint || ""; placeholderText:panel.provider === "ollama" ? "http://localhost:11434" : "http://localhost:1234"; onTextEdited:panel.editEndpoint(text); Accessible.name:"Local model endpoint" }
+        FmButton { objectName:"ollamaRefresh"; text:"Detect"; outlined:true; implicitHeight:34; leftPadding:14; rightPadding:14; onClicked:panel.refresh() }
+        Item { Layout.fillWidth:true }
     }
-    Text { Layout.fillWidth:true; text:"Optional summaries and label suggestions run on this machine. You choose the models and instructions."; wrapMode:Text.Wrap; color:Theme.secondary; font.pixelSize:Theme.fontSize(13) }
-    RowLayout { Layout.fillWidth:true
-        Text { text:panel.status; color:Theme.secondary; wrapMode:Text.Wrap; Layout.fillWidth:true; font.pixelSize:Theme.fontSize(12) }
-        FmButton { objectName:"ollamaRefresh"; text:"Refresh models"; onClicked:panel.refresh() }
+    RowLayout {
+        Layout.fillWidth:true; Layout.maximumWidth:560; spacing:10
+        Rectangle { implicitWidth:8; implicitHeight:8; radius:4; color:panel.models.length ? Theme.accent : Theme.subtle }
+        Text { text:panel.status.length ? panel.status : "Choose a local endpoint, then Detect."; color:Theme.secondary; wrapMode:Text.Wrap; Layout.fillWidth:true; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(13) }
     }
-    FmTextField { objectName:"ollamaEndpoint"; Layout.fillWidth:true; text:panel.draft.endpoint || ""; placeholderText:"http://127.0.0.1:11434"; onTextEdited:panel.edit("endpoint",text); Accessible.name:"Local Ollama endpoint" }
+    Text { text:"Model"; Layout.topMargin:8; color:Theme.inkAlpha(0.45); font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(11.5) }
+    FmComboBox { objectName:"mailModel"; Layout.fillWidth:true; Layout.maximumWidth:360; textRole:"name"; model:panel.choices; currentIndex:panel.indexFor(); onActivated:{const m=panel.choices[currentIndex];panel.edit("model",currentIndex===0?null:{name:m.name,digest:m.digest})} Accessible.name:"Mail model" }
+    Text { visible:panel.indexFor()<0; text:"Selected model is missing or changed. Detect models and choose again."; color:Theme.secondary; wrapMode:Text.Wrap; Layout.fillWidth:true; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(12) }
+    RowLayout {
+        Layout.fillWidth:true; Layout.maximumWidth:560; Layout.topMargin:18
+        Text { text:"On new mail"; color:Theme.inkAlpha(0.45); font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(11.5); Layout.fillWidth:true }
+        FmComboBox { objectName:"assistanceAccount"; Layout.preferredWidth:160; model:backend.accounts; textRole:"name"; currentIndex:backend.accounts.findIndex(a=>a.id===panel.accountId); onActivated:panel.accountId=backend.accounts[currentIndex].id; Accessible.name:"Assistance account" }
+    }
+    ColumnLayout {
+        Layout.fillWidth:true; Layout.maximumWidth:560; spacing:0
+        FmCheckBox { objectName:"enableSummaries"; Layout.fillWidth:true; text:"Summarize messages"; description:"A short summary of the main point and anything you need to do."; checked:panel.policy.summaries || false; enabled:!!panel.accountId; onClicked:panel.accountEdit("summaries",checked) }
+        FmCheckBox { objectName:"enableClassification"; Layout.fillWidth:true; text:"Label new mail"; description:"Apply one matching label and identify human or automated senders. You can correct either."; checked:panel.policy.classification || false; enabled:!!panel.accountId; onClicked:panel.accountEdit("classification",checked) }
+    }
+    Text { text:"Prompt"; Layout.topMargin:18; color:Theme.inkAlpha(0.45); font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(11.5) }
+    Text { Layout.fillWidth:true; Layout.maximumWidth:560; text:"Sent with each incoming message. Labels and their instructions from Settings → Mail fill {{labels}}; {{messages}} contains the email being analyzed."; wrapMode:Text.Wrap; lineHeight:1.5; textFormat:Text.PlainText; color:Theme.muted; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(13.5) }
     Repeater {
-        model:[{task:"summary",title:"Summaries"},{task:"classification",title:"Classification"}]
+        model:panel.promptMessages.length
         ColumnLayout {
-            id: taskPane
-            required property var modelData
-            Layout.fillWidth:true; spacing:8
-            Text { text:taskPane.modelData.title; color:Theme.text; font {pixelSize:Theme.fontSize(15);weight:Font.Medium} }
-            FmComboBox { objectName:taskPane.modelData.task+"Model"; Layout.fillWidth:true; textRole:"name"; model:panel.choices; currentIndex:panel.indexFor(taskPane.modelData.task); onActivated:{const m=panel.choices[currentIndex];panel.edit(taskPane.modelData.task+"_model",currentIndex===0?null:{name:m.name,digest:m.digest})} Accessible.name:taskPane.modelData.title+" model" }
-            Text { visible:panel.indexFor(taskPane.modelData.task)<0; text:"Selected model is missing or changed. Choose an installed model."; color:Theme.secondary; wrapMode:Text.Wrap; Layout.fillWidth:true; font.pixelSize:Theme.fontSize(12) }
-            ScrollView { Layout.fillWidth:true; Layout.preferredHeight:180
-                TextArea { objectName:taskPane.modelData.task+"Prompt"; text:panel.draft[taskPane.modelData.task+"_prompt"] || ""; onTextChanged:if(activeFocus && text!==panel.draft[taskPane.modelData.task+"_prompt"])panel.edit(taskPane.modelData.task+"_prompt",text); wrapMode:TextEdit.Wrap; textFormat:TextEdit.PlainText; selectByMouse:true; color:Theme.text; font.pixelSize:Theme.fontSize(12); padding:12; background:Rectangle{color:Theme.surface;radius:5;border.color:Theme.controlBorder} Accessible.name:taskPane.modelData.title+" instructions" }
+            required property int index
+            Layout.fillWidth:true; Layout.maximumWidth:560
+            readonly property string roleName:panel.promptMessages[index].role === "system" ? "System" : "User"
+            Text { text:parent.roleName; color:Theme.text; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(13) }
+            TextArea {
+                objectName:"mailPrompt"+index; Layout.fillWidth:true; Layout.preferredHeight:Math.max(100,contentHeight+24)
+                text:panel.promptMessages[index].content
+                onTextChanged:if(activeFocus)panel.editMessage(index,text)
+                wrapMode:TextEdit.Wrap; textFormat:TextEdit.PlainText; selectByMouse:true; color:Theme.text
+                font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(13); padding:12
+                background:Rectangle{color:Theme.bg2;radius:6;border.color:parent.activeFocus ? Theme.focusBorder : Theme.line2}
+                Accessible.name:parent.roleName+" prompt"
             }
-            RowLayout {
-                FmButton { text:"Restore default"; onClicked:panel.edit(taskPane.modelData.task+"_prompt",panel.defaults[taskPane.modelData.task+"_prompt"]) }
-                FmButton { text:"Test with sample"; enabled:!panel.sampleBusy && !!panel.draft[taskPane.modelData.task+"_model"]; onClicked:panel.sample(taskPane.modelData.task) }
-            }
-        }
-    }
-    Text { text:"Account"; color:Theme.text; font.pixelSize:Theme.fontSize(15) }
-    FmComboBox { objectName:"assistanceAccount"; Layout.fillWidth:true; model:backend.accounts; textRole:"name"; currentIndex:backend.accounts.findIndex(a=>a.id===panel.accountId); onActivated:panel.accountId=backend.accounts[currentIndex].id; Accessible.name:"Assistance account" }
-    CheckBox { objectName:"enableSummaries"; text:"Enable on-demand summaries"; checked:panel.policy.summaries || false; enabled:!!panel.accountId; onClicked:panel.accountEdit("summaries",checked) }
-    CheckBox { objectName:"enableClassification"; text:"Suggest labels and classify new incoming mail"; checked:panel.policy.classification || false; enabled:!!panel.accountId; onClicked:panel.accountEdit("classification",checked) }
-    Text { Layout.fillWidth:true; text:"Suggestions use this account’s labels. Accepting a suggestion applies that label. Human / Automated / Unknown is a separate, correctable annotation."; wrapMode:Text.Wrap; color:Theme.secondary; font.pixelSize:Theme.fontSize(12) }
-    Repeater {
-        model:panel.labels
-        ColumnLayout {
-            required property var modelData
-            Layout.fillWidth:true
-            Text { text:modelData.name; color:Theme.text; font.pixelSize:Theme.fontSize(12) }
-            FmTextField { Layout.fillWidth:true; text:(panel.policy.descriptions || {})[modelData.id] || ""; placeholderText:"When should this label apply? (optional)"; onTextEdited:panel.describe(modelData.id,text); Accessible.name:"Classification description for "+modelData.name }
         }
     }
     RowLayout {
         FmButton { objectName:"saveLocalModel"; text:"Save"; enabled:panel.dirty && !panel.saving; onClicked:panel.save() }
         FmButton { text:"Cancel edits"; enabled:panel.dirty; onClicked:panel.discard() }
         FmButton { objectName:"reloadModelSettings"; text:"Reload saved settings"; visible:panel.conflict; onClicked:panel.reloadSaved() }
-        FmButton { text:"Cancel sample"; visible:panel.sampleBusy; onClicked:{panel.cancelSample();panel.status="Sample canceled";panel.sampleResult=null} }
     }
-    Text { visible:panel.jobErrors.length>0; text:panel.jobErrors; Layout.fillWidth:true; wrapMode:Text.Wrap; color:Theme.secondary; font.pixelSize:Theme.fontSize(12) }
-    SummaryCard {
-        objectName: "sampleSummary"; Layout.fillWidth: true; title: "Sample summary"; showSources: false
-        result: panel.sampleTask === "summary" && panel.sampleResult && panel.sampleResult.output ? panel.sampleResult : null
-        busy: panel.sampleTask === "summary" && panel.sampleBusy
-        canSummarize: !panel.sampleBusy && !!panel.draft.summary_model && backend.connected
-        onRegenerate: panel.sample("summary")
-        onCancelRequested: { panel.cancelSample(); panel.sampleResult=null; panel.status="Sample canceled" }
-    }
-    Text {
-        objectName: "sampleClassification"; Layout.fillWidth: true
-        visible: panel.sampleTask === "classification" && panel.sampleResult && !!panel.sampleResult.output
-        text: visible ? ({human:"Human",automated:"Automated",unknown:"Unknown sender kind"})[panel.sampleResult.output.sender_kind]
-            + " · " + (panel.sampleResult.output.category_abstain ? "Not enough information to label" : (panel.sampleResult.output.category_ids || []).map(id => (panel.labels.find(c=>c.id===id) || {}).name || id).join(", ") || "No matching labels")
-            + "\n" + panel.sampleResult.output.reason : ""
-        wrapMode: Text.Wrap; textFormat: Text.PlainText; color: Theme.secondary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13)
-    }
-    Text { visible:panel.models.some(m=>!m.eligible); Layout.fillWidth:true; text:panel.models.filter(m=>!m.eligible).map(m=>m.name+": "+m.reason).join("\n"); wrapMode:Text.Wrap; color:Theme.subtle; font.pixelSize:Theme.fontSize(11) }
+    Text { visible:panel.jobErrors.length>0; text:panel.jobErrors; Layout.fillWidth:true; wrapMode:Text.Wrap; color:Theme.secondary; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(12) }
+    Text { visible:panel.models.some(m=>!m.eligible); Layout.fillWidth:true; text:panel.models.filter(m=>!m.eligible).map(m=>m.name+": "+m.reason).join("\n"); wrapMode:Text.Wrap; color:Theme.subtle; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(11) }
 }

@@ -10,8 +10,9 @@ Item {
     property string selectionCursor: ""
     property var menuRows: []
     property bool rowMenu: false
+    property var messageMenuSource: null
     readonly property bool hasSelection: selectionRows.length > 0
-    readonly property bool selectionMutable: !backend.mutationInFlight && canMutate
+    readonly property bool selectionMutable: !backend.mutationInFlight && canMutate && !(morePopup.opened ? menuRows : hasSelection ? selectionRows : [thread]).some(function(row) { return row.is_outgoing })
     property var thread: backend.conversation
     property var members: thread.messages || []
     property bool expanded: false
@@ -26,12 +27,12 @@ Item {
     property string replyRevealIdentity: ""
     readonly property string composerIdentity: backend.account + (backend.activeDraftId.length ? "/draft/" + backend.activeDraftId : "/" + backend.selectedId)
     readonly property bool newMessageAvailable: backend.connected && backend.account.length > 0 && !backend.accountArchived && !backend.unsavedAccountBuffer
-    readonly property bool popupOpen: threadSummary.popupOpen || assistancePopupOpen() || labelMenu.opened || discardSelection.opened || folderPopup.opened || filterPopup.opened || categoryPopup.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
+    readonly property bool popupOpen: assistancePopupOpen() || labelMenu.opened || discardSelection.opened || folderPopup.opened || filterPopup.opened || categoryPopup.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
     readonly property bool canMutate: { const accounts = backend.accounts; return backend.connected && backend.accountCapability(backend.account,"mail_write") }
     readonly property bool singleKeyActionsAllowed: mail.visible && !popupOpen && mail.ApplicationWindow.window && mail.ApplicationWindow.window.singleKeysAllowed
     readonly property bool dateGroups: (backend.folder === "sent" || backend.folder === "drafts") && backend.preferences.mail_date_grouping !== "plain"
     readonly property bool draftsMode: backend.folder === "drafts"
-    readonly property bool collapsedDraftVisible: !replyOpen && backend.draftStatus !== "Draft discarded"
+    readonly property bool collapsedDraftVisible: !replyOpen && !backend.sendQueued && backend.draftStatus !== "Draft discarded"
         && (backend.activeDraftId.length > 0 || (backend.draft.body || "").length > 0)
     readonly property bool anyUnread: members.some(function(m) { return m.unread })
     readonly property bool anyStarred: members.some(function(m) { return m.starred })
@@ -42,6 +43,19 @@ Item {
         return row && row.matching_message_ids ? row.matching_message_ids : []
     }
     readonly property var latest: members.length ? members[members.length - 1] : ({})
+    readonly property var participants: {
+        const seen = {}, people = []
+        for (const message of members) {
+            const key = message.sender_email || message.sender_name
+            if (seen[key]) continue
+            seen[key] = true
+            people.push({name: message.sent ? "You" : message.sender_name || message.sender_email, message: message})
+        }
+        return people
+    }
+    function initials(name) { return (name || "?").split(/\s+/).slice(0,2).map(function(part) { return part.charAt(0).toUpperCase() }).join("") }
+    readonly property string conversationSpan: members.length ? (members.length > 1 && members[0].sent_at.slice(0,10) !== latest.sent_at.slice(0,10) ? Qt.formatDateTime(new Date(members[0].sent_at), "d MMM") + " – " : "") + Qt.formatDateTime(new Date(latest.sent_at), "d MMM") : ""
+
     readonly property var popularCategories: backend.categories.slice().sort(function(a, b) { return b.conversation_count - a.conversation_count || a.name.localeCompare(b.name) }).slice(0, 7)
     readonly property string expansionKey: backend.account + "/" + backend.selectedId + "/"
     readonly property string coverageText: backend.querySummary.coverage ? backend.querySummary.coverage.text || "" : ""
@@ -429,6 +443,7 @@ Item {
                         FmButton { objectName: "sentScopeButton"; text: "Sent"; selected: backend.folder==="sent"; font.pixelSize: Theme.fontSize(20); font.weight: Font.Medium; implicitWidth: contentItem.implicitWidth; foreground: selected ? Theme.text : Theme.inkAlpha(.32); leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft; background: Item {} onClicked: backend.folder="sent" }
                         Rectangle { implicitWidth: 3; implicitHeight: 3; radius: 2; color: Theme.inkAlpha(.3) }
                         FmButton { objectName: "draftsScopeButton"; text: "Drafts"; selected: backend.folder==="drafts"; font.pixelSize: Theme.fontSize(20); font.weight: Font.Medium; implicitWidth: contentItem.implicitWidth; foreground: selected ? Theme.text : Theme.inkAlpha(.32); leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft; background: Item {} onClicked: backend.folder="drafts" }
+                        Text { objectName: "sendingCount"; visible: backend.sendingCount > 0; text: backend.sendingCount + " sending"; color: Theme.accent; font.pixelSize: Theme.fontSize(12) }
                         FmButton { id: folderButton; objectName: "moreMailFolders"; visible: !backend.syntheticProfile; text: backend.folder === "trash" ? "Trash" : backend.folder === "all" ? "All mail" : ""; iconName: "down"; implicitHeight: 28; leftPadding: 0; rightPadding: 0; tip: "More mail folders"; onClicked: folderPopup.open() }
                         Item { Layout.fillWidth: true }
                         RowLayout {
@@ -612,8 +627,9 @@ Item {
                                     }
                                     RowLayout {
                                         Layout.fillWidth: true; spacing: 5
-                                        FmIcon { visible: !mail.draftsMode; name: mail.kindIcon(groupedRow.modelData.kind); size: 11; color: Theme.subtle }
-                                        Text { text: groupedRow.modelData.sender_name+(groupedRow.modelData.snippet ? " · "+groupedRow.modelData.snippet.replace(/\s+/g," ") : ""); color: Theme.secondary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); elide: Text.ElideRight; Layout.fillWidth: true; textFormat: Text.PlainText }
+                                        FmIcon { visible: !mail.draftsMode; name: groupedRow.modelData.is_outgoing ? "send" : mail.kindIcon(groupedRow.modelData.kind); size: 11; color: Theme.subtle }
+                                        FmIcon { objectName:"summaryPreviewIcon_"+groupedRow.modelData.id; visible:!!groupedRow.modelData.summary; name:"summary"; size:11; color:Theme.ai }
+                                        Text { objectName:"mailPreview_"+groupedRow.modelData.id; text: groupedRow.modelData.summary || (groupedRow.modelData.sender_name+(groupedRow.modelData.snippet ? " · "+groupedRow.modelData.snippet.replace(/\s+/g," ") : "")); color: Theme.secondary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); elide: Text.ElideRight; Layout.fillWidth: true; textFormat: Text.PlainText }
                                     }
                                 }
                                 Rectangle {
@@ -621,7 +637,7 @@ Item {
                                     implicitWidth: Math.min(rowCategory.implicitWidth+14, leftPane.width > 480 ? 100 : 68); implicitHeight: 22; radius: 4; color: "transparent"; border.color: Theme.line
                                     Text { id: rowCategory; anchors.fill: parent; anchors.margins: 3; text: (groupedRow.modelData.categories||[]).map(function(c) { return c.name }).join(" · "); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); elide: Text.ElideRight; horizontalAlignment: Text.AlignHCenter }
                                 }
-                                Text { text: groupedRow.group === "held" || groupedRow.doneRow ? mail.relativeTime(groupedRow.modelData.latest_at) : mail.rowTime(groupedRow.modelData.latest_at); color: groupedRow.group === "held" ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); font.weight: groupedRow.group === "held" ? Font.Medium : Font.Normal; Layout.preferredWidth: Theme.fontSize(68); horizontalAlignment: Text.AlignRight }
+                                Text { text: groupedRow.modelData.is_outgoing ? groupedRow.modelData.send_status : groupedRow.group === "held" || groupedRow.doneRow ? mail.relativeTime(groupedRow.modelData.latest_at) : mail.rowTime(groupedRow.modelData.latest_at); color: groupedRow.group === "held" ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); font.weight: groupedRow.group === "held" ? Font.Medium : Font.Normal; Layout.preferredWidth: Theme.fontSize(68); horizontalAlignment: Text.AlignRight }
                             }
                             FmToolTip { visible: rowMouse.containsMouse; text: groupedRow.modelData.subject + "\n" + mail.kindTitle(groupedRow.modelData.kind) + " · " + mail.fullTime(groupedRow.modelData.latest_at) + ((groupedRow.modelData.categories || []).length ? "\n" + groupedRow.modelData.categories.map(function(c) { return c.name }).join(" · ") : "") + (groupedRow.group === "held" ? "\nDelayed without a timer." : "") + (groupedRow.modelData.pinned ? "\nKept in place while open. Current state: "+mail.groupTitle(groupedRow.modelData.group)+"." : "") }
                         }
@@ -648,7 +664,7 @@ Item {
         }
         Item {
             id: readerPane
-            SplitView.fillWidth: true; SplitView.minimumWidth: Math.max(470, readerButtons.implicitWidth + 48)
+            SplitView.fillWidth: true; SplitView.minimumWidth: 470
             readonly property int margin: width<620 ? 24 : 40
             Rectangle { anchors.fill: parent; color: Theme.bg0 }
             ColumnLayout {
@@ -656,98 +672,44 @@ Item {
                 ColumnLayout {
                     visible: mail.members.length>0
                     Layout.fillWidth: true; Layout.leftMargin: readerPane.margin; Layout.rightMargin: readerPane.margin; Layout.topMargin: 24; spacing: 14
-                    Item {
-                        id: readerActions
-                        objectName: "conversationActionsRow"
-                        Layout.fillWidth: true
-                        readonly property bool wrapped: width < readerCategoryRow.width + readerButtons.width + 16
-                        implicitHeight: wrapped ? readerCategoryRow.height + 12 + readerButtons.height : Math.max(readerCategoryRow.height, readerButtons.height)
-                        Row {
-                            id: readerCategoryRow; spacing: 6; height: 32
-                            FmButton { id: categoriesButton; objectName: "categoryAssignmentButton"; text: mail.thread.categories && mail.thread.categories.length ? mail.thread.categories[0].name : "Label"; font.pixelSize: Theme.fontSize(12); implicitHeight: 24; anchors.verticalCenter: parent.verticalCenter; outlined: true; tip: "Edit labels on the loaded members"; onClicked: categoryPopup.open() }
-                            Repeater { model: (mail.thread.categories||[]).slice(1); FmButton { required property var modelData; text: modelData.name; font.pixelSize: Theme.fontSize(12); implicitHeight: 24; anchors.verticalCenter: parent.verticalCenter; outlined: true; onClicked: categoryPopup.open() } }
-                        }
-                        Row {
-                            id: readerButtons
-                            x: Math.max(0, readerActions.width - width)
-                            y: readerActions.wrapped ? readerCategoryRow.height + 12 : 0
-                            height: 32; spacing: 4
-                            ReaderAction { objectName: "replyButton"; text: "Reply"; iconName: "reply"; font.pixelSize: Theme.fontSize(13); prominent: true; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: mail.openReply() }
-                            ReaderAction { objectName: "replyAllButton"; visible: backend.draft.reply_all_available === true; text: "Reply all"; iconName: "replyAll"; font.pixelSize: Theme.fontSize(13); outlined: true; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: backend.beginDraft("reply_all") }
-                            ReaderAction { objectName: "forwardButton"; text: "Forward"; iconName: "forward"; font.pixelSize: Theme.fontSize(13); outlined: true; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: backend.beginDraft("forward") }
-                            Item { width: 13; height: 32; Rectangle { x: Theme.snapX(parent, (parent.width-1)/2); y: Theme.snapY(parent, (parent.height-20)/2); width: Theme.ruleWidth; height: 20; color: Theme.controlBorder } }
-                            ReaderAction { objectName: "delayConversationButton"; visible: !mail.anyStarred; text: "Delay"; iconName: "clock"; outlined: true; font.pixelSize: Theme.fontSize(13); enabled: !backend.mutationInFlight && mail.canMutate; tip: "Hold this conversation for later, without a timer · D"; onClicked: backend.setStarred(true) }
-                            ReaderAction { objectName: "doneConversationButton"; visible: mail.anyStarred; text: "Done"; iconName: "check"; outlined: true; font.pixelSize: Theme.fontSize(13); enabled: !backend.mutationInFlight && mail.canMutate; tip: "Clear unread and stars on the loaded members · E"; onClicked: backend.doneConversation() }
-                            FmButton { id: moreButton; objectName: "conversationActionsButton"; iconName: "more"; implicitWidth: 30; outlined: true; tip: "More conversation actions"; onClicked: morePopup.open() }
-                        }
+                    Flow {
+                        id: readerHeading
+                        objectName: "conversationHeadingRow"
+                        Layout.fillWidth: true; spacing: 12
+                        FmButton { id: categoriesButton; objectName: "categoryAssignmentButton"; visible: (mail.thread.categories || []).length > 0; text: visible ? mail.thread.categories[0].name : "Label"; font.pixelSize: Theme.fontSize(11.5); implicitHeight: 26; y: 3; outlined: true; onClicked: categoryPopup.open() }
+                        Repeater { model: (mail.thread.categories||[]).slice(1); FmButton { required property var modelData; text: modelData.name; font.pixelSize: Theme.fontSize(11.5); implicitHeight: 26; y: 3; outlined: true; onClicked: categoryPopup.open() } }
+                        Text { objectName: "readerSubject"; text: mail.thread.subject||""; width: Math.min(implicitWidth, readerHeading.width); color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(28); font.weight: Font.Medium; font.letterSpacing: -0.56; wrapMode: Text.Wrap; lineHeight: 1.15; textFormat: Text.PlainText }
                     }
-                    Text {
-                        objectName: "mailDeliveryStatus"; visible: !backend.syntheticProfile && (!mail.canMutate || text.length > 0)
-                        text: backend.accountArchived ? "Read-only account archive" : !mail.canMutate ? "Cached copy · reconnect with Mail access to mark reviewed or change labels"
-                            : ({pending:"Saved locally · waiting for Google",unknown:"Saved locally · checking Google's outcome",confirmed:"Synced to Google",failed:"Google did not accept this change · check account access",superseded:"Replaced by a later change"})[backend.mailDelivery.state] || ""
-                        color: backend.mailDelivery.state === "failed" ? Theme.error : Theme.subtle
-                        font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) }
-                        Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
-                    }
-                    Text { text: mail.thread.subject||""; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(28); font.weight: Font.Medium; font.letterSpacing: -0.56; wrapMode: Text.Wrap; Layout.fillWidth: true; Layout.topMargin: 10; textFormat: Text.PlainText }
                     RowLayout {
-                        Layout.fillWidth: true; spacing: 10
-                        Rectangle {
-                            implicitWidth: 24; implicitHeight: 24; color: Theme.selected; radius: 12
-                            FmIcon { anchors.centerIn: parent; name: mail.kindIcon(mail.thread.kind); color: Theme.secondary; size: 13 }
-                            FmToolTip { visible: kindHover.hovered; text: mail.kindTitle(mail.thread.kind) }
-                            HoverHandler { id: kindHover }
+                        Layout.fillWidth: true; spacing: 12; Layout.topMargin: 2
+                        Row {
+                            spacing: -6
+                            Repeater {
+                                model: mail.participants.slice(0,6)
+                                Rectangle {
+                                    required property var modelData
+                                    width: 24; height: 24; radius: 12; color: modelData.message.sent ? Theme.accentAlpha(0.18) : Theme.bg4
+                                    border.width: 2; border.color: Theme.bg0
+                                    Text { anchors.centerIn: parent; text: mail.initials(modelData.name); color: modelData.message.sent ? Theme.accent : Theme.secondary; font.pixelSize: Theme.fontSize(9); font.weight: Font.Medium }
+                                    HoverHandler { id: participantHover }
+                                    FmToolTip { visible: participantHover.hovered; text: parent.modelData.name + " · " + (parent.modelData.message.sender_email || "") }
+                                }
+                            }
                         }
-                        Flow {
-                            Layout.fillWidth: true; spacing: 4
-                            FmButton {
-                                id: metadataSender; text: mail.latest.sender_name || ""; foreground: Theme.secondary; font.pixelSize: Theme.fontSize(13)
-                                implicitHeight: 24; implicitWidth: Math.min(contentItem.implicitWidth, readerPane.width / 3); leftPadding: 0; rightPadding: 0
-                                onHoveredChanged: hovered ? mail.senderCardFor(mail.latest, metadataSender) : senderCard.scheduleClose()
-                                onClicked: mail.senderCardFor(mail.latest, metadataSender)
-                            }
-                            Text {
-                                text: "· " + mail.members.length + (mail.members.length === 1 ? " message · " : " messages · ") + mail.relativeTime(mail.latest.sent_at) + " · " + (backend.currentAccount.name || "")
-                                height: 24; verticalAlignment: Text.AlignVCenter; color: Theme.muted; font.pixelSize: Theme.fontSize(13)
-                                FmToolTip { visible: metadataDateHover.hovered; text: mail.fullTime(mail.latest.sent_at) }
-                                HoverHandler { id: metadataDateHover }
-                            }
+                        Text {
+                            Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                            text: mail.members.length + (mail.members.length === 1 ? " message · " : " messages · ") + mail.conversationSpan + " · " + mail.participants.map(function(p) { return p.name }).join(", ")
+                            color: Theme.inkAlpha(0.62); font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13)
                         }
                         FmButton { visible: mail.matchingIds.length>0; text: "Show match"; font.pixelSize: Theme.fontSize(11); onClicked: mail.revealMatch() }
                     }
-                    RowLayout {
-                        Layout.fillWidth: true; spacing: 8
-                        visible: (!assistance.resultFor("summary", "") && assistance.summariesEnabled && !assistance.workingOn("summary", "")) || assistance.workingOn("classification", "")
-                        FmButton {
-                            objectName: "summarizeConversation"; text: "Summarize thread"; iconName: "summary"
-                            visible: !assistance.resultFor("summary", "") && assistance.summariesEnabled
-                            enabled: !assistance.busy && backend.connected
-                            foreground: Theme.ai; font.pixelSize: Theme.fontSize(12); leftPadding: 0
-                            onClicked: assistance.start("summary", "")
-                        }
-                        FmButton {
-                            visible: assistance.workingOn("classification", "")
-                            text: "Classifying thread… Cancel"; font.pixelSize: Theme.fontSize(12)
-                            onClicked: assistance.cancel()
-                        }
-                    }
                     Text {
-                        visible: assistance.errorFor("classification", "").length > 0
-                        text: assistance.errorFor("classification", ""); color: Theme.error
-                        Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                        objectName: "mailDeliveryStatus"; visible: !backend.syntheticProfile && text.length > 0
+                        text: mail.thread.is_outgoing ? "" : backend.accountArchived ? "Read-only account archive" : !mail.canMutate ? "Cached copy · reconnect with Mail access to make changes"
+                            : ({pending:"Saved locally · waiting for Google",unknown:"Saved locally · checking Google's outcome",failed:"Google did not accept this change · check account access"})[backend.mailDelivery.state] || ""
+                        color: backend.mailDelivery.state === "failed" ? Theme.error : Theme.subtle
                         font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12)
-                    }
-                    SummaryCard {
-                        id: threadSummary; objectName: "threadSummary"
-                        Layout.fillWidth: true; Layout.topMargin: 8
-                        result: assistance.resultFor("summary", ""); members: mail.members
-                        maximumBodyHeight: Math.max(64, Math.min(210, readerPane.height * 0.22))
-                        busy: assistance.workingOn("summary", "")
-                        error: assistance.errorFor("summary", "")
-                        canSummarize: assistance.summariesEnabled && !assistance.busy && backend.connected
-                        onRegenerate: assistance.start("summary", "")
-                        onCancelRequested: assistance.cancel()
-                        onOpenSource: messageId => mail.scrollToMember(messageId)
+                        Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
                     }
                 }
                 Flickable {
@@ -775,12 +737,13 @@ Item {
                                 required property int index
                                 readonly property bool isExpanded: mail.memberIsExpanded(modelData.id,index)
                                 readonly property bool isMatch: mail.matchingIds.indexOf(modelData.id)>=0
-                                readonly property bool assistancePopupOpen: messageAssistance.popupOpen
+                                readonly property bool assistancePopupOpen: messageAssistance.popupOpen || messageSource.popupOpen
                                 objectName: "messageMember_"+modelData.id
-                                Layout.fillWidth: true; spacing: 12; Layout.topMargin: 22; Layout.bottomMargin: 24; visible: mail.expanded || index===mail.members.length-1
+                                Layout.fillWidth: true; spacing: member.isExpanded ? 14 : 0; Layout.topMargin: member.isExpanded ? 24 : 0; Layout.bottomMargin: member.isExpanded ? 28 : 0; visible: mail.expanded || index===mail.members.length-1
+                                MessageSource { id: messageSource; message: member.modelData; active: member.isExpanded && member.visible; visible: false }
                                 ItemDelegate {
                                     id: memberHeading
-                                    Layout.fillWidth: true; implicitHeight: member.isExpanded ? 40 : 44; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
+                                    Layout.fillWidth: true; implicitHeight: member.isExpanded ? 34 : 44; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
                                     onClicked: if (member.index!==mail.members.length-1) mail.toggleMember(member.modelData.id,member.index)
                                     background: Rectangle { color: memberHeading.hovered ? Theme.surface : "transparent"; border.color: memberHeading.activeFocus ? Theme.accent : "transparent"; radius: 4 }
                                     contentItem: ColumnLayout {
@@ -788,57 +751,112 @@ Item {
                                         RowLayout {
                                             Layout.fillWidth: true; spacing: 14
                                             Rectangle {
-                                                implicitWidth: 26; implicitHeight: 26; radius: 13; color: Theme.selected
-                                                Text { anchors.centerIn: parent; text: (member.modelData.sender_name || member.modelData.sender_email || "?").split(/\s+/).slice(0,2).map(function(part) { return part.charAt(0).toUpperCase() }).join(""); color: Theme.secondary; font.pixelSize: Theme.fontSize(10); font.weight: Font.Medium }
+                                                implicitWidth: member.isExpanded ? 34 : 26; implicitHeight: implicitWidth; radius: implicitWidth / 2; color: member.modelData.sent ? Theme.accentAlpha(0.18) : Theme.bg4
+                                                Text { anchors.centerIn: parent; text: mail.initials(member.modelData.sender_name || member.modelData.sender_email); color: member.modelData.sent ? Theme.accent : Theme.secondary; font.pixelSize: Theme.fontSize(member.isExpanded ? 12 : 10); font.weight: Font.Medium }
                                             }
-                                            FmButton {
-                                                id: memberSender; objectName: "senderFilter_"+member.modelData.id; text: member.modelData.sender_name; foreground: Theme.text; font.pixelSize: Theme.fontSize(13); font.weight: Font.Medium
-                                                Layout.fillWidth: true; leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft
-                                                onHoveredChanged: hovered ? mail.senderCardFor(member.modelData, memberSender) : senderCard.scheduleClose()
-                                                onClicked: mail.senderCardFor(member.modelData, memberSender)
+                                            ColumnLayout {
+                                                Layout.fillWidth: member.isExpanded; Layout.maximumWidth: member.isExpanded ? Number.POSITIVE_INFINITY : readerColumn.width * 0.32; spacing: 2
+                                                FmButton {
+                                                    id: memberSender; objectName: "senderFilter_"+member.modelData.id; text: member.modelData.sender_name; foreground: member.modelData.sent ? Theme.accent : Theme.text; font.pixelSize: Theme.fontSize(member.isExpanded ? 14 : 13); font.weight: Font.Medium
+                                                    Layout.fillWidth: true; implicitHeight: 18; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; textAlignment: Text.AlignLeft
+                                                    onHoveredChanged: hovered ? mail.senderCardFor(member.modelData, memberSender) : senderCard.scheduleClose()
+                                                    onClicked: mail.senderCardFor(member.modelData, memberSender)
+                                                }
+                                                Text { visible: member.isExpanded; text: member.modelData.sender_email || ""; color: Theme.subtle; font.pixelSize: Theme.fontSize(12.5); elide: Text.ElideRight; Layout.fillWidth: true; textFormat: Text.PlainText }
                                             }
+                                            Text { visible: !member.isExpanded; text: (member.modelData.text || "").replace(/\s+/g," "); Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.inkAlpha(0.45); font.pixelSize: Theme.fontSize(13); textFormat: Text.PlainText }
                                             Text { visible: member.isMatch; text: "Match"; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11) }
-                                            FmIcon { visible: member.modelData.starred; name: "star"; size: 12; color: Theme.accent }
+                                            FmButton {
+                                                objectName: "messageSenderKind_" + member.modelData.id
+                                                visible: member.isExpanded && !member.modelData.sent && assistance.classificationEnabled
+                                                iconName: mail.kindIcon(member.modelData.kind); iconSize: 13
+                                                implicitWidth: 24; implicitHeight: 24; leftPadding: 4; rightPadding: 4
+                                                tip: mail.kindTitle(member.modelData.kind) + " · correct sender kind"
+                                                onClicked: messageAssistance.correctSender()
+                                            }
+                                            FmIcon { visible: !!member.modelData.starred; name: "star"; size: 12; color: Theme.accent }
                                             Text {
-                                                text: member.index === mail.members.length - 1 ? mail.relativeTime(member.modelData.sent_at) : mail.rowTime(member.modelData.sent_at)
+                                                text: (member.index === mail.members.length - 1 ? mail.relativeTime(member.modelData.sent_at) : mail.rowTime(member.modelData.sent_at)) + (member.modelData.is_outgoing ? " · " + member.modelData.send_status : "")
                                                 color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12)
                                                 FmToolTip { visible: memberDateHover.hovered; text: mail.fullTime(member.modelData.sent_at) }
                                                 HoverHandler { id: memberDateHover }
                                             }
+                                            FmButton {
+                                                id: memberMore; objectName: "messageMore_" + member.modelData.id; visible: member.isExpanded
+                                                iconName: "more"; implicitWidth: 28; implicitHeight: 28; leftPadding: 6; rightPadding: 6; outlined: true; tip: "Message options"
+                                                onClicked: {
+                                                    mail.menuRows = backend.snapshotMailRows([member.modelData.is_outgoing ? member.modelData.id : backend.selectedId]); mail.rowMenu = true; mail.messageMenuSource = member.modelData.is_outgoing ? null : messageSource
+                                                    const point = memberMore.mapToItem(Overlay.overlay, width, height)
+                                                    morePopup.x = Math.max(8, point.x - morePopup.width); morePopup.y = point.y + 6; morePopup.open()
+                                                }
+                                            }
                                         }
-                                        Text { visible: member.isExpanded; Layout.leftMargin: 40; text: "to " + (member.modelData.to || ""); color: Theme.subtle; font.pixelSize: Theme.fontSize(12); elide: Text.ElideRight; Layout.fillWidth: true; textFormat: Text.PlainText }
-                                        Text { visible: !member.isExpanded; Layout.leftMargin: 40; text: (member.modelData.text||"").replace(/\s+/g," "); color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); elide: Text.ElideRight; Layout.fillWidth: true; textFormat: Text.PlainText }
                                     }
+                                }
+                                ColumnLayout {
+                                    visible: member.isExpanded; Layout.fillWidth: true; Layout.leftMargin: 48; spacing: 6
+                                    Repeater {
+                                        model: member.modelData.metadata || (messageSource.metadata.length ? messageSource.metadata : member.modelData.to ? [{label:"To",people:[{name:"",email:member.modelData.to}]}] : [])
+                                        RowLayout {
+                                            required property var modelData; Layout.fillWidth: true; spacing: 14
+                                            Text { text: modelData.label.toUpperCase(); Layout.preferredWidth: 48; Layout.alignment: Qt.AlignTop; color: Theme.inkAlpha(0.4); font.pixelSize: Theme.fontSize(11); font.letterSpacing: 0.66 }
+                                            Text { text: modelData.people.map(function(person) { return (person.name ? person.name + "  " : "") + person.email }).join("    "); Layout.fillWidth: true; color: Theme.secondary; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; textFormat: Text.PlainText }
+                                        }
+                                    }
+                                }
+                                RowLayout {
+                                    visible: member.isExpanded && !!member.modelData.text_truncated; Layout.fillWidth: true; Layout.leftMargin: 48; spacing: 12
+                                    Text { visible: !!member.modelData.text_truncated; text: "This preview is shortened."; color: Theme.subtle; font.pixelSize: Theme.fontSize(12) }
                                 }
                                 MessageAssistance {
                                     id: messageAssistance
-                                    Layout.fillWidth: true; Layout.leftMargin: 40
+                                    Layout.fillWidth: true; Layout.leftMargin: 48
                                     controller: assistance; message: member.modelData
-                                    visible: member.isExpanded && (assistance.summariesEnabled || (assistance.classificationEnabled && !member.modelData.sent) || !!summary || !!classification)
+                                    showKindControl: false
+                                    visible: member.isExpanded && !member.modelData.sent && (assistance.summariesEnabled || (assistance.classificationEnabled && !member.modelData.sent) || !!summary || !!classification)
                                 }
+                                Text { visible: member.isExpanded && !!member.modelData.content_error; Layout.fillWidth: true; Layout.leftMargin: 48; text: member.modelData.content_error || ""; color: Theme.error; wrapMode: Text.Wrap; font.pixelSize: Theme.fontSize(13) }
                                 TextArea {
-                                    visible: member.isExpanded; Layout.fillWidth: true; Layout.leftMargin: 40; text: member.modelData.text||"Readable content is unavailable."
-                                    readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.PlainText
+                                    objectName: "messageBody_" + member.modelData.id
+                                    visible: member.isExpanded && !member.modelData.content_error; Layout.fillWidth: true; Layout.leftMargin: 48; text: messageSource.hasHtml && !messageSource.plain ? messageSource.html : Theme.proseMarkup(member.modelData.content_pending ? "Loading sent message…" : member.modelData.text || (member.modelData.is_outgoing ? "(No text)" : "Readable content is unavailable."), 1.65)
+                                    readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.RichText
                                     color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(15); leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; background: null
                                     Accessible.name: "Message from "+member.modelData.sender_name
+                                    onLinkActivated: function(link) { backend.openLink(link) }
                                 }
                                 Flow {
-                                    visible: member.isExpanded; Layout.fillWidth: true; Layout.leftMargin: 40; spacing: 8
+                                    visible: member.isExpanded; Layout.fillWidth: true; Layout.leftMargin: 48; spacing: 8
                                     Repeater { model: backend.linksInText(member.modelData.text||""); FmButton { required property string modelData; text: modelData.length>60 ? modelData.substring(0,60)+"…" : modelData; implicitWidth: Math.min(contentItem.implicitWidth+22,readerColumn.width); font.pixelSize: Theme.fontSize(11); tip: "Open link: "+modelData; onClicked: backend.openLink(modelData) } }
                                 }
                                 Flow {
-                                    visible: member.isExpanded; Layout.fillWidth: true; Layout.leftMargin: 40; spacing: 8
+                                    visible: member.isExpanded; Layout.fillWidth: true; Layout.leftMargin: 48; spacing: 8
                                     Repeater {
                                         model: member.modelData.attachments||[]
                                         FmButton {
                                             required property var modelData
-                                            iconName: "attachment"; text: modelData.name+" · "+(modelData.state==="available" ? "available offline" : modelData.state); implicitWidth: Math.min(contentItem.implicitWidth+22,readerColumn.width)
-                                            outlined: true; font.pixelSize: Theme.fontSize(12); enabled: modelData.state==="available"; onClicked: backend.openAttachment(modelData.id)
-                                            tip: modelData.state==="available" ? "Verify the retained bytes and open this attachment" : "This attachment is "+modelData.state+" and cannot be opened."
+                                            iconName: "attachment"; text: modelData.name+" · "+(member.modelData.is_outgoing ? "available after sync" : modelData.state==="available" ? "available offline" : modelData.state); implicitWidth: Math.min(contentItem.implicitWidth+22,readerColumn.width)
+                                            outlined: true; font.pixelSize: Theme.fontSize(12); enabled: !member.modelData.is_outgoing && modelData.state==="available"; onClicked: backend.openAttachment(modelData.id)
+                                            tip: member.modelData.is_outgoing ? "This file is preserved with the message. Open it after Sent sync." : modelData.state==="available" ? "Verify the retained bytes and open this attachment" : "This attachment is "+modelData.state+" and cannot be opened."
                                         }
                                     }
                                 }
                                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line; Layout.topMargin: 10 }
+                            }
+                        }
+                        Item {
+                            id: readerActions; objectName: "conversationActionsRow"
+                            visible: mail.members.length > 0 && !mail.replyOpen && !mail.thread.is_outgoing
+                            Layout.fillWidth: true; Layout.topMargin: visible ? 24 : 0; Layout.bottomMargin: visible ? 8 : 0
+                            implicitHeight: readerButtons.implicitHeight
+                            Flow {
+                                id: readerButtons; width: parent.width; spacing: 6
+                                ReaderAction { objectName: "replyButton"; text: "Reply"; iconName: "reply"; prominent: true; visible: backend.folder !== "sent"; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: mail.openReply() }
+                                ReaderAction { objectName: "replyAllButton"; visible: backend.draft.reply_all_available === true && backend.folder !== "sent"; text: "Reply all"; iconName: "replyAll"; outlined: true; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: backend.beginDraft("reply_all") }
+                                ReaderAction { objectName: "forwardButton"; text: "Forward"; iconName: "forward"; outlined: true; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: backend.beginDraft("forward") }
+                                Item { width: 13; height: 32; Rectangle { x: 6; y: 6; width: 1; height: 20; color: Theme.line2 } }
+                                ReaderAction { objectName: "delayConversationButton"; visible: !mail.anyStarred && backend.folder !== "sent"; text: "Delay"; iconName: "clock"; outlined: true; enabled: !backend.mutationInFlight && mail.canMutate; tip: "Hold this conversation for later · D"; onClicked: backend.setStarred(true) }
+                                ReaderAction { objectName: "doneConversationButton"; visible: mail.anyStarred && backend.folder !== "sent"; text: "Done"; iconName: "check"; outlined: true; enabled: !backend.mutationInFlight && mail.canMutate; tip: "Clear unread and stars · E"; onClicked: backend.doneConversation() }
+                                FmButton { id: moreButton; objectName: "conversationActionsButton"; iconName: "more"; implicitWidth: 32; outlined: true; tip: "More conversation actions"; onClicked: morePopup.open() }
                             }
                         }
                         Item {
@@ -926,7 +944,7 @@ Item {
         }
     }
     Popup {
-        id: morePopup; objectName: "mailContextMenu"; parent: Overlay.overlay; width: 220; padding: 6
+        id: morePopup; readonly property bool outgoing: mail.menuRows.some(function(row) { return row.is_outgoing }); objectName: "mailContextMenu"; parent: Overlay.overlay; width: 220; padding: 6
         onAboutToShow: {
             if (!mail.rowMenu) {
                 mail.menuRows = backend.snapshotMailRows([backend.selectedId])
@@ -934,10 +952,11 @@ Item {
                 x=Math.max(8,Math.min(p.x-width,parent.width-width-8)); y=Math.max(8,Math.min(p.y,parent.height-implicitHeight-8))
             }
         }
-        onClosed: { mail.rowMenu = false; labelMenu.close() }
+        onOpened: { x = Math.max(8, Math.min(x, parent.width - width - 8)); y = Math.max(8, Math.min(y, parent.height - height - 8)) }
+        onClosed: { mail.rowMenu = false; labelMenu.close(); formatMenu.close(); mail.messageMenuSource = null }
         readonly property bool drafts: mail.menuRows.length > 0 && mail.menuRows.every(function(row) { return row.is_draft === true })
         readonly property bool allUnread: mail.menuRows.length > 0 && mail.menuRows.every(function(row) { return row.unread === true })
-        focus: true; closePolicy: labelMenu.opened ? Popup.CloseOnEscape : Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        focus: true; closePolicy: labelMenu.opened || formatMenu.opened ? Popup.CloseOnEscape : Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 6 }
         contentItem: ColumnLayout {
             FmButton {
@@ -950,20 +969,33 @@ Item {
 
             spacing: 2
             Text { visible: mail.menuRows.length > 1; text: mail.menuRows.length + " SELECTED"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); Layout.margins: 8 }
-            FmButton { objectName: "contextReply"; visible: !morePopup.drafts && backend.folder !== "sent" && mail.menuRows.length === 1; text: "Reply"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: mail.composeMenu("reply") }
-            FmButton { objectName: "contextForward"; visible: !morePopup.drafts && mail.menuRows.length === 1; text: "Forward"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: mail.composeMenu("forward") }
-            Rectangle { visible: !morePopup.drafts && mail.menuRows.length === 1; Layout.fillWidth: true; height: 1; color: Theme.line }
-            FmButton { objectName: "contextRead"; visible: !morePopup.drafts && backend.folder !== "sent"; text: morePopup.allUnread ? "Mark as read" : "Mark as unread"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.selectionMutable; onClicked: mail.selectionAction(morePopup.allUnread ? "read" : "unread") }
-            FmButton { objectName: "contextDelay"; visible: !morePopup.drafts && backend.folder !== "sent"; text: "Delay"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.selectionMutable; onClicked: mail.selectionAction("delay") }
-            FmButton { objectName: "unholdConversationButton"; visible: !morePopup.drafts && mail.menuRows.some(function(row) { return row.starred }); text: "Remove Delay"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.selectionMutable; onClicked: mail.selectionAction("undelay") }
-            FmButton { objectName: "contextDone"; visible: !morePopup.drafts && backend.folder !== "sent"; text: "Mark done"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.selectionMutable; onClicked: mail.selectionAction("done") }
-            FmButton { id: labelsMenuButton; objectName: "contextLabels"; visible: !morePopup.drafts && backend.folder !== "sent"; text: "Labels   ›"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.selectionMutable && backend.categories.length > 0; onClicked: labelMenu.open() }
-            Rectangle { visible: !morePopup.drafts; Layout.fillWidth: true; height: 1; color: Theme.line }
-            FmButton { objectName: "archiveConversation"; visible: !morePopup.drafts && !backend.syntheticProfile && backend.folder !== "trash"; text: "Archive in Gmail"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.selectionMutable; onClicked: mail.selectionAction("archive") }
-            FmButton { objectName: "trashConversation"; visible: !morePopup.drafts && !backend.syntheticProfile && backend.folder !== "trash"; text: "Move to Trash"; foreground: Theme.error; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.selectionMutable; onClicked: mail.selectionAction("trash") }
+            FmButton { objectName: "contextOutgoing"; visible: morePopup.outgoing && mail.menuRows.length === 1; text: mail.menuRows[0] && mail.menuRows[0].outgoing_state === "queued" ? "Undo send" : "Send status"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { const row = mail.menuRows[0]; morePopup.close(); backend.outgoingAction(row.id, row.outgoing_state === "queued") } }
+            FmButton { objectName: "contextReply"; visible: !morePopup.drafts && !morePopup.outgoing && backend.folder !== "sent" && mail.menuRows.length === 1; text: "Reply"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: mail.composeMenu("reply") }
+            FmButton { objectName: "contextForward"; visible: !morePopup.drafts && !morePopup.outgoing && mail.menuRows.length === 1; text: "Forward"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.newMessageAvailable && !backend.draftBusy; onClicked: mail.composeMenu("forward") }
+            Rectangle { visible: !morePopup.drafts && !morePopup.outgoing && mail.menuRows.length === 1; Layout.fillWidth: true; height: 1; color: Theme.line }
+            FmButton { objectName: "contextRead"; visible: !morePopup.drafts && !morePopup.outgoing && backend.folder !== "sent"; text: morePopup.allUnread ? "Mark as read" : "Mark as unread"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.selectionMutable; onClicked: mail.selectionAction(morePopup.allUnread ? "read" : "unread") }
+            FmButton { objectName: "contextDelay"; visible: !morePopup.drafts && !morePopup.outgoing && backend.folder !== "sent"; text: "Delay"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.selectionMutable; onClicked: mail.selectionAction("delay") }
+            FmButton { objectName: "unholdConversationButton"; visible: !morePopup.drafts && !morePopup.outgoing && mail.menuRows.some(function(row) { return row.starred }); text: "Remove Delay"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.selectionMutable; onClicked: mail.selectionAction("undelay") }
+            FmButton { objectName: "contextDone"; visible: !morePopup.drafts && !morePopup.outgoing && backend.folder !== "sent"; text: "Mark done"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.selectionMutable; onClicked: mail.selectionAction("done") }
+            FmButton { id: labelsMenuButton; objectName: "contextLabels"; visible: !morePopup.drafts && !morePopup.outgoing && backend.folder !== "sent"; text: "Labels   ›"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.selectionMutable && backend.categories.length > 0; onClicked: labelMenu.open() }
+            FmButton { objectName: "contextFormat"; visible: !!mail.messageMenuSource && mail.messageMenuSource.hasHtml; text: "Format   ‹"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: formatMenu.open() }
+            FmButton { objectName: "contextMessageSource"; visible: !!mail.messageMenuSource; text: "View source"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { const source = mail.messageMenuSource; morePopup.close(); source.show() } }
+            Rectangle { visible: !morePopup.drafts && !morePopup.outgoing; Layout.fillWidth: true; height: 1; color: Theme.line }
+            FmButton { objectName: "archiveConversation"; visible: !morePopup.drafts && !morePopup.outgoing && !backend.syntheticProfile && backend.folder !== "trash"; text: "Archive in Gmail"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.selectionMutable; onClicked: mail.selectionAction("archive") }
+            FmButton { objectName: "trashConversation"; visible: !morePopup.drafts && !morePopup.outgoing && !backend.syntheticProfile && backend.folder !== "trash"; text: "Move to Trash"; foreground: Theme.error; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.selectionMutable; onClicked: mail.selectionAction("trash") }
             FmButton { objectName: "restoreConversation"; visible: !morePopup.drafts && !backend.syntheticProfile && backend.folder === "trash"; text: "Restore from Trash"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.selectionMutable; onClicked: mail.selectionAction("restore") }
             FmButton { objectName: "contextDiscard"; visible: morePopup.drafts; text: mail.menuRows.length > 1 ? "Discard drafts…" : "Discard draft…"; foreground: Theme.error; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: mail.selectionMutable; onClicked: { discardSelection.rows = mail.menuRows.slice(); morePopup.close(); discardSelection.open() } }
             FmButton { visible: backend.syntheticProfile && !morePopup.drafts; text: "Local captures"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { morePopup.close(); capturePopup.open() } }
+        }
+    }
+    Popup {
+        id: formatMenu; objectName: "messageFormatMenu"; parent: morePopup.contentItem
+        width: 154; padding: 6; focus: true; x: -width - 8; y: Math.max(0, morePopup.height - height - 48)
+        background: Rectangle { color: Theme.bg2; border.color: Theme.line2; radius: 7 }
+        contentItem: ColumnLayout {
+            spacing: 2
+            FmButton { objectName: "messageFormatHtml"; text: "HTML"; iconName: mail.messageMenuSource && !mail.messageMenuSource.plain ? "check" : ""; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { if (mail.messageMenuSource) mail.messageMenuSource.plain = false; morePopup.close() } }
+            FmButton { objectName: "messageFormatPlain"; text: "Plain text"; iconName: mail.messageMenuSource && mail.messageMenuSource.plain ? "check" : ""; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { if (mail.messageMenuSource) mail.messageMenuSource.plain = true; morePopup.close() } }
         }
     }
     Popup {
@@ -985,13 +1017,14 @@ Item {
             }
         }
     }
-    Dialog {
-        id: discardSelection; parent: Overlay.overlay; anchors.centerIn: parent; width: 380; modal: true
+    FmConfirmDialog {
+        id: discardSelection
         property var rows: []
         title: "Discard " + rows.length + (rows.length === 1 ? " draft?" : " drafts?")
-        standardButtons: Dialog.Cancel | Dialog.Discard
-        onDiscarded: { backend.applyMailSelection(rows,"discard"); mail.clearSelection() }
-        contentItem: Text { text: "Discard the selected local drafts. Google source previews and unresolved sends must be handled in their draft editor."; wrapMode: Text.Wrap; color: Theme.text; font.pixelSize: Theme.fontSize(13) }
+        message: "The selected drafts will be discarded. You can undo for a few seconds afterwards."
+        actionText: rows.length === 1 ? "Discard" : "Discard all"
+        destructive: true
+        onAccepted: { backend.applyMailSelection(rows,"discard"); mail.clearSelection() }
     }
     Popup {
         id: capturePopup; objectName: "captureHistoryPopup"; parent: Overlay.overlay
@@ -1038,9 +1071,9 @@ Item {
     Shortcut { sequence: "Shift+Up"; enabled: mail.singleKeyActionsAllowed && mail.listHasFocus(); onActivated: mail.moveSelection(-1,true) }
     Shortcut { sequence: "U"; enabled: mail.singleKeyActionsAllowed && !mail.draftsMode && mail.canMutate; onActivated: mail.selectionAction(mail.hasSelection ? (mail.selectionRows.every(function(row) { return row.unread }) ? "read" : "unread") : mail.anyUnread ? "read" : "unread") }
     Shortcut { sequence: "N"; enabled: mail.singleKeyActionsAllowed; onActivated: mail.newMessage() }
-    Shortcut { sequence: "R"; enabled: mail.singleKeyActionsAllowed && !mail.hasSelection && mail.members.length>0; onActivated: mail.openReply() }
+    Shortcut { sequence: "R"; enabled: mail.singleKeyActionsAllowed && !mail.hasSelection && mail.members.length>0 && !mail.thread.is_outgoing; onActivated: mail.openReply() }
     Shortcut { sequence: "A"; enabled: mail.singleKeyActionsAllowed && !mail.hasSelection && mail.members.length>0 && backend.draft.reply_all_available === true; onActivated: backend.beginDraft("reply_all") }
-    Shortcut { sequence: "F"; enabled: mail.singleKeyActionsAllowed && !mail.hasSelection && mail.members.length>0; onActivated: backend.beginDraft("forward") }
+    Shortcut { sequence: "F"; enabled: mail.singleKeyActionsAllowed && !mail.hasSelection && mail.members.length>0 && !mail.thread.is_outgoing; onActivated: backend.beginDraft("forward") }
     Shortcut { sequence: "E"; enabled: mail.singleKeyActionsAllowed && !mail.draftsMode && (mail.hasSelection || mail.members.length>0) && mail.selectionMutable; onActivated: mail.selectionAction("done") }
     Shortcut { sequence: "D"; enabled: mail.singleKeyActionsAllowed && !mail.draftsMode && (mail.hasSelection || mail.members.length>0) && mail.selectionMutable; onActivated: mail.selectionAction(mail.hasSelection || !mail.anyStarred ? "delay" : "undelay") }
     Shortcut { sequence: "S"; enabled: mail.singleKeyActionsAllowed; onActivated: backend.folder=backend.folder==="inbox" ? "sent" : backend.folder==="sent" ? "drafts" : "inbox" }

@@ -25,6 +25,7 @@ pub enum GmailMethod {
     MessageRaw,
     MessageState,
     LabelsList,
+    LabelCreate,
     MessageModify,
     MessageTrash,
     MessageRestore,
@@ -42,7 +43,11 @@ impl GmailMethod {
         match self {
             Self::Profile | Self::LabelsList => 1,
             Self::HistoryList => 2,
-            Self::MessagesList | Self::MessageModify | Self::MessageRestore | Self::DraftsList => 5,
+            Self::MessagesList
+            | Self::MessageModify
+            | Self::MessageRestore
+            | Self::DraftsList
+            | Self::LabelCreate => 5,
             Self::DraftCreate | Self::DraftDelete => 10,
             Self::DraftUpdate => 15,
             Self::MessageRaw | Self::MessageState | Self::MessageTrash | Self::DraftGet => 20,
@@ -51,7 +56,7 @@ impl GmailMethod {
     }
     fn class(self) -> WorkClass {
         match self {
-            Self::MessageModify | Self::MessageTrash | Self::MessageRestore => {
+            Self::MessageModify | Self::MessageTrash | Self::MessageRestore | Self::LabelCreate => {
                 WorkClass::StateMutation
             }
             Self::DraftCreate | Self::DraftUpdate | Self::DraftDelete => WorkClass::DraftMutation,
@@ -79,6 +84,19 @@ impl fmt::Debug for GmailCall {
     }
 }
 impl GmailCall {
+    pub fn create_label(account: &AccountId, name: &str) -> Result<Self, GoogleError> {
+        checked(name, 256)?;
+        Self::new(
+            account,
+            GmailMethod::LabelCreate,
+            HttpMethod::Post,
+            &["labels"],
+            &[],
+            Some(
+                json!({"name":name,"labelListVisibility":"labelShow","messageListVisibility":"show"}),
+            ),
+        )
+    }
     fn new(
         account: &AccountId,
         method: GmailMethod,
@@ -501,6 +519,9 @@ pub enum GmailReply {
     Raw(RawOutcome),
     MessageState(Option<GmailMessageState>),
     Labels(GmailLabels),
+    Label(GmailLabel),
+    /// HTTP 400/409 rejected creation; a malformed success remains uncertain.
+    LabelCreateRejected,
     Drafts(GmailDraftPage),
     /// A supplied draft inventory continuation was rejected. Restarting the
     /// read enumeration must preserve already retained snapshots.
@@ -566,6 +587,9 @@ impl<T: HttpTransport> GmailApi<T> {
         };
         if response.status == 404 && call.method == GmailMethod::MessageRaw {
             return Ok(GmailReply::Raw(RawOutcome::Missing));
+        }
+        if matches!(response.status, 400 | 409) && call.method == GmailMethod::LabelCreate {
+            return Ok(GmailReply::LabelCreateRejected);
         }
         if response.status == 404 && call.method == GmailMethod::MessageState {
             return Ok(GmailReply::MessageState(None));
@@ -655,6 +679,15 @@ impl<T: HttpTransport> GmailApi<T> {
                     }
                 }
                 Ok(GmailReply::Labels(value))
+            }
+            GmailMethod::LabelCreate => {
+                let label: GmailLabel = decode_json(bytes, MAX_JSON)?;
+                checked(&label.id, 256)?;
+                checked(&label.name, 256)?;
+                if label.label_type != "user" {
+                    return Err(invalid());
+                }
+                Ok(GmailReply::Label(label))
             }
             GmailMethod::DraftsList => {
                 let value: GmailDraftPage = decode_json(bytes, MAX_JSON)?;

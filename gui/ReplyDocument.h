@@ -30,7 +30,7 @@ public:
     Q_INVOKABLE void pastePlain();
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
-    static QString limitedHtml(const QString &html);
+    static QString limitedHtml(const QString &html, bool received = false);
 signals:
     void readOnlyChanged();
     void documentChanged();

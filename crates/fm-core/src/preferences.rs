@@ -4,10 +4,30 @@ use rusqlite::params;
 use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
-    json!({"density":"comfortable","mail_date_grouping":"grouped","week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
-        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"calendar_display_time_zone":null,"google_sync_limits":null,"notifications":"events"})
+    json!({"density":"comfortable","mail_date_grouping":"grouped","sync_every_minutes":1,"week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
+        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"calendar_display_time_zone":null,"google_sync_limits":null,"google_sync_services":{},"notifications":"events"})
 }
 impl Store {
+    pub fn google_service_sync_enabled(&self, account: &str, service: &str) -> Result<bool> {
+        if !matches!(service, "mail" | "calendar") {
+            return Err(err("invalid_request", "Choose Mail or Calendar sync"));
+        }
+        Ok(
+            self.preferences()?["preferences"]["google_sync_services"][account][service]
+                .as_bool()
+                .unwrap_or(true),
+        )
+    }
+    pub fn google_sync_interval_ms(&self) -> Result<u64> {
+        let value = self.preferences()?["preferences"]["sync_every_minutes"].as_u64();
+        match value {
+            Some(minutes @ (1 | 5 | 15)) => Ok(minutes * 60_000),
+            _ => Err(err(
+                "invalid_request",
+                "Sync interval must be 1, 5 or 15 minutes",
+            )),
+        }
+    }
     pub(crate) fn preferences(&self) -> Result<Value> {
         let mut profile_defaults = defaults();
         if self.profile_kind()? == crate::live_profile::ProfileKind::Synthetic {
@@ -69,6 +89,7 @@ impl Store {
             &[
                 "density",
                 "mail_date_grouping",
+                "sync_every_minutes",
                 "week_start",
                 "calendar_start_hour",
                 "calendar_end_hour",
@@ -84,6 +105,7 @@ impl Store {
                 "last_workspace",
                 "timeline_position",
                 "google_sync_limits",
+                "google_sync_services",
                 "notifications",
                 "default_event_duration_minutes",
                 "calendar_display_time_zone",
@@ -92,6 +114,38 @@ impl Store {
         let mut preferences = current["preferences"].clone();
         for (key, value) in patch.as_object().unwrap() {
             preferences[key] = value.clone();
+        }
+        let services = preferences["google_sync_services"]
+            .as_object()
+            .filter(|v| v.len() <= 200)
+            .ok_or_else(|| {
+                err(
+                    "invalid_request",
+                    "Sync services must contain at most 200 account choices",
+                )
+            })?;
+        for (account, choices) in services {
+            crate::id(account)?;
+            if !self.db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM accounts WHERE id=?1)",
+                [account],
+                |r| r.get::<_, bool>(0),
+            )? {
+                return Err(err("not_found", "Sync account was not found"));
+            }
+            fields(choices, &["mail", "calendar"])?;
+            if !choices["mail"].is_boolean() || !choices["calendar"].is_boolean() {
+                return Err(err(
+                    "invalid_request",
+                    "Choose enabled or disabled for Mail and Calendar",
+                ));
+            }
+        }
+        if !matches!(preferences["sync_every_minutes"].as_u64(), Some(1 | 5 | 15)) {
+            return Err(err(
+                "invalid_request",
+                "Sync interval must be 1, 5 or 15 minutes",
+            ));
         }
         if !preferences["google_sync_limits"].is_null() {
             fm_google::scheduler::SchedulerConfig::from_confirmed_json(
@@ -120,7 +174,7 @@ impl Store {
         }
         for (key, allowed) in [
             ("mail_date_grouping", &["grouped", "plain"][..]),
-            ("theme", &["graphite", "paper", "harbour"][..]),
+            ("theme", &["graphite", "paper", "terminal", "harbour"][..]),
             ("text_size", &["small", "default", "large"][..]),
             ("startup_view", &["mail", "calendar", "last"][..]),
             ("last_workspace", &["mail", "calendar"][..]),
@@ -317,6 +371,73 @@ pub(crate) fn required_revision(p: &Value) -> Result<i64> {
 #[cfg(test)]
 mod appearance_tests {
     use super::*;
+    #[test]
+    fn account_service_switches_are_independent_durable_and_validated() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        assert!(store
+            .google_service_sync_enabled("personal", "mail")
+            .unwrap());
+        assert!(store
+            .google_service_sync_enabled("personal", "calendar")
+            .unwrap());
+        let command = json!({"preferences":{"google_sync_services":{"personal":{"mail":false,"calendar":true},"windscribe":{"mail":true,"calendar":false}}},"expected_revision":0,"request_id":"service-choices"});
+        let saved = store
+            .handle("preferences_save", None, command.clone())
+            .unwrap();
+        assert!(!store
+            .google_service_sync_enabled("personal", "mail")
+            .unwrap());
+        assert!(store
+            .google_service_sync_enabled("personal", "calendar")
+            .unwrap());
+        assert!(store
+            .google_service_sync_enabled("windscribe", "mail")
+            .unwrap());
+        assert!(!store
+            .google_service_sync_enabled("windscribe", "calendar")
+            .unwrap());
+        for bad in [
+            json!({"personal":{"mail":"off","calendar":true}}),
+            json!({"personal":{"mail":false}}),
+            json!({"unknown-account":{"mail":false,"calendar":true}}),
+            json!([]),
+        ] {
+            assert!(store.handle("preferences_save",None,json!({"preferences":{"google_sync_services":bad},"expected_revision":1,"request_id":"invalid-services"})).is_err());
+            assert_eq!(store.preferences().unwrap(), saved);
+        }
+        drop(store);
+        let mut store = Store::open(dir.path()).unwrap();
+        assert!(!store
+            .google_service_sync_enabled("personal", "mail")
+            .unwrap());
+        assert_eq!(
+            store.handle("preferences_save", None, command).unwrap(),
+            saved
+        );
+    }
+    #[test]
+    fn sync_cadence_is_shared_durable_and_rejects_invalid_values_atomically() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        assert_eq!(store.google_sync_interval_ms().unwrap(), 60_000);
+        let command = json!({"preferences":{"sync_every_minutes":15},"expected_revision":0,"request_id":"slow-checks"});
+        let saved = store
+            .handle("preferences_save", None, command.clone())
+            .unwrap();
+        assert_eq!(store.google_sync_interval_ms().unwrap(), 900_000);
+        for value in [json!(0), json!(2), json!(1.5), json!("5"), Value::Null] {
+            assert_eq!(store.handle("preferences_save", None, json!({"preferences":{"sync_every_minutes":value,"theme":"paper"},"expected_revision":1,"request_id":"invalid-checks"})).unwrap_err().code, "invalid_request");
+            assert_eq!(store.preferences().unwrap(), saved);
+        }
+        drop(store);
+        let mut store = Store::open(dir.path()).unwrap();
+        assert_eq!(store.google_sync_interval_ms().unwrap(), 900_000);
+        assert_eq!(
+            store.handle("preferences_save", None, command).unwrap(),
+            saved
+        );
+    }
 
     #[test]
     fn mail_date_grouping_is_shared_durable_and_validated() {
@@ -488,7 +609,7 @@ mod appearance_tests {
             store.draft("windscribe", "windscribe-thread-003").unwrap(),
             draft_before
         );
-        for (index, theme) in ["harbour", "graphite"].iter().enumerate() {
+        for (index, theme) in ["terminal", "harbour", "graphite"].iter().enumerate() {
             let next = store
                 .handle(
                     "preferences_save",

@@ -11,18 +11,61 @@ Item {
     signal bccRequested()
     readonly property var recipients: backend.draft[fieldName] || []
     property string identity: backend.account + "/" + (backend.activeDraftId || backend.selectedId)
+    readonly property bool popupOpen: suggestions.opened
+    property var candidates: []
+    property string ticket: ""
+    property int highlighted: 0
+    function placeSuggestions() {
+        if (!suggestions.parent) return
+        const position = entry.mapToItem(suggestions.parent, 0, entry.height + 6)
+        suggestions.x = Math.max(12, Math.min(position.x, suggestions.parent.width - suggestions.width - 12))
+        suggestions.y = Math.max(12, Math.min(position.y, suggestions.parent.height - suggestions.implicitHeight - 12))
+    }
+    onWidthChanged: if (suggestions.opened) placeSuggestions()
+    function excluded() {
+        let values = []
+        for (const key of ["to_recipients", "cc_recipients", "bcc_recipients"])
+            for (const recipient of (backend.draft[key] || [])) values.push(recipient.email.toLowerCase())
+        return values
+    }
+    function resetSuggestions() { lookup.stop(); ticket = ""; candidates = []; highlighted = 0; suggestions.close() }
+    function showCandidates(rows) {
+        const used = excluded(), value = entry.text.trim()
+        let next = rows.filter(row => used.indexOf(row.email.toLowerCase()) < 0)
+        if (/^[^\s<>;,]+@[^\s<>;,]+$/.test(value) && used.indexOf(value.toLowerCase()) < 0 && !next.some(row => row.email.toLowerCase() === value.toLowerCase()))
+            next.push({ name: "", email: value, raw: true })
+        candidates = next; highlighted = 0
+        if (next.length && entry.activeFocus) suggestions.open(); else suggestions.close()
+    }
+    function choose(index) {
+        if (index < 0 || index >= candidates.length) return false
+        const row = candidates[index]
+        if (!backend.addDraftAddress(fieldName, row.email, row.name || "")) return false
+        entry.text = ""; resetSuggestions(); entry.forceActiveFocus(); return true
+    }
     implicitHeight: Math.max(24, chips.implicitHeight) + 14
     function commit() {
         if (!entry.text.trim().length) return true
         if (!backend.addDraftRecipient(fieldName, entry.text)) return false
-        entry.text = ""; return true
+        entry.text = ""; resetSuggestions(); return true
     }
-    onIdentityChanged: entry.text = ""
+    onIdentityChanged: { resetSuggestions(); entry.text = backend.recipientInputs[fieldName] || "" }
+    Component.onCompleted: entry.text = backend.recipientInputs[fieldName] || ""
+    onVisibleChanged: if (!visible) resetSuggestions()
+    Timer {
+        id: lookup; interval: 150
+        onTriggered: if (entry.activeFocus && entry.text.trim().length) field.ticket = backend.recipientSuggestions(entry.text.trim(), field.excluded())
+    }
     Connections {
         target: backend
         function onDraftChanged() {
             const text = backend.recipientInputs[field.fieldName] || ""
             if (entry.text !== text) entry.text = text
+        }
+        function onRecipientSuggestionsReply(replyTicket, result, ok) {
+            if (!field.ticket.length || replyTicket !== field.ticket || result.account !== backend.account || result.query !== entry.text.trim().toLowerCase()) return
+            field.ticket = ""
+            if (ok && entry.activeFocus) field.showCandidates(result.suggestions || [])
         }
     }
     Rectangle { y: Theme.snapY(parent, parent.height-1); width: parent.width; height: Theme.ruleWidth; color: Theme.line }
@@ -48,10 +91,68 @@ Item {
             color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(14); placeholderTextColor: Theme.subtle
             placeholderText: field.recipients.length ? "" : "Add recipient"
             enabled: !backend.draftLocked; selectByMouse: true
-            onTextEdited: backend.stageDraftRecipient(field.fieldName,text)
+            onTextEdited: { backend.stageDraftRecipient(field.fieldName,text); field.resetSuggestions(); field.showCandidates([]); lookup.restart() }
             onAccepted: field.commit()
-            onEditingFinished: if (text.trim().length) field.commit()
+            onEditingFinished: { field.resetSuggestions(); if (text.trim().length) field.commit() }
+            onActiveFocusChanged: if (activeFocus && text.trim().length) lookup.restart()
+            Keys.onPressed: event => {
+                if (event.modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.AltModifier)) return
+                const count = field.candidates.length
+                if (event.key === Qt.Key_Escape && suggestions.opened) { field.resetSuggestions(); event.accepted = true }
+                else if (count && (event.key === Qt.Key_Down || event.key === Qt.Key_Up)) {
+                    field.highlighted = (field.highlighted + count + (event.key === Qt.Key_Down ? 1 : -1)) % count; event.accepted = true
+                } else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter || event.key === Qt.Key_Tab || event.key === Qt.Key_Comma) {
+                    if (count && suggestions.opened) { field.choose(field.highlighted); event.accepted = true }
+                    else if (text.trim().length) { field.commit(); event.accepted = true }
+                } else if (event.key === Qt.Key_Backspace && !text.length && field.recipients.length) {
+                    backend.removeDraftRecipient(field.fieldName, field.recipients.length - 1); event.accepted = true
+                }
+            }
             Accessible.name: field.label+" recipient"
+        }
+    }
+    Popup {
+        id: suggestions; objectName: "recipientSuggestions_" + field.fieldName
+        parent: Overlay.overlay; padding: 5; focus: false
+        width: Math.min(460, parent ? parent.width - 24 : 460)
+        implicitHeight: suggestionRows.implicitHeight + topPadding + bottomPadding
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onAboutToShow: field.placeSuggestions()
+        onImplicitHeightChanged: if (opened) field.placeSuggestions()
+        Connections {
+            target: suggestions.parent
+            function onWidthChanged() { if (suggestions.opened) field.placeSuggestions() }
+            function onHeightChanged() { if (suggestions.opened) field.placeSuggestions() }
+        }
+        background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
+        contentItem: Column {
+            id: suggestionRows; spacing: 2
+            Repeater {
+                model: field.candidates
+                ItemDelegate {
+                    id: candidate; required property var modelData; required property int index
+                    objectName: "recipientSuggestion_" + field.fieldName + "_" + index
+                    width: suggestionRows.width; height: Math.max(50, candidateText.implicitHeight + 12)
+                    focusPolicy: Qt.NoFocus; padding: 6
+                    onHoveredChanged: if (hovered) field.highlighted = index
+                    onClicked: field.choose(index)
+                    Accessible.name: (modelData.name || modelData.email) + ", " + modelData.email + (modelData.account !== backend.account && modelData.account_name ? ", " + modelData.account_name : "")
+                    background: Rectangle { radius: 5; color: candidate.index === field.highlighted ? Theme.inkAlpha(.06) : "transparent" }
+                    contentItem: RowLayout {
+                        spacing: 10
+                        Rectangle {
+                            width: 28; height: 28; radius: 14; color: Theme.inkAlpha(.06)
+                            Text { anchors.centerIn: parent; text: candidate.modelData.raw ? "@" : (candidate.modelData.name || candidate.modelData.email).trim().split(/\s+/).slice(0, 2).map(word => word.slice(0, 1)).join("").toUpperCase(); color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11) }
+                        }
+                        Column {
+                            id: candidateText; Layout.fillWidth: true; spacing: 2
+                            Text { width: parent.width; text: candidate.modelData.raw ? "Use “" + candidate.modelData.email + "”" : candidate.modelData.name || candidate.modelData.email; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); elide: Text.ElideRight; textFormat: Text.PlainText }
+                            Text { width: parent.width; text: candidate.modelData.raw ? "Enter this address" : candidate.modelData.email; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11); elide: Text.ElideRight; textFormat: Text.PlainText }
+                        }
+                        Text { visible: !candidate.modelData.raw && candidate.modelData.account !== backend.account; Layout.maximumWidth: 95; text: candidate.modelData.account_name || ""; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(10); elide: Text.ElideRight; textFormat: Text.PlainText }
+                    }
+                }
+            }
         }
     }
     Row {

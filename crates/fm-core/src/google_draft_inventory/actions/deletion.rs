@@ -354,6 +354,7 @@ impl Store {
         revision: i64,
     ) -> Result<GoogleDraftDeleteLease> {
         self.delete_scope(scope)?;
+        self.check_transfer_cleanup_authority(&scope.account, request)?;
         let mut op = self
             .delete_operation(&scope.account, request)?
             .ok_or_else(|| err("not_found", "Deletion request is not recorded"))?;

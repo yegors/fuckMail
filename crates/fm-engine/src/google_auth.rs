@@ -298,9 +298,10 @@ impl Runtime {
                             "email",
                             "reauthorize",
                             "expected_revision",
+                            "access",
                         ]
                     } else {
-                        &["client_config_path", "email", "reauthorize"]
+                        &["client_config_path", "email", "reauthorize", "access"]
                     },
                 )?;
                 let restore_revision = if restore {
@@ -348,6 +349,18 @@ impl Runtime {
                     Some(Value::Bool(value)) => *value,
                     _ => return Err(error("invalid_request", "reauthorize must be a boolean")),
                 };
+                let access: fm_google::auth::RequestedAccess = params
+                    .get("access")
+                    .map(|value| serde_json::from_value(value.clone()))
+                    .transpose()
+                    .map_err(|_| {
+                        error(
+                            "invalid_request",
+                            "Choose none, read or write for Mail and Calendar",
+                        )
+                    })?
+                    .unwrap_or_default();
+                access.scopes().map_err(google_error)?;
                 self.begin(
                     owner,
                     owner_cancel,
@@ -356,6 +369,7 @@ impl Runtime {
                     email,
                     reauthorize,
                     restore_revision,
+                    access,
                 )
                 .await
             }
@@ -446,6 +460,7 @@ impl Runtime {
         email: Option<String>,
         reauthorize: bool,
         restore_revision: Option<i64>,
+        access: fm_google::auth::RequestedAccess,
     ) -> Result<Value> {
         let id = fm_ipc::random_token();
         let cancel = self.inner.cancel.child_token();
@@ -520,11 +535,12 @@ impl Runtime {
             if owner_cancel.is_cancelled() || cancel.is_cancelled() {
                 return Err(cancelled());
             }
-            let login = DesktopLogin::begin_with_login_hint(
+            let login = DesktopLogin::begin_with_access(
                 config.client_id().to_owned(),
                 Duration::from_secs(LOGIN_SECONDS),
                 reauthorize,
                 email.as_deref(),
+                access,
             )
             .await
             .map_err(google_error)?;

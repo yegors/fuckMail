@@ -108,6 +108,193 @@ pub(crate) async fn refresh(ctx: &SyncContext) -> Result<Value> {
     }
     Ok(result)
 }
+
+pub(crate) fn request_parameter<'a>(params: &'a Value, key: &str) -> Result<&'a str> {
+    if params
+        .as_object()
+        .is_none_or(|p| p.len() != 1 || !p.contains_key(key))
+    {
+        return Err(failure(
+            "invalid_request",
+            "Supply the label-sync identifier",
+        ));
+    }
+    params[key]
+        .as_str()
+        .filter(|v| !v.is_empty() && v.len() <= 256 && !v.chars().any(char::is_control))
+        .ok_or_else(|| failure("invalid_request", "Invalid label-sync identifier"))
+}
+pub(crate) struct SyncJob {
+    pub owner: String,
+    pub account: String,
+    pub request: String,
+    pub cancel: fm_google::transport::CancellationToken,
+    pub task: tokio::task::JoinHandle<()>,
+    result: Arc<std::sync::Mutex<Value>>,
+}
+impl SyncJob {
+    pub(super) fn start(
+        ctx: SyncContext,
+        owner: super::OperationOwner,
+        owner_id: String,
+        owner_cancel: fm_google::transport::CancellationToken,
+        request: String,
+    ) -> Self {
+        let cancel = ctx.cancel.child_token();
+        let ctx = SyncContext {
+            cancel: cancel.clone(),
+            ..ctx
+        };
+        let account = ctx.account.as_str().to_owned();
+        let result = Arc::new(std::sync::Mutex::new(json!({"state":"running"})));
+        let task_result = result.clone();
+        let task_request = request.clone();
+        let task = tokio::spawn(async move {
+            let _owner = owner;
+            let relay_cancel = ctx.cancel.clone();
+            let relay = tokio::spawn(async move {
+                tokio::select! { _=owner_cancel.cancelled()=>relay_cancel.cancel(), _=relay_cancel.cancelled()=>{} }
+            });
+            let outcome = sync_names(&ctx, json!({"request_id":task_request})).await;
+            *task_result.lock().unwrap() = match outcome {
+                Ok(value) => json!({"state":"complete", "result":value}),
+                Err(error) => {
+                    json!({"state":if ctx.cancel.is_cancelled(){"cancelled"}else{"failed"},"error":{"code":error.code,"message":error.message,"details":error.details}})
+                }
+            };
+            ctx.cancel.cancel();
+            relay.abort();
+            let _ = relay.await;
+        });
+        Self {
+            owner: owner_id,
+            account,
+            request,
+            cancel,
+            task,
+            result,
+        }
+    }
+    pub fn snapshot(&self, id: &str) -> Value {
+        let mut value = self.result.lock().unwrap().clone();
+        if value["state"] == "running" && self.task.is_finished() {
+            value = json!({"state":"failed","error":{"code":"engine_stopped","message":"Label sync stopped. Sync again to check Google."}});
+        }
+        value["job_id"] = json!(id);
+        value
+    }
+}
+pub(crate) async fn sync_names(ctx: &SyncContext, params: Value) -> Result<Value> {
+    let request = request_parameter(&params, "request_id")?.to_owned();
+    refresh(ctx).await?;
+    let account = ctx.account.as_str().to_owned();
+    let plan = ctx
+        .core_call(move |store| store.google_labels_merge(&account, &request))
+        .await?;
+    let mut created = 0;
+    let mut unresolved = 0;
+    for item in plan["pending"].as_array().unwrap() {
+        let category = item["id"].as_str().unwrap().to_owned();
+        let name = item["name"].as_str().unwrap().to_owned();
+        let call = GmailCall::create_label(&ctx.account, &name).map_err(provider)?;
+        let (a, c, n) = (
+            ctx.account.as_str().to_owned(),
+            category.clone(),
+            name.clone(),
+        );
+        if !ctx
+            .core_call(move |store| store.google_label_create_begin(&a, &c, &n))
+            .await?
+        {
+            unresolved += 1;
+            continue;
+        }
+        let reply = ctx.gmail_mutation(call).await;
+        let (label, rejected, error) = match reply {
+            Ok(GmailReply::Label(label)) if label.name == name => (Some(label.id), false, None),
+            Ok(GmailReply::LabelCreateRejected) => {
+                (None, true, Some("google_label_name_rejected".to_owned()))
+            }
+            Ok(_) => (None, false, Some("invalid_google_response".to_string())),
+            Err(error) => {
+                let rejected = matches!(
+                    error,
+                    GoogleError::PermissionDenied
+                        | GoogleError::ReauthorizationRequired
+                        | GoogleError::RateLimited { .. }
+                );
+                (None, rejected, Some(provider(error).code))
+            }
+        };
+        let a = ctx.account.as_str().to_owned();
+        let accepted = label.is_some();
+        let failure_code = error.clone();
+        // Persist a received outcome even when this UI owner has just closed.
+        ctx.core
+            .call(move |store| {
+                store.google_label_create_finish(
+                    &a,
+                    &category,
+                    &name,
+                    label.as_deref(),
+                    rejected,
+                    error.as_deref(),
+                )
+            })
+            .await?;
+        if accepted {
+            created += 1;
+        } else {
+            return Err(failure(
+                failure_code
+                    .as_deref()
+                    .unwrap_or("google_label_create_unknown"),
+                if rejected {
+                    "Google did not create the label. Check its name and your mail permissions before syncing again."
+                } else {
+                    "The label creation outcome is unknown. Sync again to check Google before creating another label."
+                },
+            ));
+        }
+    }
+    if created > 0 {
+        refresh(ctx).await?;
+    }
+    let mut queued = 0;
+    loop {
+        let account = ctx.account.as_str().to_owned();
+        let count = ctx
+            .core_call(move |store| store.google_label_memberships_queue(&account))
+            .await?;
+        queued += count;
+        if count == 0 {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    ctx.refresh
+        .send_modify(|revision| *revision = revision.wrapping_add(1));
+    let pulled = plan["pulled"].as_u64().unwrap_or(0);
+    let renamed = plan["renamed"].as_u64().unwrap_or(0);
+    let skipped = plan["skipped"].as_u64().unwrap_or(0);
+    let missing = plan["missing"].as_u64().unwrap_or(0);
+    let message = if unresolved > 0 {
+        format!("{pulled} imported · {created} created in Google · {unresolved} uncertain creations still need Google readback.")
+    } else if skipped > 0 {
+        format!("{pulled} imported · {created} created · {skipped} labels could not be merged (name conflict or account limit).")
+    } else if missing > 0 {
+        format!("{pulled} imported · {created} created · {missing} linked labels are no longer in Google. Remove those labels here before adding replacements.")
+    } else if pulled + created + renamed == 0 {
+        "Already in sync · just now".into()
+    } else {
+        format!(
+            "{pulled} imported · {created} created in Google · {renamed} names updated · just now"
+        )
+    };
+    Ok(
+        json!({"pulled":pulled,"created":created,"renamed":renamed,"skipped":skipped,"missing":missing,"unresolved":unresolved,"queued_memberships":queued,"message":message}),
+    )
+}
 async fn memory_core<T, F>(
     ctx: &SyncContext,
     memory: &Arc<OwnedSemaphorePermit>,

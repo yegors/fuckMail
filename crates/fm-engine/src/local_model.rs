@@ -56,7 +56,7 @@ impl Runtime {
         p: Value,
     ) -> Result<Value> {
         let allowed: &[&str] = match method {
-            "assist_discover" => &["endpoint"],
+            "assist_discover" => &["endpoint", "provider"],
             "assist_start" => &[
                 "task",
                 "sample",
@@ -86,10 +86,20 @@ impl Runtime {
             ),
             "assist_discover" => {
                 let settings = self.core.call(|s| s.local_model_settings()).await?;
-                let endpoint = p["endpoint"]
-                    .as_str()
-                    .unwrap_or(settings["settings"]["endpoint"].as_str().unwrap());
-                ollama::discover(endpoint, &cancel).await
+                let configured: Settings = serde_json::from_value(settings["settings"].clone())
+                    .map_err(|_| failure("invalid_request", "Invalid local model settings"))?;
+                let endpoint = p["endpoint"].as_str().unwrap_or(&configured.endpoint);
+                let provider = if let Some(value) = p.get("provider") {
+                    serde_json::from_value(value.clone())
+                        .map_err(|_| failure("invalid_request", "Unknown local model provider"))?
+                } else {
+                    configured.provider
+                };
+                if provider == fm_assist::ollama::Provider::Ollama {
+                    ollama::discover(endpoint, &cancel).await
+                } else {
+                    crate::openai_local::discover(endpoint, &cancel).await
+                }
             }
             "assist_settings_save" => {
                 let result = self
@@ -125,7 +135,7 @@ impl Runtime {
                 let state = self.core.call(|s| s.local_model_settings()).await?;
                 let settings: Settings = serde_json::from_value(state["settings"].clone())
                     .map_err(|_| failure("storage_error", "Invalid model settings"))?;
-                if !settings.accounts.values().any(|a| a.classification) {
+                if settings.model.is_none() {
                     return Ok(json!({"watching":false}));
                 }
                 let token = cancel.child_token();
@@ -159,14 +169,14 @@ impl Runtime {
                                 .await;
                             if current.is_ok_and(|r| {
                                 r["items"].as_array().unwrap().iter().any(|i| {
-                                    i["task"] == "classification"
+                                    (i["task"] == "classification" || i["task"] == "summary")
                                         && i["target"] == target
                                         && i["stale"] == false
                                 })
                             }) {
                                 continue;
                             }
-                            match runtime.start(&owner,token.clone(),m["account"].as_str(),json!({"task":"classification","conversation_id":m["conversation_id"],"message_id":m["id"]})).await {
+                            match runtime.start(&owner,token.clone(),m["account"].as_str(),json!({"task":"message","conversation_id":m["conversation_id"],"message_id":m["id"]})).await {
                                 Ok(job)=>loop {
                                     if token.is_cancelled(){return;}
                                     let running=runtime.jobs.lock().unwrap().get(job["job_id"].as_str().unwrap()).is_some_and(|j|j.state["status"]=="queued" || j.state["status"]=="running");
@@ -207,7 +217,7 @@ impl Runtime {
     ) -> Result<Value> {
         let task = p["task"]
             .as_str()
-            .filter(|t| ["summary", "classification"].contains(t))
+            .filter(|t| ["summary", "classification", "message"].contains(t))
             .ok_or_else(|| failure("invalid_request", "Choose summary or classification"))?
             .to_owned();
         let sample = p["sample"].as_bool().unwrap_or(false);
