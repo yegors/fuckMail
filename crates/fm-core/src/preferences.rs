@@ -278,7 +278,13 @@ impl Store {
     pub(crate) fn account_update(&self, account: &str, p: &Value) -> Result<Value> {
         fields(
             p,
-            &["name", "signature_text", "expected_revision", "request_id"],
+            &[
+                "name",
+                "signature_text",
+                "mail_retention",
+                "expected_revision",
+                "request_id",
+            ],
         )?;
         let request = string(p, "request_id")?;
         let fingerprint = format!(
@@ -329,6 +335,34 @@ impl Store {
             |r| r.get(0),
         )?;
         crate::mutations::check_revision(required_revision(p)?, current)?;
+        if let Some(retention) = p.get("mail_retention") {
+            let retention = retention
+                .as_str()
+                .ok_or_else(|| err("invalid_request", "Invalid mail retention"))?;
+            let since = mail_retention_since(retention)?;
+            let old: String = tx.query_row(
+                "SELECT mail_retention FROM account_metadata WHERE account=?1",
+                [account],
+                |r| r.get(0),
+            )?;
+            if old != retention {
+                let started: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM google_live_lanes WHERE account=?1)",
+                    [account],
+                    |r| r.get(0),
+                )?;
+                if started {
+                    return Err(err(
+                        "retention_already_started",
+                        "Download history is chosen before the first mail sync",
+                    ));
+                }
+                tx.execute(
+                    "UPDATE account_metadata SET mail_retention=?2,mail_since=?3 WHERE account=?1",
+                    params![account, retention, since],
+                )?;
+            }
+        }
         tx.execute(
             "UPDATE accounts SET name=?1 WHERE id=?2",
             params![name, account],
@@ -358,6 +392,24 @@ impl Store {
         Ok(result)
     }
 }
+pub(crate) fn mail_retention_since(retention: &str) -> Result<Option<i64>> {
+    let months = match retention {
+        "1_month" => 1,
+        "3_months" => 3,
+        "1_year" => 12,
+        "all" => return Ok(None),
+        _ => {
+            return Err(err(
+                "invalid_request",
+                "Choose 1 month, 3 months, 1 year or All",
+            ))
+        }
+    };
+    Ok(Some(
+        (chrono::Utc::now() - chrono::Months::new(months)).timestamp(),
+    ))
+}
+
 pub(crate) fn required_revision(p: &Value) -> Result<i64> {
     p["expected_revision"]
         .as_i64()
@@ -373,6 +425,46 @@ pub(crate) fn required_revision(p: &Value) -> Result<i64> {
 #[cfg(test)]
 mod appearance_tests {
     use super::*;
+    #[test]
+    fn retention_setup_choices_are_durable_and_frozen_after_acquisition() {
+        for (index, choice) in ["1_month", "3_months", "1_year", "all"].iter().enumerate() {
+            let dir = tempfile::tempdir().unwrap();
+            let mut store = Store::open_live(dir.path()).unwrap();
+            let account = store
+                .bind_google_account(
+                    "retention-owner",
+                    "owner@example.test",
+                    &std::collections::BTreeSet::from([
+                        "https://www.googleapis.com/auth/gmail.modify".into(),
+                    ]),
+                    None,
+                )
+                .unwrap();
+            let before = store.accounts().unwrap()["accounts"][0].clone();
+            assert_eq!(before["mail_retention"], "1_year");
+            let p = json!({"name":"History","signature_text":"","mail_retention":choice,"expected_revision":before["metadata_revision"],"request_id":format!("history-{index}")});
+            let saved = store
+                .handle("account_update", Some(&account), p.clone())
+                .unwrap();
+            assert_eq!(saved["mail_retention"], *choice);
+            assert_eq!(saved["mail_since"].is_null(), *choice == "all");
+            drop(store);
+            let mut store = Store::open_live(dir.path()).unwrap();
+            assert_eq!(
+                store.handle("account_update", Some(&account), p).unwrap(),
+                saved
+            );
+            store
+                .google_live_begin(&account, "100", chrono::Utc::now().timestamp())
+                .unwrap();
+            let next = if *choice == "all" { "1_month" } else { "all" };
+            assert_eq!(store.handle("account_update",Some(&account),json!({"name":"History","signature_text":"","mail_retention":next,"expected_revision":saved["metadata_revision"],"request_id":"too-late"})).unwrap_err().code,"retention_already_started");
+            assert_eq!(
+                store.accounts().unwrap()["accounts"][0]["mail_since"],
+                saved["mail_since"]
+            );
+        }
+    }
     #[test]
     fn calendar_account_visibility_is_additive_typed_and_durable() {
         let dir = tempfile::tempdir().unwrap();

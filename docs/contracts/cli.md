@@ -1,5 +1,12 @@
 # CLI and external agent interface
 
+## D072 — account and model feedback (CLI37)
+
+`fm --account ID account delete-archive --expected-revision N --request-id ID` uses the shared permanent local deletion boundary. Require explicit scope and a positive revision before storage; replay the same request to recover its result. `account-update --mail-retention 1_month|3_months|1_year|all` optionally saves initial history coverage with existing name/signature revision checks. Omission preserves the choice; it cannot change after acquisition starts.
+
+Consumers: Core42/Gmail22/Local assistance14/Mail UI49/CLI37/Quality49, schema29; Calendar25, fixtures0/3 and protocol1 unchanged. Whole-area readiness remains 0/9.
+
+
 D070 / P2-UI3 (CLI36): generic `preferences show` and `preferences save` expose `calendar_account_visibility`, accepting `all` or `current` with existing revision/request identity checks. The stored choice follows the current GUI account and does not narrow ordinary explicit CLI Calendar queries. Existing `selected_calendars` and unrelated preferences survive edits and old-engine round trips. Consumers: Core41/Calendar25/Mail UI48/Quality48; Gmail21/schema28/fixtures0,3/protocol1 unchanged.
 
 D067 / P2-UI3 outgoing presentation. `google sent [--offset N] [--limit 1..100] [--conversation-id ID]` lists retained outgoing submissions before acquisition. `google sent-message --request-id ID` reads the frozen plain text, recipients and attachment metadata. Both require explicit account scope and run locally without provider calls. Existing send/status/reconcile/abandon commands remain the authority for delivery state and recovery. Consumers: Core40/Gmail21/Mail UI45/CLI35/Quality45, schema28, fixtures0/3 and protocol1.
@@ -30,7 +37,7 @@ D058 / P2-LLM2D limits all assistance to received mail. Reader queries expose th
 
 D056 / P2-LLM2B exposes the complete editable Ollama JSON request: system/user messages, all five variables, full response schema and generation options. No hidden envelope or schema is injected. Schema 23 archives and wraps prior prompt text, preserving model/account choices. Application output/action validation remains independent of editable instructions. Consumers: Local assistance 9/Core 32/Mail UI 34/CLI 26/Quality 34; fixtures 0/3/protocol 1 unchanged. See [the current request contract](local-ai.md) and D056 evidence.
 
-State: Draft · Revision: 35 · Updated: 2026-09-15 · Implementation: D067 outgoing presentation is verified in scoped Windows package164; prior evidence retains its original source boundary.
+State: Draft · Revision: 37 · Updated: 2026-09-16 · Implementation: D072 account/model feedback at schema29. Scoped evidence is recorded in the prototype execution report; whole-area readiness remains 0/9.
 
 D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages}}`, `{{partial}}`), combined per-message output, default-on prospective summaries/automatic single-label classification, manual precedence, and summary list previews. Schema 22 fences settings and assisted delivery; fixtures 0/3/protocol 1 unchanged. This supersedes conflicting D051–D053 delivery defaults below; historical evidence remains scoped to its original version. See the D055 decision and Local assistance 8.
 

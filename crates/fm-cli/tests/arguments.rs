@@ -40,6 +40,24 @@ fn account_removal_refuses_missing_scope_and_unsafe_requests_before_storage() {
     let profile = root.path().join("not-created");
     let oversized = "r".repeat(129);
     let cases = vec![
+        vec![
+            "account",
+            "delete-archive",
+            "--expected-revision",
+            "1",
+            "--request-id",
+            "purge",
+        ],
+        vec![
+            "--account",
+            "chosen",
+            "account",
+            "delete-archive",
+            "--expected-revision",
+            "0",
+            "--request-id",
+            "purge",
+        ],
         vec!["account", "remove-preview"],
         vec!["account", "removal-status", "--request-id", "remove-1"],
         vec![

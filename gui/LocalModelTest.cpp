@@ -11,6 +11,7 @@
 #include <QElapsedTimer>
 #include <QThread>
 #include <QInputMethodEvent>
+#include <QKeyEvent>
 #include <QJsonDocument>
 #include <QJSValue>
 #include <QDebug>
@@ -117,6 +118,16 @@ ApplicationWindow {width:680;height:900;visible:true;color:Theme.canvas
  require(QMetaObject::invokeMethod(combo,"activated",Q_ARG(int,1)),"native selector signal");
  const auto originalRequest=QJsonDocument::fromJson(backend.settings["prompt"].toString().toUtf8()).toVariant().toMap();
  const auto originalMessages=originalRequest["messages"].toList();
+ auto *modelChoice=find(window->contentItem(),"mailModel");require(modelChoice,"native model choice");
+ await([&]{return panel->property("discovered").toBool();});
+ modelChoice->forceActiveFocus();
+ QKeyEvent modelDown(QEvent::KeyPress,Qt::Key_Down,Qt::NoModifier),modelUp(QEvent::KeyRelease,Qt::Key_Down,Qt::NoModifier);
+ QCoreApplication::sendEvent(modelChoice,&modelDown);QCoreApplication::sendEvent(modelChoice,&modelUp);
+ await([&]{return panel->property("selectedAvailable").toBool();});
+ backend.delayDiscovery=true;QMetaObject::invokeMethod(panel,"refresh");
+ require(modelChoice->property("currentIndex").toInt()==1 && !find(window->contentItem(),"modelUnavailable")->isVisible(),"refresh retains installed selection without a false missing warning");
+ await([&]{return !backend.discoveries.empty();});backend.flush(backend.discoveries);backend.delayDiscovery=false;
+ require(panel->property("selectedAvailable").toBool(),"installed model identity survives refreshed discovery");
  auto systemField=find(window->contentItem(),"mailPrompt0");auto field=find(window->contentItem(),"mailPrompt1");require(systemField && field,"system and user content editors");
  require(systemField->property("text").toString()==originalMessages[0].toMap()["content"].toString(),"system content only");
  require(field->property("text").toString()==originalMessages[1].toMap()["content"].toString(),"user content only with decoded newlines");

@@ -1,5 +1,14 @@
 # Mail UI, reader and human composer
 
+## D072 — account and model feedback (Mail UI49)
+
+Removed account cards offer Delete archive with the common destructive confirmation. Name the account, explain permanent local deletion and next-startup unused-file cleanup, and state that Google data is unchanged. Cancel does nothing. Success removes the card and clears a selected archive; unsaved editor buffers keep their explicit disposition. Restoration clears obsolete removal status.
+
+Google setup omits Meetings and offers Local retention: 1 month, 3 months, 1 year (default), All. Save it with the display name before sync; reconnect preserves the choice. Cards show the saved choice. Model selection stays visible during discovery. Remove the workspace-wide top error banner; retain startup and contextual reader, editor, account and Settings errors.
+
+Consumers: Core42/Gmail22/Local assistance14/Mail UI49/CLI37/Quality49, schema29; Calendar25, fixtures0/3 and protocol1 unchanged. Whole-area readiness remains 0/9.
+
+
 D070–D071 / P2-UI3 (Mail UI48): Calendar Settings starts with Other accounts’ events, Show/Hide; individual calendars and the display zone remain in collapsed details. Timeline dragging reveals the real adjacent day, settles after the existing threshold and retains cached events on arrival. Only the selected panel exposes focusable/clickable events; neighboring panels use their own date, hours, overlap shading and labels. All three panels honor visible accounts and deletion Undo. Consumers: Core41/Calendar25/CLI36/Quality48; Gmail21/schema28/fixtures0,3/protocol1 unchanged.
 
 D069 / P2-UI3 (Mail UI46): the current objective is GUI/UX alignment. D068 remote draft cleanup is parked and schema28 remains active. Search uses the prototype's compact shortcut row, solid selected chips and scope-specific Sent date choices. Quick actions apply existing typed filters without altering search words; dates explicitly use the existing UTC filter boundary. Examples use actual cached sender/category metadata. Additional active filters remain visible and removable after switching scopes. Empty category sections are hidden; the popup scrolls and clips to the available viewport. Graphite, Paper and Terminal are the current visible themes. Core40/Gmail21/Calendar23/CLI35 and fixture/protocol revisions stay unchanged.
@@ -30,7 +39,7 @@ D057 / P2-LLM2C simplifies Settings to editable System/User content with normal 
 
 D056 / P2-LLM2B exposes the complete editable Ollama JSON request: system/user messages, all five variables, full response schema and generation options. No hidden envelope or schema is injected. Schema 23 archives and wraps prior prompt text, preserving model/account choices. Application output/action validation remains independent of editable instructions. Consumers: Local assistance 9/Core 32/Mail UI 34/CLI 26/Quality 34; fixtures 0/3/protocol 1 unchanged. See [the current request contract](local-ai.md) and D056 evidence.
 
-State: Draft · Revision: 46 · Updated: 2026-09-15 · Implementation: D069 UI controls pass scoped native checks; configured relocated package176 passes. Schema28 stays active; prior evidence retains its original source boundary.
+State: Draft · Revision: 49 · Updated: 2026-09-16 · Implementation: D072 account/model feedback at schema29. Scoped evidence is recorded in the prototype execution report; whole-area readiness remains 0/9.
 
 D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages}}`, `{{partial}}`), combined per-message output, default-on prospective summaries/automatic single-label classification, manual precedence, and summary list previews. Schema 22 fences settings and assisted delivery; fixtures 0/3/protocol 1 unchanged. This supersedes conflicting D051–D053 delivery defaults below; historical evidence remains scoped to its original version. See the D055 decision and Local assistance 8.
 

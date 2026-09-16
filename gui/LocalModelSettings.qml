@@ -16,13 +16,21 @@ ColumnLayout {
     property string status: ""
     property bool conflict: false
     property string discoveryTicket: ""
+    property bool discovering: false
+    property bool discovered: false
     enabled: !saving
     property string jobErrors: ""
     property bool saving: false
     readonly property string provider: draft.provider || "ollama"
     readonly property var providers: [{name:"Ollama",id:"ollama"},{name:"OpenAI-compatible · local",id:"openai_compatible"}]
     readonly property bool dirty: revision >= 0 && JSON.stringify(saved) !== JSON.stringify(draft)
-    readonly property var choices: [{name:"Choose a model",digest:""}].concat(models.filter(m => m.eligible))
+    readonly property var installedModels: models.filter(m => m.eligible)
+    readonly property bool selectedAvailable: !!draft.model && installedModels.some(m => m.name === draft.model.name && m.digest === draft.model.digest)
+    readonly property var choices: {
+        const rows = [{name:"Choose a model",digest:""}].concat(installedModels)
+        if (draft.model && !selectedAvailable) rows.push(draft.model)
+        return rows
+    }
     readonly property var policy: (draft.accounts || {})[accountId] || {classification:true,summaries:true,descriptions:{}}
     readonly property var requestTemplate: {
         try { return JSON.parse(draft.prompt || "{}") } catch (e) { return ({}) }
@@ -50,16 +58,16 @@ ColumnLayout {
         if (value === "ollama") delete d.provider; else d.provider = value
         d.endpoint = value === "ollama" ? "http://127.0.0.1:11434" : "http://127.0.0.1:1234"
         d.model = null; draft = d
-        models = []; discoveryTicket = ""; status = "Enter the server address, then Detect."
+        models = []; discoveryTicket = ""; discovering = false; discovered = false; status = "Enter the server address, then Detect."
     }
     function editEndpoint(value) {
         if (value === draft.endpoint) return
         edit("endpoint",value); edit("model",null)
-        models = []; discoveryTicket = ""; status = "Server address changed. Detect models to continue."
+        models = []; discoveryTicket = ""; discovering = false; discovered = false; status = "Server address changed. Detect models to continue."
     }
     function refresh() {
         const endpoint = draft.endpoint || "http://127.0.0.1:11434"
-        models = []; status = "Looking for models…"
+        discovering = true; discovered = false; status = "Looking for models…"
         discoveryTicket = send("assist_discover", {endpoint:endpoint,provider:provider}, "discover", "", {endpoint:endpoint,provider:provider})
     }
     function save() { if(saving)return; saving=true; send("assist_settings_save",{expected_revision:revision,settings:draft},"save") }
@@ -71,7 +79,7 @@ ColumnLayout {
     Connections {
         target: backend
         function onConnectedChanged() {
-            if (!backend.connected) {panel.requests=({});panel.saving=false}
+            if (!backend.connected) {panel.requests=({});panel.saving=false;panel.discovering=false;panel.discovered=false}
             else if (panel.visible) panel.send("assist_settings_get",{},"load")
         }
         function onAssistanceReply(ticket,method,result,ok) {
@@ -81,6 +89,7 @@ ColumnLayout {
             if(kind==="ignore")return
             if(kind==="labels" && req.account!==panel.accountId)return
             if(kind==="discover" && (ticket!==panel.discoveryTicket || req.endpoint!==panel.draft.endpoint || req.provider!==panel.provider))return
+            if(kind==="discover") panel.discovering=false
             if (kind==="save") panel.saving=false
             if (!ok) {
                 panel.status=result.message || "Local model request failed"
@@ -92,7 +101,7 @@ ColumnLayout {
                 if (kind!=="load")panel.conflict=false
                 if (kind==="save") { panel.status="Saved"; panel.saveCompleted() }
                 if (panel.visible) { panel.refresh(); panel.send("assist_jobs",{},"jobs"); if(panel.accountId)panel.send("assist_catalog",{},"labels",panel.accountId) }
-            } else if (kind==="discover") { panel.models=result.models || []; panel.status=(panel.provider === "ollama" ? "Ollama "+(result.version || "") : "Local server")+" · "+panel.models.length+(panel.models.length === 1 ? " model" : " models") }
+            } else if (kind==="discover") { panel.models=result.models || []; panel.discovered=true; panel.status=(panel.provider === "ollama" ? "Ollama "+(result.version || "") : "Local server")+" · "+panel.models.length+(panel.models.length === 1 ? " model" : " models") }
             else if (kind==="labels") panel.labels=result.categories || []
             else if (kind==="jobs") panel.jobErrors=(result.items || []).filter(j=>j.error).map(j=>j.error.message).join("\n")
         }
@@ -113,8 +122,8 @@ ColumnLayout {
         Text { text:panel.status.length ? panel.status : "Choose a local endpoint, then Detect."; color:Theme.secondary; wrapMode:Text.Wrap; Layout.fillWidth:true; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(13) }
     }
     Text { text:"Model"; Layout.topMargin:8; color:Theme.inkAlpha(0.45); font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(11.5) }
-    FmComboBox { objectName:"mailModel"; Layout.fillWidth:true; Layout.maximumWidth:360; textRole:"name"; model:panel.choices; currentIndex:panel.indexFor(); onActivated:{const m=panel.choices[currentIndex];panel.edit("model",currentIndex===0?null:{name:m.name,digest:m.digest})} Accessible.name:"Mail model" }
-    Text { visible:panel.indexFor()<0; text:"Selected model is missing or changed. Detect models and choose again."; color:Theme.secondary; wrapMode:Text.Wrap; Layout.fillWidth:true; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(12) }
+    FmComboBox { objectName:"mailModel"; Layout.fillWidth:true; Layout.maximumWidth:360; textRole:"name"; model:panel.choices; currentIndex:panel.indexFor(); onActivated:function(index){const m=panel.choices[index];if(m)panel.edit("model",index===0?null:{name:m.name,digest:m.digest});currentIndex=Qt.binding(function(){return panel.indexFor()})} Accessible.name:"Mail model" }
+    Text { objectName:"modelUnavailable"; visible:panel.discovered && !panel.discovering && !!panel.draft.model && !panel.selectedAvailable; text:"The server no longer lists these model weights. Choose an available model."; color:Theme.secondary; wrapMode:Text.Wrap; Layout.fillWidth:true; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(12) }
     RowLayout {
         Layout.fillWidth:true; Layout.maximumWidth:560; Layout.topMargin:18
         Text { text:"On new mail"; color:Theme.inkAlpha(0.45); font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(11.5); Layout.fillWidth:true }

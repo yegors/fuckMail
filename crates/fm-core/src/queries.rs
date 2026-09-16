@@ -263,12 +263,14 @@ impl Store {
                 |r| r.get(0),
             )?;
             let counts = self.account_counts(&account)?;
-            let (metadata_revision, signature_text): (i64, String) = self.db.query_row(
-                "SELECT revision,signature_text FROM account_metadata WHERE account=?1",
+            let (metadata_revision, signature_text, mail_retention, mail_since): (i64, String, String, Option<i64>) = self.db.query_row(
+                "SELECT revision,signature_text,mail_retention,mail_since FROM account_metadata WHERE account=?1",
                 [&account],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )?;
             out.push(json!({"metadata_revision":metadata_revision,"unread_conversation_count":counts["unread_conversation_count"],"held_conversation_count":counts["held_conversation_count"],"done_conversation_count":counts["done_conversation_count"],"count_scope":"all_account_mail_including_archive","id":account,"name":name,"email":email,"provider":provider,"signature_text":signature_text,"unread_count":unread,"starred_count":starred,"conversation_count":count,"message_count":messages,"coverage":self.coverage(&account)?}));
+            out.last_mut().unwrap()["mail_retention"] = json!(mail_retention);
+            out.last_mut().unwrap()["mail_since"] = json!(mail_since);
             let drafts: i64 = self.db.query_row(
                 "SELECT COUNT(*) FROM drafts d WHERE account=?1 AND discarded=0 AND (origin='local' OR NOT EXISTS(SELECT 1 FROM google_draft_sources s WHERE s.account=d.account AND s.draft_id=d.draft_id AND s.is_current=1 AND s.linked_local_draft_id IS NOT NULL))",
                 [&account],

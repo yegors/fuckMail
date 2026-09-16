@@ -3,10 +3,11 @@ import QtQuick.Controls
 
 Item {
     id: lifecycle
-    readonly property bool popupOpen: removeDialog.opened || bufferDialog.opened
+    readonly property bool popupOpen: removeDialog.opened || bufferDialog.opened || archiveDialog.opened
     Connections {
         target: backend
         function onAccountRemovalReady(context) { removeDialog.context = context; removeDialog.open() }
+        function onArchiveDeletionReady(context) { archiveDialog.context = context; archiveDialog.open() }
         function onAccountBufferDispositionRequired() { bufferDialog.open() }
     }
     FmConfirmDialog {
@@ -19,6 +20,17 @@ Item {
         actionObjectName: "confirmAccountRemoval"
         cancelObjectName: "cancelAccountRemoval"
         onAccepted: backend.confirmAccountRemoval(context)
+    }
+    FmConfirmDialog {
+        id: archiveDialog; objectName: "archiveDeleteDialog"
+        property var context: ({})
+        title: "Delete local archive?"
+        message: "Permanently delete saved mail, drafts, events and history for " + (context.email || "this account") + " from this app? This cannot be undone. Unused downloaded files are cleaned up when the app next starts. Nothing changes at Google."
+        destructive: true
+        actionText: "Delete archive"
+        actionObjectName: "confirmArchiveDeletion"
+        cancelObjectName: "cancelArchiveDeletion"
+        onAccepted: backend.confirmArchiveDeletion(context)
     }
     FmConfirmDialog {
         id: bufferDialog; objectName: "removedAccountBufferDialog"

@@ -86,6 +86,8 @@ enum Command {
     },
     /// Update display name and signature, preserving existing draft snapshots.
     AccountUpdate {
+        #[arg(long, value_parser=["1_month","3_months","1_year","all"])]
+        mail_retention: Option<String>,
         #[arg(long)]
         name: String,
         #[arg(long)]
@@ -184,6 +186,13 @@ enum CalendarCommand {
 
 #[derive(Subcommand)]
 enum AccountCommand {
+    /// Permanently delete a removed local archive; Google data is unchanged.
+    DeleteArchive {
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        expected_revision: i64,
+        #[arg(long)]
+        request_id: String,
+    },
     /// Inspect retained work and the current lifecycle revision before removal.
     RemovePreview,
     /// Remove from active views and clear local credentials; keep a read-only archive.
@@ -1214,6 +1223,13 @@ fn account_lifecycle_request(command: &Command) -> Result<Option<(&'static str, 
     };
     let (method, params) = match command {
         AccountCommand::RemovePreview => ("account_remove_preview", json!({})),
+        AccountCommand::DeleteArchive {
+            expected_revision,
+            request_id,
+        } => (
+            "account_archive_delete",
+            json!({"expected_revision":expected_revision,"request_id":request_id}),
+        ),
         AccountCommand::Remove {
             expected_revision,
             request_id,
@@ -2110,6 +2126,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             }
         },
         Command::AccountUpdate {
+            mail_retention,
             name,
             signature_file,
             expected_revision,
@@ -2117,7 +2134,9 @@ async fn run(args: &Args) -> Result<(), Failure> {
         } => {
             let signature = String::from_utf8(read_input(signature_file, 16 * 1024)?)
                 .map_err(|_| invalid("Signature must be UTF-8"))?;
-            client.call("account_update",scope,json!({"name":name,"signature_text":signature,"expected_revision":expected_revision,"request_id":request_id})).await?
+            let mut params=json!({"name":name,"signature_text":signature,"expected_revision":expected_revision,"request_id":request_id});
+            if let Some(retention)=mail_retention {params["mail_retention"]=json!(retention);}
+            client.call("account_update",scope,params).await?
         }
         Command::CalendarSources => client.call("calendar_sources", None, json!({})).await?,
         Command::CalendarWrite { params_file } => {

@@ -317,15 +317,6 @@ ApplicationWindow {
     }
     ColumnLayout {
         anchors.fill: parent; spacing: 0
-        Rectangle {
-            visible: backend.error.length > 0; Layout.fillWidth: true; implicitHeight: errorRow.implicitHeight + 16
-            color: Theme.surface
-            RowLayout {
-                id: errorRow; anchors.fill: parent; anchors.margins: 8
-                Text { text: backend.error; color: Theme.error; wrapMode: Text.Wrap; Layout.fillWidth: true; textFormat: Text.PlainText }
-                FmButton { text: backend.connected ? "Dismiss" : "Reconnect"; onClicked: backend.connected ? backend.clearError() : backend.start() }
-            }
-        }
         Item { id: timelineHeaderSlot; visible: window.timelineVisible && window.timelineAtTop; Layout.fillWidth: true; implicitHeight: visible ? timeline.implicitHeight : 0 }
         StackLayout {
             Layout.fillWidth: true; Layout.fillHeight: true

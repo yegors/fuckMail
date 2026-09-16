@@ -240,7 +240,17 @@ impl Store {
                 "Connect Google accounts in a separate live profile",
             ));
         }
-        let account = google_account_id(subject)?;
+        let base = google_account_id(subject)?;
+        let existing: Option<String> = self
+            .db
+            .query_row(
+                "SELECT account FROM google_accounts WHERE google_subject=?1",
+                [subject],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let replacement: Option<String> = self.db.query_row("SELECT replacement_account FROM deleted_account_archives WHERE base_account=?1 ORDER BY rowid DESC LIMIT 1",[&base],|r|r.get(0)).optional()?;
+        let account = existing.or(replacement).unwrap_or(base);
         if expected_account.is_some_and(|expected| expected != account) {
             return Err(err(
                 "identity_mismatch",
@@ -404,8 +414,8 @@ pub(crate) fn write_binding(
 ) -> Result<()> {
     tx.execute("INSERT INTO accounts(id,name,email,provider) VALUES(?1,?2,?2,'google') ON CONFLICT(id) DO UPDATE SET name=CASE WHEN accounts.name=accounts.email THEN excluded.email ELSE accounts.name END,email=excluded.email",params![account,email])?;
     tx.execute(
-        "INSERT OR IGNORE INTO account_metadata(account,signature_text) VALUES(?1,'')",
-        [account],
+        "INSERT OR IGNORE INTO account_metadata(account,signature_text,mail_retention,mail_since) VALUES(?1,'','1_year',?2)",
+        params![account,crate::preferences::mail_retention_since("1_year")?],
     )?;
     tx.execute("INSERT INTO google_accounts(account,google_subject,scopes_json,connection_state) VALUES(?1,?2,?3,'connected') ON CONFLICT(account) DO UPDATE SET scopes_json=excluded.scopes_json,connection_state='connected',revision=google_accounts.revision+1,connection_generation=google_accounts.connection_generation+1",params![account,subject,serde_json::to_string(scopes)?])?;
     if let Some((client_id, config_path)) = client {

@@ -1,5 +1,14 @@
 # Core and storage
 
+## D072 — account and model feedback (Core42)
+
+Schema29 adds a minimal archive-deletion receipt, pending shared-file cleanup and account metadata fields `mail_retention`/`mail_since`. Existing profiles retain All and their history. New Google bindings default to one calendar year; revisioned `account_update` accepts `1_month`, `3_months`, `1_year` or `all` before acquisition starts. The saved UTC cutoff survives restart/resync. Existing saved mail is not aged out automatically.
+
+`account_archive_delete(account,{expected_revision,request_id})` permanently removes a removed account's local mail, drafts, Calendar data, account-specific model settings and history. Require the exact lifecycle revision, completed credential cleanup and no unfinished cross-account transfer. Delete content/index references atomically, preserving other accounts. Exact replay returns the saved result after deletion. A new connection uses a fresh local account identity, fencing old callbacks. The response reports `file_cleanup:"next_startup"`: under the exclusive profile lock, before workers start, recheck remaining references and remove only unused queued blobs. User-exported files remain untouched. Older engines refuse schema29.
+
+Consumers: Core42/Gmail22/Local assistance14/Mail UI49/CLI37/Quality49, schema29; Calendar25, fixtures0/3 and protocol1 unchanged. Whole-area readiness remains 0/9.
+
+
 D070 / P2-UI3 (Core41): `calendar_account_visibility` is an additive typed local preference with values `all` (default) and `current`. It shares the revisioned JSON preferences store and exact replay semantics; existing individual `selected_calendars` remain unchanged. The GUI intersects the saved selection with the current account for display. Sync and reminder settings are independent. Older schema28 engines retain this unknown stored field through unrelated known preference edits. Consumers: Calendar25/Mail UI48/CLI36/Quality48; Gmail21/schema28/fixtures0,3/protocol1 unchanged.
 
 D067 / P2-UI3 outgoing presentation. The read-only `google_sent(account,{offset?,limit?,conversation_id?})` query returns outstanding prepared/in-flight/unknown/accepted submissions, with bounded pages (1–100 rows), immutable request/headers/source identity and a next offset. A conversation filter includes only replies whose retained source belongs to that conversation. `google_sent_message(account,{request_id})` parses verified frozen MIME on the existing bounded content worker and returns plain text, truncation state, recipients and attachment metadata. It never reads the mutable draft as sent content, changes review flags, or contacts Google. Provider acquisition suppresses the accepted preview by exact account/provider ID, including later deletion. Existing receipts and schema28 are preserved. Consumers: Core40/Gmail21/Mail UI45/CLI35/Quality45, schema28, fixtures0/3 and protocol1.
@@ -28,7 +37,7 @@ D058 / P2-LLM2D limits all assistance to received mail. Reader queries expose th
 
 D056 / P2-LLM2B exposes the complete editable Ollama JSON request: system/user messages, all five variables, full response schema and generation options. No hidden envelope or schema is injected. Schema 23 archives and wraps prior prompt text, preserving model/account choices. Application output/action validation remains independent of editable instructions. Consumers: Local assistance 9/Core 32/Mail UI 34/CLI 26/Quality 34; fixtures 0/3/protocol 1 unchanged. See [the current request contract](local-ai.md) and D056 evidence.
 
-State: Draft · Revision: 40 · Updated: 2026-09-15 · Implementation: D067 outgoing presentation is verified in scoped Windows package164; prior evidence retains its original source boundary.
+State: Draft · Revision: 42 · Updated: 2026-09-16 · Implementation: D072 account/model feedback at schema29. Scoped evidence is recorded in the prototype execution report; whole-area readiness remains 0/9.
 
 D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages}}`, `{{partial}}`), combined per-message output, default-on prospective summaries/automatic single-label classification, manual precedence, and summary list previews. Schema 22 fences settings and assisted delivery; fixtures 0/3/protocol 1 unchanged. This supersedes conflicting D051–D053 delivery defaults below; historical evidence remains scoped to its original version. See the D055 decision and Local assistance 8.
 

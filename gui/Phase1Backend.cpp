@@ -311,11 +311,12 @@ void MailBackend::savePreferences() {
         if (m_shutdown) finishShutdown();
     });
 }
-void MailBackend::updateAccountPreferences(const QString &account, const QString &name, const QString &signature) {
+void MailBackend::updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention) {
     qint64 revision = -1;
     for (const auto &row : m_accounts) if (row.toMap()["id"].toString() == account) revision = row.toMap()["metadata_revision"].toLongLong();
     if (revision < 0) return;
     auto params = mutation(); params["expected_revision"] = revision; params["name"] = name; params["signature_text"] = signature;
+    if (!retention.isEmpty()) params["mail_retention"] = retention;
     m_preferencesStatus = "Saving…"; emit preferencesChanged();
     ++m_accountWrites;
     request("account_update", account, params, [this, account](auto result, bool ok) {

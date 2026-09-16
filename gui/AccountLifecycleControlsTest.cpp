@@ -52,6 +52,10 @@ static void run() {
         const auto method = request["method"].toString(), id = request["id"].toString(), selected = request["account"].toString();
         const auto params = request["params"].toObject(); QJsonObject result;
         if (method == "accounts") { require(params["include_removed"].toBool(), "explicit archive discovery"); result["accounts"] = rows; }
+        else if (method == "account_archive_delete") {
+            require(selected=="fixture-account" && params["expected_revision"].toInt()==11,"archive deletion uses captured identity and revision");
+            rows.removeAt(0); result={{"deleted",true},{"account",selected}};
+        }
         else if (method == "draft_save") {
             ++saves; if (holdSave) { held = peer; heldId = id; heldParams = params; return true; }
             saved["body"] = params["body"]; saved["revision"] = saved["revision"].toInt() + 1; result = saved;
@@ -257,6 +261,14 @@ static void run() {
             require(!QFileInfo::exists(dialogPath) && window->grabWindow().save(dialogPath), "retained removal capture"); activate("cancelAccountRemoval");
         }
     }
+    window->setProperty("settingsShown",true); emit backend.accountsChanged(); QCoreApplication::processEvents();
+    activate("deleteAccountArchive_fixture-account"); activate("cancelArchiveDeletion");
+    require(rows.size()==2,"cancel preserves archives");
+    activate("deleteAccountArchive_fixture-account"); activate("confirmArchiveDeletion");
+    await([&]{ return backend.m_pending.isEmpty() && backend.m_allAccounts.size()==1; },"confirmed archive disappears from account listing");
+    backend.m_accountLifecycleUi["second-account"]=QVariantMap{{"status","Account removed. Saved mail, drafts and history are kept in its archive."}};
+    rows[0]=account("second-account",3); backend.m_allAccounts=rows.toVariantList(); backend.publishAccounts(rows.toVariantList()); backend.reconcileAccountLifecycle();
+    require(!backend.m_accountLifecycleUi.contains("second-account"),"restore clears stale removal message");
     require(!warnings, "no QML warnings");
     backend.m_connected = false; backend.m_socket.abort();
     qInfo() << "Account lifecycle native handlers, archive guards, fresh confirmation, cleanup retry and unsaved callback/close/navigation fences passed.";

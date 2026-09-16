@@ -1,8 +1,17 @@
 # Local mail analysis
 
+## D072 — account and model feedback (Local assistance14)
+
+Keep the selected model and discovered catalog visible while Detect refreshes. Show unavailable only after a successful current-endpoint discovery no longer contains the saved name and digest. Native selection saves the exact chosen identity; inference retains existing identity checks.
+
+Fit incoming text against the fully expanded serialized request, including message content, schema, labels, options, sources and JSON escaping. Keep a nonempty UTF-8 prefix within the existing 12,000-byte boundary and mark truncation partial. Do not discard the whole email merely because escaping expands it. Incoming-only classification, one-label application, summaries and manual precedence remain unchanged. Schema29 accompanies account changes; it does not migrate prompts.
+
+Consumers: Core42/Gmail22/Local assistance14/Mail UI49/CLI37/Quality49, schema29; Calendar25, fixtures0/3 and protocol1 unchanged. Whole-area readiness remains 0/9.
+
+
 D061 / P2-UI3 adds account-local label creation, descriptions and removal plus explicit Google name merging/creation. Removal clears local membership and mappings, retaining historical receipts; it does not delete Gmail labels or mail. Descriptions use the existing assistance settings and stay local. Schema 26 journals provider creation before dispatch; unknown outcomes require inventory reconciliation, with no blind retry. Unmapped local memberships wait for an explicit link/sync before provider delivery. The decision and [prototype execution record](../research/prototype-september-15.md) own the detailed scope and evidence.
 
-State: Draft · Revision: 13 · Updated: 2026-09-15 · Implementation: D058 / P2-LLM2D and D060 / P2-UI3. Whole-area readiness remains 0/9; actual evidence is in [the execution report](../research/local-assistance-execution.md).
+State: Draft · Revision: 14 · Updated: 2026-09-16 · Implementation: D072 account/model feedback at schema29. Scoped evidence is recorded in the prototype execution report; whole-area readiness remains 0/9.
 
 ## Local compatible servers (D060)
 

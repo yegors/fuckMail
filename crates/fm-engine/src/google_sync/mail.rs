@@ -3,7 +3,7 @@
 use super::SyncContext;
 use fm_core::{
     google_live_mail::{
-        prepare_google_item, verify_staged_google_item, GoogleItemAction, GooglePageIdentity,
+        prepare_google_item_since, verify_staged_google_item, GoogleItemAction, GooglePageIdentity,
         MailLane, MailLaneState, PreparedGoogleItem, MAX_PART_BYTES, MAX_PART_ITEMS,
     },
     CoreError, Result,
@@ -241,11 +241,12 @@ impl MailWorker {
         page: &GooglePageIdentity,
     ) -> Result<Option<Checkpoint>> {
         let owned_page = page.clone();
-        let (blobs, pending) = ctx
+        let (blobs, pending, since) = ctx
             .core_call(move |store| {
                 Ok((
                     store.google_blob_store(),
                     store.google_live_pending(&owned_page, MAX_PART_ITEMS)?,
+                    store.google_mail_since(&owned_page.account)?,
                 ))
             })
             .await?;
@@ -286,7 +287,14 @@ impl MailWorker {
                 if let Some(staged) = item.staged {
                     verify_staged_google_item(&blobs, &owned_page, staged, &cancel)
                 } else {
-                    prepare_google_item(&blobs, &owned_page, &item.remote_id, outcome, &cancel)
+                    prepare_google_item_since(
+                        &blobs,
+                        &owned_page,
+                        &item.remote_id,
+                        outcome,
+                        &cancel,
+                        since,
+                    )
                 }
             })
             .await

@@ -33,6 +33,22 @@ impl BlobStore {
     }
 }
 
+pub(crate) fn remove_unused_blob(profile: &Path, hash: &str) -> Result<()> {
+    validate_hash(hash)?;
+    let directory = blob_directory(profile, false)?;
+    let path = directory.join(hash);
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) => {
+            reject_non_regular(&metadata)?;
+            fs::remove_file(path)?;
+            sync_directory(&directory)?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.into()),
+    }
+    Ok(())
+}
+
 impl Store {
     pub fn google_blob_store(&self) -> BlobStore {
         BlobStore {

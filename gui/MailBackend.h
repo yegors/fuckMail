@@ -221,6 +221,8 @@ public:
     Q_INVOKABLE void cancelGoogleAuth();
     Q_INVOKABLE void disconnectGoogle(const QString &account);
     Q_INVOKABLE void previewAccountRemoval(const QString &account);
+    Q_INVOKABLE void previewArchiveDeletion(const QString &account);
+    Q_INVOKABLE void confirmArchiveDeletion(const QVariantMap &context);
     Q_INVOKABLE void confirmAccountRemoval(const QVariantMap &context);
     Q_INVOKABLE void retryAccountCleanup(const QString &account);
     Q_INVOKABLE void checkAccountRemoval(const QString &account, const QString &requestId);
@@ -323,7 +325,7 @@ public:
     Q_INVOKABLE void applyFilters(const QVariantMap &filters);
     Q_INVOKABLE void setCollapsedGroups(const QStringList &groups);
     Q_INVOKABLE void setPreferences(const QVariantMap &patch);
-    Q_INVOKABLE void updateAccountPreferences(const QString &account, const QString &name, const QString &signature);
+    Q_INVOKABLE void updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention = {});
     Q_INVOKABLE void setCalendarSelected(const QString &account, const QString &calendar, bool selected);
     Q_INVOKABLE void setCalendarView(const QString &view);
     Q_INVOKABLE void moveCalendar(int delta);
@@ -362,6 +364,7 @@ signals:
     void accountsChanged();
     void accountLifecycleChanged();
     void accountRemovalReady(const QVariantMap &context);
+    void archiveDeletionReady(const QVariantMap &context);
     void accountBufferDispositionRequired();
     void googleAuthChanged();
     void googleSyncChanged();
@@ -704,6 +707,7 @@ private:
     QVariantList m_allAccounts;
     QVariantMap m_accountLifecycleUi;
     QJsonObject m_accountRemovalConfirmation;
+    QJsonObject m_archiveDeletionConfirmation;
     QJsonObject m_deferredAccountRemovalPreview;
     int m_accountViewRestorationGeneration = -1;
     QHash<QString, QJsonObject> m_accountRemovalRequests;

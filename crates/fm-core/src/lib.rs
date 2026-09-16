@@ -6,6 +6,7 @@ use std::{
     fs::{File, OpenOptions},
     path::{Path, PathBuf},
 };
+mod account_archives;
 pub mod account_lifecycle;
 pub mod assist_store;
 #[cfg(test)]
@@ -54,7 +55,7 @@ mod queries;
 mod sender_kind_tests;
 #[cfg(test)]
 mod test_profiles;
-pub const SCHEMA_VERSION: u32 = 28;
+pub const SCHEMA_VERSION: u32 = 29;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -502,6 +503,16 @@ impl Store {
             tx.execute_batch("PRAGMA user_version=28")?;
             tx.commit()?;
         }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 28 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-029-account-archives.sql"))?;
+            tx.execute_batch("PRAGMA user_version=29")?;
+            tx.commit()?;
+        }
+        store.cleanup_deleted_archive_blobs()?;
         store.validate_profile_identity()?;
         store.recover_google_category_projections()?;
         store.recover_account_cleanup()?;
@@ -596,6 +607,7 @@ impl Store {
         }
         if ![
             "account_remove_preview",
+            "account_archive_delete",
             "account_remove_status",
             "conversations",
             "google_sent",
@@ -646,6 +658,9 @@ impl Store {
         }
         let account = account.ok_or_else(|| err("account_required", "Choose an account"))?;
         id(account)?;
+        if method == "account_archive_delete" {
+            return self.account_archive_delete(account, &params);
+        }
         if !self.db.query_row(
             "SELECT EXISTS(SELECT 1 FROM accounts WHERE id=?1)",
             [account],

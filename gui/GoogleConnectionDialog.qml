@@ -15,10 +15,12 @@ FmDialog {
     property string connectedAccount: ""
     property bool finishing: false
     property bool authStarted: false
+    readonly property var retentionKeys: ["1_month", "3_months", "1_year", "all"]
     readonly property var accountRow: backend.accounts.find(function(account) { return account.id === googleSignIn.connectedAccount }) || ({})
     readonly property var requestedAccess: ({mail: connectMail.checked ? (connectMailMode.currentIndex === 0 ? "read" : "write") : "none", calendar: connectCalendar.checked ? (connectCalendarMode.currentIndex === 0 ? "read" : "write") : "none"})
     onOpened: {
         step = 0; connectedAccount = ""; finishing = false; authStarted = false; connectName.text = ""
+        connectRetention.currentIndex = 2
         connectMail.checked = true; connectCalendar.checked = true; connectMailMode.currentIndex = 1; connectCalendarMode.currentIndex = 1
         backend.prepareGoogleSignIn(); googleEmail.forceActiveFocus()
     }
@@ -32,7 +34,7 @@ FmDialog {
     function finish() {
         if (finishing || !accountRow.id || !connectName.text.trim().length) return
         finishing = true
-        backend.updateAccountPreferences(connectedAccount, connectName.text.trim(), accountRow.signature_text || "")
+        backend.updateAccountPreferences(connectedAccount, connectName.text.trim(), accountRow.signature_text || "", reconnectAccount.length ? "" : retentionKeys[connectRetention.currentIndex])
     }
     function grantedAccess() {
         if (!accountRow.id) return "Checking granted access…"
@@ -98,7 +100,12 @@ FmDialog {
                     FmCheckBox { id: connectCalendar; objectName: "connectCalendarAccess"; Layout.fillWidth: true; checked: true; text: "Calendar"; description: connectCalendarMode.currentIndex === 0 ? "See events and invites" : "See and edit events and invites" }
                     FmSegmented { id: connectCalendarMode; objectName: "connectCalendarMode"; model: ["Read", "Read & write"]; currentIndex: 1; enabled: connectCalendar.checked; onActivated: function(index) { currentIndex = index } }
                 }
-                FmCheckBox { objectName: "connectMeetAccess"; Layout.fillWidth: true; text: "Meetings"; description: "Google Meet links use the Calendar access above."; checked: connectCalendar.checked; enabled: false }
+            }
+            ColumnLayout {
+                visible: !googleSignIn.reconnectAccount.length; Layout.fillWidth: true; spacing: 6
+                Caption { text: "Local retention" }
+                FmComboBox { id: connectRetention; objectName: "connectRetention"; Layout.fillWidth: true; model: ["1 month", "3 months", "1 year", "All"]; currentIndex: 2; Accessible.name: "Local retention" }
+                Caption { text: "How much mail history to download. Mail already saved stays on this machine."; Layout.fillWidth: true; wrapMode: Text.Wrap }
             }
             FmCheckBox {
                 id: renewGoogleAccess; text: "Ask Google to renew access"; description: "Use this when access expired or Google did not supply renewable access."

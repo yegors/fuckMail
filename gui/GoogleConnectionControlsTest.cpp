@@ -25,7 +25,7 @@ public:
     bool connected = true, busy = false, saveSucceeds = false;
     QVariantMap auth, configuration{{"available",true}}, requested;
     QVariantList accounts{QVariantMap{{"id","fixture-account"},{"name","Personal"},{"email","person@example.test"},{"signature_text","Original signature"}}};
-    QString account, email, savedName, syncedAccount, preferencesStatus;
+    QString account, email, savedName, syncedAccount, preferencesStatus, savedRetention;
     int connections=0, syncStarts=0, saves=0;
     Q_INVOKABLE void prepareGoogleSignIn() { auth.clear(); emit googleAuthChanged(); }
     Q_INVOKABLE void clearError() {}
@@ -33,7 +33,7 @@ public:
     Q_INVOKABLE bool accountCapability(const QString &,const QString &capability) { return capability=="mail_read"; }
     Q_INVOKABLE void connectGoogle(const QString &address,const QString &,bool,const QVariantMap &access) { email=address; requested=access; ++connections; busy=true; auth={{"phase","waiting_for_browser"}}; emit googleAuthChanged(); }
     Q_INVOKABLE void restoreGoogleAccount(const QString &,const QString &,double,bool,const QVariantMap &) { qFatal("ordinary Add cannot restore an archive"); }
-    Q_INVOKABLE void updateAccountPreferences(const QString &id,const QString &name,const QString &signature) { require(signature=="Original signature","connect preserves account signature"); savedName=name; ++saves; preferencesStatus=saveSucceeds ? "Saved" : "Not saved — synthetic failure"; emit preferencesChanged(); emit accountPreferencesFinished(id,saveSucceeds); }
+    Q_INVOKABLE void updateAccountPreferences(const QString &id,const QString &name,const QString &signature,const QString &retention) { require(signature=="Original signature","connect preserves account signature"); savedRetention=retention; savedName=name; ++saves; preferencesStatus=saveSucceeds ? "Saved" : "Not saved — synthetic failure"; emit preferencesChanged(); emit accountPreferencesFinished(id,saveSucceeds); }
     Q_INVOKABLE void startGoogleSync(const QString &id,const QVariantMap &) { require(saveSucceeds&&!savedName.isEmpty(),"name saves before sync"); syncedAccount=id; ++syncStarts; }
 signals:
     void googleAuthChanged(); void accountsChanged(); void connectedChanged(); void preferencesChanged();
@@ -58,6 +58,9 @@ int main(int argc,char **argv) {
     auto control=[&](const QString &name){auto item=find(window->contentItem(),name);require(item,"control exists");return item;};
     auto activate=[&](const QString &name){auto item=control(name);require(item->isVisible()&&item->isEnabled(),"control available");require(QMetaObject::invokeMethod(item,"clicked"),"actual click handler");settle();};
     auto dialog=window->findChild<QObject*>("googleSignInDialog");require(dialog,"connection popup");
+    require(!find(window->contentItem(),"connectMeetAccess"),"no redundant Meetings permission");
+    require(control("connectRetention")->property("currentIndex").toInt()==2,"retention defaults to one year");
+    control("connectRetention")->setProperty("currentIndex",1);
     control("connectMailMode")->setProperty("currentIndex",0);control("connectCalendarAccess")->setProperty("checked",false);settle();
     const auto captures=qEnvironmentVariable("FM_CONNECTION_CAPTURES");
     auto capture=[&](const QString &name) { if(captures.isEmpty())return;require(QDir().mkpath(captures),"capture directory");const auto file=QDir(captures).filePath(name+".png");settle();require(!QFileInfo::exists(file)&&window->grabWindow().save(file),"retain connection frame"); };
@@ -78,6 +81,7 @@ int main(int argc,char **argv) {
     require(dialog->property("step").toInt()==2&&backend.syncStarts==0,"successful sign-in waits for final action");control("connectedAccountName")->setProperty("text","My personal mail");capture("ready-terminal");
     activate("finishGoogleConnection");require(backend.saves==1&&backend.syncStarts==0&&dialog->property("visible").toBool(),"failed display-name save retains form and starts no sync");
     backend.saveSucceeds=true;activate("finishGoogleConnection");require(backend.saves==2&&backend.savedName=="My personal mail"&&backend.syncedAccount=="fixture-account"&&backend.syncStarts==1,"retry saves exact name and starts only the connected account");
+    require(backend.savedRetention=="3_months","selected retention saves before sync");
     require(!warnings,"no QML warnings");return 0;
 }
 #include "GoogleConnectionControlsTest.moc"

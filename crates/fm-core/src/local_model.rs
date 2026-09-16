@@ -370,11 +370,18 @@ impl Store {
         let mut payload = json!({"labels":labels,"messages":[]});
         let mut sources = Vec::new();
         let mut partial = false;
-        // A conservative byte ceiling leaves room for the JSON escaping and output.
-        let budget = 12000usize.saturating_sub(
-            settings.prompt(task).len() + serde_json::to_vec(&labels)?.len() + 2000,
-        );
-        let mut remaining = budget;
+        // Budget the actual expanded request. Email text is JSON inside a
+        // message string, so quotes/newlines can be escaped twice. A raw-byte
+        // estimate followed by rejecting the whole message loses usable text.
+        const REQUEST_BYTES: usize = 12000;
+        let model_name = &settings.model(task).unwrap().name;
+        let request_size = |payload: &Value, sources: &[String]| -> Result<usize> {
+            let request =
+                ollama::render_request(settings.prompt(task), payload, model_name, sources)
+                    .map_err(|message| err("invalid_request", &message))?;
+            Ok(serde_json::to_vec(&request)?.len())
+        };
+        payload["partial"] = false.into();
         let members = snapshot["members"].as_array().unwrap();
         for member in members.iter().rev().take(128) {
             let id = member["id"].as_str().unwrap();
@@ -383,16 +390,35 @@ impl Store {
                 params![account, id],
                 |r| r.get(0),
             )?;
-            if member["source_hash"].as_str().unwrap().len() != 64 || remaining < 512 {
+            if member["source_hash"].as_str().unwrap().len() != 64 || body.is_empty() {
                 partial = true;
                 continue;
             }
             let mut message = json!({"id":id,"from":member["sender_email"],"name":member["sender_name"],"to":member["recipient"],"subject":member["subject"],"date":member["date"],"sent":member["sent"],"text":""});
-            let overhead = serde_json::to_vec(&message)?.len();
-            let max = remaining.saturating_sub(overhead + 32);
-            let mut end = body.len().min(max);
-            while !body.is_char_boundary(end) {
-                end -= 1;
+            let mut candidate_sources = sources.clone();
+            candidate_sources.push(id.to_owned());
+            let mut low = 1usize;
+            let mut high = body.len().min(REQUEST_BYTES);
+            let mut end = 0;
+            while low <= high {
+                let midpoint = low + (high - low) / 2;
+                let mut boundary = midpoint;
+                while !body.is_char_boundary(boundary) {
+                    boundary -= 1;
+                }
+                message["text"] = body[..boundary].into();
+                payload["messages"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(message.clone());
+                let fits = request_size(&payload, &candidate_sources)? <= REQUEST_BYTES;
+                payload["messages"].as_array_mut().unwrap().pop();
+                if fits {
+                    end = boundary;
+                    low = midpoint + 1;
+                } else {
+                    high = midpoint - 1;
+                }
             }
             if end == 0 {
                 partial = true;
@@ -400,12 +426,6 @@ impl Store {
             }
             partial |= end < body.len();
             message["text"] = body[..end].into();
-            let size = serde_json::to_vec(&message)?.len();
-            if size > remaining {
-                partial = true;
-                continue;
-            }
-            remaining -= size;
             payload["messages"].as_array_mut().unwrap().push(message);
             sources.push(id.to_owned());
         }
@@ -716,9 +736,10 @@ mod tests {
             })
             .unwrap();
         // Recreate the actual prior CHECK constraint, then reopen through migration 25.
+        crate::test_profiles::restore_schema_twenty_six(&store.db);
         store.db.execute_batch("ALTER TABLE message_sender_kinds RENAME TO previous_kinds;
             CREATE TABLE message_sender_kinds(account TEXT NOT NULL,message_id TEXT NOT NULL,source_hash TEXT NOT NULL CHECK(length(source_hash)=64),kind TEXT NOT NULL CHECK(kind IN ('people','automated','unknown')),provenance TEXT NOT NULL CHECK(provenance IN ('fixture','ollama','manual')),PRIMARY KEY(account,message_id),FOREIGN KEY(account,message_id) REFERENCES messages(account,id) ON DELETE CASCADE);
-            INSERT INTO message_sender_kinds SELECT * FROM previous_kinds; DROP TABLE previous_kinds; DROP TABLE google_label_creations; DROP TABLE draft_transfers; PRAGMA user_version=24;").unwrap();
+            INSERT INTO message_sender_kinds SELECT * FROM previous_kinds; DROP TABLE previous_kinds; DROP TABLE google_label_creations; PRAGMA user_version=24;").unwrap();
         drop(store);
         let mut store = Store::open_synthetic(dir.path()).unwrap();
         assert_eq!(
@@ -812,6 +833,40 @@ mod tests {
         (dir, s)
     }
     #[test]
+    fn local_model_escaped_text_is_truncated_to_the_expanded_request_budget() {
+        let (_dir, s) = configured_store();
+        let (account, conversation, message) = (
+            "windscribe",
+            "windscribe-thread-001",
+            "windscribe-message-001-000",
+        );
+        for text in [
+            "\"quoted\"\\path\n".repeat(4000),
+            "日本語 😀\n".repeat(4000),
+        ] {
+            s.db.execute(
+                "UPDATE messages SET body=?3 WHERE account=?1 AND id=?2",
+                params![account, message, text],
+            )
+            .unwrap();
+            let plan = s
+                .local_model_prepare(account, conversation, "message", message)
+                .unwrap();
+            assert!(plan.partial);
+            let retained = plan.payload["messages"][0]["text"].as_str().unwrap();
+            assert!(!retained.is_empty() && text.starts_with(retained));
+            let request = ollama::render_request(
+                &plan.settings.prompt,
+                &plan.payload,
+                "fixture",
+                &plan.sources,
+            )
+            .unwrap();
+            assert!(serde_json::to_vec(&request).unwrap().len() <= 12000);
+            assert_eq!(plan.sources, vec![message]);
+        }
+    }
+    #[test]
     fn local_model_sent_messages_are_excluded_and_reader_reports_direction() {
         let (_dir, s) = configured_store();
         let (a, c, m) = (
@@ -874,6 +929,7 @@ mod tests {
             [&bytes],
         )
         .unwrap();
+        crate::test_profiles::restore_schema_twenty_six(&s.db);
         s.db.execute_batch("DROP TABLE google_label_creations; PRAGMA user_version=23")
             .unwrap();
         drop(s);
@@ -968,6 +1024,7 @@ mod tests {
             [&bytes],
         )
         .unwrap();
+        crate::test_profiles::restore_schema_twenty_six(&s.db);
         s.db.execute_batch("DROP TABLE google_label_creations; PRAGMA user_version=22;")
             .unwrap();
         drop(s);
@@ -998,6 +1055,7 @@ mod tests {
         let old=json!({"endpoint":"http://127.0.0.1:11434","classification_model":{"name":"classifier","digest":"a".repeat(64)},"summary_model":{"name":"summarizer","digest":"b".repeat(64)},"classification_prompt":ollama::CLASSIFICATION_PROMPT,"summary_prompt":"Please use French.","accounts":{"windscribe":{"classification":false,"summaries":true,"descriptions":{}}}}).to_string();
         s.db.execute("UPDATE local_model_settings SET settings_json=?1", [&old])
             .unwrap();
+        crate::test_profiles::restore_schema_twenty_six(&s.db);
         s.db.execute_batch("DROP TABLE google_label_creations; DROP TABLE local_model_settings_history; DROP TABLE local_model_label_overrides; PRAGMA user_version=21;").unwrap();
         drop(s);
         let s = Store::open_synthetic(dir.path()).unwrap();

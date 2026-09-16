@@ -1,5 +1,12 @@
 # Gmail provider
 
+## D072 — account and model feedback (Gmail22)
+
+Save the setup history choice before sync. Inventory uses the persisted UTC cutoff; the recent lane uses the later of that cutoff and its usual recent boundary. History responses older than the boundary are discarded before MIME/content storage and do not count as missing-content failures. Provider deletions still reconcile. Resync preserves the boundary. Existing schema28 accounts keep All. Meetings has no independent permission checkbox; archive deletion changes only local data.
+
+Consumers: Core42/Gmail22/Local assistance14/Mail UI49/CLI37/Quality49, schema29; Calendar25, fixtures0/3 and protocol1 unchanged. Whole-area readiness remains 0/9.
+
+
 D067 / P2-UI3 outgoing presentation. Outgoing presentation derives its durable state from the existing Send journal. The GUI-only six-second queue uses the exact saved authored version; once invoked, the frozen MIME and receipt are authoritative. Sending, prepared, unknown and accepted states remain distinct. An unknown submission never automatically retries. Exact accepted provider-message acquisition replaces the temporary presentation and cannot revive it after Trash/deletion. UI and CLI consume the same read-only queries; outgoing previews confer no provider mutation authority. Consumers: Core40/Gmail21/Mail UI45/CLI35/Quality45, schema28, fixtures0/3 and protocol1.
 
 D065 / P2-UI3 (Gmail20) implements durable draft-discard Undo with exact revision/lifecycle checks, captured authored buffers and unfinished recipient input, shared CLI/GUI recovery and grouped six-second toast Undo. Schema28 adds the snapshot journal and recipient-input storage; fixtures0/3 and protocol1 stay unchanged. Capture/upload continues verifying retained bytes before use. Scoped Windows Core, engine, CLI and native checks, actual schema27→28 migration/refusal/reopen, strict lint and configured relocated package146 pass. The full prototype goal and provider-cleanup/Calendar-Undo/pending-Sent gaps remain open. See D065 and the prototype execution record.
@@ -10,7 +17,7 @@ D061 / P2-UI3 adds account-local label creation, descriptions and removal plus e
 
 P2-UI3 Google connection accepts optional `access:{mail,calendar}` with `none`, `read`, or `write` for each service; at least one service is required. Omitted access preserves the existing request. Read Mail requests gmail.readonly; write Mail requests gmail.modify. Calendar requests catalog/detail/free-busy scopes with read-only or writable event detail access. Meetings follow the Calendar permission because Google exposes creation through the Events API. The requested access changes the consent request, never invents granted capabilities; the successful step reports the actual verified grant (which can retain earlier Google permissions). Login remains explicit, PKCE/state/nonce and same-subject restore stay unchanged, and sync starts only from the user's final Start syncing action. Schema/fixture/protocol unchanged; Core 34/Mail UI 37/CLI 28 consume the same optional request.
 
-State: Draft · Revision: 21 · Updated: 2026-09-15 · Implementation: D067 outgoing presentation is verified in scoped Windows package164; prior evidence retains its original source boundary.
+State: Draft · Revision: 22 · Updated: 2026-09-16 · Implementation: D072 account/model feedback at schema29. Scoped evidence is recorded in the prototype execution report; whole-area readiness remains 0/9.
 
 D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages}}`, `{{partial}}`), combined per-message output, default-on prospective summaries/automatic single-label classification, manual precedence, and summary list previews. Schema 22 fences settings and assisted delivery; fixtures 0/3/protocol 1 unchanged. This supersedes conflicting D051–D053 delivery defaults below; historical evidence remains scoped to its original version. See the D055 decision and Local assistance 8.
 

@@ -388,7 +388,7 @@ Item {
                                             ColumnLayout {
                                                 id: accountStatistic1; x: 18; y: 12; width: parent.width - 36; spacing: 4
                                                 Text { text: "LOCAL RETENTION"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); font.letterSpacing: 0.55 }
-                                                Text { text: accountCard.modelData.cached_since ? "Since " + Qt.formatDate(new Date(accountCard.modelData.cached_since), "d MMM yyyy") : "No mail downloaded"; color: Theme.text; font.pixelSize: Theme.fontSize(13); Layout.fillWidth: true; elide: Text.ElideRight }
+                                                Text { text: ({"1_month":"1 month", "3_months":"3 months", "1_year":"1 year", "all":"All"})[accountCard.modelData.mail_retention || "all"]; color: Theme.text; font.pixelSize: Theme.fontSize(13); Layout.fillWidth: true; elide: Text.ElideRight }
                                             }
                                             Rectangle { width: 1; height: parent.height; color: Theme.line }
                                         }
@@ -436,6 +436,7 @@ Item {
                                         Flow {
                                             Layout.fillWidth: true; spacing: 8
                                             FmButton { objectName: "openAccountArchive_" + accountCard.modelData.id; text: "Open archive"; visible: accountCard.archived; outlined: true; onClicked: { backend.openAccountArchive(accountCard.modelData.id); if (!backend.unsavedAccountBuffer) settings.archiveOpened() } }
+                                            FmButton { objectName: "deleteAccountArchive_" + accountCard.modelData.id; text: "Delete archive…"; visible: accountCard.archived; enabled: backend.connected && !accountCard.removal.busy && accountCard.cleanup.state === "complete" && !backend.unsavedAccountBuffer; onClicked: backend.previewArchiveDeletion(accountCard.modelData.id) }
                                             FmButton { objectName: "retryAccountCleanup_" + accountCard.modelData.id; text: "Retry cleanup"; visible: accountCard.archived && (accountCard.cleanup.state === "pending" || accountCard.cleanup.state === "failed"); enabled: backend.connected && !accountCard.removal.busy; onClicked: backend.retryAccountCleanup(accountCard.modelData.id) }
                                             FmButton { objectName: "checkAccountRemoval_" + accountCard.modelData.id; text: "Check saved result"; visible: accountCard.removal.uncertain || false; enabled: backend.connected && !accountCard.removal.busy; onClicked: backend.checkAccountRemoval(accountCard.modelData.id, accountCard.removal.request_id) }
                                             FmButton { objectName: "retryAccountRemoval_" + accountCard.modelData.id; text: "Retry same removal"; visible: accountCard.removal.uncertain || false; enabled: backend.connected && !accountCard.removal.busy; onClicked: backend.retryAccountCleanup(accountCard.modelData.id) }

@@ -1115,6 +1115,7 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
         "account_remove_preview",
         "account_remove",
         "account_remove_status",
+        "account_archive_delete",
         "google_sync_start",
         "google_sync_refresh",
         "google_sync_stop",
