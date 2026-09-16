@@ -15,6 +15,7 @@ Item {
     property string latestResults: ""
     property string job: ""
     property bool starting: false
+    property bool completing: false
     property bool polling: false
     property bool watching: false
     property string jobTask: ""
@@ -22,7 +23,7 @@ Item {
     property string status: ""
     property string error: ""
     property var changeErrors: ({})
-    readonly property bool busy: starting || job.length > 0
+    readonly property bool busy: starting || completing || job.length > 0
     readonly property var policy: (settings.accounts || {})[accountId] || {}
     readonly property bool summariesEnabled: settingsRevision >= 0 && policy.summaries !== false
     readonly property bool classificationEnabled: settingsRevision >= 0 && policy.classification !== false
@@ -70,6 +71,7 @@ Item {
         if (job && backend.connected) send("assist_cancel", {job_id: job}, "ignore")
         job = ""
         starting = false
+        completing = false
         polling = false
         status = "Canceled"
         error = ""
@@ -129,20 +131,26 @@ Item {
                     const errors = Object.assign({}, assistance.changeErrors)
                     errors[req.target] = result.message || "Could not save this change. Try again."
                     assistance.changeErrors = errors
-                } else if (req.kind === "start" || req.kind === "job") {
+                } else if (req.kind === "start" || req.kind === "job" || (req.kind === "results" && assistance.completing)) {
                     if (assistance.job) assistance.send("assist_cancel", {job_id: assistance.job}, "ignore")
                     assistance.job = ""
+                    assistance.completing = false
                     assistance.error = result.message || "Local assistance unavailable. Try again."
                 }
                 return
             }
             if (req.kind === "settings") {
                 assistance.adoptSettings(result)
-            } else if (req.kind === "results") assistance.items = result.items || []
+            } else if (req.kind === "results") {
+                assistance.items = result.items || []
+                if (req.operation === assistance.operation) assistance.completing = false
+            }
             else if (req.kind === "start") { assistance.job = result.job_id; assistance.status = "Queued" }
             else if (req.kind === "job") {
                 assistance.status = result.status
                 if (["running", "queued"].indexOf(result.status) < 0) {
+                    // Keep the progress surface until the committed result arrives.
+                    assistance.completing = result.status === "completed"
                     assistance.job = ""
                     assistance.error = result.error ? result.error.message : ""
                     assistance.refresh()

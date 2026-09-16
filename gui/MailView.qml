@@ -32,7 +32,7 @@ Item {
     readonly property bool singleKeyActionsAllowed: mail.visible && !popupOpen && mail.ApplicationWindow.window && mail.ApplicationWindow.window.singleKeysAllowed
     readonly property bool dateGroups: (backend.folder === "sent" || backend.folder === "drafts") && backend.preferences.mail_date_grouping !== "plain"
     readonly property bool draftsMode: backend.folder === "drafts"
-    readonly property bool collapsedDraftVisible: !replyOpen && !backend.sendQueued && backend.draftStatus !== "Draft discarded"
+    readonly property bool collapsedDraftVisible: !replyOpen && !backend.sendQueued && !backend.googleSend.sent_current && backend.draftStatus !== "Draft discarded"
         && (backend.activeDraftId.length > 0 || (backend.draft.body || "").length > 0)
     readonly property bool anyUnread: members.some(function(m) { return m.unread })
     readonly property bool anyStarred: members.some(function(m) { return m.starred })
@@ -43,18 +43,32 @@ Item {
         return row && row.matching_message_ids ? row.matching_message_ids : []
     }
     readonly property var latest: members.length ? members[members.length - 1] : ({})
+    property var participantMetadata: ({})
+    onExpansionKeyChanged: participantMetadata = ({})
+    function recordMetadata(id, rows) { const next=Object.assign({},participantMetadata); next[id]=rows; participantMetadata=next }
     readonly property var participants: {
         const seen = {}, people = []
         for (const message of members) {
-            const key = message.sender_email || message.sender_name
+            const key = (message.sender_email || message.sender_name || "").trim().toLowerCase()
             if (seen[key]) continue
             seen[key] = true
             people.push({name: message.sent ? "You" : message.sender_name || message.sender_email, message: message})
         }
+        for (const message of members) {
+            for (const row of message.metadata || participantMetadata[message.id] || []) {
+                if (row.label.toLowerCase() !== "cc") continue
+                for (const person of row.people) {
+                    const key=(person.email || "").trim().toLowerCase()
+                    if (!key || seen[key]) continue
+                    seen[key]=true
+                    people.push({name:person.name || person.email,message:{id:"cc_"+key,sender_email:person.email,sender_name:person.name,sent:false}})
+                }
+            }
+        }
         return people
     }
     function initials(name) { return (name || "?").split(/\s+/).slice(0,2).map(function(part) { return part.charAt(0).toUpperCase() }).join("") }
-    readonly property string conversationSpan: members.length ? (members.length > 1 && members[0].sent_at.slice(0,10) !== latest.sent_at.slice(0,10) ? Qt.formatDateTime(new Date(members[0].sent_at), "d MMM") + " – " : "") + Qt.formatDateTime(new Date(latest.sent_at), "d MMM") : ""
+    readonly property string conversationSpan: members.length ? (members.length > 1 && members[0].sent_at.slice(0,10) !== latest.sent_at.slice(0,10) ? mail.relativeTime(members[0].sent_at) + " → " : "") + mail.relativeTime(latest.sent_at) : ""
 
     readonly property var popularCategories: backend.categories.slice().sort(function(a, b) { return b.conversation_count - a.conversation_count || a.name.localeCompare(b.name) }).slice(0, 7)
     readonly property string expansionKey: backend.account + "/" + backend.selectedId + "/"
@@ -197,7 +211,47 @@ Item {
     }
     function kindIcon(kind) { return kind === "people" ? "person" : kind === "automated" ? "bot" : "unknown" }
     function kindTitle(kind) { return kind === "people" ? "Person" : kind === "automated" ? "Automated sender" : "Sender kind is unknown" }
-    function senderCardFor(member, anchor) { senderCard.showSender(member.sender_email, member.sender_name, anchor) }
+    component ContactName: FmButton {
+        id: contact
+        property string email: ""
+        leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
+        implicitHeight: contentItem.implicitHeight
+        textAlignment: Text.AlignLeft
+        foreground: Theme.inkAlpha(0.85)
+        onHoveredChanged: hovered ? senderCard.showSender(email, text, contact) : senderCard.scheduleClose()
+        onClicked: senderCard.showSender(email, text, contact)
+        background: Item {
+            Row {
+                anchors.bottom: parent.bottom; spacing: 2
+                visible: contact.hovered || contact.activeFocus
+                Repeater { model: Math.floor(contact.width / 3); Rectangle { width: 1; height: 1; color: contact.foreground } }
+            }
+        }
+    }
+    component ContactAvatar: FmButton {
+        id: avatar
+        property string email: ""
+        property string personName: ""
+        property bool own: false
+        property int diameter: 34
+        implicitWidth: diameter; implicitHeight: diameter
+        leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
+        Accessible.name: "Contact: " + personName
+        onHoveredChanged: hovered ? senderCard.showSender(email, personName, avatar) : senderCard.scheduleClose()
+        onClicked: senderCard.showSender(email, personName, avatar)
+        contentItem: Text { text: mail.initials(avatar.personName); color: avatar.own ? Theme.accent : Theme.secondary; font.pixelSize: Theme.fontSize(avatar.diameter > 26 ? 12 : 10); font.weight: Font.Medium; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+        background: Rectangle { radius: avatar.diameter / 2; color: avatar.own ? Theme.accentAlpha(0.18) : Theme.bg4; border.width: avatar.activeFocus ? 1 : 0; border.color: Theme.accent }
+    }
+    function visibleMetadata(message, source) {
+        const rows = message.metadata || (source.length ? source : message.to ? [{label:"To",people:[{name:"",email:message.to}]}] : [])
+        const own = (backend.currentAccount.email || "").toLowerCase()
+        return rows.filter(function(row) {
+            const label = row.label.toLowerCase().replace(/[-_]/g," ")
+            if (label === "reply to" && row.people.every(function(person) { return person.email.toLowerCase() === (message.sender_email || "").toLowerCase() })) return false
+            return row.people.length && (message.sent || label !== "to" || !row.people.every(function(person) { return person.email.toLowerCase() === own }))
+        })
+    }
+    function senderCardFor(member, anchor) { senderCard.showSender(member.sender_email, member.sent ? "You" : member.sender_name, anchor) }
     function currentComposerIdentity() { return backend.account + (backend.activeDraftId.length ? "/draft/" + backend.activeDraftId : "/" + backend.selectedId) }
     function newMessage() { backend.beginDraft("new") }
     function openActions() { morePopup.open() }
@@ -232,7 +286,7 @@ Item {
         if (minutes < 8 * 1440) return Math.round(minutes / 1440) + " d ago"
         return Qt.formatDate(date,date.getFullYear() === now.getFullYear() ? "d MMM" : "d MMM yyyy")
     }
-    function fullTime(value) { const date = new Date(value); return isNaN(date.getTime()) ? "" : Qt.formatDateTime(date, "dddd d MMMM yyyy, HH:mm t") }
+    function fullTime(value) { const date = new Date(value); return isNaN(date.getTime()) ? "" : Qt.formatDateTime(date, "dddd d MMMM yyyy, HH:mm") }
     MailAssistance {
         id: assistance
         objectName: "mailAssistanceController"
@@ -387,6 +441,7 @@ Item {
             }
         }
         function onDraftChanged() {
+            if (backend.googleSend.sent_current) { mail.setReplyOpen(false); return }
             if (backend.activeDraftId.length && Object.keys(backend.draft).length) {
                 if (backend.draftStatus === "Draft discarded") mail.replyOpen = false
                 else if (mail.hydratedDraftIdentity !== backend.account+"/draft/"+backend.activeDraftId) {
@@ -686,20 +741,27 @@ Item {
                             spacing: -6
                             Repeater {
                                 model: mail.participants.slice(0,6)
-                                Rectangle {
+                                ContactAvatar {
                                     required property var modelData
-                                    width: 24; height: 24; radius: 12; color: modelData.message.sent ? Theme.accentAlpha(0.18) : Theme.bg4
-                                    border.width: 2; border.color: Theme.bg0
-                                    Text { anchors.centerIn: parent; text: mail.initials(modelData.name); color: modelData.message.sent ? Theme.accent : Theme.secondary; font.pixelSize: Theme.fontSize(9); font.weight: Font.Medium }
-                                    HoverHandler { id: participantHover }
-                                    FmToolTip { visible: participantHover.hovered; text: parent.modelData.name + " · " + (parent.modelData.message.sender_email || "") }
+                                    objectName: "participantAvatar_" + modelData.message.id
+                                    diameter: 22; own: !!modelData.message.sent
+                                    email: modelData.message.sender_email || ""; personName: modelData.name
                                 }
                             }
                         }
-                        Text {
-                            Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
-                            text: mail.members.length + (mail.members.length === 1 ? " message · " : " messages · ") + mail.conversationSpan + " · " + mail.participants.map(function(p) { return p.name }).join(", ")
-                            color: Theme.inkAlpha(0.62); font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13)
+                        Flow {
+                            id: participantNames
+                            Layout.fillWidth: true; spacing: 4
+                            Text { text: mail.members.length + (mail.members.length === 1 ? " message · " : " messages · ") + mail.conversationSpan + " ·"; color: Theme.inkAlpha(0.62); font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
+                            Repeater {
+                                model: mail.participants
+                                Row {
+                                    required property var modelData
+                                    required property int index
+                                    ContactName { objectName: "participantName_" + parent.modelData.message.id; text: parent.modelData.name; email: parent.modelData.message.sender_email || ""; width: Math.min(implicitWidth, participantNames.width); foreground: parent.modelData.message.sent ? Theme.accent : Theme.inkAlpha(0.85) }
+                                    Text { visible: parent.index < mail.participants.length - 1; text: ","; color: Theme.subtle; font.pixelSize: Theme.fontSize(13) }
+                                }
+                            }
                         }
                         FmButton { visible: mail.matchingIds.length>0; text: "Show match"; font.pixelSize: Theme.fontSize(11); onClicked: mail.revealMatch() }
                     }
@@ -722,7 +784,7 @@ Item {
                         id: readerColumn
                         x: readerPane.margin; y: 8; width: reader.width-readerPane.margin*2; spacing: 0; visible: mail.members.length>0 || mail.replyOpen || mail.collapsedDraftVisible
                         RowLayout {
-                            Layout.fillWidth: true; visible: mail.members.length>1; spacing: 12; Layout.topMargin: 6; Layout.bottomMargin: 5
+                            Layout.fillWidth: true; visible: mail.members.length>1 && !mail.expanded; spacing: 12; Layout.topMargin: 6; Layout.bottomMargin: 5
                             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                             FmButton { objectName: "earlierMessagesButton"; iconName: mail.expanded ? "up" : "down"; text: (mail.expanded ? "Hide " : "")+(mail.members.length-1)+" earlier messages"; font.pixelSize: Theme.fontSize(12); onClicked: { mail.expanded=!mail.expanded; backend.remember("expanded",mail.expanded) } }
                             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
@@ -737,70 +799,128 @@ Item {
                                 required property int index
                                 readonly property bool isExpanded: mail.memberIsExpanded(modelData.id,index)
                                 readonly property bool isMatch: mail.matchingIds.indexOf(modelData.id)>=0
-                                readonly property bool assistancePopupOpen: messageAssistance.popupOpen || messageSource.popupOpen
+                                readonly property bool assistancePopupOpen: messageAssistance.popupOpen || messageSource.popupOpen || attachmentPopupOpen()
+                                function attachmentPopupOpen() {
+                                    for (let i = 0; i < attachmentRepeater.count; ++i) {
+                                        const tile = attachmentRepeater.itemAt(i)
+                                        if (tile && tile.popupOpen) return true
+                                    }
+                                    return false
+                                }
                                 objectName: "messageMember_"+modelData.id
                                 Layout.fillWidth: true; spacing: member.isExpanded ? 14 : 0; Layout.topMargin: member.isExpanded ? 24 : 0; Layout.bottomMargin: member.isExpanded ? 28 : 0; visible: mail.expanded || index===mail.members.length-1
-                                MessageSource { id: messageSource; message: member.modelData; active: member.isExpanded && member.visible; visible: false }
+                                MessageSource { id: messageSource; message: member.modelData; active: member.isExpanded && member.visible; visible: false; onMetadataChanged: mail.recordMetadata(member.modelData.id, metadata) }
                                 ItemDelegate {
                                     id: memberHeading
-                                    Layout.fillWidth: true; implicitHeight: member.isExpanded ? 34 : 44; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
-                                    onClicked: if (member.index!==mail.members.length-1) mail.toggleMember(member.modelData.id,member.index)
-                                    background: Rectangle { color: memberHeading.hovered ? Theme.surface : "transparent"; border.color: memberHeading.activeFocus ? Theme.accent : "transparent"; radius: 4 }
+                                    Layout.fillWidth: true; implicitHeight: member.isExpanded ? Math.max(34,contentItem.implicitHeight) : 44; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
+                                    objectName: "messageHeading_" + member.modelData.id
+                                    focusPolicy: member.isExpanded ? Qt.NoFocus : Qt.StrongFocus
+                                    onClicked: if (!member.isExpanded) { memberSender.forceActiveFocus(); mail.toggleMember(member.modelData.id,member.index) }
+                                    background: Rectangle { color: !member.isExpanded && memberHeading.hovered ? Theme.surface : "transparent"; border.color: memberHeading.activeFocus ? Theme.accent : "transparent"; radius: 4 }
                                     contentItem: ColumnLayout {
                                         spacing: 4
                                         RowLayout {
                                             Layout.fillWidth: true; spacing: 14
-                                            Rectangle {
-                                                implicitWidth: member.isExpanded ? 34 : 26; implicitHeight: implicitWidth; radius: implicitWidth / 2; color: member.modelData.sent ? Theme.accentAlpha(0.18) : Theme.bg4
-                                                Text { anchors.centerIn: parent; text: mail.initials(member.modelData.sender_name || member.modelData.sender_email); color: member.modelData.sent ? Theme.accent : Theme.secondary; font.pixelSize: Theme.fontSize(member.isExpanded ? 12 : 10); font.weight: Font.Medium }
+                                            ContactAvatar {
+                                                objectName: "senderAvatar_" + member.modelData.id
+                                                diameter: member.isExpanded ? 34 : 26; own: !!member.modelData.sent
+                                                personName: member.modelData.sent ? "You" : member.modelData.sender_name || member.modelData.sender_email
+                                                email: member.modelData.sender_email || ""
+                                                Layout.alignment: Qt.AlignTop
                                             }
-                                            ColumnLayout {
-                                                Layout.fillWidth: member.isExpanded; Layout.maximumWidth: member.isExpanded ? Number.POSITIVE_INFINITY : readerColumn.width * 0.32; spacing: 2
-                                                FmButton {
-                                                    id: memberSender; objectName: "senderFilter_"+member.modelData.id; text: member.modelData.sender_name; foreground: member.modelData.sent ? Theme.accent : Theme.text; font.pixelSize: Theme.fontSize(member.isExpanded ? 14 : 13); font.weight: Font.Medium
-                                                    Layout.fillWidth: true; implicitHeight: 18; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; textAlignment: Text.AlignLeft
-                                                    onHoveredChanged: hovered ? mail.senderCardFor(member.modelData, memberSender) : senderCard.scheduleClose()
-                                                    onClicked: mail.senderCardFor(member.modelData, memberSender)
+                                            Item {
+                                                id: senderIdentity
+                                                Layout.fillWidth: member.isExpanded; Layout.maximumWidth: member.isExpanded ? Number.POSITIVE_INFINITY : readerColumn.width * 0.32
+                                                implicitWidth: memberSender.implicitWidth + (senderKind.visible ? 20 : 0)
+                                                implicitHeight: identityContent.implicitHeight
+                                                Column {
+                                                    id: identityContent; width: parent.width; spacing: 2
+                                                    Row {
+                                                        width: parent.width; spacing: 8
+                                                        ContactName {
+                                                            id: memberSender; objectName: "senderFilter_"+member.modelData.id
+                                                            text: member.modelData.sent ? "You" : member.modelData.sender_name || member.modelData.sender_email
+                                                            email: member.modelData.sender_email || ""
+                                                            foreground: member.modelData.sent ? Theme.accent : Theme.text
+                                                            font.pixelSize: Theme.fontSize(member.isExpanded ? 14 : 13); font.weight: Font.Medium
+                                                            width: Math.max(0, Math.min(implicitWidth, senderIdentity.width - (senderKind.visible ? 20 : 0)))
+                                                        }
+                                                        FmButton {
+                                                            id: senderKind; objectName: "messageSenderKind_" + member.modelData.id
+                                                            visible: member.isExpanded && !member.modelData.sent && assistance.classificationEnabled
+                                                            iconName: mail.kindIcon(member.modelData.kind); iconSize: 12
+                                                            implicitWidth: 12; implicitHeight: 18; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
+                                                            tip: mail.kindTitle(member.modelData.kind) + " · correct sender kind"
+                                                            onClicked: messageAssistance.correctSender()
+                                                        }
+                                                    }
+                                                    Text { visible: member.isExpanded; text: member.modelData.sender_email || ""; color: Theme.subtle; font.pixelSize: Theme.fontSize(12.5); elide: Text.ElideRight; width: parent.width; textFormat: Text.PlainText }
                                                 }
-                                                Text { visible: member.isExpanded; text: member.modelData.sender_email || ""; color: Theme.subtle; font.pixelSize: Theme.fontSize(12.5); elide: Text.ElideRight; Layout.fillWidth: true; textFormat: Text.PlainText }
                                             }
                                             Text { visible: !member.isExpanded; text: (member.modelData.text || "").replace(/\s+/g," "); Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.inkAlpha(0.45); font.pixelSize: Theme.fontSize(13); textFormat: Text.PlainText }
                                             Text { visible: member.isMatch; text: "Match"; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11) }
-                                            FmButton {
-                                                objectName: "messageSenderKind_" + member.modelData.id
-                                                visible: member.isExpanded && !member.modelData.sent && assistance.classificationEnabled
-                                                iconName: mail.kindIcon(member.modelData.kind); iconSize: 13
-                                                implicitWidth: 24; implicitHeight: 24; leftPadding: 4; rightPadding: 4
-                                                tip: mail.kindTitle(member.modelData.kind) + " · correct sender kind"
-                                                onClicked: messageAssistance.correctSender()
-                                            }
-                                            FmIcon { visible: !!member.modelData.starred; name: "star"; size: 12; color: Theme.accent }
-                                            Text {
-                                                text: (member.index === mail.members.length - 1 ? mail.relativeTime(member.modelData.sent_at) : mail.rowTime(member.modelData.sent_at)) + (member.modelData.is_outgoing ? " · " + member.modelData.send_status : "")
-                                                color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12)
-                                                FmToolTip { visible: memberDateHover.hovered; text: mail.fullTime(member.modelData.sent_at) }
-                                                HoverHandler { id: memberDateHover }
-                                            }
-                                            FmButton {
-                                                id: memberMore; objectName: "messageMore_" + member.modelData.id; visible: member.isExpanded
-                                                iconName: "more"; implicitWidth: 28; implicitHeight: 28; leftPadding: 6; rightPadding: 6; outlined: true; tip: "Message options"
-                                                onClicked: {
-                                                    mail.menuRows = backend.snapshotMailRows([member.modelData.is_outgoing ? member.modelData.id : backend.selectedId]); mail.rowMenu = true; mail.messageMenuSource = member.modelData.is_outgoing ? null : messageSource
-                                                    const point = memberMore.mapToItem(Overlay.overlay, width, height)
-                                                    morePopup.x = Math.max(8, point.x - morePopup.width); morePopup.y = point.y + 6; morePopup.open()
+                                            RowLayout {
+                                                Layout.alignment: Qt.AlignRight | Qt.AlignTop
+                                                Layout.fillWidth: false
+                                                Layout.maximumWidth: readerColumn.width * 0.45
+                                                spacing: 10
+                                                ColumnLayout {
+                                                    objectName: "messageDateBlock_" + member.modelData.id
+                                                    Layout.fillWidth: true; spacing: 2
+                                                    RowLayout {
+                                                        Layout.alignment: Qt.AlignRight; Layout.fillWidth: false; spacing: 8
+                                                        FmIcon { objectName: "messageStar_" + member.modelData.id; visible: !!member.modelData.starred; name: "star"; size: 12; color: Theme.accent }
+                                                        Text {
+                                                            objectName: "messageShortDate_" + member.modelData.id
+                                                            text: (member.index === mail.members.length - 1 ? mail.relativeTime(member.modelData.sent_at) : mail.rowTime(member.modelData.sent_at)) + (member.modelData.is_outgoing ? " · " + member.modelData.send_status : "")
+                                                            color: member.isExpanded ? Theme.inkAlpha(0.85) : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(member.isExpanded ? 13 : 12)
+                                                            FmToolTip { visible: memberDateHover.hovered; text: mail.fullTime(member.modelData.sent_at) }
+                                                            HoverHandler { id: memberDateHover }
+                                                        }
+                                                    }
+                                                    Text {
+                                                        objectName: "messageFullDate_" + member.modelData.id
+                                                        visible: member.isExpanded && !member.modelData.sent && member.index === mail.members.length - 1
+                                                        Layout.fillWidth: true; horizontalAlignment: Text.AlignRight; wrapMode: Text.Wrap; text: mail.fullTime(member.modelData.sent_at)
+                                                        color: Theme.subtle; font.pixelSize: Theme.fontSize(12)
+                                                    }
+                                                }
+                                                FmButton {
+                                                    id: memberMore; objectName: "messageMore_" + member.modelData.id; visible: member.isExpanded
+                                                    Layout.alignment: Qt.AlignVCenter
+                                                    iconName: "more"; implicitWidth: 28; implicitHeight: 28; leftPadding: 6; rightPadding: 6; outlined: true; tip: "Message options"
+                                                    onClicked: {
+                                                        mail.menuRows = backend.snapshotMailRows([member.modelData.is_outgoing ? member.modelData.id : backend.selectedId]); mail.rowMenu = true; mail.messageMenuSource = member.modelData.is_outgoing ? null : messageSource
+                                                        const point = memberMore.mapToItem(Overlay.overlay, width, height)
+                                                        morePopup.x = Math.max(8, point.x - morePopup.width); morePopup.y = point.y + 6; morePopup.open()
+                                                    }
                                                 }
                                             }
                                         }
                                     }
                                 }
                                 ColumnLayout {
-                                    visible: member.isExpanded; Layout.fillWidth: true; Layout.leftMargin: 48; spacing: 6
+                                    id: recipients
+                                    readonly property var rows: mail.visibleMetadata(member.modelData, messageSource.metadata)
+                                    visible: member.isExpanded && rows.length > 0; Layout.fillWidth: true; Layout.leftMargin: 48; spacing: 6
                                     Repeater {
-                                        model: member.modelData.metadata || (messageSource.metadata.length ? messageSource.metadata : member.modelData.to ? [{label:"To",people:[{name:"",email:member.modelData.to}]}] : [])
+                                        model: recipients.rows
                                         RowLayout {
                                             required property var modelData; Layout.fillWidth: true; spacing: 14
                                             Text { text: modelData.label.toUpperCase(); Layout.preferredWidth: 48; Layout.alignment: Qt.AlignTop; color: Theme.inkAlpha(0.4); font.pixelSize: Theme.fontSize(11); font.letterSpacing: 0.66 }
-                                            Text { text: modelData.people.map(function(person) { return (person.name ? person.name + "  " : "") + person.email }).join("    "); Layout.fillWidth: true; color: Theme.secondary; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; textFormat: Text.PlainText }
+                                            Flow {
+                                                id: recipientPeople
+                                                Layout.fillWidth: true; spacing: 14
+                                                Repeater {
+                                                    model: parent.parent.modelData.people
+                                                    Flow {
+                                                        required property var modelData
+                                                        width: Math.min(recipientContact.implicitWidth + (recipientAddress.visible ? recipientAddress.implicitWidth + 5 : 0), recipientPeople.width); spacing: 5
+                                                        ContactName { id: recipientContact; objectName: "recipientName_" + member.modelData.id + "_" + parent.modelData.email; email: parent.modelData.email; text: parent.modelData.name || parent.modelData.email; width: Math.min(implicitWidth, recipientPeople.width) }
+                                                        Text { id: recipientAddress; visible: !!parent.modelData.name; text: parent.modelData.email; width: Math.min(implicitWidth, recipientPeople.width); elide: Text.ElideRight; color: Theme.subtle; font.pixelSize: Theme.fontSize(12); textFormat: Text.PlainText }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -816,27 +936,54 @@ Item {
                                     visible: member.isExpanded && !member.modelData.sent && (assistance.summariesEnabled || (assistance.classificationEnabled && !member.modelData.sent) || !!summary || !!classification)
                                 }
                                 Text { visible: member.isExpanded && !!member.modelData.content_error; Layout.fillWidth: true; Layout.leftMargin: 48; text: member.modelData.content_error || ""; color: Theme.error; wrapMode: Text.Wrap; font.pixelSize: Theme.fontSize(13) }
-                                TextArea {
-                                    objectName: "messageBody_" + member.modelData.id
-                                    visible: member.isExpanded && !member.modelData.content_error; Layout.fillWidth: true; Layout.leftMargin: 48; text: messageSource.hasHtml && !messageSource.plain ? messageSource.html : Theme.proseMarkup(member.modelData.content_pending ? "Loading sent message…" : member.modelData.text || (member.modelData.is_outgoing ? "(No text)" : "Readable content is unavailable."), 1.65)
-                                    readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.RichText
-                                    color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(15); leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; background: null
-                                    Accessible.name: "Message from "+member.modelData.sender_name
-                                    onLinkActivated: function(link) { backend.openLink(link) }
-                                }
-                                Flow {
-                                    visible: member.isExpanded; Layout.fillWidth: true; Layout.leftMargin: 48; spacing: 8
-                                    Repeater { model: backend.linksInText(member.modelData.text||""); FmButton { required property string modelData; text: modelData.length>60 ? modelData.substring(0,60)+"…" : modelData; implicitWidth: Math.min(contentItem.implicitWidth+22,readerColumn.width); font.pixelSize: Theme.fontSize(11); tip: "Open link: "+modelData; onClicked: backend.openLink(modelData) } }
-                                }
-                                Flow {
-                                    visible: member.isExpanded; Layout.fillWidth: true; Layout.leftMargin: 48; spacing: 8
+                                ColumnLayout {
+                                    id: messageBody
+                                    visible: member.isExpanded && !member.modelData.content_error
+                                    Layout.fillWidth: true; Layout.leftMargin: 48; spacing: 7
+                                    readonly property var rows: backend.receivedBody(messageSource.hasHtml && !messageSource.plain ? messageSource.result.body_html : "", member.modelData.content_pending ? "Loading sent message…" : member.modelData.text || "(No text)")
+                                    readonly property string projectionKey: messageSource.identity + "/" + messageSource.plain + "/" + messageSource.hasHtml
+                                    property var openQuotes: ({})
+                                    onProjectionKeyChanged: openQuotes = ({})
+                                    function toggle(key) { const next=Object.assign({},openQuotes); next[key]=!next[key]; openQuotes=next }
                                     Repeater {
-                                        model: member.modelData.attachments||[]
-                                        FmButton {
+                                        model: messageBody.rows
+                                        ColumnLayout {
                                             required property var modelData
-                                            iconName: "attachment"; text: modelData.name+" · "+(member.modelData.is_outgoing ? "available after sync" : modelData.state==="available" ? "available offline" : modelData.state); implicitWidth: Math.min(contentItem.implicitWidth+22,readerColumn.width)
-                                            outlined: true; font.pixelSize: Theme.fontSize(12); enabled: !member.modelData.is_outgoing && modelData.state==="available"; onClicked: backend.openAttachment(modelData.id)
-                                            tip: member.modelData.is_outgoing ? "This file is preserved with the message. Open it after Sent sync." : modelData.state==="available" ? "Verify the retained bytes and open this attachment" : "This attachment is "+modelData.state+" and cannot be opened."
+                                            required property int index
+                                            Layout.fillWidth: true; Layout.leftMargin: Math.min(24,modelData.parents.length*10); spacing: 0
+                                            visible: modelData.parents.every(function(key) { return !!messageBody.openQuotes[key] })
+                                            FmButton {
+                                                objectName: "quotedReply_" + member.modelData.id + "_" + index
+                                                visible: !!modelData.quote
+                                                text: messageBody.openQuotes[modelData.key] ? "Hide quoted reply" : "Show quoted reply"
+                                                iconName: messageBody.openQuotes[modelData.key] ? "up" : "more"
+                                                font.pixelSize: Theme.fontSize(11.5); implicitHeight: 25; leftPadding: 7; rightPadding: 9
+                                                outlined: true; foreground: Theme.subtle
+                                                onClicked: messageBody.toggle(modelData.key)
+                                            }
+                                            TextArea {
+                                                objectName: index === 0 ? "messageBody_" + member.modelData.id : "messageBodyPart_" + member.modelData.id + "_" + index
+                                                visible: !modelData.quote; Layout.fillWidth: true; text: modelData.html || ""
+                                                readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.RichText
+                                                color: modelData.parents.length ? Theme.secondary : Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(15)
+                                                leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; background: null
+                                                Accessible.name: "Message from " + member.modelData.sender_name
+                                                onLinkActivated: function(link) { backend.openLink(link) }
+                                            }
+                                        }
+                                    }
+                                }
+                                Flow {
+                                    id: attachmentFlow
+                                    visible: member.isExpanded && (member.modelData.attachments||[]).length > 0; Layout.fillWidth: true; Layout.leftMargin: 48; spacing: 8
+                                    Repeater {
+                                        id: attachmentRepeater
+                                        model: member.modelData.attachments||[]
+                                        AttachmentTile {
+                                            required property var modelData
+                                            attachment: modelData; account: backend.account
+                                            maximumWidth: attachmentFlow.width
+                                            available: !member.modelData.is_outgoing && modelData.state === "available"
                                         }
                                     }
                                 }

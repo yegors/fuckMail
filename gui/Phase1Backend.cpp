@@ -269,6 +269,7 @@ void MailBackend::loadPreferences() {
             m_timelineDate = preferences.value("timeline_date").isNull() ? todayDate() : preferences.value("timeline_date").toString();
             emit preferencesChanged(); if (reloadCalendar) loadCalendar();
         }
+        resumeStartupGoogleSync();
         if (!m_syntheticProfile && m_preferences.value("calendar_display_time_zone").isNull()
             && !m_preferencesPending.contains("calendar_display_time_zone")) {
             // Resolve the host zone once; the shared Core validates the IANA ID.

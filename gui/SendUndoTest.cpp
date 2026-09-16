@@ -32,7 +32,8 @@ static void run() {
     for(const auto weight:{"Regular","Medium","SemiBold"})
         require(QFontDatabase::addApplicationFont(QString::fromUtf8(FM_GUI_SOURCE_DIR)+"/fonts/Geist-"+weight+".ttf")>=0,"bundled font");
     Engine fixture; MailBackend backend(fixture.profile,"unused-fixture-engine",nullptr,false,true);
-    backend.m_connected=true;backend.m_account="fixture-account";backend.m_activeDraft="original-draft";
+    backend.m_connected=true; backend.m_googleSync["fixture-account"] = QVariantMap{{"active", true}, {"owned", true}};backend.m_googleSync["other-account"] = QVariantMap{{"active", true}, {"owned", true}};backend.m_account="fixture-account";backend.m_activeDraft="original-draft";
+    require(backend.m_sendUndoMs==0,"normal Send has no artificial delay");backend.m_sendUndoMs=6000; // Retain delayed-queue safety regression.
     backend.m_enginePid=QCoreApplication::applicationPid();
     QJsonObject source=draft("fixture-account","original-draft"),other=draft("other-account","other-draft");
     backend.m_draft=source.toVariantMap();
@@ -100,7 +101,7 @@ ApplicationWindow {width:1280;height:800;visible:true;color:Theme.bg
     await([&]{return backend.sendQueued();},"save then queue");
     await([&]{return !mail->property("replyOpen").toBool();},"Send closes real composer");
     require(!mail->property("collapsedDraftVisible").toBool(),"queued draft does not leave collapsed editor");
-    require(backend.m_sendUndoMs==6000 && sends.isEmpty() && saves==1,"default six seconds begins after a real save");
+    require(backend.m_sendUndoMs==6000 && sends.isEmpty() && saves==1,"explicit delay begins after a real save");
     require(source["bcc_recipients"].toArray().size()==1 && source["body"]=="Latest human text before Send","staged routing and words saved");
     require(backend.draftLocked() && !backend.googleSend()["can_send"].toBool(),"queued draft protected");
     const auto originalFolder=backend.m_folder, originalSelection=backend.m_selected;
@@ -203,11 +204,24 @@ ApplicationWindow {width:1280;height:800;visible:true;color:Theme.bg
     backend.acceptDraft(other);click("captureReply");require(backend.sendQueued(),"queue before connection loss");
     backend.m_socket.abort();await([&]{return backend.m_queuedSends.isEmpty();},"connection loss cancels queued send");
     require(sends.size()==1 && !backend.m_actionTimer.isActive(),"disconnect starts no Send and stops timer");
-    backend.m_connected=true;backend.m_socket.connectToServer(fixture.server.serverName());
+    backend.m_connected=true;backend.m_googleSync["other-account"] = QVariantMap{{"active",true},{"owned",true}};backend.m_socket.connectToServer(fixture.server.serverName());
     await([&]{return backend.m_socket.state()==QLocalSocket::ConnectedState;},"reconnect fixture");
     hello=false;backend.request("hello",{},{{"token","synthetic-operation-token"}},[&](auto,bool ok){hello=ok;});await([&]{return hello;},"reconnected cached hello");
+    // Normal Send dispatches as soon as local preflight returns, with persistent progress.
+    backend.m_sendUndoMs=0;backend.acceptDraft(other);const auto fastStarted=backend.m_actionClock.elapsed();click("captureReply");
+    await([&]{return sends.size()==2;},"normal Send reaches provider without Undo delay");
+    require(backend.m_actionClock.elapsed()-fastStarted<1500 && backend.actionToast()["progress"].toBool(),"fast send dispatch and visible indeterminate progress");
+    require(backend.googleSend()["status"].toString()=="Sending…","normal sending has one clear status without obsolete Undo instructions");
+    backend.m_actionToastDeadline=backend.m_actionClock.elapsed();backend.advanceSendUndo();
+    require(backend.actionToast()["visible"].toBool(),"slow upload retains progress beyond toast expiry");
+    auto fast=sends.last();auto fastAccepted=accepted;fastAccepted["account"]=fast.account;fastAccepted["draft_id"]=fast.params["draft_id"];fastAccepted["request_id"]=fast.params["request_id"];fastAccepted["request"]=fast.params;fastAccepted["draft_revision"]=fast.params["expected_revision"];fastAccepted["google_revision"]=fast.params["expected_google_revision"];fastAccepted["last_accepted_draft_revision"]=fast.params["expected_revision"];
+    fast.peer->write(reply(fast.id,fastAccepted));await([&]{return backend.m_googleOperations.isEmpty();},"immediate send accepted");
+    require(backend.actionToast()["success"].toBool() && !backend.actionToast()["progress"].toBool(),"progress becomes confirmed Sent feedback");
+    require(!mail->property("replyOpen").toBool() && !mail->property("collapsedDraftVisible").toBool(),"accepted unchanged composer fully closes");
+    backend.m_draftDirty=true;require(!backend.googleSend()["sent_current"].toBool(),"newer unsaved text remains editable");backend.m_draftDirty=false;
+    backend.m_sendUndoMs=6000;other["revision"]=other["revision"].toInteger()+1;
     backend.acceptDraft(other);click("captureReply");require(backend.sendQueued(),"queue before close");
-    backend.shutdown();require(backend.m_queuedSends.isEmpty() && sends.size()==1,"GUI close cancels unsubmitted work");
+    backend.shutdown();require(backend.m_queuedSends.isEmpty() && sends.size()==2,"GUI close cancels unsubmitted work");
     require(!warnings,"production QML has no warnings");
     qInfo()<<"PASS: real six-second Undo, save/routing, navigation, current Google revision, toast ownership, cancellation, changed draft and close";
 }

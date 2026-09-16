@@ -1,5 +1,55 @@
 # Mail UI, reader and human composer
 
+## D079 — stable attachment feedback and clear Send state (Mail UI56)
+
+Reserve the attachment filename/status row for idle size, Saving, Saved and failure text. Status changes must not alter the tile height or shift subsequent email content. Elide long errors in place and expose their full text through hover/focus disclosure and accessibility; keep the retry/save control available. Modal saving feedback occupies its existing metadata line. Retain decoded images during asynchronous size changes, begin full-image loading as the viewer becomes visible, and honor raster orientation in preview dimensions and decoding. Close open attachment dialogs on identity change.
+
+Production Send uses one Sending status with no obsolete delayed-Undo instruction or duplicated progress wording. Existing unknown-outcome recovery remains explicit. Consumers: Mail UI56/Quality56; Core44/Gmail24/CLI39/schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged.
+
+## D077–D078 — sending and attachments (Mail UI55)
+
+Previously initialized, connected Google accounts resume acquisition once on GUI startup after preferences load. Respect saved service choices, removed accounts and explicit pause; new account setup still chooses retention before import. Paused sending offers Resume sync. Send immediately enters exact save/preflight and provider submission with no artificial Undo delay. A fixed overlay shows indeterminate Sending progress, including attachments, then confirmed Sent; no fabricated percentage or minimum duration. Unknown outcomes retain explicit read-only recovery and never auto-resend. Accepted unchanged drafts leave the editor and shared Drafts projection; newer edits and authored history survive.
+
+Saved summaries appear immediately on navigation, including delayed cached-result reads. Only a job observed running in the current message may animate into its result.
+
+Available raster attachments show a fixed-height thumbnail and open a shared-style modal with fit and actual-size viewing, scrolling, Escape/Close and Save. Every available attachment has a minimal Save button and native Save as picker. The backend uses the existing account-scoped verified attachment export and writes an atomic, length/digest-verified destination; a failed copy preserves an existing file. Freeze account/attachment identity for the picker and request. Progress and failures stay with the attachment. Unavailable content is explicit; unsupported images retain saving. No network images or automatic external application launch. Raster decoding is bounded to 64 million pixels; saving has no image-type restriction.
+
+Consumers: Mail UI55/Quality55, Core44/Gmail24/CLI39/schema29. Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged; readiness remains 0/9.
+
+## D076 — stable summarization surface (Mail UI53)
+
+The initial Summarize control changes to Summarizing… with an indeterminate line inside the same 29-pixel-high surface. Reserve label/action width so queued/running state changes do not resize the button or move the email body. Remove the separate classification cancellation row for the combined job. Keep cancellation in the surface's actions menu. Do not fabricate completion percentages.
+
+Once the committed result is available, fade in the summary and animate its required height over 220 ms with eased motion and clipped contents. Keep progress active between job completion and result readback; do not flash the idle button. Preserve existing text and height during regeneration. First failures appear inside the same card; retry retains the expanded card and error context until its outcome replaces them. Preserve source disclosure, bounded long-summary scrolling, sender correction, incoming-only eligibility and existing job/navigation guards.
+
+Mail UI53/Quality53; Core43/Gmail23/CLI38/schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Whole-area readiness stays 0/9; D068 remains parked.
+
+## D075 — reader date/menu (Mail UI52)
+
+Display the latest received message's short time above its full local weekday/date and 24-hour time (`Friday 11 September 2026, 09:12`), with no visible timezone suffix. Both lines share their right edge. Center the 28-pixel message menu vertically beside the entire date block with a ten-pixel gap. Earlier expanded messages keep the same right-edge menu alignment. Place the star eight pixels before the short time, keeping it out of the date/menu gap. At narrow widths, wrap the full date and center the menu against the resulting block. Format the actual source instant in the machine's local timezone.
+
+Mail UI52/Quality52; Core43/Gmail23/CLI38/schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Whole-area readiness stays 0/9; D068 remains parked.
+
+## D074 — compact reader and quoted replies (Mail UI51)
+
+Keep the delayed/star indicator at the right edge beside message actions, after the timestamp rather than in the stretchable sender area. CC recipients join the participant row with account-scoped contact cards; canonical email identity deduplicates names without merging distinct people by display name. Omit Reply-To metadata when it repeats the sender address. Constrain long selected-model names inside the dashed Summarize control, with elision and a full-name hover tooltip.
+
+Received message bodies use a display-only projection. Explicit HTML blockquotes and Gmail/Yahoo/Proton quotation wrappers, Outlook reply boundaries, recognizable English reply-attribution/header blocks and plain `>` quotations become collapsed Show quoted reply controls. Each nested reply can be revealed independently; opening a parent leaves deeper levels collapsed. Preserve new inline answers outside quote blocks. Merge the Gmail attribution wrapper with its immediate blockquote and plain attribution with its quote prefix to avoid redundant disclosure levels. Expansion belongs to the current message source/format and resets on identity changes. Limit recursive detection to 32 levels; deeper content remains available as readable retained text when revealed. Ambiguous content stays visible.
+
+Use compact received paragraph margins (zero above, seven logical pixels below), controlled line height, remove empty HTML spacer paragraphs and bound repeated line breaks. Plain paragraph gaps use the same display spacing. Keep ordinary formatting, clickable safe links and attachment actions. Historical links stay inside their quote instead of being repeated as separate buttons outside it. Received projection does not alter stored RAW, extracted text, search, model input or authored/composer spacing. Full retained source remains available through Message source.
+
+Mail UI51/Quality51; Core43/Gmail23/CLI38/schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Whole-area readiness remains 0/9.
+
+## D073 — filing and prototype thread details (Mail UI50)
+
+Inbox uses real incoming Inbox membership. Successful Archive/Trash releases the selected row's presentation pin before list refresh, including context-menu and keyboard/bulk paths. Pending/unknown Google delivery remains contextual and does not stop the local filing result from updating the list.
+
+Use the supplied September 15 prototype and current screenshot for the thread reader: label beside subject; overlapping participant avatars and individually contactable names; sender avatar/name/email at left; sender-kind correction immediately after the name; time/menu at right; full timestamp below the latest received time. All sender/participant/recipient names and avatars open the existing account-scoped contact card on hover or activation, including You in a folded sent row. Name hit areas follow the text, not the entire header. Expanded headers have no row hover or collapse action. A folded row unfolds from its remaining surface without turning its name into a fold control. Hide redundant received To-self metadata; keep sent To and other meaningful To/Cc/Bcc rows. Received summary actions show Summarize and the chosen model in the prototype's dashed control. Per-message summaries, incoming-only assistance and bottom reply actions remain.
+
+The normal synced draft caption is Saved to Google. Raw byte differences alone no longer create a warning. A proven content difference explains that Google's saved draft differs and local text is safe. Keep unsaved/newer-local, conflict, unknown-outcome, Check Google and explicit replacement behavior.
+
+Consumers: Core43/Gmail23/Mail UI50/CLI38/Quality50; schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Whole-area readiness remains 0/9.
+
 ## D072 — account and model feedback (Mail UI49)
 
 Removed account cards offer Delete archive with the common destructive confirmation. Name the account, explain permanent local deletion and next-startup unused-file cleanup, and state that Google data is unchanged. Cancel does nothing. Success removes the card and clears a selected archive; unsaved editor buffers keep their explicit disposition. Restoration clears obsolete removal status.

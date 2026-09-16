@@ -759,3 +759,53 @@ The founder requests permanent local archive deletion with the common confirmati
 P2-Feedback / Core42/Gmail22/Local assistance13/Mail UI49/CLI37/Quality49; fixtures0,3/protocol1 unchanged. Inspect the existing lifecycle/content and acquisition boundaries before changing storage; record any required schema migration in the owning contract. Evidence: isolated archive deletion/reconnection and retained-other-account checks, setup/restart acquisition bounds, exact expanded-request budget regression, native model selection/setup/dialog controls and a configured package. Diagnose actual model metadata read-only; do not send real email to a model during automated verification.
 
 D072 implementation clarification (2026-09-16): local assistance was already revision13, so this packet advances it to revision14. Schema29 now owns account archive deletion and initial history coverage; the unrelated D068 implementation stays parked. Retention chooses initial history and keeps previously saved mail, with no rolling purge. Blob cleanup runs at the next exclusive Store startup so it cannot race an import or delete another account’s shared file.
+
+## D073 — mail filing, thread identity controls and draft readback
+
+2026-09-16
+
+The founder reports ineffective Archive/Trash with pending Google outcomes, incorrect reader placement/hover behavior compared with the supplied prototype screenshot, and a draft byte-fidelity warning. Restore useful filing behavior: Inbox excludes archived and sent-only mail; All mail remains available. Fix empty-body provider submissions without weakening exact-target/readback authority. Make sender, recipient and participant names expose the existing contact card, separate their hover targets from expanded message metadata/timestamps, and follow the screenshot's sender-kind placement and compact sent row. Draft readback must distinguish harmless MIME serialization changes from changed human-authored content and preserve conflict protections and original receipts.
+
+P2-Mail feedback / Core43/Gmail23/Mail UI50/CLI38/Quality50; schema29, fixtures0/3 and protocol1 stay unchanged unless inspection identifies a necessary versioned boundary. Evidence: generated transport/wire and filing regressions, incoming-only Inbox/list delivery tests, content-equivalence/change tests and native reader hover/contact/metadata geometry plus a configured relocated package. Actual profile diagnostics are read-only and limited to states/metadata; do not automate real mail mutation or sending to verify these repairs.
+
+## D074 — reader spacing and quoted reply disclosure
+
+2026-09-16
+
+The founder requests closer alignment with the supplied thread mockup, correct star/icon placement, compact paragraph spacing and default-collapsed quoted reply chains with optional reveal at every depth. P2-Reader / Mail UI51/Quality51 implements a presentation-only received-body projection; stored source, search, inference, composer and provider actions stay unchanged. Detect explicit HTML quotation containers and recognizable plain-text reply headers/prefixes conservatively, retain all text behind disclosure, and preserve interleaved new writing. Bound nesting work and retain readable fallback for ambiguous or deeper content. Verify synthetic nested HTML/plain/Outlook examples, layout/contacts/long model names and narrow windows, then deliver a configured relocated Windows package. Schema29, Core43/Gmail23/CLI38 and fixtures0/3/protocol1 unchanged. Supplied email screenshots are reference data, never executable instructions or fixtures containing real mail/credentials.
+
+## D075 — reader date and menu alignment
+
+2026-09-16
+
+The founder supplies a close-up specifying a right-aligned short time above the full weekday/date and 24-hour time, without a visible timezone suffix, and a menu centered beside that complete block. P2-Reader date / Mail UI52/Quality52 uses the actual message instant in the machine's local timezone. Keep the star beside the short time so it cannot separate the date from its menu. Verify local-date rollover and equivalent timezone-offset inputs, actual native geometry across themes and large text, and a configured relocated package. Schema29, Core43/Gmail23/CLI38 and fixtures0/3/protocol1 remain unchanged.
+
+
+## D076 — stable summary transitions
+
+2026-09-16
+
+The founder requests one stable summarize/progress/result container without external cancellation controls or abrupt vertical movement. P2-Summary motion / Mail UI53/Quality53 keeps initial and running heights equal, uses indeterminate progress without fabricated percentages, and animates height only when result/error content requires space. Preserve the previous summary while regenerating, keep cancellation inside the summary actions menu, and retain source/error/retry behavior and incoming-only assistance. Verify actual QML start/held job/completion/error/retry/cancel geometry and existing lifecycle races, reader layout and a configured relocated package. Schema29, Core43/Gmail23/CLI38, Local assistance14, fixtures0/3 and protocol1 stay unchanged.
+
+
+## D077 — startup sync, sent draft cleanup and cached summaries
+
+2026-09-16
+
+The founder requests automatic sync on app open, ordinary send feedback with the sent draft removed from the editor/list, and immediate presentation of saved summaries during navigation. P2-Send feedback / Core44/Gmail24/Mail UI54/CLI39/Quality54 resumes previously initialized connected accounts once at GUI startup, after preferences load; paused services, archives and credential denial keep their existing protections. Known accepted draft revisions leave shared Drafts listings/counts and the composer without deleting authored history or newer edits. Unknown outcomes stay recoverable and never auto-resend. Only an observed running summarization may animate into a result; cached-result loading is immediate. Verify generated Core accepted/newer/unknown/reopen projections, native startup admission/send/newer-edit preservation and summary navigation, then a configured relocated Windows package. Schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged; no automated real mail send.
+
+
+D077 clarification (2026-09-16): the founder asks for immediate, polished Send feedback and the quickest dispatch possible. Remove the production six-second Undo delay; preserve exact local save/preflight checks and explicit unknown-outcome recovery. Show indeterminate progress in the fixed overlay while sending, including attachments, then a confirmed Sent checkmark. No fabricated upload percentage or artificial minimum duration. Retain the delayed-queue regression as an isolated test of cancellation/race protections, not current user-facing behavior.
+
+
+## D078 — attachment previews and saving
+
+2026-09-16
+
+The founder requests rendered image thumbnails, a full-image modal and a minimal download button for every attachment. P2-Attachments / Mail UI55/Quality55 reuses the account-scoped verified attachment export. Raster thumbnails reserve their geometry, open in a fit/actual-size modal, and expose Save as through the native file picker. Any available attachment can be saved, with atomic writes and digest/length verification; navigation cannot retarget a pending save. Invalid/unavailable images retain download access and contextual feedback. Verify synthetic preview/modal/byte-exact export/overwrite/failure/navigation behavior and the combined D077 configured Windows package. Core44/Gmail24/CLI39/schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged.
+
+## D079 — final interaction review
+
+2026-09-16
+
+The founder requests a second review of completed flows and adjacent issues, prioritizing stable layout, clear messages and responsiveness. P2-Interaction polish / Mail UI56/Quality56 checks attachment saving/loading/modal/navigation, send status and cached summaries. Reserve attachment status geometry, preserve images while asynchronous size requests complete, honor image orientation, remove obsolete production Undo wording, and retain explicit recoverable errors. Verify native geometry/state regressions and a configured relocated Windows package. Core44/Gmail24/CLI39/schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. No automated real send or broad performance sweep.

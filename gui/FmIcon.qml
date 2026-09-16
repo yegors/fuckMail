@@ -76,6 +76,7 @@ Canvas {
         case "star":
             for (let j = 0; j <= 10; ++j) { const a = -Math.PI/2 + j*Math.PI/5; const r = j%2 ? 2.8 : 6; if (j === 0) c.moveTo(8+r*Math.cos(a),8+r*Math.sin(a)); else c.lineTo(8+r*Math.cos(a),8+r*Math.sin(a)) }
             break
+        case "download": line([8,2,8,10]); line([4.5,6.5,8,10,11.5,6.5]); line([2.5,11,2.5,14,13.5,14,13.5,11]); break
         case "attachment": c.moveTo(5,10); c.lineTo(10,5); c.bezierCurveTo(13,2,16,5,13,8); c.lineTo(7,14); c.bezierCurveTo(3,18,-1,12,3,8); c.lineTo(9,2); break
         default: break
         }

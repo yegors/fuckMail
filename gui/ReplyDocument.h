@@ -15,6 +15,7 @@ class ReplyDocument : public QObject {
     Q_PROPERTY(QString html READ html NOTIFY textChanged)
     Q_PROPERTY(bool readOnly READ readOnly WRITE setReadOnly NOTIFY readOnlyChanged)
 public:
+    static QVariantList receivedBody(const QString &html, const QString &plain);
     explicit ReplyDocument(QObject *parent = nullptr) : QObject(parent) {}
     QQuickTextDocument *textDocument() const { return m_document; }
     QQuickItem *editor() const { return m_editor; }

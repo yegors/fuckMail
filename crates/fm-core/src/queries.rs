@@ -272,7 +272,7 @@ impl Store {
             out.last_mut().unwrap()["mail_retention"] = json!(mail_retention);
             out.last_mut().unwrap()["mail_since"] = json!(mail_since);
             let drafts: i64 = self.db.query_row(
-                "SELECT COUNT(*) FROM drafts d WHERE account=?1 AND discarded=0 AND (origin='local' OR NOT EXISTS(SELECT 1 FROM google_draft_sources s WHERE s.account=d.account AND s.draft_id=d.draft_id AND s.is_current=1 AND s.linked_local_draft_id IS NOT NULL))",
+                "SELECT COUNT(*) FROM drafts d WHERE account=?1 AND discarded=0 AND COALESCE(json_extract(d.google_json,'$.submission.last_accepted_draft_revision'),0)<d.revision AND (origin='local' OR NOT EXISTS(SELECT 1 FROM google_draft_sources s WHERE s.account=d.account AND s.draft_id=d.draft_id AND s.is_current=1 AND s.linked_local_draft_id IS NOT NULL))",
                 [&account],
                 |r| r.get(0),
             )?;
@@ -483,7 +483,7 @@ impl Store {
         let held = states.values().filter(|s| s.starred).count();
         let done = states.values().filter(|s| !s.unread && !s.starred).count();
         let folders: (i64, i64, i64, i64, i64) = self.db.query_row(
-            "SELECT count(DISTINCT CASE WHEN trashed=0 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=0 AND inbox=1 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=0 AND sent=1 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=1 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=0 AND sent=0 THEN conversation_id END) FROM messages WHERE account=?1", [account],
+            "SELECT count(DISTINCT CASE WHEN trashed=0 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=0 AND inbox=1 AND sent=0 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=0 AND sent=1 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=1 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=0 AND sent=0 THEN conversation_id END) FROM messages WHERE account=?1", [account],
             |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)))?;
         Ok(
             json!({"folder_conversation_counts":{"all":folders.0,"inbox":folders.1,"sent":folders.2,"trash":folders.3,"received":folders.4},"conversation_count":states.len(),"unread_conversation_count":unread,"held_conversation_count":held,"done_conversation_count":done,"scope":"all_account_mail_including_archive","held_includes_unread":true}),
@@ -1289,7 +1289,7 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
     // sender/body columns in the old query's scan even for unfiltered listings.
     let mut predicate = "m.account=?1".to_owned();
     match p["folder"].as_str().unwrap_or("inbox") {
-        "inbox" => predicate.push_str(" AND m.inbox=1 AND m.trashed=0"),
+        "inbox" => predicate.push_str(" AND m.inbox=1 AND m.sent=0 AND m.trashed=0"),
         "received" => predicate.push_str(" AND m.sent=0 AND m.trashed=0"),
         "sent" => predicate.push_str(" AND m.sent=1 AND m.trashed=0"),
         "trash" => predicate.push_str(" AND m.trashed=1"),
@@ -1387,7 +1387,7 @@ mod projection_tests {
         let google_inbox = store
             .conversations("windscribe", &json!({"folder":"inbox","limit":100}))
             .unwrap();
-        assert!(google_inbox["folder_conversation_count"].as_i64().unwrap() > 1);
+        assert_eq!(google_inbox["folder_conversation_count"], 0);
         store
             .db
             .execute(
@@ -1572,7 +1572,7 @@ mod projection_tests {
         let params = json!({"folder":"inbox","grouped":true,"limit":100});
         let check = |store: &Store, account: &str| {
             let actual = store.conversations(account, &params).unwrap();
-            let mut statement = store.db.prepare("SELECT c.id,c.subject,MAX(m.unread),MAX(m.starred) FROM conversations c JOIN messages m ON m.account=c.account AND m.conversation_id=c.id WHERE c.account=?1 AND EXISTS(SELECT 1 FROM messages source WHERE source.account=c.account AND source.conversation_id=c.id AND source.inbox=1) GROUP BY c.id ORDER BY CASE WHEN MAX(m.unread) THEN 0 WHEN MAX(m.starred) THEN 1 ELSE 2 END,MAX(julianday(m.sent_at)) DESC,c.id LIMIT 100").unwrap();
+            let mut statement = store.db.prepare("SELECT c.id,c.subject,MAX(m.unread),MAX(m.starred) FROM conversations c JOIN messages m ON m.account=c.account AND m.conversation_id=c.id WHERE c.account=?1 AND EXISTS(SELECT 1 FROM messages source WHERE source.account=c.account AND source.conversation_id=c.id AND source.inbox=1 AND source.sent=0 AND source.trashed=0) GROUP BY c.id ORDER BY CASE WHEN MAX(m.unread) THEN 0 WHEN MAX(m.starred) THEN 1 ELSE 2 END,MAX(julianday(m.sent_at)) DESC,c.id LIMIT 100").unwrap();
             let expected = statement
                 .query_map([account], |row| {
                     Ok((

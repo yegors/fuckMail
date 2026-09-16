@@ -64,6 +64,7 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
     connect(this, &MailBackend::googleSyncChanged, this, &MailBackend::googleDraftInventoryChanged);
     connect(this, &MailBackend::googleSyncChanged, this, &MailBackend::draftAuthoringChanged);
     connect(this, &MailBackend::googleSyncChanged, this, &MailBackend::draftDeletionChanged);
+    connect(this, &MailBackend::googleSyncChanged, this, &MailBackend::draftChanged);
     m_calendarDate = todayDate(); m_timelineDate = todayDate();
     m_clockTimer.setInterval(30000);
     connect(&m_clockTimer, &QTimer::timeout, this, [this] { emit eventsChanged(); });
@@ -346,7 +347,15 @@ QVariantMap MailBackend::currentAccount() const {
 void MailBackend::loadAccounts() {
     request("accounts", {}, {{"include_removed", true}}, [this](auto result, bool ok) {
         if (!ok) return;
-        if (!m_initialAccountsLoaded) { m_initialAccountsLoaded = true; emit startupReadyChanged(); }
+        if (!m_initialAccountsLoaded) {
+            for (const auto &entry : result["accounts"].toArray()) {
+                const auto row = entry.toObject(), google = row["google"].toObject();
+                if (row["lifecycle"].toObject()["state"] != "removed" && google["connection_state"] == "connected"
+                    && google["sync"].toObject()["state"].isString() && google["sync"].toObject()["state"] != "not_started")
+                    m_startupGoogleAccounts.insert(row["id"].toString());
+            }
+            m_initialAccountsLoaded = true; emit startupReadyChanged();
+        }
         const auto all = result["accounts"].toArray().toVariantList();
         const bool changed = all != m_allAccounts;
         bool lifecycleChanged = false;
@@ -363,6 +372,7 @@ void MailBackend::loadAccounts() {
         }
         if (changed) { emit accountsChanged(); emit currentAccountChanged(); reconcileAccountLifecycle(); }
         if (lifecycleChanged) { loadCalendarSources(); loadCalendar(); }
+        resumeStartupGoogleSync();
         if (m_account.isEmpty() && !m_accounts.isEmpty()) selectAccount(m_accounts.first().toMap()["id"].toString());
     });
 }
@@ -572,7 +582,7 @@ void MailBackend::loadConversations(bool append, bool preserveLoaded) {
     const int offset = append ? m_nextOffset : 0;
     if (offset < 0) return;
     m_loading = true; emit loadingChanged();
-    QJsonObject params{{"query", m_query}, {"folder", m_folder == "inbox" ? "received" : m_folder}, {"limit", 50}, {"offset", offset}};
+    QJsonObject params{{"query", m_query}, {"folder", m_folder}, {"limit", 50}, {"offset", offset}};
     params["grouped"] = m_folder != "sent";
     for (auto it = m_filters.cbegin(); it != m_filters.cend(); ++it) params[it.key()] = QJsonValue::fromVariant(it.value());
     if (m_folder == "inbox" && !m_collapsedGroups.isEmpty()) params["collapsed_groups"] = QJsonArray::fromStringList(m_collapsedGroups);
@@ -740,6 +750,7 @@ void MailBackend::mutateConversation(const QString &method, QJsonObject params) 
             if (id == m_selected && account == m_account) emit mailDeliveryChanged();
         }
         if (ok && id == m_selected && account == m_account) {
+            if (method == "mail_filing") { m_pinnedRow.clear(); m_pinnedIndex = -1; }
             m_conversation = result.toVariantMap();
             cacheConversation(account, id, m_conversation, lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong());
             if (!m_pinnedRow.isEmpty()) {
@@ -893,8 +904,9 @@ void MailBackend::runMailSelection() {
                 if (key == qMakePair(m_account, m_selected)) emit mailDeliveryChanged();
             }
             if (currentLifecycle && account == m_account && id == m_selected) {
+                if (command["method"] == "mail_filing") { m_pinnedRow.clear(); m_pinnedIndex = -1; }
                 m_conversation = result.toVariantMap();
-                if (m_pinnedRow["id"].toString() == id) {
+                if (m_pinnedRow.value("id").toString() == id) {
                     m_pinnedRow["revision"] = result["revision"].toVariant();
                     bool unread = false, starred = false;
                     for (const auto &member : result["messages"].toArray()) { unread |= member.toObject()["unread"].toBool(); starred |= member.toObject()["starred"].toBool(); }
@@ -1269,6 +1281,7 @@ QString MailBackend::requestMessageSource(const QString &id, const QString &vers
     return ticket;
 }
 QString MailBackend::receivedHtml(const QString &html) const { return ReplyDocument::limitedHtml(html, true); }
+QVariantList MailBackend::receivedBody(const QString &html,const QString &plain) const { return ReplyDocument::receivedBody(html,plain); }
 QString MailBackend::fixedFontFamily() const {
     const auto families = QFontDatabase::families();
     const auto system = QFontDatabase::systemFont(QFontDatabase::FixedFont).family();

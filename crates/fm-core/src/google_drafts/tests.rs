@@ -109,6 +109,54 @@ fn raw(store: &Store, lease: &GoogleDraftLease) -> Vec<u8> {
 }
 
 #[test]
+fn content_difference_is_durable_and_legacy_baselines_can_be_checked_without_upload() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, scope, id) = setup(dir.path());
+    save(&mut store, &scope, &id, 1, "Original body");
+    let prepared = freeze(&mut store, &scope, &request(&id, 2, "upload"));
+    let lease = claim(&mut store, &scope, &prepared);
+    let bytes = raw(&store, &lease);
+    let mut changed = String::from_utf8(bytes).unwrap();
+    let start = changed.find("Subject:").unwrap();
+    let end = start + changed[start..].find("\r\n").unwrap();
+    changed.replace_range(start..end, "Subject: Changed subject");
+    let changed = changed.into_bytes();
+    ack(&mut store, &lease, "draft-remote", "message-remote");
+    let status = observe(
+        &mut store,
+        &scope,
+        &id,
+        Some(("draft-remote", "message-remote", &changed)),
+    );
+    assert_eq!(status["baseline"]["content_matches"], false);
+    assert_eq!(status["fidelity_warning"], true);
+    store.db.execute("UPDATE drafts SET google_json=json_remove(google_json,'$.baseline.content_matches') WHERE draft_id=?1",[&id]).unwrap();
+    let legacy = store.google_draft_status(&scope.account, &id).unwrap();
+    assert!(legacy["baseline"].get("content_matches").is_none());
+    assert_eq!(legacy["fidelity_warning"], false);
+    let checked = observe(
+        &mut store,
+        &scope,
+        &id,
+        Some(("draft-remote", "message-remote", &changed)),
+    );
+    assert_eq!(checked["fidelity_warning"], true);
+    assert_eq!(checked["operation"], status["operation"]);
+    assert_eq!(
+        store
+            .handle("draft_get", Some(&scope.account), json!({"draft_id":id}))
+            .unwrap()["body"],
+        "Original body"
+    );
+    drop(store);
+    let store = Store::open_live(dir.path()).unwrap();
+    assert_eq!(
+        store.google_draft_status(&scope.account, &id).unwrap(),
+        checked
+    );
+}
+
+#[test]
 fn recipient_free_create_dual_hash_baseline_newer_authored_text_and_noop() {
     let dir = tempfile::tempdir().unwrap();
     let (mut store, scope, id) = setup(dir.path());
@@ -137,7 +185,8 @@ fn recipient_free_create_dual_hash_baseline_newer_authored_text_and_noop() {
         status["baseline"]["observed_sha256"],
         format!("{:x}", Sha256::digest(&normalized))
     );
-    assert_eq!(status["fidelity_warning"], true);
+    assert_eq!(status["fidelity_warning"], false);
+    assert_eq!(status["baseline"]["content_matches"], true);
     let draft = store
         .handle("draft_get", Some(&scope.account), json!({"draft_id":id}))
         .unwrap();

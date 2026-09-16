@@ -211,8 +211,12 @@ public:
     Q_INVOKABLE void loadMore();
     Q_INVOKABLE QString assistanceRequest(const QString &method, const QVariantMap &params, const QString &account = QString());
     Q_INVOKABLE QString labelRequest(const QString &method, const QVariantMap &params, const QString &account);
+    Q_INVOKABLE QString requestAttachmentPreview(const QString &account, const QString &id);
+    Q_INVOKABLE QString saveAttachment(const QString &account, const QString &id, const QUrl &destination);
+    Q_INVOKABLE QUrl attachmentSaveLocation(const QString &name) const;
     Q_INVOKABLE QString requestMessageSource(const QString &id, const QString &version);
     Q_INVOKABLE QString receivedHtml(const QString &html) const;
+    Q_INVOKABLE QVariantList receivedBody(const QString &html, const QString &plain) const;
     Q_INVOKABLE QString fixedFontFamily() const;
     Q_INVOKABLE void copyText(const QString &text);
     Q_INVOKABLE void refresh();
@@ -355,6 +359,8 @@ public:
 signals:
     void recipientSuggestionsReply(const QString &ticket, const QVariantMap &result, bool ok);
     void assistanceReply(const QString &ticket, const QString &method, const QVariantMap &result, bool ok);
+    void attachmentPreviewReady(const QString &ticket, const QVariantMap &result, bool ok);
+    void attachmentSaved(const QString &ticket, const QString &error);
     void messageSourceReady(const QString &ticket, const QVariantMap &result, bool ok);
     void calendarSearchChanged();
     void calendarSearchResultReady(const QVariantMap &event);
@@ -435,6 +441,8 @@ private:
     void cancelGoogleOperations(bool notify = true);
     void cancelGoogleProviderOperations(const QString &account);
     void pollGoogleSync();
+    void resumeStartupGoogleSync();
+    QSet<QString> m_startupGoogleAccounts;
     void pollMailDelivery();
     void submitGoogleLabelBinding(const QString &account);
     void finishCalendarOperation(const QString &account, const QString &requestId, QJsonObject result, bool ok);
@@ -561,7 +569,7 @@ private:
     void loadOutgoingMessage(const QVariantMap &value);
     QElapsedTimer m_actionClock;
     QTimer m_actionTimer;
-    int m_sendUndoMs = 6000;
+    int m_sendUndoMs = 0; // No artificial send delay; negative bypasses preflight in isolated control tests.
     QVariantMap m_actionToast;
     QList<QVariantMap> m_deferredActionToasts;
     qint64 m_actionToastDeadline = 0;

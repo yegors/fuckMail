@@ -253,14 +253,22 @@ impl ReqwestTransport {
         if cap == 0 {
             return Err(TransportError::InvalidRequest);
         }
-        let mut response = self
+        let empty_submission = request.body.is_empty()
+            && matches!(
+                request.method,
+                HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch
+            );
+        let mut builder = self
             .client
             .request(request.method.native(), request.url)
             .headers(request.headers)
-            .body(request.body)
-            .send()
-            .await
-            .map_err(map_error)?;
+            .body(request.body);
+        // An empty Vec does not make reqwest emit Content-Length. Google's
+        // empty-body POST endpoints still need explicit HTTP body framing.
+        if empty_submission {
+            builder = builder.header(reqwest::header::CONTENT_LENGTH, 0);
+        }
+        let mut response = builder.send().await.map_err(map_error)?;
         if response.status().is_redirection()
             && response.status() != reqwest::StatusCode::NOT_MODIFIED
         {
@@ -691,6 +699,33 @@ mod tests {
             TransportError::Timeout
         );
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn empty_post_has_explicit_zero_content_length() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/trash", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut bytes = [0; 4096];
+            let n = socket.read(&mut bytes).await.unwrap();
+            let headers = String::from_utf8_lossy(&bytes[..n]).to_ascii_lowercase();
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+                .await
+                .unwrap();
+            assert!(
+                headers.contains("content-length: 0\r\n"),
+                "Empty POST must declare its zero-length body: {headers}"
+            );
+        });
+        let mut request = local_request(&url);
+        request.method = HttpMethod::Post;
+        transport()
+            .execute(request, &CancellationToken::new())
+            .await
+            .unwrap();
+        server.await.unwrap();
     }
 
     #[tokio::test]

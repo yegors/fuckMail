@@ -17,26 +17,13 @@ ColumnLayout {
     visible: !message.sent && (controller.summariesEnabled || canClassify || !!summary || !!classification)
     Flow {
         Layout.fillWidth: true; spacing: 6
-        visible: (panel.controller.summariesEnabled && !panel.summary && !panel.controller.workingOn("summary", panel.message.id)) || (panel.canClassify && panel.showKindControl) || panel.controller.workingOn("classification", panel.message.id)
-        FmButton {
-            objectName: "summarizeMessage_" + panel.message.id
-            visible: panel.controller.summariesEnabled && !panel.summary && !panel.controller.workingOn("summary", panel.message.id)
-            enabled: !panel.controller.busy && backend.connected
-            text: "Summarize message"; iconName: "summary"; foreground: Theme.ai
-            font.pixelSize: Theme.fontSize(11); leftPadding: 0
-            onClicked: panel.controller.start("summary", panel.message.id)
-        }
+        visible: panel.canClassify && panel.showKindControl
         FmButton {
             id: kind; objectName: "correctSender_" + panel.message.id
             visible: panel.canClassify && panel.showKindControl
             text: ({people: "Human", automated: "Automated", unknown: "Unknown sender kind"})[panel.message.kind] || "Unknown sender kind"
             iconName: "down"; iconSize: 10; font.pixelSize: Theme.fontSize(11)
             tip: "Correct sender kind or classify this message"; onClicked: correction.open()
-        }
-        FmButton {
-            visible: panel.controller.workingOn("classification", panel.message.id)
-            text: "Classifying… Cancel"; font.pixelSize: Theme.fontSize(11)
-            onClicked: panel.controller.cancel()
         }
 
     }
@@ -50,6 +37,9 @@ ColumnLayout {
     SummaryCard {
         id: summaryCard; objectName: "messageSummary_" + panel.message.id
         Layout.fillWidth: true; title: "Summary"
+        inlineAction: panel.controller.summariesEnabled
+        messageId: panel.message.id
+        modelName: (panel.controller.settings.model || {}).name || ""
         result: panel.summary; members: [panel.message]
         busy: panel.controller.workingOn("summary", panel.message.id)
         error: panel.controller.errorFor("summary", panel.message.id)

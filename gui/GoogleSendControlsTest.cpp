@@ -56,8 +56,8 @@ public:
                 + "/fonts/Geist-" + weight + ".ttf") >= 0, "load the same bundled Geist fonts as the app");
         Engine fixture;
         MailBackend backend(fixture.profile, "unused-fixture-engine", nullptr, false, true);
-        backend.m_sendUndoMs = 0; // The separate SendUndoTest verifies the real six-second window.
-        backend.m_connected = true; backend.m_account = "fixture-account";
+        backend.m_sendUndoMs = -1; // Isolate operation controls; SendUndoTest covers save/preflight/dispatch.
+        backend.m_connected = true; backend.m_googleSync["fixture-account"] = QVariantMap{{"active", true}, {"owned", true}}; backend.m_account = "fixture-account";
         backend.m_enginePid = QCoreApplication::applicationPid(); backend.m_activeDraft = "draft-fixture"; backend.m_generation = 1;
         backend.m_draft = projection().toVariantMap();
         const QVariantList activeAccounts{QVariantMap{{"id", "fixture-account"}, {"name", "Fixture account"},
@@ -384,6 +384,40 @@ ApplicationWindow { width: 900; height: 1200; visible: true
         require(authored(backend.m_draft) == beforeProof && backend.m_draftDirty && fixture.operations == 13
             && backend.m_googleSendUi[backend.googleSendKey()].request.isEmpty() && backend.googleSend()["can_send"].toBool(),
             "strong obsolete proof clears only original identity, preserves newer text and requires fresh explicit Send");
+        backend.m_draftDirty = false; backend.m_googleSendUi.clear(); backend.m_draft = projection().toVariantMap();
+        backend.m_googleSync.clear(); emit backend.googleSyncChanged();
+        require(!backend.googleSend()["can_send"].toBool() && backend.googleSend()["can_resume_sync"].toBool()
+            && backend.googleSend()["status"].toString().contains("Resume sync"), "paused sync offers a plain recovery action before Send");
+        const auto currentRequest = QJsonObject{{"draft_id","draft-fixture"},{"request_id","final-sent"},{"expected_revision",5},{"expected_google_revision",0}};
+        backend.mergeGoogleSendStatus(status(currentRequest,"accepted",3,2,5),"fixture-account","draft-fixture");emit backend.draftChanged();
+        require(backend.googleSend()["sent_current"].toBool() && backend.googleSend()["status"]=="Sent."
+            && !backend.googleSend()["can_check"].toBool() && !backend.googleDraft()["visible"].toBool(),"accepted unchanged draft has only plain sent feedback");
+        backend.m_draftDirty=true;
+        require(!backend.googleSend()["sent_current"].toBool(),"unsaved newer work never closes as sent");backend.m_draftDirty=false;
+        // Startup inventory and preferences arrive independently; only established eligible accounts resume once.
+        backend.m_draftTimer.stop();backend.m_pollTimer.stop();backend.m_viewTimer.stop();
+        auto startupAccount=[](const QString &id,const QString &state="active") {
+            return QVariantMap{{"id",id},{"name",id},{"lifecycle",QVariantMap{{"state",state},{"revision",1}}},
+                {"google",QVariantMap{{"connection_state","connected"},{"sync",QVariantMap{{"state","caught_up"}}}}}};
+        };
+        backend.m_allAccounts={startupAccount("fixture-account"),startupAccount("paused"),startupAccount("removed","removed")};
+        backend.publishAccounts({backend.m_allAccounts[0],backend.m_allAccounts[1]});
+        backend.m_initialAccountsLoaded=true;backend.m_initialPreferencesLoaded=false;
+        backend.m_preferences["google_sync_services"]=QVariantMap{{"paused",QVariantMap{{"mail",false},{"calendar",false}}}};
+        backend.m_startupGoogleAccounts={"fixture-account","paused","removed"};int syncStarts=0;
+        fixture.customRequest=[&](QLocalSocket *peer,const QJsonObject &request) {
+            const auto method=request["method"].toString(),id=request["id"].toString();
+            if(method=="google_sync_start") {require(request["account"]=="fixture-account","only eligible startup account resumes");++syncStarts;peer->write(reply(id,{{"started",true}}));}
+            else if(method=="google_sync_status") peer->write(reply(id,{{"accounts",QJsonArray{}},{"limits",QJsonObject{}}}));
+            else if(method=="accounts") peer->write(reply(id,{{"accounts",QJsonArray::fromVariantList(backend.m_allAccounts)}}));
+            else if(method=="view_save") peer->write(reply(id,{{"revision",1}}));
+            else return false;
+            return true;
+        };
+        backend.resumeStartupGoogleSync();require(backend.m_startupGoogleAccounts.size()==3,"startup waits for saved service preferences");
+        backend.m_initialPreferencesLoaded=true;backend.resumeStartupGoogleSync();
+        await([&]{return syncStarts==1 && backend.m_inFlight.isEmpty();},"startup sync and inventory refresh finish");
+        backend.resumeStartupGoogleSync();require(syncStarts==1 && backend.m_startupGoogleAccounts.isEmpty(),"polling cannot restart a paused or denied startup attempt");
         require(!qmlError, "native Send controls generated no QML errors");
         backend.m_draftTimer.stop(); backend.m_pollTimer.stop(); backend.m_viewTimer.stop();
         qInfo() << "Native Send controls passed: actual QML handlers, private held save/auxiliary IPC, recipient validation, cancelled save continuation, frozen resume, revision-bound abandon, unknown evidence, historical/current metadata and account/editor isolation. Synthetic IPC only; no provider or performance claim.";

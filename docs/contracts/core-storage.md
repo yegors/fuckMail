@@ -1,5 +1,21 @@
 # Core and storage
 
+## D077 — accepted draft projections (Core44)
+
+Shared Drafts queries, search and account counts omit a draft when its persisted last accepted submission revision is at least its current revision. In-flight/unknown drafts remain present. A newer saved revision appears again. Keep authored content, submission receipts and history intact; this projection never discards a draft or grants resend authority. Reopening the store preserves the result. GUI composer cleanup also requires no newer unsaved text or recipient input.
+
+Consumers: Core44/Gmail24/Mail UI55/CLI39/Quality55; schema29, fixtures0/3 and protocol1 unchanged.
+
+## D073 — mail filing and draft content readback (Core43)
+
+Inbox queries and counts require a non-Trash, non-sent message with Inbox membership. Archived incoming mail remains available through All mail/received queries. Conversation membership and explicit filing targets are unchanged.
+
+Google draft readback compares the frozen uploaded MIME with fetched RAW off the Store writer. An optional `baseline.content_matches` records a decoded-content comparison; omission means unknown, not proven equivalent. Compare From/To/Cc/Bcc/Reply-To, subject, reply/reference identities, MIME part structure/type and rendering parameters, decoded text/HTML, attachment names/content/disposition and content IDs. Ignore transport-added headers, transfer encoding, MIME boundaries and body terminal line endings. Text attachments retain their terminal newlines. Unsupported groups/nested messages or decoding errors produce no equivalence assertion. `fidelity_warning` means a proven content difference. A legacy baseline can acquire this proof through read-only reconciliation with no new upload.
+
+Keep both original hashes, exact provider identity, revisions, RAW retention and conflict checks. Content equivalence never grants overwrite authority: a subsequent changed RAW baseline still enters the existing conflict flow. Local authored text and unsaved/newer edits remain independent. This is additive metadata in the existing schema29 journal.
+
+Consumers: Core43/Gmail23/Mail UI50/CLI38/Quality50; schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Whole-area readiness remains 0/9.
+
 ## D072 — account and model feedback (Core42)
 
 Schema29 adds a minimal archive-deletion receipt, pending shared-file cleanup and account metadata fields `mail_retention`/`mail_since`. Existing profiles retain All and their history. New Google bindings default to one calendar year; revisioned `account_update` accepts `1_month`, `3_months`, `1_year` or `all` before acquisition starts. The saved UTC cutoff survives restart/resync. Existing saved mail is not aged out automatically.

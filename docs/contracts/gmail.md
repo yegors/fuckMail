@@ -1,5 +1,21 @@
 # Gmail provider
 
+## D077 — startup acquisition and send presentation (Gmail24)
+
+The GUI resumes previously initialized connected accounts once after initial account/preferences loading, using existing sync ownership and persisted service choices. Exclude removed/disconnected accounts, never-started setup and both-disabled services. Explicit start/pause consumes pending startup work; polling must not rearm it or repeatedly request credentials. CLI lifetime and explicit ownership remain unchanged.
+
+Send uses the existing immutable submission authority immediately after required local save/preflight. Production has no six-second Undo hold. Progress remains visible until the outcome is known. Acceptance hides only the unchanged accepted draft projection; preserve newer edits, exact receipts, conflicts and unknown recovery. Provider acceptance is not recipient delivery. Do not auto-resend or recreate a draft after acceptance.
+
+Consumers: Gmail24/Core44/Mail UI55/CLI39/Quality55/schema29; fixtures0/3 and protocol1 unchanged.
+
+## D073 — empty requests and draft fidelity (Gmail23)
+
+Empty POST/PUT/PATCH submissions explicitly declare `Content-Length: 0`; this repairs Trash/Restore wire framing. Preserve the existing bounded transport, exact provider message identity, preflight/readback checks and unknown-outcome recovery. An HTTP response alone does not establish final filing success.
+
+Draft upload/readback can produce different MIME bytes with equivalent authored content. Core43 records a conservative decoded-content comparison while retaining distinct upload and observed hashes. Later RAW changes still require conflict handling; no automatic replacement or repeated unknown create is added. Unsupported comparisons remain unknown, and content changes receive a warning rather than being hidden as serialization differences.
+
+Consumers: Core43/Gmail23/Mail UI50/CLI38/Quality50; schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Whole-area readiness remains 0/9.
+
 ## D072 — account and model feedback (Gmail22)
 
 Save the setup history choice before sync. Inventory uses the persisted UTC cutoff; the recent lane uses the later of that cutoff and its usual recent boundary. History responses older than the boundary are discarded before MIME/content storage and do not count as missing-content failures. Provider deletions still reconcile. Resync preserves the boundary. Existing schema28 accounts keep All. Meetings has no independent permission checkbox; archive deletion changes only local data.

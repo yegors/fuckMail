@@ -17,6 +17,7 @@
 #include <QDebug>
 #include <QFontDatabase>
 #include <functional>
+#include <algorithm>
 #include <vector>
 
 static void require(bool ok,const char *message){if(!ok)qFatal("%s",message);}
@@ -37,7 +38,8 @@ public:
  QVariantList categories()const{return {QVariantMap{{"id","work"},{"name","Work"}}};}
  QVariantMap settings{{"endpoint","http://127.0.0.1:11434"},{"model",QVariant()},{"prompt","Summarize faithfully. {{labels}} {{messages}} {{partial}}"},{"accounts",QVariantMap{}}};
  int sequence=0,revision=0,inferences=0,cancellations=0,watches=0;bool reject=false,delayStart=false,delayPoll=false,failPoll=false;QVariantMap lastSave;
- std::vector<std::function<void()>> starts,polls,discoveries;
+ std::vector<std::function<void()>> starts,polls,discoveries,results;
+ bool delayResults=false; QVariantMap completedItems;
  bool delayDiscovery=false;
  QVariantMap lastDiscovery;
  QVariantMap targets;
@@ -58,7 +60,11 @@ public:
    }
    else if(method=="assist_watch"){++watches;result={{"watching",false}};}
    else if(method=="assist_catalog")result={{"categories",categories()}};
-   else if(method=="assist_results")result={{"items",selected=="conversation" ? QVariantList{summary()} : QVariantList{}}};
+   else if(method=="assist_results") {
+    QVariantList items{summary()};for(auto it=completedItems.cbegin();it!=completedItems.cend();++it)items.append(it.value());
+    result={{"items",selected=="conversation" ? items : QVariantList{}}};
+    if(delayResults){results.push_back([this,ticket,method,result]{emit assistanceReply(ticket,method,result,true);});return;}
+   }
    else if(method=="assist_settings_save"){
     if(reject){ok=false;result={{"message","Settings changed; reload"}};}
     else{lastSave=params;settings=params["settings"].toMap();++revision;result={{"revision",revision},{"settings",settings},{"defaults",settings}};}
@@ -68,7 +74,7 @@ public:
    }else if(method=="assist_cancel"){++cancellations;result={{"status","canceled"}};}
    else if(method=="assist_job"){
     if(failPoll){ok=false;result={{"message","The local model disconnected. Try again."}};}
-    else result={{"status","completed"},{"items",QVariantList{summary(targets[params["job_id"].toString()].toMap()["message_id"].toString())}}};
+    else {const auto target=targets[params["job_id"].toString()].toMap()["message_id"].toString();if(!target.isEmpty())completedItems[target]=summary(target);result={{"status","completed"}};}
     if(delayPoll){polls.push_back([this,ticket,method,result,ok]{emit assistanceReply(ticket,method,result,ok);});return;}
    }
    emit assistanceReply(ticket,method,result,ok);
@@ -103,8 +109,8 @@ ApplicationWindow {width:680;height:900;visible:true;color:Theme.canvas
   Text{text:"Alex · 2 messages · 2 h ago · Personal";color:Theme.muted;font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(13)}
   SummaryCard{objectName:"summaryFixture";Layout.fillWidth:true;result:controller.resultFor("summary","");busy:controller.workingOn("summary","");error:controller.errorFor("summary","");canSummarize:controller.summariesEnabled && !controller.busy;members:[{id:"message",sender_name:"Alex",sent_at:"2026-09-14T22:00:00Z"}];onRegenerate:controller.start("summary","");onCancelRequested:controller.cancel();onOpenSource:id=>openedSource=id}
   Text{text:"Alex";color:Theme.text;font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(13);font.weight:Font.Medium}
-  MessageAssistance{objectName:"receivedActions";Layout.fillWidth:true;controller:controller;message:({id:"message",sender_name:"Alex",kind:"unknown",sent:false,revision:1})}
-  Text{Layout.fillWidth:true;wrapMode:Text.Wrap;text:"Hi, I reviewed the draft. The revised design is approved. Can we meet on Friday at 10 to discuss implementation?";color:Theme.text;font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(15)}
+  MessageAssistance{objectName:"receivedActions";showKindControl:false;Layout.fillWidth:true;controller:controller;message:({id:"message",sender_name:"Alex",kind:"unknown",sent:false,revision:1})}
+  Text{objectName:"receivedBody";Layout.fillWidth:true;wrapMode:Text.Wrap;text:"Hi, I reviewed the draft. The revised design is approved. Can we meet on Friday at 10 to discuss implementation?";color:Theme.text;font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(15)}
   MessageAssistance{objectName:"sentActions";Layout.fillWidth:true;controller:controller;message:({id:"sent-message",sender_name:"Me",kind:"unknown",sent:true,revision:1})}
  }
 }}}
@@ -176,7 +182,28 @@ ApplicationWindow {width:680;height:900;visible:true;color:Theme.canvas
  await([&]{return backend.watches>0;});const auto watchesBefore=backend.watches;++backend.revision;emit backend.conversationChanged();await([&]{return backend.watches==watchesBefore+1 && controller->property("settingsRevision").toInt()==backend.revision;});const auto watchesAfter=backend.watches;emit backend.conversationChanged();QCoreApplication::processEvents();require(backend.watches==watchesAfter,"unchanged Settings refresh does not reset new-mail cursor");
  auto card=find(window->contentItem(),"summaryFixture");require(card,"thread card");
  await([&]{return !card->property("summaryText").toString().isEmpty();});
- QMetaObject::invokeMethod(find(window->contentItem(),"summarizeMessage_message"),"clicked");
+ auto messageCard=find(window->contentItem(),"messageSummary_message");auto action=find(window->contentItem(),"summarizeMessage_message");auto receivedBody=find(window->contentItem(),"receivedBody");
+ auto settle=[] {QElapsedTimer timer;timer.start();while(timer.elapsed()<300){QCoreApplication::processEvents();QThread::msleep(5);}};
+ settle();const auto idleHeight=messageCard->height(),idleBodyY=receivedBody->y(),idleWidth=action->width();
+ const auto motionCapture=qEnvironmentVariable("FM_SUMMARY_MOTION_CAPTURE");
+ auto capture=[&](const QString &state){if(!motionCapture.isEmpty())require(window->grabWindow().save(motionCapture+"-"+state+".png"),"summary transition capture");};
+ capture("idle");backend.delayStart=true;backend.delayPoll=true;
+ QMetaObject::invokeMethod(action,"clicked");await([&]{return backend.starts.size()==1;});settle();
+ require(action->isVisible() && action->property("text")=="Summarizing…","initial control becomes progress in place");
+ qInfo()<<"Summary idle/running geometry"<<idleHeight<<messageCard->height()<<idleBodyY<<receivedBody->y()<<idleWidth<<action->width();
+ require(qAbs(messageCard->height()-idleHeight)<0.5 && qAbs(receivedBody->y()-idleBodyY)<0.5 && qAbs(action->width()-idleWidth)<0.5,"queued summary leaves button and email geometry unchanged");
+ require(find(messageCard,"summaryProgress")->isVisible(),"indeterminate progress is inside original control");
+ require(!find(window->contentItem(),"classificationError_message")->isVisible(),"no external combined-job feedback");
+ capture("queued");backend.flush(backend.starts);backend.delayStart=false;await([&]{return !backend.polls.empty();});settle();
+ require(qAbs(receivedBody->y()-idleBodyY)<0.5,"running job does not move email text");capture("running");
+ backend.delayResults=true;backend.flush(backend.polls);backend.delayPoll=false;await([&]{return !backend.results.empty();});settle();
+ require(controller->property("busy").toBool() && action->property("text")=="Summarizing…","completion waits for committed result without flashing idle control");
+ require(qAbs(messageCard->height()-idleHeight)<0.5,"result readback preserves processing height");
+ backend.delayResults=false;backend.flush(backend.results);
+ QList<double> heights;double previous=idleHeight;QElapsedTimer motion;motion.start();
+ while(motion.elapsed()<350){QCoreApplication::processEvents();const auto height=messageCard->height();require(height+0.5>=previous,"summary expansion never jumps backwards");heights.append(height);previous=height;QThread::msleep(8);}
+ require(std::any_of(heights.cbegin(),heights.cend(),[&](double height){return height>idleHeight+1 && height<messageCard->height()-1;}) && messageCard->height()>idleHeight+10 && !action->isVisible(),"summary grows smoothly from initial control to text");
+ require(messageCard->property("summaryText").toString()==backend.summaryText,"committed message summary appears in same surface");capture("completed");
  await([&]{return backend.inferences==1 && !controller->property("busy").toBool();});
  require(backend.targets["job-1"].toMap()["message_id"]=="message","message button preserves exact target");
  require(controller->property("status").toString()=="completed","reader completion");
@@ -189,6 +216,38 @@ ApplicationWindow {width:680;height:900;visible:true;color:Theme.canvas
  backend.delayPoll=true;invokeStart("summary","");await([&]{return !backend.polls.empty();});QMetaObject::invokeMethod(controller,"cancel");invokeStart("summary","");await([&]{return controller->property("job").toString()=="job-4";});backend.flush(backend.polls);require(controller->property("job").toString()=="job-4","old poll cannot clear new job");backend.delayPoll=false;await([&]{return !controller->property("busy").toBool();});
  backend.failPoll=true;invokeStart("summary","message");await([&]{return !controller->property("busy").toBool();});require(!controller->property("error").toString().isEmpty(),"poll failure releases busy state with visible error");require(find(window->contentItem(),"messageSummary_message")->property("error").toString()==controller->property("error").toString(),"error shown in this message summary");require(!find(window->contentItem(),"classificationError_message")->isVisible(),"combined error not repeated beside summary card");backend.failPoll=false;
  backend.delayPoll=true;invokeStart("summary","");await([&]{return !backend.polls.empty();});backend.online=false;emit backend.connectedChanged();require(!controller->property("busy").toBool(),"disconnect releases busy state");backend.flush(backend.polls);backend.delayPoll=false;backend.online=true;emit backend.connectedChanged();invokeStart("summary","");await([&]{return !controller->property("busy").toBool();});
+ // Regeneration keeps the existing text and height; cancellation lives only in its menu.
+ settle();backend.delayPoll=true;const auto readyHeight=messageCard->height(),readyBodyY=receivedBody->y();
+ invokeStart("summary","message");await([&]{return !backend.polls.empty();});settle();
+ qInfo()<<"Regeneration geometry"<<readyHeight<<messageCard->height()<<readyBodyY<<receivedBody->y()<<messageCard->property("displayedError");
+ require(messageCard->property("summaryText").toString()==backend.summaryText && qAbs(messageCard->height()-readyHeight)<0.5 && qAbs(receivedBody->y()-readyBodyY)<0.5,"regeneration preserves summary text and email placement");
+ require(!find(messageCard,"summaryCancel"),"cancel is absent from the inline summary surface");
+ QMetaObject::invokeMethod(find(messageCard,"summaryActions"),"clicked");
+ await([&]{auto item=find(window->contentItem(),"summaryCancel");return item && item->isVisible();});
+ QMetaObject::invokeMethod(find(window->contentItem(),"summaryCancel"),"clicked");await([&]{return !controller->property("busy").toBool();});
+ backend.flush(backend.polls);backend.delayPoll=false;settle();
+ require(qAbs(messageCard->height()-readyHeight)<0.5,"cancel leaves existing summary geometry intact");
+ // A first-attempt error stays inside the same surface and retry does not collapse it.
+ auto receivedActions=find(window->contentItem(),"receivedActions");
+ receivedActions->setProperty("message",QVariantMap{{"id","fresh-message"},{"sender_name","Alex"},{"kind","unknown"},{"sent",false},{"revision",1}});
+ await([&]{return find(window->contentItem(),"messageSummary_fresh-message")!=nullptr;});
+ auto fresh=find(window->contentItem(),"messageSummary_fresh-message");backend.failPoll=true;invokeStart("summary","fresh-message");await([&]{return !controller->property("busy").toBool();});settle();
+ require(find(fresh,"summaryError")->isVisible() && !find(window->contentItem(),"classificationError_fresh-message")->isVisible(),"first failure is contained without duplicate external feedback");
+ const auto errorHeight=fresh->height(),errorBodyY=receivedBody->y();backend.failPoll=false;backend.delayPoll=true;
+ invokeStart("summary","fresh-message");await([&]{return !backend.polls.empty();});settle();
+ qInfo()<<"Retry geometry"<<errorHeight<<fresh->height()<<errorBodyY<<receivedBody->y()<<fresh->property("displayedError");
+ require(qAbs(fresh->height()-errorHeight)<0.5 && qAbs(receivedBody->y()-errorBodyY)<0.5,"retry retains the expanded error container without collapsing");
+ backend.flush(backend.polls);backend.delayPoll=false;await([&]{return !controller->property("busy").toBool();});settle();
+ require(!find(fresh,"summaryError")->isVisible() && fresh->property("summaryText").toString()==backend.summaryText,"successful retry replaces error with summary");
+ // Navigating to a cached summary must never arm a reveal animation, even after delayed readback.
+ settle();auto snapshot=backend.summary("cached-message");
+ receivedActions->setProperty("message",QVariantMap{{"id","cached-message"},{"sender_name","Alex"},{"kind","unknown"},{"sent",false},{"revision",1}});
+ backend.completedItems["cached-message"]=snapshot;backend.delayResults=true;emit backend.conversationChanged();await([&]{return !backend.results.empty();});settle();
+ auto cached=find(window->contentItem(),"messageSummary_cached-message");require(cached && !cached->property("motionReady").toBool(),"navigation does not arm summary animation");
+ backend.delayResults=false;backend.flush(backend.results);QCoreApplication::processEvents();
+ bool cachedPaint=false;const auto paintConnection=QObject::connect(window,&QQuickWindow::frameSwapped,window,[&]{cachedPaint=true;},Qt::QueuedConnection);window->requestUpdate();await([&]{return cachedPaint;});QObject::disconnect(paintConnection);
+ const auto cachedHeight=cached->height();require(!cached->property("heightAnimating").toBool(),"cached summary does not start a height animation");require(cached->property("summaryText").toString()==backend.summaryText && !cached->property("motionReady").toBool(),"cached result is immediately visible without animation");
+ settle();require(qAbs(cachedHeight-cached->height())<0.5,"saved summary has no delayed height growth");
  // Geometry at narrow reader widths and every supported appearance, using production QML.
  const auto screenshots=qEnvironmentVariable("FM_ASSIST_SCREENSHOTS");if(!screenshots.isEmpty())QDir().mkpath(screenshots);
  for(const auto theme:{"graphite","paper","terminal"})for(const auto size:{"small","default","large"}){

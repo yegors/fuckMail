@@ -1,4 +1,6 @@
 #include "ReplyDocument.h"
+#include <QSet>
+#include "ReceivedBody.h"
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QKeyEvent>
@@ -41,7 +43,7 @@ QString ReplyDocument::limitedHtml(const QString &input, bool received) {
             // Qt records the trailing empty text block explicitly. Without this
             // marker, <p><br></p> reloads as two line breaks and changes the draft.
             // Preserve authored repeated spaces too, without retaining arbitrary CSS.
-            QString style = "white-space:pre-wrap";
+            QString style = received ? "white-space:pre-wrap;margin-top:0;margin-bottom:7px;line-height:145%" : "white-space:pre-wrap";
             if (tag == "p" && token.contains(QRegularExpression("-qt-paragraph-type\\s*:\\s*empty", QRegularExpression::CaseInsensitiveOption)))
                 style += ";-qt-paragraph-type:empty";
             output += " style=\"" + style + "\"";
@@ -61,7 +63,15 @@ QString ReplyDocument::limitedHtml(const QString &input, bool received) {
         output += ">";
     }
     auto tail = body.mid(end); tail.replace('<', "&lt;").replace('>', "&gt;");
-    return output + tail;
+    output += tail;
+    if (received) {
+        output.remove(QRegularExpression("<p\\b[^>]*>(?:\\s|&nbsp;|<br\\s*/?>)*</p>",QRegularExpression::CaseInsensitiveOption));
+        output.replace(QRegularExpression("(?:<br\\s*/?>\\s*){3,}",QRegularExpression::CaseInsensitiveOption),"<br><br>");
+    }
+    return output;
+}
+QVariantList ReplyDocument::receivedBody(const QString &html,const QString &plain) {
+    return ReceivedBody::sections(html,plain,[](const QString &body){return limitedHtml(body,true);});
 }
 void ReplyDocument::setTextDocument(QQuickTextDocument *document) {
     if (document == m_document) return;

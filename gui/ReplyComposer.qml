@@ -420,12 +420,12 @@ Rectangle {
             FmButton {
                 objectName: "captureReply"
                 visible: !root.readOnly
-                text: backend.syntheticProfile ? "Capture locally" : "Send"
+                text: backend.syntheticProfile ? "Capture locally" : backend.googleSend.busy ? "Sending…" : "Send"
                 prominent: true
                 leftPadding: 16; rightPadding: 16
                 font.pixelSize: Theme.fontSize(13)
                 enabled: backend.syntheticProfile ? !backend.draftLocked && !backend.attachmentImport.pending && (document.plainText.trim().length > 0 || root.attachmentIds.length > 0) : backend.googleSend.can_send || false
-                tip: backend.syntheticProfile ? "Record an outgoing MIME copy on this machine; no email is delivered" : "Save and send through Google. You have six seconds to undo."
+                tip: backend.syntheticProfile ? "Record an outgoing MIME copy on this machine; no email is delivered" : "Save and send through Google."
                 onClicked: { if (backend.syntheticProfile) backend.captureDraft(); else backend.sendGoogleDraft() }
             }
             FmButton { objectName: "draftAttachButton"; visible: !root.readOnly; text: "Attach"; iconName: "attachment"; outlined: true; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pixelSize: Theme.fontSize(13); tip: "Attach a local file or a retained conversation file"; enabled: backend.connected && !backend.draftBusy && !backend.attachmentImportBusy; onClicked: attachmentMenu.popup() }
@@ -450,9 +450,9 @@ Rectangle {
             visible: backend.googleSend.visible || false
             Layout.fillWidth: true; Layout.topMargin: visible ? 8 : 0; spacing: 6
             Text { objectName: "googleSendStatus"; Layout.fillWidth: true; text: backend.googleSend.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.googleSend.warning ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
-            Text { visible: (backend.googleSend.request_id || "").length > 0; text: "Request " + (backend.googleSend.request_id || ""); textFormat: Text.PlainText; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11); Layout.fillWidth: true; wrapMode: Text.Wrap }
             Flow {
                 Layout.fillWidth: true; spacing: 6
+                FmButton { objectName: "resumeSyncToSend"; text: "Resume sync"; outlined: true; visible: backend.googleSend.can_resume_sync || false; onClicked: backend.startGoogleSync(backend.account, {}) }
                 FmButton { objectName: "checkGoogleSend"; text: backend.googleSend.check_label || "Check status"; outlined: true; visible: backend.googleSend.can_check || false; onClicked: backend.checkGoogleSend() }
                 FmButton { objectName: "showCurrentGoogleSend"; text: "View current send"; visible: backend.googleSend.can_select_current || false; onClicked: backend.showCurrentGoogleSend() }
                 FmButton { objectName: "resumeGoogleSend"; text: backend.googleSend.resume_label || "Send prepared version"; visible: backend.googleSend.can_resume || false; onClicked: backend.resumeGoogleSend() }

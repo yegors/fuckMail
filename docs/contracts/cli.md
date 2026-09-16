@@ -1,5 +1,17 @@
 # CLI and external agent interface
 
+## D077 — Drafts parity (CLI39)
+
+CLI Drafts listings, searches and account counts share Core44's accepted-revision filter with the GUI: an unchanged accepted draft is absent, a newer revision is present, and in-flight/unknown work stays visible. Existing authored-history and submission commands preserve their exact identities and explicit recovery semantics. GUI startup acquisition does not change CLI ownership or lifetime.
+
+Core44/Gmail24/CLI39/Mail UI55/Quality55/schema29; fixtures0/3 and protocol1 unchanged.
+
+## D073 — shared Inbox and draft status (CLI38)
+
+`mail list --folder inbox` and account Inbox counts exclude archived and sent-only mail. Explicit All/received queries retain archived incoming conversations. Existing archive/trash/restore command grammar, exact targets, revision checks and delivery lookup remain unchanged. Google draft status optionally includes `baseline.content_matches`; absent is unknown, true is decoded equivalence and false is a content difference. `fidelity_warning` reports the latter; both raw hashes and conflict authority remain available.
+
+Consumers: Core43/Gmail23/Mail UI50/CLI38/Quality50; schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Whole-area readiness remains 0/9.
+
 ## D072 — account and model feedback (CLI37)
 
 `fm --account ID account delete-archive --expected-revision N --request-id ID` uses the shared permanent local deletion boundary. Require explicit scope and a positive revision before storage; replay the same request to recover its result. `account-update --mail-retention 1_month|3_months|1_year|all` optionally saves initial history coverage with existing name/signature revision checks. Omission preserves the choice; it cannot change after acquisition starts.

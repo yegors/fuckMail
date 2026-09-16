@@ -1,5 +1,43 @@
 # Quality, performance and release acceptance
 
+## D079 — final interaction review (Quality56)
+
+Verify exact tile geometry across Saving, Saved and long failure states in production QML. Verify generated EXIF portrait dimensions and refusal to preview arbitrary non-image bytes; retain multi-chunk save/atomic failure/navigation checks. Assert one plain production Sending status, keep dispatch/progress and newer-edit protections, and rerun cached-summary/observed-job motion checks. Inspect native cards/viewer captures, then verify a configured relocated empty-profile Windows package. This is focused interaction validation, not a whole-app latency or real-provider acceptance claim.
+
+Mail UI56/Quality56; Core44/Gmail24/CLI39/schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged; readiness remains 0/9.
+
+## D077–D078 — send, navigation and attachment verification (Quality55)
+
+Verify accepted/current/newer/in-flight/reopened Drafts projections in Core; native startup admission, immediate dispatch/progress, accepted composer cleanup and preservation of newer work. Keep old delayed cancellation/race coverage explicitly isolated from the production zero-delay default. Cached summaries must not animate after navigation or late readback; retain observed-job transition coverage.
+
+Use generated local image/binary attachments in actual production QML. Verify thumbnails, modal/actual-size controls and reader shortcut fencing. Save multi-chunk bytes across navigation, verify atomic replacement, reject corrupt digest and nonlocal destination, preserving previous destination content on failure. Inspect native captures and verify a configured relocated package using an empty profile. No actual mailbox send or broad/performance run is required.
+
+Core44/Gmail24/Mail UI55/CLI39/Quality55/schema29; Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Whole-area readiness remains 0/9; D068 stays parked.
+
+## D076 — summary motion verification (Quality53)
+
+Use held synthetic start, poll and committed-result replies to measure production QML geometry. Queued/running/readback states must retain initial height, button width and email position. Sample the result expansion to prove monotonic intermediate heights instead of a single jump. Check retained text/geometry during regeneration, menu-only cancellation, error/retry stability and no duplicate external feedback. Retain lifecycle race, source, sent-mail exclusion, all-theme/text-size and real reader regressions. Verify a configured relocated Windows package with an empty profile; no actual inference/mailbox action is required.
+
+Mail UI53/Quality53; Core43/Gmail23/CLI38/schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Whole-area readiness stays 0/9; D068 remains parked.
+
+## D075 — date/menu verification (Quality52)
+
+Verify actual production QML date formatting with a fixed local weekday/time, equivalent instants expressed in different offsets and local midnight rollover. Assert both timestamp lines share a right edge, the menu has a ten-pixel gap and centers against the entire timestamp block, earlier/latest menus align with the reader edge, and the star sits beside the short time. Exercise all themes and narrow large text, inspect native captures and verify the configured relocated Windows package with a fresh empty profile.
+
+Mail UI52/Quality52; Core43/Gmail23/CLI38/schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Whole-area readiness stays 0/9; D068 remains parked.
+
+## D074 — reader projection verification (Quality51)
+
+Verify nested plain/HTML/Gmail/Outlook quotations, preservation of interleaved current answers, independent reveal/collapse, conservative ordinary-prose handling, safe links, compact empty-paragraph handling and deep-nesting fallback. Exercise real QML controls and verify sender contacts, right-edge star geometry, long model-name clipping and narrow large-text layout in Graphite/Paper/Terminal. Re-run authoring round-trip/undo tests to ensure received-only spacing does not change outgoing content. Build and check a configured relocated Windows package using a fresh empty profile. Generated fixtures contain no user email or credentials; actual mailbox writes and performance/broad workspace work are not part of this packet.
+
+Mail UI51/Quality51; Core43/Gmail23/CLI38/schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Whole-area readiness remains 0/9.
+
+## D073 — filing, reader contacts and draft verification (Quality50)
+
+Require an actual loopback HTTP wire check for empty submission framing, scoped query and filing/readback regressions, native selected-row removal and immutable bulk targets. Verify decoded draft equivalence and body/header/attachment/reply-routing differences, legacy proof refresh, restart, local-text preservation and unchanged conflict protection. Exercise real QML hover/click on participants, avatars, folded You, senders and recipients; verify empty header behavior, sender-icon geometry, received metadata suppression, latest full time and narrow/large-text layout. Check Graphite/Paper/Terminal frames and local-assistance controls, strict scoped lint and a configured relocated Windows package. Preserve failed attempts in ignored evidence. Actual-account diagnostics remain metadata-only; generated checks do not establish real Google filing or other-host acceptance.
+
+Consumers: Core43/Gmail23/Mail UI50/CLI38/Quality50; schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Whole-area readiness remains 0/9.
+
 ## D072 — account and model feedback (Quality49)
 
 Verify archive deletion, active/stale/cleanup refusal, exact replay, reconnect identity, foreign keys and other-account/shared-file preservation in isolated profiles. Check setup defaults/choices, durable acquisition queries, old-item exclusion without stored bytes and restart. Exercise native model activation/refresh, archive confirmation, restoration status and setup save-before-sync. Measure expanded request size with escaped/multibyte bodies. Prove schema28 upgrade, old-engine refusal and schema29 reopen with the preserved binary; verify a configured relocated package. Preserve failed attempts. No actual-account mutation or real-mail model inference during automated checks. Full prototype parity and other-host acceptance remain separate.

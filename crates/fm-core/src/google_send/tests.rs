@@ -1182,3 +1182,47 @@ fn outgoing_pages_keep_uncertainty_and_exclude_rejected_abandoned_submissions() 
         .unwrap()
         .is_empty());
 }
+
+#[test]
+fn accepted_draft_leaves_lists_but_preserves_history_and_newer_edits() {
+    let temp = tempfile::tempdir().unwrap();
+    let (mut store, scope, id) = setup(temp.path());
+    let count = |store: &mut Store, expected: usize| {
+        for query in ["", "original"] {
+            let rows = store
+                .handle("drafts", Some(&scope.account), json!({"query":query}))
+                .unwrap();
+            assert_eq!(rows["drafts"].as_array().unwrap().len(), expected);
+            assert_eq!(rows["total"], expected);
+        }
+        let accounts = store.handle("accounts", None, json!({})).unwrap();
+        assert_eq!(accounts["accounts"][0]["draft_count"], expected);
+    };
+    count(&mut store, 1);
+    let params = request(&store, &scope, &id, "consume-draft");
+    let prepared = freeze(&mut store, &scope, &params);
+    let lease = claim(&mut store, &scope, &prepared);
+    count(&mut store, 1); // An unconfirmed submission is still recoverable.
+    accepted(&mut store, &lease, "sent-consumed");
+    count(&mut store, 0);
+    let original = body(&mut store, &scope, &id);
+    assert_eq!(original["body"], "original authored text");
+    assert_eq!(original["discarded"], false);
+    drop(store);
+    let mut store = Store::open_live(temp.path()).unwrap();
+    count(&mut store, 0);
+    save(
+        &mut store,
+        &scope,
+        &id,
+        original["revision"].as_i64().unwrap(),
+        "original with newer edits",
+    );
+    count(&mut store, 1);
+    assert_eq!(
+        store
+            .google_send_status(&scope.account, "consume-draft")
+            .unwrap()["state"],
+        "accepted"
+    );
+}

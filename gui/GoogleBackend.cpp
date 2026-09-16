@@ -111,8 +111,23 @@ void MailBackend::pollMailDelivery() {
     });
 }
 
+void MailBackend::resumeStartupGoogleSync() {
+    if (m_syntheticProfile || !m_connected || m_shutdown || !m_initialAccountsLoaded || !m_initialPreferencesLoaded) return;
+    const auto pending = m_startupGoogleAccounts;
+    m_startupGoogleAccounts.clear(); // One attempt per launch, including a credential refusal.
+    for (const auto &account : pending) {
+        const auto row = lifecycleAccount(account);
+        const auto services = m_preferences.value("google_sync_services").toMap().value(account).toMap();
+        if (accountRemoved(account) || row.value("google").toMap().value("connection_state") != "connected"
+            || (!services.value("mail", true).toBool() && !services.value("calendar", true).toBool())
+            || googleSyncState(account).value("owned").toBool()) continue;
+        startGoogleSync(account, {});
+    }
+}
+
 void MailBackend::startGoogleSync(const QString &account, const QVariantMap &limits) {
     if (!m_connected || m_shutdown || m_syntheticProfile || account.isEmpty() || m_googleSyncChanging.contains(account)) return;
+    m_startupGoogleAccounts.remove(account);
     m_googleSyncChanging.insert(account); ++m_accountWrites; emit googleSyncChanged();
     request("google_sync_start", account, QJsonObject::fromVariantMap(limits), [this, account](auto result, bool ok) {
         m_googleSyncChanging.remove(account); --m_accountWrites; emit googleSyncChanged();
@@ -125,6 +140,7 @@ void MailBackend::startGoogleSync(const QString &account, const QVariantMap &lim
 void MailBackend::refreshGoogleSync(const QString &account) {
     if (!m_connected || m_shutdown || m_syntheticProfile || !accountCapability(account, "mail_read")
         || m_googleSyncChanging.contains(account)) return;
+    m_startupGoogleAccounts.remove(account);
     m_googleSyncChanging.insert(account); ++m_accountWrites; emit googleSyncChanged();
     request("google_sync_refresh", account, {}, [this, account](auto result, bool ok) {
         m_googleSyncChanging.remove(account); --m_accountWrites; emit googleSyncChanged();
@@ -137,6 +153,7 @@ void MailBackend::refreshGoogleSync(const QString &account) {
 void MailBackend::pauseGoogleSync(const QString &account) {
     if (!m_connected || m_shutdown || m_syntheticProfile || !googleSyncState(account)["owned"].toBool()
         || m_googleSyncChanging.contains(account)) return;
+    m_startupGoogleAccounts.remove(account);
     m_googleSyncChanging.insert(account); emit googleSyncChanged();
     cancelGoogleProviderOperations(account);
     request("google_sync_release", account, {}, [this, account](auto result, bool ok) {

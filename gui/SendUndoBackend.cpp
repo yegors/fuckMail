@@ -11,7 +11,10 @@ void MailBackend::initializeSendUndo() {
 bool MailBackend::sendQueued() const { return m_queuedSends.contains(googleSendKey()); }
 QVariantMap MailBackend::actionToast() const {
     auto toast = m_actionToast;
-    toast["visible"] = !toast.isEmpty() && m_actionClock.elapsed() < m_actionToastDeadline;
+    const auto key = toast.value("key").toString();
+    const bool progress = toast.value("progress").toBool() && (m_queuedSends.contains(key) || m_sendNoticeRecipients.contains(key));
+    toast["progress"] = progress;
+    toast["visible"] = !toast.isEmpty() && (progress || m_actionClock.elapsed() < m_actionToastDeadline);
     toast["action_label"] = toast.value("action").toString().startsWith("undo_") ? "Undo" : toast.value("action") == "open_draft" ? "Open draft" : toast.value("action") == "calendar_activity" ? "View activity" : "";
     return toast;
 }
@@ -46,7 +49,7 @@ void MailBackend::activateActionToast() {
     }
 }
 void MailBackend::queueGoogleSend(const QJsonObject &params) {
-    if (m_sendUndoMs == 0) { startGoogleSendOperation("google_send", params); return; }
+    if (m_sendUndoMs < 0) { startGoogleSendOperation("google_send", params); return; }
     const auto key = googleSendKey();
     if (m_queuedSends.contains(key)) return;
     if (m_queuedSends.size() >= 8) { fail("Wait for a pending send before sending another message."); return; }
@@ -64,7 +67,13 @@ void MailBackend::queueGoogleSend(const QJsonObject &params) {
     m_queuedSends.insert(key, send);
     refreshOutgoingPresentation();
     remember("replyOpen", false); emit presentationChanged(); emit draftChanged();
-    showActionToast("Sending to " + send.recipientNames, "undo_send", {{"key", key}}, m_sendUndoMs);
+    if (m_sendUndoMs > 0) showActionToast("Sending to " + send.recipientNames, "undo_send", {{"key", key}}, m_sendUndoMs);
+    else {
+        const bool attachments = !m_draft.value("attachment_ids").toList().isEmpty();
+        showActionToast(attachments ? "Sending with attachments…" : "Sending to " + send.recipientNames,
+            {}, {{"key", key}, {"progress", true}}, 2800);
+        dispatchQueuedSend(key);
+    }
 }
 void MailBackend::cancelQueuedSend(const QString &key, bool restore) {
     if (!m_queuedSends.contains(key)) return;
@@ -88,7 +97,7 @@ void MailBackend::cancelQueuedSends(const QString &reason) {
 void MailBackend::advanceSendUndo() {
     advanceCalendarDeletions();
     const auto now = m_actionClock.elapsed();
-    if ((!m_actionToast.isEmpty() && now >= m_actionToastDeadline) || (m_actionToast.isEmpty() && !m_deferredActionToasts.isEmpty())) {
+    if ((!m_actionToast.isEmpty() && now >= m_actionToastDeadline && !actionToast().value("progress").toBool()) || (m_actionToast.isEmpty() && !m_deferredActionToasts.isEmpty())) {
         m_actionToast = {};
         if (!m_deferredActionToasts.isEmpty()) {
             m_actionToast = m_deferredActionToasts.takeFirst();
@@ -159,6 +168,6 @@ void MailBackend::finishQueuedSendNotice(const QString &key, const QJsonObject &
     if (!m_sendNoticeRecipients.contains(key)) return;
     const auto names = m_sendNoticeRecipients.take(key);
     const auto account = key.section('\n', 0, 0), draft = key.section('\n', 1);
-    if (valid && result["state"] == "accepted") showActionToast("Sent to " + names, {}, {}, 2800, true);
+    if (valid && result["state"] == "accepted") showActionToast("Sent to " + names, {}, {{"success",true}}, 2800, true);
     else showActionToast("Send needs attention. Your draft is kept.", "open_draft", {{"account", account}, {"draft_id", draft}}, 6000, true);
 }

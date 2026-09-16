@@ -2,6 +2,14 @@
 #include <QDir>
 #include <QJsonArray>
 #include <QUrl>
+#include <QFile>
+#include <QFileInfo>
+#include <QSaveFile>
+#include <QCryptographicHash>
+#include <QStandardPaths>
+#include <QImageReader>
+#include <QUuid>
+#include <memory>
 
 namespace {
 QString importKey(const QString &account, const QString &draft) { return account + '\n' + draft; }
@@ -166,4 +174,78 @@ void MailBackend::startDraftAttachmentImport(const QString &key) {
         if (current) saveDraft();
         if (m_shutdown) finishShutdown();
     });
+}
+
+
+QUrl MailBackend::attachmentSaveLocation(const QString &name) const {
+    auto filename = QFileInfo(QString(name).replace('\\', '/')).fileName();
+    if (filename.isEmpty() || filename == "." || filename == "..") filename = "attachment";
+    return QUrl::fromLocalFile(QDir(QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)).filePath(filename));
+}
+QString MailBackend::requestAttachmentPreview(const QString &account, const QString &id) {
+    const auto ticket = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    QTimer::singleShot(0, this, [this, ticket, account, id] {
+        request("attachment", account, {{"id",id}}, [this, ticket, account, id](auto result, bool ok) {
+            const auto path = result["path"].toString();
+            ok = ok && result["account"] == account && result["id"] == id && QDir::isAbsolutePath(path) && QFileInfo(path).isFile();
+            if (ok) {
+                QImageReader reader(path);
+                const auto format = reader.format().toLower();
+                auto size = reader.size();
+                if (reader.transformation() & QImageIOHandler::TransformationRotate90) size.transpose();
+                const bool raster = QList<QByteArray>{"png","jpeg","jpg","gif","webp","bmp","ico","tiff","tif"}.contains(format);
+                if (raster && size.isValid() && qint64(size.width()) * size.height() <= 64000000) {
+                    result["preview_url"] = QUrl::fromLocalFile(path).toString();
+                    result["width"] = size.width(); result["height"] = size.height();
+                } else result["preview_error"] = "Preview unavailable. You can still save this file.";
+            } else result = {{"message", "This attachment is not available on this machine yet."}};
+            emit attachmentPreviewReady(ticket, result.toVariantMap(), ok);
+        });
+    });
+    return ticket;
+}
+QString MailBackend::saveAttachment(const QString &account, const QString &id, const QUrl &destination) {
+    const auto ticket = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    QTimer::singleShot(0, this, [this, ticket, account, id, destination] {
+        if (!destination.isLocalFile() || !QDir::isAbsolutePath(destination.toLocalFile()) || m_shutdown) {
+            emit attachmentSaved(ticket, "Choose a local file to save this attachment."); return;
+        }
+        if (findChildren<QTimer *>("attachmentCopy").size() >= 4) { emit attachmentSaved(ticket, "Wait for another attachment to finish saving."); return; }
+        request("attachment", account, {{"id",id}}, [this, ticket, account, id, destination](auto result, bool ok) {
+            if (!ok || result["account"] != account || result["id"] != id || !QDir::isAbsolutePath(result["path"].toString())
+                || result["sha256"].toString().size() != 64 || result["size"].toInteger(-1) < 0) {
+                emit attachmentSaved(ticket, "This attachment could not be saved. Its local copy is unavailable."); return;
+            }
+            if (m_shutdown || findChildren<QTimer *>("attachmentCopy").size() >= 4) { emit attachmentSaved(ticket, "Wait for another attachment to finish saving."); return; }
+            struct Copy {
+                QFile source; QSaveFile output; QCryptographicHash hash{QCryptographicHash::Sha256};
+                qint64 bytes = 0, expected = 0; QByteArray digest;
+                Copy(const QString &from, const QString &to) : source(from), output(to) {}
+            };
+            auto copy = std::make_shared<Copy>(result["path"].toString(), destination.toLocalFile());
+            copy->expected = result["size"].toInteger(); copy->digest = result["sha256"].toString().toLatin1();
+            if (!copy->source.open(QIODevice::ReadOnly) || !copy->output.open(QIODevice::WriteOnly)) {
+                emit attachmentSaved(ticket, "Could not save here. Choose another location and try again."); return;
+            }
+            auto timer = new QTimer(this); timer->setObjectName("attachmentCopy"); timer->setInterval(0);
+            connect(timer, &QTimer::timeout, this, [this, timer, copy, ticket] {
+                auto finish = [this, timer, ticket](const QString &error) { timer->stop(); timer->deleteLater(); emit attachmentSaved(ticket, error); };
+                if (m_shutdown) { copy->output.cancelWriting(); finish("Saving stopped because the app is closing."); return; }
+                const auto bytes = copy->source.read(256 * 1024);
+                if (copy->source.error() != QFileDevice::NoError || copy->output.write(bytes) != bytes.size()) {
+                    copy->output.cancelWriting(); finish("Could not finish saving. The destination file was left unchanged."); return;
+                }
+                copy->hash.addData(bytes); copy->bytes += bytes.size();
+                if (copy->bytes > copy->expected || (copy->source.atEnd() && (copy->bytes != copy->expected || copy->hash.result().toHex() != copy->digest))) {
+                    copy->output.cancelWriting(); finish("The attachment failed verification. The destination file was left unchanged."); return;
+                }
+                if (copy->source.atEnd()) {
+                    const bool saved = copy->output.commit();
+                    finish(saved ? QString{} : "Could not finish saving. Try another location.");
+                }
+            });
+            timer->start();
+        });
+    });
+    return ticket;
 }

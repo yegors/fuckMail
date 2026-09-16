@@ -774,7 +774,7 @@ impl Store {
         if tokens.is_empty() {
             return self.drafts_unfiltered(account, limit, offset);
         }
-        let mut stmt=self.db.prepare("SELECT draft_id,conversation_id,mode,body,routing_json,updated_at,revision,origin FROM drafts d WHERE account=?1 AND discarded=0 AND (origin='local' OR NOT EXISTS(SELECT 1 FROM google_draft_sources s WHERE s.account=d.account AND s.draft_id=d.draft_id AND s.is_current=1 AND s.linked_local_draft_id IS NOT NULL)) ORDER BY updated_at DESC,draft_id")?;
+        let mut stmt=self.db.prepare("SELECT draft_id,conversation_id,mode,body,routing_json,updated_at,revision,origin FROM drafts d WHERE account=?1 AND discarded=0 AND COALESCE(json_extract(d.google_json,'$.submission.last_accepted_draft_revision'),0)<d.revision AND (origin='local' OR NOT EXISTS(SELECT 1 FROM google_draft_sources s WHERE s.account=d.account AND s.draft_id=d.draft_id AND s.is_current=1 AND s.linked_local_draft_id IS NOT NULL)) ORDER BY updated_at DESC,draft_id")?;
         let mut rows = stmt.query([account])?;
         let mut count = 0i64;
         let mut total = 0i64;
@@ -857,7 +857,7 @@ impl Store {
     }
     fn drafts_unfiltered(&self, account: &str, limit: i64, offset: i64) -> Result<Value> {
         let archived = self.account_lifecycle(account)?["state"] == "removed";
-        let predicate="account=?1 AND discarded=0 AND (origin='local' OR NOT EXISTS(SELECT 1 FROM google_draft_sources s WHERE s.account=d.account AND s.draft_id=d.draft_id AND s.is_current=1 AND s.linked_local_draft_id IS NOT NULL))";
+        let predicate="account=?1 AND discarded=0 AND COALESCE(json_extract(d.google_json,'$.submission.last_accepted_draft_revision'),0)<d.revision AND (origin='local' OR NOT EXISTS(SELECT 1 FROM google_draft_sources s WHERE s.account=d.account AND s.draft_id=d.draft_id AND s.is_current=1 AND s.linked_local_draft_id IS NOT NULL))";
         let count: i64 = self.db.query_row(
             &format!("SELECT COUNT(*) FROM drafts d WHERE {predicate}"),
             [account],
