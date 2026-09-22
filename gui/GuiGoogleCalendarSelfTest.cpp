@@ -206,22 +206,10 @@ void GuiGoogleCalendarSelfTest::tick() {
         if (m_backend.googleSyncState(id).value("owned").toBool()) { finish("Unexpected GUI owner before explicit Settings start."); return; }
         if (click("settingsButton")) m_stage = 3; break;
     case 3: if (click("settingsPage_Accounts")) m_stage = 4; break;
-    case 4: if (click("googleSync_" + id)) { m_quotaFilled = false; m_quotaSubmitted = false; m_stage = 5; } break;
+    case 4: if (click("googleSync_" + id)) { m_stage = 5; } break;
     case 5: {
-        if (!m_backend.googleSyncState(id).value("owned").toBool()) {
-            auto dialog = m_window->findChild<QObject *>("googleSyncLimitsDialog");
-            if (!dialog || !dialog->property("visible").toBool() || m_quotaSubmitted) return;
-            if (!m_quotaFilled) {
-                for (const auto &key : quotaKeys) { auto field = named(m_window->contentItem(), key); if (!field || !field->isVisible() || !field->isEnabled()) return; }
-                for (const auto &key : quotaKeys) {
-                    auto field = named(m_window->contentItem(), key); field->forceActiveFocus();
-                    if (!field->setProperty("text", QString::number(m_limits[key].toInteger())) || !QMetaObject::invokeMethod(field, "textEdited")) { finish("Could not author native sync limits."); return; }
-                }
-                m_quotaFilled = true; return;
-            }
-            if (click("saveGoogleSyncLimits")) m_quotaSubmitted = true;
-            return;
-        }
+        if (!m_backend.googleSyncState(id).value("owned").toBool()) return;
+        if (m_window->findChild<QObject *>("googleSyncLimitsDialog")) { finish("Removed quota setup is still present."); return; }
         if (QJsonObject::fromVariantMap(m_backend.googleSyncLimits()) != m_limits) { finish("Actual native limits differ from independent expectation."); return; }
         m_accountResult = {{"account", id}, {"limits", m_limits}}; m_createdId.clear(); m_createdSeries = {};
         if (click("settingsDoneButton")) { m_backend.setCalendarDate(m_date); m_stage = 6; } break;

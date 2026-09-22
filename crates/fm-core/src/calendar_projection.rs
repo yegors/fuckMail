@@ -221,6 +221,12 @@ impl Store {
                                 row["organizer_name"] = name.into();
                             }
                         }
+                        if row["busy_only"] != true {
+                            crate::calendar_editor_options::project(
+                                &mut row,
+                                &occurrence_source.source,
+                            );
+                        }
                         if live {
                             let (edit, rsvp) = crate::live_calendar_writes::live_event_actions(
                                 event, access, &actor,

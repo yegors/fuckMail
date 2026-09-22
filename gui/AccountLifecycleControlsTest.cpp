@@ -9,6 +9,7 @@
 #include <QQuickItem>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QThread>
 using namespace GoogleOperationFixture;
 namespace {
 QJsonObject account(const QString &id, int revision = 1, const QString &state = "active", const QString &cleanup = {}) {
@@ -51,6 +52,10 @@ static void run() {
         const auto method = request["method"].toString(), id = request["id"].toString(), selected = request["account"].toString();
         const auto params = request["params"].toObject(); QJsonObject result;
         if (method == "accounts") { require(params["include_removed"].toBool(), "explicit archive discovery"); result["accounts"] = rows; }
+        else if (method == "account_archive_delete") {
+            require(selected=="fixture-account" && params["expected_revision"].toInt()==11,"archive deletion uses captured identity and revision");
+            rows.removeAt(0); result={{"deleted",true},{"account",selected}};
+        }
         else if (method == "draft_save") {
             ++saves; if (holdSave) { held = peer; heldId = id; heldParams = params; return true; }
             saved["body"] = params["body"]; saved["revision"] = saved["revision"].toInt() + 1; result = saved;
@@ -104,13 +109,28 @@ static void run() {
     }
     module.close();
     for (const auto font : {"Geist-Regular.ttf", "Geist-Medium.ttf", "Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/fonts/" + font) >= 0, "bundled fonts");
+    QGuiApplication::setFont(QFont("Geist", 10));
     qmlRegisterType<ReplyDocument>("LifecycleTest", 1, 0, "ReplyDocument");
     QQmlApplicationEngine qml; bool warnings = false;
     QObject::connect(&qml, &QQmlEngine::warnings, [&](const QList<QQmlError> &errors) { warnings = true; for (const auto &error : errors) qWarning() << error; });
     qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend", &backend);
     qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport LifecycleTest\nApplicationWindow { id: testWindow; width: 1000; height: 720; visible: true; color: Theme.canvas; property bool settingsShown: false; function appearance(theme,size) { Theme.themeId=theme; Theme.textSize=size } AccountLifecycleDialogs {} ScrollView { visible: !testWindow.settingsShown; anchors.fill: parent; ReplyComposer { width: 440 } } SettingsView { visible: testWindow.settingsShown; anchors.fill: parent; page: 'Accounts' } }");
     require(!qml.rootObjects().isEmpty(), "production lifecycle dialogs and composer load"); auto window = qobject_cast<QQuickWindow *>(qml.rootObjects().first());
-    auto activate = [&](const QString &name) { auto item = named(window->contentItem(), name); require(item && item->isVisible() && item->isEnabled(), qPrintable("available control " + name)); require(QMetaObject::invokeMethod(item, "clicked"), "actual clicked handler"); };
+    auto activate = [&](const QString &name) {
+        if (name.startsWith("removeAccount_")) {
+            auto more = named(window->contentItem(), "accountOptions_" + name.mid(QString("removeAccount_").size()));
+            require(more && more->isVisible() && more->isEnabled(), "account options are available");
+            require(QMetaObject::invokeMethod(more, "clicked"), "open account menu through its real control");
+            QCoreApplication::processEvents();
+        }
+        auto item = named(window->contentItem(), name); require(item && item->isVisible() && item->isEnabled(), qPrintable("available control " + name)); require(QMetaObject::invokeMethod(item, "clicked"), "actual clicked handler");
+    };
+    const auto activeCapture = qEnvironmentVariable("FM_ACCOUNTS_CAPTURE");
+    if (!activeCapture.isEmpty()) {
+        window->setProperty("settingsShown", true); QCoreApplication::processEvents(); QThread::msleep(40); QCoreApplication::processEvents();
+        require(!QFileInfo::exists(activeCapture) && window->grabWindow().save(activeCapture), "capture active account cards");
+        window->setProperty("settingsShown", false);
+    }
     QVariantMap confirmation; QObject::connect(&backend, &MailBackend::accountRemovalReady, [&](const QVariantMap &value) { confirmation = value; });
     backend.stageDraftRecipient("to_recipients", "invalid-address"); backend.previewAccountRemoval("fixture-account");
     require(previews == 0 && backend.recipientInputs().value("to_recipients") == "invalid-address", "incomplete inputs retained before removal");
@@ -228,7 +248,7 @@ static void run() {
     if (!captureDir.isEmpty()) {
         require(QDir().mkpath(captureDir), "capture directory"); window->setProperty("settingsShown", true);
         emit backend.accountsChanged();
-        for (const auto theme : {"graphite", "paper", "harbour"}) for (const auto size : {"default", "large"}) {
+        for (const auto theme : {"graphite", "paper", "terminal"}) for (const auto size : {"default", "large"}) {
             require(QMetaObject::invokeMethod(window, "appearance", Q_ARG(QVariant, QString(theme)), Q_ARG(QVariant, QString(size))), "appearance");
             QCoreApplication::processEvents();
             const auto settingsPath = QDir(captureDir).filePath(QString("accounts-%1-%2.png").arg(theme, size));
@@ -241,6 +261,14 @@ static void run() {
             require(!QFileInfo::exists(dialogPath) && window->grabWindow().save(dialogPath), "retained removal capture"); activate("cancelAccountRemoval");
         }
     }
+    window->setProperty("settingsShown",true); emit backend.accountsChanged(); QCoreApplication::processEvents();
+    activate("deleteAccountArchive_fixture-account"); activate("cancelArchiveDeletion");
+    require(rows.size()==2,"cancel preserves archives");
+    activate("deleteAccountArchive_fixture-account"); activate("confirmArchiveDeletion");
+    await([&]{ return backend.m_pending.isEmpty() && backend.m_allAccounts.size()==1; },"confirmed archive disappears from account listing");
+    backend.m_accountLifecycleUi["second-account"]=QVariantMap{{"status","Account removed. Saved mail, drafts and history are kept in its archive."}};
+    rows[0]=account("second-account",3); backend.m_allAccounts=rows.toVariantList(); backend.publishAccounts(rows.toVariantList()); backend.reconcileAccountLifecycle();
+    require(!backend.m_accountLifecycleUi.contains("second-account"),"restore clears stale removal message");
     require(!warnings, "no QML warnings");
     backend.m_connected = false; backend.m_socket.abort();
     qInfo() << "Account lifecycle native handlers, archive guards, fresh confirmation, cleanup retry and unsaved callback/close/navigation fences passed.";

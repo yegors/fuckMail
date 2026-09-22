@@ -24,8 +24,7 @@ void MailBackend::initializeCalendarSearch() {
 }
 
 QJsonObject MailBackend::calendarSearchParams() const {
-    QJsonValue selection = QJsonValue::fromVariant(m_preferences.value("selected_calendars"));
-    if (selection.isUndefined()) selection = QJsonValue::Null;
+    QJsonValue selection = effectiveCalendarSelection();
     if (!m_calendarSearchCombined) {
         QJsonArray selected;
         const auto candidates = selection.isArray() ? selection.toArray()
@@ -60,6 +59,7 @@ QString MailBackend::calendarSearchContextStamp() const {
 
 QVariantMap MailBackend::calendarSearch() const {
     auto result = m_calendarSearchResult;
+    result["events"] = visibleCalendarEvents(result.value("events").toList());
     const auto params = calendarSearchParams();
     result["from"] = params["from"].toString(); result["to"] = params["to"].toString();
     result["busy"] = m_calendarSearchBusy; result["status"] = m_calendarSearchStatus;
@@ -135,17 +135,16 @@ void MailBackend::runCalendarSearch() {
 void MailBackend::openCalendarSearchResult(const QVariantMap &event) {
     if (!m_calendarSearchActive || !m_connected || m_shutdown || m_calendarSearchBusy
         || m_calendarSearchContext != calendarSearchContextStamp()
-        || !m_calendarSearchResult.value("events").toList().contains(event)) return;
+        || !m_calendarSearchResult.value("events").toList().contains(event) || calendarEventHidden(event)) return;
     const auto date = QDate::fromString(event.value("date").toString(), Qt::ISODate);
     if (!date.isValid()) return;
     m_calendarSearchTimer.stop(); const int generation = ++m_calendarSearchGeneration;
     const auto stamp = calendarSearchContextStamp();
     auto params = calendarSearchParams();
     params["from"] = date.toString(Qt::ISODate); params["to"] = date.addDays(1).toString(Qt::ISODate);
-    // The visible window still contains all selected calendars. Account-only
-    // search narrows matches, never the persisted selection or combined cache.
-    params["calendars"] = QJsonValue::fromVariant(m_preferences.value("selected_calendars"));
-    if (params["calendars"].isUndefined()) params["calendars"] = QJsonValue::Null;
+    // Search may narrow further, but opening a match retains the Calendar's
+    // saved visibility and individual source selection.
+    params["calendars"] = effectiveCalendarSelection();
     m_calendarSearchBusy = true; m_calendarSearchStatus = "Opening the current saved event…"; emit calendarSearchChanged();
     request("calendar_combined", {}, params, [this, event, date, generation, stamp, params](auto result, bool ok) {
         if (generation != m_calendarSearchGeneration || stamp != calendarSearchContextStamp()) return;
@@ -158,7 +157,7 @@ void MailBackend::openCalendarSearchResult(const QVariantMap &event) {
             const auto row = value.toMap();
             if (identity(row) == identity(event) && !row.value("cancelled").toBool() && !row.value("busy_only").toBool()) { selected = row; break; }
         }
-        if (selected.isEmpty()) {
+        if (selected.isEmpty() || calendarEventHidden(selected)) {
             m_calendarSearchResult.clear();
             m_calendarSearchStatus = "This event changed or is no longer visible on that date. Search again.";
             emit calendarSearchChanged(); return;

@@ -15,6 +15,7 @@ class ReplyDocument : public QObject {
     Q_PROPERTY(QString html READ html NOTIFY textChanged)
     Q_PROPERTY(bool readOnly READ readOnly WRITE setReadOnly NOTIFY readOnlyChanged)
 public:
+    static QVariantList receivedBody(const QString &html, const QString &plain);
     explicit ReplyDocument(QObject *parent = nullptr) : QObject(parent) {}
     QQuickTextDocument *textDocument() const { return m_document; }
     QQuickItem *editor() const { return m_editor; }
@@ -30,7 +31,7 @@ public:
     Q_INVOKABLE void pastePlain();
     Q_INVOKABLE void undo();
     Q_INVOKABLE void redo();
-    static QString limitedHtml(const QString &html);
+    static QString limitedHtml(const QString &html, bool received = false);
 signals:
     void readOnlyChanged();
     void documentChanged();

@@ -20,7 +20,8 @@ import time
 from dev import package_environment
 from verify_google_calendar import BASE, BASE_UNIX, calendar, journal_snapshot, same, verify_publications
 from verify_google_drafts import read_json
-from verify_google_navigation import LIMITS, expected_accounts, read_database, require, source_manifest
+from verify_google_limits import LIMITS
+from verify_google_navigation import expected_accounts, read_database, require, source_manifest
 from verify_google_occurrence_native import validate_native
 from verify_google_occurrence_sources import (
     OccurrenceLedger, native_expectation, selector, validate_resolution, validate_status,
@@ -216,7 +217,7 @@ def run(args):
                 require(result["initial_sources"] == {"retained_sources": 12, "active_sources": 8, "query_sources": 12, "cancelled_sources": 4}
                         and not journal_snapshot(profile), "Acquisition changed source identities or created an authored intent")
                 with closing(read_database(profile)) as db:
-                    require(db.execute("PRAGMA user_version").fetchone()[0] == 20, "Wrong shared occurrence schema")
+                    require(db.execute("PRAGMA user_version").fetchone()[0] == 21, "Wrong shared occurrence schema")
                 if args.gui:
                     pause_owners()
                     expectation = recurring.native_expectation(accounts) if args.recurring else native_expectation(accounts)

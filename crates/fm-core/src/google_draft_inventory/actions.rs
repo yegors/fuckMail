@@ -180,6 +180,34 @@ impl Store {
             is_current,
         })
     }
+    pub(crate) fn linked_draft_delete_request(
+        &self,
+        account: &str,
+        draft: &str,
+        expected: &Value,
+        request: &str,
+    ) -> Result<Value> {
+        let revision:Option<i64>=self.db.query_row("SELECT source_revision FROM google_draft_sources WHERE account=?1 AND is_current=1 AND (draft_id=?2 OR linked_local_draft_id=?2) ORDER BY source_revision DESC LIMIT 1",params![account,draft],|r|r.get(0)).optional()?;
+        let revision = revision.ok_or_else(|| {
+            err(
+                "content_unavailable",
+                "Wait for the linked Google draft to be read before removing it",
+            )
+        })?;
+        let p = json!({"draft_id":draft,"source_revision":revision,"request_id":request});
+        let source = self.action_source(account, &p)?;
+        if source.provider_draft_id != expected["provider_draft_id"].as_str().unwrap_or("")
+            || source.message_id != expected["message_id"].as_str().unwrap_or("")
+            || source.sha256 != expected["sha256"].as_str().unwrap_or("")
+            || Some(source.size) != expected["size"].as_u64()
+        {
+            return Err(err(
+                "stale_source_revision",
+                "The linked Google draft changed; its newer version is preserved",
+            ));
+        }
+        Ok(p)
+    }
     fn action_owner_stamp(&self, account: &str, source: &SourceStamp) -> Result<Value> {
         let (owner, ambiguous) = self.known_draft_owner(account, &source.provider_draft_id)?;
         if ambiguous {

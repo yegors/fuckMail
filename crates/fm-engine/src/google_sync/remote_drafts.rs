@@ -178,7 +178,26 @@ impl RemoteDraftWorker {
 pub(super) async fn run(ctx: SyncContext, progress: Arc<Mutex<Value>>) {
     let mut worker = RemoteDraftWorker::default();
     let mut failures = 0;
+    let mut refresh = ctx.refresh.subscribe();
     while !ctx.cancel.is_cancelled() {
+        if !super::service_ready(&ctx, &progress, "mail", "remote_drafts", &mut refresh).await {
+            continue;
+        }
+        if ctx
+            .credential_blocked
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            progress_state(
+                &progress,
+                "remote_drafts",
+                "paused",
+                Some("vault_unavailable"),
+            );
+            if !super::wait_sync(&ctx, &mut refresh, None).await {
+                break;
+            }
+            continue;
+        }
         let mut wait_for_refresh = false;
         let delay = match worker.step(&ctx).await {
             Ok(step) => {
@@ -221,6 +240,7 @@ pub(super) async fn run(ctx: SyncContext, progress: Arc<Mutex<Value>>) {
         tokio::select! {
             _=ctx.cancel.cancelled()=>break,
             _=ctx.remote_drafts_wake.notified()=>{},
+            _=refresh.changed()=>{},
             _=super::pause(&ctx.cancel, delay), if !wait_for_refresh=>{},
         }
     }

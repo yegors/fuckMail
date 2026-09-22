@@ -14,6 +14,7 @@ pub use google_drafts::GoogleDraftScope as GoogleSendScope;
 pub const MAX_GOOGLE_SEND_BYTES: u64 = 35_000_000;
 const MAX_METADATA: usize = 512 * 1024;
 const MAX_EVIDENCE: usize = 32 * 1024;
+pub mod outgoing;
 
 /// Stored inside the existing draft twin. A later rejection must not forget a
 /// previously consumed target. Authored fields and revision are never changed.
@@ -358,6 +359,13 @@ impl Store {
         ] {
             headers[key] = draft[key].clone();
         }
+        headers["preview"] = draft["body"]
+            .as_str()
+            .unwrap_or("")
+            .chars()
+            .take(320)
+            .collect::<String>()
+            .into();
         let op = Operation {
             version: 1,
             kind: "send".into(),

@@ -34,8 +34,7 @@ pub struct ServiceBudget {
     pub account_units_per_minute: u32,
 }
 impl ServiceBudget {
-    /// Supply actual Console limits, in that service's units. This reserves 20%
-    /// headroom; it is not a claim about a particular project's Google quotas.
+    /// Reserve 20% headroom below the supplied per-minute limits.
     pub fn from_confirmed_limits(project: u32, account: u32) -> Result<Self, SchedulerError> {
         let budget = Self {
             project_units_per_minute: project / 5 * 4,
@@ -62,8 +61,32 @@ pub struct SchedulerConfig {
     pub max_accounts: usize,
 }
 impl SchedulerConfig {
-    /// One shared validation boundary for saved preferences and explicit sync.
-    /// These are confirmed Console values, not published/default quotas.
+    /// Published Google API limits checked 2026-09-14. Provider throttling remains
+    /// authoritative; these defaults do not assert a project's assigned quota.
+    /// https://developers.google.com/workspace/gmail/api/reference/quota
+    /// https://developers.google.com/workspace/calendar/api/guides/quota
+    pub fn published_limits() -> serde_json::Value {
+        serde_json::json!({
+            "gmail_project_units_per_minute":1_200_000,
+            "gmail_account_units_per_minute":6_000,
+            "calendar_project_units_per_minute":10_000,
+            "calendar_account_units_per_minute":600
+        })
+    }
+
+    /// Resolve an ordinary sync start to built-in limits. Explicit complete
+    /// overrides remain supported for isolated verification and older clients.
+    pub fn sync_limits(params: &serde_json::Value) -> Result<serde_json::Value, SchedulerError> {
+        let limits = if params.as_object().is_some_and(|object| object.is_empty()) {
+            Self::published_limits()
+        } else {
+            params.clone()
+        };
+        Self::from_confirmed_json(&limits)?;
+        Ok(limits)
+    }
+
+    /// Shared validation for legacy explicit overrides and stored preferences.
     pub fn from_confirmed_json(params: &serde_json::Value) -> Result<Self, SchedulerError> {
         const FIELDS: [&str; 4] = [
             "gmail_project_units_per_minute",
@@ -636,6 +659,22 @@ pub fn retry_delay(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ordinary_sync_uses_published_limits_with_headroom() {
+        let value = SchedulerConfig::sync_limits(&serde_json::json!({})).unwrap();
+        assert_eq!(value, SchedulerConfig::published_limits());
+        let config = SchedulerConfig::from_confirmed_json(&value).unwrap();
+        assert_eq!(config.gmail.project_units_per_minute, 960_000);
+        assert_eq!(config.gmail.account_units_per_minute, 4_800);
+        assert_eq!(config.calendar.project_units_per_minute, 8_000);
+        assert_eq!(config.calendar.account_units_per_minute, 480);
+        assert!(SchedulerConfig::sync_limits(&serde_json::Value::Null).is_err());
+        assert!(SchedulerConfig::sync_limits(
+            &serde_json::json!({"gmail_account_units_per_minute":6000})
+        )
+        .is_err());
+    }
 
     #[test]
     fn confirmed_quota_json_has_one_exact_bounded_headroom_contract() {

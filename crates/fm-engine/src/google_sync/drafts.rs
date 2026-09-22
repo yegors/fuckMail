@@ -22,6 +22,9 @@ use tokio::sync::OwnedSemaphorePermit;
 pub(super) type Memory = Arc<OwnedSemaphorePermit>;
 
 pub(crate) async fn step(ctx: &SyncContext) -> Result<Step> {
+    if super::draft_transfers::step(ctx).await? {
+        return Ok(Step::Progress);
+    }
     let account = ctx.account.as_str().to_owned();
     let generation = ctx.connection_generation;
     let due = ctx

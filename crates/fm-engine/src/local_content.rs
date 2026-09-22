@@ -35,6 +35,9 @@ impl Runtime {
                 | "google_draft_source"
                 | "google_draft_authoring"
                 | "google_draft_copy"
+                | "message_source"
+                | "google_sent_message"
+                | "draft_transfer"
         )
     }
 
@@ -62,6 +65,62 @@ impl Runtime {
             })?
             .to_owned();
         let method = method.to_owned();
+        if method == "draft_transfer" {
+            use fm_core::draft_transfer::TransferStep;
+            let begin_cancel = cancel.clone();
+            let step = self
+                .core
+                .call(move |store| {
+                    if begin_cancel.is_cancelled() {
+                        return Err(stopped());
+                    }
+                    store.draft_transfer_begin(&account, &params)
+                })
+                .await?;
+            let plan = match step {
+                TransferStep::Reply(reply) => return Ok(reply),
+                TransferStep::Prepare(plan) => plan,
+            };
+            let (proof, permit) = self
+                .prepare_held(cancel.clone(), move |cancel| {
+                    fm_core::draft_transfer::prepare(plan, cancel)
+                })
+                .await?;
+            let finish_cancel = cancel.clone();
+            let result = self
+                .core
+                .call(move |store| {
+                    if finish_cancel.is_cancelled() {
+                        return Err(stopped());
+                    }
+                    store.draft_transfer_finish(proof)
+                })
+                .await;
+            drop(permit);
+            return result;
+        }
+        if method == "google_sent_message" {
+            let plan = self
+                .core
+                .call(move |store| store.google_sent_message_begin(&account, &params))
+                .await?;
+            return self
+                .prepare(cancel, move |cancel| {
+                    fm_core::google_send::outgoing::read(plan, &cancel)
+                })
+                .await;
+        }
+        if method == "message_source" {
+            let plan = self
+                .core
+                .call(move |store| store.message_source_begin(&account, &params))
+                .await?;
+            return self
+                .prepare(cancel, move |cancel| {
+                    fm_core::message_source::read(plan, &cancel)
+                })
+                .await;
+        }
         if matches!(
             method.as_str(),
             "google_draft_authoring" | "google_draft_copy"

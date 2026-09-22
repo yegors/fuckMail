@@ -78,6 +78,115 @@ fn restore(store: &mut Store, account: &str) -> String {
 }
 
 #[test]
+fn archive_deletion_removes_saved_content_and_fences_reconnection() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, scope) = setup(dir.path());
+    draft(&mut store, &scope, "archive-draft");
+    let other = crate::live_profile::google_account_id("other-owner").unwrap();
+    let other_scope = GoogleDraftScope {
+        account: other.clone(),
+        connection_generation: 1,
+        primary_email: "other@example.test".into(),
+    };
+    let kept = draft(&mut store, &other_scope, "kept-draft");
+    let unique = store
+        .google_blob_store()
+        .stage_blob(b"only deleted archive")
+        .unwrap();
+    let shared = store
+        .google_blob_store()
+        .stage_blob(b"shared other account")
+        .unwrap();
+    for (owner, request, hashes) in [
+        (&scope.account, "content-receipt", json!([unique, shared])),
+        (&other, "shared-receipt", json!([shared])),
+    ] {
+        store
+            .db
+            .execute(
+                "INSERT INTO operations VALUES(?1,?2,'synthetic-content-receipt',?3)",
+                params![owner, request, hashes.to_string()],
+            )
+            .unwrap();
+    }
+    let p = json!({"expected_revision":1,"request_id":"purge"});
+    assert_eq!(
+        code(store.handle("account_archive_delete", Some(&scope.account), p)),
+        "stale_account_revision"
+    );
+    let lease = remove(&mut store, &scope.account, "remove-archive");
+    let p = json!({"expected_revision":store.account_lifecycle(&scope.account).unwrap()["revision"],"request_id":"purge"});
+    assert_eq!(
+        code(store.handle("account_archive_delete", Some(&scope.account), p.clone())),
+        "account_cleanup_busy"
+    );
+    clean(&mut store, &lease);
+    let p = json!({"expected_revision":store.account_lifecycle(&scope.account).unwrap()["revision"],"request_id":"purge"});
+    let result = store
+        .handle("account_archive_delete", Some(&scope.account), p.clone())
+        .unwrap();
+    assert_eq!(result["deleted"], true);
+    assert_eq!(
+        store
+            .db
+            .query_row(
+                "SELECT count(*) FROM drafts WHERE account=?1",
+                [&scope.account],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        store
+            .handle(
+                "draft_get",
+                Some(&other),
+                json!({"draft_id":kept["draft_id"]})
+            )
+            .unwrap()["draft_id"],
+        kept["draft_id"]
+    );
+    assert!(store
+        .db
+        .prepare("PRAGMA foreign_key_check")
+        .unwrap()
+        .query([])
+        .unwrap()
+        .next()
+        .unwrap()
+        .is_none());
+    drop(store);
+    let mut store = Store::open_live(dir.path()).unwrap();
+    assert!(!store.blob_present(&unique));
+    assert!(store.blob_present(&shared));
+    assert_eq!(
+        store
+            .handle("account_archive_delete", Some(&scope.account), p)
+            .unwrap(),
+        result
+    );
+    let scopes = BTreeSet::from(["https://www.googleapis.com/auth/gmail.modify".into()]);
+    let replacement = store
+        .bind_google_account("lifecycle-owner", "author@example.test", &scopes, None)
+        .unwrap();
+    assert_ne!(replacement, scope.account);
+    assert_eq!(
+        store
+            .bind_google_account("lifecycle-owner", "author@example.test", &scopes, None)
+            .unwrap(),
+        replacement
+    );
+    assert!(store
+        .handle(
+            "draft_create",
+            Some(&scope.account),
+            json!({"mode":"new","request_id":"stale"})
+        )
+        .is_err());
+}
+
+#[test]
 fn removal_cleanup_claims_are_serial_and_old_receipts_cannot_delete_restored_grants() {
     let dir = tempfile::tempdir().unwrap();
     let (mut store, scope) = setup(dir.path());

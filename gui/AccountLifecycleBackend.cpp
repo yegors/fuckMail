@@ -21,12 +21,12 @@ bool MailBackend::archivedRequestAllowed(const QString &method) const {
     // Only cached queries/verified exports and the explicit lifecycle workflow.
     // In particular, provider reconciliation and local abandon are mutations.
     static const QSet<QString> cached{
-        "accounts", "view_get", "categories", "conversations", "conversation", "drafts", "draft_get",
+        "accounts", "view_get", "categories", "conversations", "conversation", "message_source", "drafts", "draft_get",
         "sender_summary", "attachment", "capture_history", "draft_capture", "google_drafts_status",
-        "google_draft_sources", "google_draft_source", "google_draft_status", "google_send_status",
+        "google_draft_sources", "google_draft_source", "google_draft_status", "google_send_status", "google_sent", "google_sent_message",
         "google_draft_delete_status", "google_mail_mutation_status", "calendar_operations", "google_calendar_operation",
         "calendar_combined", "calendar_sources", "calendar", "account_remove_preview", "account_remove",
-        "account_remove_status", "google_auth_restore_begin"};
+        "account_remove_status", "account_archive_delete", "google_auth_restore_begin"};
     return cached.contains(method);
 }
 bool MailBackend::blockArchivedRequest(const QString &method, const QString &account) const {
@@ -77,6 +77,14 @@ void MailBackend::clearAccountSelection() {
 }
 void MailBackend::reconcileAccountLifecycle() {
     const auto row = lifecycleAccount(m_account);
+    if (!m_account.isEmpty() && row.isEmpty()) {
+        cancelGoogleProviderOperations(m_account);
+        if (!m_unsavedAccountBuffer && (m_draftDirty || m_savingDraft || !m_recipientInputs.isEmpty())) freezeRemovedAccountBuffer();
+        else if (!m_unsavedAccountBuffer) {
+            clearAccountSelection();
+            if (!m_accounts.isEmpty()) selectAccount(m_accounts.first().toMap().value("id").toString());
+        }
+    }
     const auto lifecycle = row.value("lifecycle").toMap();
     const auto revision = lifecycle.value("revision").toLongLong();
     const auto previous = m_accountLifecycleRevisions.value(m_account);
@@ -100,7 +108,11 @@ void MailBackend::reconcileAccountLifecycle() {
     }
     for (const auto &entry : m_allAccounts) {
         const auto value = entry.toMap();
-        m_accountLifecycleRevisions[value.value("id").toString()] = value.value("lifecycle").toMap().value("revision").toLongLong();
+        const auto id = value.value("id").toString();
+        const auto life = value.value("lifecycle").toMap();
+        if (life.value("state") == "active" && life.value("revision").toLongLong() > m_accountLifecycleRevisions.value(id)
+            && !m_accountRemovalBusy.contains(id)) m_accountLifecycleUi.remove(id);
+        m_accountLifecycleRevisions[id] = life.value("revision").toLongLong();
     }
     emit accountLifecycleChanged();
     if (previous != revision) emit draftChanged();
@@ -219,11 +231,39 @@ void MailBackend::openAccountArchive(const QString &account) {
     if (m_unsavedAccountBuffer) { m_afterAccountDisposition = [this, account] { openAccountArchive(account); }; accountNavigationAllowed(); return; }
     m_archiveSelection = account; selectAccount(account);
 }
-void MailBackend::restoreGoogleAccount(const QString &email, const QString &account, qint64 revision, bool reauthorize) {
+void MailBackend::previewArchiveDeletion(const QString &account) {
+    if (!m_connected || m_shutdown || !accountRemoved(account) || m_unsavedAccountBuffer || m_accountRemovalBusy.contains(account)) return;
+    const auto row = lifecycleAccount(account);
+    const auto life = row.value("lifecycle").toMap();
+    if (life.value("cleanup").toMap().value("state") != "complete") return;
+    if (m_archiveDeletionConfirmation["account"] != account || m_archiveDeletionConfirmation["expected_revision"].toInteger() != life.value("revision").toLongLong())
+    m_archiveDeletionConfirmation = {{"account", account}, {"email", row.value("email").toString()},
+        {"expected_revision", life.value("revision").toLongLong()},
+        {"request_id", "gui-purge-" + QUuid::createUuid().toString(QUuid::WithoutBraces)}};
+    emit archiveDeletionReady(m_archiveDeletionConfirmation.toVariantMap());
+}
+void MailBackend::confirmArchiveDeletion(const QVariantMap &context) {
+    const auto captured = QJsonObject::fromVariantMap(context);
+    const auto account = captured["account"].toString();
+    if (captured.isEmpty() || captured != m_archiveDeletionConfirmation || !accountRemoved(account)
+        || m_unsavedAccountBuffer || m_accountRemovalBusy.contains(account) || !m_connected || m_shutdown) return;
+    m_accountRemovalBusy.insert(account); ++m_accountWrites;
+    m_accountLifecycleUi[account] = QVariantMap{{"busy", true}, {"status", "Deleting local archive…"}};
+    emit accountLifecycleChanged();
+    request("account_archive_delete", account, {{"expected_revision", captured["expected_revision"]}, {"request_id", captured["request_id"]}},
+        [this, account](auto result, bool ok) {
+            m_accountRemovalBusy.remove(account); --m_accountWrites;
+            if (ok) { m_accountLifecycleUi.remove(account); m_archiveDeletionConfirmation = {}; }
+            else m_accountLifecycleUi[account] = QVariantMap{{"busy", false}, {"status", result["message"].toString("Archive deletion could not be confirmed. Try again.")}};
+            emit accountLifecycleChanged(); loadAccounts(); loadCalendarSources(); loadCalendar();
+            if (m_shutdown) finishShutdown();
+        });
+}
+void MailBackend::restoreGoogleAccount(const QString &email, const QString &account, qint64 revision, bool reauthorize, const QVariantMap &access) {
     const auto lifecycle = lifecycleAccount(account).value("lifecycle").toMap();
     if (!accountRemoved(account) || lifecycle.value("revision").toLongLong() != revision
         || lifecycle.value("cleanup").toMap().value("state").toString() != "complete") {
         fail("Restoration needs the current archived account and completed credential cleanup."); return;
     }
-    beginGoogleAuth("google_auth_restore_begin", email, account, reauthorize, revision);
+    beginGoogleAuth("google_auth_restore_begin", email, account, reauthorize, revision, access);
 }

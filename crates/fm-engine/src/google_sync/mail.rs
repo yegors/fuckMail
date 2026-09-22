@@ -3,7 +3,7 @@
 use super::SyncContext;
 use fm_core::{
     google_live_mail::{
-        prepare_google_item, verify_staged_google_item, GoogleItemAction, GooglePageIdentity,
+        prepare_google_item_since, verify_staged_google_item, GoogleItemAction, GooglePageIdentity,
         MailLane, MailLaneState, PreparedGoogleItem, MAX_PART_BYTES, MAX_PART_ITEMS,
     },
     CoreError, Result,
@@ -18,7 +18,6 @@ use serde_json::{json, Value};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const RECENT_SECONDS: u64 = 30 * 24 * 60 * 60;
-const DELTA_POLL_MS: u64 = 60_000;
 const PARTS_BEFORE_DELTA: u8 = 4;
 // IDs are cheap, but a smaller page makes the initial useful result independent
 // of an account's total history. History records can still fan out to 5,000 IDs.
@@ -44,6 +43,11 @@ impl MailWorker {
             non_delta_parts: 0,
             next_delta_ms: 0,
         }
+    }
+
+    pub(crate) fn request_refresh(&mut self) {
+        self.next_delta_ms = 0;
+        self.non_delta_parts = PARTS_BEFORE_DELTA;
     }
 
     pub(crate) async fn step(&mut self, ctx: &SyncContext, now_ms: u64) -> Result<Step> {
@@ -131,7 +135,10 @@ impl MailWorker {
         if page.lane == MailLane::Delta {
             self.non_delta_parts = 0;
             if completed.is_some_and(|checkpoint| checkpoint.phase == Phase::Idle) {
-                self.next_delta_ms = now_ms.saturating_add(DELTA_POLL_MS);
+                let interval = ctx
+                    .core_call(|store| store.google_sync_interval_ms())
+                    .await?;
+                self.next_delta_ms = now_ms.saturating_add(interval);
             }
         } else {
             self.non_delta_parts = self.non_delta_parts.saturating_add(1);
@@ -234,11 +241,12 @@ impl MailWorker {
         page: &GooglePageIdentity,
     ) -> Result<Option<Checkpoint>> {
         let owned_page = page.clone();
-        let (blobs, pending) = ctx
+        let (blobs, pending, since) = ctx
             .core_call(move |store| {
                 Ok((
                     store.google_blob_store(),
                     store.google_live_pending(&owned_page, MAX_PART_ITEMS)?,
+                    store.google_mail_since(&owned_page.account)?,
                 ))
             })
             .await?;
@@ -279,7 +287,14 @@ impl MailWorker {
                 if let Some(staged) = item.staged {
                     verify_staged_google_item(&blobs, &owned_page, staged, &cancel)
                 } else {
-                    prepare_google_item(&blobs, &owned_page, &item.remote_id, outcome, &cancel)
+                    prepare_google_item_since(
+                        &blobs,
+                        &owned_page,
+                        &item.remote_id,
+                        outcome,
+                        &cancel,
+                        since,
+                    )
                 }
             })
             .await

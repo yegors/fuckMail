@@ -682,7 +682,7 @@ fn schema_nineteen_upgrade_preserves_legacy_journal_and_refuses_old_engine_versi
             .db
             .query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
             .unwrap(),
-        20
+        crate::SCHEMA_VERSION
     );
     let after:(String,String,String)=store.db.query_row("SELECT fingerprint,intent_json,outcome_json FROM calendar_write_operations WHERE account=?1",[&account],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).unwrap();
     assert_eq!(before, after);
@@ -690,7 +690,10 @@ fn schema_nineteen_upgrade_preserves_legacy_journal_and_refuses_old_engine_versi
         store.calendar_live_status(&account, "delete").unwrap()["intent_version"],
         2
     );
-    store.db.pragma_update(None, "user_version", 21).unwrap();
+    store
+        .db
+        .pragma_update(None, "user_version", crate::SCHEMA_VERSION + 1)
+        .unwrap();
     drop(store);
     assert_eq!(
         Store::open_live(dir.path()).err().unwrap().code,

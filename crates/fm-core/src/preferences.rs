@@ -4,10 +4,30 @@ use rusqlite::params;
 use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
-    json!({"density":"comfortable","week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
-        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"calendar_display_time_zone":null,"google_sync_limits":null,"notifications":"events"})
+    json!({"density":"comfortable","mail_date_grouping":"grouped","sync_every_minutes":1,"week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
+        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"calendar_display_time_zone":null,"calendar_account_visibility":"all","google_sync_limits":null,"google_sync_services":{},"notifications":"events"})
 }
 impl Store {
+    pub fn google_service_sync_enabled(&self, account: &str, service: &str) -> Result<bool> {
+        if !matches!(service, "mail" | "calendar") {
+            return Err(err("invalid_request", "Choose Mail or Calendar sync"));
+        }
+        Ok(
+            self.preferences()?["preferences"]["google_sync_services"][account][service]
+                .as_bool()
+                .unwrap_or(true),
+        )
+    }
+    pub fn google_sync_interval_ms(&self) -> Result<u64> {
+        let value = self.preferences()?["preferences"]["sync_every_minutes"].as_u64();
+        match value {
+            Some(minutes @ (1 | 5 | 15)) => Ok(minutes * 60_000),
+            _ => Err(err(
+                "invalid_request",
+                "Sync interval must be 1, 5 or 15 minutes",
+            )),
+        }
+    }
     pub(crate) fn preferences(&self) -> Result<Value> {
         let mut profile_defaults = defaults();
         if self.profile_kind()? == crate::live_profile::ProfileKind::Synthetic {
@@ -68,12 +88,15 @@ impl Store {
             patch,
             &[
                 "density",
+                "mail_date_grouping",
+                "sync_every_minutes",
                 "week_start",
                 "calendar_start_hour",
                 "calendar_end_hour",
                 "timeline_start_hour",
                 "timeline_end_hour",
                 "selected_calendars",
+                "calendar_account_visibility",
                 "calendar_view",
                 "calendar_date",
                 "timeline_date",
@@ -83,6 +106,7 @@ impl Store {
                 "last_workspace",
                 "timeline_position",
                 "google_sync_limits",
+                "google_sync_services",
                 "notifications",
                 "default_event_duration_minutes",
                 "calendar_display_time_zone",
@@ -91,6 +115,38 @@ impl Store {
         let mut preferences = current["preferences"].clone();
         for (key, value) in patch.as_object().unwrap() {
             preferences[key] = value.clone();
+        }
+        let services = preferences["google_sync_services"]
+            .as_object()
+            .filter(|v| v.len() <= 200)
+            .ok_or_else(|| {
+                err(
+                    "invalid_request",
+                    "Sync services must contain at most 200 account choices",
+                )
+            })?;
+        for (account, choices) in services {
+            crate::id(account)?;
+            if !self.db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM accounts WHERE id=?1)",
+                [account],
+                |r| r.get::<_, bool>(0),
+            )? {
+                return Err(err("not_found", "Sync account was not found"));
+            }
+            fields(choices, &["mail", "calendar"])?;
+            if !choices["mail"].is_boolean() || !choices["calendar"].is_boolean() {
+                return Err(err(
+                    "invalid_request",
+                    "Choose enabled or disabled for Mail and Calendar",
+                ));
+            }
+        }
+        if !matches!(preferences["sync_every_minutes"].as_u64(), Some(1 | 5 | 15)) {
+            return Err(err(
+                "invalid_request",
+                "Sync interval must be 1, 5 or 15 minutes",
+            ));
         }
         if !preferences["google_sync_limits"].is_null() {
             fm_google::scheduler::SchedulerConfig::from_confirmed_json(
@@ -118,7 +174,9 @@ impl Store {
                 .map_err(crate::calendar_store::calendar_error)?;
         }
         for (key, allowed) in [
-            ("theme", &["graphite", "paper", "harbour"][..]),
+            ("mail_date_grouping", &["grouped", "plain"][..]),
+            ("calendar_account_visibility", &["all", "current"][..]),
+            ("theme", &["graphite", "paper", "terminal", "harbour"][..]),
             ("text_size", &["small", "default", "large"][..]),
             ("startup_view", &["mail", "calendar", "last"][..]),
             ("last_workspace", &["mail", "calendar"][..]),
@@ -220,7 +278,13 @@ impl Store {
     pub(crate) fn account_update(&self, account: &str, p: &Value) -> Result<Value> {
         fields(
             p,
-            &["name", "signature_text", "expected_revision", "request_id"],
+            &[
+                "name",
+                "signature_text",
+                "mail_retention",
+                "expected_revision",
+                "request_id",
+            ],
         )?;
         let request = string(p, "request_id")?;
         let fingerprint = format!(
@@ -271,6 +335,34 @@ impl Store {
             |r| r.get(0),
         )?;
         crate::mutations::check_revision(required_revision(p)?, current)?;
+        if let Some(retention) = p.get("mail_retention") {
+            let retention = retention
+                .as_str()
+                .ok_or_else(|| err("invalid_request", "Invalid mail retention"))?;
+            let since = mail_retention_since(retention)?;
+            let old: String = tx.query_row(
+                "SELECT mail_retention FROM account_metadata WHERE account=?1",
+                [account],
+                |r| r.get(0),
+            )?;
+            if old != retention {
+                let started: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM google_live_lanes WHERE account=?1)",
+                    [account],
+                    |r| r.get(0),
+                )?;
+                if started {
+                    return Err(err(
+                        "retention_already_started",
+                        "Download history is chosen before the first mail sync",
+                    ));
+                }
+                tx.execute(
+                    "UPDATE account_metadata SET mail_retention=?2,mail_since=?3 WHERE account=?1",
+                    params![account, retention, since],
+                )?;
+            }
+        }
         tx.execute(
             "UPDATE accounts SET name=?1 WHERE id=?2",
             params![name, account],
@@ -300,6 +392,24 @@ impl Store {
         Ok(result)
     }
 }
+pub(crate) fn mail_retention_since(retention: &str) -> Result<Option<i64>> {
+    let months = match retention {
+        "1_month" => 1,
+        "3_months" => 3,
+        "1_year" => 12,
+        "all" => return Ok(None),
+        _ => {
+            return Err(err(
+                "invalid_request",
+                "Choose 1 month, 3 months, 1 year or All",
+            ))
+        }
+    };
+    Ok(Some(
+        (chrono::Utc::now() - chrono::Months::new(months)).timestamp(),
+    ))
+}
+
 pub(crate) fn required_revision(p: &Value) -> Result<i64> {
     p["expected_revision"]
         .as_i64()
@@ -315,6 +425,169 @@ pub(crate) fn required_revision(p: &Value) -> Result<i64> {
 #[cfg(test)]
 mod appearance_tests {
     use super::*;
+    #[test]
+    fn retention_setup_choices_are_durable_and_frozen_after_acquisition() {
+        for (index, choice) in ["1_month", "3_months", "1_year", "all"].iter().enumerate() {
+            let dir = tempfile::tempdir().unwrap();
+            let mut store = Store::open_live(dir.path()).unwrap();
+            let account = store
+                .bind_google_account(
+                    "retention-owner",
+                    "owner@example.test",
+                    &std::collections::BTreeSet::from([
+                        "https://www.googleapis.com/auth/gmail.modify".into(),
+                    ]),
+                    None,
+                )
+                .unwrap();
+            let before = store.accounts().unwrap()["accounts"][0].clone();
+            assert_eq!(before["mail_retention"], "1_year");
+            let p = json!({"name":"History","signature_text":"","mail_retention":choice,"expected_revision":before["metadata_revision"],"request_id":format!("history-{index}")});
+            let saved = store
+                .handle("account_update", Some(&account), p.clone())
+                .unwrap();
+            assert_eq!(saved["mail_retention"], *choice);
+            assert_eq!(saved["mail_since"].is_null(), *choice == "all");
+            drop(store);
+            let mut store = Store::open_live(dir.path()).unwrap();
+            assert_eq!(
+                store.handle("account_update", Some(&account), p).unwrap(),
+                saved
+            );
+            store
+                .google_live_begin(&account, "100", chrono::Utc::now().timestamp())
+                .unwrap();
+            let next = if *choice == "all" { "1_month" } else { "all" };
+            assert_eq!(store.handle("account_update",Some(&account),json!({"name":"History","signature_text":"","mail_retention":next,"expected_revision":saved["metadata_revision"],"request_id":"too-late"})).unwrap_err().code,"retention_already_started");
+            assert_eq!(
+                store.accounts().unwrap()["accounts"][0]["mail_since"],
+                saved["mail_since"]
+            );
+        }
+    }
+    #[test]
+    fn calendar_account_visibility_is_additive_typed_and_durable() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        let original = store.preferences().unwrap();
+        assert_eq!(
+            original["preferences"]["calendar_account_visibility"],
+            "all"
+        );
+        let request = json!({"preferences":{"calendar_account_visibility":"current"},"expected_revision":0,"request_id":"calendar-visibility"});
+        let saved = store
+            .handle("preferences_save", None, request.clone())
+            .unwrap();
+        let mut expected = original["preferences"].clone();
+        expected["calendar_account_visibility"] = json!("current");
+        assert_eq!(saved["preferences"], expected);
+        for invalid in [json!("hidden"), json!(false), json!(null), json!(1)] {
+            assert_eq!(store.handle("preferences_save",None,json!({"preferences":{"calendar_account_visibility":invalid},"expected_revision":1,"request_id":"bad-visibility"})).unwrap_err().code,"invalid_request");
+            assert_eq!(store.preferences().unwrap(), saved);
+        }
+        drop(store);
+        let mut store = Store::open(dir.path()).unwrap();
+        assert_eq!(store.preferences().unwrap(), saved);
+        assert_eq!(
+            store.handle("preferences_save", None, request).unwrap(),
+            saved
+        );
+        let changed=store.handle("preferences_save",None,json!({"preferences":{"theme":"paper"},"expected_revision":1,"request_id":"unrelated-appearance"})).unwrap();
+        assert_eq!(
+            changed["preferences"]["calendar_account_visibility"],
+            "current"
+        );
+        assert_eq!(
+            changed["preferences"]["selected_calendars"],
+            original["preferences"]["selected_calendars"]
+        );
+        assert_eq!(
+            changed["preferences"]["notifications"],
+            original["preferences"]["notifications"]
+        );
+    }
+    #[test]
+    fn account_service_switches_are_independent_durable_and_validated() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        assert!(store
+            .google_service_sync_enabled("personal", "mail")
+            .unwrap());
+        assert!(store
+            .google_service_sync_enabled("personal", "calendar")
+            .unwrap());
+        let command = json!({"preferences":{"google_sync_services":{"personal":{"mail":false,"calendar":true},"windscribe":{"mail":true,"calendar":false}}},"expected_revision":0,"request_id":"service-choices"});
+        let saved = store
+            .handle("preferences_save", None, command.clone())
+            .unwrap();
+        assert!(!store
+            .google_service_sync_enabled("personal", "mail")
+            .unwrap());
+        assert!(store
+            .google_service_sync_enabled("personal", "calendar")
+            .unwrap());
+        assert!(store
+            .google_service_sync_enabled("windscribe", "mail")
+            .unwrap());
+        assert!(!store
+            .google_service_sync_enabled("windscribe", "calendar")
+            .unwrap());
+        for bad in [
+            json!({"personal":{"mail":"off","calendar":true}}),
+            json!({"personal":{"mail":false}}),
+            json!({"unknown-account":{"mail":false,"calendar":true}}),
+            json!([]),
+        ] {
+            assert!(store.handle("preferences_save",None,json!({"preferences":{"google_sync_services":bad},"expected_revision":1,"request_id":"invalid-services"})).is_err());
+            assert_eq!(store.preferences().unwrap(), saved);
+        }
+        drop(store);
+        let mut store = Store::open(dir.path()).unwrap();
+        assert!(!store
+            .google_service_sync_enabled("personal", "mail")
+            .unwrap());
+        assert_eq!(
+            store.handle("preferences_save", None, command).unwrap(),
+            saved
+        );
+    }
+    #[test]
+    fn sync_cadence_is_shared_durable_and_rejects_invalid_values_atomically() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        assert_eq!(store.google_sync_interval_ms().unwrap(), 60_000);
+        let command = json!({"preferences":{"sync_every_minutes":15},"expected_revision":0,"request_id":"slow-checks"});
+        let saved = store
+            .handle("preferences_save", None, command.clone())
+            .unwrap();
+        assert_eq!(store.google_sync_interval_ms().unwrap(), 900_000);
+        for value in [json!(0), json!(2), json!(1.5), json!("5"), Value::Null] {
+            assert_eq!(store.handle("preferences_save", None, json!({"preferences":{"sync_every_minutes":value,"theme":"paper"},"expected_revision":1,"request_id":"invalid-checks"})).unwrap_err().code, "invalid_request");
+            assert_eq!(store.preferences().unwrap(), saved);
+        }
+        drop(store);
+        let mut store = Store::open(dir.path()).unwrap();
+        assert_eq!(store.google_sync_interval_ms().unwrap(), 900_000);
+        assert_eq!(
+            store.handle("preferences_save", None, command).unwrap(),
+            saved
+        );
+    }
+
+    #[test]
+    fn mail_date_grouping_is_shared_durable_and_validated() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        let before = store.preferences().unwrap();
+        assert_eq!(before["preferences"]["mail_date_grouping"], "grouped");
+        let request = json!({"request_id":"date-groups","expected_revision":before["revision"],"preferences":{"mail_date_grouping":"plain"}});
+        store.handle("preferences_save", None, request).unwrap();
+        drop(store);
+        let mut reopened = Store::open(dir.path()).unwrap();
+        let saved = reopened.preferences().unwrap();
+        assert_eq!(saved["preferences"]["mail_date_grouping"], "plain");
+        assert!(reopened.handle("preferences_save", None, json!({"request_id":"bad-date-group","expected_revision":saved["revision"],"preferences":{"mail_date_grouping":true}})).is_err());
+    }
 
     #[test]
     fn confirmed_google_limits_are_durable_atomic_preferences_without_accounts() {
@@ -471,7 +744,7 @@ mod appearance_tests {
             store.draft("windscribe", "windscribe-thread-003").unwrap(),
             draft_before
         );
-        for (index, theme) in ["harbour", "graphite"].iter().enumerate() {
+        for (index, theme) in ["terminal", "harbour", "graphite"].iter().enumerate() {
             let next = store
                 .handle(
                     "preferences_save",

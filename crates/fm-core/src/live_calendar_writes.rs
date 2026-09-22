@@ -528,7 +528,14 @@ impl Store {
                     "Calendar does not permit event creation",
                 ));
             }
-            let body = field_patch(&request["fields"], None, zone, &actor, intent_version)?;
+            let body = field_patch(
+                request_id,
+                &request["fields"],
+                None,
+                zone,
+                &actor,
+                intent_version,
+            )?;
             let mut candidate = body.clone();
             candidate["id"] = target.event.clone().into();
             candidate["etag"] = "pending".into();
@@ -551,6 +558,7 @@ impl Store {
             }
             let body = match kind {
                 "edit" => field_patch(
+                    request_id,
                     &request["fields"],
                     Some(&event),
                     zone,
@@ -638,6 +646,7 @@ impl Store {
         let kind = crate::string(request, "kind")?;
         let body = if kind == "edit" {
             field_patch(
+                request_id,
                 &request["fields"],
                 Some(&proof.event),
                 &proof.master.stamp.zone,
@@ -1438,26 +1447,28 @@ fn validate_fields_version(fields: &Value, version: u64) -> Result<()> {
         }
         return validate_fields_version(&ordinary, 2);
     }
-    crate::fields(
-        fields,
-        &[
-            "title",
-            "start",
-            "end",
-            "all_day",
-            "time_zone",
-            "location",
-            "description",
-            "conference_url",
-            "attendees",
-        ],
-    )?;
+    let mut allowed = vec![
+        "title",
+        "start",
+        "end",
+        "all_day",
+        "time_zone",
+        "location",
+        "description",
+        "conference_url",
+        "attendees",
+    ];
+    if version >= 2 {
+        allowed.extend(crate::calendar_editor_options::FIELDS);
+    }
+    crate::fields(fields, &allowed)?;
     if fields.as_object().is_none_or(|v| v.is_empty()) {
         return Err(err("invalid_request", "Choose event fields to change"));
     }
     Ok(())
 }
 pub(crate) fn field_patch(
+    request_id: &str,
     fields: &Value,
     event: Option<&Event>,
     zone: &str,
@@ -1465,7 +1476,11 @@ pub(crate) fn field_patch(
     version: u64,
 ) -> Result<Value> {
     validate_fields_version(fields, version)?;
-    let mut body = json!({});
+    let mut body = if version >= 2 {
+        crate::calendar_editor_options::patch(fields, request_id)?
+    } else {
+        json!({})
+    };
     for (input, provider, max) in [
         ("title", "summary", 512),
         ("description", "description", 32768),
@@ -1537,17 +1552,29 @@ pub(crate) fn field_patch(
                 json!({"dateTime":s,"timeZone":selected_zone})
             }
         };
-        let start = times(start);
-        let end = times(end);
-        if event.is_some_and(|e| e.source["start"].get("date").is_some() != all_day) {
+        let mut start = times(start);
+        let mut end = times(end);
+        let converting = event.is_some_and(|e| e.source["start"].get("date").is_some() != all_day);
+        if converting && fields["convert_time_kind"] != true {
             return Err(err(
                 "unsupported_operation",
-                "Timed/all-day conversion requires the next Calendar slice",
+                "Confirm timed/all-day conversion with complete endpoints",
             ));
         }
         let candidate = json!({"id":"validate","start":start,"end":end});
         fm_calendar::normalize("validate", "validate", selected_zone, &candidate)
             .map_err(crate::calendar_store::calendar_error)?;
+        if converting {
+            // PATCH merges nested objects; clear the opposite kind explicitly.
+            for endpoint in [&mut start, &mut end] {
+                if all_day {
+                    endpoint["dateTime"] = Value::Null;
+                    endpoint["timeZone"] = Value::Null;
+                } else {
+                    endpoint["date"] = Value::Null;
+                }
+            }
+        }
         if event.is_none_or(|e| e.source["start"] != start) {
             body["start"] = start;
         }
@@ -1657,6 +1684,13 @@ fn matches_patch_v2_roster(source: &Value, patch: &Value, created: bool) -> bool
             None => value == "",
             Some(actual) => actual == value,
         },
+        "conferenceData" if value.is_null() => source.get(key).is_none_or(Value::is_null),
+        "reminders" if value["useDefault"] == false && value["overrides"] == json!([]) => {
+            source[key]["useDefault"] == false
+                && source[key]
+                    .get("overrides")
+                    .is_none_or(|v| v.as_array().is_some_and(Vec::is_empty))
+        }
         "conferenceData" if value["createRequest"].is_object() => {
             source["conferenceData"]["createRequest"]["requestId"]
                 == value["createRequest"]["requestId"]
@@ -1709,6 +1743,16 @@ pub(crate) fn matches_intent_v2(event: &Event, intent: &Value, dispatch: &Value)
             }
         }
     }
+    if let Ok(options) = crate::calendar_editor_options::patch(
+        fields,
+        intent["request"]["request_id"].as_str().unwrap_or(""),
+    ) {
+        for (key, value) in options.as_object().unwrap() {
+            comparison[key] = value.clone();
+        }
+    } else {
+        return false;
+    }
     if let Some(url) = fields.get("conference_url") {
         if url.as_str() != Some(event.conference_url.as_deref().unwrap_or("")) {
             return false;
@@ -1736,7 +1780,7 @@ pub(crate) fn matches_intent_v2(event: &Event, intent: &Value, dispatch: &Value)
 }
 fn same_time(actual: &Value, wanted: &Value) -> bool {
     if let Some(date) = wanted["date"].as_str() {
-        return actual["date"] == date && actual.get("dateTime").is_none();
+        return actual["date"] == date && actual["dateTime"].is_null();
     }
     let parsed = actual["dateTime"]
         .as_str()

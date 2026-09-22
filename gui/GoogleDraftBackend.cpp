@@ -80,6 +80,7 @@ QVariantMap MailBackend::googleDraft() const {
     const auto preparationFailure = status["preparation_failure"].toObject();
     const bool mismatch = !baseline["observed_sha256"].toString().isEmpty() && !baseline["upload_sha256"].toString().isEmpty()
         && baseline["observed_sha256"] != baseline["upload_sha256"];
+    const bool contentMismatch = status["fidelity_warning"].toBool();
     QString text;
     if (state == "local") text = "Saved on this machine.";
     else if (state == "adopted") text = "Editing the retained Google draft. Adoption alone has not uploaded anything; saved edits use normal draft sync.";
@@ -90,7 +91,7 @@ QVariantMap MailBackend::googleDraft() const {
     else if (state == "synced") {
         if (m_draftDirty) text = "Unsaved edits await local save and Google draft sync.";
         else text = baseline["draft_revision"].toInteger() < m_draft.value("revision").toLongLong()
-            ? "Newer local edits await Google draft sync." : "Google draft checked.";
+            ? "Newer local edits await Google draft sync." : "Saved to Google.";
     }
     else if (state == "conflict") text = "Google draft conflict. Your local work remains retained; review the Google outcome before replacing.";
     else if (state == "failed") text = "Google draft sync stopped. Check Google for its saved state.";
@@ -106,16 +107,14 @@ QVariantMap MailBackend::googleDraft() const {
         else if (newerSaved) text += " Newer saved edits await preparation and Google draft sync.";
         else text += " Edit and save to retry.";
     }
-    if (mismatch) text += " Google bytes differ from the uploaded copy; content fidelity is unverified.";
-    if (googleSendBlocksDraftSync()) text = m_draft.value("google_send").toMap().value("last_accepted_draft_revision").toLongLong() > 0
-        ? "An accepted submission ended Google draft sync for this local draft. Newer edits stay local; sending them creates another email."
-        : "Google draft sync is paused while this submission is pending or unconfirmed.";
+    if (contentMismatch) text += " Google's saved draft differs from your local version. Your local text is safe.";
+    if (googleSendBlocksDraftSync()) return {{"visible", false}, {"can_check", false}, {"can_replace", false}};
     if (busy) text += m_googleDraftOperationMethod == "google_draft_reconcile" ? " Checking Google…" : " Replacing the Google copy…";
     if (m_googleDraftFeedbackAccount == m_account && m_googleDraftFeedbackId == id && !m_googleDraftFeedback.isEmpty()) text += " " + m_googleDraftFeedback;
     const bool ready = visible && googleDraftRecoveryReady() && m_googleDraftOperationId.isEmpty();
     const bool requiresCheck = m_googleDraftRequiresCheck.contains(m_account + '\n' + id);
     return {{"visible", visible}, {"state", state}, {"status", text}, {"busy", busy}, {"byte_mismatch", mismatch},
-        {"warning", requiresCheck || mismatch || !preparationFailure.isEmpty() || state == "conflict" || state == "acceptance_unknown" || state == "failed"},
+        {"warning", requiresCheck || contentMismatch || !preparationFailure.isEmpty() || state == "conflict" || state == "acceptance_unknown" || state == "failed"},
         {"can_check", ready && knownRemote && state != "local"},
         {"can_replace", ready && !requiresCheck && state == "conflict" && (!unknown || observedUnknownTarget)
             && !m_draftDirty && !draftBusy() && !attachmentImportPending() && !m_draftConflict}};

@@ -363,6 +363,9 @@ impl Contexts {
                 busy: true,
             },
             remote_drafts_wake: Arc::new(Notify::new()),
+            refresh: watch::channel(0).0,
+            credential_blocked: Arc::new(AtomicBool::new(false)),
+            mail_refresh_requested: Arc::new(AtomicBool::new(false)),
         };
         let second = SyncContext {
             account: AccountId::new("synthetic-second").unwrap(),
@@ -380,6 +383,9 @@ impl Contexts {
                 busy: true,
             },
             remote_drafts_wake: Arc::new(Notify::new()),
+            refresh: watch::channel(0).0,
+            credential_blocked: Arc::new(AtomicBool::new(false)),
+            mail_refresh_requested: Arc::new(AtomicBool::new(false)),
         };
         Self {
             first,
@@ -733,6 +739,7 @@ async fn admitted_transport_is_one_shot_and_mutations_use_only_their_costed_lane
 }
 
 struct CachedVault {
+    denied: AtomicBool,
     account: AccountId,
     token: fm_google::auth::StoredToken,
     loads: AtomicUsize,
@@ -745,6 +752,9 @@ impl fm_google::auth::CredentialVault for CachedVault {
     ) -> std::result::Result<Option<fm_google::auth::StoredToken>, GoogleError> {
         assert_eq!(account, &self.account);
         self.loads.fetch_add(1, Ordering::SeqCst);
+        if self.denied.load(Ordering::SeqCst) {
+            return Err(GoogleError::StoreUnavailable);
+        }
         Ok(Some(self.token.clone()))
     }
     fn store(
@@ -922,6 +932,7 @@ impl RuntimeHarness {
         let core = CoreBridge::new(send, Arc::new(Semaphore::new(8)));
         let http = Arc::new(ParkedMailHttp::default());
         let vault = Arc::new(CachedVault {
+            denied: AtomicBool::new(false),
             account: AccountId::new(account.clone()).unwrap(),
             token: fm_google::auth::StoredToken {
                 access_token: "synthetic-cached-access".into(),
@@ -939,7 +950,7 @@ impl RuntimeHarness {
         let auth = google_auth::Runtime::for_test(
             core.clone(),
             http.clone(),
-            vault.clone(),
+            Arc::new(fm_google::vault::SessionCredentialVault::new(vault.clone())),
             cancel.clone(),
         );
         let runtime = Runtime::new(core.clone(), auth.clone(), cancel);
@@ -1024,6 +1035,144 @@ impl RuntimeHarness {
         drop(self.core);
         self.writer.join().unwrap();
     }
+}
+
+#[tokio::test]
+async fn default_quota_start_shares_normalized_limits_across_gui_and_cli() {
+    let h = RuntimeHarness::new();
+    let gui = CancellationToken::new();
+    let cli = CancellationToken::new();
+    let first = h
+        .runtime
+        .handle("gui", gui, "google_sync_start", Some(&h.account), json!({}))
+        .await
+        .unwrap();
+    assert_eq!(first["started"], true);
+    let second = h
+        .runtime
+        .handle(
+            "cli",
+            cli,
+            "google_sync_start",
+            Some(&h.account),
+            SchedulerConfig::published_limits(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(second["active"], true);
+    h.wait_owner_count(2).await;
+    assert_eq!(
+        h.runtime.state.lock().await.quota.as_ref().unwrap().0,
+        SchedulerConfig::published_limits()
+    );
+    h.release("gui").await;
+    h.wait_owner_count(1).await;
+    h.release("cli").await;
+    h.wait_stopped().await;
+    h.close().await;
+}
+
+#[tokio::test]
+async fn label_sync_job_replay_scope_and_owner_shutdown() {
+    let h = RuntimeHarness::new();
+    let gui = CancellationToken::new();
+    h.start("gui", gui.clone()).await;
+    h.start("other", CancellationToken::new()).await;
+    h.http.wait_calls(1).await;
+    let params = json!({"request_id":"owned-label-sync"});
+    let job = tokio::time::timeout(
+        Duration::from_secs(1),
+        h.runtime.handle(
+            "gui",
+            gui.clone(),
+            "google_labels_sync",
+            Some(&h.account),
+            params.clone(),
+        ),
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    assert_eq!(job["state"], "running");
+    let replay = h
+        .runtime
+        .handle(
+            "gui",
+            gui.clone(),
+            "google_labels_sync",
+            Some(&h.account),
+            params,
+        )
+        .await
+        .unwrap();
+    assert_eq!(replay["job_id"], job["job_id"]);
+    for (owner, account) in [("other", h.account.as_str()), ("gui", "foreign-account")] {
+        assert_eq!(
+            h.runtime
+                .handle(
+                    owner,
+                    CancellationToken::new(),
+                    "google_labels_sync_status",
+                    Some(account),
+                    json!({"job_id":job["job_id"]})
+                )
+                .await
+                .unwrap_err()
+                .code,
+            "not_found"
+        );
+    }
+    assert_eq!(
+        h.runtime
+            .handle(
+                "other",
+                CancellationToken::new(),
+                "google_labels_sync",
+                Some(&h.account),
+                json!({"request_id":"competing-sync"})
+            )
+            .await
+            .unwrap_err()
+            .code,
+        "busy"
+    );
+    gui.cancel();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let status = h
+                .runtime
+                .handle(
+                    "gui",
+                    CancellationToken::new(),
+                    "google_labels_sync_status",
+                    Some(&h.account),
+                    json!({"job_id":job["job_id"]}),
+                )
+                .await
+                .unwrap();
+            if status["state"] != "running" {
+                assert_eq!(status["state"], "cancelled");
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let status = h
+        .runtime
+        .handle(
+            "other",
+            CancellationToken::new(),
+            "google_sync_status",
+            Some(&h.account),
+            json!({}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(status["accounts"][0]["active"], true);
+    assert_eq!(status["accounts"][0]["owned"], true);
+    h.close().await;
 }
 
 async fn two_owner_lifecycle(disconnect: bool) {
@@ -1271,5 +1420,183 @@ async fn temporary_calendar_request_owner_survives_gui_exit_and_preserves_normal
     h.http.wait_cancelled().await;
     h.wait_stopped().await;
     drop(context);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn explicit_refresh_wakes_mail_preserves_owners_and_denial_needs_retry() {
+    let h = RuntimeHarness::new();
+    h.runtime.cadence_changed().await;
+    assert!(h.runtime.state.lock().await.jobs.is_empty());
+    h.vault.denied.store(true, Ordering::SeqCst);
+    let gui = CancellationToken::new();
+    h.start("gui", gui.clone()).await;
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            if h.runtime.state.lock().await.jobs[&h.account]
+                .context
+                .credential_blocked
+                .load(Ordering::Acquire)
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    // All workers see one native refusal, including the later draft loop retry.
+    tokio::time::sleep(Duration::from_millis(1200)).await;
+    assert_eq!(h.vault.loads.load(Ordering::SeqCst), 1);
+    assert_eq!(h.http.calls.load(Ordering::SeqCst), 0);
+    h.runtime.cadence_changed().await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert_eq!(h.vault.loads.load(Ordering::SeqCst), 1);
+    assert_eq!(h.http.calls.load(Ordering::SeqCst), 0);
+    let status = h
+        .runtime
+        .handle(
+            "observer",
+            CancellationToken::new(),
+            "google_sync_status",
+            Some(&h.account),
+            json!({}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(status["accounts"][0]["credential_access_required"], true);
+    assert!(status["accounts"][0]["last_mail_sync_at"].is_null());
+    h.vault.denied.store(false, Ordering::SeqCst);
+    h.http.responses.add_permits(20);
+    let result = h
+        .runtime
+        .handle(
+            "cli",
+            CancellationToken::new(),
+            "google_sync_refresh",
+            Some(&h.account),
+            json!({}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(result["started"], false);
+    h.wait_owner_count(2).await;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            let status = h
+                .runtime
+                .handle(
+                    "observer",
+                    CancellationToken::new(),
+                    "google_sync_status",
+                    Some(&h.account),
+                    json!({}),
+                )
+                .await
+                .unwrap();
+            if status["accounts"][0]["last_mail_sync_at"]
+                .as_i64()
+                .unwrap_or(0)
+                > 0
+                && status["accounts"][0]["progress"]["mail"] == "waiting"
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    h.http.responses.forget_permits(usize::MAX);
+    let calls = h.http.calls.load(Ordering::SeqCst);
+    h.runtime
+        .handle(
+            "gui",
+            gui,
+            "google_sync_refresh",
+            Some(&h.account),
+            json!({}),
+        )
+        .await
+        .unwrap();
+    // Ordinary polling is 60 seconds; a manual wake must fetch within five.
+    h.http.wait_calls(calls + 1).await;
+    assert_eq!(
+        h.runtime.state.lock().await.jobs[&h.account]
+            .progress
+            .lock()
+            .unwrap()["mail"],
+        "running"
+    );
+    assert_eq!(h.release("gui").await["active"], true);
+    h.wait_owner_count(1).await;
+    h.runtime
+        .handle(
+            "cli",
+            CancellationToken::new(),
+            "google_sync_stop",
+            Some(&h.account),
+            json!({}),
+        )
+        .await
+        .unwrap();
+    let saved = h
+        .runtime
+        .handle(
+            "observer",
+            CancellationToken::new(),
+            "google_sync_status",
+            Some(&h.account),
+            json!({}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(saved["accounts"][0]["active"], false);
+    assert!(saved["accounts"][0]["last_mail_sync_at"].as_i64().unwrap() > 0);
+    h.close().await;
+}
+
+#[tokio::test]
+async fn account_service_pause_preserves_owner_and_resumes_acquisition() {
+    let h = RuntimeHarness::new();
+    let account = h.account.clone();
+    h.core.call(move |store| store.handle("preferences_save",None,json!({"request_id":"mail-off","expected_revision":0,"preferences":{"google_sync_services":{account:{"mail":false,"calendar":true}}}}))).await.unwrap();
+    h.start("gui", CancellationToken::new()).await;
+    tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let status = h
+                .runtime
+                .handle(
+                    "observer",
+                    CancellationToken::new(),
+                    "google_sync_status",
+                    Some(&h.account),
+                    json!({}),
+                )
+                .await
+                .unwrap();
+            if status["accounts"][0]["progress"]["mail"] == "paused"
+                && status["accounts"][0]["progress"]["labels"] == "paused"
+                && status["accounts"][0]["progress"]["remote_drafts"] == "paused"
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(h.http.calls.load(Ordering::SeqCst), 0);
+    assert_eq!(h.http.draft_lists.load(Ordering::SeqCst), 0);
+    h.wait_owner_count(1).await;
+    let account = h.account.clone();
+    h.core.call(move |store| {
+        let revision = store.handle("preferences_get",None,json!({}))?["revision"].clone();
+        store.handle("preferences_save",None,json!({"request_id":"mail-on","expected_revision":revision,"preferences":{"google_sync_services":{account:{"mail":true,"calendar":true}}}}))
+    }).await.unwrap();
+    h.runtime.cadence_changed().await;
+    h.http.wait_calls(1).await;
+    h.wait_owner_count(1).await;
+    h.release("gui").await;
     h.close().await;
 }

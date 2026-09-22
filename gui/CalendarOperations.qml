@@ -68,18 +68,11 @@ Popup {
         Text { visible: backend.calendarOperationStatus.length > 0; text: backend.calendarOperationStatus; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); wrapMode: Text.Wrap; Layout.fillWidth: true; textFormat: Text.PlainText }
         FmButton { visible: backend.calendarOperationsHasMore; text: "Load more activity"; outlined: true; enabled: !backend.calendarOperationsLoading && backend.connected; Layout.alignment: Qt.AlignHCenter; onClicked: backend.loadMoreCalendarOperations() }
     }
-    Dialog {
-        id: abandonConfirmation; objectName: "calendarOperationAbandonConfirmation"; parent: Overlay.overlay; anchors.centerIn: parent; modal: true
-        implicitWidth: 324; width: Math.min(implicitWidth, parent.width - 32)
-        implicitHeight: topPadding + bottomPadding + abandonBody.implicitHeight + (header ? header.implicitHeight + spacing : 0) + (footer ? footer.implicitHeight + spacing : 0)
-        title: "Abandon recorded change?"; standardButtons: Dialog.Ok | Dialog.Cancel
-        background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
-        palette.windowText: Theme.text; palette.buttonText: Theme.text
-        onOpened: standardButton(Dialog.Ok).text = "Abandon"
-        contentItem: Item {
-            implicitHeight: abandonBody.implicitHeight
-            Text { id: abandonBody; width: abandonConfirmation.availableWidth; text: "Stop working on this recorded change. This does not undo a change already accepted by Google."; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; textFormat: Text.PlainText }
-        }
+    FmConfirmDialog {
+        id: abandonConfirmation; objectName: "calendarOperationAbandonConfirmation"
+        title: "Abandon recorded change?"
+        message: "Stop working on this recorded change. This does not undo a change already accepted by Google."
+        actionText: "Abandon"
         onAccepted: backend.calendarOperationAction(history.abandonTarget.account, history.abandonTarget.request_id, "abandon", history.abandonTarget.revision)
     }
 }

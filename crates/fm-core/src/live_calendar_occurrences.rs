@@ -411,6 +411,7 @@ impl Store {
             ));
         }
         let mut event = rows.remove(0);
+        crate::calendar_editor_options::project(&mut event, &proof.event.source);
         event["account"] = stamp.account.clone().into();
         event["event_id"] = proof.event.key.event.clone().into();
         event["etag"] = proof.event.etag.clone().into();

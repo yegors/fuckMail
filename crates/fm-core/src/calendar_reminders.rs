@@ -54,7 +54,15 @@ fn due_now(
             .with_timezone(&Utc)
     };
     let distance = due - now;
-    Ok((Duration::seconds(-60)..=Duration::minutes(5))
+    let lead = match event.get("reminder_minutes") {
+        Some(Value::Null) => return Ok(None),
+        Some(value) => value
+            .as_i64()
+            .filter(|v| (0..=40320).contains(v))
+            .unwrap_or(5),
+        None => 5,
+    };
+    Ok((Duration::seconds(-60)..=Duration::minutes(lead))
         .contains(&distance)
         .then_some(due))
 }
@@ -64,7 +72,7 @@ impl Store {
             .pred_opt()
             .ok_or_else(|| err("invalid_request", "Date is out of range"))?;
         let to = date
-            .checked_add_signed(Duration::days(2))
+            .checked_add_signed(Duration::days(29))
             .ok_or_else(|| err("invalid_request", "Date is out of range"))?;
         self.calendar_combined(&json!({"from":from.to_string(),"to":to.to_string()}))
     }

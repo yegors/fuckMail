@@ -8,6 +8,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
+mod fidelity;
 
 pub const MAX_GOOGLE_DRAFT_BYTES: u64 = 35_000_000;
 const MAX_METADATA: usize = 32 * 1024;
@@ -69,6 +70,8 @@ struct Baseline {
     message_id: String,
     observed_sha256: String,
     upload_sha256: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    content_matches: Option<bool>,
     draft_revision: i64,
     size: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -266,6 +269,7 @@ impl GoogleDraftObservationPlan {
 pub struct PreparedGoogleDraftObservation {
     plan: GoogleDraftObservationPlan,
     observation: Option<Observation>,
+    content_matches: Option<bool>,
     cancel: CancellationToken,
     retained_source: Option<crate::google_draft_inventory::PreparedGoogleDraftImport>,
 }
@@ -655,7 +659,7 @@ impl Store {
             .flatten();
         Ok(
             json!({"account":account,"draft_id":draft_id,"state":twin.state,"revision":twin.revision,"local_revision":local_revision,"operation_is_current":true,"preparation_failure":twin.preparation_failure,"retry":twin.retry,
-            "operation":operation.as_ref().map(operation_status),"fidelity_warning":twin.baseline.as_ref().is_some_and(|b|b.observed_sha256 != b.upload_sha256),"effective_target":effective_target(&twin),"baseline":twin.baseline,"conflict":twin.conflict,"adoption":twin.adoption,"derivation":twin.derivation,"deletion":twin.deletion}),
+            "operation":operation.as_ref().map(operation_status),"fidelity_warning":twin.baseline.as_ref().is_some_and(|b|b.content_matches == Some(false)),"effective_target":effective_target(&twin),"baseline":twin.baseline,"conflict":twin.conflict,"adoption":twin.adoption,"derivation":twin.derivation,"deletion":twin.deletion}),
         )
     }
 
@@ -769,6 +773,7 @@ impl Store {
                             message_id: row.message_id.clone(),
                             observed_sha256: row.sha256.clone(),
                             upload_sha256: op.upload_sha256.clone(),
+                            content_matches: proof.content_matches,
                             draft_revision: op.draft_revision,
                             size: row.size,
                             thread_id: row.thread_id.clone(),
@@ -838,6 +843,15 @@ impl Store {
                 }),
             }
         };
+        if conflict.is_none() {
+            if let (Some(old), Some(op), Some(matches)) =
+                (&mut baseline, &operation, proof.content_matches)
+            {
+                if old.upload_sha256 == op.upload_sha256 {
+                    old.content_matches = Some(matches);
+                }
+            }
+        }
         let state = if conflict.is_some() {
             "conflict"
         } else if baseline.is_none() && twin.adoption.is_some() {
@@ -1393,6 +1407,13 @@ pub fn prepare_google_draft_observation(
             })
         })
         .transpose()?;
+    let content_matches = if let (Some(op), Some(remote)) = (&plan.operation, &remote) {
+        let path = plan.blobs.verified_blob(&op.upload_sha256, op.size)?;
+        let upload = std::fs::read(path)?;
+        fidelity::equivalent(&upload, &remote.raw)
+    } else {
+        None
+    };
     let retained_source = if let Some(message) = &plan.adopted_message {
         Some(crate::google_draft_actions::prepare_adopted_source(
             &plan.blobs,
@@ -1409,6 +1430,7 @@ pub fn prepare_google_draft_observation(
     Ok(PreparedGoogleDraftObservation {
         plan,
         observation,
+        content_matches,
         cancel: cancel.clone(),
         retained_source,
     })
@@ -1434,7 +1456,7 @@ fn operation_status(op: &Operation) -> Value {
         "upload_sha256":op.upload_sha256,"size":op.size,"ack":op.ack,"error":op.error,"provider_draft_id":op.target})
 }
 
-fn unix_ms() -> Result<i64> {
+pub(crate) fn unix_ms() -> Result<i64> {
     let ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| invalid())?

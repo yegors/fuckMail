@@ -25,8 +25,15 @@ impl MailMutationAction {
         }
     }
 }
+fn is_false(v: &bool) -> bool {
+    !*v
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct DesiredField {
+    #[serde(default, skip_serializing_if = "is_false")]
+    assisted: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    provider_categories: Option<BTreeSet<String>>,
     field: String,
     key: String,
     value: bool,
@@ -97,6 +104,13 @@ pub(crate) fn enqueue(
     if !live {
         return Ok(());
     }
+    if method == "set_category" && !db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM google_category_labels WHERE account=?1 AND category_id=?2)",
+        params![account,crate::string(p,"category_id")?], |r|r.get::<_,bool>(0),
+    )? {
+        // Local memberships remain explicit intents until the user links the label.
+        return Ok(());
+    }
     validate_authoring(db, account)?;
     let action = match p["action"].as_str() {
         Some("trash") => MailMutationAction::Trash,
@@ -146,6 +160,8 @@ pub(crate) fn enqueue(
                 _ => unreachable!(),
             };
             desired.push(DesiredField {
+                assisted: false,
+                provider_categories: None,
                 field: (*field).into(),
                 key: key.clone(),
                 value,
@@ -157,6 +173,167 @@ pub(crate) fn enqueue(
         db.execute("INSERT INTO google_mail_mutations(account,request_id,message_id,remote_id,action,desired_json,state) VALUES(?1,?2,?3,?4,?5,?6,'pending')",params![account,request,message,remote,action.key(),serde_json::to_string(&desired)?])?;
     }
     Ok(())
+}
+/// Persist a source-validated model label through the existing delivery journal.
+/// Human choices are durable even after their provider acknowledgement.
+pub(crate) fn enqueue_assisted_category(
+    db: &Transaction<'_>,
+    account: &str,
+    message: &str,
+    category: &str,
+) -> Result<&'static str> {
+    let blocked:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM local_model_label_overrides WHERE account=?1 AND message_id=?2) OR EXISTS(SELECT 1 FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field='category')",params![account,message],|r|r.get(0))?;
+    if blocked {
+        return Ok("manual_override");
+    }
+    let (sent, trashed, revision): (bool, bool, i64) = db.query_row(
+        "SELECT sent,trashed,revision FROM messages WHERE account=?1 AND id=?2",
+        params![account, message],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
+    if sent || trashed {
+        return Ok("not_incoming");
+    }
+    let exists:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM message_categories WHERE account=?1 AND message_id=?2 AND category_id=?3)",params![account,message,category],|r|r.get(0))?;
+    if exists {
+        return Ok("already_present");
+    }
+    let live: bool = db.query_row(
+        "SELECT value=1 FROM meta WHERE key='profile_kind'",
+        [],
+        |r| r.get(0),
+    )?;
+    let mapping:Option<String>=db.query_row("SELECT provider_label_id FROM google_category_labels WHERE account=?1 AND category_id=?2",params![account,category],|r|r.get(0)).optional()?;
+    if mapping
+        .as_ref()
+        .is_some_and(|label| crate::google_store::is_system_label(label))
+    {
+        return Ok("label_unmapped");
+    }
+    let deliver = live && mapping.is_some();
+    if deliver {
+        match validate_authoring(db, account) {
+            Err(e) if e.code == "capability_unavailable" || e.code == "not_found" => {
+                return Ok("permission_required")
+            }
+            Err(e) => return Err(e),
+            Ok(()) => (),
+        }
+    }
+    let remote:Option<String>=db.query_row("SELECT m.remote_id FROM messages m JOIN google_message_state g ON g.account=m.account AND g.message_id=m.id WHERE m.account=?1 AND m.id=?2 AND g.deleted=0",params![account,message],|r|r.get(0)).optional()?;
+    if deliver && remote.is_none() {
+        return Ok("source_unavailable");
+    }
+    let request = format!("assist-{}-{}", message, revision + 1);
+    db.execute(
+        "INSERT OR IGNORE INTO message_categories(account,message_id,category_id) VALUES(?1,?2,?3)",
+        params![account, message, category],
+    )?;
+    db.execute("INSERT INTO assist_category_intents(account,message_id,category_id,value,revision,request_id) VALUES(?1,?2,?3,1,?4,?5) ON CONFLICT(account,message_id,category_id) DO UPDATE SET value=1,revision=excluded.revision,request_id=excluded.request_id",params![account,message,category,revision+1,request])?;
+    db.execute(
+        "UPDATE messages SET revision=revision+1 WHERE account=?1 AND id=?2",
+        params![account, message],
+    )?;
+    if deliver {
+        let labels:String=db.query_row("SELECT provider_labels_json FROM google_message_state WHERE account=?1 AND message_id=?2",params![account,message],|r|r.get(0))?;
+        let labels: BTreeSet<String> = serde_json::from_str(&labels)?;
+        let categories = mapped_labels(db, account, &labels)?;
+        let desired = vec![DesiredField {
+            assisted: true,
+            provider_categories: Some(categories),
+            field: "category".into(),
+            key: category.into(),
+            value: true,
+            revision: revision + 1,
+            label: mapping.unwrap(),
+            present: true,
+        }];
+        use sha2::{Digest, Sha256};
+        let fingerprint = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&json!([
+                "assist_label_v1",
+                account,
+                message,
+                category,
+                revision
+            ]))?)
+        );
+        let receipt = json!({"kind":"assist_label","message_id":message,"category_id":category,"delivery":{"state":"pending","request_id":request}});
+        db.execute("INSERT INTO operations(account,request_id,fingerprint,result_json) VALUES(?1,?2,?3,?4)",params![account,request,fingerprint,serde_json::to_string(&receipt)?])?;
+        db.execute("INSERT INTO google_mail_mutations(account,request_id,message_id,remote_id,action,desired_json,state) VALUES(?1,?2,?3,?4,'modify',?5,'pending')",params![account,request,message,remote.unwrap(),serde_json::to_string(&desired)?])?;
+        Ok("pending")
+    } else {
+        Ok(if live { "local_only" } else { "applied" })
+    }
+}
+fn mapped_labels(
+    db: &Connection,
+    account: &str,
+    labels: &BTreeSet<String>,
+) -> Result<BTreeSet<String>> {
+    let mut stmt =
+        db.prepare("SELECT provider_label_id FROM google_category_labels WHERE account=?1")?;
+    let mapped = stmt
+        .query_map([account], |r| r.get::<_, String>(0))?
+        .collect::<std::result::Result<BTreeSet<_>, _>>()?;
+    Ok(labels.intersection(&mapped).cloned().collect())
+}
+
+/// Admit previously local label choices after an explicit label link/sync.
+pub(crate) fn enqueue_bound_categories(db: &Transaction<'_>, account: &str) -> Result<usize> {
+    validate_authoring(db, account)?;
+    let rows=db.prepare("WITH intents AS (
+        SELECT account,message_id,category_id,value,revision,0 AS assisted FROM google_manual_intents WHERE account=?1 AND field='category'
+        UNION ALL SELECT account,message_id,category_id,value,revision,1 FROM assist_category_intents WHERE account=?1
+        AND NOT EXISTS(SELECT 1 FROM local_model_label_overrides o WHERE o.account=assist_category_intents.account AND o.message_id=assist_category_intents.message_id)
+    ) SELECT i.message_id,i.category_id,i.value,i.revision,i.assisted,m.remote_id,g.provider_labels_json,c.provider_label_id
+    FROM intents i JOIN messages m ON m.account=i.account AND m.id=i.message_id
+    JOIN google_message_state g ON g.account=i.account AND g.message_id=i.message_id AND g.deleted=0
+    JOIN google_category_labels c ON c.account=i.account AND c.category_id=i.category_id
+    WHERE NOT EXISTS(SELECT 1 FROM google_mail_mutations j,json_each(j.desired_json) d WHERE j.account=i.account AND j.message_id=i.message_id AND json_extract(d.value,'$.field')='category' AND json_extract(d.value,'$.key')=i.category_id AND json_extract(d.value,'$.revision')=i.revision AND json_extract(d.value,'$.label')=c.provider_label_id AND COALESCE(json_extract(d.value,'$.assisted'),0)=i.assisted)
+    ORDER BY i.message_id,i.category_id LIMIT 64")?.query_map([account],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,bool>(2)?,r.get::<_,i64>(3)?,r.get::<_,bool>(4)?,r.get::<_,String>(5)?,r.get::<_,String>(6)?,r.get::<_,String>(7)?)))?.collect::<rusqlite::Result<Vec<_>>>()?;
+    for (message, category, value, revision, assisted, remote, labels, label) in &rows {
+        if crate::google_store::is_system_label(label) {
+            return Err(err(
+                "invalid_request",
+                "Category requires a Google user label",
+            ));
+        }
+        let desired = vec![DesiredField {
+            assisted: *assisted,
+            provider_categories: if *assisted {
+                Some(mapped_labels(db, account, &serde_json::from_str(labels)?)?)
+            } else {
+                None
+            },
+            field: "category".into(),
+            key: category.clone(),
+            value: *value,
+            revision: *revision,
+            label: label.clone(),
+            present: *value,
+        }];
+        use sha2::{Digest, Sha256};
+        let fingerprint = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&json!([
+                "linked_category_v1",
+                account,
+                message,
+                category,
+                value,
+                revision,
+                assisted,
+                label
+            ]))?)
+        );
+        let request = format!("label-link-{fingerprint}");
+        let receipt = json!({"kind":"linked_category","message_id":message,"category_id":category,"assisted":assisted,"delivery":{"state":"pending","request_id":request}});
+        db.execute("INSERT OR IGNORE INTO operations(account,request_id,fingerprint,result_json) VALUES(?1,?2,?3,?4)",params![account,request,fingerprint,serde_json::to_string(&receipt)?])?;
+        db.execute("INSERT OR IGNORE INTO google_mail_mutations(account,request_id,message_id,remote_id,action,desired_json,state) VALUES(?1,?2,?3,?4,'modify',?5,'pending')",params![account,request,message,remote,serde_json::to_string(&desired)?])?;
+    }
+    Ok(rows.len())
 }
 fn validate_authoring(db: &Connection, account: &str) -> Result<()> {
     let scopes: Option<String> = db
@@ -273,7 +450,26 @@ impl Store {
         }
         let mut active = Vec::new();
         for desired in &work.desired {
-            let current:Option<(bool,i64)>=tx.query_row("SELECT value,revision FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field=?3 AND category_id=?4",params![work.account,work.message_id,desired.field,desired.key],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+            let current: Option<(bool, i64)> = if desired.assisted {
+                let blocked:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM local_model_label_overrides WHERE account=?1 AND message_id=?2) OR EXISTS(SELECT 1 FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field='category')",params![work.account,work.message_id],|r|r.get(0))?;
+                let provider_changed = work.attempt == 0
+                    && !observed.labels.contains(&desired.label)
+                    && desired
+                        .provider_categories
+                        .as_ref()
+                        .is_some_and(|baseline| {
+                            mapped_labels(&tx, &work.account, &observed.labels)
+                                .is_ok_and(|current| &current != baseline)
+                        });
+                if blocked || provider_changed {
+                    tx.execute("DELETE FROM assist_category_intents WHERE account=?1 AND message_id=?2 AND category_id=?3",params![work.account,work.message_id,desired.key])?;
+                    None
+                } else {
+                    tx.query_row("SELECT value,revision FROM assist_category_intents WHERE account=?1 AND message_id=?2 AND category_id=?3",params![work.account,work.message_id,desired.key],|r|Ok((r.get(0)?,r.get(1)?))).optional()?
+                }
+            } else {
+                tx.query_row("SELECT value,revision FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field=?3 AND category_id=?4",params![work.account,work.message_id,desired.field,desired.key],|r|Ok((r.get(0)?,r.get(1)?))).optional()?
+            };
             if current != Some((desired.value, desired.revision)) {
                 continue;
             }
@@ -291,7 +487,11 @@ impl Store {
         let mut remaining = Vec::new();
         for desired in active {
             if observed.labels.contains(&desired.label) == desired.present {
-                tx.execute("DELETE FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field=?3 AND category_id=?4 AND value=?5 AND revision=?6",params![work.account,work.message_id,desired.field,desired.key,desired.value,desired.revision])?;
+                if desired.assisted {
+                    tx.execute("DELETE FROM assist_category_intents WHERE account=?1 AND message_id=?2 AND category_id=?3 AND revision=?4",params![work.account,work.message_id,desired.key,desired.revision])?;
+                } else {
+                    tx.execute("DELETE FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field=?3 AND category_id=?4 AND value=?5 AND revision=?6",params![work.account,work.message_id,desired.field,desired.key,desired.value,desired.revision])?;
+                }
             } else {
                 remaining.push(desired);
             }

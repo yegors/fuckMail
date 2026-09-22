@@ -56,6 +56,32 @@ struct Editor {
 int main(int argc, char **argv) {
     QGuiApplication app(argc, argv);
     QQmlEngine engine;
+    auto content=[](const QVariantList &rows,bool topOnly) {
+        QString text; for(const auto &value:rows){const auto row=value.toMap();if(row.value("quote").toBool() || (topOnly && !row.value("parents").toList().isEmpty()))continue;QTextDocument doc;doc.setHtml(row.value("html").toString());text+=doc.toPlainText()+"\n";} return text;
+    };
+    auto nested=ReplyDocument::receivedBody({},"New reply\n\nOn Tuesday, Alex <alex@example.test> wrote:\n> Earlier answer\n>> Oldest answer\n> Still earlier\n");
+    require(content(nested,true).trimmed()=="New reply","plain reply history is collapsed by default");
+    require(content(nested,false).contains("Oldest answer") && content(nested,false).contains("Still earlier"),"all nested content is retained");
+    int controls=0; for(const auto &row:nested)controls+=row.toMap().value("quote").toBool();
+    require(controls==2,"attribution and quote prefix share one level; nested replies have independent controls");
+    auto rich=ReplyDocument::receivedBody("<p><b>New reply</b></p><div class='gmail_quote'><p>Prior reply</p><blockquote><p>Oldest reply</p></blockquote></div><p>Inline new answer</p>",{});
+    require(content(rich,true).contains("Inline new answer") && !content(rich,true).contains("Prior reply"),"HTML quoted container collapses without hiding interleaved new text");
+    require(content(rich,false).contains("Oldest reply") && rich.first().toMap().value("html").toString().contains("<b>"),"HTML nesting and current message formatting survive");
+    auto gmail=ReplyDocument::receivedBody("<p>New</p><div class='gmail_quote'><div class='gmail_attr'>On Tuesday, Alex &lt;alex@example.test&gt; wrote:</div><blockquote>Earlier<blockquote>Oldest</blockquote></blockquote></div>",{});
+    controls=0;for(const auto &row:gmail)controls+=row.toMap().value("quote").toBool();
+    require(controls==2 && content(gmail,false).contains("Oldest"),"Gmail attribution wrapper does not add a redundant disclosure level");
+    const auto links=ReplyDocument::receivedBody({},"Current https://example.test/current\n> History https://example.test/history");
+    require(links.first().toMap().value("html").toString().contains("href=\"https://example.test/current\"") && !content(links,true).contains("/history"),"plain links remain clickable and historical links stay inside their quote");
+    auto outlook=ReplyDocument::receivedBody({},"My answer\n\nFrom: Alex <alex@example.test>\nTo: Sam <sam@example.test>\nDate: Tuesday\nSubject: Review\n\nOld reply\n\nFrom: Sam <sam@example.test>\nTo: Alex <alex@example.test>\nSent: Monday\nSubject: Review\n\nOldest reply");
+    require(content(outlook,true).trimmed()=="My answer" && content(outlook,false).contains("Oldest reply"),"structured Outlook headers collapse recursively");
+    require(content(ReplyDocument::receivedBody({},"From: a business perspective\nThis remains visible."),true).contains("This remains visible"),"ordinary prose is not hidden by a lone From line");
+    auto inlineReply=ReplyDocument::receivedBody({},"> Earlier question\nNew inline answer\n> Another question\nAnother new answer");
+    require(content(inlineReply,true).contains("New inline answer") && content(inlineReply,true).contains("Another new answer"),"inline new answers remain visible between quoted blocks");
+    auto compact=ReplyDocument::limitedHtml("<p>One</p><p>&nbsp;</p><p><br></p><p>Two</p>",true);
+    require(!compact.contains("&nbsp;") && compact.count("margin-bottom:7px")==2,"received paragraphs use compact controlled gaps without empty spacer blocks");
+    QString deep="Deepest retained"; for(int i=0;i<70;++i)deep="<blockquote>"+deep+"</blockquote>";
+    const auto bounded=ReplyDocument::receivedBody(deep,{});
+    require(bounded.size()<=65 && content(bounded,false).contains("Deepest retained"),"deep nesting is bounded without losing access to text");
     Editor authored(engine);
     const auto text = QString::fromUtf8("Hello Zoë,\nMontréal — 東京 👋\nLiteral  <angle> & plain entities.\n");
     int changes = 0;
@@ -160,6 +186,9 @@ int main(int argc, char **argv) {
     require(limited.contains("https://example.test/meeting"), "An explicit ordinary link survives without extra attributes");
 
     const auto rejectedLink = ReplyDocument::limitedHtml("<p><a href=\"file:///local/example.txt\">label</a></p>");
+    const auto received = ReplyDocument::limitedHtml("<table><tr><td><b>Flight</b></td></tr></table><img src=\"https://images.example.test/logo\" alt=\"Logo\"><p style=\"background-image:url(https://images.example.test/bg)\">Details</p>", true);
+    require(received.contains("<table>") && received.contains("<b>Flight</b>") && received.contains("[Logo]"), "received formatting retains content and image descriptions");
+    require(!received.contains("<img") && !received.contains("images.example.test") && !received.contains("background-image"), "received formatting excludes resource loads");
     require(!rejectedLink.contains("href="), "Unsupported link schemes are absent from the saved formatting");
     reopened.reply.load("Authoritative words", "<p>Different stale words</p>");
     require(reopened.reply.plainText() == "Authoritative words", "A stale HTML alternative cannot replace authoritative authored text");

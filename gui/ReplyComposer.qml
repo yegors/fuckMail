@@ -10,12 +10,12 @@ Rectangle {
     property bool signatureOpen: false
     property bool ccOpen: false
     property bool bccOpen: false
-    readonly property bool popupOpen: sourceActions.opened || sourceActionDialog.opened || deleteAbandonDialog.opened || sourceHistory.opened || discardDialog.opened || reloadDialog.opened || conflictDialog.opened || googleDraftDialog.opened || attachmentMenu.opened || contextMenu.opened || localAttachmentDialog.visible
+    readonly property bool popupOpen: fromMenu.opened || toField.popupOpen || ccField.popupOpen || bccField.popupOpen || sourceActions.opened || sourceActionDialog.opened || deleteAbandonDialog.opened || sourceHistory.opened || discardDialog.opened || reloadDialog.opened || conflictDialog.opened || googleDraftDialog.opened || attachmentMenu.opened || contextMenu.opened || localAttachmentDialog.visible
     readonly property string mode: backend.draft.mode || "reply"
     readonly property bool snapshotReadOnly: backend.draftReadOnly
     readonly property bool readOnly: snapshotReadOnly || backend.accountArchived || backend.unsavedAccountBuffer
     property string snapshotContext: backend.account + "/" + backend.activeDraftId + "/" + ((backend.draft.remote_source || {}).source_revision || 0)
-    onSnapshotContextChanged: { sourceHistory.close(); sourceActions.close(); sourceActionDialog.close(); deleteAbandonDialog.close() }
+    onSnapshotContextChanged: { fromMenu.close(); sourceHistory.close(); sourceActions.close(); sourceActionDialog.close(); deleteAbandonDialog.close() }
     function confirmSourceAction(action) {
         const context = backend.draftSourceActionContext(action)
         if (!context.request_id) return
@@ -24,7 +24,7 @@ Rectangle {
         sourceActionDialog.open()
     }
     function inspectDeletion(requestId) { sourceHistory.close(); backend.loadDraftDeletion(requestId) }
-    readonly property string draftTitle: backend.unsavedAccountBuffer ? "Retained unsaved edits" : backend.accountArchived ? "Archived draft" : snapshotReadOnly ? "Google draft preview" : ({new:"New message",reply:"Reply",reply_all:"Reply all",forward:"Forward"})[mode] || "Reply"
+    readonly property string draftTitle: backend.unsavedAccountBuffer ? "Retained unsaved edits" : backend.accountArchived ? "Archived draft" : backend.draft.transferred ? "Moved draft" : snapshotReadOnly ? "Google draft preview" : ({new:"New message",reply:"Reply",reply_all:"Reply all",forward:"Forward"})[mode] || "Reply"
     readonly property bool hasSelection: bodyEditor.selectionEnd > bodyEditor.selectionStart
     readonly property var attachmentIds: backend.draft.attachment_ids || []
     readonly property var availableAttachments: {
@@ -68,7 +68,15 @@ Rectangle {
     function attachmentSize(bytes) {
         return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + " MB" : bytes >= 1024 ? Math.ceil(bytes / 1024) + " KB" : bytes + " B"
     }
-    function confirmDiscard() { if (!backend.draftLocked && !backend.attachmentImport.pending) discardDialog.open() }
+    function confirmDiscard() {
+        if (backend.draftLocked || backend.draftBusy || backend.attachmentImport.pending) return
+        const draft = backend.draft
+        const hasContent = (draft.subject || "").trim().length || (draft.body || "").trim().length
+            || (draft.to_recipients || []).length || (draft.cc_recipients || []).length || (draft.bcc_recipients || []).length
+            || (draft.attachment_ids || []).length || Object.keys(backend.recipientInputs).length
+        discardDialog.capturedContext = backend.draftDiscardContext()
+        if (hasContent) discardDialog.open(); else backend.discardDraft(discardDialog.capturedContext)
+    }
     function syncDraft() {
         loading = true
         document.setIdentity(backend.account + "/" + (backend.activeDraftId || backend.selectedId))
@@ -78,7 +86,30 @@ Rectangle {
     }
     color: "transparent"
     implicitHeight: contents.implicitHeight
-    Rectangle { width: 2; height: parent.height; color: Theme.accentAlpha(0.55) }
+    Rectangle { width: 2; height: parent.height; color: fileDrop.containsDrag ? Theme.accent : Theme.accentAlpha(0.55) }
+    DropArea {
+        id: fileDrop; objectName: "draftFileDrop"
+        anchors.fill: parent; z: 100
+        property string targetAccount: ""
+        property string targetDraft: ""
+        enabled: !root.readOnly && !backend.draftLocked && backend.connected && !backend.attachmentImport.pending
+        onEntered: drag => {
+            drag.accepted = drag.hasUrls && drag.urls.length > 0
+            targetAccount = backend.account
+            targetDraft = backend.draft.draft_id || ""
+        }
+        onDropped: drop => {
+            if (!drop.hasUrls || targetAccount !== backend.account || targetDraft !== (backend.draft.draft_id || "")) { drop.accepted = false; return }
+            backend.importDraftAttachments(drop.urls, targetAccount, targetDraft)
+            drop.action = Qt.CopyAction
+            drop.accepted = true
+        }
+        Rectangle {
+            anchors.fill: parent; visible: fileDrop.containsDrag
+            color: Theme.surface; opacity: 0.96; border.width: 1; border.color: Theme.accent; radius: 8
+            Text { anchors.centerIn: parent; text: "Drop files to attach"; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(16) }
+        }
+    }
     Component.onCompleted: syncDraft()
     Connections {
         target: backend
@@ -105,7 +136,7 @@ Rectangle {
             Item { Layout.fillWidth: true }
             RowLayout {
                 spacing: 6
-                FmButton { objectName: "discardReply"; visible: !root.readOnly; iconName: "trash"; iconSize: 12; implicitWidth: 26; implicitHeight: 26; leftPadding: 0; rightPadding: 0; outlined: true; foreground: !enabled ? Theme.subtle : hovered ? Theme.error : Theme.inkAlpha(.6); tip: "Discard this draft"; enabled: !backend.draftLocked && !backend.attachmentImport.pending; onClicked: discardDialog.open() }
+                FmButton { objectName: "discardReply"; visible: !root.readOnly; iconName: "trash"; iconSize: 12; implicitWidth: 26; implicitHeight: 26; leftPadding: 0; rightPadding: 0; outlined: true; foreground: !enabled ? Theme.subtle : hovered ? Theme.error : Theme.inkAlpha(.6); tip: "Discard this draft"; enabled: !backend.draftLocked && !backend.draftBusy && !backend.attachmentImport.pending; onClicked: root.confirmDiscard() }
                 FmButton { objectName: "collapseReply"; iconName: "minus"; iconSize: 12; implicitWidth: 26; implicitHeight: 26; leftPadding: 0; rightPadding: 0; outlined: true; foreground: hovered ? Theme.text : Theme.inkAlpha(.6); tip: "Minimise — keeps the draft, Esc"; onClicked: { if (backend.accountNavigationAllowed()) { backend.saveDraft(); root.dismissed() } } }
             }
         }
@@ -121,7 +152,7 @@ Rectangle {
             Layout.fillWidth: true; Layout.bottomMargin: 12; spacing: 8
             Text {
                 objectName: "draftSnapshotNotice"
-                visible: root.snapshotReadOnly
+                visible: root.snapshotReadOnly && !backend.draft.transferred
                 Layout.fillWidth: true
                 text: ((backend.draft.remote_source || {}).source_state === "available" ? "Read-only preview · saved source " : "Earlier cached preview · latest source ") + ((backend.draft.remote_source || {}).source_revision || 0)
                     + " · " + ((backend.draft.remote_source || {}).source_state || "unavailable")
@@ -134,6 +165,7 @@ Rectangle {
             }
             ScrollView {
                 id: snapshotHeaderScroll
+                visible: !backend.draft.transferred
                 Layout.fillWidth: true; Layout.preferredHeight: Math.min(200, snapshotHeaders.implicitHeight)
                 contentWidth: availableWidth; clip: true
                 ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
@@ -159,7 +191,7 @@ Rectangle {
                 }
             }
             RowLayout {
-                visible: root.snapshotReadOnly
+                visible: root.snapshotReadOnly && !backend.draft.transferred
                 Layout.fillWidth: true; spacing: 8
                 FmButton { objectName: "draftSourceHistoryButton"; text: "Saved sources"; outlined: true; onClicked: { backend.loadDraftSources(); sourceHistory.open() } }
                 FmButton { objectName: "draftSourceActionsButton"; text: "Actions"; visible: !backend.accountArchived && !backend.unsavedAccountBuffer; outlined: true; onClicked: { backend.loadDraftAuthoring(); sourceActions.open() } }
@@ -190,12 +222,64 @@ Rectangle {
             visible: !root.readOnly
             Layout.fillWidth: true; Layout.preferredHeight: 38; spacing: 10
             Text { text: "From"; Layout.preferredWidth: 44; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
-            Text { text: (backend.draft.from_name || backend.currentAccount.name || "")+" · "+(backend.draft.from || ""); color: Theme.text; textFormat: Text.PlainText; elide: Text.ElideRight; Layout.fillWidth: true; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
+            Button {
+                id: fromButton; objectName: "draftFromAccount"
+                Layout.fillWidth: true; Layout.maximumWidth: contentItem.implicitWidth + 20
+                implicitHeight: 30; leftPadding: 8; rightPadding: 8
+                enabled: backend.draftTransfer.can_change && backend.accounts.length > 1
+                Accessible.name: "From account, " + (backend.draft.from || "")
+                onClicked: fromMenu.open()
+                background: Rectangle { color: fromButton.hovered || fromButton.down ? Theme.hover : "transparent"; radius: 4; border.color: fromButton.activeFocus ? Theme.accent : "transparent" }
+                contentItem: RowLayout {
+                    spacing: 8
+                    Text { Layout.fillWidth: true; text: (backend.draft.from_name || backend.currentAccount.name || "")+" · "+(backend.draft.from || ""); color: fromButton.enabled ? Theme.text : Theme.subtle; textFormat: Text.PlainText; elide: Text.ElideRight; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
+                    FmIcon { name: "chevronDown"; size: 12; color: Theme.subtle; visible: backend.accounts.length > 1 }
+                }
+                Menu {
+                    id: fromMenu; objectName: "draftFromMenu"; y: fromButton.height
+                    padding: 5
+                    background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
+                    width: Math.min(420, root.width - 30)
+                    Instantiator {
+                        model: backend.accounts
+                        delegate: MenuItem {
+                            id: fromOption
+                            required property var modelData
+                            implicitHeight: 36; leftPadding: 8; rightPadding: 8
+                            text: (modelData.name || modelData.email || "") + (modelData.email ? " · " + modelData.email : "")
+                            checkable: true; checked: modelData.id === backend.account
+                            indicator: null
+                            background: Rectangle { color: fromOption.highlighted || fromOption.hovered ? Theme.hover : "transparent"; radius: 4 }
+                            contentItem: RowLayout {
+                                spacing: 8
+                                FmIcon { name: "check"; size: 14; color: Theme.text; opacity: fromOption.checked ? 1 : 0 }
+                                Text { Layout.fillWidth: true; text: fromOption.text; textFormat: Text.PlainText; elide: Text.ElideRight; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
+                            }
+                            onTriggered: backend.changeDraftAccount(modelData.id)
+                        }
+                        onObjectAdded: (index, object) => fromMenu.insertItem(index, object)
+                        onObjectRemoved: (index, object) => fromMenu.removeItem(object)
+                    }
+                }
+            }
+            Item { Layout.fillWidth: true }
+
         }
         Item { Layout.fillWidth: true; implicitHeight: 1; Rectangle { y: Theme.snapY(parent, 0); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
-        RecipientField { visible: !root.readOnly; Layout.fillWidth: true; label: "To"; fieldName: "to_recipients"; showLinks: true; onCcRequested: root.ccOpen=true; onBccRequested: root.bccOpen=true }
-        RecipientField { Layout.fillWidth: true; label: "Cc"; fieldName: "cc_recipients"; visible: !root.readOnly && (root.ccOpen || (backend.draft.cc_recipients||[]).length>0) }
-        RecipientField { Layout.fillWidth: true; label: "Bcc"; fieldName: "bcc_recipients"; visible: !root.readOnly && (root.bccOpen || (backend.draft.bcc_recipients||[]).length>0) }
+        ColumnLayout {
+            Layout.fillWidth: true; spacing: 6
+            visible: (backend.draftTransfer.status || "").length > 0
+            Text { objectName: "draftTransferStatus"; Layout.fillWidth: true; text: backend.draftTransfer.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Flow {
+                Layout.fillWidth: true; spacing: 8
+                FmButton { objectName: "retryDraftTransfer"; text: "Check account change"; visible: backend.draftTransfer.retry; enabled: !backend.draftTransfer.busy; onClicked: backend.retryDraftTransfer() }
+                FmButton { objectName: "retryDraftTransferCleanup"; text: "Retry account change"; visible: backend.draftTransfer.cleanup_retry; enabled: !backend.draftTransfer.busy; onClicked: backend.retryDraftTransferCleanup() }
+                FmButton { objectName: "openDraftTransferDestination"; text: "Open moved draft"; visible: backend.draftTransfer.transferred; onClicked: backend.openDraftTransferDestination() }
+            }
+        }
+        RecipientField { id: toField; visible: !root.readOnly; Layout.fillWidth: true; label: "To"; fieldName: "to_recipients"; showLinks: true; onCcRequested: root.ccOpen=true; onBccRequested: root.bccOpen=true }
+        RecipientField { id: ccField; Layout.fillWidth: true; label: "Cc"; fieldName: "cc_recipients"; visible: !root.readOnly && (root.ccOpen || (backend.draft.cc_recipients||[]).length>0 || (backend.recipientInputs.cc_recipients||"").length>0) }
+        RecipientField { id: bccField; Layout.fillWidth: true; label: "Bcc"; fieldName: "bcc_recipients"; visible: !root.readOnly && (root.bccOpen || (backend.draft.bcc_recipients||[]).length>0 || (backend.recipientInputs.bcc_recipients||"").length>0) }
         RowLayout {
             Layout.fillWidth: true; Layout.preferredHeight: 38; spacing: 10
             Text { text: "Subject"; Layout.preferredWidth: 44; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
@@ -336,12 +420,12 @@ Rectangle {
             FmButton {
                 objectName: "captureReply"
                 visible: !root.readOnly
-                text: backend.syntheticProfile ? "Capture locally" : "Send"
+                text: backend.syntheticProfile ? "Capture locally" : backend.googleSend.busy ? "Sending…" : "Send"
                 prominent: true
                 leftPadding: 16; rightPadding: 16
                 font.pixelSize: Theme.fontSize(13)
                 enabled: backend.syntheticProfile ? !backend.draftLocked && !backend.attachmentImport.pending && (document.plainText.trim().length > 0 || root.attachmentIds.length > 0) : backend.googleSend.can_send || false
-                tip: backend.syntheticProfile ? "Record an outgoing MIME copy on this machine; no email is delivered" : "Save and submit this version through Google. Sending newer edits after an accepted version creates another email."
+                tip: backend.syntheticProfile ? "Record an outgoing MIME copy on this machine; no email is delivered" : "Save and send through Google."
                 onClicked: { if (backend.syntheticProfile) backend.captureDraft(); else backend.sendGoogleDraft() }
             }
             FmButton { objectName: "draftAttachButton"; visible: !root.readOnly; text: "Attach"; iconName: "attachment"; outlined: true; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pixelSize: Theme.fontSize(13); tip: "Attach a local file or a retained conversation file"; enabled: backend.connected && !backend.draftBusy && !backend.attachmentImportBusy; onClicked: attachmentMenu.popup() }
@@ -359,20 +443,31 @@ Rectangle {
             visible: !root.readOnly && (backend.attachmentImport.status || "").length > 0
             Layout.fillWidth: true; spacing: 8
             Text { objectName: "draftAttachmentStatus"; Layout.fillWidth: true; text: backend.attachmentImport.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.attachmentImport.retry ? Theme.warn : text.indexOf("Not attached") === 0 ? Theme.error : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
-            FmButton { objectName: "retryDraftAttachment"; visible: backend.attachmentImport.retry || false; text: "Retry attachment"; outlined: true; enabled: backend.connected && !backend.attachmentImportBusy && !backend.draftBusy; onClicked: { backend.clearError(); backend.retryDraftAttachment() } }
+            FmButton { objectName: "retryDraftAttachment"; visible: backend.attachmentImport.retry || backend.attachmentImport.can_resume || false; text: backend.attachmentImport.retry ? "Retry attachment" : "Continue"; outlined: true; enabled: backend.connected && !backend.attachmentImportBusy && !backend.draftBusy; onClicked: { backend.clearError(); backend.retryDraftAttachment() } }
+            FmButton { objectName: "skipQueuedAttachments"; visible: (backend.attachmentImport.queued || 0) > 0; text: "Skip remaining"; onClicked: backend.skipQueuedDraftAttachments() }
         }
         ColumnLayout {
             visible: backend.googleSend.visible || false
             Layout.fillWidth: true; Layout.topMargin: visible ? 8 : 0; spacing: 6
             Text { objectName: "googleSendStatus"; Layout.fillWidth: true; text: backend.googleSend.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.googleSend.warning ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
-            Text { visible: (backend.googleSend.request_id || "").length > 0; text: "Request " + (backend.googleSend.request_id || ""); textFormat: Text.PlainText; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11); Layout.fillWidth: true; wrapMode: Text.Wrap }
             Flow {
                 Layout.fillWidth: true; spacing: 6
+                FmButton { objectName: "resumeSyncToSend"; text: "Resume sync"; outlined: true; visible: backend.googleSend.can_resume_sync || false; onClicked: backend.startGoogleSync(backend.account, {}) }
                 FmButton { objectName: "checkGoogleSend"; text: backend.googleSend.check_label || "Check status"; outlined: true; visible: backend.googleSend.can_check || false; onClicked: backend.checkGoogleSend() }
                 FmButton { objectName: "showCurrentGoogleSend"; text: "View current send"; visible: backend.googleSend.can_select_current || false; onClicked: backend.showCurrentGoogleSend() }
                 FmButton { objectName: "resumeGoogleSend"; text: backend.googleSend.resume_label || "Send prepared version"; visible: backend.googleSend.can_resume || false; onClicked: backend.resumeGoogleSend() }
                 FmButton { objectName: "abandonGoogleSend"; text: "Abandon prepared send"; visible: backend.googleSend.can_abandon || false; onClicked: backend.abandonGoogleSend() }
                 FmButton { objectName: "cancelGoogleSend"; text: "Cancel"; visible: backend.googleSend.can_cancel || false; onClicked: backend.cancelGoogleSend() }
+            }
+        }
+        ColumnLayout {
+            visible: backend.draftDiscard.visible || false
+            Layout.fillWidth: true; spacing: 6
+            Text { Layout.fillWidth: true; text: backend.draftDiscard.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.warn; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            RowLayout {
+                spacing: 6
+                FmButton { objectName: "checkDraftDiscard"; text: "Check discard"; visible: backend.draftDiscard.can_check || false; onClicked: backend.checkDraftDiscard() }
+                FmButton { objectName: "retryDraftDiscard"; text: backend.draftDiscard.retry_label || "Retry discard"; visible: backend.draftDiscard.can_retry || false; onClicked: backend.retryDraftDiscard() }
             }
         }
         ColumnLayout {
@@ -453,55 +548,27 @@ Rectangle {
             Text { Layout.fillWidth: true; visible: (backend.draftAuthoring.status || "").length > 0; text: backend.draftAuthoring.status || ""; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
         }
     }
-    Dialog {
-        id: sourceActionDialog
-        objectName: "draftSourceActionDialog"
+    FmConfirmDialog {
+        id: sourceActionDialog; objectName: "draftSourceActionDialog"
+        titleObjectName: "draftSourceActionTitle"; messageObjectName: "draftSourceActionDisclosure"
         property var capturedContext: ({})
-        parent: Overlay.overlay; anchors.centerIn: parent; modal: true
-        width: Math.min(500, parent ? parent.width - 32 : 500)
-        title: capturedContext.action === "copy" ? "Create a separate plain-text copy?" : capturedContext.action === "adopt" ? "Edit this Google draft?" : "Delete this Google draft permanently?"
-        header: Label { objectName: "draftSourceActionTitle"; text: sourceActionDialog.title; padding: 12; wrapMode: Text.Wrap; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(15); font.weight: Font.DemiBold }
-        contentItem: ColumnLayout {
-            property bool blocksWorkspaceShortcuts: true
-            spacing: 12
-            Text { Layout.fillWidth: true; text: (sourceActionDialog.capturedContext.subject || "(No subject)") + "\nAccount: " + ((sourceActionDialog.capturedContext.primary_from || {}).email || "") + " · saved source " + (sourceActionDialog.capturedContext.source_revision || ""); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
-            Text {
-                objectName: "draftSourceActionDisclosure"
-                Layout.fillWidth: true
-                text: sourceActionDialog.capturedContext.action === "copy"
-                    ? "Create a separate draft with all validated original To, Cc and Bcc recipients, full extracted text and every verified file.\n\nFrom: " + (sourceActionDialog.capturedContext.original_from || "(not representable)") + "\nCopy From: " + ((sourceActionDialog.capturedContext.primary_from || {}).email || "") + "\n\nHTML presentation is omitted. Inline files become ordinary attachments. Reply-thread linkage is omitted and no signature is added. The copy uses normal automatic draft sync while this account's sync is running. The original source remains unchanged. This does not send mail."
-                    : sourceActionDialog.capturedContext.action === "adopt"
-                    ? "Open one editable draft for this exact Google draft after checking the latest source. The original source and files remain retained. Opening alone does not upload; your first actual edit enters normal draft sync. Another client can change Google between the check and a later update; a detected change requires an explicit conflict decision."
-                    : "Permanently remove this draft from Google after checking this exact observed version. This is separate from local Discard. Original saved sources and the operation receipt remain available here. Another client can change Google between the check and deletion. A lost response stays uncertain and is never retried automatically."
-                textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13)
-            }
-            RowLayout {
-                Layout.fillWidth: true
-                Item { Layout.fillWidth: true }
-                FmButton { objectName: "cancelDraftSourceAction"; text: "Cancel"; onClicked: sourceActionDialog.close() }
-                FmButton { objectName: "confirmDraftSourceAction"; text: sourceActionDialog.capturedContext.action === "copy" ? "Create copy" : sourceActionDialog.capturedContext.action === "adopt" ? "Open editor" : "Delete permanently"; prominent: true; onClicked: { const context = sourceActionDialog.capturedContext; sourceActionDialog.close(); backend.confirmDraftSourceAction(context) } }
-            }
-        }
+        title: capturedContext.action === "copy" ? "Create a plain-text copy?" : capturedContext.action === "adopt" ? "Edit this Google draft?" : "Delete this draft permanently?"
+        message: (capturedContext.subject || "(No subject)") + "\n" + ((capturedContext.primary_from || {}).email || "") + "\n\n" + (capturedContext.action === "copy"
+            ? "Keep the original recipients, extracted text and verified files in a separate draft. HTML layout and reply-thread linkage are omitted; no signature is added. Your account's normal draft sync applies."
+            : capturedContext.action === "adopt" ? "Check the latest Google version and open it for editing. Opening alone does not upload. Your first edit uses normal draft sync; a detected conflict needs your review."
+            : "Permanently delete this exact Google draft after checking its current version. Saved sources and the operation receipt remain available. An uncertain result will need review before any retry.")
+        destructive: capturedContext.action === "delete"
+        actionText: capturedContext.action === "copy" ? "Create copy" : capturedContext.action === "adopt" ? "Open editor" : "Delete permanently"
+        actionObjectName: "confirmDraftSourceAction"; cancelObjectName: "cancelDraftSourceAction"
+        onAccepted: backend.confirmDraftSourceAction(capturedContext)
     }
-    Dialog {
-        id: deleteAbandonDialog
-        objectName: "draftDeletionAbandonDialog"
+    FmConfirmDialog {
+        id: deleteAbandonDialog; objectName: "draftDeletionAbandonDialog"
         property var capturedContext: ({})
-        parent: Overlay.overlay; anchors.centerIn: parent; modal: true
-        width: Math.min(480, parent ? parent.width - 32 : 480)
-        title: "Abandon this prepared deletion?"
-        header: Label { text: deleteAbandonDialog.title; padding: 12; wrapMode: Text.Wrap; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(15); font.weight: Font.DemiBold }
-        contentItem: ColumnLayout {
-            property bool blocksWorkspaceShortcuts: true
-            spacing: 12
-            Text { Layout.fillWidth: true; text: "This is available only while the exact saved request is proven not dispatched. The Google draft and retained source stay unchanged."; wrapMode: Text.Wrap; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
-            RowLayout {
-                Layout.fillWidth: true
-                Item { Layout.fillWidth: true }
-                FmButton { text: "Cancel"; onClicked: deleteAbandonDialog.close() }
-                FmButton { objectName: "confirmAbandonDraftDeletion"; text: "Abandon deletion"; onClicked: { const context = deleteAbandonDialog.capturedContext; deleteAbandonDialog.close(); backend.abandonDraftDeletion(context) } }
-            }
-        }
+        title: "Abandon this deletion?"
+        message: "Stop this prepared deletion before it is sent to Google. The Google draft and saved source stay available."
+        actionText: "Abandon deletion"; actionObjectName: "confirmAbandonDraftDeletion"
+        onAccepted: backend.abandonDraftDeletion(capturedContext)
     }
     Popup {
         id: sourceHistory
@@ -587,7 +654,7 @@ Rectangle {
     Menu {
         id: attachmentMenu
         objectName: "draftAttachmentMenu"
-        MenuItem { objectName: "draftAttachLocalFile"; text: "Choose a local file…"; enabled: !root.readOnly && !backend.attachmentImportBusy; onTriggered: root.chooseLocalAttachment() }
+        MenuItem { objectName: "draftAttachLocalFile"; text: "Choose files…"; enabled: !root.readOnly && !backend.attachmentImport.pending; onTriggered: root.chooseLocalAttachment() }
         MenuSeparator { visible: root.availableAttachments.length > 0 }
         Repeater {
             model: root.availableAttachments
@@ -605,65 +672,40 @@ Rectangle {
         objectName: "draftAttachmentFileDialog"
         property string targetAccount: ""
         property string targetDraft: ""
-        title: "Attach a file"
-        fileMode: FileDialog.OpenFile
-        onAccepted: backend.importDraftAttachment(selectedFile, targetAccount, targetDraft)
+        title: "Attach files"
+        fileMode: FileDialog.OpenFiles
+        onAccepted: backend.importDraftAttachments(selectedFiles, targetAccount, targetDraft)
     }
-    Dialog {
-        id: discardDialog
-        implicitWidth: 480
-        parent: Overlay.overlay
-        anchors.centerIn: parent
+    FmConfirmDialog {
+        id: discardDialog; objectName: "discardDraftDialog"
+        property var capturedContext: ({})
         title: "Discard this draft?"
-        modal: true
-        standardButtons: Dialog.Discard | Dialog.Cancel
-        contentItem: Label { property bool blocksWorkspaceShortcuts: true; text: "The saved body, signature and selected attachments will be cleared.\nReceived mail and local capture history stay available."; wrapMode: Text.WordWrap }
-        onDiscarded: backend.discardDraft()
+        message: "This draft will be discarded. You can undo for a few seconds afterwards."
+        actionText: "Discard"; destructive: true
+        actionObjectName: "confirmDiscardDraft"
+        onAccepted: backend.discardDraft(capturedContext)
     }
-    Dialog {
+    FmConfirmDialog {
         id: reloadDialog
-        implicitWidth: 480
-        parent: Overlay.overlay
-        anchors.centerIn: parent
         title: "Reload the saved draft?"
-        modal: true
-        standardButtons: Dialog.Ok | Dialog.Cancel
-        contentItem: Label { property bool blocksWorkspaceShortcuts: true; text: "This replaces the unsaved text in this editor with the last saved draft."; wrapMode: Text.WordWrap }
+        message: "This replaces your unsaved edits with the last saved version."
+        actionText: "Reload"; destructive: true
         onAccepted: { backend.clearError(); backend.reloadDraft() }
     }
-    Dialog {
-        id: googleDraftDialog
-        objectName: "googleDraftReplaceDialog"
+    FmConfirmDialog {
+        id: googleDraftDialog; objectName: "googleDraftReplaceDialog"
         property var capturedContext: ({})
-        implicitWidth: 480; parent: Overlay.overlay; anchors.centerIn: parent; modal: true
         title: "Replace the Google draft?"
-        contentItem: ColumnLayout {
-            property bool blocksWorkspaceShortcuts: true
-            spacing: 16
-            Text { Layout.fillWidth: true; text: "Upload this saved local version to Google. Your local version and any previously fetched Google copy stay retained. Another client can edit between the last check and the upload; that unseen edit can be overwritten. A changed local draft or known Google revision will require a new confirmation."; color: Theme.text; textFormat: Text.PlainText; wrapMode: Text.Wrap; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
-            RowLayout {
-                Layout.fillWidth: true
-                Item { Layout.fillWidth: true }
-                FmButton { objectName: "cancelReplaceGoogleDraft"; text: "Cancel"; onClicked: googleDraftDialog.close() }
-                FmButton { objectName: "confirmReplaceGoogleDraft"; text: "Replace Google copy"; prominent: true; onClicked: { const context = googleDraftDialog.capturedContext; googleDraftDialog.close(); backend.replaceGoogleDraft(context) } }
-            }
-        }
+        message: "Upload this saved version to Google. An edit made in another client since the last check may be overwritten. Your retained versions stay available."
+        actionText: "Replace"; destructive: true
+        actionObjectName: "confirmReplaceGoogleDraft"; cancelObjectName: "cancelReplaceGoogleDraft"
+        onAccepted: backend.replaceGoogleDraft(capturedContext)
     }
-    Dialog {
-        id: conflictDialog
-        objectName: "draftConflictDialog"
-        implicitWidth: 480; parent: Overlay.overlay; anchors.centerIn: parent; modal: true
+    FmConfirmDialog {
+        id: conflictDialog; objectName: "draftConflictDialog"
         title: "Save your version?"
-        contentItem: ColumnLayout {
-            property bool blocksWorkspaceShortcuts: true
-            spacing: 16
-            Text { Layout.fillWidth: true; text: "This replaces the current saved draft with your retained body, formatting, signature and attachments. Another edit made while saving will cause a new conflict."; color: Theme.text; wrapMode: Text.Wrap; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
-            RowLayout {
-                Layout.fillWidth: true
-                Item { Layout.fillWidth: true }
-                FmButton { text: "Cancel"; onClicked: conflictDialog.close() }
-                FmButton { objectName: "confirmSaveMyDraft"; text: "Save my version"; prominent: true; onClicked: { conflictDialog.close(); backend.saveMyDraftVersion() } }
-            }
-        }
+        message: "Replace the saved draft with your body, formatting, signature and attachments. If it changes again while saving, you can review the new conflict."
+        actionText: "Save my version"; actionObjectName: "confirmSaveMyDraft"
+        onAccepted: backend.saveMyDraftVersion()
     }
 }

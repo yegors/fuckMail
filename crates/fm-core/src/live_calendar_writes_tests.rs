@@ -1,6 +1,135 @@
 use super::*;
 use crate::live_calendar::{CalendarPage, CalendarSyncMode};
 use std::collections::BTreeSet;
+
+#[test]
+fn editor_options_preserve_omitted_fields_and_freeze_provider_intent() {
+    let (dir, mut store, account) = setup();
+    let mut original = event();
+    original["reminders"] = json!({"useDefault":false,"overrides":[{"method":"email","minutes":60},{"method":"popup","minutes":15}]});
+    let normalized = fm_calendar::normalize(&account, CAL, "UTC", &original).unwrap();
+    let untouched = field_patch(
+        "title-only",
+        &json!({"title":"Changed"}),
+        Some(&normalized),
+        "UTC",
+        CAL,
+        2,
+    )
+    .unwrap();
+    for key in [
+        "reminders",
+        "transparency",
+        "conferenceData",
+        "start",
+        "end",
+    ] {
+        assert!(untouched.get(key).is_none());
+    }
+    let mut req = request("edit");
+    req["fields"] = json!({"reminder_minutes":30,"availability":"free","conference":"none"});
+    let lease = prepare(&mut store, &account, req.clone(), Some(original.clone()));
+    assert_eq!(
+        lease.dispatch["body"],
+        json!({"reminders":{"useDefault":false,"overrides":[{"method":"popup","minutes":30}]},"transparency":"transparent","conferenceData":null})
+    );
+    let document = store
+        .calendar_live_operation(&account, "edit")
+        .unwrap()
+        .intent;
+    let mut observed = original.clone();
+    observed["reminders"] = lease.dispatch["body"]["reminders"].clone();
+    observed["transparency"] = "transparent".into();
+    observed.as_object_mut().unwrap().remove("conferenceData");
+    let actual = fm_calendar::normalize(&account, CAL, "UTC", &observed).unwrap();
+    assert!(matches_intent_v2(&actual, &document, &lease.dispatch));
+    observed["reminders"]["overrides"][0]["minutes"] = 15.into();
+    assert!(!matches_intent_v2(
+        &fm_calendar::normalize(&account, CAL, "UTC", &observed).unwrap(),
+        &document,
+        &lease.dispatch
+    ));
+    drop(store);
+    let mut store = Store::open_live(dir.path()).unwrap();
+    store.calendar_live_prepare(&account, &req).unwrap();
+    assert_eq!(
+        store
+            .calendar_live_operation(&account, "edit")
+            .unwrap()
+            .lease
+            .unwrap()
+            .dispatch,
+        lease.dispatch
+    );
+    for bad in [
+        json!({"reminder_minutes":-1}),
+        json!({"reminder_minutes":40321}),
+        json!({"reminder_minutes":1.5}),
+        json!({"availability":"maybe"}),
+        json!({"conference":"https://example.test"}),
+    ] {
+        assert!(field_patch("invalid", &bad, Some(&normalized), "UTC", CAL, 2).is_err());
+    }
+}
+
+#[test]
+fn meeting_creation_matches_only_the_same_successful_request() {
+    let (_dir, mut store, account) = setup();
+    let mut req = request("edit");
+    req["request_id"] = "new-meet".into();
+    req["fields"] = json!({"conference":"google_meet"});
+    let lease = prepare(&mut store, &account, req, Some(event()));
+    let document = store
+        .calendar_live_operation(&account, "new-meet")
+        .unwrap()
+        .intent;
+    let conference = &lease.dispatch["body"]["conferenceData"];
+    assert_eq!(conference["createRequest"]["requestId"], "new-meet");
+    assert!(conference.get("entryPoints").is_none());
+    let mut source = event();
+    source["conferenceData"] = conference.clone();
+    for status in ["pending", "failure", "success"] {
+        source["conferenceData"]["createRequest"]["status"]["statusCode"] = status.into();
+        let actual = fm_calendar::normalize(&account, CAL, "UTC", &source).unwrap();
+        assert_eq!(
+            matches_intent_v2(&actual, &document, &lease.dispatch),
+            status == "success"
+        );
+    }
+    source["conferenceData"]["createRequest"]["requestId"] = "another-request".into();
+    assert!(!matches_intent_v2(
+        &fm_calendar::normalize(&account, CAL, "UTC", &source).unwrap(),
+        &document,
+        &lease.dispatch
+    ));
+}
+
+#[test]
+fn explicit_time_conversion_clears_the_other_kind_and_preserves_multiday_dates() {
+    let mut source = event();
+    for (all_day, start, end) in [
+        (true, "2026-09-12", "2026-09-15"),
+        (false, "2026-09-12T09:00:00Z", "2026-09-14T10:00:00Z"),
+    ] {
+        let event = fm_calendar::normalize("a", CAL, "UTC", &source).unwrap();
+        let mut fields = json!({"all_day":all_day,"start":start,"end":end,"time_zone":"UTC"});
+        assert!(field_patch("conversion", &fields, Some(&event), "UTC", CAL, 2).is_err());
+        fields["convert_time_kind"] = true.into();
+        let patch = field_patch("conversion", &fields, Some(&event), "UTC", CAL, 2).unwrap();
+        assert!(patch["start"]
+            .get(if all_day { "dateTime" } else { "date" })
+            .is_some_and(Value::is_null));
+        for (key, value) in patch.as_object().unwrap() {
+            source[key] = value.clone();
+        }
+        crate::calendar_editor_options::clear_endpoint_nulls(&mut source);
+        assert!(fm_calendar::normalize("a", CAL, "UTC", &source).is_ok());
+        assert_eq!(
+            source["end"][if all_day { "date" } else { "dateTime" }],
+            end
+        );
+    }
+}
 pub(super) const CAL: &str = "human@example.test";
 pub(super) fn setup() -> (tempfile::TempDir, Store, String) {
     let dir = tempfile::tempdir().unwrap();
@@ -623,6 +752,7 @@ fn no_conference_changes_no_recurring_writes_and_no_stale_claims() {
     let original = event();
     let normalized = fm_calendar::normalize(&account, CAL, "UTC", &original).unwrap();
     assert!(field_patch(
+        "test-options",
         &json!({"conference_url":""}),
         Some(&normalized),
         "UTC",
@@ -632,6 +762,7 @@ fn no_conference_changes_no_recurring_writes_and_no_stale_claims() {
     .is_err());
     assert_eq!(
         field_patch(
+            "test-options",
             &json!({"title":"Before","conference_url":"https://meet.example.test/room"}),
             Some(&normalized),
             "UTC",

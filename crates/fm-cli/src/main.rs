@@ -35,6 +35,11 @@ struct Args {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Optional local Ollama summaries and label/sender-kind classification.
+    Assist {
+        #[command(subcommand)]
+        command: Assist,
+    },
     /// Initialize a separate empty live profile; requires an explicit --profile.
     ProfileInit,
     /// Explicit Google sign-in and retained-account connection management.
@@ -81,6 +86,8 @@ enum Command {
     },
     /// Update display name and signature, preserving existing draft snapshots.
     AccountUpdate {
+        #[arg(long, value_parser=["1_month","3_months","1_year","all"])]
+        mail_retention: Option<String>,
         #[arg(long)]
         name: String,
         #[arg(long)]
@@ -127,6 +134,11 @@ enum Command {
         output: Option<PathBuf>,
     },
     Categories,
+    /// Manage account labels and their local classification instructions.
+    Labels {
+        #[command(subcommand)]
+        command: Labels,
+    },
     /// Explicit foreground session; report changes until Ctrl-C or --seconds.
     Watch {
         #[arg(long)]
@@ -174,6 +186,13 @@ enum CalendarCommand {
 
 #[derive(Subcommand)]
 enum AccountCommand {
+    /// Permanently delete a removed local archive; Google data is unchanged.
+    DeleteArchive {
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        expected_revision: i64,
+        #[arg(long)]
+        request_id: String,
+    },
     /// Inspect retained work and the current lifecycle revision before removal.
     RemovePreview,
     /// Remove from active views and clear local credentials; keep a read-only archive.
@@ -199,6 +218,10 @@ enum Google {
     /// Open your browser and keep this CLI session until login finishes or Ctrl-C.
     /// Add --account for an identity-checked reconnect.
     Connect {
+        #[arg(long, default_value="write", value_parser=["none","read","write"])]
+        mail_access: String,
+        #[arg(long, default_value="write", value_parser=["none","read","write"])]
+        calendar_access: String,
         /// Gmail or Workspace email to prefill in Google's browser sign-in.
         #[arg(long)]
         email: Option<String>,
@@ -211,6 +234,10 @@ enum Google {
     /// Restore the selected archive by signing in as the same Google identity.
     /// Retained work and sync do not start automatically.
     Restore {
+        #[arg(long, default_value="write", value_parser=["none","read","write"])]
+        mail_access: String,
+        #[arg(long, default_value="write", value_parser=["none","read","write"])]
+        calendar_access: String,
         #[arg(long)]
         email: Option<String>,
         /// Developer override; configured builds do not need this file.
@@ -224,16 +251,19 @@ enum Google {
     /// Stop Google access while retaining downloaded content, drafts and credentials.
     Disconnect,
     /// Download mail and Calendar while this explicit CLI session remains open.
-    /// Supply the four actual Google Console per-minute quota limits.
+    /// Uses built-in Google API limits. Optional developer overrides must supply all four.
     Sync {
+        /// Fetch new mail immediately and retry denied credential access.
+        #[arg(long)]
+        refresh: bool,
         #[arg(long, value_parser=clap::value_parser!(u32).range(100..=100_000_000))]
-        gmail_project_units_per_minute: u32,
+        gmail_project_units_per_minute: Option<u32>,
         #[arg(long, value_parser=clap::value_parser!(u32).range(100..=100_000_000))]
-        gmail_account_units_per_minute: u32,
+        gmail_account_units_per_minute: Option<u32>,
         #[arg(long, value_parser=clap::value_parser!(u32).range(100..=100_000_000))]
-        calendar_project_units_per_minute: u32,
+        calendar_project_units_per_minute: Option<u32>,
         #[arg(long, value_parser=clap::value_parser!(u32).range(100..=100_000_000))]
-        calendar_account_units_per_minute: u32,
+        calendar_account_units_per_minute: Option<u32>,
         #[arg(long)]
         seconds: Option<u64>,
     },
@@ -344,9 +374,26 @@ enum Google {
         expected_google_revision: i64,
         #[arg(long)]
         request_id: String,
+        /// Wait six seconds before connecting; Ctrl+C keeps the draft unsent.
+        #[arg(long)]
+        undo: bool,
     },
     /// Inspect one retained submission outcome without contacting Google.
     SendStatus {
+        #[arg(long)]
+        request_id: String,
+    },
+    /// List retained outgoing messages awaiting acquisition, without contacting Google.
+    Sent {
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long, default_value_t = 50, value_parser=clap::value_parser!(u64).range(1..=100))]
+        limit: u64,
+        #[arg(long)]
+        conversation_id: Option<String>,
+    },
+    /// Read the exact retained submission content, without contacting Google.
+    SentMessage {
         #[arg(long)]
         request_id: String,
     },
@@ -416,7 +463,7 @@ enum Mail {
         query: Option<String>,
         #[arg(long,default_value="all",value_parser=["all","sender","subject","body"])]
         field: String,
-        #[arg(long,default_value="inbox",value_parser=["inbox","sent","all","trash"])]
+        #[arg(long,default_value="inbox",value_parser=["inbox","received","sent","all","trash"])]
         folder: String,
         #[arg(long)]
         category: Option<String>,
@@ -445,8 +492,22 @@ enum Mail {
     },
     /// Query only; this does not mark mail reviewed.
     Read { id: String },
+    /// Inspect retained message headers, HTML and source without marking reviewed.
+    Source {
+        id: String,
+        #[arg(long)]
+        source_version: String,
+    },
     /// Exact sender history in this account; querying never marks mail reviewed.
     Sender { address: String },
+    /// Suggest addresses from recent cached mail and drafts; never changes routing.
+    Recipients {
+        query: String,
+        #[arg(long)]
+        exclude: Vec<String>,
+        #[arg(long, default_value_t = 6)]
+        limit: u8,
+    },
     /// Mark the loaded snapshot read.
     Review {
         id: String,
@@ -503,6 +564,106 @@ enum Mail {
 }
 
 #[derive(Subcommand)]
+enum Labels {
+    List,
+    Create {
+        name: String,
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        request_id: String,
+    },
+    Describe {
+        id: String,
+        description: String,
+        #[arg(long)]
+        expected_description: String,
+        #[arg(long)]
+        request_id: String,
+    },
+    Remove {
+        id: String,
+        #[arg(long)]
+        expected_name: String,
+        #[arg(long)]
+        expected_provider_label_id: Option<String>,
+        #[arg(long)]
+        request_id: String,
+    },
+    Sync {
+        #[arg(long)]
+        request_id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum Assist {
+    /// Discover models from the configured same-machine service.
+    Discover {
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long, value_parser = ["ollama", "openai_compatible"])]
+        provider: Option<String>,
+    },
+    /// Show saved settings, defaults and their revision.
+    Settings,
+    /// Save a settings JSON object with compare-and-swap revision checking.
+    Configure {
+        #[arg(long)]
+        settings_file: PathBuf,
+        #[arg(long)]
+        expected_revision: u64,
+    },
+    /// Test a chosen task on built-in synthetic mail without changing settings.
+    Test {
+        #[arg(value_parser=["summary","classification","message"])]
+        task: String,
+        #[arg(long, default_value = "personal")]
+        sample_case: String,
+        #[arg(long)]
+        settings_file: Option<PathBuf>,
+    },
+    /// Summarize retained mail without marking it read.
+    Summarize {
+        conversation_id: String,
+        #[arg(long)]
+        message_id: Option<String>,
+    },
+    /// Analyze each received message once: summary, sender kind and automatic label.
+    Analyze {
+        conversation_id: String,
+        #[arg(long)]
+        message_id: Option<String>,
+    },
+    /// Classify received messages and automatically apply the matching label.
+    Classify {
+        conversation_id: String,
+        #[arg(long)]
+        message_id: Option<String>,
+    },
+    Results {
+        conversation_id: String,
+    },
+    Correct {
+        conversation_id: String,
+        message_id: String,
+        #[arg(value_parser=["human","automated","unknown","reset"])]
+        kind: String,
+        #[arg(long)]
+        expected_revision: u64,
+    },
+    Accept {
+        conversation_id: String,
+        message_id: String,
+        category_id: String,
+        #[arg(long)]
+        request_id: String,
+    },
+    /// Classify new arrivals for enabled accounts until Ctrl-C; no backfill sweep.
+    Watch,
+}
+
+#[derive(Subcommand)]
 enum Preferences {
     Show,
     /// Apply a bounded preferences JSON patch from a file or stdin (-).
@@ -518,6 +679,33 @@ enum Preferences {
 
 #[derive(Subcommand)]
 enum Draft {
+    /// Change the owning From account while preserving this saved composition.
+    Transfer {
+        #[arg(long)]
+        draft_id: String,
+        #[arg(long)]
+        target_account: String,
+        #[arg(long)]
+        expected_revision: i64,
+        #[arg(long)]
+        expected_google_revision: i64,
+        #[arg(long)]
+        request_id: String,
+        #[arg(long)]
+        keep_original: bool,
+    },
+    /// Inspect a recorded account change without repeating provider work.
+    TransferRetry {
+        #[arg(long)]
+        transfer_request_id: String,
+        #[arg(long)]
+        request_id: String,
+    },
+    /// Inspect a recorded account change without repeating provider work
+    TransferStatus {
+        #[arg(long)]
+        request_id: String,
+    },
     /// Inspect exact retained-source conversion and editing eligibility without Google access.
     Authoring {
         #[arg(long)]
@@ -599,12 +787,31 @@ enum Draft {
         #[arg(long, default_value_t = 0)]
         offset: u64,
     },
-    /// Explicitly clear saved body, HTML, signature and attachment selection.
+    /// Discard a local draft, retaining its exact state for revision-bound Undo.
     Discard {
         #[command(flatten)]
         target: DraftTarget,
         #[arg(long)]
         expected_revision: u64,
+        #[arg(long)]
+        request_id: String,
+        /// Optional authored editor fields and unfinished recipients to preserve for Undo.
+        #[arg(long)]
+        buffer_file: Option<PathBuf>,
+    },
+    /// Inspect the original discard receipt and whether its exact revision can be restored.
+    DiscardStatus {
+        #[arg(long)]
+        request_id: String,
+    },
+    /// Restore the exact draft snapshot from a prior discard; never overwrites newer edits.
+    UndoDiscard {
+        #[arg(long)]
+        draft_id: String,
+        #[arg(long)]
+        discard_request_id: String,
+        #[arg(long, value_parser=clap::value_parser!(i64).range(1..))]
+        expected_revision: i64,
         #[arg(long)]
         request_id: String,
     },
@@ -873,6 +1080,7 @@ fn google_composition_request(command: &Command) -> Result<Option<(&'static str,
             expected_revision,
             expected_google_revision,
             request_id,
+            ..
         } => (
             "google_send",
             json!({"draft_id":draft_id,"expected_revision":expected_revision,
@@ -880,6 +1088,20 @@ fn google_composition_request(command: &Command) -> Result<Option<(&'static str,
         ),
         Google::SendStatus { request_id } => {
             ("google_send_status", json!({"request_id":request_id}))
+        }
+        Google::Sent {
+            offset,
+            limit,
+            conversation_id,
+        } => {
+            let mut params = json!({"offset":offset,"limit":limit});
+            if let Some(id) = conversation_id {
+                params["conversation_id"] = id.as_str().into();
+            }
+            ("google_sent", params)
+        }
+        Google::SentMessage { request_id } => {
+            ("google_sent_message", json!({"request_id":request_id}))
         }
         Google::SendReconcile { request_id } => {
             ("google_send_reconcile", json!({"request_id":request_id}))
@@ -1001,6 +1223,13 @@ fn account_lifecycle_request(command: &Command) -> Result<Option<(&'static str, 
     };
     let (method, params) = match command {
         AccountCommand::RemovePreview => ("account_remove_preview", json!({})),
+        AccountCommand::DeleteArchive {
+            expected_revision,
+            request_id,
+        } => (
+            "account_archive_delete",
+            json!({"expected_revision":expected_revision,"request_id":request_id}),
+        ),
         AccountCommand::Remove {
             expected_revision,
             request_id,
@@ -1218,6 +1447,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             | Command::Watch { .. }
             | Command::Call { .. }
             | Command::Preferences { .. }
+            | Command::Assist { .. }
             | Command::CalendarSources
             | Command::Calendar { combined: true, .. }
             | Command::Calendar {
@@ -1299,11 +1529,67 @@ async fn run(args: &Args) -> Result<(), Failure> {
         None
     };
     let attachment_import = attachment_import_params(&args.command)?;
+    let discard_buffer = if let Command::Draft {
+        command: Draft::Discard {
+            buffer_file: Some(path),
+            ..
+        },
+    } = &args.command
+    {
+        let value: Value = serde_json::from_slice(&read_input(path, 768 * 1024)?)
+            .map_err(|_| invalid("Draft buffer must be JSON"))?;
+        if !value.is_object() {
+            return Err(invalid("Draft buffer must be a JSON object"));
+        }
+        Some(value)
+    } else {
+        None
+    };
     let google_composition = google_composition_request(&args.command)?;
     let draft_source = draft_source_request(&args.command)?;
     let account_lifecycle = account_lifecycle_request(&args.command)?;
     let notification = notification_request(&args.command)?;
     let calendar_search = calendar_search_request(&args.command)?;
+    if matches!(
+        &args.command,
+        Command::Google {
+            command: Google::Send { undo: true, .. }
+        }
+    ) {
+        if args.account.is_none() {
+            return Err(invalid(
+                "Choose an account before starting the Send undo interval",
+            ));
+        }
+        #[cfg(windows)]
+        let mut interrupt = {
+            let unavailable = || Failure {
+                code: "io".into(),
+                message: "Cannot listen for Send Undo. Nothing was submitted.".into(),
+                recovery: RecoveryProofs::default(),
+            };
+            let signal = tokio::signal::windows::ctrl_c().map_err(|_| unavailable())?;
+            // Launchers can pass down the per-process attribute that ignores
+            // Ctrl+C. Register the listener first, then enable delivery only
+            // for this CLI process, before advertising the Undo interval.
+            if unsafe { windows_sys::Win32::System::Console::SetConsoleCtrlHandler(None, 0) } == 0 {
+                return Err(unavailable());
+            }
+            signal
+        };
+        eprintln!("Sending in six seconds. Press Ctrl+C to keep the draft.");
+        #[cfg(windows)]
+        let cancelled = tokio::select! { biased; _=interrupt.recv()=>true, _=tokio::time::sleep(Duration::from_secs(6))=>false };
+        #[cfg(not(windows))]
+        let cancelled = tokio::select! { biased; _=tokio::signal::ctrl_c()=>true, _=tokio::time::sleep(Duration::from_secs(6))=>false };
+        if cancelled {
+            return Err(Failure {
+                code: "cancelled".into(),
+                message: "Send undone before connecting. Your saved draft is kept.".into(),
+                recovery: RecoveryProofs::default(),
+            });
+        }
+    }
     let mut client = if args.demo_profile {
         Client::connect_demo(&profile, engine.as_deref()).await?
     } else if live_command || args.profile.is_none() {
@@ -1413,6 +1699,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 | Google::DraftReplace { .. }
                 | Google::Send { .. }
                 | Google::SendStatus { .. }
+                | Google::Sent { .. }
+                | Google::SentMessage { .. }
                 | Google::SendReconcile { .. }
                 | Google::SendAbandon { .. },
         } => {
@@ -1540,6 +1828,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
         Command::Google {
             command:
                 Google::Sync {
+                    refresh,
                     gmail_project_units_per_minute,
                     gmail_account_units_per_minute,
                     calendar_project_units_per_minute,
@@ -1547,7 +1836,35 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     seconds,
                 },
         } => {
-            let reply=client.call("google_sync_start",scope,json!({"gmail_project_units_per_minute":gmail_project_units_per_minute,"gmail_account_units_per_minute":gmail_account_units_per_minute,"calendar_project_units_per_minute":calendar_project_units_per_minute,"calendar_account_units_per_minute":calendar_account_units_per_minute})).await?;
+            let limits = if [
+                gmail_project_units_per_minute,
+                gmail_account_units_per_minute,
+                calendar_project_units_per_minute,
+                calendar_account_units_per_minute,
+            ]
+            .iter()
+            .all(|value| value.is_none())
+            {
+                json!({})
+            } else {
+                json!({"gmail_project_units_per_minute":gmail_project_units_per_minute,"gmail_account_units_per_minute":gmail_account_units_per_minute,"calendar_project_units_per_minute":calendar_project_units_per_minute,"calendar_account_units_per_minute":calendar_account_units_per_minute})
+            };
+            if *refresh && limits != json!({}) {
+                return Err(invalid(
+                    "--refresh uses the existing shared limits; omit quota overrides",
+                ));
+            }
+            let reply = client
+                .call(
+                    if *refresh {
+                        "google_sync_refresh"
+                    } else {
+                        "google_sync_start"
+                    },
+                    scope,
+                    limits,
+                )
+                .await?;
             result(reply.clone())?;
             emit(args, &reply)?;
             if !args.json {
@@ -1588,13 +1905,21 @@ async fn run(args: &Args) -> Result<(), Failure> {
         Command::Google {
             command:
                 Google::Connect {
-                    reauthorize, email, ..
+                    reauthorize,
+                    email,
+                    mail_access,
+                    calendar_access,
+                    ..
                 }
                 | Google::Restore {
-                    reauthorize, email, ..
+                    reauthorize,
+                    email,
+                    mail_access,
+                    calendar_access,
+                    ..
                 },
         } => {
-            let mut params = json!({"reauthorize":reauthorize});
+            let mut params = json!({"reauthorize":reauthorize,"access":{"mail":mail_access,"calendar":calendar_access}});
             if let Some(path) = &google_client_path {
                 params["client_config_path"] = json!(path
                     .to_str()
@@ -1678,6 +2003,115 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 }
             }
         }
+        Command::Assist { command } => {
+            let (method, params) = match command {
+                Assist::Discover { endpoint, provider } => {
+                    let mut params = json!({});
+                    if let Some(endpoint) = endpoint {
+                        params["endpoint"] = json!(endpoint);
+                    }
+                    if let Some(provider) = provider {
+                        params["provider"] = json!(provider);
+                    }
+                    ("assist_discover", params)
+                }
+                Assist::Settings => ("assist_settings_get", json!({})),
+                Assist::Configure {
+                    settings_file,
+                    expected_revision,
+                } => {
+                    let settings: Value =
+                        serde_json::from_slice(&read_input(settings_file, 48 * 1024)?)
+                            .map_err(|_| invalid("Settings must be JSON"))?;
+                    (
+                        "assist_settings_save",
+                        json!({"settings":settings,"expected_revision":expected_revision}),
+                    )
+                }
+                Assist::Test {
+                    task,
+                    sample_case,
+                    settings_file,
+                } => {
+                    let mut p = json!({"task":task,"sample":true,"sample_case":sample_case});
+                    if let Some(path) = settings_file {
+                        p["settings"] = serde_json::from_slice(&read_input(path, 48 * 1024)?)
+                            .map_err(|_| invalid("Settings must be JSON"))?;
+                    }
+                    ("assist_start", p)
+                }
+                Assist::Summarize {
+                    conversation_id,
+                    message_id,
+                }
+                | Assist::Analyze {
+                    conversation_id,
+                    message_id,
+                }
+                | Assist::Classify {
+                    conversation_id,
+                    message_id,
+                } => {
+                    account(args)?;
+                    (
+                        "assist_start",
+                        json!({"task":if matches!(command,Assist::Summarize{..}){"summary"}else{"message"},"conversation_id":conversation_id,"message_id":message_id}),
+                    )
+                }
+                Assist::Results { conversation_id } => {
+                    ("assist_results", json!({"conversation_id":conversation_id}))
+                }
+                Assist::Correct {
+                    conversation_id,
+                    message_id,
+                    kind,
+                    expected_revision,
+                } => (
+                    "assist_correct",
+                    json!({"conversation_id":conversation_id,"message_id":message_id,"kind":kind,"expected_revision":expected_revision}),
+                ),
+                Assist::Accept {
+                    conversation_id,
+                    message_id,
+                    category_id,
+                    request_id,
+                } => (
+                    "assist_accept",
+                    json!({"conversation_id":conversation_id,"message_id":message_id,"category_id":category_id,"request_id":request_id}),
+                ),
+                Assist::Watch => ("assist_watch", json!({})),
+            };
+            let mut result = client.call(method, scope, params).await?;
+            if matches!(command, Assist::Watch) {
+                tokio::signal::ctrl_c().await?;
+                json!({"version":1,"ok":true,"result":{"status":"canceled"}})
+            } else if method == "assist_start" {
+                self::result(result.clone())?;
+                let job = result["result"]["job_id"].clone();
+                loop {
+                    tokio::select! {_=tokio::signal::ctrl_c()=>{result=client.call("assist_cancel",None,json!({"job_id":job})).await?;break;},_=tokio::time::sleep(Duration::from_millis(250))=>{}}
+                    result = client
+                        .call("assist_job", None, json!({"job_id":job}))
+                        .await?;
+                    self::result(result.clone())?;
+                    if !["queued", "running"]
+                        .contains(&result["result"]["status"].as_str().unwrap_or_default())
+                    {
+                        break;
+                    }
+                }
+                if result["result"]["status"] == "failed" {
+                    return Err(invalid(
+                        result["result"]["error"]["message"]
+                            .as_str()
+                            .unwrap_or("Local inference failed"),
+                    ));
+                }
+                result
+            } else {
+                result
+            }
+        }
         Command::Preferences { command } => match command {
             Preferences::Show => client.call("preferences_get", None, json!({})).await?,
             Preferences::Save {
@@ -1692,6 +2126,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             }
         },
         Command::AccountUpdate {
+            mail_retention,
             name,
             signature_file,
             expected_revision,
@@ -1699,7 +2134,9 @@ async fn run(args: &Args) -> Result<(), Failure> {
         } => {
             let signature = String::from_utf8(read_input(signature_file, 16 * 1024)?)
                 .map_err(|_| invalid("Signature must be UTF-8"))?;
-            client.call("account_update",scope,json!({"name":name,"signature_text":signature,"expected_revision":expected_revision,"request_id":request_id})).await?
+            let mut params=json!({"name":name,"signature_text":signature,"expected_revision":expected_revision,"request_id":request_id});
+            if let Some(retention)=mail_retention {params["mail_retention"]=json!(retention);}
+            client.call("account_update",scope,params).await?
         }
         Command::CalendarSources => client.call("calendar_sources", None, json!({})).await?,
         Command::CalendarWrite { params_file } => {
@@ -1732,6 +2169,62 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 .await?
         }
         Command::Categories => client.call("categories", scope, json!({})).await?,
+        Command::Labels { command } => {
+            let (method, params) = match command {
+                Labels::List => ("label_catalog", json!({})),
+                Labels::Create {
+                    name,
+                    id,
+                    request_id,
+                } => (
+                    "label_create",
+                    json!({"name":name,"id":id,"request_id":request_id}),
+                ),
+                Labels::Describe {
+                    id,
+                    description,
+                    expected_description,
+                    request_id,
+                } => (
+                    "label_describe",
+                    json!({"id":id,"description":description,"expected_description":expected_description,"request_id":request_id}),
+                ),
+                Labels::Remove {
+                    id,
+                    expected_name,
+                    expected_provider_label_id,
+                    request_id,
+                } => (
+                    "label_remove",
+                    json!({"id":id,"expected_name":expected_name,"expected_provider_label_id":expected_provider_label_id,"request_id":request_id}),
+                ),
+                Labels::Sync { request_id } => {
+                    ("google_labels_sync", json!({"request_id":request_id}))
+                }
+            };
+            let mut reply = client.call(method, scope, params).await?;
+            if method == "google_labels_sync" {
+                let job = result(reply.clone())?["job_id"].clone();
+                while result(reply.clone())?["state"] == "running" {
+                    let interrupted = tokio::select! { _=tokio::signal::ctrl_c()=>true, _=tokio::time::sleep(Duration::from_millis(250))=>false };
+                    reply = client
+                        .call(
+                            if interrupted {
+                                "google_labels_sync_cancel"
+                            } else {
+                                "google_labels_sync_status"
+                            },
+                            scope,
+                            json!({"job_id":job}),
+                        )
+                        .await?;
+                    if interrupted {
+                        break;
+                    }
+                }
+            }
+            reply
+        }
         Command::Mail { command } => match command {
             Mail::List {
                 query,
@@ -1781,9 +2274,31 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 client.call("conversations", scope, params).await?
             }
             Mail::Read { id } => client.call("conversation", scope, json!({"id":id})).await?,
+            Mail::Source { id, source_version } => {
+                client
+                    .call(
+                        "message_source",
+                        scope,
+                        json!({"id":id,"source_version":source_version}),
+                    )
+                    .await?
+            }
             Mail::Sender { address } => {
                 client
                     .call("sender_summary", scope, json!({"email":address}))
+                    .await?
+            }
+            Mail::Recipients {
+                query,
+                exclude,
+                limit,
+            } => {
+                client
+                    .call(
+                        "recipient_suggestions",
+                        scope,
+                        json!({"query":query,"exclude":exclude,"limit":limit}),
+                    )
                     .await?
             }
             Mail::Review {
@@ -1870,6 +2385,9 @@ async fn run(args: &Args) -> Result<(), Failure> {
             }
         },
         Command::Draft { command } => match command {
+            Draft::Transfer { draft_id,target_account,expected_revision,expected_google_revision,request_id,keep_original } => client.call("draft_transfer",scope,json!({"draft_id":draft_id,"target_account":target_account,"expected_revision":expected_revision,"expected_google_revision":expected_google_revision,"request_id":request_id,"keep_original":keep_original})).await?,
+            Draft::TransferRetry { transfer_request_id, request_id } => client.call("draft_transfer_retry",scope,json!({"transfer_request_id":transfer_request_id,"request_id":request_id})).await?,
+            Draft::TransferStatus { request_id } => client.call("draft_transfer_status",scope,json!({"request_id":request_id})).await?,
             Draft::Sources { .. }
             | Draft::Source { .. }
             | Draft::Authoring { .. }
@@ -1934,12 +2452,16 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 target,
                 expected_revision,
                 request_id,
+                ..
             } => {
                 let mut params = target.params();
                 params["expected_revision"] = json!(expected_revision);
                 params["request_id"] = json!(request_id);
+                if let Some(buffer) = discard_buffer { params["buffer"] = buffer; }
                 client.call("draft_discard", scope, params).await?
             }
+            Draft::DiscardStatus { request_id } => client.call("draft_discard_status",scope,json!({"request_id":request_id})).await?,
+            Draft::UndoDiscard { draft_id,discard_request_id,expected_revision,request_id } => client.call("draft_undo_discard",scope,json!({"draft_id":draft_id,"discard_request_id":discard_request_id,"expected_revision":expected_revision,"request_id":request_id})).await?,
             Draft::Attach { .. } => {
                 client
                     .call(
@@ -2173,6 +2695,84 @@ fn emit(args: &Args, reply: &Value) -> Result<(), Failure> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn send_undo_preserves_exact_submission_request() {
+        let input = [
+            "fm",
+            "--account",
+            "original-account",
+            "google",
+            "send",
+            "--draft-id",
+            "original-draft",
+            "--expected-revision",
+            "7",
+            "--expected-google-revision",
+            "11",
+            "--request-id",
+            "exact-send",
+        ];
+        let immediate = Args::try_parse_from(input).unwrap();
+        let delayed = Args::try_parse_from(input.into_iter().chain(["--undo"])).unwrap();
+        assert!(matches!(
+            &delayed.command,
+            Command::Google {
+                command: Google::Send { undo: true, .. }
+            }
+        ));
+        assert_eq!(
+            google_composition_request(&immediate.command).unwrap(),
+            google_composition_request(&delayed.command).unwrap()
+        );
+        assert_eq!(
+            google_composition_request(&delayed.command)
+                .unwrap()
+                .unwrap(),
+            (
+                "google_send",
+                json!({"draft_id":"original-draft", "expected_revision":7,
+                "expected_google_revision":11, "request_id":"exact-send"})
+            )
+        );
+    }
+
+    #[test]
+    fn google_sync_accepts_no_quota_setup() {
+        let args = Args::try_parse_from([
+            "fm",
+            "--account",
+            "test",
+            "google",
+            "sync",
+            "--seconds",
+            "1",
+        ])
+        .unwrap();
+        match args.command {
+            Command::Google {
+                command:
+                    Google::Sync {
+                        gmail_project_units_per_minute,
+                        gmail_account_units_per_minute,
+                        calendar_project_units_per_minute,
+                        calendar_account_units_per_minute,
+                        ..
+                    },
+            } => {
+                assert_eq!(
+                    [
+                        gmail_project_units_per_minute,
+                        gmail_account_units_per_minute,
+                        calendar_project_units_per_minute,
+                        calendar_account_units_per_minute
+                    ],
+                    [None; 4]
+                );
+            }
+            _ => panic!("expected sync"),
+        }
+    }
+
     #[test]
     fn calendar_search_routes_global_explicit_range_without_notification_or_provider_work() {
         let args = Args::try_parse_from([

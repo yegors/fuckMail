@@ -57,6 +57,24 @@ impl DesktopLogin {
         reconsent: bool,
         login_hint: Option<&str>,
     ) -> Result<Self, GoogleError> {
+        Self::begin_with_access(
+            client_id,
+            lifetime,
+            reconsent,
+            login_hint,
+            crate::auth::RequestedAccess::default(),
+        )
+        .await
+    }
+
+    pub async fn begin_with_access(
+        client_id: String,
+        lifetime: Duration,
+        reconsent: bool,
+        login_hint: Option<&str>,
+        access: crate::auth::RequestedAccess,
+    ) -> Result<Self, GoogleError> {
+        access.scopes()?;
         if let Some(email) = login_hint {
             crate::auth::validate_login_hint(email)?;
         }
@@ -72,8 +90,8 @@ impl DesktopLogin {
             .port();
         Ok(Self {
             listener,
-            authorization: DesktopAuthorization::with_login_hint(
-                client_id, port, reconsent, login_hint,
+            authorization: DesktopAuthorization::with_access(
+                client_id, port, reconsent, login_hint, access,
             )?,
             deadline: Instant::now() + lifetime,
         })

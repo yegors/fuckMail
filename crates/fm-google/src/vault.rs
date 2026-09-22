@@ -6,6 +6,72 @@ use sha2::{Digest, Sha256};
 use std::sync::Mutex;
 use zeroize::Zeroizing;
 
+/// A native refusal is shared by every worker until an explicit user retry.
+/// The lock remains inside the blocking operation, including caller cancellation.
+pub struct SessionCredentialVault<V: ?Sized> {
+    inner: std::sync::Arc<V>,
+    denied: Mutex<std::collections::BTreeSet<AccountId>>,
+}
+impl<V: CredentialVault + ?Sized> SessionCredentialVault<V> {
+    pub fn new(inner: std::sync::Arc<V>) -> Self {
+        Self {
+            inner,
+            denied: Mutex::new(Default::default()),
+        }
+    }
+}
+impl<V: CredentialVault + ?Sized> CredentialVault for SessionCredentialVault<V> {
+    fn retry_access(&self, account: &AccountId) -> Result<(), GoogleError> {
+        self.denied
+            .lock()
+            .map_err(|_| GoogleError::StoreUnavailable)?
+            .remove(account);
+        Ok(())
+    }
+    fn load(&self, account: &AccountId) -> Result<Option<StoredToken>, GoogleError> {
+        let mut denied = self
+            .denied
+            .lock()
+            .map_err(|_| GoogleError::StoreUnavailable)?;
+        if denied.contains(account) {
+            return Err(GoogleError::StoreUnavailable);
+        }
+        let result = self.inner.load(account);
+        if result.is_err() {
+            denied.insert(account.clone());
+        }
+        result
+    }
+    fn store(&self, account: &AccountId, token: StoredToken) -> Result<(), GoogleError> {
+        let mut denied = self
+            .denied
+            .lock()
+            .map_err(|_| GoogleError::StoreUnavailable)?;
+        // A verified reconnect may replace the credential even after denial.
+        // Refresh always loads first, so it cannot bypass the blocked load.
+        let result = self.inner.store(account, token);
+        if result.is_err() {
+            denied.insert(account.clone());
+        } else {
+            denied.remove(account);
+        }
+        result
+    }
+    fn remove(&self, account: &AccountId) -> Result<(), GoogleError> {
+        let mut denied = self
+            .denied
+            .lock()
+            .map_err(|_| GoogleError::StoreUnavailable)?;
+        let result = self.inner.remove(account);
+        if result.is_err() {
+            denied.insert(account.clone());
+        } else {
+            denied.remove(account);
+        }
+        result
+    }
+}
+
 /// Core supplies a random, persistent per-profile namespace. It is not a token.
 /// Native errors are deliberately collapsed before reaching diagnostics.
 pub struct NativeCredentialVault {
@@ -174,5 +240,86 @@ mod tests {
         assert_ne!(one.reference(&a), one.reference(&b));
         assert!(!one.reference(&a).contains("fixture"));
         assert!(NativeCredentialVault::new("short").is_err());
+    }
+}
+
+#[cfg(test)]
+mod denial_tests {
+    use super::*;
+    use std::sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc,
+    };
+    #[derive(Default)]
+    struct Vault {
+        loads: AtomicUsize,
+        denied: AtomicBool,
+    }
+    impl CredentialVault for Vault {
+        fn load(&self, _: &AccountId) -> Result<Option<StoredToken>, GoogleError> {
+            self.loads.fetch_add(1, Ordering::SeqCst);
+            if self.denied.load(Ordering::SeqCst) {
+                Err(GoogleError::StoreUnavailable)
+            } else {
+                Ok(None)
+            }
+        }
+        fn store(&self, _: &AccountId, _: StoredToken) -> Result<(), GoogleError> {
+            if self.denied.load(Ordering::SeqCst) {
+                Err(GoogleError::StoreUnavailable)
+            } else {
+                Ok(())
+            }
+        }
+    }
+    #[test]
+    fn concurrent_denial_is_latched_until_explicit_retry_and_other_accounts_work() {
+        let inner = Arc::new(Vault::default());
+        inner.denied.store(true, Ordering::SeqCst);
+        let vault = Arc::new(SessionCredentialVault::new(inner.clone()));
+        let account = AccountId::new("denied").unwrap();
+        let workers: Vec<_> = (0..12)
+            .map(|_| {
+                let v = vault.clone();
+                let a = account.clone();
+                std::thread::spawn(move || {
+                    assert!(matches!(v.load(&a), Err(GoogleError::StoreUnavailable)))
+                })
+            })
+            .collect();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        assert_eq!(inner.loads.load(Ordering::SeqCst), 1);
+        inner.denied.store(false, Ordering::SeqCst);
+        assert!(matches!(
+            vault.load(&account),
+            Err(GoogleError::StoreUnavailable)
+        ));
+        assert!(vault
+            .load(&AccountId::new("other").unwrap())
+            .unwrap()
+            .is_none());
+        vault.retry_access(&account).unwrap();
+        assert!(vault.load(&account).unwrap().is_none());
+        assert_eq!(inner.loads.load(Ordering::SeqCst), 3);
+    }
+    #[test]
+    fn failed_refresh_storage_latches_and_verified_reconnect_clears_it() {
+        let inner = Arc::new(Vault::default());
+        let vault = SessionCredentialVault::new(inner.clone());
+        let account = AccountId::new("account").unwrap();
+        let token = || StoredToken {
+            access_token: "synthetic".into(),
+            refresh_token: "synthetic".into(),
+            expires_at_secs: 123,
+        };
+        inner.denied.store(true, Ordering::SeqCst);
+        assert!(vault.store(&account, token()).is_err());
+        assert!(vault.load(&account).is_err());
+        assert_eq!(inner.loads.load(Ordering::SeqCst), 0);
+        inner.denied.store(false, Ordering::SeqCst);
+        vault.store(&account, token()).unwrap();
+        assert!(vault.load(&account).unwrap().is_none());
     }
 }

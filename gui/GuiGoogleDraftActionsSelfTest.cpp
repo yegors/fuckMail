@@ -109,35 +109,10 @@ void GuiGoogleDraftActionsSelfTest::tick() {
         if(click("settingsButton"))m_stage=3; break;
     case 3: if(click("settingsPage_Accounts"))m_stage=4; break;
     case 4:
-        if(click("googleSync_"+id)){m_quotaFilled=false;m_quotaSubmitted=false;m_stage=5;} break;
+        if(click("googleSync_"+id)){m_stage=5;} break;
     case 5: {
-        if(!m_backend.googleSyncState(id).value("owned").toBool()) {
-            auto dialog=m_window->findChild<QObject*>("googleSyncLimitsDialog");
-            if(!dialog||!dialog->property("visible").toBool()||m_quotaSubmitted)return;
-            if(!m_quotaFilled) {
-                for(const auto &key:quotaKeys) {
-                    auto field=named(m_window->contentItem(),key);
-                    if(!field||!field->isVisible()||!field->isEnabled())return;
-                }
-                for(const auto &key:quotaKeys) {
-                    auto field=named(m_window->contentItem(),key);
-                    const auto text=QString::number(m_limits[key].toInteger());
-                    field->forceActiveFocus();
-                    if(!field->setProperty("text",text)||!QMetaObject::invokeMethod(field,"textEdited")
-                        ||field->property("text").toString()!=text) {
-                        finish("Native quota field edit failed: "+key);return;
-                    }
-                }
-                m_quotaFilled=true;
-                qInfo()<<"Native draft actions filled all four Settings quota fields.";
-                return;
-            }
-            if(click("saveGoogleSyncLimits")) {
-                m_quotaSubmitted=true;
-                qInfo()<<"Native draft actions submitted Settings Start sync.";
-            }
-            return;
-        }
+        if (!m_backend.googleSyncState(id).value("owned").toBool()) return;
+        if (m_window->findChild<QObject *>("googleSyncLimitsDialog")) { finish("Removed quota setup is still present."); return; }
         const auto limits=QJsonObject::fromVariantMap(m_backend.googleSyncLimits());
         if(limits!=m_limits){finish("Native owned sync limits differ from the independent expectation.");return;}
         m_accountResult={{"account",id},{"limits",limits}};m_exports={};m_action=0;

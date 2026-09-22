@@ -11,6 +11,7 @@ Popup {
     property bool saving: false
     property string feedback: ""
     property var pendingResponse: ({})
+    property var deleteTarget: ({})
     readonly property bool live: !backend.syntheticProfile
     property string operationState: ""
     property double operationRevision: -1
@@ -44,6 +45,7 @@ Popup {
         scope: details.recurringScopes.length ? details.recurringScope : ""
         onResolved: function(event) {
             if (event.recurring_action === "rsvp") details.submitResponse(details.requestedResponse, event)
+            else if (event.recurring_action === "delete" && (event.recurring_context||{}).scope!=="following") details.confirmDeletion(event)
             else { details.editRequested(event); details.close() }
         }
         onFailed: function(message) { details.feedback = message }
@@ -61,16 +63,16 @@ Popup {
     x: Math.max(16, Math.min(originX - width / 2, parent.width - width - 16))
     y: timelineSource ? Math.max(64, Math.min(parent.height - height - 16, timelineAtTop ? timelineEdge + 12 : timelineEdge - height - 12)) : Math.max(64, originY + 14 + height <= parent.height - 16 ? originY + 14 : originY - height - 14)
     modal: false; dim: false; focus: true
-    closePolicy: saving ? Popup.NoAutoClose : Popup.CloseOnEscape | Popup.CloseOnPressOutside
+    closePolicy: saving || deleteConfirmation.visible ? Popup.NoAutoClose : Popup.CloseOnEscape | Popup.CloseOnPressOutside
     background: Rectangle {
         color: Theme.surface; radius: 8; border.color: Theme.controlBorder
-        layer.enabled: true; layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.6); shadowBlur: .8; shadowVerticalOffset: 12 }
+        layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software; layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.6); shadowBlur: .8; shadowVerticalOffset: 12 }
     }
     enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180 } }
     onAboutToShow: { feedback = ""; pendingResponse = ({}); awaitedEtag = ""; operationState = ""; operationRevision = -1 }
-    onAboutToHide: occurrenceRead.invalidate()
+    onAboutToHide: { occurrenceRead.invalidate(); deleteConfirmation.close() }
     function openAt(event, anchor) {
-        if (saving || (visible && hasPendingResponse)) return
+        if (saving || deleteConfirmation.visible || (visible && hasPendingResponse)) return
         occurrenceRead.invalidate()
         eventData = event
         recurringScope = recurringScopes.indexOf("occurrence") >= 0 ? "occurrence" : recurringScopes[0] || "occurrence"
@@ -101,6 +103,26 @@ Popup {
         saving = true; feedback = "Checking the recorded response…"
         backend.calendarOperationAction(pendingResponse.account, pendingResponse.request_id, action, operationRevision)
     }
+    function deleteEvent(scope) {
+        if (!visible || !live || saving || occurrenceRead.busy || !accountReady || hasPendingResponse) return
+        const allowed=(eventData.recurring_scopes||{}).delete||[]
+        if(scope && allowed.indexOf(scope)>=0) {recurringScope=scope;readScoped("delete")}
+        else if(!scope && eventData.can_delete===true)confirmDeletion(eventData)
+    }
+    function confirmDeletion(event) {
+        if(event.can_delete!==true)return
+        deleteTarget=Object.assign({},event)
+        deleteConfirmation.open()
+    }
+    function submitDeletion() {
+        const event=deleteTarget
+        if(saving||hasPendingResponse||!backend.connected||!backend.accountCapability(event.account,"calendar_write")||!backend.googleSyncState(event.account).active||event.can_delete!==true)return
+        const request={account:event.account,calendar_id:event.calendar_id,event_id:event.event_id,expected_etag:event.etag,kind:"delete",request_id:"gui-delete-"+Date.now()+"-"+Math.floor(Math.random()*1000000000)}
+        if(event.recurring_context)request.recurring=event.recurring_context
+        else if(event.occurrence)request.occurrence=event.occurrence
+        const error = backend.queueCalendarDeletion(request, event)
+        if (error.length) feedback = error; else close()
+    }
     Connections {
         target: backend
         function onEventsChanged() {
@@ -118,6 +140,7 @@ Popup {
             details.saving = false
             if (ok) {
                 details.operationState = ""; details.operationRevision = -1
+                if(details.pendingResponse.kind==="delete") {details.pendingResponse={};details.close();return}
                 if (details.live) { details.feedback = result.state === "reconciled" ? "Your response was observed on Google. The original response and notification delivery remain unconfirmed." : "Google accepted your response. Notification delivery is unverified."; details.pendingResponse = ({}) }
                 else { details.feedback = "Response saved locally. No invitation was sent."; details.awaitedEtag = result.etag || ""; let updated = Object.assign({}, details.eventData); if (result.etag) updated.etag = result.etag; updated.self_response = details.pendingResponse.response; details.eventData = updated }
             } else if (details.live) {
@@ -139,15 +162,15 @@ Popup {
             RowLayout {
                 Layout.fillWidth: true; spacing: 10
                 Text { text: details.eventData.title || ""; color: Theme.text; font.pixelSize: Theme.fontSize(15); font.weight: Font.Medium; wrapMode: Text.Wrap; Layout.fillWidth: true; textFormat: Text.PlainText }
-                Text { text: details.eventData.account_name || ""; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); Layout.maximumWidth: 95; elide: Text.ElideRight; Layout.alignment: Qt.AlignTop; topPadding: 2 }
+                Text { text: details.eventData.account_name || ""; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); Layout.minimumWidth:Math.min(95,implicitWidth);Layout.preferredWidth:Math.min(95,implicitWidth);Layout.maximumWidth: 95; elide: Text.ElideRight; Layout.alignment: Qt.AlignTop; topPadding: 2 }
             }
             Flow {
             Layout.fillWidth: true; spacing: 8
-            Text { text: details.eventData.all_day ? "All day" : (details.eventData.time_display || "") + " – " + (details.eventData.end_display || ""); color: Theme.accent; font.pixelSize: Theme.fontSize(13); font.weight: Font.Medium }
+            Text { width: parent.width; wrapMode: Text.Wrap; text: details.eventData.multi_day ? (details.eventData.start_display || "") + " – " + (details.eventData.end_display || "") : details.eventData.all_day ? "All day" : (details.eventData.time_display || "") + " – " + (details.eventData.end_display || ""); color: Theme.accent; font.pixelSize: Theme.fontSize(13); font.weight: Font.Medium }
             Text {
-                text: (details.eventData.date ? Qt.formatDate(new Date(details.eventData.date + "T12:00:00"), "ddd d MMM") : "")
-                    + (!details.eventData.all_day && details.eventData.duration_hours ? " · " + Math.round(details.eventData.duration_hours * 60) + " min" : "")
-                    + (details.eventData.recurring ? " · repeats" : "")
+                text: (!details.eventData.multi_day && details.eventData.date ? Qt.formatDate(new Date(details.eventData.date + "T12:00:00"), "ddd d MMM") : "")
+                    + (!details.eventData.all_day && !details.eventData.multi_day && details.eventData.duration_hours ? " · " + (details.eventData.duration_minutes || Math.round(details.eventData.duration_hours * 60)) + " min" : "")
+                    + (details.eventData.recurring ? details.eventData.multi_day ? "Repeats" : " · repeats" : "")
                 color: Theme.subtle; font.pixelSize: Theme.fontSize(12)
             }
             }
@@ -170,7 +193,7 @@ Popup {
             }
             Text { visible: details.conflicts.length > 0; text: "Overlaps " + details.conflicts.map(function(e) { return e.title + " (" + e.time_display + " – " + e.end_display + ", " + e.account_name + " / " + e.calendar_name + ")" }).join(", "); color: Theme.accent; font.pixelSize: Theme.fontSize(12); wrapMode: Text.Wrap; textFormat: Text.PlainText; Layout.fillWidth: true }
             Text {
-                visible: details.eventData.date === backend.todayDate && !details.eventData.all_day
+                visible: details.eventData.date === backend.todayDate && !details.eventData.all_day && !details.eventData.multi_day
                 property real start: details.eventData.start_hour || 0
                 property real end: start + (details.eventData.duration_hours || 0)
                 text: backend.nowHour < start ? "Starts in " + Math.ceil((start - backend.nowHour) * 60) + " min" : backend.nowHour < end ? "Now · ends " + details.eventData.end_display : "Ended " + details.eventData.end_display
@@ -216,27 +239,27 @@ Popup {
             }
             Text { visible: details.feedback.length > 0; text: details.feedback; color: Theme.accent; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true; textFormat: Text.PlainText }
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
-            RowLayout {
-                Layout.fillWidth: true; spacing: 6
+            Flow {
+                Layout.fillWidth: true; Layout.minimumWidth:0; Layout.preferredWidth:1; spacing: 6
                 FmButton { objectName: "eventEditButton"; visible: !!details.eventData.can_edit || details.scopedAllowed("edit") || (!details.recurringScopes.length && details.eventData.can_resolve_occurrence === true); text: occurrenceRead.busy ? "Checking…" : !details.recurringScopes.length && details.eventData.can_resolve_occurrence === true ? "Edit this occurrence" : "Edit"; prominent: true; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); enabled: !details.saving && !occurrenceRead.busy && !details.awaitedEtag.length && details.accountReady && !details.hasPendingResponse; onClicked: { if (details.scopedAllowed("edit") || details.eventData.can_resolve_occurrence === true) details.readScoped("edit"); else { details.editRequested(details.eventData); details.close() } } }
-                FmButton { objectName: "eventScopedCancel"; visible: details.scopedAllowed("delete"); text: "Cancel"; outlined: true; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); enabled: !details.saving && !occurrenceRead.busy && details.accountReady && !details.hasPendingResponse; onClicked: details.readScoped("delete") }
-                Item { Layout.fillWidth: true }
-                FmButton { objectName: "eventDetailsClose"; text: details.live && details.saving ? "Cancel request" : "Close"; implicitHeight: 28; font.pixelSize: Theme.fontSize(11); enabled: !details.saving || details.live; onClicked: { if (details.live && details.saving) backend.cancelGoogleOperation(details.pendingResponse.account, details.pendingResponse.request_id); else details.close() } }
+                FmButton { objectName: "eventScopedCancel"; visible: details.live && (((details.eventData.recurring_scopes||{}).delete||[]).indexOf("occurrence")>=0 || details.scopedAllowed("delete") || (details.eventData.can_delete===true&&!details.recurringScopes.length)); text: details.recurringScope==="following"?"Delete following":details.recurringScopes.length?"Delete this":"Delete"; outlined:true;implicitHeight:28;font.pixelSize:Theme.fontSize(12);enabled:!details.saving&&!occurrenceRead.busy&&details.accountReady&&!details.hasPendingResponse;onClicked:details.deleteEvent(details.recurringScopes.length?(details.recurringScope==="following"?"following":"occurrence"):"") }
+                FmButton { objectName:"eventDeleteSeries";visible:details.live&&((details.eventData.recurring_scopes||{}).delete||[]).indexOf("series")>=0;text:"Delete series";outlined:true;implicitHeight:28;font.pixelSize:Theme.fontSize(12);enabled:!details.saving&&!occurrenceRead.busy&&details.accountReady&&!details.hasPendingResponse;onClicked:details.deleteEvent("series") }
+                FmButton { objectName: "eventDetailsClose"; visible:details.saving||(!details.eventData.can_edit&&!details.scopedAllowed("edit"));text: details.live && details.saving ? "Cancel request" : "Close"; implicitHeight: 28; font.pixelSize: Theme.fontSize(11); enabled: !details.saving || details.live; onClicked: { if (details.live && details.saving) backend.cancelGoogleOperation(details.pendingResponse.account, details.pendingResponse.request_id); else details.close() } }
             }
         }
     }
-    Dialog {
-        id: responseAbandonConfirmation; objectName: "eventRsvpAbandonConfirmation"; parent: Overlay.overlay; anchors.centerIn: parent; modal: true
-        implicitWidth: 304; width: Math.min(implicitWidth, parent.width - 32)
-        implicitHeight: topPadding + bottomPadding + responseBody.implicitHeight + (header ? header.implicitHeight + spacing : 0) + (footer ? footer.implicitHeight + spacing : 0)
-        title: "Abandon recorded response?"; standardButtons: Dialog.Ok | Dialog.Cancel
-        background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
-        palette.windowText: Theme.text; palette.buttonText: Theme.text
-        onOpened: standardButton(Dialog.Ok).text = "Abandon"
-        contentItem: Item {
-            implicitHeight: responseBody.implicitHeight
-            Text { id: responseBody; width: responseAbandonConfirmation.availableWidth; text: "Abandon this recorded response. This does not undo a response already accepted by Google."; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; textFormat: Text.PlainText }
-        }
+    FmConfirmDialog {
+        id:deleteConfirmation;objectName:"eventDetailsDeleteConfirmation";actionObjectName:"confirmDetailsDelete"
+        title:((details.deleteTarget.recurring_context||{}).scope==="series"?"Delete series":"Delete event")+"?"
+        message:"Remove “"+(details.deleteTarget.title||"this event")+"”"+((details.deleteTarget.recurring_context||{}).scope==="series"?" and every occurrence":(details.deleteTarget.recurring_context||{}).scope==="occurrence"||details.deleteTarget.occurrence?" for this occurrence only":"")+" from Google Calendar? Google may notify guests. You can undo for a few seconds afterwards."
+        actionText:"Delete";destructive:true
+        onAccepted:details.submitDeletion()
+    }
+    FmConfirmDialog {
+        id: responseAbandonConfirmation; objectName: "eventRsvpAbandonConfirmation"
+        title: "Abandon recorded change?"
+        message: "Abandon this recorded change. This does not undo a change already accepted by Google."
+        actionText: "Abandon"
         onAccepted: details.resolveResponse("abandon")
     }
 }

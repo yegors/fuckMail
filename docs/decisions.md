@@ -564,3 +564,248 @@ The founder requires a green pipeline before continuing feedback-driven developm
 Both Windows hosted attempts at `ebc3484` exhaust the 600-second Rust workspace aggregate allowance while Core tests continue progressing, without an individual test failure. The local ordinary suite also exhausts that allowance after completing Core and starting engine tests. Quality 28 changes the aggregate execution allowance to 1,800 seconds and the hosted job allowance from 45 to 60 minutes to accommodate cold compilation, tests and package verification. The separate 900-second test-build allowance, every assertion, individual operation/native watchdog and application latency target stay unchanged. This supersedes only D047’s aggregate-budget preservation; original failures remain recorded.
 
 Consumers: CMake, GitHub Actions and development instructions. Calendar control wait failures gain source-location diagnostics with their existing deadline. No production behavior, runtime contract, schema 20, fixtures 0/3 or protocol 1 changes. Acceptance still requires complete passing native/workspace and relocated package checks on all three hosts for the final branch and PR merge tree; extending a deadline alone is not a pass.
+
+
+## D049 — Phase 2 updated native UI and complete account browsing (2026-09-14T21:39:23.507448+00:00)
+
+The founder requests a new Phase 2 branch, faithful placement from the September 14 second export, right-click context menus and multi-conversation actions, a visible splash animation, and visibility of imported labeled mail without Gmail INBOX membership. P2-UI starts on `codex/phase-2-ui-alignment` from merged `a5bec7f`. Its tree matches `55e9848`; the preserved CI report records all six branch/PR host jobs passing 23/23 and relocated packages, clearing D047 on that baseline.
+
+Mail UI 29 and Platform 16 govern this packet. GUI Inbox uses the existing account-scoped `all` query (non-Trash), retaining actual Gmail labels; it never adds INBOX remotely. CLI `--folder all` provides the same scope, while its literal inbox query remains available. Selection and context menus do not review mail. Bulk commands use frozen account/lifecycle/conversation/member identities and revisions through existing journaled commands, serialized with visible partial/failure outcomes; no implicit retry or newly arrived member adoption. Done clears read/stars; Delay changes only stars, preserving D014 despite prototype sample callbacks. Draft deletion preserves existing source/unknown-send safeguards. Splash waits at least 1.75 seconds before its 350-ms fade and also waits for readiness; startup errors remain immediately accessible.
+
+Schema 20, Core 27, Gmail 13, Calendar 21, CLI 21, Search 5, fixtures 0/3 and protocol 1 remain unchanged. Source exports/support.js are reference data, not runtime behavior, consent or dependencies. Scope includes native layout/interaction regression and a configured Mac GUI update preserving the existing engine identity. Full Phase 2 acceptance/performance remains separate.
+
+
+## D050 — Repair imported label projection and own Google quotas (2026-09-14T23:00:00Z)
+
+The founder removes the Google Limits screen and user quota setup, using Google's public limits as the reference. P2-UI now also fixes a verified second cause of invisible imported labels: linking a label after acquisition did not project retained provider membership onto existing messages. Core 28/Gmail 14/CLI 22/Quality 29 expand D049's GUI-only packet; Mail UI 29/Platform 16 and Calendar 21/Search 5 remain current. A new engine is necessary, so preserve the old configured package before replacement instead of promising byte-identical engine identity.
+
+New bindings project stored Gmail user-label membership immediately. Opening an older live store performs one idempotent transactional derived-membership repair, giving manual intents priority over assist intents over observed provider labels. Changed conversations receive new revisions; original sources, Gmail INBOX state, read/star flags, journal receipts and pending actions stay intact. No remote request is generated. Schema 20 and fixtures 0/3/protocol 1 stay unchanged. Core also owns the durable `mail_date_grouping` preference (`grouped` by default, or `plain`) for Sent/Drafts. Done marks read and clears stars (clarifying D049's wording); Delay changes only stars.
+
+Ordinary GUI and CLI sync use built-in per-minute limits: Gmail 1,200,000 project / 6,000 user quota units, Calendar 10,000 project / 600 user requests, with the existing 20% headroom and bounded throttling/backoff. Sources checked September 14: [Gmail quota](https://developers.google.com/workspace/gmail/api/reference/quota), [Calendar quota](https://developers.google.com/workspace/calendar/api/guides/quota). Assigned project quotas may differ; provider throttling is authoritative. Daily billing thresholds are not rate budgets. The existing explicit four-value API/CLI override remains for verification/legacy clients; no GUI field or saved preference is required or consulted for an ordinary start. Normalize default and explicit values before shared-owner equality checks. Sign-in still does not import, and Start sync remains explicit.
+
+Acceptance: focused Core label repair/reopen/manual-override and preference tests, Google scheduler/backoff tests, engine default/shared-owner regression, CLI no-quota parsing, native selection/context/date/splash/settings regressions, and the configured relocated Mac package. Retain original failures in ignored evidence. Current other-host CI, performance and the remaining actual-account/backup/coverage acceptance gates remain separate; this does not close Phase 2.
+
+
+## D051 — Plan Ollama-only local assistance alongside UI work (2026-09-14T22:14:47+00:00)
+
+**Accepted requirement:** the founder requests local LLM support, Ollama only for now, using this machine's instance as a reference. Automatically discover Ollama and its models; allow model selection for summaries and classification against configured local labels; distinguish human and automated email; supply useful editable prompts in Settings. Prepare the plan/contracts before starting implementation. Existing branch use is permitted while another agent continues UI/mail work.
+
+Local assistance 5/Triage 7 and P2-LLM advance this work from the later Phase 3 sequence. The proposed delivery defaults are separate summary/classification model selectors and editable prompts shared across local accounts, independent per-account enablement, Off by default, on-demand summaries and Suggest-first classification. Reuse the existing account category catalog and optional descriptions. Human/Automated/Unknown annotations are source-bound and user-correctable, independent of category relevance and Gmail state. Default prompts and the fixed schema/authority envelope live in Local assistance 5. Auto-apply requires subsequent labeled quality qualification; vLLM and broad historical reclassification are deferred. These delivery defaults are implementation proposals, not newly observed user preferences.
+
+Read-only reference inspection finds Ollama 0.34.0 and 20 entries, including a cloud model. One local candidate's metadata succeeds, another returns HTTP 500, and the cloud entry returns HTTP 410. This proves limited discovery only. Model eligibility, actual local execution, structured inference, quality and server-side cancellation still need verification with synthetic inputs before enabling mail inference. No real mail or inference request was sent for this planning work, and the shared Ollama service was not changed.
+
+Keep the existing human-authorship, manual-precedence, account isolation, no-cloud-fallback and session-lifetime constraints. No model changes unread/stars, Done/Delay, drafts, Send or Calendar. Preserve the concurrent D049/D050 code, evidence and package identity; coordinate shared type/schema and Settings integration when implementation starts. Re-read current consumer revisions then and update the owning Core/CLI/Mail UI/Platform/Quality contracts before introducing production interfaces. This planning update changes neither schema 20 nor fixtures 0/3/protocol 1, starts no runtime implementation and leaves readiness 0/9. D041's broad performance/workspace deferral remains in force.
+
+Affected files: Local assistance, Triage, scoped local-AI research, Phase 2/development plans, product/UI scope, status, root README and contract index.
+
+
+## D052 — Implement the planned Ollama packet (2026-09-14T22:21:50+00:00)
+
+The founder says “implement it,” authorizing D051/P2-LLM implementation on the existing branch. Local assistance 6/Core 29/CLI 23/Mail UI 30/Platform 17/Quality 30 define the concrete shared commands, schema 21, bounded model adapter and native/CLI integration before consumer changes. Triage 7, Gmail 14, Calendar 21, Search 5 and fixtures 0/3/protocol 1 retain their boundaries. Preserve concurrent UI/mail edits and previous working packages. Use isolated build output and synthetic model inputs for qualification; record actual outcomes and remaining gates without claiming Phase 2 closure.
+
+
+## D053 — Align summary presentation and repair assistance controls (2026-09-15T01:41:41.792587+00:00)
+
+The founder rejects D052’s summary presentation and requests alignment with the latest supplied prototype plus related bug fixes and verification. Use the September 14 second export’s compact bordered Summary card, blue assistance accent, 11-pixel uppercase heading, quiet right-aligned model attribution and readable body. Put thread summaries below reader metadata; individual summaries belong with their source message. Keep secondary classification/correction/provenance actions out of the primary summary surface. Fix independent summary enablement, exact source navigation, pending/canceled/stale callbacks, disconnected job recovery and Settings sample/edit behavior. Summaries remain explicitly on demand; no automatic summary sweep follows from prototype sample behavior.
+
+Mail UI 31/Local assistance 7/Quality 31 own this repair. Shared commands and schema 21/fixtures 0/3/protocol 1 remain unchanged. Evidence requires native summary-only and sent/received controls, delayed response/cancel/switch/disconnect checks, source navigation and small/large text across themes, synthetic engine/CLI regression, an installed-Ollama sample, and a separate verified Mac candidate preserving existing packages and real profiles. Report limits without whole-area closure.
+
+
+## D054 — Respect Keychain denial and provide a real header sync control (2026-09-15T01:43:34+00:00)
+
+The founder reports repeating macOS credential prompts after Deny and requests replacing the header's Local copy indicator with a sync button and last successful fetch time. Keep credentials in the native vault and respect its access controls. A vault refusal blocks further automatic credential attempts in this engine session until explicit Sync/reconnect; concurrent workers must share that refusal. Existing authorized work and account/owner cancellation fences remain. No plaintext credential fallback or automatic Keychain trust changes.
+
+The header's account-scoped Sync action starts or wakes the existing shared sync owner with published budgets, fetches fresh Gmail history promptly, and shows the last fully applied successful history check. Persist that timestamp independently of UI refreshes; failures and partial pages cannot advance it. GUI and CLI share the command/status boundary. Consumers: Core 30/Gmail 15/Platform 18/Mail UI 32/CLI 24/Quality 32; schema 21, fixture 0/3 and protocol 1 unchanged. D053's concurrent summary UI remains independently owned. Acceptance: denied-vault concurrency/retry tests, generated-provider wake/success/failure and restart readback, native header interaction, configured Mac package. Broad performance and whole Phase 2 qualification remain separate.
+
+## D055 — One useful local mail analysis (2026-09-15T05:02:49Z)
+
+The founder requests one model and a fully visible editable prompt for per-message summaries, human/bot classification and one matching account label. Auto-label new mail and summaries default on once a model is selected; no per-result acceptance. Zero labels is valid when no definition fits. Summaries are one or two factual prose sentences describing the main point and any explicit recipient request, preserving conditional warnings without inventing a security incident. Show a current message summary in its list preview with the assistance icon, and remove the redundant thread-summary UI, sample buttons and default-reset buttons.
+
+P2-LLM2 supersedes D051–D053's separate model/prompt, Suggest-first and off-by-default delivery choices. Local assistance 8/Core 31/Triage 8/Mail UI 33/CLI 25/Gmail 16/Quality 33 own the shared boundary. Schema 22 fences the new settings/result and assisted label-delivery semantics; fixtures 0/3 and protocol 1 stay unchanged. Preserve explicit saved account opt-outs, select the former classification model (or summary model as fallback), retain customized old instructions in the new prompt, and retain old result/receipt bytes. New settings do not classify historical mail. No model controls read/stars, Done/Delay, composition or Calendar. Local inference remains bounded and session-owned; missing models leave ordinary mail usable.
+
+Acceptance: focused settings-upgrade, combined-result, template, stale/manual/provider precedence and single-label delivery tests; native Settings/message/list regressions; a configured Windows candidate and synthetic installed-model evaluation when available. Keep generated evidence ignored and report actual host/quality limits. This is implementation authorization, including prospective automatic label delivery, not permission to send mail or sweep a real mailbox.
+
+## D056 — Show and edit the complete Ollama request (2026-09-15T05:47:42.459643+00:00)
+
+The founder clarifies that the entire prompt means all app-supplied messages, JSON response syntax, template variables and generation settings in the same editable box. D055’s separate fixed system envelope and hidden structured-output schema do not meet that requirement. P2-LLM2B stores the full JSON chat request template; inference performs a single typed variable expansion and sends that request without appending hidden messages or replacing its schema/options. Existing application validation, output/action limits and local-only transport remain enforced outside the prompt. The model’s own Ollama chat template/tokenization is outside the app request.
+
+Local assistance 9/Core 32/Mail UI 34/CLI 26/Quality 34 own the correction. Schema 23 preserves exact schema-22 settings in history and wraps saved text into the complete request without losing custom instructions or account choices; old engines refuse it. Fixtures 0/3 and protocol 1 are unchanged. Acceptance requires byte-semantic request equality at the fake HTTP endpoint, template substitution/escaping/bounds tests, settings migration and native editor checks, installed-model smoke and a separately packaged Windows candidate. No real-mailbox sweep, external send or broad performance work is authorized.
+
+## D057 — Readable system and user prompt content (2026-09-15T06:14:41.119501+00:00)
+
+The founder wants only the system and user message content in Settings, with normal newlines, not request JSON, response schema or generation options. P2-LLM2C renders each stored message content as an editable plain-text field in its existing order, labeled System or User. Content edits preserve every other request field. Local assistance 10/Mail UI 35/Quality 35 own this presentation correction; engine/CLI, schema 23, fixtures 0/3 and protocol 1 are unchanged. Verify native newline/content editing and preservation of the undisplayed request fields, then package the GUI with the existing verified engine.
+
+## D058 — Incoming-only assistance and precise model failures (2026-09-15T06:33:19.129036+00:00)
+
+The founder reports missing classification/labels and duplicate model errors, then clarifies that sent mail must never be summarized: assistance is for external incoming mail only. P2-LLM2D adds the omitted sent flag to reader messages, excludes sent messages from inference and visible historical results/previews, and removes their assistance controls. Received-mail classification and single matching label remain automatic when enabled; no matching label is a valid result. Preserve manual overrides and receipt history.
+
+Separate truncated output, unfinished response, model mismatch and actual tool-call errors. Null or empty tool_calls means no tools. Raise the default generation allowance from 1024 to 4096 tokens to leave room for thinking plus final JSON, retaining 120-second and response-size bounds without automatic retry. Schema 24 archives old settings and updates only the former default token allowance; preserve user message contents, options otherwise and account choices. Core 33/Local assistance 11/Mail UI 36/CLI 27/Quality 36 own the packet; fixtures 0/3/protocol 1 stay unchanged. Verify sent/received queries, combined result application, old settings migration, HTTP failure cases, native no-sent/one-error behavior and a configured Windows candidate. Use synthetic inference, not a real-mailbox sweep.
+
+## D059 — September 15 prototype throughout the native app (2026-09-15T07:00:55+00:00)
+
+The founder supplies a new HTML export and requests complete GUI/UX alignment plus the backend needed by its working controls. P2-UI3 covers the reader, list actions, six Settings sections, Google connection, Calendar multi-day/custom recurrence and a shared confirmation design. The supplied source is preserved unchanged and inventoried in `docs/research/prototype-september-15.md`. The reference browser URL was rejected; source analysis and native screen checks must not be described as a rendered side-by-side comparison.
+
+Core 34/Mail UI 37/Calendar 22/CLI 28/Quality 37 own the initial packet. Add an explicit `received` conversation scope: non-Trash, non-sent messages qualify a conversation; the reader retains all its members. Native Inbox uses that scope, superseding D049/D050's inclusion of sent-only conversations. Retain provider INBOX and all-mail query meanings. Add Terminal to shared preferences, retaining readability of legacy Harbour choices. Calendar authoring exposes supported weekday/end-date recurrence through the existing conditional Google write boundary. Keep stale authority, uncertain outcome and unsaved-buffer protections, while using the shared compact confirmation surface.
+
+Schema 24, fixtures 0/3 and protocol 1 initially remain unchanged. Preserve the earlier uncommitted assistance work, exact historical receipts, configured packages and real profiles. Scope new persistence changes before implementing them. Evidence requires focused shared-boundary tests, real native controls/keyboard/form checks, native screen inspection and a separate configured Windows candidate. Whole readiness and other-host qualification remain open; no real sends, invitations or mailbox sweep are implied.
+
+## D060 — Local server choices in the updated prototype (2026-09-15T09:03:43Z)
+
+P2-UI3 includes the prototype's Ollama and local OpenAI-compatible provider choices. Local assistance 12/Core 35/Mail UI 38/CLI 29/Quality 38 add a persisted provider with Ollama as the backward-compatible default. Keep the same combined incoming-message analysis, visible System/User contents, account switches and manual precedence. Standard compatible servers expose model IDs, not verified weight digests: record that distinction accurately and send only to the configured loopback server. The server controls how its model runs; no hosted fallback, model download, API key storage or service management is added.
+
+Map the existing expanded messages and response schema to `/v1/chat/completions`, with temperature/output limits, no tools and no streaming. Server context size is configured in that server; the application retains its input/response/time bounds. Ollama keeps its existing request and digest checks. Schema 25 adds compatible-provider classification provenance, preserves all existing rows/settings/history/receipts and fences older engines. Fixtures 0/3 and protocol 1 stay unchanged. Verify exact HTTP messages/schema, discovery, incomplete/tool/mismatched responses, cancellation/limits, unchanged old snapshots, settings migration and native provider switching before packaging. No real-mailbox inference is implied.
+
+## D061 — Account labels and explicit Google synchronization (2026-09-15T09:24:38Z)
+
+P2-UI3 implements the prototype's account-specific label rows, local descriptions, Enter-to-add, shared removal confirmation and Sync with Google. The prototype removes labels locally; explicit sync merges Google user-label names back in and creates missing local names in Google. An optional founder question about remote deletion remains unanswered; use this supplied behavior. This does not delete mail or Gmail labels. Google names are authoritative for linked labels; descriptions stay local in the existing assistance settings. Preserve unrelated settings, manual choices, account separation and immutable operation receipts. The Accounts retention statistic reports the oldest cached message date, not an invented retention policy.
+
+Core 36/Gmail 18/Mail UI 39/CLI 30/Local assistance 13/Quality 39 own the boundary. Schema 26 adds a durable label-creation record so interrupted/uncertain creates are reconciled from the next explicit label inventory and never blindly resubmitted. Local label CRUD preserves historical receipts while clearing removed local membership/mapping/intents. Local unmapped labels can be assigned without Google delivery; linking flushes captured pending membership through the existing mutation journal. Existing review/star/Send/calendar authority is unchanged. Sync uses the existing account-scoped operation owner, quota/cancellation path and typed Google labels API. Duplicate names, missing access, conflicts, limits and unknown outcomes must be visible. Fixtures 0/3/protocol 1 stay unchanged.
+
+Acceptance: focused local lifecycle/replay/description preservation and provider create/reconciliation tests, native account selection/Enter/edit/remove/shared confirmation/sync controls, paired CLI checks and the configured UI3 package. No actual mailbox/provider writes are used for these verifiers.
+
+## D062 — Composer file input and cached recipient suggestions (2026-09-15T10:27:43+00:00)
+
+P2-UI3 continues the supplied composer interaction: selecting multiple local files and dropping files into the editor use the existing revisioned single-file import in a serial queue. Each selection captures account/draft identity. Keep uncertain import receipts for exact retry, preserve newer authored fields, pause remaining files on errors or navigation, and expose resume/skip without retargeting a file. A pending receipt still prevents Send/discard. No automatic upload, Send or cloud download-link service is introduced.
+
+Core 37/Mail UI 40/CLI 31/Quality 40 add a bounded, read-only cached-recipient query and native suggestions with names, addresses, account attribution, keyboard navigation and duplicate exclusion across To/Cc/Bcc. Prefer the selected account; existing active account mail/draft metadata supplies candidates, without reading source files or creating a contacts app. Suggestions never change routing until chosen. Stale replies after query, account or draft changes are discarded. Schema 26, fixtures 0/3 and protocol 1 remain unchanged.
+
+Acceptance: focused query bounds/validation/ranking/read-state checks, native production composer tests for multi-file sequencing, uncertain retry, navigation and in-flight edits, suggestion mouse/keyboard/stale identity checks, existing draft/Send regressions and a configured package. Full prototype parity and actual-account/other-host acceptance remain open.
+
+
+## D063 — Composer sender-account transfer (2026-09-15T10:58:14+00:00)
+
+P2-UI3 implements the prototype's From-account selector as an explicit transfer of the selected local authored draft. Preserve subject, To/Cc/Bcc, text/HTML, signature, attachment bytes and frozen RFC reply context. The destination uses its primary From address/display identity and its own draft/attachment ownership; do not manufacture a received conversation or reuse the source account's Google thread/draft IDs. Preserve the original row and historical receipts. Account lifecycle, local draft revision, provider state and destination identity must still match when preparation commits. Existing pending/unknown Send or draft operations must be resolved first.
+
+The default move policy retires the local source after the destination commits and removes an existing source Google draft only after the destination has been acknowledged by Google. Capture the exact original provider identity and content observation; changed/unknown remote state requires visible reconciliation, never blind deletion. A copy policy keeps the original; an optional founder preference question is pending. These are application behaviors, not authorization for test writes to an actual mailbox. A durable transfer record owns completion, recovery and the source/destination relationship across process restart. Preserve account-removal fences and shared CLI/GUI semantics.
+
+Core 38/Gmail 19/Mail UI 41/CLI 32/Quality 41 own this packet. Schema 27 adds only the transfer journal; all existing settings, messages, sources, drafts and operation receipts remain unchanged during migration. Fixtures 0/3 and protocol 1 are unchanged. Work is in progress: package94/schema26 remains the tested user candidate until native account-selection, actual migration/refusal/reopen, content/replay/cancellation, provider cleanup and relocated package checks pass. The full prototype goal remains open.
+
+
+## D064 — P2-UI3 Send Undo and shared action toast
+
+2026-09-15T11:56:49+00:00
+
+The September 15 prototype gives Send a six-second Undo interval and a common compact action toast. Implement that interval before invoking the existing exact-revision Google Send command. Save and validate recipients/content first; keep a bounded GUI-owned pending action per draft, preserve its account/lifecycle and authored revision, and allow browsing or composing elsewhere. Undo removes the action before any submission request; closing/disconnecting the GUI cancels unsubmitted actions and retains their saved drafts. After the interval, reread the same draft and current Google revision so ordinary draft synchronization does not make the saved Send stale; changed authored content, account incarnation or unsafe provider state must not be silently retargeted or retried. Existing exact Send receipts and unknown-outcome recovery remain authoritative once invocation starts. Use truthful Sending/accepted/error text rather than simulated provider success. CLI may opt into the same six-second client-side cancellation interval without changing the Core envelope.
+
+Mail UI 42/CLI 33/Quality 42; Core38/Gmail19/schema27/fixtures0,3/protocol1 unchanged. Evidence: actual native Undo/timing/navigation/lifecycle/close tests plus unchanged Send recovery controls, CLI argument/cancellation checks, theme captures and a configured relocated package. The broader prototype pending-Sent presentation, draft-discard Undo and Calendar-delete Undo remain required under the full active goal; this decision does not substitute this slice for them. No real account send or invitation is authorized for automated verification.
+
+## D065 — P2-UI3 durable draft-discard Undo
+
+2026-09-15T12:44:55Z
+
+Implement the prototype's six-second draft-discard Undo through the shared store and CLI/GUI boundary. Discard atomically retains an immutable snapshot of the saved draft and any captured editor buffer before clearing the active draft. Preserve body/HTML, signature and From identity, recipient lists and unfinished recipient input, attachment references, and frozen reply context. Undo names the original discard request, account/lifecycle and exact discarded revision; it must not overwrite newer edits, revive a transferred source, or retarget an account. Exact request replay precedes current-state validation. Keep old receipt bytes unchanged. Unknown discard/Undo results retain their original request identity for explicit status/retry. Multi-selection restores the successfully discarded drafts together from the shared toast.
+
+Schema28 adds the discard snapshot journal and durable unfinished recipient input to the existing drafts/store. Snapshot/restore checks retained attachment ownership and limits without reading files on the writer; capture/upload still verifies bytes on the existing bounded worker. Local autosave can retain unfinished address input; Send requires that input to be resolved. The existing local discard and Google draft recovery semantics remain intact; this packet does not pretend to reverse a remote deletion or finish the separate provider-cleanup/pending-Sent/Calendar-Undo gaps.
+
+Core39/Gmail20/Mail UI43/CLI34/Quality43, fixtures0/3 and protocol1. Evidence: exact snapshot/replay/restart, stale/lifecycle/ownership refusal, unfinished-recipient persistence and upload guard, native editor and selection Undo/recovery, actual schema27 migration/refusal/reopen, scoped regressions, strict lint and configured relocated package. Package135/schema27 stays preserved until that evidence passes. The complete prototype goal remains active; no real provider mutation is authorized for automated verification.
+
+
+## D066 — P2-UI3 Calendar deletion Undo
+
+2026-09-15
+
+Implement the prototype's six-second Undo for single-event, occurrence, series and supported following deletion. A bounded GUI queue retains the exact confirmed account/calendar/event/ETag and recurring identity before invoking the existing shared Calendar command. Hide only matching projected events across Calendar, Mail timeline and cached search; Undo restores the current cache without rewriting historical event snapshots. Closing/disconnecting cancels unsubmitted deletions. Changed account/authority/source cancels a queued deletion, while the existing Core/provider conditional checks remain authoritative at dispatch. Once invoked, use existing durable operation status/reconciliation and never retry an unknown deletion automatically. Show later outcomes through the common toast and Calendar activity, preserving unrelated open editors.
+
+Calendar23/Mail UI44/Quality44; Core39/Gmail20/CLI34/schema28, fixtures0/3 and protocol1 unchanged. Acceptance: production QML confirmation/queue/close, real six-second interval and Undo, exact source and recurring scope filtering, account/permission changes, no dispatch after Undo/close/disconnect, original request delivery and failure recovery, existing Calendar regression and configured package. Package146 remains preserved. Full prototype parity, provider draft cleanup, pending Sent, account disposition and remaining visual/interaction work are still open. Verification uses isolated fixtures only.
+
+## D067 — P2-UI3 outgoing message presentation
+
+2026-09-15
+
+Show the prototype's pending Sent rows and reply bubbles using the exact saved version during the six-second Undo interval and the existing immutable Send journal after invocation. Add bounded, read-only shared queries for outstanding outgoing messages and their retained MIME content; do not insert fabricated provider messages into Inbox or change Send certainty. Accepted messages remain visible through restart until their exact provider identity is acquired. Acquisition, including later Trash/deletion, suppresses the duplicate preview. Unknown submissions remain visibly unresolved and use the existing explicit recovery controls. Undo removes only its own unsubmitted preview and restores its saved editor. Reader content must never follow later draft edits.
+
+Core40/Gmail21/Mail UI45/CLI35/Quality45; schema28, fixtures0/3 and protocol1 unchanged. Reuse the Send journal and bounded local content workers; preserve all existing receipts. Verification will cover frozen content/restart, account scope, acquisition deduplication, bounded reads, native Send/Undo/navigation and recovery, and the configured relocated package. Package151 stays preserved. The complete prototype goal remains active and real provider writes remain outside automated verification.
+
+## D068 — P2-UI3 linked Google draft discard
+
+2026-09-15
+
+Discard of a locally owned draft also removes its linked Google draft after the shared six-second Undo interval. Record that intent alongside the immutable discard snapshot, with an authoritative expiry returned to the GUI; show the remaining interval so a displayed Undo cannot outlive its provider gate. Undo/new edits/account incarnation changes cancel unclaimed cleanup. Reuse the existing verified-source deletion journal, owned sync lifetime, quota/memory limits and read-only reconciliation. A stopped app starts no background service; committed cleanup resumes when an explicit sync owner next runs.
+
+Wait for earlier owned uploads, reconcile acknowledged versions, and cancel only proven-undispatched preparation. Delete only an exact linked source whose own acknowledged/adopted identity still matches; preserve external changes and unknown ownership. An unknown DELETE is read-only reconciled, never automatically repeated. Pending or blocked removal must be visible from Drafts and inspectable/retryable through the same Core/CLI boundary. Existing receipts and local snapshot bytes stay unchanged. Historical discards acquire no new provider intent during migration.
+
+Core41/Gmail22/Mail UI46/CLI36/Quality46/schema29; fixtures0/3 and protocol1 unchanged. Required evidence: exact target/deadline/Undo/claim fences, late upload and source-change handling, unknown/rejected deletion recovery, restart/account lifecycle, native confirmation/activity/Undo, actual migration/refusal/readback and configured package. Preserve package164. The full prototype goal remains active; all verification uses isolated generated data/providers.
+
+## D069 — P2-UI3 visual and interaction scope
+
+2026-09-15T11:04:12-04:00
+
+The founder narrowed the active objective to matching the latest prototype's GUI and UX, followed by commit and push. Set aside D068's unfinished provider cleanup; it is not a condition of this UI pass. Preserve its exact work in ignored `build/verification/ui3-cleanup-parked168/`, including the untracked module and this turn's patch. Remove the incomplete migration and module registration from the active build, retaining the verified schema28 behavior. D068 was never delivered or exercised against a real profile.
+
+Mail UI46/Quality46 cover the source-based UI comparison: search quick-filter chips, selected-chip colors, Sent date filters, current theme coverage and Settings wording. Existing typed filters own the query; shortcut examples use the account's real categories/senders and real date bounds rather than simulated query syntax. Core40/Gmail21/Calendar23/CLI35/schema28, fixtures0/3 and protocol1 remain the delivered boundary. Scoped native interaction checks, theme/resize captures and a configured relocated package count as evidence. The earlier browser restriction still prevents rendered reference comparison; do not equate source inspection with visual acceptance. Account retention wording must remain truthful to the existing archive behavior.
+
+## D070 — P2-UI3 Calendar visibility
+
+2026-09-15
+
+Add the prototype's Show/Hide control for other accounts' events. A typed `calendar_account_visibility` preference defaults to `all`; `current` intersects the existing individual calendar selection with the currently selected mailbox. Calendar, timeline and contextual Calendar search use the same effective selection and invalidate stale reads after account/catalog changes. Preserve explicit calendar selection, sync and reminder settings. Move individual calendar and display-zone controls into the existing expandable details so the default Settings layout follows the prototype.
+
+Core41/Calendar24/Mail UI47/CLI36/Quality47; Gmail21/schema28/fixtures0,3/protocol1 unchanged. This additive presentation preference uses the existing extensible JSON preferences store and generic CLI patch command. Verify typed saves/replay/restart, exact old-engine round-trip retention, native account-switch and late-response guards, visible Settings controls and the configured package. No new provider workflow is required.
+
+## D071 — P2-UI3 adjacent timeline days
+
+2026-09-15
+
+Render the preceding, selected and following days while dragging the Mail timeline, matching the supplied prototype. Use one bounded three-day cached Calendar query through the existing shared method. Retain only those three day projections; re-use a cached adjacent day when navigation finishes, and invalidate them when calendar selection or display zone changes. All projections respect account visibility and pending deletion Undo. Only the selected day's controls can receive focus or open details. No new provider acquisition or schema is needed.
+
+Calendar25/Mail UI48/Quality48; Core41/Gmail21/CLI36/schema28/fixtures0,3/protocol1 unchanged. Verify three distinct day projections, cached navigation, stale-response and scope guards, native drag/click/keyboard behavior and theme captures. This completes the remaining identified interaction gap before the final UI audit and package.
+
+## D072 — account setup and local-model feedback
+
+2026-09-16
+
+The founder requests permanent local archive deletion with the common confirmation, clearing obsolete removal messages after restoration, no separate Meetings permission checkbox, a setup retention choice (1 month, 3 months, 1 year default, All), working installed-model selection and summaries, and removal of the global top error bar. Preserve contextual errors, incoming-only assistance, explicit user-controlled review state and Google data. Archive deletion must be revision-bound, remove only an already removed account's local content, preserve other accounts and prevent stale work from reviving deleted content. Reconnection must remain possible. Never exercise deletion against the founder's actual profile during verification.
+
+P2-Feedback / Core42/Gmail22/Local assistance13/Mail UI49/CLI37/Quality49; fixtures0,3/protocol1 unchanged. Inspect the existing lifecycle/content and acquisition boundaries before changing storage; record any required schema migration in the owning contract. Evidence: isolated archive deletion/reconnection and retained-other-account checks, setup/restart acquisition bounds, exact expanded-request budget regression, native model selection/setup/dialog controls and a configured package. Diagnose actual model metadata read-only; do not send real email to a model during automated verification.
+
+D072 implementation clarification (2026-09-16): local assistance was already revision13, so this packet advances it to revision14. Schema29 now owns account archive deletion and initial history coverage; the unrelated D068 implementation stays parked. Retention chooses initial history and keeps previously saved mail, with no rolling purge. Blob cleanup runs at the next exclusive Store startup so it cannot race an import or delete another account’s shared file.
+
+## D073 — mail filing, thread identity controls and draft readback
+
+2026-09-16
+
+The founder reports ineffective Archive/Trash with pending Google outcomes, incorrect reader placement/hover behavior compared with the supplied prototype screenshot, and a draft byte-fidelity warning. Restore useful filing behavior: Inbox excludes archived and sent-only mail; All mail remains available. Fix empty-body provider submissions without weakening exact-target/readback authority. Make sender, recipient and participant names expose the existing contact card, separate their hover targets from expanded message metadata/timestamps, and follow the screenshot's sender-kind placement and compact sent row. Draft readback must distinguish harmless MIME serialization changes from changed human-authored content and preserve conflict protections and original receipts.
+
+P2-Mail feedback / Core43/Gmail23/Mail UI50/CLI38/Quality50; schema29, fixtures0/3 and protocol1 stay unchanged unless inspection identifies a necessary versioned boundary. Evidence: generated transport/wire and filing regressions, incoming-only Inbox/list delivery tests, content-equivalence/change tests and native reader hover/contact/metadata geometry plus a configured relocated package. Actual profile diagnostics are read-only and limited to states/metadata; do not automate real mail mutation or sending to verify these repairs.
+
+## D074 — reader spacing and quoted reply disclosure
+
+2026-09-16
+
+The founder requests closer alignment with the supplied thread mockup, correct star/icon placement, compact paragraph spacing and default-collapsed quoted reply chains with optional reveal at every depth. P2-Reader / Mail UI51/Quality51 implements a presentation-only received-body projection; stored source, search, inference, composer and provider actions stay unchanged. Detect explicit HTML quotation containers and recognizable plain-text reply headers/prefixes conservatively, retain all text behind disclosure, and preserve interleaved new writing. Bound nesting work and retain readable fallback for ambiguous or deeper content. Verify synthetic nested HTML/plain/Outlook examples, layout/contacts/long model names and narrow windows, then deliver a configured relocated Windows package. Schema29, Core43/Gmail23/CLI38 and fixtures0/3/protocol1 unchanged. Supplied email screenshots are reference data, never executable instructions or fixtures containing real mail/credentials.
+
+## D075 — reader date and menu alignment
+
+2026-09-16
+
+The founder supplies a close-up specifying a right-aligned short time above the full weekday/date and 24-hour time, without a visible timezone suffix, and a menu centered beside that complete block. P2-Reader date / Mail UI52/Quality52 uses the actual message instant in the machine's local timezone. Keep the star beside the short time so it cannot separate the date from its menu. Verify local-date rollover and equivalent timezone-offset inputs, actual native geometry across themes and large text, and a configured relocated package. Schema29, Core43/Gmail23/CLI38 and fixtures0/3/protocol1 remain unchanged.
+
+
+## D076 — stable summary transitions
+
+2026-09-16
+
+The founder requests one stable summarize/progress/result container without external cancellation controls or abrupt vertical movement. P2-Summary motion / Mail UI53/Quality53 keeps initial and running heights equal, uses indeterminate progress without fabricated percentages, and animates height only when result/error content requires space. Preserve the previous summary while regenerating, keep cancellation inside the summary actions menu, and retain source/error/retry behavior and incoming-only assistance. Verify actual QML start/held job/completion/error/retry/cancel geometry and existing lifecycle races, reader layout and a configured relocated package. Schema29, Core43/Gmail23/CLI38, Local assistance14, fixtures0/3 and protocol1 stay unchanged.
+
+
+## D077 — startup sync, sent draft cleanup and cached summaries
+
+2026-09-16
+
+The founder requests automatic sync on app open, ordinary send feedback with the sent draft removed from the editor/list, and immediate presentation of saved summaries during navigation. P2-Send feedback / Core44/Gmail24/Mail UI54/CLI39/Quality54 resumes previously initialized connected accounts once at GUI startup, after preferences load; paused services, archives and credential denial keep their existing protections. Known accepted draft revisions leave shared Drafts listings/counts and the composer without deleting authored history or newer edits. Unknown outcomes stay recoverable and never auto-resend. Only an observed running summarization may animate into a result; cached-result loading is immediate. Verify generated Core accepted/newer/unknown/reopen projections, native startup admission/send/newer-edit preservation and summary navigation, then a configured relocated Windows package. Schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged; no automated real mail send.
+
+
+D077 clarification (2026-09-16): the founder asks for immediate, polished Send feedback and the quickest dispatch possible. Remove the production six-second Undo delay; preserve exact local save/preflight checks and explicit unknown-outcome recovery. Show indeterminate progress in the fixed overlay while sending, including attachments, then a confirmed Sent checkmark. No fabricated upload percentage or artificial minimum duration. Retain the delayed-queue regression as an isolated test of cancellation/race protections, not current user-facing behavior.
+
+
+## D078 — attachment previews and saving
+
+2026-09-16
+
+The founder requests rendered image thumbnails, a full-image modal and a minimal download button for every attachment. P2-Attachments / Mail UI55/Quality55 reuses the account-scoped verified attachment export. Raster thumbnails reserve their geometry, open in a fit/actual-size modal, and expose Save as through the native file picker. Any available attachment can be saved, with atomic writes and digest/length verification; navigation cannot retarget a pending save. Invalid/unavailable images retain download access and contextual feedback. Verify synthetic preview/modal/byte-exact export/overwrite/failure/navigation behavior and the combined D077 configured Windows package. Core44/Gmail24/CLI39/schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged.
+
+## D079 — final interaction review
+
+2026-09-16
+
+The founder requests a second review of completed flows and adjacent issues, prioritizing stable layout, clear messages and responsiveness. P2-Interaction polish / Mail UI56/Quality56 checks attachment saving/loading/modal/navigation, send status and cached summaries. Reserve attachment status geometry, preserve images while asynchronous size requests complete, honor image orientation, remove obsolete production Undo wording, and retain explicit recoverable errors. Verify native geometry/state regressions and a configured relocated Windows package. Core44/Gmail24/CLI39/schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. No automated real send or broad performance sweep.

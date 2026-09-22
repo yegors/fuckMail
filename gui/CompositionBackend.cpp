@@ -4,6 +4,7 @@
 #include <QJsonDocument>
 #include <QRegularExpression>
 #include <QTimeZone>
+#include <QUuid>
 #include <algorithm>
 
 QJsonObject MailBackend::draftSelector() const {
@@ -24,7 +25,7 @@ bool MailBackend::olderDraftProjection(const QJsonObject &result) const {
     if (!same) return false;
     // Imported observations have their own source clock; an unchanged authored
     // revision does not make an earlier cached source safe to publish.
-    if (draftReadOnly()) {
+    if (draftReadOnly() && !m_draft.value("transferred").toBool()) {
         const auto incoming = result["remote_source"].toObject();
         const auto current = m_draft.value("remote_source").toMap();
         const auto scan = incoming["latest_scan_generation"].toInteger(), oldScan = current.value("latest_scan_generation").toLongLong();
@@ -42,15 +43,18 @@ void MailBackend::acceptDraft(const QJsonObject &result, bool restoreView) {
         if (!draftReadOnly()) m_draftStatus = m_draftDirty ? "Saving…" : "Saved on this machine";
         emit draftChanged(); return;
     }
-    m_recipientInputs.clear();
+    if (result["draft_id"].toString() != m_draft.value("draft_id").toString() && !m_attachmentQueues.value(attachmentImportKey()).isEmpty())
+        m_attachmentQueuePaused.insert(attachmentImportKey());
+    restoreRecipientInputs(result.toVariantMap());
     m_activeDraft = result["draft_id"].toString();
     m_selected = result["conversation_id"].toString();
     m_draft = mergedDraftProjection(result); m_draftDirty = false; m_draftConflict = false;
-    m_draftStatus = draftReadOnly() ? "Read-only Google draft preview" : "Saved on this machine";
+    m_draftStatus = draftDiscardPending() ? "Draft action needs attention" : m_draft.value("transferred").toBool() ? "Draft moved to another account" : draftReadOnly() ? "Read-only Google draft preview" : "Saved on this machine";
     m_conversation.clear(); m_pinnedRow.clear(); m_pinnedIndex = -1;
     remember("selectedDraft", m_activeDraft); remember("selected", m_selected);
     if (!restoreView) { remember("readerY", 0); remember("replyOpen", true); }
     emit conversationChanged(); emit draftChanged(); emit draftSourcesChanged();
+    if (!restoreView) emit presentationChanged();
     if (!m_selected.isEmpty()) loadConversation(false);
     else emit ready();
 }
@@ -84,6 +88,7 @@ void MailBackend::beginDraftWithRecipient(const QString &mode, const QString &em
     }
     // Retain the operation identity on a lost response, so retry cannot create
     // another copy of this draft. The Core journal is the durable authority.
+    if (!m_attachmentQueues.value(attachmentImportKey()).isEmpty()) m_attachmentQueuePaused.insert(attachmentImportKey());
     m_resolvingDraft = true; m_draftStatus = "Opening draft…"; emit draftChanged();
     const auto account = m_account;
     request("draft_create", account, m_draftCreation, [this, account, email, name](auto result, bool ok) {
@@ -116,10 +121,10 @@ void MailBackend::openDraft(const QString &draftId, bool restoreView) {
     m_resolvingDraft = true; m_draftStatus = "Opening draft…"; emit draftChanged();
     const auto account = m_account;
     const int generation = ++m_generation;
-    request("draft_get", account, {{"draft_id", draftId}}, [this, account, generation, restoreView](auto result, bool ok) {
+    request("draft_get", account, {{"draft_id", draftId}}, [this, account, draftId, generation, restoreView](auto result, bool ok) {
         m_resolvingDraft = false;
         if (account != m_account || generation != m_generation) return;
-        if (ok && !result["discarded"].toBool()) acceptDraft(result, restoreView);
+        if (ok && (!result["discarded"].toBool() || result["transferred"].toBool() || m_draftDiscardUi.contains(account + '\n' + draftId))) acceptDraft(result, restoreView);
         else { m_draftStatus = "This draft is unavailable. Your current editor is unchanged."; cancelShutdown(); emit draftChanged(); }
         if (ok) saveDraft();
         if (m_shutdown) finishShutdown();
@@ -140,7 +145,7 @@ void MailBackend::loadActiveDraft() {
         if (m_draftDirty || draftBusy() || olderDraftProjection(result)) { if (metadataChanged) emit draftChanged(); return; }
         const auto next = mergedDraftProjection(result);
         if (next != m_draft) {
-            m_draft = next; m_draftStatus = draftReadOnly() ? "Read-only Google draft preview" : result["discarded"].toBool() ? "Draft discarded" : "Saved on this machine";
+            m_draft = next; restoreRecipientInputs(m_draft); m_draftStatus = draftDiscardPending() ? "Draft action needs attention" : m_draft.value("transferred").toBool() ? "Draft moved to another account" : draftReadOnly() ? "Read-only Google draft preview" : result["discarded"].toBool() ? "Draft discarded" : "Saved on this machine";
             emit draftChanged();
         }
         else if (metadataChanged) emit draftChanged();
@@ -202,6 +207,11 @@ bool MailBackend::addDraftRecipient(const QString &field, const QString &text) {
     QString name = match.captured(1).trimmed(), email = match.captured(2);
     if (email.isEmpty()) email = match.captured(3);
     if (name.startsWith('"') && name.endsWith('"') && name.size() > 1) name = name.mid(1, name.size() - 2);
+    return addDraftAddress(field, email, name);
+}
+bool MailBackend::addDraftAddress(const QString &field, const QString &email, const QString &name) {
+    if (draftLocked() || m_draft.isEmpty() || (field != "to_recipients" && field != "cc_recipients" && field != "bcc_recipients")) return false;
+    if (std::any_of(name.begin(), name.end(), [](QChar ch) { return ch.category() == QChar::Other_Control; })) return false;
     static const QRegularExpression mailboxPattern(R"(^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$)");
     if (email.toUtf8().size() > 320 || name.toUtf8().size() > 4096 || !mailboxPattern.match(email).hasMatch()) {
         fail("Enter a valid mailbox address (up to 320 UTF-8 bytes) and a display name up to 4096 bytes."); return false;
@@ -219,17 +229,33 @@ bool MailBackend::addDraftRecipient(const QString &field, const QString &text) {
     m_recipientInputs.remove(field); m_draft[field] = entries; m_draftDirty = true; m_draftStatus = "Saving…";
     clearError(); emit draftChanged(); m_draftTimer.start(); return true;
 }
+QString MailBackend::recipientSuggestions(const QString &query, const QStringList &exclude) {
+    const auto ticket = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const auto account = m_account;
+    QTimer::singleShot(0, this, [this, ticket, account, query, exclude] {
+        request("recipient_suggestions", account, {{"query", query}, {"exclude", QJsonArray::fromStringList(exclude)}},
+            [this, ticket](auto result, bool ok) { emit recipientSuggestionsReply(ticket, result.toVariantMap(), ok); });
+    });
+    return ticket;
+}
 void MailBackend::stageDraftRecipient(const QString &field, const QString &text) {
     if (draftLocked() || m_draft.isEmpty() || (field != "to_recipients" && field != "cc_recipients" && field != "bcc_recipients")) return;
-    if (text.trimmed().isEmpty()) m_recipientInputs.remove(field);
-    else { m_recipientInputs[field] = text; m_draftDirty = true; }
+    const auto value = text.trimmed().isEmpty() ? QString{} : text;
+    if (m_recipientInputs.value(field) == value) return;
+    if (value.isEmpty()) m_recipientInputs.remove(field); else m_recipientInputs[field] = value;
+    m_draftDirty = true; m_draftStatus = "Saving…"; emit draftChanged(); m_draftTimer.start();
+}
+void MailBackend::restoreRecipientInputs(const QVariantMap &draft) {
+    m_recipientInputs.clear();
+    const auto inputs = draft.value("recipient_inputs").toMap();
+    for (auto it = inputs.cbegin(); it != inputs.cend(); ++it) m_recipientInputs[it.key()] = it.value().toString();
 }
 bool MailBackend::commitRecipientInputs() {
     if (draftReadOnly()) return m_recipientInputs.isEmpty();
     const auto inputs = m_recipientInputs;
     for (auto it = inputs.cbegin(); it != inputs.cend(); ++it) {
         if (!addDraftRecipient(it.key(), it.value())) {
-            m_draftStatus = "Not saved — finish or remove the incomplete recipient. Your text remains here.";
+            m_draftStatus = "Finish or remove the incomplete recipient before continuing. Your text remains here.";
             cancelShutdown(); emit draftChanged(); return false;
         }
     }

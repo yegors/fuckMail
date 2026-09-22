@@ -81,6 +81,15 @@ impl RetainedDraft {
         if draft["discarded"] == true {
             return Err(err("invalid_draft", "Discarded draft cannot be uploaded"));
         }
+        if draft["recipient_inputs"]
+            .as_object()
+            .is_some_and(|inputs| !inputs.is_empty())
+        {
+            return Err(err(
+                "invalid_draft",
+                "Finish the recipient addresses before uploading or sending this draft",
+            ));
+        }
         if draft["mode"] != "new" {
             if draft["source_unavailable"] == true {
                 return Err(err(
@@ -467,6 +476,14 @@ impl Store {
         })
     }
 
+    pub(crate) fn check_retained_attachment_selection(
+        &self,
+        account: &str,
+        selected: &Value,
+    ) -> Result<()> {
+        self.local_attachment_refs(account, selected).map(|_| ())
+    }
+
     fn local_attachment_refs(&self, account: &str, selected: &Value) -> Result<Vec<AttachmentRef>> {
         let ids = selected
             .as_array()
@@ -653,7 +670,7 @@ fn prepare_after_import_metadata(
     })
 }
 
-fn read_source(blobs: &content::BlobStore, hash: &str) -> Result<Vec<u8>> {
+pub(crate) fn read_source(blobs: &content::BlobStore, hash: &str) -> Result<Vec<u8>> {
     // Verify the hash syntax before ever joining a stored source reference.
     if hash.len() != 64
         || !hash

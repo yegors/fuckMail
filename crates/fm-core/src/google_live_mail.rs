@@ -12,7 +12,8 @@ use std::collections::BTreeSet;
 #[path = "google_live_mail/preparation.rs"]
 mod preparation;
 pub use preparation::{
-    prepare_google_item, verify_staged_google_item, ItemIssue, PreparedGoogleItem, StoredGoogleItem,
+    prepare_google_item, prepare_google_item_since, verify_staged_google_item, ItemIssue,
+    PreparedGoogleItem, StoredGoogleItem,
 };
 #[cfg(test)]
 #[path = "google_live_mail/tests.rs"]
@@ -148,6 +149,13 @@ fn active_account(db: &Connection, account: &str) -> Result<(u64, u64)> {
 }
 
 impl Store {
+    pub fn google_mail_since(&self, account: &str) -> Result<Option<i64>> {
+        Ok(self.db.query_row(
+            "SELECT mail_since FROM account_metadata WHERE account=?1",
+            [account],
+            |r| r.get(0),
+        )?)
+    }
     /// Start all lanes from a baseline captured before listing. Reopening preserves
     /// the stored cutoff and cursors, regardless of newly supplied defaults.
     pub fn google_live_begin(
@@ -476,10 +484,31 @@ impl Store {
                 [&page.account],
             )?;
         }
+        if page.lane == MailLane::Delta
+            && lane_complete
+            && matches!(
+                record.plan.expected.phase,
+                Phase::Delta { .. } | Phase::CatchUp { .. }
+            )
+        {
+            // Only a completed provider history response, never begin_delta or replay.
+            tx.execute("INSERT INTO meta(key,value) VALUES(?1,unixepoch()) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [format!("last_mail_sync:{}", page.account)])?;
+        }
         tx.execute("UPDATE google_live_pages SET complete=1 WHERE account=?1 AND lane=?2 AND generation=?3 AND expected_revision=?4",params![page.account,page.lane.key(),page.generation,page.expected_revision])?;
         tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
         tx.commit()?;
         Ok(record.plan.next)
+    }
+
+    pub fn google_last_mail_sync(&self, account: &str) -> Result<Option<i64>> {
+        Ok(self
+            .db
+            .query_row(
+                "SELECT value FROM meta WHERE key=?1",
+                [format!("last_mail_sync:{account}")],
+                |r| r.get(0),
+            )
+            .optional()?)
     }
 
     pub fn google_live_coverage(&self, account: &str) -> Result<GoogleMailCoverage> {
@@ -645,7 +674,16 @@ fn insert_lanes(
                 page_token: None,
             };
         }
-        let query = (lane == MailLane::Recent).then(|| format!("after:{cutoff}"));
+        let since: Option<i64> = db.query_row(
+            "SELECT mail_since FROM account_metadata WHERE account=?1",
+            [account],
+            |r| r.get(0),
+        )?;
+        let query = match lane {
+            MailLane::Recent => Some(format!("after:{}", cutoff.max(since.unwrap_or(cutoff)))),
+            MailLane::Inventory => since.map(|s| format!("after:{s}")),
+            MailLane::Delta => None,
+        };
         db.execute("INSERT INTO google_live_lanes(account,lane,generation,checkpoint_json,query_json) VALUES(?1,?2,?3,?4,?5)",params![account,lane.key(),generation,serde_json::to_string(&checkpoint)?,serde_json::to_string(&query)?])?;
     }
     Ok(())
@@ -781,6 +819,9 @@ fn publish_item_inner(
 ) -> Result<()> {
     use preparation::Disposition;
     let remote = &item.remote_id;
+    if item.disposition == Disposition::OutsideRetention {
+        return Ok(());
+    }
     let previous: Option<(Option<String>, bool)> = db
         .query_row(
             "SELECT history_id,deleted FROM google_mail_coverage WHERE account=?1 AND remote_id=?2",

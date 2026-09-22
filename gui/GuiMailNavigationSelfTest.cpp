@@ -1100,7 +1100,7 @@ void GuiMailNavigationSelfTest::step() {
     case 60: {
         if (m_backend.loading() || m_backend.draftBusy() || m_backend.m_searchTimer.isActive()) return;
         const auto path=QDir(m_backend.m_profile).filePath("native-mail-group-counts.json");
-        QFile file(path); const auto bytes=QJsonDocument(QJsonObject{{"folder","inbox"},{"grouped",true},{"limit",1}}).toJson();
+        QFile file(path); const auto bytes=QJsonDocument(QJsonObject{{"folder","all"},{"grouped",true},{"limit",1}}).toJson();
         if (!file.open(QIODevice::WriteOnly) || file.write(bytes)!=bytes.size()) { finish("Cannot prepare independent bounded group-count query."); return; }
         file.close(); m_stage=61;
         arrivalCli({"call","conversations","--params-file",path},[this](const auto &result) {
@@ -1117,14 +1117,19 @@ void GuiMailNavigationSelfTest::step() {
         if (m_backend.loading()) return;
         if (QJsonObject::fromVariantMap(m_backend.querySummary()["filtered_group_counts"].toMap())!=m_surfaceCounts
             || m_backend.conversations().isEmpty()) { finish("Native group totals disagree with the independent pre-pagination CLI counts."); return; }
+        // Wait for the structural page to render before positioning this test
+        // setup. ListView originY can change during its deferred layout.
+        if (m_collapseSettledFrame < 0) { m_collapseSettledFrame=m_renderedFrames; m_window->update(); return; }
+        if (m_renderedFrames <= m_collapseSettledFrame) return;
         const auto first=m_backend.conversations().first().toMap();
-        m_surfaceGroup=first["group"].toString(); m_surfaceFirstId=first["id"].toString();
+        m_surfaceGroup=first.value("display_group",first["group"]).toString(); m_surfaceFirstId=first["id"].toString();
         auto list=find(m_window->contentItem(),"conversationList");
         if (!list) return;
         // This is deliberate setup at the first group, not an assertion that
         // query results repaired their viewport (the earlier cases prove that).
-        m_backend.remember("listY",list->property("originY"));
-        list->setProperty("contentY",list->property("originY"));
+        QMetaObject::invokeMethod(list,"forceLayout");
+        QMetaObject::invokeMethod(list,"positionViewAtBeginning");
+        m_backend.remember("listY",list->property("contentY"));
         if (auto search=find(m_window->contentItem(),"searchField")) key(search,Qt::Key_Escape);
         m_stage=62; break;
     }
@@ -1133,7 +1138,13 @@ void GuiMailNavigationSelfTest::step() {
         if (!heading || !textItem(heading,QString::number(m_surfaceCounts[m_surfaceGroup].toInteger()))) {
             finish("The native group heading does not display its full filtered count."); return;
         }
-        if (!clickItem(heading)) return;
+        if (!clickItem(heading)) {
+            if (m_collapseSettledFrame != -99) {
+                qInfo()<<"Counted heading not clickable"<<geometryDiagnostic(heading,m_window)<<"enabled"<<heading->isEnabled()<<"folder"<<m_backend.folder()<<"first row"<<m_backend.conversations().first();
+                m_collapseSettledFrame=-99;
+            }
+            return;
+        }
         m_collapseSettledFrame=-1;
         m_stage=63; break;
     }

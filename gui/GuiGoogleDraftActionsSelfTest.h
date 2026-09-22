@@ -22,6 +22,5 @@ private:
     QJsonArray m_expected, m_observed, m_exports;
     QJsonObject m_accountResult, m_limits;
     int m_stage=0, m_account=0, m_action=0, m_pages=0, m_loggedStage=-1;
-    bool m_quotaFilled=false, m_quotaSubmitted=false;
     bool m_finished=false, m_passed=false;
 };

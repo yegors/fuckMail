@@ -40,5 +40,5 @@ private:
     qint64 m_beforeRestoreCutoff = 0;
     int m_stage = 0, m_loggedStage = -1, m_account = 0, m_step = 0, m_browserCount = 0;
     int m_droppedStages = 0, m_droppedDispatches = 0, m_droppedClickedSignals = 0;
-    bool m_probe = false, m_finished = false, m_passed = false, m_quotaFilled = false;
+    bool m_probe = false, m_finished = false, m_passed = false;
 };

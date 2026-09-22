@@ -39,6 +39,7 @@ pub(super) enum Disposition {
     SourceRetainedUnindexed,
     Missing,
     Observed,
+    OutsideRetention,
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub(super) struct BlobRef {
@@ -120,6 +121,17 @@ pub fn prepare_google_item(
     outcome: Option<RawOutcome>,
     cancel: &CancellationToken,
 ) -> Result<PreparedGoogleItem> {
+    prepare_google_item_since(blobs, page, remote_id, outcome, cancel, None)
+}
+
+pub fn prepare_google_item_since(
+    blobs: &BlobStore,
+    page: &GooglePageIdentity,
+    remote_id: &str,
+    outcome: Option<RawOutcome>,
+    cancel: &CancellationToken,
+    since: Option<i64>,
+) -> Result<PreparedGoogleItem> {
     cancelled(cancel)?;
     crate::id(remote_id)?;
     let mut manifest = Manifest {
@@ -152,6 +164,22 @@ pub fn prepare_google_item(
         .internal_date
         .as_ref()
         .and_then(|s| s.parse::<i64>().ok());
+    if since
+        .zip(date)
+        .is_some_and(|(since, date)| date < since.saturating_mul(1000))
+    {
+        if raw.message.id != remote_id {
+            return Err(err(
+                "google_invalid_response",
+                "Unexpected message identity",
+            ));
+        }
+        manifest.remote_thread_id = Some(raw.message.thread_id);
+        manifest.history_id = Some(raw.message.history_id);
+        manifest.internal_date_ms = date;
+        manifest.disposition = Disposition::OutsideRetention;
+        return proof(blobs, page, manifest);
+    }
     let content = match fm_google::sync::decode_raw_message(raw.message, remote_id) {
         Ok(content) => content,
         Err(_) => {

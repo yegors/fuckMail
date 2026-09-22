@@ -2,6 +2,42 @@ use super::*;
 use crate::live_calendar::{CalendarPage, CalendarSyncMode};
 use std::collections::BTreeSet;
 
+#[test]
+fn selected_reminder_time_and_none_control_the_due_window() {
+    let window = fm_calendar::Window::from_dates(
+        NaiveDate::from_ymd_opt(2026, 9, 15).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 9, 16).unwrap(),
+        "UTC",
+    )
+    .unwrap();
+    let now = DateTime::parse_from_rfc3339("2026-09-15T09:00:00Z")
+        .unwrap()
+        .with_timezone(&Utc);
+    let mut event = json!({"start":"2026-09-15T10:00:00Z","all_day":false,"reminder_minutes":60});
+    assert!(due_now(&event, now, &window).unwrap().is_some());
+    assert!(due_now(&event, now - Duration::seconds(1), &window)
+        .unwrap()
+        .is_none());
+    event["reminder_minutes"] = Value::Null;
+    assert!(due_now(&event, now + Duration::hours(1), &window)
+        .unwrap()
+        .is_none());
+    event["reminder_minutes"] = 0.into();
+    assert!(due_now(&event, now + Duration::minutes(59), &window)
+        .unwrap()
+        .is_none());
+    assert!(due_now(&event, now + Duration::hours(1), &window)
+        .unwrap()
+        .is_some());
+    assert!(due_now(
+        &event,
+        now + Duration::hours(1) + Duration::seconds(61),
+        &window
+    )
+    .unwrap()
+    .is_none());
+}
+
 fn setup() -> (tempfile::TempDir, Store, String) {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open_live(dir.path()).unwrap();

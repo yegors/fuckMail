@@ -913,7 +913,8 @@ async fn normalized_raw_has_a_distinct_retained_baseline_not_claimed_byte_fideli
         result["baseline"]["upload_sha256"],
         result["baseline"]["observed_sha256"]
     );
-    assert_eq!(result["fidelity_warning"], true);
+    assert_eq!(result["fidelity_warning"], false);
+    assert_eq!(result["baseline"]["content_matches"], true);
     // The acknowledged contained-message identity is the observed baseline;
     // a later change to those fetched bytes must still stop an overwrite.
     h.http.0.lock().unwrap().normalize_raw = false;

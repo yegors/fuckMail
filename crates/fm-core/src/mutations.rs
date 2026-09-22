@@ -48,12 +48,20 @@ impl Store {
                 "to_recipients",
                 "cc_recipients",
                 "bcc_recipients",
+                "recipient_inputs",
                 "expected_revision",
                 "request_id",
             ],
             "draft_discard" => &[
                 "conversation_id",
                 "draft_id",
+                "expected_revision",
+                "request_id",
+                "buffer",
+            ],
+            "draft_undo_discard" => &[
+                "draft_id",
+                "discard_request_id",
                 "expected_revision",
                 "request_id",
             ],
@@ -191,6 +199,11 @@ impl Store {
                         }
                     }
                 } else if method == "set_category" {
+                    for message in &targets {
+                        tx.execute("INSERT OR IGNORE INTO local_model_label_overrides(account,message_id) VALUES(?1,?2)",params![account,message])?;
+                        tx.execute("DELETE FROM assist_category_intents WHERE account=?1 AND message_id=?2",params![account,message])?;
+                    }
+
                     let category = string(p, "category_id")?;
                     let present = p["present"]
                         .as_bool()
@@ -242,13 +255,11 @@ impl Store {
                 )?;
                 self.conversation(account, conversation)?
             }
-            "draft_save" | "draft_discard" => self.save_composition_prepared(
-                account,
-                p,
-                expected,
-                method == "draft_discard",
-                prepared_draft,
-            )?,
+            "draft_save" => {
+                self.save_composition_prepared(account, p, expected, false, prepared_draft)?
+            }
+            "draft_discard" => self.discard_composition(account, p, expected)?,
+            "draft_undo_discard" => self.undo_discard_composition(account, p, expected)?,
             "view_save" => {
                 let view = &p["view"];
                 if !view.is_object() {

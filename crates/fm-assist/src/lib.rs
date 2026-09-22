@@ -1,5 +1,6 @@
-//! Phase 0 fake assistance boundary. There is no model, network client, or action tool.
-//! The only returned mutation intent is a subset of configured category IDs.
+pub mod ollama;
+// Phase 0 fake assistance boundary. There is no model, network client, or action tool.
+// The only returned mutation intent is a subset of configured category IDs.
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
 

@@ -6,10 +6,12 @@ use std::{
     fs::{File, OpenOptions},
     path::{Path, PathBuf},
 };
+mod account_archives;
 pub mod account_lifecycle;
 pub mod assist_store;
 #[cfg(test)]
 mod benchmark;
+mod calendar_editor_options;
 mod calendar_projection;
 mod calendar_reminders;
 mod calendar_search;
@@ -20,8 +22,14 @@ mod composition;
 #[cfg(test)]
 mod composition_tests;
 mod content;
+mod draft_discard;
+pub mod draft_transfer;
 mod fixture;
 pub mod google_draft_inventory;
+pub mod label_sync;
+pub mod local_labels;
+pub mod local_model;
+mod recipient_suggestions;
 pub use google_draft_inventory::actions as google_draft_actions;
 pub mod google_drafts;
 pub mod google_labels;
@@ -36,6 +44,7 @@ pub mod live_calendar_recurring;
 pub mod live_calendar_writes;
 pub mod live_profile;
 pub mod local_content;
+pub mod message_source;
 mod mutations;
 mod phase1_calendar;
 #[cfg(test)]
@@ -46,7 +55,7 @@ mod queries;
 mod sender_kind_tests;
 #[cfg(test)]
 mod test_profiles;
-pub const SCHEMA_VERSION: u32 = 20;
+pub const SCHEMA_VERSION: u32 = 29;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -378,7 +387,134 @@ impl Store {
             tx.execute_batch("PRAGMA user_version=20")?;
             tx.commit()?;
         }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 20 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-021-ollama.sql"))?;
+            tx.execute_batch("PRAGMA user_version=21")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 21 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch("CREATE TABLE local_model_label_overrides(account TEXT NOT NULL,message_id TEXT NOT NULL,PRIMARY KEY(account,message_id),FOREIGN KEY(account,message_id) REFERENCES messages(account,id) ON DELETE CASCADE); CREATE TABLE local_model_settings_history(revision INTEGER PRIMARY KEY,settings_json TEXT NOT NULL); INSERT INTO local_model_settings_history SELECT revision,settings_json FROM local_model_settings;")?;
+            let old: Option<String> = tx
+                .query_row(
+                    "SELECT settings_json FROM local_model_settings WHERE id=1",
+                    [],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if let Some(old) = old {
+                let settings = fm_assist::ollama::upgrade_settings(serde_json::from_str(&old)?)
+                    .map_err(|s| err("storage_error", &s))?;
+                tx.execute("UPDATE local_model_settings SET revision=revision+1,settings_json=?1 WHERE id=1",[serde_json::to_string(&settings)?])?;
+            }
+            tx.execute_batch("PRAGMA user_version=22")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 22 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch("INSERT INTO local_model_settings_history SELECT revision,settings_json FROM local_model_settings;")?;
+            let old: Option<String> = tx
+                .query_row(
+                    "SELECT settings_json FROM local_model_settings WHERE id=1",
+                    [],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if let Some(old) = old {
+                let settings = fm_assist::ollama::upgrade_settings(serde_json::from_str(&old)?)
+                    .map_err(|s| err("storage_error", &s))?;
+                tx.execute("UPDATE local_model_settings SET revision=revision+1,settings_json=?1 WHERE id=1", [serde_json::to_string(&settings)?])?;
+            }
+            tx.execute_batch("PRAGMA user_version=23")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 23 {
+            let tx = store.db.unchecked_transaction()?;
+            let old: Option<String> = tx
+                .query_row(
+                    "SELECT settings_json FROM local_model_settings WHERE id=1",
+                    [],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            if let Some(old) = old {
+                let mut settings: Value = serde_json::from_str(&old)?;
+                let mut request: Value = serde_json::from_str(
+                    settings["prompt"]
+                        .as_str()
+                        .ok_or_else(|| err("storage_error", "Missing prompt"))?,
+                )?;
+                if request["options"]["num_predict"] == 1024 {
+                    tx.execute_batch("INSERT INTO local_model_settings_history SELECT revision,settings_json FROM local_model_settings")?;
+                    request["options"]["num_predict"] = json!(4096);
+                    settings["prompt"] = serde_json::to_string_pretty(&request)?.into();
+                    tx.execute("UPDATE local_model_settings SET revision=revision+1,settings_json=?1 WHERE id=1",[serde_json::to_string(&settings)?])?;
+                }
+            }
+            tx.execute_batch("PRAGMA user_version=24")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 24 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-025-local-providers.sql"))?;
+            tx.execute_batch("PRAGMA user_version=25")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 25 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-026-label-creation.sql"))?;
+            tx.execute_batch("PRAGMA user_version=26")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 26 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-027-draft-transfers.sql"))?;
+            tx.execute_batch("PRAGMA user_version=27")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 27 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-028-draft-discard.sql"))?;
+            tx.execute_batch("PRAGMA user_version=28")?;
+            tx.commit()?;
+        }
+        let version: u32 = store
+            .db
+            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version == 28 {
+            let tx = store.db.unchecked_transaction()?;
+            tx.execute_batch(include_str!("migration-029-account-archives.sql"))?;
+            tx.execute_batch("PRAGMA user_version=29")?;
+            tx.commit()?;
+        }
+        store.cleanup_deleted_archive_blobs()?;
         store.validate_profile_identity()?;
+        store.recover_google_category_projections()?;
         store.recover_account_cleanup()?;
         store.recover_captures()?;
         store.recover_google_drafts()?;
@@ -431,6 +567,9 @@ impl Store {
                 )),
             };
         }
+        if method.starts_with("assist_") {
+            return self.local_model_handle(method, account, &params);
+        }
         if method == "accounts" {
             fields(&params, &["include_removed"])?;
             let include_removed = match params.get("include_removed") {
@@ -446,7 +585,7 @@ impl Store {
             // These describe callable local interfaces. Account grants and
             // connectivity independently gate provider delivery and writes.
             return Ok(
-                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"calendar_generation":self.mail_changes.calendar_generation(),"synthetic":synthetic,"profile_kind":if synthetic {"synthetic"} else {"live"},"fixture_today":if synthetic {Some(FIXTURE_TODAY)} else {None},"capabilities":{"mail":true,"drafts":true,"calendar_read":true,"phase1":synthetic,"typed_filters":true,"preferences":true,"capture_history":synthetic,"calendar_write_local":synthetic,"send":!synthetic,"models":false,"google_auth":!synthetic,"google_sync":!synthetic}}),
+                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"calendar_generation":self.mail_changes.calendar_generation(),"synthetic":synthetic,"profile_kind":if synthetic {"synthetic"} else {"live"},"fixture_today":if synthetic {Some(FIXTURE_TODAY)} else {None},"capabilities":{"mail":true,"drafts":true,"calendar_read":true,"phase1":synthetic,"typed_filters":true,"preferences":true,"capture_history":synthetic,"calendar_write_local":synthetic,"send":!synthetic,"models":true,"google_auth":!synthetic,"google_sync":!synthetic}}),
             );
         }
         match method {
@@ -468,8 +607,10 @@ impl Store {
         }
         if ![
             "account_remove_preview",
+            "account_archive_delete",
             "account_remove_status",
             "conversations",
+            "google_sent",
             "conversation",
             "flag",
             "draft_get",
@@ -482,6 +623,10 @@ impl Store {
             "calendar",
             "attachment",
             "categories",
+            "label_catalog",
+            "label_create",
+            "label_describe",
+            "label_remove",
             "set_category",
             "mail_filing",
             "google_mail_mutation_status",
@@ -491,6 +636,8 @@ impl Store {
             "view_save",
             "account_update",
             "draft_discard",
+            "draft_discard_status",
+            "draft_undo_discard",
             "capture_history",
             "calendar_write",
             "calendar_write_ack",
@@ -498,6 +645,9 @@ impl Store {
             "drafts",
             "draft_create",
             "sender_summary",
+            "recipient_suggestions",
+            "draft_transfer_status",
+            "draft_transfer_retry",
         ]
         .contains(&method)
         {
@@ -508,6 +658,9 @@ impl Store {
         }
         let account = account.ok_or_else(|| err("account_required", "Choose an account"))?;
         id(account)?;
+        if method == "account_archive_delete" {
+            return self.account_archive_delete(account, &params);
+        }
         if !self.db.query_row(
             "SELECT EXISTS(SELECT 1 FROM accounts WHERE id=?1)",
             [account],
@@ -525,7 +678,14 @@ impl Store {
                 self.account_remove_status(account, string(&params, "request_id")?)
             }
             "conversations" => self.conversations(account, &params),
+            "google_sent" => self.google_sent(account, &params),
             "sender_summary" => self.sender_summary(account, &params),
+            "recipient_suggestions" => self.recipient_suggestions(account, &params),
+            "draft_transfer_status" => {
+                fields(&params, &["request_id"])?;
+                self.draft_transfer_status(account, string(&params, "request_id")?)
+            }
+            "draft_transfer_retry" => self.draft_transfer_retry(account, &params),
             "conversation" => {
                 fields(&params, &["id"])?;
                 self.conversation(account, string(&params, "id")?)
@@ -577,8 +737,18 @@ impl Store {
             }
             "google_labels" => self.google_labels(account, &params),
             "google_category_bind" => self.google_category_bind(account, &params),
+            "label_catalog" => {
+                fields(&params, &[])?;
+                self.label_catalog(account)
+            }
+            "label_create" | "label_describe" | "label_remove" => {
+                self.label_edit(account, method, &params)
+            }
             "flag" | "set_category" | "mail_filing" | "draft_create" | "draft_save"
-            | "draft_discard" | "view_save" => self.mutate(method, account, &params),
+            | "draft_discard" | "draft_undo_discard" | "view_save" => {
+                self.mutate(method, account, &params)
+            }
+            "draft_discard_status" => self.draft_discard_status(account, &params),
             _ => unreachable!(),
         }
     }

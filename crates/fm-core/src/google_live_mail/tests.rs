@@ -90,6 +90,81 @@ fn raw(id: &str, history: &str, body: &str) -> RawOutcome {
         "1789210800123",
     )
 }
+
+#[test]
+fn retention_filters_inventory_and_old_delta_without_storing_content() {
+    let (directory, mut store, account) = setup();
+    let since = store.google_mail_since(&account).unwrap().unwrap();
+    let lanes = store.google_live_lanes(&account).unwrap();
+    assert_eq!(
+        lanes
+            .iter()
+            .find(|l| l.lane == MailLane::Inventory)
+            .unwrap()
+            .query,
+        Some(format!("after:{since}"))
+    );
+    let page = begin_list(&mut store, &account, MailLane::Inventory, &["old"], None);
+    let blobs = store.google_blob_store();
+    let item = prepare_google_item_since(
+        &blobs,
+        &page,
+        "old",
+        Some(raw_bytes(
+            "old",
+            "101",
+            &source("old private body"),
+            &["INBOX"],
+            &((since - 1) * 1000).to_string(),
+        )),
+        &CancellationToken::new(),
+        Some(since),
+    )
+    .unwrap();
+    assert!(item.manifest.source.is_none());
+    assert!(!directory.path().join("blobs").exists());
+    store.google_live_stage_prepared(&page, &item).unwrap();
+    drop(store);
+    let mut store = Store::open_live(directory.path()).unwrap();
+    assert_eq!(store.google_mail_since(&account).unwrap(), Some(since));
+    let staged = store
+        .google_live_pending(&page, 1)
+        .unwrap()
+        .remove(0)
+        .staged
+        .unwrap();
+    let item = verify_staged_google_item(
+        &store.google_blob_store(),
+        &page,
+        staged,
+        &CancellationToken::new(),
+    )
+    .unwrap();
+    store.google_live_commit_part(&page, &[item]).unwrap();
+    store.google_live_finish_page(&page).unwrap();
+    assert_eq!(
+        store
+            .db
+            .query_row(
+                "SELECT count(*) FROM messages WHERE account=?1",
+                [&account],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        store
+            .db
+            .query_row(
+                "SELECT count(*) FROM google_mail_coverage WHERE account=?1",
+                [&account],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+}
 fn prepared(
     store: &Store,
     page: &GooglePageIdentity,
@@ -789,4 +864,43 @@ fn parallel_content_publication_reuses_one_verified_blob() {
     assert_eq!(hashes[0], hashes[1]);
     let path = blobs.verified_blob(&hashes[0], 1024 * 1024).unwrap();
     assert_eq!(std::fs::read(path).unwrap(), vec![73; 1024 * 1024]);
+}
+
+#[test]
+fn successful_history_timestamp_requires_full_application_and_survives_reopen() {
+    let (directory, mut store, account) = setup();
+    assert_eq!(store.google_last_mail_sync(&account).unwrap(), None);
+    let inventory = begin_list(&mut store, &account, MailLane::Inventory, &[], None);
+    store.google_live_finish_page(&inventory).unwrap();
+    assert_eq!(store.google_last_mail_sync(&account).unwrap(), None);
+    let page = catch_up(&mut store, &account, "200", &["a"], &[]);
+    assert_eq!(
+        store.google_live_finish_page(&page).unwrap_err().code,
+        "google_page_pending"
+    );
+    assert_eq!(store.google_last_mail_sync(&account).unwrap(), None);
+    let item = prepared(&store, &page, "a", raw("a", "200", "source"));
+    publish(&mut store, &page, item);
+    store.google_live_finish_page(&page).unwrap();
+    let stamp = store.google_last_mail_sync(&account).unwrap().unwrap();
+    assert!(stamp > 0);
+    // Exact receipt replay cannot relabel an old completion as fresh.
+    store
+        .db
+        .execute(
+            "UPDATE meta SET value=1 WHERE key=?1",
+            [format!("last_mail_sync:{account}")],
+        )
+        .unwrap();
+    store.google_live_finish_page(&page).unwrap();
+    assert_eq!(store.google_last_mail_sync(&account).unwrap(), Some(1));
+    let page = catch_up(&mut store, &account, "210", &["b"], &[]);
+    assert!(store.google_live_finish_page(&page).is_err());
+    drop(store);
+    let store = Store::open_live(directory.path()).unwrap();
+    assert_eq!(store.google_last_mail_sync(&account).unwrap(), Some(1));
+    assert_eq!(
+        store.accounts().unwrap()["accounts"][0]["last_mail_sync_at"],
+        1
+    );
 }

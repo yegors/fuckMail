@@ -26,7 +26,11 @@ Canvas {
         function circle(x,y,r) { c.moveTo(x+r,y); c.arc(x,y,r,0,Math.PI*2) }
         c.beginPath()
         switch (name) {
+        case "pause": line([5.5,3.5,5.5,12.5]); line([10.5,3.5,10.5,12.5]); break
+        case "play": line([5,3.5,12,8,5,12.5,5,3.5]); break
+        case "summary": line([8,1.5,8,4.7]); line([8,11.3,8,14.5]); line([2.4,4.75,5.2,6.35]); line([10.8,9.65,13.6,11.25]); line([2.4,11.25,5.2,9.65]); line([10.8,6.35,13.6,4.75]); circle(8,8,1.6); break
         case "mail": c.roundedRect(2,3.5,12,9,1.3,1.3); line([2.5,4.5,8,8.7,13.5,4.5]); break
+        case "send": line([14,2,9.5,14,7,9,2,6.5,14,2]); line([7,9,14,2]); break
         case "calendar": c.roundedRect(2.5,3.5,11,10,1,1); line([2.5,7,13.5,7]); line([5.5,2,5.5,5]); line([10.5,2,10.5,5]); break
         case "search": circle(7,7,4.5); line([10.5,10.5,14,14]); break
         case "close": line([4,4,12,12]); line([12,4,4,12]); break
@@ -72,6 +76,7 @@ Canvas {
         case "star":
             for (let j = 0; j <= 10; ++j) { const a = -Math.PI/2 + j*Math.PI/5; const r = j%2 ? 2.8 : 6; if (j === 0) c.moveTo(8+r*Math.cos(a),8+r*Math.sin(a)); else c.lineTo(8+r*Math.cos(a),8+r*Math.sin(a)) }
             break
+        case "download": line([8,2,8,10]); line([4.5,6.5,8,10,11.5,6.5]); line([2.5,11,2.5,14,13.5,14,13.5,11]); break
         case "attachment": c.moveTo(5,10); c.lineTo(10,5); c.bezierCurveTo(13,2,16,5,13,8); c.lineTo(7,14); c.bezierCurveTo(3,18,-1,12,3,8); c.lineTo(9,2); break
         default: break
         }

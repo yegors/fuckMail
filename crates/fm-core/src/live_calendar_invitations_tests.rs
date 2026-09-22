@@ -31,7 +31,7 @@ fn invited() -> Value {
 }
 fn patch(source: &Value, fields: Value) -> Result<Value> {
     let event = fm_calendar::normalize("account", CAL, "UTC", source).unwrap();
-    field_patch(&fields, Some(&event), "UTC", CAL, 2)
+    field_patch("test-options", &fields, Some(&event), "UTC", CAL, 2)
 }
 
 fn writable(person: &Value) -> Value {
@@ -530,6 +530,7 @@ fn invitation_fifty_participants_includes_protected_and_implicit_organizer() {
     };
     let create = |people: Value| {
         field_patch(
+            "test-options",
             &json!({"title":"Invitation","start":"2026-09-12","end":"2026-09-13","all_day":true,"attendees":people}),
             None,
             "UTC",

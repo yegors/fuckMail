@@ -342,11 +342,11 @@ void GuiSettingsSelfTest::step() {
     case 35:
         if (!saved() || m_backend.preferences()["text_size"] != "default" || m_backend.preferences()["theme"] != "graphite") return;
         if (m_window->color() != QColor("#0E0F11") || item("settingsPage_General")->property("font").value<QFont>().pixelSize() != m_defaultFontSize) { finish("Default typography or Graphite palette did not restore."); return; }
-        if (!click("theme_harbour") || !click("startup_calendar")) return;
+        if (!click("theme_terminal") || !click("startup_calendar")) return;
         ++m_stage; break;
     case 36:
-        if (!saved() || m_backend.preferences()["theme"] != "harbour" || m_backend.preferences()["startup_view"] != "calendar") return;
-        if (m_window->color() != QColor("#0A0F18") || m_window->property("workspace").toString() != "mail") { finish("Harbour failed to render or changing initial workspace navigated the active workspace."); return; }
+        if (!saved() || m_backend.preferences()["theme"] != "terminal" || m_backend.preferences()["startup_view"] != "calendar") return;
+        if (m_window->color() != QColor("#080B08") || m_window->property("workspace").toString() != "mail") { finish("Terminal failed to render or changing initial workspace navigated the active workspace."); return; }
         if (!click("startup_last")) return;
         ++m_stage; break;
     case 37:

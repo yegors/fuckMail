@@ -45,6 +45,9 @@ impl HttpTransport for SharedHttp {
 }
 struct SharedVault(Arc<dyn CredentialVault>);
 impl CredentialVault for SharedVault {
+    fn retry_access(&self, account: &AccountId) -> std::result::Result<(), GoogleError> {
+        self.0.retry_access(account)
+    }
     fn remove(&self, account: &AccountId) -> std::result::Result<(), GoogleError> {
         self.0.remove(account)
     }
@@ -149,7 +152,14 @@ impl Runtime {
             )
         })?;
         let vault = NativeCredentialVault::new(&namespace).map_err(google_error)?;
-        let mut runtime = Self::with_services(core, Arc::new(http), Arc::new(vault), cancel);
+        let mut runtime = Self::with_services(
+            core,
+            Arc::new(http),
+            Arc::new(fm_google::vault::SessionCredentialVault::new(Arc::new(
+                vault,
+            ))),
+            cancel,
+        );
         Arc::get_mut(&mut runtime.inner).unwrap().app_client = AppClient::installed();
         Ok(Arc::new(runtime))
     }
@@ -288,9 +298,10 @@ impl Runtime {
                             "email",
                             "reauthorize",
                             "expected_revision",
+                            "access",
                         ]
                     } else {
-                        &["client_config_path", "email", "reauthorize"]
+                        &["client_config_path", "email", "reauthorize", "access"]
                     },
                 )?;
                 let restore_revision = if restore {
@@ -338,6 +349,18 @@ impl Runtime {
                     Some(Value::Bool(value)) => *value,
                     _ => return Err(error("invalid_request", "reauthorize must be a boolean")),
                 };
+                let access: fm_google::auth::RequestedAccess = params
+                    .get("access")
+                    .map(|value| serde_json::from_value(value.clone()))
+                    .transpose()
+                    .map_err(|_| {
+                        error(
+                            "invalid_request",
+                            "Choose none, read or write for Mail and Calendar",
+                        )
+                    })?
+                    .unwrap_or_default();
+                access.scopes().map_err(google_error)?;
                 self.begin(
                     owner,
                     owner_cancel,
@@ -346,6 +369,7 @@ impl Runtime {
                     email,
                     reauthorize,
                     restore_revision,
+                    access,
                 )
                 .await
             }
@@ -436,6 +460,7 @@ impl Runtime {
         email: Option<String>,
         reauthorize: bool,
         restore_revision: Option<i64>,
+        access: fm_google::auth::RequestedAccess,
     ) -> Result<Value> {
         let id = fm_ipc::random_token();
         let cancel = self.inner.cancel.child_token();
@@ -510,11 +535,12 @@ impl Runtime {
             if owner_cancel.is_cancelled() || cancel.is_cancelled() {
                 return Err(cancelled());
             }
-            let login = DesktopLogin::begin_with_login_hint(
+            let login = DesktopLogin::begin_with_access(
                 config.client_id().to_owned(),
                 Duration::from_secs(LOGIN_SECONDS),
                 reauthorize,
                 email.as_deref(),
+                access,
             )
             .await
             .map_err(google_error)?;
@@ -790,6 +816,27 @@ impl Runtime {
     }
     /// Use this cancellation token for the whole account job, including provider
     /// I/O after access_token returns. Disconnect cancels all such children.
+    pub(crate) async fn retry_credential_access(&self, account: &str) -> Result<()> {
+        let id = AccountId::new(account.to_owned()).map_err(google_error)?;
+        let cancel = self.account_work_cancel(account).await?;
+        let guard = self
+            .inner
+            .coordinator
+            .account_guard(&id, &cancel)
+            .await
+            .map_err(google_error)?;
+        let vault = self.inner.vault.clone();
+        tokio::task::spawn_blocking(move || {
+            let _guard = guard;
+            if cancel.is_cancelled() {
+                return Err(GoogleError::TransportInterrupted);
+            }
+            vault.retry_access(&id)
+        })
+        .await
+        .map_err(|_| error("vault_unavailable", "Credential access could not resume"))?
+        .map_err(google_error)
+    }
     #[allow(dead_code)] // Explicit shared API for the upcoming mail/calendar worker wiring.
     pub(crate) async fn account_work_cancel(&self, account: &str) -> Result<CancellationToken> {
         let mut state = self.inner.state.lock().await;
@@ -1062,7 +1109,7 @@ fn google_error(failure: GoogleError) -> CoreError {
         ),
         GoogleError::StoreUnavailable => error(
             "vault_unavailable",
-            "The operating-system credential vault is unavailable",
+            "Credential access was denied or the keychain is locked. Sync is paused; click Sync to try again.",
         ),
         GoogleError::RateLimited { .. } => error(
             "rate_limited",

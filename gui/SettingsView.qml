@@ -15,14 +15,6 @@ Item {
     property bool calendarDetailsOpen: false
     property string reconnectAccount: ""
     property double restoreRevision: -1
-    property string syncAccount: ""
-    property var quotaValues: ({})
-    readonly property var quotaFields: [
-        {key:"gmail_project_units_per_minute",label:"Gmail · project units / minute"},
-        {key:"gmail_account_units_per_minute",label:"Gmail · user units / minute"},
-        {key:"calendar_project_units_per_minute",label:"Calendar · project units / minute"},
-        {key:"calendar_account_units_per_minute",label:"Calendar · user units / minute"}
-    ]
     readonly property string modifier: Qt.platform.os === "osx" ? "⌘" : "Ctrl+"
     readonly property var hourLabels: Array.from({length:25}, (_, h) => (h < 10 ? "0" : "") + h + ":00")
     Connections {
@@ -39,27 +31,13 @@ Item {
             }
             settings.accountEdits = pending
         }
-        function onGoogleAuthChanged() { if (backend.googleAuth.phase === "connected") googleSignIn.close() }
-        function onGoogleSyncChanged() {
-            if (googleQuota.visible && settings.syncAccount.length && backend.googleSyncState(settings.syncAccount).owned) googleQuota.close()
-        }
+
     }
     function accountValue(account, field) {
         const edited = accountEdits[account.id]
         return edited && edited[field] !== undefined ? edited[field] : account[field] || ""
     }
-    function editSyncLimits(account) {
-        syncAccount = account
-        const active = backend.googleSyncLimits || {}
-        quotaValues = Object.assign({},Object.keys(active).length ? active : backend.preferences.google_sync_limits || {})
-        localError = ""; googleQuota.open()
-    }
-    function startSync(account) {
-        const active = backend.googleSyncLimits || {}
-        const limits = Object.keys(active).length ? active : backend.preferences.google_sync_limits || {}
-        if (Object.keys(limits).length === 4) backend.startGoogleSync(account,limits)
-        else editSyncLimits(account)
-    }
+    function startSync(account) { backend.startGoogleSync(account, {}) }
     function syncProgress(state) {
         const progress = state.progress || {}, parts = []
         const names = {mail:"Mail",calendar:"Calendar",mail_mutations:"Mail changes",labels:"Labels"}
@@ -69,20 +47,6 @@ Item {
             parts.push(names[key] + ": " + String(progress[key]).replace(/_/g," ") + (error ? " · " + String(error).replace(/_/g," ") : ""))
         }
         return parts.join("  /  ")
-    }
-    function saveSyncLimits() {
-        const limits = {}
-        for (const field of quotaFields) {
-            const text = String(quotaValues[field.key] || "")
-            const value = Number(text)
-            if (!/^\d+$/.test(text) || value < 100 || value > 100000000) {
-                localError = "Enter all four Console limits, from 100 to 100000000."; return
-            }
-            limits[field.key] = value
-        }
-        localError = ""; backend.clearError()
-        if (syncAccount.length) backend.startGoogleSync(syncAccount,limits)
-        else { backend.setPreferences({google_sync_limits:limits}); googleQuota.close() }
     }
     function changeAccount(account, field, value) {
         const copy = Object.assign({}, accountEdits), fields = Object.assign({}, copy[account.id] || {})
@@ -95,6 +59,20 @@ Item {
         if (!name.length || name.length > 80) { localError = "Use a display name between 1 and 80 characters."; return }
         backend.updateAccountPreferences(account.id,name,accountValue(account,"signature_text"))
     }
+    function serviceEnabled(account, service) { return ((backend.preferences.google_sync_services || {})[account] || {})[service] !== false }
+    function toggleService(account, service) {
+        const choices = Object.assign({}, backend.preferences.google_sync_services || {})
+        choices[account] = {mail: serviceEnabled(account, "mail"), calendar: serviceEnabled(account, "calendar")}
+        choices[account][service] = !choices[account][service]
+        backend.setPreferences({google_sync_services:choices})
+    }
+    function syncAgo(state) {
+        if (state.changing || state.refresh_requested) return "Running now"
+        if (!state.active) return "Paused"
+        if (!state.last_mail_sync_at) return "Not synced yet"
+        const seconds = Math.max(0, Date.now() / 1000 - Number(state.last_mail_sync_at))
+        return seconds < 60 ? "Just now" : seconds < 3600 ? Math.floor(seconds / 60) + " min ago" : seconds < 86400 ? Math.floor(seconds / 3600) + " hours ago" : Math.floor(seconds / 86400) + " days ago"
+    }
     function sourceSelected(source) {
         const chosen = backend.preferences.selected_calendars
         return chosen === null || chosen === undefined || chosen.some(item => item.account === source.account && item.calendar_id === source.calendar_id)
@@ -106,110 +84,41 @@ Item {
         localError = ""
         const patch = {}; patch[key] = value; backend.setPreferences(patch)
     }
+    readonly property bool modelDirty: localModelSettings.dirty
+    property var pendingModelLeave: null
+    function confirmLeave(action) {
+        if (!localModelSettings.dirty) { action(); return }
+        pendingModelLeave=action; modelUnsaved.open()
+    }
+    function finishModelLeave() { const action=pendingModelLeave;pendingModelLeave=null;modelUnsaved.close();if(action)action() }
     function selectPage(nextPage) {
+        if (page === "Local model" && localModelSettings.dirty) { confirmLeave(function(){settings.selectPage(nextPage)}); return }
+
         const scrolls = Object.assign({},pageScroll); scrolls[page] = contentFlick.contentY; pageScroll = scrolls
         page = nextPage; localError = ""
         Qt.callLater(function() { contentFlick.contentY = pageScroll[nextPage] || 0 })
     }
-    Dialog {
-        id: googleSignIn
-        objectName: "googleSignInDialog"
-        parent: Overlay.overlay
-        anchors.centerIn: parent
-        width: Math.min(520, parent.width - 32)
-        modal: true
-        padding: 24
-        closePolicy: Popup.CloseOnEscape
-        background: Rectangle { color: Theme.canvas; border.color: Theme.controlBorder; radius: 8 }
-        onOpened: { backend.prepareGoogleSignIn(); googleEmail.forceActiveFocus() }
-        onClosed: if (backend.googleAuthBusy) backend.cancelGoogleAuth()
-        function signIn() {
-            if (!backend.connected || backend.googleAuthBusy || !backend.googleAuthConfiguration.available || !googleEmail.acceptableInput) return
-            backend.clearError()
-            if (settings.restoreRevision > 0) backend.restoreGoogleAccount(googleEmail.text.trim(), settings.reconnectAccount, settings.restoreRevision, renewGoogleAccess.checked)
-            else backend.connectGoogle(googleEmail.text.trim(), settings.reconnectAccount, renewGoogleAccess.checked)
+    FmDialog {
+        id:modelUnsaved; parent:Overlay.overlay; anchors.centerIn:parent; modal:true; title:"Save local model changes?"
+        contentItem: Label {
+            text: "Keep your endpoint, model and prompt changes before leaving this section?"
+            color: Theme.inkAlpha(0.6); font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; lineHeight: 1.5
         }
-        Connections {
-            target: backend
-            function onGoogleAuthChanged() { if (googleSignIn.opened && backend.googleAuth.phase === "connected") googleSignIn.close() }
+        footer: RowLayout {
+            spacing: 6
+            Item { Layout.fillWidth: true }
+            FmButton {text:"Stay";implicitHeight:32;outlined:true;onClicked:{settings.pendingModelLeave=null;modelUnsaved.close()}}
+            FmButton {text:"Discard";implicitHeight:32;outlined:true;onClicked:{localModelSettings.discard();settings.finishModelLeave()}}
+            FmButton {text:"Save";implicitHeight:32;prominent:true;enabled:!localModelSettings.saving;onClicked:localModelSettings.save()}
+            Item { Layout.preferredWidth: 16 }
         }
-        contentItem: ColumnLayout {
-            spacing: 16
-            property bool blocksWorkspaceShortcuts: true
-            Heading { text: settings.restoreRevision > 0 ? "Restore archived account" : settings.reconnectAccount.length ? "Reconnect Google" : "Connect Google" }
-            Description { text: settings.restoreRevision > 0 ? "Sign in as the same Google account to use your saved mail and calendars again." : "Enter your Gmail or Google Workspace email. You'll sign in securely with Google in your browser." }
-            FmTextField {
-                id: googleEmail; objectName: "googleEmailAddress"; Layout.fillWidth: true
-                placeholderText: "you@gmail.com"; enabled: !backend.googleAuthBusy
-                Accessible.name: "Gmail or Google Workspace email address"
-                inputMethodHints: Qt.ImhEmailCharactersOnly | Qt.ImhNoAutoUppercase
-                maximumLength: 320
-                validator: RegularExpressionValidator { regularExpression: / *[^\s@<>,;]+@[^\s@<>,;]+ */ }
-                onAccepted: googleSignIn.signIn()
-            }
-            CheckBox {
-                id: renewGoogleAccess
-                text: "Ask Google to renew access"
-                visible: settings.reconnectAccount.length > 0 || backend.googleAuth.error_code === "reauthorization_required"
-                enabled: !backend.googleAuthBusy
-                font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13)
-                palette.windowText: Theme.text; palette.buttonText: Theme.text
-            }
-            Caption { visible: renewGoogleAccess.visible; text: "Use this if previous access expired or Google did not supply renewable access." }
-            Description { visible: (backend.googleAuth.message || "").length > 0; text: backend.googleAuth.message || "" }
-            Description { visible: !!backend.googleAuthConfiguration.error; text: (backend.googleAuthConfiguration.error || {}).message || "" }
-            Caption { text: "Google will ask for Mail and Calendar access. You choose when to start syncing." }
-            RowLayout {
-                Layout.fillWidth: true; spacing: 10
-                Item { Layout.fillWidth: true }
-                FmButton { text: "Cancel"; onClicked: googleSignIn.close() }
-                FmButton { objectName: "beginGoogleSignIn"; text: backend.googleAuthBusy ? "Signing in…" : "Continue with Google"; prominent: true; enabled: backend.connected && !backend.googleAuthBusy && !!backend.googleAuthConfiguration.available && googleEmail.acceptableInput; onClicked: googleSignIn.signIn() }
-            }
-        }
+        bottomPadding: 18
     }
-    Dialog {
-        id: googleQuota
-        objectName: "googleSyncLimitsDialog"
-        parent: Overlay.overlay; anchors.centerIn: parent
-        width: Math.min(540,parent.width-32); modal: true; padding: 24
-        closePolicy: Popup.CloseOnEscape
-        background: Rectangle { color: Theme.canvas; border.color: Theme.controlBorder; radius: 8 }
-        contentItem: ColumnLayout {
-            spacing: 14
-            property bool blocksWorkspaceShortcuts: true
-            Heading { text: "Google sync limits" }
-            Description { text: "Enter the four limits shown for your project in Google Cloud Console. Mail and Calendar share these limits across your accounts; the app reserves 20% headroom." }
-            Caption { visible: Object.keys(backend.googleSyncLimits || {}).length > 0; text: "These limits are active. Close all app and CLI sessions before changing them." }
-            Repeater {
-                model: settings.quotaFields
-                ColumnLayout {
-                    required property var modelData
-                    Layout.fillWidth: true; spacing: 4
-                    Caption { text: modelData.label }
-                    FmTextField {
-                        objectName: modelData.key
-                        Layout.fillWidth: true; text: String(settings.quotaValues[modelData.key] || "")
-                        placeholderText: "Confirmed Console limit"; maximumLength: 9
-                        validator: IntValidator { bottom: 100; top: 100000000 }
-                        enabled: Object.keys(backend.googleSyncLimits || {}).length === 0 && (!settings.syncAccount.length || !backend.googleSyncState(settings.syncAccount).changing)
-                        Accessible.name: modelData.label
-                        onTextEdited: { const next = Object.assign({},settings.quotaValues); next[modelData.key] = text; settings.quotaValues = next }
-                    }
-                }
-            }
-            Description { visible: settings.localError.length > 0 || backend.error.length > 0; text: settings.localError || backend.error; color: Theme.error }
-            Caption { text: "Sync runs only for accounts you start. Closing the app stops its work." }
-            RowLayout {
-                Layout.fillWidth: true; spacing: 10
-                Item { Layout.fillWidth: true }
-                FmButton { text: "Cancel"; onClicked: googleQuota.close() }
-                FmButton {
-                    objectName: "saveGoogleSyncLimits"; text: settings.syncAccount.length ? "Start sync" : "Save limits"; prominent: true
-                    enabled: backend.connected && (settings.syncAccount.length ? !backend.googleSyncState(settings.syncAccount).changing : Object.keys(backend.googleSyncLimits || {}).length === 0)
-                    onClicked: settings.saveSyncLimits()
-                }
-            }
-        }
+    GoogleConnectionDialog {
+        id: googleSignIn
+        reconnectAccount: settings.reconnectAccount
+        restoreRevision: settings.restoreRevision
+        onSyncRequested: function(account) { settings.startSync(account) }
     }
     component Heading: Text {
         color: Theme.text; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(22); weight: Font.Medium; letterSpacing: -0.44 }
@@ -326,7 +235,7 @@ Item {
                 objectName: "settingsDoneButton"
                 z: 2; anchors.top: parent.top; anchors.right: parent.right; anchors.topMargin: 22; anchors.rightMargin: 24
                 text: "Done"; outlined: true; implicitWidth: doneContent.implicitWidth + 24
-                onClicked: settings.done()
+                onClicked: settings.confirmLeave(function(){settings.done()})
                 background: Rectangle { radius: 5; color: doneButton.hovered ? Theme.surface : Theme.canvas; border.color: doneButton.activeFocus ? Theme.focusBorder : Theme.controlBorder }
                 contentItem: Row {
                     id: doneContent; spacing: 8
@@ -358,7 +267,7 @@ Item {
                         RowLayout {
                             Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
                             PreferenceLabel { label: "Theme"; detail: Theme.current.description; Layout.alignment: Qt.AlignTop }
-                            Row { spacing: 10; Repeater { model: Theme.themes; ThemeSwatch { required property var modelData; paletteData: modelData } } }
+                            Row { spacing: 10; Repeater { model: Theme.themes.filter(function(theme) { return theme.id !== "harbour" }); ThemeSwatch { required property var modelData; paletteData: modelData } } }
                         }
                         Divider {}
                         RowLayout {
@@ -385,21 +294,20 @@ Item {
                         Divider {}
                         RowLayout {
                             Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
-                            PreferenceLabel { label: "Sync every"; detail: backend.syntheticProfile ? "Connect a live profile to sync Google accounts." : "Active mail and Calendar check about every minute. Limits and backoff can slow checks." }
-                            FmSegmented { model: ["1 min","5 min","15 min"]; currentIndex: backend.syntheticProfile ? -1 : 0; enabled: false; Accessible.name: "Current sync cadence" }
+                            PreferenceLabel { label: "Sync every"; detail: "Mail and calendar, per account. Sending is always immediate." }
+                            FmSegmented { objectName: "syncIntervalPreference"; model: ["1 min","5 min","15 min"]; currentIndex: [1,5,15].indexOf(backend.preferences.sync_every_minutes || 1); onActivated: function(index) { backend.setPreferences({sync_every_minutes:[1,5,15][index]}); currentIndex = Qt.binding(function() { return [1,5,15].indexOf(backend.preferences.sync_every_minutes || 1) }) } Accessible.name: "Sync interval" }
                         }
-                        FmButton { visible: !backend.syntheticProfile; Layout.alignment: Qt.AlignRight; Layout.bottomMargin: 14; text: "Google limits"; outlined: true; onClicked: settings.editSyncLimits("") }
                         Divider {}
                         RowLayout {
                             Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
-                            PreferenceLabel { label: "Notifications"; detail: "Alerts while the app is open. Events appear five minutes before they start." }
+                            PreferenceLabel { label: "Notifications"; detail: "Alerts while the app is open. Event reminders use the time you choose." }
                             FmSegmented { model: ["All","Events only","Off"]; currentIndex: ["all","events","off"].indexOf(backend.preferences.notifications || "events"); onActivated: function(index) { backend.setPreferences({notifications:["all","events","off"][index]}); currentIndex = Qt.binding(function() { return ["all","events","off"].indexOf(backend.preferences.notifications || "events") }) }; Accessible.name: "Notifications" }
                         }
                         Divider {}
                     }
                     ColumnLayout {
                         visible: settings.page === "Accounts"; Layout.fillWidth: true; spacing: 12
-                        Description { text: "Each account has its own local mail and calendar. The display name is what the top bar shows."; Layout.maximumWidth: 560; Layout.bottomMargin: 12 }
+                        Description { text: "Each Google account keeps its own mail and calendar on this machine. Sync runs while the app is open."; Layout.maximumWidth: 560; Layout.bottomMargin: 12 }
                         Repeater {
                             model: backend.allAccounts
                             Rectangle {
@@ -413,102 +321,150 @@ Item {
                                 readonly property var coverage: (modelData.google || {}).sync || {}
                                 readonly property int observed: backend.syntheticProfile ? modelData.message_count : Number(coverage.observed_messages || 0)
                                 readonly property int indexed: backend.syntheticProfile ? Number((modelData.coverage || {}).indexed_messages || 0) : Number(coverage.indexed_messages || 0)
-                                Layout.fillWidth: true; implicitHeight: accountContent.implicitHeight + 32
-                                color: "transparent"; border.color: Theme.line; radius: 8
+                                readonly property bool current: backend.account === modelData.id
+                                readonly property bool signedIn: (modelData.google || {}).connection_state === "connected"
+                                readonly property string stateText: archived ? "Archived" : backend.syntheticProfile ? "Local copy" : !signedIn ? "Needs sign-in" : syncState.active ? "Connected" : "Paused"
+                                Layout.fillWidth: true; implicitHeight: accountContent.implicitHeight
+                                color: Theme.canvas; border.color: Theme.line2; radius: 8
                                 ColumnLayout {
-                                    id: accountContent
-                                    anchors { left: parent.left; right: parent.right; top: parent.top; leftMargin: 18; rightMargin: 18; topMargin: 16 }
-                                    spacing: 12
+                                    id: accountContent; width: parent.width; spacing: 0
                                     RowLayout {
-                                        spacing: 12; Layout.fillWidth: true
-                                        Rectangle { implicitWidth: 32; implicitHeight: 32; color: Theme.surface; radius: 6; FmIcon { anchors.centerIn: parent; name: Theme.accountIcon(accountCard.modelData.id); size: 16; color: Theme.secondary } }
+                                        Layout.fillWidth: true; Layout.margins: 18; Layout.topMargin: 16; Layout.bottomMargin: 16; spacing: 14
+                                        Rectangle {
+                                            implicitWidth: 36; implicitHeight: 36; radius: 18
+                                            color: accountCard.current ? Theme.accentAlpha(0.18) : Theme.bg4
+                                            Text { anchors.centerIn: parent; text: accountCard.modelData.name.trim().split(/\s+/).map(function(n) { return n.slice(0,1) }).slice(0,2).join("").toUpperCase(); color: accountCard.current ? Theme.accent : Theme.inkAlpha(0.8); font.pixelSize: Theme.fontSize(12); font.weight: Font.Medium }
+                                        }
                                         ColumnLayout {
-                                            Layout.fillWidth: true; spacing: 2
-                                            TextField {
-                                                id: accountName
-                                                readOnly: accountCard.archived
-                                                objectName: "accountName_" + accountCard.modelData.id
-                                                Layout.fillWidth: true; implicitHeight: 20; padding: 0
-                                                text: settings.accountValue(accountCard.modelData,"name"); maximumLength: 80
-                                                color: Theme.text; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(14); weight: Font.Medium }
-                                                selectByMouse: true; hoverEnabled: true
-                                                background: Rectangle { color: "transparent"; Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: accountName.activeFocus ? Theme.focusBorder : accountName.hovered ? Theme.controlBorder : "transparent" } }
-                                                Accessible.name: "Display name for " + accountCard.modelData.email
-                                                onTextEdited: settings.changeAccount(accountCard.modelData,"name",text)
-                                                onAccepted: settings.saveAccount(accountCard.modelData)
+                                            Layout.fillWidth: true; spacing: 3
+                                            RowLayout {
+                                                Layout.fillWidth: true; spacing: 8
+                                                TextField {
+                                                    id: accountName; readOnly: accountCard.archived
+                                                    objectName: "accountName_" + accountCard.modelData.id
+                                                    Layout.fillWidth: true; Layout.maximumWidth: Math.max(55, contentWidth + 4); implicitHeight: 22; padding: 0
+                                                    text: settings.accountValue(accountCard.modelData,"name"); maximumLength: 80
+                                                    color: Theme.text; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(15); weight: Font.Medium }
+                                                    selectByMouse: true; hoverEnabled: true
+                                                    background: Rectangle { color: "transparent"; Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: accountName.activeFocus ? Theme.focusBorder : accountName.hovered ? Theme.controlBorder : "transparent" } }
+                                                    Accessible.name: "Display name for " + accountCard.modelData.email
+                                                    onTextEdited: settings.changeAccount(accountCard.modelData,"name",text)
+                                                    onEditingFinished: if (!readOnly && settings.accountDirty(accountCard.modelData)) settings.saveAccount(accountCard.modelData)
+                                                }
+                                                Rectangle {
+                                                    visible: accountCard.current; implicitWidth: currentLabel.implicitWidth + 10; implicitHeight: 18; radius: 3
+                                                    color: "transparent"; border.color: Theme.accentAlpha(0.5)
+                                                    Text { id: currentLabel; anchors.centerIn: parent; text: "CURRENT"; font.pixelSize: Theme.fontSize(10.5); font.letterSpacing: 0.63; color: Theme.accent }
+                                                }
+                                                Item { Layout.fillWidth: true }
                                             }
-                                            Text { text: accountCard.modelData.email + " · Mail and Calendar"; color: Theme.muted; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } elide: Text.ElideRight; Layout.fillWidth: true; textFormat: Text.PlainText }
+                                            Text { text: accountCard.modelData.email; color: Theme.inkAlpha(0.5); font.pixelSize: Theme.fontSize(12.5); elide: Text.ElideRight; Layout.fillWidth: true; textFormat: Text.PlainText }
                                         }
-                                        Row { visible: !settings.accountDirty(accountCard.modelData); spacing: 7; FmIcon { name: "refresh"; size: 13; color: Theme.subtle; anchors.verticalCenter: parent.verticalCenter } Text { text: accountCard.archived ? "Archived" : backend.syntheticProfile ? "Local copy" : (accountCard.modelData.google || {}).connection_state === "connected" ? "Connected" : "Access paused"; color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } } }
-                                        FmButton { objectName: "saveAccount_" + accountCard.modelData.id; visible: !accountCard.archived && settings.accountDirty(accountCard.modelData); text: "Save"; outlined: true; onClicked: settings.saveAccount(accountCard.modelData) }
-                                    }
-                                    Divider {}
-                                    RowLayout {
-                                        Layout.fillWidth: true
-                                        Caption { text: "Indexed " + accountCard.indexed + " of " + accountCard.observed + (backend.syntheticProfile ? " messages" : " observed messages") }
-                                        Text { text: backend.syntheticProfile ? (accountCard.modelData.coverage || {}).text_index_complete ? "Complete" : "Building index" : accountCard.coverage.offline_complete ? "Offline copy complete" : accountCard.coverage.inventory_complete ? "Downloading content" : "Inventory incomplete"; color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } }
-                                    }
-                                    Rectangle {
-                                        Layout.fillWidth: true; implicitHeight: 2; color: Theme.hover; radius: 1; Layout.topMargin: -6
-                                        Rectangle { height: parent.height; width: parent.width * Math.max(0,Math.min(1,accountCard.indexed / Math.max(1,accountCard.observed))); color: Theme.subtle; radius: 1 }
-                                    }
-                                    RowLayout {
-                                        visible: !backend.syntheticProfile && !accountCard.archived; Layout.fillWidth: true; spacing: 10
-                                        Caption {
-                                            text: accountCard.syncState.changing ? "Updating sync…" : accountCard.syncState.active
-                                                ? accountCard.syncState.owned ? "Syncing while this app is open" : "Sync active in another session"
-                                                : "Sync paused · cached mail remains available"
+                                        Row {
+                                            spacing: 7
+                                            Rectangle { width: 6; height: 6; radius: 3; anchors.verticalCenter: parent.verticalCenter; color: accountCard.signedIn && accountCard.syncState.active ? Theme.ai : Theme.subtle }
+                                            Text { text: accountCard.stateText; color: !accountCard.signedIn && !backend.syntheticProfile && !accountCard.archived ? Theme.error : Theme.secondary; font.pixelSize: Theme.fontSize(12.5) }
                                         }
-                                        FmButton {
-                                            objectName: "googleSync_" + accountCard.modelData.id
-                                            text: accountCard.syncState.owned ? "Pause" : accountCard.syncState.active ? "Keep syncing here" : "Start sync"
-                                            outlined: true
-                                            enabled: backend.connected && !accountCard.syncState.changing && (accountCard.modelData.google || {}).connection_state === "connected"
-                                            onClicked: accountCard.syncState.owned ? backend.pauseGoogleSync(accountCard.modelData.id) : settings.startSync(accountCard.modelData.id)
+                                        Row {
+                                            visible: !accountCard.archived && !backend.syntheticProfile; spacing: 4
+                                            FmButton { objectName: "refreshGoogle_" + accountCard.modelData.id; iconName: "refresh"; tip: "Sync now"; implicitWidth: 32; implicitHeight: 32; leftPadding: 8; rightPadding: 8; outlined: true; enabled: backend.connected && accountCard.signedIn && !accountCard.syncState.changing; onClicked: accountCard.syncState.active ? backend.refreshGoogleSync(accountCard.modelData.id) : settings.startSync(accountCard.modelData.id) }
+                                            FmButton { objectName: "googleSync_" + accountCard.modelData.id; iconName: accountCard.syncState.owned ? "pause" : "play"; tip: accountCard.syncState.owned ? "Pause syncing" : "Resume syncing"; implicitWidth: 32; implicitHeight: 32; leftPadding: 8; rightPadding: 8; outlined: true; enabled: backend.connected && accountCard.signedIn && !accountCard.syncState.changing; onClicked: accountCard.syncState.owned ? backend.pauseGoogleSync(accountCard.modelData.id) : settings.startSync(accountCard.modelData.id) }
+                                            FmButton { id: accountMore; objectName: "accountOptions_" + accountCard.modelData.id; iconName: "more"; tip: "Account options"; implicitWidth: 32; implicitHeight: 32; leftPadding: 8; rightPadding: 8; outlined: true; onClicked: { const point = mapToItem(Overlay.overlay, width, height); accountActions.x = point.x - accountActions.width; accountActions.y = point.y + 6; accountActions.open() } }
                                         }
                                     }
-                                    Caption { visible: !backend.syntheticProfile && text.length > 0; text: settings.syncProgress(accountCard.syncState) }
-                                    RowLayout {
-                                        visible: !backend.syntheticProfile && !accountCard.archived; Layout.fillWidth: true; spacing: 10
-                                        Caption { text: ((accountCard.modelData.google || {}).connection_state === "reauthorization_required") ? "Sign in again to restore Google access." : (accountCard.modelData.coverage || {}).text || "Your downloaded copy stays on this machine." }
-                                        FmButton { objectName: "reconnectGoogle_" + accountCard.modelData.id; text: "Reconnect"; outlined: true; enabled: backend.connected && !backend.googleAuthBusy; onClicked: { settings.restoreRevision = -1; settings.reconnectAccount = accountCard.modelData.id; googleEmail.text = accountCard.modelData.email; renewGoogleAccess.checked = true; googleSignIn.open() } }
-                                        FmButton { objectName: "disconnectGoogle_" + accountCard.modelData.id; text: "Disconnect"; enabled: backend.connected && !backend.googleAuthBusy && (accountCard.modelData.google || {}).connection_state !== "disconnected"; onClicked: backend.disconnectGoogle(accountCard.modelData.id) }
+                                    Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+                                    Row {
+                                        id: accountStats; Layout.fillWidth: true; spacing: 0
+                                        Item {
+                                            width: accountStats.width / 3; height: accountStatistic0.implicitHeight + 24
+                                            ColumnLayout {
+                                                id: accountStatistic0; x: 18; y: 12; width: parent.width - 36; spacing: 4
+                                                Text { text: "LAST SYNC"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); font.letterSpacing: 0.55 }
+                                                Text { text: accountCard.archived ? "Archived" : backend.syntheticProfile ? "Local copy" : settings.syncAgo(accountCard.syncState); color: Theme.text; font.pixelSize: Theme.fontSize(13) }
+                                            }
+                                        }
+                                        Item {
+                                            width: accountStats.width / 3; height: accountStatistic1.implicitHeight + 24
+                                            ColumnLayout {
+                                                id: accountStatistic1; x: 18; y: 12; width: parent.width - 36; spacing: 4
+                                                Text { text: "LOCAL RETENTION"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); font.letterSpacing: 0.55 }
+                                                Text { text: ({"1_month":"1 month", "3_months":"3 months", "1_year":"1 year", "all":"All"})[accountCard.modelData.mail_retention || "all"]; color: Theme.text; font.pixelSize: Theme.fontSize(13); Layout.fillWidth: true; elide: Text.ElideRight }
+                                            }
+                                            Rectangle { width: 1; height: parent.height; color: Theme.line }
+                                        }
+                                        Item {
+                                            width: accountStats.width / 3; height: accountStatistic2.implicitHeight + 24
+                                            ColumnLayout {
+                                                id: accountStatistic2; x: 18; y: 12; width: parent.width - 36; spacing: 4
+                                                Text { text: "SYNCING"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); font.letterSpacing: 0.55 }
+                                                Row {
+                                                    spacing: 6
+                                                    Repeater {
+                                                        model: [{key:"mail",text:"Mail"},{key:"calendar",text:"Calendar"}]
+                                                        FmButton {
+                                                            required property var modelData
+                                                            objectName: "syncService_" + accountCard.modelData.id + "_" + modelData.key
+                                                            text: modelData.text; implicitHeight: 24; leftPadding: 8; rightPadding: 8; font.pixelSize: Theme.fontSize(12)
+                                                            readonly property bool on: settings.serviceEnabled(accountCard.modelData.id, modelData.key)
+                                                            foreground: on ? Theme.text : Theme.subtle
+                                                            enabled: backend.connected && !accountCard.archived && backend.accountCapability(accountCard.modelData.id,modelData.key + "_read") && !backend.preferencesPending
+                                                            background: Rectangle { radius: height / 2; color: parent.on ? Theme.bg4 : "transparent"; border.color: parent.activeFocus ? Theme.focusBorder : parent.on ? Theme.inkAlpha(0.45) : Theme.line }
+                                                            Accessible.role: Accessible.CheckBox; Accessible.checked: on
+                                                            onClicked: settings.toggleService(accountCard.modelData.id, modelData.key)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Rectangle { width: 1; height: parent.height; color: Theme.line }
+                                        }
+                                    }
+                                    Rectangle { Layout.fillWidth: true; implicitHeight: 2; color: Theme.line; Rectangle { height: parent.height; width: parent.width * Math.max(0,Math.min(1,accountCard.indexed / Math.max(1,accountCard.observed))); color: accountCard.syncState.active ? Theme.inkAlpha(0.6) : Theme.subtle } }
+                                    Text {
+                                        Layout.fillWidth: true; Layout.leftMargin: 18; Layout.rightMargin: 18; Layout.topMargin: 10; Layout.bottomMargin: 10
+                                        text: accountCard.archived ? "Your saved mail, drafts and history remain available in a read-only archive."
+                                            : !settings.serviceEnabled(accountCard.modelData.id,"mail") && !settings.serviceEnabled(accountCard.modelData.id,"calendar") ? "Nothing syncing · turn Mail or Calendar back on."
+                                            : !accountCard.syncState.active && !backend.syntheticProfile ? "Paused · downloaded mail and events remain available offline."
+                                            : accountCard.coverage.offline_complete || backend.syntheticProfile ? "Up to date · your downloaded copy stays on this machine."
+                                            : settings.syncProgress(accountCard.syncState) || "Downloading mail and events · new mail arrives first."
+                                        color: Theme.inkAlpha(0.45); font.pixelSize: Theme.fontSize(12.5); wrapMode: Text.Wrap; lineHeight: 1.5
                                     }
                                     ColumnLayout {
-                                        visible: !backend.syntheticProfile; Layout.fillWidth: true; spacing: 8
+                                        visible: !backend.syntheticProfile && (accountCard.archived || (accountCard.removal.status || "").length > 0); Layout.fillWidth: true; Layout.margins: 18; spacing: 8
                                         Caption { visible: accountCard.archived; text: "Read-only archive · saved mail, drafts, files and history" }
                                         Caption { visible: accountCard.cleanup.state !== undefined; text: "Local credential cleanup: " + (accountCard.cleanup.state || "") + (accountCard.cleanup.code ? " · " + accountCard.cleanup.code : "") }
                                         Caption { visible: (accountCard.removal.status || "").length > 0; text: accountCard.removal.status || "" }
                                         Flow {
                                             Layout.fillWidth: true; spacing: 8
-                                            FmButton { objectName: "removeAccount_" + accountCard.modelData.id; text: "Remove…"; visible: !accountCard.archived; enabled: backend.connected && !backend.googleAuthBusy && !accountCard.removal.busy; onClicked: backend.previewAccountRemoval(accountCard.modelData.id) }
                                             FmButton { objectName: "openAccountArchive_" + accountCard.modelData.id; text: "Open archive"; visible: accountCard.archived; outlined: true; onClicked: { backend.openAccountArchive(accountCard.modelData.id); if (!backend.unsavedAccountBuffer) settings.archiveOpened() } }
+                                            FmButton { objectName: "deleteAccountArchive_" + accountCard.modelData.id; text: "Delete archive…"; visible: accountCard.archived; enabled: backend.connected && !accountCard.removal.busy && accountCard.cleanup.state === "complete" && !backend.unsavedAccountBuffer; onClicked: backend.previewArchiveDeletion(accountCard.modelData.id) }
                                             FmButton { objectName: "retryAccountCleanup_" + accountCard.modelData.id; text: "Retry cleanup"; visible: accountCard.archived && (accountCard.cleanup.state === "pending" || accountCard.cleanup.state === "failed"); enabled: backend.connected && !accountCard.removal.busy; onClicked: backend.retryAccountCleanup(accountCard.modelData.id) }
                                             FmButton { objectName: "checkAccountRemoval_" + accountCard.modelData.id; text: "Check saved result"; visible: accountCard.removal.uncertain || false; enabled: backend.connected && !accountCard.removal.busy; onClicked: backend.checkAccountRemoval(accountCard.modelData.id, accountCard.removal.request_id) }
                                             FmButton { objectName: "retryAccountRemoval_" + accountCard.modelData.id; text: "Retry same removal"; visible: accountCard.removal.uncertain || false; enabled: backend.connected && !accountCard.removal.busy; onClicked: backend.retryAccountCleanup(accountCard.modelData.id) }
-                                            FmButton { objectName: "restoreAccount_" + accountCard.modelData.id; text: "Restore…"; visible: accountCard.archived; enabled: backend.connected && !backend.googleAuthBusy && !accountCard.removal.busy && accountCard.cleanup.state === "complete"; onClicked: { settings.reconnectAccount = accountCard.modelData.id; settings.restoreRevision = accountCard.lifecycle.revision; googleEmail.text = accountCard.modelData.email; renewGoogleAccess.checked = false; googleSignIn.open() } }
+                                            FmButton { objectName: "restoreAccount_" + accountCard.modelData.id; text: "Restore…"; visible: accountCard.archived; enabled: backend.connected && !backend.googleAuthBusy && !accountCard.removal.busy && accountCard.cleanup.state === "complete"; onClicked: { settings.reconnectAccount = accountCard.modelData.id; settings.restoreRevision = accountCard.lifecycle.revision; googleSignIn.email = accountCard.modelData.email; googleSignIn.renewAccess = false; googleSignIn.open() } }
                                         }
+                                    }
+                                }
+                                Popup {
+                                    id: accountActions; parent: Overlay.overlay; width: 220; padding: 5; modal: true; focus: true
+                                    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+                                    background: Rectangle { color: Theme.bg2; border.color: Theme.line2; radius: 6 }
+                                    contentItem: ColumnLayout {
+                                        spacing: 2
+                                        FmButton { text: "Rename"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { accountActions.close(); accountName.forceActiveFocus(); accountName.selectAll() } }
+                                        FmButton { text: accountCard.current ? "Current account" : "Switch to this account"; enabled: !accountCard.current; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { accountActions.close(); backend.account = accountCard.modelData.id } }
+                                        FmButton { objectName: "reconnectGoogle_" + accountCard.modelData.id; text: "Reconnect"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: backend.connected && !backend.googleAuthBusy; onClicked: { accountActions.close(); settings.restoreRevision = -1; settings.reconnectAccount = accountCard.modelData.id; googleSignIn.email = accountCard.modelData.email; googleSignIn.renewAccess = true; googleSignIn.open() } }
+                                        FmButton { objectName: "disconnectGoogle_" + accountCard.modelData.id; text: "Disconnect"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; enabled: backend.connected && !backend.googleAuthBusy && accountCard.signedIn; onClicked: { accountActions.close(); backend.disconnectGoogle(accountCard.modelData.id) } }
+                                        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line; Layout.topMargin: 3; Layout.bottomMargin: 3 }
+                                        FmButton { objectName: "removeAccount_" + accountCard.modelData.id; text: "Remove account…"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; foreground: Theme.error; enabled: backend.connected && !backend.googleAuthBusy && !accountCard.removal.busy; onClicked: { accountActions.close(); backend.previewAccountRemoval(accountCard.modelData.id) } }
                                     }
                                 }
                             }
                         }
-                        FmButton { objectName: "connectGoogleButton"; visible: !backend.syntheticProfile; text: "Connect Google account"; iconName: "plus"; outlined: true; enabled: backend.connected && !backend.googleAuthBusy; onClicked: { settings.restoreRevision = -1; settings.reconnectAccount = ""; googleEmail.text = ""; renewGoogleAccess.checked = false; googleSignIn.open() } }
+                        FmButton { objectName: "connectGoogleButton"; visible: !backend.syntheticProfile; text: "Connect Google account"; iconName: "plus"; outlined: true; enabled: backend.connected && !backend.googleAuthBusy; onClicked: { settings.restoreRevision = -1; settings.reconnectAccount = ""; googleSignIn.email = ""; googleSignIn.renewAccess = false; googleSignIn.open() } }
                         Caption { visible: !backend.syntheticProfile && (backend.googleAuth.message || "").length > 0; text: backend.googleAuth.message || "" }
                         Caption { Layout.topMargin: 4; visible: backend.syntheticProfile; text: "Open a separate live profile to connect your Google accounts." }
                     }
-                    ColumnLayout {
-                        visible: settings.page === "Local model"; Layout.fillWidth: true; spacing: 14
-                        Description { text: "Optional summaries and category suggestions run on this machine. Humans write the mail and choose its state."; Layout.maximumWidth: 560; Layout.bottomMargin: 10 }
-                        Rectangle {
-                            Layout.fillWidth: true; implicitHeight: modelStatus.implicitHeight + 28; color: Theme.surface; radius: 8
-                            RowLayout {
-                                id: modelStatus; anchors { left: parent.left; right: parent.right; top: parent.top; margins: 16; topMargin: 14 } spacing: 14
-                                Rectangle { implicitWidth: 8; implicitHeight: 8; radius: 4; color: Theme.subtle }
-                                ColumnLayout { Layout.fillWidth: true; spacing: 3; Text { text: "No model — summaries unavailable"; color: Theme.text; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(14); weight: Font.Medium } } Description { text: "This version displays the original message text. No model provider is connected." } }
-                            }
-                        }
-                        Caption { text: "Provider detection and model selection are not available in this version." }
-                    }
+                    LocalModelSettings { id: localModelSettings; onSaveCompleted: if(settings.pendingModelLeave)settings.finishModelLeave(); visible: settings.page === "Local model"; Layout.fillWidth: true }
                     ColumnLayout {
                         visible: settings.page === "Mail"; Layout.fillWidth: true; spacing: 0
                         Description { text: "Three states: to review, delayed, done. Delay leaves the action with you until you choose Done."; Layout.maximumWidth: 560; Layout.bottomMargin: 16 }
@@ -523,20 +479,18 @@ Item {
                             }
                         }
                         Divider {}
-                        Caption { text: "Labels"; Layout.topMargin: 28 }
-                        Description { text: "Labels used in this account. Change a conversation's labels from its reader."; Layout.topMargin: 6 }
-                        Flow {
-                            Layout.fillWidth: true; Layout.topMargin: 14; spacing: 6
-                            Repeater {
-                                model: backend.categories
-                                Rectangle {
-                                    required property var modelData
-                                    implicitHeight: 28; implicitWidth: labelRow.implicitWidth + 22; color: "transparent"; border.color: Theme.controlBorder; radius: 14
-                                    Row { id: labelRow; anchors.centerIn: parent; spacing: 6; Text { text: modelData.name; color: Theme.text; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } } Text { text: modelData.conversation_count; color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(11) } } }
-                                }
+                        RowLayout {
+                            Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
+                            PreferenceLabel { label: "Group Sent and Drafts by date"; detail: "Today, yesterday, weekdays, then months. Off shows one plain list." }
+                            FmSegmented {
+                                objectName: "mailDateGroupingPreference"; model: ["On","Off"]
+                                currentIndex: backend.preferences.mail_date_grouping === "plain" ? 1 : 0
+                                onActivated: function(index) { backend.setPreferences({mail_date_grouping:index === 1 ? "plain" : "grouped"}); currentIndex = Qt.binding(function() { return backend.preferences.mail_date_grouping === "plain" ? 1 : 0 }) }
+                                Accessible.name: "Sent and Drafts date grouping"
                             }
                         }
-                        GoogleLabelSetup { visible: !backend.syntheticProfile; Layout.fillWidth: true; Layout.topMargin: 16 }
+                        Divider {}
+                        LabelSettings { Layout.fillWidth: true }
                         FmButton { objectName: "settingsSignaturesButton"; Layout.topMargin: 24; text: "Signatures"; iconName: settings.signaturesOpen ? "down" : "next"; textAlignment: Text.AlignLeft; leftPadding: 0; onClicked: settings.signaturesOpen = !settings.signaturesOpen }
                         ColumnLayout {
                             visible: settings.signaturesOpen; Layout.fillWidth: true; spacing: 12
@@ -565,33 +519,15 @@ Item {
                     }
                     ColumnLayout {
                         visible: settings.page === "Calendar"; Layout.fillWidth: true; spacing: 0
-                        RowLayout {
-                            visible: !backend.syntheticProfile; Layout.fillWidth: true; Layout.bottomMargin: 20; spacing: 12
-                            PreferenceLabel { label: "Display time zone"; detail: "Used for calendar grids, the Mail timeline and Today." }
-                            FmTextField { id: displayTimeZone; objectName: "calendarDisplayTimeZone"; Layout.preferredWidth: 200; text: backend.preferences.calendar_display_time_zone || ""; placeholderText: "America/Toronto"; Accessible.name: "Calendar display time zone" }
-                            FmButton { text: "Save"; outlined: true; enabled: displayTimeZone.text.trim().length > 0 && displayTimeZone.text.trim() !== backend.preferences.calendar_display_time_zone; onClicked: backend.setPreferences({calendar_display_time_zone:displayTimeZone.text.trim()}) }
-                        }
                         Description { text: "One combined feed across your selected calendars. Events keep their account name and the details you have permission to see."; Layout.maximumWidth: 560; Layout.bottomMargin: 16 }
                         RowLayout {
                             Layout.fillWidth: true; Layout.topMargin: 14; Layout.bottomMargin: 14; spacing: 24
-                            PreferenceLabel { label: "Visible calendars"; detail: "Selected independently of the mailbox you are reading." }
-                            FmButton { objectName: "calendarDisplayButton"; text: "Calendars"; iconName: settings.calendarDetailsOpen ? "down" : "next"; outlined: true; onClicked: settings.calendarDetailsOpen = !settings.calendarDetailsOpen }
-                        }
-                        ColumnLayout {
-                            visible: settings.calendarDetailsOpen; Layout.fillWidth: true; spacing: 12
-                            RowLayout { Layout.fillWidth: true; Caption { text: "Visible calendars" } FmButton { objectName: "showAllCalendars"; text: "Show all"; onClicked: backend.setPreferences({selected_calendars:null}) } FmButton { objectName: "hideAllCalendars"; text: "Hide all"; onClicked: backend.setPreferences({selected_calendars:[]}) } }
-                            Repeater {
-                                model: backend.calendarSources
-                                CheckBox {
-                                    required property var modelData
-                                    id: calendarCheck
-                                    objectName: "calendarSelected_" + modelData.account + "_" + modelData.calendar_id
-                                    Layout.fillWidth: true; implicitHeight: 46; spacing: 12; leftPadding: 28; rightPadding: 0
-                                    checked: settings.sourceSelected(modelData); onClicked: backend.setCalendarSelected(modelData.account,modelData.calendar_id,checked)
-                                    indicator: Rectangle { x: 0; y: (parent.height-height)/2; width: 16; height: 16; radius: 3; color: calendarCheck.checked ? Theme.text : "transparent"; border.color: calendarCheck.activeFocus ? Theme.focusBorder : calendarCheck.checked ? Theme.text : Theme.controlBorder; FmIcon { anchors.centerIn: parent; name: "check"; size: 13; color: Theme.canvas; visible: calendarCheck.checked } }
-                                    contentItem: Column { spacing: 4; Text { text: modelData.name; color: Theme.text; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(13) } } Text { text: modelData.account_name + " · " + settings.calendarPermissionLabel(modelData.permission); color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } } }
-                                    Accessible.name: modelData.name + " from " + modelData.account_name
-                                }
+                            PreferenceLabel { label: "Other accounts' events"; detail: "Show everything on one feed, or only the account you are in." }
+                            FmSegmented {
+                                objectName: "calendarAccountVisibility"; model: ["Show","Hide"]; optionNames: ["calendarAccounts_all","calendarAccounts_current"]
+                                currentIndex: backend.preferences.calendar_account_visibility === "current" ? 1 : 0
+                                onActivated: function(index) { backend.setPreferences({calendar_account_visibility:index === 1 ? "current" : "all"}); currentIndex = Qt.binding(function(){return backend.preferences.calendar_account_visibility === "current" ? 1 : 0}) }
+                                Accessible.name: "Other accounts' events"
                             }
                         }
                         Divider { }
@@ -636,13 +572,37 @@ Item {
                             FmSegmented { objectName: "weekStartPreference"; model: ["Monday","Sunday"]; currentIndex: backend.preferences.week_start === "sunday" ? 1 : 0; onActivated: function(index) { backend.setPreferences({week_start:index === 1 ? "sunday" : "monday"}); currentIndex = Qt.binding(function() { return backend.preferences.week_start === "sunday" ? 1 : 0 }) } Accessible.name: "Week starts on" }
                         }
                         Divider {}
+                        FmButton { objectName: "calendarDisplayButton"; Layout.topMargin: 20; text: "Calendars and time zone"; iconName: settings.calendarDetailsOpen ? "down" : "next"; textAlignment: Text.AlignLeft; leftPadding: 0; onClicked: settings.calendarDetailsOpen = !settings.calendarDetailsOpen }
+                        ColumnLayout {
+                            visible: settings.calendarDetailsOpen; Layout.fillWidth: true; spacing: 12
+                            RowLayout { Layout.fillWidth: true; Caption { text: "Visible calendars" } FmButton { objectName: "showAllCalendars"; text: "Show all"; onClicked: backend.setPreferences({selected_calendars:null}) } FmButton { objectName: "hideAllCalendars"; text: "Hide all"; onClicked: backend.setPreferences({selected_calendars:[]}) } }
+                            Repeater {
+                                model: backend.calendarSources
+                                CheckBox {
+                                    required property var modelData
+                                    id: calendarCheck
+                                    objectName: "calendarSelected_" + modelData.account + "_" + modelData.calendar_id
+                                    Layout.fillWidth: true; implicitHeight: 46; spacing: 12; leftPadding: 28; rightPadding: 0
+                                    checked: settings.sourceSelected(modelData); onClicked: backend.setCalendarSelected(modelData.account,modelData.calendar_id,checked)
+                                    indicator: Rectangle { x: 0; y: (parent.height-height)/2; width: 16; height: 16; radius: 3; color: calendarCheck.checked ? Theme.text : "transparent"; border.color: calendarCheck.activeFocus ? Theme.focusBorder : calendarCheck.checked ? Theme.text : Theme.controlBorder; FmIcon { anchors.centerIn: parent; name: "check"; size: 13; color: Theme.canvas; visible: calendarCheck.checked } }
+                                    contentItem: Column { spacing: 4; Text { text: modelData.name; color: Theme.text; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(13) } } Text { text: modelData.account_name + " · " + settings.calendarPermissionLabel(modelData.permission); color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } } }
+                                    Accessible.name: modelData.name + " from " + modelData.account_name
+                                }
+                            }
+                        }
+                        RowLayout {
+                            visible: settings.calendarDetailsOpen && !backend.syntheticProfile; Layout.fillWidth: true; Layout.topMargin: 12; spacing: 12
+                            PreferenceLabel { label: "Display time zone"; detail: "Used for calendar grids, the Mail timeline and Today." }
+                            FmTextField { id: displayTimeZone; objectName: "calendarDisplayTimeZone"; Layout.preferredWidth: 200; text: backend.preferences.calendar_display_time_zone || ""; placeholderText: "America/Toronto"; Accessible.name: "Calendar display time zone" }
+                            FmButton { text: "Save"; outlined: true; enabled: displayTimeZone.text.trim().length > 0 && displayTimeZone.text.trim() !== backend.preferences.calendar_display_time_zone; onClicked: backend.setPreferences({calendar_display_time_zone:displayTimeZone.text.trim()}) }
+                        }
                     }
                     ColumnLayout {
                         visible: settings.page === "Shortcuts"; Layout.fillWidth: true; spacing: 0
                         Description { text: "Single keys, no modifiers. They work whenever the cursor is not in a text field."; Layout.maximumWidth: 560 }
                         Repeater {
                             model: [
-                                {group:"Mail",rows:[{keys:["j","k"],action:"Next · previous conversation"},{keys:["d"],action:"Delay · undelay"},{keys:["e"],action:"Done"},{keys:["r","a","f"],action:"Reply · Reply all · Forward"},{keys:["n"],action:"New message"},{keys:["s"],action:"Inbox · Sent · Drafts"},{keys:["/",settings.modifier+"K"],action:"Search"},{keys:["Tab","⇧Tab"],action:"Next · previous mailbox"}]},
+                                {group:"Mail",rows:[{keys:["j","k","↑","↓"],action:"Next · previous conversation"},{keys:[settings.modifier+"click","⇧click"],action:"Toggle selection · select range"},{keys:[settings.modifier+"A","Esc"],action:"Select loaded conversations · clear selection"},{keys:["u","⌫"],action:"Read/unread · move selected mail to Trash"},{keys:["d"],action:"Delay · undelay"},{keys:["e"],action:"Done"},{keys:["r","a","f"],action:"Reply · Reply all · Forward"},{keys:["n"],action:"New message"},{keys:["s"],action:"Inbox · Sent · Drafts"},{keys:["/",settings.modifier+"K"],action:"Search"},{keys:["Tab","⇧Tab"],action:"Next · previous mailbox"}]},
                                 {group:"Calendar",rows:[{keys:["d","w","m"],action:"Day · Week · Month"},{keys:["←","→"],action:"Previous · next"},{keys:["t"],action:"Today"},{keys:["n"],action:"New event"}]},
                                 {group:"Everywhere",rows:[{keys:["v"],action:"Mail · Calendar"},{keys:[","],action:"Settings"},{keys:["Esc"],action:"Close search, event details, the event editor or settings · minimise a draft"}]}
                             ]

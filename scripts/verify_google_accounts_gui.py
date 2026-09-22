@@ -18,7 +18,8 @@ from dev import package_environment
 from verify_google_account_sources import retained_content, source_inputs, verify_initial_sources
 from verify_google_calendar import BASE, BASE_UNIX, WINDOW
 from verify_google_drafts import read_json
-from verify_google_navigation import LIMITS, expected_accounts, read_database, require
+from verify_google_limits import LIMITS
+from verify_google_navigation import expected_accounts, read_database, require
 from verify_search_ingestion import sha256, stop_children
 
 

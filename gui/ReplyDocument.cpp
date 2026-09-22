@@ -1,4 +1,6 @@
 #include "ReplyDocument.h"
+#include <QSet>
+#include "ReceivedBody.h"
 #include <QClipboard>
 #include <QGuiApplication>
 #include <QKeyEvent>
@@ -8,7 +10,7 @@
 #include <QTextDocument>
 #include <QUrl>
 
-QString ReplyDocument::limitedHtml(const QString &input) {
+QString ReplyDocument::limitedHtml(const QString &input, bool received) {
     // Reconstruct every tag/attribute, keeping only the formatting we expose.
     // Resource tags, image URLs, CSS URLs and event attributes cannot survive.
     QString body = input;
@@ -28,14 +30,20 @@ QString ReplyDocument::limitedHtml(const QString &input) {
         const auto parsed = name.match(token);
         if (!parsed.hasMatch()) continue;
         const auto tag = parsed.captured(2).toLower(); const bool closing = !parsed.captured(1).isEmpty();
-        if (tag != "p" && tag != "div" && tag != "br" && tag != "span" && tag != "b" && tag != "strong" && tag != "i" && tag != "em" && tag != "u" && tag != "ul" && tag != "ol" && tag != "li" && tag != "a") continue;
+        if (received && tag == "img" && !closing) {
+            const auto alt = QRegularExpression("\\balt\\s*=\\s*[\"']([^\"']*)[\"']", QRegularExpression::CaseInsensitiveOption).match(token);
+            if (alt.hasMatch() && !alt.captured(1).isEmpty()) output += "[" + alt.captured(1).toHtmlEscaped() + "]";
+            continue;
+        }
+        const bool receivedTag = received && QStringList{"table","tr","td","th","thead","tbody","h1","h2","h3","h4","blockquote","hr","pre","code"}.contains(tag);
+        if (!receivedTag && tag != "p" && tag != "div" && tag != "br" && tag != "span" && tag != "b" && tag != "strong" && tag != "i" && tag != "em" && tag != "u" && tag != "ul" && tag != "ol" && tag != "li" && tag != "a") continue;
         if (closing) { if (tag != "br") output += "</" + tag + ">"; continue; }
         output += "<" + tag;
         if (tag == "p" || tag == "li") {
             // Qt records the trailing empty text block explicitly. Without this
             // marker, <p><br></p> reloads as two line breaks and changes the draft.
             // Preserve authored repeated spaces too, without retaining arbitrary CSS.
-            QString style = "white-space:pre-wrap";
+            QString style = received ? "white-space:pre-wrap;margin-top:0;margin-bottom:7px;line-height:145%" : "white-space:pre-wrap";
             if (tag == "p" && token.contains(QRegularExpression("-qt-paragraph-type\\s*:\\s*empty", QRegularExpression::CaseInsensitiveOption)))
                 style += ";-qt-paragraph-type:empty";
             output += " style=\"" + style + "\"";
@@ -55,7 +63,15 @@ QString ReplyDocument::limitedHtml(const QString &input) {
         output += ">";
     }
     auto tail = body.mid(end); tail.replace('<', "&lt;").replace('>', "&gt;");
-    return output + tail;
+    output += tail;
+    if (received) {
+        output.remove(QRegularExpression("<p\\b[^>]*>(?:\\s|&nbsp;|<br\\s*/?>)*</p>",QRegularExpression::CaseInsensitiveOption));
+        output.replace(QRegularExpression("(?:<br\\s*/?>\\s*){3,}",QRegularExpression::CaseInsensitiveOption),"<br><br>");
+    }
+    return output;
+}
+QVariantList ReplyDocument::receivedBody(const QString &html,const QString &plain) {
+    return ReceivedBody::sections(html,plain,[](const QString &body){return limitedHtml(body,true);});
 }
 void ReplyDocument::setTextDocument(QQuickTextDocument *document) {
     if (document == m_document) return;

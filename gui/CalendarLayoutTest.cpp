@@ -26,6 +26,7 @@ int main(int argc, char **argv) {
     require(rows.size() == 2, "An overnight occurrence has two visible segments");
     require(rows[0].toMap()["id"] == rows[1].toMap()["id"], "Clipping preserves the provider occurrence identity");
     require(rows[0].toMap()["duration_hours"].toDouble() == 1.0 && rows[1].toMap()["duration_hours"].toDouble() == 1.5, "Segments clip at civil midnight");
+    require(rows[0].toMap()["multi_day"].toBool() && rows[1].toMap()["duration_minutes"].toInt() == 150, "Details retain the full multi-day duration across clipped segments");
     auto today = calendarPresentation({timed("overnight", "2026-09-10T23:00:00-04:00", "2026-09-11T01:30:00-04:00")}, QDate(2026,9,11), 1, zone);
     require(today.size() == 1 && today[0].toMap()["start_hour"].toDouble() == 0.0, "Footer receives only the part in today");
     rows = calendarPresentation({

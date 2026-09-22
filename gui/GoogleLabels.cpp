@@ -141,7 +141,7 @@ void MailBackend::submitGoogleLabelBinding(const QString &account) {
         result["account"] = account; result["request_id"] = requestId;
         emit googleLabelsChanged();
         emit googleLabelBindingFinished(account, ok, result.toVariantMap(), ok ? QString{} : m_googleLabelStatus.value(account));
-        if ((ok || code == "stale_revision") && account == m_account) loadCategories();
+        if ((ok || code == "stale_revision") && account == m_account) { loadCategories(); loadConversations(false, true); loadConversation(false); }
         if ((ok || code == "stale_revision") && account == m_googleLabelsAccount) {
             ++m_googleLabelsGeneration; m_googleLabelsLoading = false;
             loadGoogleLabels(account, false);

@@ -1,5 +1,7 @@
 # Flight Progress v2 — Phase 1 design handoff
 
+Current native target: [September 14 second export](#september-14-second-export--d049--p2-ui), under D049/D050. Earlier inventories below retain their historical scope.
+
 Updated 2026-09-12. The founder supplied a second same-day update and requested close native implementation, replacing invented elements. [D018](../decisions.md) records Update 2 and P1-09; [D016/D017](../decisions.md) retain the earlier same-day design/composition authorization. [D014](../decisions.md) preserves confirmed read/Done/untimed Delay and combined calendar behavior. Earlier inventories below remain historical analysis; execution evidence belongs in [Phase 1 execution](phase-1-execution.md).
 
 ## Active September 12 Update 2 reference
@@ -177,3 +179,8 @@ The export does not provide create/edit/RSVP forms, all-day overflow, a full age
 Bound the first composer to replies to existing conversations, plain text plus authored formatting, per-account signature and already retained attachments. New mail, reply-all/forward, editable recipient/alias flows and arbitrary new-file attachment import remain later work. Local capture exercises submission without real sending. Calendar mutations cover ordinary nonrecurring create/edit and self RSVP through a deterministic provider fake; series editing remains later.
 
 The reference's provider/model pages remain useful later design material. Microsoft/Fastmail options, actual models/downloads, live Google authorization, received HTML rendering, timed snooze/follow-up and destructive account lifecycle are outside Phase 1. Their appearance does not expand the approved Google-first sequence.
+
+
+## September 14 second export — D049 / P2-UI
+
+The founder supplied a newer 310,337-byte Flight Progress v2 export and support.js. Exact bytes and hashes are preserved in [reference provenance](assets/2026-09-14/flight-progress-v2-update-2/manifest.json). The changes include fixed-size dotted scope tabs, stable sender-kind placement, right-click menus, modifier/range selection, bulk flag/label/trash actions, collapsible message rows with avatars, Sent/Drafts date groups with a grouped/plain setting, refined account cards and AI styling. Prototype remote effects and state shortcuts do not replace the existing contracts. Native implementation and evidence are recorded in the Phase 2 execution report.

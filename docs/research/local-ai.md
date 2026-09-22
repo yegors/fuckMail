@@ -1,5 +1,20 @@
 # Local classification and summarization: Ollama and vLLM
 
+**D052 (2026-09-14): Ollama support is implemented with native/CLI controls.** [Execution results](local-assistance-execution.md#d052--p2-llm-mac-implementation-2026-09-14) record local model selection, structured samples, actual cancellation and quality misses. vLLM findings below remain research for later. [Local assistance revision 6](../contracts/local-ai.md) owns behavior; historical inspection below retains its original scope.
+
+## September 14 Ollama reference inspection (D051)
+
+Read-only inspection of this Mac at approximately 2026-09-14T22:09Z, separate from the running UI/mail work:
+
+- `GET http://127.0.0.1:11434/api/version` returns **0.34.0**. `GET /api/tags` returns **20 model entries**, including `gemma3n:e4b`, `gpt-oss:20b`, and `kimi-k2.5:cloud`. The inventory contains a cloud entry, so counting tags as usable local models would be wrong. `/usr/local/bin/ollama` exists; the app adapter must not require that executable.
+- `POST /api/show` for `gemma3n:e4b` returns `completion` capability and no `remote_model`/`remote_host` fields. This is a candidate for a small synthetic qualification run, not proof of local execution, correct structured results or acceptable quality.
+- The same metadata request for `gpt-oss:20b` returns **HTTP 500**. The request for the cloud entry returns **HTTP 410** with a retirement error. Preserve both as reference compatibility findings. Do not let one broken entry suppress the rest of the picker; do not infer cloud eligibility by successfully listing its name. No generation, model download, service configuration change or real mailbox inference was performed.
+- The first sandboxed loopback request could not connect; the permitted direct local request succeeded. This was a tool-environment restriction, not evidence that the service was stopped.
+
+Official documentation checked September 14: Ollama supplies a [model-list endpoint](https://docs.ollama.com/api/tags), [chat API with JSON/schema output](https://docs.ollama.com/api/chat), and [structured output guidance](https://docs.ollama.com/capabilities/structured-outputs). Native Rust HTTP plus Core validation fits the existing app; no SDK/runtime dependency is needed. Schema conformance alone does not establish faithful summaries or label quality.
+
+The [Ollama FAQ](https://docs.ollama.com/faq) documents cloud disabling through `OLLAMA_NO_CLOUD=1` or `disable_ollama_cloud`, and explains model residency. Localhost alone cannot prove local processing. Qualify actual selected weights/routing and cloud-disabled execution before mail inference, without silently changing the shared service. Cancellation of this app's request must be checked against server-side work; an idle loaded model or a disconnected client alone proves neither success nor failure. These gates remain untested.
+
 **Classifier intent clarified by D009 (2026-09-11):** tag human correspondence versus bots/lists/user-defined noise and the configured account/category/scope. Only the user chooses Done/Delayed. A classifier tag never marks mail reviewed or changes read/star state, and a personal spam/noise category does not authorize Gmail system Spam/Trash routing. Gmail labels are the first integration; IMAP filing experiments wait for the post-dogfood phase.
 
 Sources checked 2026-09-11; reorganized 2026-09-11. Documentation/source evidence and proposals only; no app prototype, live account flow or benchmark has run. Recheck version-sensitive claims before implementation.

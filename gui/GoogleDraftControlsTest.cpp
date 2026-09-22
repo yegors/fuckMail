@@ -73,7 +73,7 @@ public:
 
         QTemporaryDir copy; require(copy.isValid(), "private QML source copy");
         const auto modulePath = copy.filePath("DraftTest"); require(QDir().mkpath(modulePath), "native draft test module");
-        for (const auto name : {"Theme.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "RecipientField.qml", "ReplyComposer.qml"})
+        for (const auto name : {"Theme.qml", "FmDialog.qml", "FmConfirmDialog.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "RecipientField.qml", "ReplyComposer.qml"})
             require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + '/' + name, modulePath + '/' + name), "copy unchanged production QML");
         QFile module(modulePath + "/qmldir"); require(module.open(QIODevice::WriteOnly), "draft test QML registration");
         module.write("module DraftTest\nsingleton Theme 1.0 Theme.qml\nReplyComposer 1.0 ReplyComposer.qml\nFmButton 1.0 FmButton.qml\nFmToolTip 1.0 FmToolTip.qml\nFmIcon 1.0 FmIcon.qml\nRecipientField 1.0 RecipientField.qml\n"); module.close();
@@ -196,13 +196,16 @@ ApplicationWindow { width: 900; height: 1000; visible: true
         auto differing = status("synced", 26, 6); auto baseline = differing["baseline"].toObject(); baseline["observed_sha256"] = QString(64, 'b'); differing["baseline"] = baseline;
         setStatus(differing);
         statusText = named(root, "googleDraftStatus")->property("text").toString();
-        require(backend.googleDraft()["byte_mismatch"].toBool() && statusText.contains("unverified") && statusText.contains("Unsaved edits")
-            && !named(root, "captureReply")->property("enabled").toBool(), "byte mismatch and unsaved work both remain visible and Send remains disabled");
+        require(backend.googleDraft()["byte_mismatch"].toBool() && !backend.googleDraft()["warning"].toBool() && statusText.contains("Unsaved edits")
+            && !named(root, "captureReply")->property("enabled").toBool(), "transport byte changes do not invent a content warning; unsaved Send stays disabled");
+        differing["fidelity_warning"] = true;
+        setStatus(differing);
+        require(backend.googleDraft()["warning"].toBool() && backend.googleDraft()["status"].toString().contains("differs from your local version"), "proven content changes retain an actionable warning");
         auto saved = QJsonObject::fromVariantMap(backend.m_draft); saved["revision"] = 7;
         differing["revision"] = 27; differing["local_revision"] = 7; saved["google"] = differing;
         backend.m_draftDirty = false; startRead(); finishRead(saved);
         statusText = named(root, "googleDraftStatus")->property("text").toString();
-        require(statusText.contains("Newer local edits await Google draft sync") && statusText.contains("unverified")
+        require(statusText.contains("Newer local edits await Google draft sync") && statusText.contains("differs from your local version")
             && !statusText.contains("Unsaved edits"), "cached saved revision keeps both pending Google sync and fidelity warning visible");
 
         // A selected old operation can arrive with today's twin revision. Its

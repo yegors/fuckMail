@@ -85,7 +85,7 @@ static void run() {
         held=peer;heldId=id;heldParams=params;heldMethod=method;return true;
     };
     QTemporaryDir copy;const auto modulePath=copy.filePath("DraftTest");require(QDir().mkpath(modulePath),"QML module");
-    for(const auto name:{"Theme.qml","FmButton.qml","FmToolTip.qml","FmIcon.qml","RecipientField.qml","ReplyComposer.qml"})
+    for(const auto name:{"Theme.qml","FmDialog.qml", "FmConfirmDialog.qml", "FmButton.qml","FmToolTip.qml","FmIcon.qml","RecipientField.qml","ReplyComposer.qml"})
         require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR)+'/'+name,modulePath+'/'+name),"copy production QML");
     QFile module(modulePath+"/qmldir");require(module.open(QIODevice::WriteOnly),"QML metadata");
     module.write("module DraftTest\nsingleton Theme 1.0 Theme.qml\nReplyComposer 1.0 ReplyComposer.qml\nFmButton 1.0 FmButton.qml\nFmToolTip 1.0 FmToolTip.qml\nFmIcon 1.0 FmIcon.qml\nRecipientField 1.0 RecipientField.qml\n");module.close();
@@ -122,7 +122,7 @@ ApplicationWindow { width:390; height:1500; visible:true; color:Theme.reader
         if(!captures.isEmpty()){require(QDir().mkpath(captures),"captures path");const auto name=QDir(captures).filePath(QString("actions-%1-%2.png").arg(theme,size));require(!QFileInfo::exists(name)&&window->grabWindow().save(name),"retain open actions screenshot");}
         activate("copyGoogleDraftSource");auto disclosure=named(window->contentItem(),"draftSourceActionDisclosure");
         require(disclosure->property("text").toString().contains("primary@example.test")&&disclosure->property("text").toString().contains("signature"),"explicit primary From and copy losses disclosed");
-        require(named(window->contentItem(),"draftSourceActionTitle")->property("color")==disclosure->property("color"),"confirmation title uses the same readable theme ink as its disclosure");
+        require(disclosure->property("color").value<QColor>().alphaF() >= 0.59, "confirmation disclosure keeps the prototype's readable secondary ink");
         QCoreApplication::processEvents();const auto path=qEnvironmentVariable("FM_GUI_ACTION_SCREENSHOTS");
         if(!path.isEmpty()){require(QDir().mkpath(path),"captures path");const auto name=QDir(path).filePath(QString("copy-%1-%2.png").arg(theme,size));require(!QFileInfo::exists(name)&&window->grabWindow().save(name),"retain confirmation screenshot");}
         activate("cancelDraftSourceAction");

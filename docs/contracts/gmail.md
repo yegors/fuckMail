@@ -1,6 +1,46 @@
 # Gmail provider
 
-State: Draft · Revision: 13 · Updated: 2026-09-14 · Implementation: D040/P2-01C email-first Google setup is implemented; Mac native/package and generated account checks pass. D042 supplies the app registration; actual-account acceptance remains open. Core 27/Calendar 20/Search 5/schema 20, fixtures 0/3 and protocol 1 stay unchanged. Whole readiness remains 0/9; historical evidence retains its original source scope.
+## D077 — startup acquisition and send presentation (Gmail24)
+
+The GUI resumes previously initialized connected accounts once after initial account/preferences loading, using existing sync ownership and persisted service choices. Exclude removed/disconnected accounts, never-started setup and both-disabled services. Explicit start/pause consumes pending startup work; polling must not rearm it or repeatedly request credentials. CLI lifetime and explicit ownership remain unchanged.
+
+Send uses the existing immutable submission authority immediately after required local save/preflight. Production has no six-second Undo hold. Progress remains visible until the outcome is known. Acceptance hides only the unchanged accepted draft projection; preserve newer edits, exact receipts, conflicts and unknown recovery. Provider acceptance is not recipient delivery. Do not auto-resend or recreate a draft after acceptance.
+
+Consumers: Gmail24/Core44/Mail UI55/CLI39/Quality55/schema29; fixtures0/3 and protocol1 unchanged.
+
+## D073 — empty requests and draft fidelity (Gmail23)
+
+Empty POST/PUT/PATCH submissions explicitly declare `Content-Length: 0`; this repairs Trash/Restore wire framing. Preserve the existing bounded transport, exact provider message identity, preflight/readback checks and unknown-outcome recovery. An HTTP response alone does not establish final filing success.
+
+Draft upload/readback can produce different MIME bytes with equivalent authored content. Core43 records a conservative decoded-content comparison while retaining distinct upload and observed hashes. Later RAW changes still require conflict handling; no automatic replacement or repeated unknown create is added. Unsupported comparisons remain unknown, and content changes receive a warning rather than being hidden as serialization differences.
+
+Consumers: Core43/Gmail23/Mail UI50/CLI38/Quality50; schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Whole-area readiness remains 0/9.
+
+## D072 — account and model feedback (Gmail22)
+
+Save the setup history choice before sync. Inventory uses the persisted UTC cutoff; the recent lane uses the later of that cutoff and its usual recent boundary. History responses older than the boundary are discarded before MIME/content storage and do not count as missing-content failures. Provider deletions still reconcile. Resync preserves the boundary. Existing schema28 accounts keep All. Meetings has no independent permission checkbox; archive deletion changes only local data.
+
+Consumers: Core42/Gmail22/Local assistance14/Mail UI49/CLI37/Quality49, schema29; Calendar25, fixtures0/3 and protocol1 unchanged. Whole-area readiness remains 0/9.
+
+
+D067 / P2-UI3 outgoing presentation. Outgoing presentation derives its durable state from the existing Send journal. The GUI-only six-second queue uses the exact saved authored version; once invoked, the frozen MIME and receipt are authoritative. Sending, prepared, unknown and accepted states remain distinct. An unknown submission never automatically retries. Exact accepted provider-message acquisition replaces the temporary presentation and cannot revive it after Trash/deletion. UI and CLI consume the same read-only queries; outgoing previews confer no provider mutation authority. Consumers: Core40/Gmail21/Mail UI45/CLI35/Quality45, schema28, fixtures0/3 and protocol1.
+
+D065 / P2-UI3 (Gmail20) implements durable draft-discard Undo with exact revision/lifecycle checks, captured authored buffers and unfinished recipient input, shared CLI/GUI recovery and grouped six-second toast Undo. Schema28 adds the snapshot journal and recipient-input storage; fixtures0/3 and protocol1 stay unchanged. Capture/upload continues verifying retained bytes before use. Scoped Windows Core, engine, CLI and native checks, actual schema27→28 migration/refusal/reopen, strict lint and configured relocated package146 pass. The full prototype goal and provider-cleanup/Calendar-Undo/pending-Sent gaps remain open. See D065 and the prototype execution record.
+
+D063 / P2-UI3 adds explicit From-account transfer with source revision and Google revision checks, verified retained content, destination ownership and durable exact-request replay. A move preserves the original local history and waits for the destination Google draft readback before removing the unchanged original Google draft. Unknown deletion outcomes only reconcile the same request; explicit retry starts a new deletion attempt only after a known rejection. Account lifecycle changes fence cleanup. The composer and CLI share transfer/status/retry; source provider IDs never become destination IDs. Schema 27 adds the bounded transfer journal and preserves existing receipt bytes. Core 38/Gmail 19/Mail UI 41/CLI 32/Quality 41, fixtures 0/3 and protocol 1. Scoped Windows Core/provider/native/CLI, actual migration/refusal/reopen, strict lint and relocated package115 checks pass. Full prototype alignment and other-host acceptance remain open; package94/schema26 is preserved in ignored relocation94.
+
+D061 / P2-UI3 adds account-local label creation, descriptions and removal plus explicit Google name merging/creation. Removal clears local membership and mappings, retaining historical receipts; it does not delete Gmail labels or mail. Descriptions use the existing assistance settings and stay local. Schema 26 journals provider creation before dispatch; unknown outcomes require inventory reconciliation, with no blind retry. Unmapped local memberships wait for an explicit link/sync before provider delivery. The decision and [prototype execution record](../research/prototype-september-15.md) own the detailed scope and evidence.
+
+P2-UI3 Google connection accepts optional `access:{mail,calendar}` with `none`, `read`, or `write` for each service; at least one service is required. Omitted access preserves the existing request. Read Mail requests gmail.readonly; write Mail requests gmail.modify. Calendar requests catalog/detail/free-busy scopes with read-only or writable event detail access. Meetings follow the Calendar permission because Google exposes creation through the Events API. The requested access changes the consent request, never invents granted capabilities; the successful step reports the actual verified grant (which can retain earlier Google permissions). Login remains explicit, PKCE/state/nonce and same-subject restore stay unchanged, and sync starts only from the user's final Start syncing action. Schema/fixture/protocol unchanged; Core 34/Mail UI 37/CLI 28 consume the same optional request.
+
+State: Draft · Revision: 22 · Updated: 2026-09-16 · Implementation: D072 account/model feedback at schema29. Scoped evidence is recorded in the prototype execution report; whole-area readiness remains 0/9.
+
+D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages}}`, `{{partial}}`), combined per-message output, default-on prospective summaries/automatic single-label classification, manual precedence, and summary list previews. Schema 22 fences settings and assisted delivery; fixtures 0/3/protocol 1 unchanged. This supersedes conflicting D051–D053 delivery defaults below; historical evidence remains scoped to its original version. See the D055 decision and Local assistance 8.
+
+
+D054 adds explicit google_sync_refresh with empty parameters: start a session using published budgets if absent, or wake the existing account worker while retaining owners. Wake respects provider cooldowns and cancellation. Status exposes last_mail_sync_at; only completed Gmail history application advances it. Credential refusal blocks automatic repeated vault calls until explicit retry.
+
+D050 uses built-in published Gmail 1,200,000 project / 6,000 user quota units per minute and Calendar 10,000 project / 600 user requests per minute, retaining 20% headroom, bounded retries and provider throttling. Empty sync parameters resolve centrally; complete legacy overrides remain supported. No user quota setup or saved quota preference is required. Linking a cached user label projects retained message membership immediately and repairs older missing projections on reopen without provider writes.
 
 D040 adds an optional bounded email hint to native browser authorization for personal Gmail and Workspace alike. It is URL-encoded once as `login_hint`, never an `hd` restriction or account identity. Signed Google subject, issuer/audience/nonce, actual grants and existing reconnect/restore checks remain authoritative, including a renamed Workspace address. Keep the owned loopback, PKCE, state, cancellation and shared vault coordinator. Login uses the app registration by default; setup status exposes availability and a sanitized failure only. Sign-in does not acquire mail or Calendar or send anything. Consumers: Platform 15/Gmail 13/Mail UI 26/CLI 21/Quality 24 with Core 27/Calendar 20/Search 5/schema 20 and fixtures 0/3/protocol 1 unchanged.
 
@@ -73,3 +113,9 @@ Submission follows Core's accepted/failed/acceptance-unknown states. Mail invita
 ## Open before affected behavior ships
 
 Record actual Cloud project limits, account types, required scopes and sustained authentication behavior. Finalize label setup/archiving policy and provider-draft synchronization. Public verification/distribution is deferred, but its requirements must be revisited if the audience changes. Protocol and category evidence is in the linked research, not a measured implementation result.
+
+## D061 explicit label synchronization
+
+Google user-label names are imported and missing local names are explicitly created with `users.labels.create` (five quota units). Descriptions stay local. The loopback IPC request starts a background operation; eight jobs may run across accounts, at most one per account, with at most 64 retained results. Same-owner/account/request replay returns the existing job. Other accounts or sessions cannot read or cancel it. Shutdown cancels and joins admitted work before closing Core.
+
+HTTP 400/409 is a known create rejection; transport interruptions and malformed successes retain uncertainty. Never automatically retry an uncertain POST. The next explicit inventory can bind an exact unambiguous name and preserve its original local descriptions. Missing linked Google labels and skipped/conflicting names are reported. Name synchronization never deletes Gmail labels or messages.

@@ -44,7 +44,25 @@ pub(crate) fn restore_schema_seventeen(db: &Connection) {
     restore_schema_eighteen(db);
     db.execute_batch("DROP INDEX accounts_active; ALTER TABLE accounts DROP COLUMN cleanup_json; ALTER TABLE accounts DROP COLUMN lifecycle_revision; ALTER TABLE accounts DROP COLUMN lifecycle_state; PRAGMA user_version=17;").unwrap();
 }
+pub(crate) fn restore_schema_twenty_six(db: &Connection) {
+    db.execute_batch("DROP TABLE deleted_account_archives; DROP TABLE archive_blob_cleanup; ALTER TABLE account_metadata DROP COLUMN mail_retention; ALTER TABLE account_metadata DROP COLUMN mail_since;").unwrap();
+    db.execute_batch(
+        "DROP TABLE draft_discards; ALTER TABLE drafts DROP COLUMN recipient_inputs_json;",
+    )
+    .unwrap();
+    db.execute_batch("DROP TABLE draft_transfers;").unwrap();
+    db.pragma_update(None, "user_version", 26).unwrap();
+}
+pub(crate) fn restore_schema_twenty(db: &Connection) {
+    restore_schema_twenty_six(db);
+    db.execute_batch("DROP TABLE google_label_creations;")
+        .unwrap();
+    db.execute_batch("DROP TABLE local_model_label_overrides; DROP TABLE local_model_settings_history; DROP TABLE local_model_results; DROP TABLE local_model_settings; ALTER TABLE message_sender_kinds RENAME TO model_kinds_new;").unwrap();
+    db.execute_batch(include_str!("migration-007.sql")).unwrap();
+    db.execute_batch("INSERT INTO message_sender_kinds SELECT * FROM model_kinds_new WHERE provenance='fixture'; DROP TABLE model_kinds_new; PRAGMA user_version=20;").unwrap();
+}
 pub(crate) fn restore_schema_nineteen(db: &Connection) {
+    restore_schema_twenty(db);
     db.execute_batch("DROP TABLE IF EXISTS calendar_reminder_receipts; ALTER TABLE calendar_write_operations DROP COLUMN recurring_steps_json; PRAGMA user_version=19;").unwrap();
 }
 pub(crate) fn restore_schema_eighteen(db: &Connection) {

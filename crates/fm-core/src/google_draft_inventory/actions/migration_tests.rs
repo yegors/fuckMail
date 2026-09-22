@@ -21,6 +21,9 @@ fn preserved_rows(store: &Store) -> BTreeMap<&'static str, Vec<Vec<rusqlite::typ
             .unwrap()
             .query_map([], |row| {
                 (0..row.as_ref().column_count())
+                    // Schema 28 adds only an empty recipient buffer to these
+                    // historical drafts; compare all of their original columns.
+                    .filter(|&i| row.as_ref().column_name(i).unwrap() != "recipient_inputs_json")
                     .map(|i| row.get(i))
                     .collect::<rusqlite::Result<Vec<_>>>()
             })
@@ -119,6 +122,17 @@ fn schema15_upgrade_keeps_source_versions_authored_bytes_and_mixed_receipts() {
         i64::from(crate::SCHEMA_VERSION)
     );
     assert_eq!(preserved_rows(&reopened), rows);
+    assert_eq!(
+        reopened
+            .db
+            .query_row(
+                "SELECT count(*) FROM drafts WHERE recipient_inputs_json != '{}'",
+                [],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
     assert_eq!(retained_blobs(&reopened), blobs);
     assert_eq!(
         reopened

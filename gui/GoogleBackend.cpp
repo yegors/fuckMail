@@ -36,7 +36,7 @@ void MailBackend::googleOperation(const QString &method, const QString &account,
         callback(error, false);
     };
     const bool localContent = method == "draft_attachment_import" || method == "google_draft_source"
-        || method == "google_draft_authoring" || method == "google_draft_copy";
+        || method == "google_draft_authoring" || method == "google_draft_copy" || method == "draft_transfer";
     if (blockArchivedRequest(method, account)) {
         refuseBeforeRequest("account_removed", "This is a read-only account archive. Restore it explicitly before making changes."); return;
     }
@@ -111,15 +111,40 @@ void MailBackend::pollMailDelivery() {
     });
 }
 
+void MailBackend::resumeStartupGoogleSync() {
+    if (m_syntheticProfile || !m_connected || m_shutdown || !m_initialAccountsLoaded || !m_initialPreferencesLoaded) return;
+    const auto pending = m_startupGoogleAccounts;
+    m_startupGoogleAccounts.clear(); // One attempt per launch, including a credential refusal.
+    for (const auto &account : pending) {
+        const auto row = lifecycleAccount(account);
+        const auto services = m_preferences.value("google_sync_services").toMap().value(account).toMap();
+        if (accountRemoved(account) || row.value("google").toMap().value("connection_state") != "connected"
+            || (!services.value("mail", true).toBool() && !services.value("calendar", true).toBool())
+            || googleSyncState(account).value("owned").toBool()) continue;
+        startGoogleSync(account, {});
+    }
+}
+
 void MailBackend::startGoogleSync(const QString &account, const QVariantMap &limits) {
     if (!m_connected || m_shutdown || m_syntheticProfile || account.isEmpty() || m_googleSyncChanging.contains(account)) return;
+    m_startupGoogleAccounts.remove(account);
     m_googleSyncChanging.insert(account); ++m_accountWrites; emit googleSyncChanged();
-    request("google_sync_start", account, QJsonObject::fromVariantMap(limits), [this, account, limits](auto result, bool ok) {
+    request("google_sync_start", account, QJsonObject::fromVariantMap(limits), [this, account](auto result, bool ok) {
         m_googleSyncChanging.remove(account); --m_accountWrites; emit googleSyncChanged();
         if (!ok) { if (!m_shutdown) fail(result["message"].toString("Google sync could not start.")); finishShutdown(); return; }
-        // Retain only limits that the engine validated. This preference does not
-        // start an account on launch; ownership always comes from this action.
-        setPreferences({{"google_sync_limits", limits}});
+        pollGoogleSync(); loadAccounts();
+        if (m_shutdown) finishShutdown();
+    });
+}
+
+void MailBackend::refreshGoogleSync(const QString &account) {
+    if (!m_connected || m_shutdown || m_syntheticProfile || !accountCapability(account, "mail_read")
+        || m_googleSyncChanging.contains(account)) return;
+    m_startupGoogleAccounts.remove(account);
+    m_googleSyncChanging.insert(account); ++m_accountWrites; emit googleSyncChanged();
+    request("google_sync_refresh", account, {}, [this, account](auto result, bool ok) {
+        m_googleSyncChanging.remove(account); --m_accountWrites; emit googleSyncChanged();
+        if (!ok && !m_shutdown) fail(result["message"].toString("Mail could not sync."));
         pollGoogleSync(); loadAccounts();
         if (m_shutdown) finishShutdown();
     });
@@ -128,6 +153,7 @@ void MailBackend::startGoogleSync(const QString &account, const QVariantMap &lim
 void MailBackend::pauseGoogleSync(const QString &account) {
     if (!m_connected || m_shutdown || m_syntheticProfile || !googleSyncState(account)["owned"].toBool()
         || m_googleSyncChanging.contains(account)) return;
+    m_startupGoogleAccounts.remove(account);
     m_googleSyncChanging.insert(account); emit googleSyncChanged();
     cancelGoogleProviderOperations(account);
     request("google_sync_release", account, {}, [this, account](auto result, bool ok) {
@@ -169,17 +195,18 @@ void MailBackend::prepareGoogleSignIn() {
     });
 }
 
-void MailBackend::connectGoogle(const QString &email, const QString &account, bool reauthorize) {
+void MailBackend::connectGoogle(const QString &email, const QString &account, bool reauthorize, const QVariantMap &access) {
     if (accountRemoved(account)) { fail("Use Restore for this archived account."); return; }
-    beginGoogleAuth("google_auth_begin", email, account, reauthorize);
+    beginGoogleAuth("google_auth_begin", email, account, reauthorize, -1, access);
 }
-void MailBackend::beginGoogleAuth(const QString &method, const QString &email, const QString &account, bool reauthorize, qint64 expectedRevision) {
+void MailBackend::beginGoogleAuth(const QString &method, const QString &email, const QString &account, bool reauthorize, qint64 expectedRevision, const QVariantMap &access) {
     if (!m_connected || m_shutdown || m_syntheticProfile || m_googleAuthBusy) return;
     if (email.trimmed().isEmpty()) { fail("Enter your Gmail or Google Workspace email address."); return; }
     m_googleAuthAttempt.clear();
     m_googleAuthCancelRequested = false;
     setGoogleAuth({{"phase", "starting"}});
     QJsonObject params{{"email", email.trimmed()}, {"reauthorize", reauthorize}};
+    if (!access.isEmpty()) params["access"] = QJsonObject::fromVariantMap(access);
     if (method == "google_auth_restore_begin") params["expected_revision"] = expectedRevision;
     request(method, account, params, [this](auto result, bool ok) {
         if (!ok) { setGoogleAuth({{"phase", "failed"}, {"error", result}}); return; }

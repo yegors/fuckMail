@@ -704,6 +704,7 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -734,6 +735,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "clap",
+ "fm-assist",
  "fm-calendar",
  "fm-core",
  "fm-google",
@@ -741,6 +743,7 @@ dependencies = [
  "jsonwebtoken",
  "libc",
  "mail-parser",
+ "reqwest",
  "rusqlite",
  "serde_json",
  "sha2",

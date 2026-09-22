@@ -117,18 +117,11 @@ ColumnLayout {
         color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true
     }
     Text { visible: !!setup.state.status; text: setup.state.status || ""; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
-    Dialog {
-        id: remapConfirmation; objectName: "googleLabelsRemapConfirmation"; parent: Overlay.overlay; anchors.centerIn: parent; modal: true
-        implicitWidth: 344; width: Math.min(implicitWidth, parent.width - 32)
-        implicitHeight: topPadding + bottomPadding + remapBody.implicitHeight + (header ? header.implicitHeight + spacing : 0) + (footer ? footer.implicitHeight + spacing : 0)
-        title: "Remap local label?"; standardButtons: Dialog.Ok | Dialog.Cancel
-        background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
-        palette.windowText: Theme.text; palette.buttonText: Theme.text
-        onOpened: standardButton(Dialog.Ok).text = "Remap"
-        contentItem: Item {
-            implicitHeight: remapBody.implicitHeight
-            Text { id: remapBody; width: remapConfirmation.availableWidth; text: "Replace this local label's Google link. Existing recorded message changes keep their original destination. Future label changes use the selected Google label."; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); wrapMode: Text.Wrap; textFormat: Text.PlainText }
-        }
+    FmConfirmDialog {
+        id: remapConfirmation; objectName: "googleLabelsRemapConfirmation"
+        title: "Change the Google label link?"
+        message: "Future label changes will use the selected Google label. Changes already recorded keep their original destination."
+        actionText: "Change link"
         onAccepted: setup.submit(setup.confirmation)
     }
 }

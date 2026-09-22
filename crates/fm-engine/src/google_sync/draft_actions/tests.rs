@@ -119,7 +119,9 @@ impl HttpTransport for Http {
             }
             let value: Value = serde_json::from_slice(request.body_bytes()).unwrap();
             let mut s = self.states[index].lock().unwrap();
-            if path == "drafts/target" && request.method() == HttpMethod::Put {
+            if (path == "drafts/target" && request.method() == HttpMethod::Put)
+                || (path == "drafts" && request.method() == HttpMethod::Post)
+            {
                 s.uploads += 1;
                 s.version += 1;
                 s.uploaded = Some(
@@ -434,5 +436,179 @@ async fn local_assessment_copy_and_replay_need_no_provider_owner_and_preserve_so
     assert_eq!(retained["body"], original["body"]);
     assert_eq!(h.http.states[0].lock().unwrap().reads, before);
     drop(runtime);
+    h.close();
+}
+
+#[tokio::test]
+async fn account_transfer_waits_for_target_and_reconciles_unknown_cleanup_without_another_delete() {
+    let h = Harness::new();
+    let original = h.imported(0).await;
+    let adopted = adopt(&h.ctx[0], params(&original, "transfer-adopt"))
+        .await
+        .unwrap();
+    let source = h.ctx[0].account.as_str().to_owned();
+    let target = h.ctx[1].account.as_str().to_owned();
+    let local = crate::local_content::Runtime::new(h.ctx[0].core.clone());
+    let p = json!({"draft_id":adopted["draft_id"],"expected_revision":adopted["revision"],"expected_google_revision":adopted["google"]["revision"],"target_account":target,"request_id":"move-from"});
+    let moved = local
+        .handle(
+            CancellationToken::new(),
+            "draft_transfer",
+            Some(&source),
+            p.clone(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(moved["state"], "waiting_target");
+    assert!(!crate::google_sync::draft_transfers::step(&h.ctx[0])
+        .await
+        .unwrap());
+    assert_eq!(h.http.states[0].lock().unwrap().deletes, 0);
+    let target_draft = &moved["draft"];
+    assert_eq!(target_draft["body"], adopted["body"]);
+    assert_eq!(target_draft["bcc_recipients"], adopted["bcc_recipients"]);
+    let uploaded=drafts::execute(&h.ctx[1],json!({"draft_id":target_draft["draft_id"],"expected_revision":target_draft["revision"],"request_id":"save-destination"})).await.unwrap();
+    assert_eq!(uploaded["state"], "synced");
+    let target_bytes = h.http.states[1].lock().unwrap().uploaded.clone().unwrap();
+    let raw = String::from_utf8(target_bytes).unwrap();
+    assert!(
+        raw.contains("author1@example.test")
+            && mail_parser::MessageParser::default()
+                .parse(raw.as_bytes())
+                .unwrap()
+                .body_text(0)
+                .unwrap()
+                .contains("Retained text 0/0")
+            && raw.contains("blind@example.test")
+    );
+    h.http.states[0].lock().unwrap().lose = true;
+    assert!(crate::google_sync::draft_transfers::step(&h.ctx[0])
+        .await
+        .unwrap());
+    let a = source.clone();
+    let blocked = h.ctx[0]
+        .core
+        .call(move |store| store.draft_transfer_status(&a, "move-from"))
+        .await
+        .unwrap();
+    assert_eq!(blocked["state"], "blocked");
+    assert!(blocked["error"].is_object());
+    assert_eq!(h.http.states[0].lock().unwrap().deletes, 1);
+    assert!(!crate::google_sync::draft_transfers::step(&h.ctx[0])
+        .await
+        .unwrap());
+    let a = source.clone();
+    let retry = json!({"transfer_request_id":"move-from","request_id":"check-move"});
+    let retried = h.ctx[0]
+        .core
+        .call(move |store| store.draft_transfer_retry(&a, &retry))
+        .await
+        .unwrap();
+    assert_eq!(retried["state"], "waiting_target");
+    assert!(crate::google_sync::draft_transfers::step(&h.ctx[0])
+        .await
+        .unwrap());
+    let a = source.clone();
+    assert_eq!(
+        h.ctx[0]
+            .core
+            .call(move |store| store.draft_transfer_status(&a, "move-from"))
+            .await
+            .unwrap()["state"],
+        "complete"
+    );
+    assert_eq!(h.http.states[0].lock().unwrap().deletes, 1);
+    assert_eq!(
+        local
+            .handle(CancellationToken::new(), "draft_transfer", Some(&source), p)
+            .await
+            .unwrap(),
+        moved
+    );
+    let a = source.clone();
+    let id = adopted["draft_id"].clone();
+    let old = h.ctx[0]
+        .core
+        .call(move |store| store.handle("draft_get", Some(&a), json!({"draft_id":id})))
+        .await
+        .unwrap();
+    assert!(old["transferred"] == true && old["discarded"] == true);
+    assert_eq!(old["account_transfer"]["state"], "complete");
+    assert_eq!(old["google_delete"]["state"], "acceptance_unknown");
+    assert_eq!(old["google_delete"]["read_evidence"]["draft_exists"], false);
+    drop(local);
+    h.close();
+}
+
+#[tokio::test]
+async fn account_transfer_preserves_a_newer_remote_original_after_destination_is_saved() {
+    let h = Harness::new();
+    let original = h.imported(0).await;
+    let adopted = adopt(&h.ctx[0], params(&original, "changed-original-adopt"))
+        .await
+        .unwrap();
+    let source = h.ctx[0].account.as_str().to_owned();
+    let target = h.ctx[1].account.as_str().to_owned();
+    let local = crate::local_content::Runtime::new(h.ctx[0].core.clone());
+    let moved=local.handle(CancellationToken::new(),"draft_transfer",Some(&source),json!({"draft_id":adopted["draft_id"],"expected_revision":adopted["revision"],"expected_google_revision":adopted["google"]["revision"],"target_account":target,"request_id":"changed-original-move"})).await.unwrap();
+    assert_eq!(drafts::execute(&h.ctx[1],json!({"draft_id":moved["draft"]["draft_id"],"expected_revision":1,"request_id":"changed-original-target"})).await.unwrap()["state"],"synced");
+    h.http.states[0].lock().unwrap().version = 1;
+    assert!(crate::google_sync::draft_transfers::step(&h.ctx[0])
+        .await
+        .unwrap());
+    let a = source.clone();
+    let status = h.ctx[0]
+        .core
+        .call(move |store| store.draft_transfer_status(&a, "changed-original-move"))
+        .await
+        .unwrap();
+    assert_eq!(status["state"], "blocked");
+    assert_eq!(h.http.states[0].lock().unwrap().deletes, 0);
+    assert!(!h.http.states[0].lock().unwrap().missing);
+    let a = source.clone();
+    h.ctx[0].core.call(move |store|store.draft_transfer_retry(&a,&json!({"transfer_request_id":"changed-original-move","request_id":"changed-original-retry"}))).await.unwrap();
+    crate::google_sync::draft_transfers::step(&h.ctx[0])
+        .await
+        .unwrap();
+    assert_eq!(h.http.states[0].lock().unwrap().deletes, 0);
+    drop(local);
+    h.close();
+}
+
+#[tokio::test]
+async fn account_transfer_rechecks_destination_lifecycle_before_deletion_claim() {
+    let h = Harness::new();
+    let original = h.imported(0).await;
+    let adopted = adopt(&h.ctx[0], params(&original, "lifecycle-adopt"))
+        .await
+        .unwrap();
+    let source = h.ctx[0].account.as_str().to_owned();
+    let target = h.ctx[1].account.as_str().to_owned();
+    let local = crate::local_content::Runtime::new(h.ctx[0].core.clone());
+    let moved=local.handle(CancellationToken::new(),"draft_transfer",Some(&source),json!({"draft_id":adopted["draft_id"],"expected_revision":adopted["revision"],"expected_google_revision":adopted["google"]["revision"],"target_account":target,"request_id":"lifecycle-move"})).await.unwrap();
+    assert_eq!(drafts::execute(&h.ctx[1],json!({"draft_id":moved["draft"]["draft_id"],"expected_revision":1,"request_id":"lifecycle-target"})).await.unwrap()["state"],"synced");
+    let gate = Arc::new(Gate::default());
+    h.http.states[0].lock().unwrap().hold_read = Some(gate.clone());
+    let child = h.ctx[0].clone();
+    let task = tokio::spawn(async move { crate::google_sync::draft_transfers::step(&child).await });
+    tokio::time::timeout(Duration::from_secs(5), gate.entered.notified())
+        .await
+        .unwrap();
+    h.ctx[1].core.call(move |store| {
+        let life=store.account_lifecycle(&target)?;
+        store.account_remove_begin(&target,&json!({"request_id":"remove-target","expected_revision":life["revision"],"retention":"archive"})).map(|_|())
+    }).await.unwrap();
+    gate.release.notify_one();
+    assert!(task.await.unwrap().unwrap());
+    assert_eq!(h.http.states[0].lock().unwrap().deletes, 0);
+    let a = source.clone();
+    let status = h.ctx[0]
+        .core
+        .call(move |store| store.draft_transfer_status(&a, "lifecycle-move"))
+        .await
+        .unwrap();
+    assert_eq!(status["state"], "blocked");
+    assert_eq!(status["error"]["code"], "account_removed");
+    drop(local);
     h.close();
 }
