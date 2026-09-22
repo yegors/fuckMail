@@ -318,16 +318,8 @@ class MailSelectionTest {
         require(formatted(localInstant.toOffsetFromUtc(9*3600).toString(Qt::ISODate))==formatted(localInstant.toUTC().toString(Qt::ISODate)),"equivalent timezone-offset instants display identically");
         const auto localMidnight=QDateTime(QDate(2026,9,12),QTime(0,3),QTimeZone::systemTimeZone());
         require(formatted(localMidnight.toUTC().toString(Qt::ISODate))=="Saturday 12 September 2026, 00:03","date follows local midnight rather than the source UTC calendar date");
-        auto outer=find(window->contentItem(),"quotedReply_last_1");
-        require(outer && outer->isVisible() && !find(window->contentItem(),"messageBodyPart_last_5")->isVisible(),"all quoted reply levels start collapsed");
-        click(window,outer,Qt::LeftButton);
-        await([&]{return find(window->contentItem(),"quotedReply_last_4")->isVisible();},"outer history reveals its nested control");
-        require(!find(window->contentItem(),"messageBodyPart_last_5")->isVisible(),"opening one level keeps older history collapsed");
-        layout.restart();while(layout.elapsed()<120)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
-        click(window,find(window->contentItem(),"quotedReply_last_4"),Qt::LeftButton);
-        await([&]{return find(window->contentItem(),"messageBodyPart_last_5")->isVisible();},"nested reply can be revealed independently");
-        click(window,outer,Qt::LeftButton);
-        await([&]{return !find(window->contentItem(),"messageBodyPart_last_5")->isVisible();},"collapse hides the complete history again");
+        require(!find(window->contentItem(),"quotedReply_last_1") && !find(window->contentItem(),"messageBodyPart_last_5"),"quoted history creates neither controls nor hidden body delegates");
+        require(find(window->contentItem(),"messageBody_last")->property("text").toString().contains("Final release notes are ready"),"thread reader retains the new contribution");
         auto popup=[&]()->QObject* {for(auto object:window->findChildren<QObject *>("senderCard"))if(object->property("opened").toBool())return object;return nullptr;};
         auto move=[&](const QPointF &p) {QMouseEvent event(QEvent::MouseMove,p,window->mapToGlobal(p.toPoint()),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(window,&event);};
         for(const auto &[target,address]:QList<QPair<QString,QString>>{{"participantName_first","priya@example.test"},{"participantAvatar_self","test@example.test"},{"senderFilter_self","test@example.test"},{"senderAvatar_first","priya@example.test"},{"recipientName_last_team@example.test","team@example.test"}}) {
@@ -342,14 +334,27 @@ class MailSelectionTest {
         layout.restart();while(layout.elapsed()<260)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
         require(!popup(),"empty expanded header area is not a contact target");
         click(window,heading,Qt::LeftButton);
-        require(find(window->contentItem(),"messageBody_first")->isVisible(),"expanded header does not act as a collapse button");
+        await([&]{auto body=find(window->contentItem(),"messageBody_first");return !body || !body->isVisible();},"expanded earlier header collapses its body");
+        heading->forceActiveFocus();
+        QKeyEvent expandDown(QEvent::KeyPress,Qt::Key_Space,Qt::NoModifier), expandUp(QEvent::KeyRelease,Qt::Key_Space,Qt::NoModifier);
+        QCoreApplication::sendEvent(window,&expandDown);QCoreApplication::sendEvent(window,&expandUp);
+        await([&]{auto body=find(window->contentItem(),"messageBody_first");return body && body->isVisible();},"Space expands the focused message header again");
+        click(window,find(window->contentItem(),"toggleMessage_last"),Qt::LeftButton);
+        await([&]{auto body=find(window->contentItem(),"messageBody_last");return !body || !body->isVisible();},"the newest message can collapse too");
+        click(window,find(window->contentItem(),"toggleMessage_last"),Qt::LeftButton);
+        await([&]{auto body=find(window->contentItem(),"messageBody_last");return body && body->isVisible();},"newest message re-expands");
         click(window,find(window->contentItem(),"messageHeading_self"),Qt::LeftButton);
         await([&]{auto item=find(window->contentItem(),"recipientName_self_priya@example.test");return item && item->isVisible();},"folded sent row expands with contactable recipient metadata");
         layout.restart();while(layout.elapsed()<120)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
         click(window,find(window->contentItem(),"recipientName_self_priya@example.test"),Qt::LeftButton);
         await([&]{return popup() && popup()->property("email")=="priya@example.test";},"recipient activation opens contact card");
         QMetaObject::invokeMethod(popup(),"close"); move({5,5});
-        QMetaObject::invokeMethod(mail,"toggleMember",Q_ARG(QVariant,QString("self")),Q_ARG(QVariant,1));
+        click(window,find(window->contentItem(),"toggleMessage_self"),Qt::LeftButton);
+        await([&]{auto body=find(window->contentItem(),"messageBody_self");return !body || !body->isVisible();},"expanded sent message collapses through its visible control");
+        click(window,find(window->contentItem(),"earlierMessagesButton"),Qt::LeftButton);
+        await([&]{auto header=find(window->contentItem(),"messageHeading_first");return !header || !header->isVisible();},"earlier-message group hides again");
+        click(window,find(window->contentItem(),"earlierMessagesButton"),Qt::LeftButton);
+        await([&]{auto header=find(window->contentItem(),"messageHeading_first");return header && header->isVisible();},"earlier-message group reopens");
         const auto readerCapture=qEnvironmentVariable("FM_READER_CAPTURE");
         if(!readerCapture.isEmpty()){layout.restart();while(layout.elapsed()<160)QCoreApplication::processEvents(QEventLoop::AllEvents,10);require(window->grabWindow().save(readerCapture),"prototype reader frame");}
         for(const auto &theme: {"paper","terminal","graphite"}) {

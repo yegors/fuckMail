@@ -1,12 +1,17 @@
 //! Shared incoming text extraction and human-authored MIME construction.
 //! No transport, AI, file reads or database.
 mod incoming;
+mod reply_text;
 use ammonia::{Builder as HtmlCleaner, UrlRelative};
-pub use incoming::{extract_incoming_text, extract_parsed_incoming_text, IncomingError};
+pub use incoming::{
+    extract_incoming_text, extract_parsed_incoming_contribution, extract_parsed_incoming_text,
+    IncomingError,
+};
 use lettre::message::{
     header::{self as mime_header, ContentTransferEncoding, ContentType},
     Attachment, Mailbox, Mailboxes, Message, MultiPart, SinglePart,
 };
+pub use reply_text::reply_contribution;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::{Duration, UNIX_EPOCH};

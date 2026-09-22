@@ -420,7 +420,7 @@ pub(crate) fn prepare_message(
         .parse(&content.source_mime)
         .ok_or(GoogleError::InvalidResponse("Cannot parse source MIME"))?;
     let sender = parsed.from().and_then(|list| list.first());
-    let body = fm_mail::extract_parsed_incoming_text(&parsed)
+    let body = fm_mail::extract_parsed_incoming_contribution(&parsed)
         .map_err(|_| GoogleError::InvalidResponse("Cannot extract source text"))?;
     if body.len() > 256 * 1024 {
         return Err(GoogleError::InvalidResponse(

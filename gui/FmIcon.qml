@@ -38,6 +38,8 @@ Canvas {
         case "next": line([6,3.5,10.5,8,6,12.5]); break
         case "chevronDown":
         case "down": line([4,6,8,10,12,6]); break
+        case "chevronUp":
+        case "up": line([4,10,8,6,12,10]); break
         case "arrowUp": line([8,13,8,3]); line([3.5,7.5,8,3,12.5,7.5]); break
         case "undo": line([6,2.5,2.5,6,6,9.5]); c.moveTo(3,6); c.bezierCurveTo(14,3,15,13,8,13); break
         case "redo": line([10,2.5,13.5,6,10,9.5]); c.moveTo(13,6); c.bezierCurveTo(2,3,1,13,8,13); break

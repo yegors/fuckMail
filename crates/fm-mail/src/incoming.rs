@@ -26,6 +26,21 @@ pub fn extract_incoming_text(raw: &[u8]) -> Result<String, IncomingError> {
 pub fn extract_parsed_incoming_text(
     message: &mail_parser::Message<'_>,
 ) -> Result<String, IncomingError> {
+    extract(message, false)
+}
+
+/// New mail's reading/search copy omits recognizable reply history. Core keeps
+/// exact original MIME outside the database for source inspection and recovery.
+pub fn extract_parsed_incoming_contribution(
+    message: &mail_parser::Message<'_>,
+) -> Result<String, IncomingError> {
+    extract(message, true)
+}
+
+fn extract(
+    message: &mail_parser::Message<'_>,
+    contribution: bool,
+) -> Result<String, IncomingError> {
     let plain: Vec<&str> = message
         .text_body
         .iter()
@@ -35,7 +50,12 @@ pub fn extract_parsed_incoming_text(
         })
         .collect();
     if !plain.is_empty() {
-        return Ok(plain.join("\n"));
+        let text = plain.join("\n");
+        return Ok(if contribution {
+            crate::reply_contribution(&text)
+        } else {
+            text
+        });
     }
     let mut cleaner = Builder::default();
     cleaner
@@ -81,10 +101,64 @@ pub fn extract_parsed_incoming_text(
         .html_body
         .iter()
         .filter_map(|id| match &message.part(*id)?.body {
-            PartType::Html(html) => Some(html_to_text(&cleaner.clean(html).to_string())),
+            PartType::Html(html) => {
+                // Drop quote bodies before conversion, so HTML-only quotations
+                // do not become indistinguishable from new unquoted prose.
+                let omit_quotes =
+                    contribution && !html.to_ascii_lowercase().contains("forwarded message");
+                if omit_quotes {
+                    cleaner
+                        .rm_tags(&["blockquote"])
+                        .add_clean_content_tags(&["blockquote"]);
+                } else {
+                    cleaner
+                        .rm_clean_content_tags(&["blockquote"])
+                        .add_tags(&["blockquote"]);
+                }
+                let text = html_to_text(&cleaner.clean(html).to_string());
+                Some(if contribution {
+                    crate::reply_text::project(
+                        &text,
+                        omit_quotes && html.to_ascii_lowercase().contains("<blockquote"),
+                    )
+                } else {
+                    text
+                })
+            }
             _ => None,
         })
         .collect::<Vec<_>>()
         .join("\n");
     Ok(text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn contribution(kind: &str, body: &str) -> String {
+        let raw = format!("MIME-Version: 1.0\r\nContent-Type: {kind}; charset=utf-8\r\n\r\n{body}");
+        let parsed = MessageParser::default().parse(raw.as_bytes()).unwrap();
+        extract_parsed_incoming_contribution(&parsed).unwrap()
+    }
+
+    #[test]
+    fn html_history_is_removed_before_text_conversion_without_losing_inline_answers() {
+        let body = "<p>New answer</p><p>On Tuesday, Alex wrote:</p><blockquote><p>Old question</p><blockquote>Older</blockquote></blockquote><p>Inline answer</p>";
+        let projected = contribution("text/html", body);
+        assert!(
+            projected.contains("New answer") && projected.contains("Inline answer"),
+            "{projected}"
+        );
+        assert!(!projected.contains("Old") && !projected.contains("wrote:"));
+        let outlook = contribution("text/html", "<p>New answer</p><p>------ Original Message ------<br>From Alex<br>To Sam</p><blockquote>Old answer</blockquote>");
+        assert_eq!(outlook.trim(), "New answer");
+        let forward = contribution("text/html", "<p>Please review</p><div class='gmail_quote'><p>---------- Forwarded message ----------</p><blockquote>Forwarded content</blockquote></div>");
+        assert!(forward.contains("Forwarded content"));
+        assert!(contribution(
+            "text/plain",
+            "Answer\r\n\r\nOn Tuesday, Alex wrote:\r\n> History"
+        )
+        .contains("Answer"));
+    }
 }

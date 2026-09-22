@@ -102,3 +102,36 @@ Delivered app: `dist/navigation-reader-darwin-arm64/fuckmail-gui.app`. The engin
 | GUI | `7347f53ae54357545a3b8630d1d82eecf0767cbb6d43fce350ec36acf2861be7` |
 | Engine | `31f396bdd35243d04f74ccdd241897d4fdc29dac2c1ad9dabf66670740518394` |
 | CLI | `3c5bece133037e441243aff60652f016edf647c995ff2993b92eafe90df105c8` |
+
+
+## D088 — clean thread contributions and reversible expansion
+
+Core48/Gmail25/Mail UI64/Quality64 implements the founder's September 22 follow-up. Normal reading omits recognized reply history and its attribution/Original Message headers instead of constructing hidden quote controls and documents. Unquoted inline answers and intentional forwards remain visible. Every message, including sent and newest, toggles through its header or visible chevron; focused headers support Space activation. The earlier-message group can hide and reopen. Screenshot review caught a missing `up` glyph in the shared icon set; the final candidate includes it.
+
+New Google acquisitions put the derived contribution in the existing SQLite body/FTS fields, shared by reader/search/assistance consumers. Exact original MIME/HTML and attachments remain in the verified external blob store. The optional storage question was unanswered; the stated conservative default preserves recoverability. Existing archive rows are not rewritten, so this does not reclaim existing database pages or remove source-file duplication. Unknown quote formats may remain. The GUI cleans existing retained messages at display time. Authored drafts, receipts, source hashes and read/star state do not change. CLI41/Local assistance16/schema29, fixtures0/3/protocol1 and readiness0/9 remain unchanged.
+
+Ignored evidence: `.tools/local-logs/thread-content-september-22/`. The supplied private screenshots are not copied into the repository or used as fixture content.
+
+| Verification | Result |
+| --- | --- |
+| `mail02` | Three contribution tests and 13 existing MIME/authoring/attachment round trips pass. Plain/HTML headers, nested history, inline answers and forwards covered. |
+| `core04` | Ten Google store tests pass (46.38 s), including actual body/FTS contribution readback, exact retained source, unchanged unread/star flags and the shared MIME attachment corpus. |
+| `live-preparation01` | Sixteen synthetic live-provider preparation/publication tests pass (1.86 s), covering staged source integrity, cancellation, receipts, attachment retention and replay. No live service was contacted. |
+| `clippy02` | Strict all-target Core/mail lint passes. |
+| `native02` | Six rebuilt Release native suites pass (19.94 s): document/composer, input, selection, reader/cache, account lifecycle and assistance. Pointer/header/chevron/Space collapse/reopen, sent/newest messages, earlier group and three themes/narrow large text pass. |
+| `reader-capture02` | Final production QML selection/control suite passes after the chevron repair; final synthetic screenshots inspected. The pre-existing `DelegateModel::cancel` diagnostic remains recorded. |
+| `gui-mail-navigation-cache-test-cocoa04` | Native Cocoa reader passes when run alone: 54 stable observed frames across three readers; a 102-key burst handles input in 19 ms, starts one reader request and paints the exact target in 120 ms. Cold/next/warm first frames are 149/14/12 ms; these are scoped observations, not a p95 or real-mailbox claim. The later glyph-only change does not alter layout or reader work. |
+
+Preserved attempts: `core01` used an incorrect filter and ran zero tests; it is not acceptance evidence. `core02` exposed the obsolete full-source quote expectation in the import corpus. `core03` retains an accidentally overbroad expected-history exclusion, corrected by inspecting the unchanged fixture; final `core04` preserves ordinary HTML prose and excludes only its actual plain quotation. MIME sources and fixture revision never changed. Cocoa selection attempts 01/02 stopped on pre-existing focus/read-assumption differences before reaching the new reader assertions; offscreen production-QML controls pass. Cocoa reader attempt03 lost the warm reader frame while package checks also opened native windows; the isolated attempt04 passes without runtime changes. No whole native-Cocoa selection pass is claimed.
+
+The earlier D086 broad scroll-restoration timeout remains open and was not rerun. Existing D086/D087 packages are preserved. Other-host, actual-mailbox and whole-product acceptance remain separate.
+
+Delivered candidate: `dist/thread-content-darwin-arm64/fuckmail-gui.app`; close older copies before opening it. `install02` and `package02` verify the final configured app's deep ad-hoc signature, SDK-free relocation, CLI query, empty-live startup/preferences and engine shutdown. The Qt deploy tool's existing JSON/non-object inspection notice is preserved; registration contents are never logged. This remains a development build, with the earlier broad GUI gate open.
+
+`source-final.json` records 467 runtime/verifier inputs and the three packaged executables; SHA-256 `10bbd7f4086f6dcf8259e2802510b4ae56614d836e25df076b3848fad0c55c00`. Engine behavior changes here; the CLI binary remains identical to D087.
+
+| Final executable | SHA-256 |
+| --- | --- |
+| GUI | `9ec73b3a54987e534b045fa4ff966f3c4032ee4e97501f57239ef084701b9455` |
+| Engine | `67e4941967eeaf20394a09927b37386fe78de1b39100bbac5595cf905a13442f` |
+| CLI | `3c5bece133037e441243aff60652f016edf647c995ff2993b92eafe90df105c8` |

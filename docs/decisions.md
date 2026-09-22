@@ -853,3 +853,13 @@ Accounts adds real retained-message/eligible-analysis counts and an explicit Las
 ## D087 — repeated paging and coherent reader frames (2026-09-22T16:06:00-04:00)
 
 The founder reports a complete UI lockup during rapid Page Down and staged reader layout on thread switches. P2-Navigation repair / Mail UI63 / Quality63 bounds repeated navigation work and received-HTML layout, preserves the latest intended selection and authored drafts, and publishes source/summary/body presentation coherently. Verify a synthetic nested-table failure against the sampled Qt text-layout stack, native key bursts with delayed responses, stale-response/account fences and actual painted reader geometry. Keep prior packages and failed evidence. Core47/Local assistance16/CLI41/schema29, fixtures0/3/protocol1 and readiness0/9 remain unchanged. Scoped responsiveness measurement is authorized; no real mailbox action or model sweep follows.
+
+
+## D088 — clean thread content and reversible expansion (2026-09-22)
+
+The founder requests only each message’s new contribution in an already-threaded reader, no quoted-history disclosures or leaked Original Message headers, and the ability to collapse expanded messages again. P2-Thread content / Mail UI64 / Quality64 removes quoted-history rendering, preserves unquoted inline answers, and toggles every message including the newest; the earlier-message group remains reversible. Verify plain/HTML attribution boundaries, native pointer/keyboard collapse and preserved source/attachments/drafts, then package a Mac candidate. The storage preference is being clarified separately because irreversible quote deletion can remove unique history or inline answers. Until resolved, source retention and shared Core47/schema29 remain unchanged. Fixtures0/3/protocol1 and readiness0/9 are unchanged.
+
+
+### D088 implementation clarification (2026-09-22)
+
+After the optional storage question received no response, proceed with the stated conservative default: trim newly acquired reading/search copies (Core48/Gmail25), retain exact original MIME/HTML in the existing external blob store, and leave existing archive rows untouched. This supplies derived-database savings without irreversible loss of original content. No permanent source deletion is authorized or implemented. Unknown formats remain conservative; source inspection recovers any content omitted by the projection. Mail UI64/Quality64; schema29, fixtures0/3/protocol1 and readiness0/9 unchanged.

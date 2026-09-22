@@ -325,11 +325,13 @@ Item {
         }
         return false
     }
-    function memberIsExpanded(id, index) { return index === members.length - 1 || expandedMembers[expansionKey + id] === true }
+    function memberIsExpanded(id, index) {
+        const state = expandedMembers[expansionKey + id]
+        return state === undefined ? index === members.length - 1 : state === true
+    }
     function toggleMember(id, index) {
-        if (index === members.length - 1) return
         const next = Object.assign({}, expandedMembers), key = expansionKey + id
-        next[key] = !next[key]; expandedMembers = next
+        next[key] = !memberIsExpanded(id,index); expandedMembers = next
         backend.remember("selectedMember", next[key] ? id : "")
     }
     function scrollToMember(id) {
@@ -881,7 +883,7 @@ Item {
                         id: readerColumn
                         x: readerPane.margin; y: 8; width: reader.width-readerPane.margin*2; spacing: 0; visible: mail.members.length>0 || mail.replyOpen || mail.collapsedDraftVisible
                         RowLayout {
-                            Layout.fillWidth: true; visible: mail.members.length>1 && !mail.expanded; spacing: 12; Layout.topMargin: 6; Layout.bottomMargin: 5
+                            Layout.fillWidth: true; visible: mail.members.length>1; spacing: 12; Layout.topMargin: 6; Layout.bottomMargin: 5
                             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                             FmButton { objectName: "earlierMessagesButton"; iconName: mail.expanded ? "up" : "down"; text: (mail.expanded ? "Hide " : "")+(mail.members.length-1)+" earlier messages"; font.pixelSize: Theme.fontSize(12); onClicked: { mail.expanded=!mail.expanded; backend.remember("expanded",mail.expanded) } }
                             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
@@ -911,8 +913,9 @@ Item {
                                     id: memberHeading
                                     Layout.fillWidth: true; implicitHeight: member.isExpanded ? Math.max(34,contentItem.implicitHeight) : 44; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
                                     objectName: "messageHeading_" + member.modelData.id
-                                    focusPolicy: member.isExpanded ? Qt.NoFocus : Qt.StrongFocus
-                                    onClicked: if (!member.isExpanded) { memberSender.forceActiveFocus(); mail.toggleMember(member.modelData.id,member.index) }
+                                    focusPolicy: Qt.StrongFocus
+                                    Accessible.name: (member.isExpanded ? "Collapse message from " : "Expand message from ") + (member.modelData.sender_name || member.modelData.sender_email)
+                                    onClicked: { forceActiveFocus(); mail.toggleMember(member.modelData.id,member.index) }
                                     background: Rectangle { color: !member.isExpanded && memberHeading.hovered ? Theme.surface : "transparent"; border.color: memberHeading.activeFocus ? Theme.accent : "transparent"; radius: 4 }
                                     contentItem: ColumnLayout {
                                         spacing: 4
@@ -961,6 +964,13 @@ Item {
                                                 Layout.fillWidth: false
                                                 Layout.maximumWidth: readerColumn.width * 0.45
                                                 spacing: 10
+                                                FmButton {
+                                                    objectName: "toggleMessage_" + member.modelData.id
+                                                    iconName: member.isExpanded ? "up" : "down"
+                                                    implicitWidth: 24; implicitHeight: 28; leftPadding: 5; rightPadding: 5
+                                                    tip: member.isExpanded ? "Collapse message" : "Expand message"
+                                                    onClicked: mail.toggleMember(member.modelData.id,member.index)
+                                                }
                                                 ColumnLayout {
                                                     objectName: "messageDateBlock_" + member.modelData.id
                                                     Layout.fillWidth: true; spacing: 2
@@ -1040,41 +1050,26 @@ Item {
                                     property var rows: []
                                     readonly property string plainText: member.modelData.content_pending ? "Loading sent message…" : member.modelData.text || "(No text)"
                                     readonly property string projectionKey: messageSource.identity + "/" + messageSource.plain + "/" + messageSource.hasHtml + "/" + member.isExpanded
-                                    property var openQuotes: ({})
                                     function project() {
                                         if (!member.isExpanded) { rows = []; return }
                                         const prepared = messageSource.plain ? member.modelData.reader_plain_sections : member.modelData.reader_sections
-                                        rows = prepared || backend.receivedBody(messageSource.hasHtml && !messageSource.plain ? messageSource.result.body_html : "", plainText)
+                                        rows = (prepared || backend.receivedBody(messageSource.hasHtml && !messageSource.plain ? messageSource.result.body_html : "", plainText)).filter(function(row) { return !row.quote && !(row.parents || []).length })
                                     }
                                     onPlainTextChanged: project()
-                                    onProjectionKeyChanged: { openQuotes = ({}); project() }
+                                    onProjectionKeyChanged: project()
                                     Component.onCompleted: project()
-                                    function toggle(key) { const next=Object.assign({},openQuotes); next[key]=!next[key]; openQuotes=next }
                                     Repeater {
                                         model: messageBody.rows
-                                        ColumnLayout {
+                                        TextArea {
                                             required property var modelData
                                             required property int index
-                                            Layout.fillWidth: true; Layout.leftMargin: Math.min(24,modelData.parents.length*10); spacing: 0
-                                            visible: modelData.parents.every(function(key) { return !!messageBody.openQuotes[key] })
-                                            FmButton {
-                                                objectName: "quotedReply_" + member.modelData.id + "_" + index
-                                                visible: !!modelData.quote
-                                                text: messageBody.openQuotes[modelData.key] ? "Hide quoted reply" : "Show quoted reply"
-                                                iconName: messageBody.openQuotes[modelData.key] ? "up" : "more"
-                                                font.pixelSize: Theme.fontSize(11.5); implicitHeight: 25; leftPadding: 7; rightPadding: 9
-                                                outlined: true; foreground: Theme.subtle
-                                                onClicked: messageBody.toggle(modelData.key)
-                                            }
-                                            TextArea {
-                                                objectName: index === 0 ? "messageBody_" + member.modelData.id : "messageBodyPart_" + member.modelData.id + "_" + index
-                                                visible: !modelData.quote; Layout.fillWidth: true; text: visible ? modelData.html || "" : ""
-                                                readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.RichText
-                                                color: modelData.parents.length ? Theme.secondary : Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(15)
-                                                leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; background: null
-                                                Accessible.name: "Message from " + member.modelData.sender_name
-                                                onLinkActivated: function(link) { backend.openLink(link) }
-                                            }
+                                            objectName: index === 0 ? "messageBody_" + member.modelData.id : "messageBodyPart_" + member.modelData.id + "_" + index
+                                            Layout.fillWidth: true; text: modelData.html || ""
+                                            readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.RichText
+                                            color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(15)
+                                            leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; background: null
+                                            Accessible.name: "Message from " + member.modelData.sender_name
+                                            onLinkActivated: function(link) { backend.openLink(link) }
                                         }
                                     }
                                 }

@@ -1,5 +1,9 @@
 # Mail UI, reader and human composer
 
+## D088 — clean threaded messages (Mail UI64)
+
+Thread reading shows only each message’s new contribution, without quoted-history disclosure controls or Original Message/attribution headers. Preserve unquoted answers between quoted blocks. All message headers, including the newest, can expand and collapse with pointer or keyboard; keep an explicit toggle and a reversible earlier-message group. Exact original-source inspection remains separate from the normal reader. Core48/Gmail25 trim newly acquired reading/search copies while preserving exact source blobs; existing archive rows are not rewritten. Schema29/fixtures0,3/protocol1 and readiness0/9 remain unchanged.
+
 ## D087 — navigation and reader stability (Mail UI63)
 
 Repeated keyboard input must retain its exact final target without unbounded reader work. Accumulate every key against the cursor, coalesce viewport/open work at a 16 ms frame interval, and cancel queued intent on account/query/mouse/new-message changes. Disable old-reader actions until its cursor target is selected. Received layout tables must not block the UI thread: linearize nested or malformed tables and projections exceeding 64 cells or 32 rows; preserve simple data tables, safe formatting/links and every cell’s text. Stored source and authored composition do not change. Cold navigation must prepare saved source, summary and body together, without provisional body or stale summary replacement. Adopting a prepared summary invalidates earlier controller result tickets. Reserve one status line so provider acknowledgment transitions cannot move the body; elided feedback exposes its full text on hover. Preserve editable focus, draft saves, read-on-open and account/source fences. Consumers: native GUI and verification; shared Core/CLI/schema29/fixtures0,3/protocol1 unchanged.

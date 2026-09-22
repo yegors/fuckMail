@@ -1,5 +1,7 @@
 # Phase 2 — Google mail and calendar together
 
+**D088 / scoped thread-content follow-up:** complete contribution-only rendering and reversible message/group expansion, with new-acquisition body/FTS trimming and exact original blobs retained. Scoped store/MIME/native/relocated Mac checks pass; earlier archive rows and outstanding broad/other-host gates remain unchanged. Core48/Gmail25/Mail UI64/Quality64, schema29/fixtures0,3/protocol1 and readiness0/9.
+
 **D087 / scoped navigation repair:** complete after the D086 feedback: bound repeated-key reader work and nested-table layout, reject superseded summary replies and keep delivery status geometry stable. Six scoped native suites, Cocoa scene-frame/input verification and the configured Mac candidate pass. Mail UI63/Quality63; shared schema29/fixtures0,3/protocol1 and readiness0/9 unchanged. Existing broad scroll-restoration and other-host gates remain open.
 
 ## Current packet: D086 — mail list and explicit backlog

@@ -1,5 +1,11 @@
 # Core and storage
 
+## D088 — received contribution projection (Core48)
+
+Google acquisition stores recognizable reply contributions in `messages.body` and FTS instead of repeated quoted history. Preserve unquoted inline answers, intentional forwards and unknown formats. Exact MIME/HTML and attachment bytes remain in the existing verified blob store, outside SQLite; original-source inspection remains available. Apply during new message preparation before the existing text bound, on the shared live/synthetic provider path. Do not rewrite the existing archive, authored drafts, submission receipts, read/star flags or source hashes. No schema migration or claim of reclaimed space in an existing database follows. Summaries/search for newly acquired messages consume the same derived body; existing source/text provenance checks remain authoritative.
+
+Consumers: Core48 / Gmail25 / Mail UI64 / Quality64; CLI41 and Local assistance16 consume the existing query shape. Schema29, fixtures0/3 and protocol1 unchanged.
+
 ## D086 — mail list and account backlog
 
 Explicit account backlog queries capture account lifecycle, settings revision, maximum retained row ID and a time ceiling. Read bounded pages; exclude sent, Trash, provider-deleted and messages without a source identity or readable cached body. Counts are local metadata, not Google inventory. Conversation list rows additionally expose the selected preview message’s `recipient`, so acquired Sent previews show who received the mail. Recheck current enabled summary/classification projections, preserve valid existing results, and use existing source/manual/provider guards before commit.

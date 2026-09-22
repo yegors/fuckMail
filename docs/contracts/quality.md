@@ -1,5 +1,11 @@
 # Quality, performance and release acceptance
 
+## D088 — clean threaded messages (Quality64)
+
+Verify plain and HTML reply-header removal, nested quotations, unquoted inline answers, exact source retention and unchanged attachment/composition paths. Exercise expand/collapse/re-expand on earlier, sent and newest messages using production QML and keyboard, across themes and narrow layouts. Re-run reader stability and package checks; keep failures and source/binary identities in ignored evidence. Core48/Gmail25 trim newly acquired reading/search copies while preserving exact source blobs; existing archive rows are not rewritten. Schema29/fixtures0,3/protocol1 and readiness0/9 remain unchanged.
+
+Executed D088 evidence: 16 mail/MIME tests, ten Google store tests, sixteen synthetic live-preparation tests and strict lint pass. Six native suites pass in 19.94 s; final chevron/control screenshots and isolated Cocoa reader frames pass. Cocoa selection harness limitations and earlier broad scroll-restoration failure remain recorded separately. See the [execution report](../research/prototype-september-22.md#d088--clean-thread-contributions-and-reversible-expansion).
+
 ## D087 — navigation and reader stability (Quality63)
 
 Verify pathological nested email tables at initial and final widths, sustained Page Up/Down and arrows with delayed replies, final target and bounded event-loop work, plus actual reader frames for late geometry changes. Retain failing baseline, timings, source/binary identities and prior evidence. Executed: six rebuilt native suites pass in 19.42 s; the final scene-synchronization reader suite passes offscreen and with macOS Cocoa. The latter preserves all 89 observed target frames, handles a 102-key burst in 18 ms with one foreground reader request, and reaches its exact final painted target in 163 ms (including a synthetic 25 ms source delay). Cold/next/warm reader samples are 79/18/11 ms; these are three scoped observations, not a p95 or real-mailbox performance claim. Signed configured Mac relocation, empty-live startup/CLI and shutdown checks pass. No broad or other-host acceptance claim. Consumers: native GUI and verification; shared Core/CLI/schema29/fixtures0,3/protocol1 unchanged.

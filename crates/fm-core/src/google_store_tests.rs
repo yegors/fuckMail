@@ -114,6 +114,36 @@ fn commit(store: &mut Store, checkpoint: &mut Checkpoint, plan: PagePlan) {
 }
 
 #[test]
+fn reply_import_indexes_contribution_and_retains_exact_source_and_flags() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut store = Store::open(tmp.path()).unwrap();
+    let cp = store.google_begin_full("windscribe", "100").unwrap();
+    let mut message = raw("reply", "ordinary", &["INBOX", "UNREAD", "STARRED"]);
+    let source = String::from("From: Alex <alex@example.test>\r\nTo: Sam <sam@example.test>\r\nSubject: Reply projection\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\ncurrentcontribution\r\n\r\nOn Tuesday, Alex wrote:\r\n> historicalduplicate\r\ninlineanswer\r\n").into_bytes();
+    message.raw = URL_SAFE_NO_PAD.encode(&source);
+    GooglePageStore::new(&mut store)
+        .stage_message(&cp, content(message))
+        .unwrap();
+    GooglePageStore::new(&mut store)
+        .commit_page(&prepare_full_page(&cp, list(&["reply"], None)).unwrap())
+        .unwrap();
+    let received = detail(&mut store, "windscribe", "reply")["messages"][0].clone();
+    assert_eq!(received["text"], "currentcontribution\n\ninlineanswer");
+    assert_eq!(
+        search(&mut store, "windscribe", "currentcontribution").len(),
+        1
+    );
+    assert_eq!(search(&mut store, "windscribe", "inlineanswer").len(), 1);
+    assert!(search(&mut store, "windscribe", "historicalduplicate").is_empty());
+    let (hash, unread, starred): (String, i64, i64) = store.db.query_row("SELECT source_hash, unread, starred FROM messages WHERE account='windscribe' AND remote_id='reply'", [], |row| Ok((row.get(0)?,row.get(1)?,row.get(2)?))).unwrap();
+    assert_eq!((unread, starred), (1, 1));
+    assert_eq!(
+        std::fs::read(store.verified_blob(&hash, source.len() as u64).unwrap()).unwrap(),
+        source
+    );
+}
+
+#[test]
 fn two_page_import_catchup_reopen_replay_and_colliding_accounts() {
     let tmp = tempfile::tempdir().unwrap();
     let mut store = Store::open(tmp.path()).unwrap();
@@ -499,6 +529,15 @@ fn mime_corpus_import_preserves_bytes_visible_search_and_attachment_checksums() 
         let message = detail(&mut store, "windscribe", remote)["messages"][0].clone();
         let text = message["text"].as_str().unwrap();
         for expected in entry["expected_text_contains"].as_array().unwrap() {
+            // This manifest describes full source extraction. Acquisition now
+            // omits this known quoted-history passage from its copy.
+            if expected.as_str() == Some("> Can you send the revised figures?") {
+                assert!(
+                    !text.contains(expected.as_str().unwrap()),
+                    "quoted history leaked: {expected}"
+                );
+                continue;
+            }
             assert!(
                 text.contains(expected.as_str().unwrap()),
                 "missing {expected} in {text}"

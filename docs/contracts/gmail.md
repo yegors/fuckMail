@@ -1,5 +1,9 @@
 # Gmail provider
 
+## D088 — acquired reply contributions (Gmail25)
+
+Shared message preparation derives the cached reading/search body from new contributions, omitting recognizable reply history while retaining inline answers and explicit forwarded content. Retain exact RAW MIME and attachment blobs and their checksums; provider identity, labels, checkpoints, replay and authored draft/send handling do not change. Existing retained messages are not backfilled. Core48/Mail UI64/Quality64; CLI41, schema29, fixtures0/3/protocol1 unchanged.
+
 ## D077 — startup acquisition and send presentation (Gmail24)
 
 The GUI resumes previously initialized connected accounts once after initial account/preferences loading, using existing sync ownership and persisted service choices. Exclude removed/disconnected accounts, never-started setup and both-disabled services. Explicit start/pause consumes pending startup work; polling must not rearm it or repeatedly request credentials. CLI lifetime and explicit ownership remain unchanged.

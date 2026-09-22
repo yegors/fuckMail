@@ -1,5 +1,7 @@
 # Visual design and interaction brief
 
+**D088 / clean thread content:** each message shows its new contribution without quoted-history controls or attribution headers. Inline answers and intentional forwards remain content. Click a header or its chevron to expand/collapse any message, including the newest; focused headers support keyboard activation. The earlier-message group also toggles both ways. Original source stays available separately.
+
 **D087 / reader stability:** repeated navigation keeps one cursor and opens its final target once per frame. Source/body/summary geometry stays stable on display; late summary responses cannot replace the prepared result, and delivery feedback occupies a fixed line. Nested newsletter layout tables become readable linear content while retaining text/links and the original stored source.
 
 **D086 / September 22 reference:** the [updated prototype](research/prototype-september-22.md) owns the current mail-list and Accounts presentation. Incoming rows separate sender identity from subject/summary preview; narrow panes retain readable compact rows, and Sent/Drafts show recipients. Accounts adds cached/processed counts, a missing-only date-range menu, progress and Stop. Arrows, Page Up/Down, Home/End and Shift ranges share a single pointer/keyboard cursor. Real counts and bounded engine jobs replace prototype simulation; Google mailbox total remains unknown. Preserve D085 scrollbar behavior and established human-owned mail actions.
