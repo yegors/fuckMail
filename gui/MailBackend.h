@@ -12,6 +12,8 @@
 #include <QSet>
 #include <QQueue>
 #include <QCache>
+#include <QFuture>
+#include <QThreadPool>
 #include <QUrl>
 #include <functional>
 
@@ -47,6 +49,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QString category READ category WRITE setCategory NOTIFY queryChanged)
     Q_PROPERTY(QString selectedId READ selectedId NOTIFY conversationChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
+    Q_PROPERTY(QVariantMap debugRuntime READ debugRuntime)
     Q_PROPERTY(QString draftStatus READ draftStatus NOTIFY draftChanged)
     Q_PROPERTY(bool connected READ connected NOTIFY connectedChanged)
     Q_PROPERTY(bool syntheticProfile READ syntheticProfile NOTIFY connectedChanged)
@@ -95,6 +98,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QVariantList calendarSources READ calendarSources NOTIFY eventsChanged)
     Q_PROPERTY(QString calendarSearchQuery READ calendarSearchQuery WRITE setCalendarSearchQuery NOTIFY calendarSearchChanged)
     Q_PROPERTY(QVariantMap calendarSearch READ calendarSearch NOTIFY calendarSearchChanged)
+    Q_PROPERTY(QVariantMap calendarMailActivity READ calendarMailActivity NOTIFY calendarMailActivityChanged)
     Q_PROPERTY(QString calendarView READ calendarView NOTIFY eventsChanged)
     Q_PROPERTY(QString calendarDate READ calendarDate NOTIFY eventsChanged)
     Q_PROPERTY(QString calendarFrom READ calendarFrom NOTIFY eventsChanged)
@@ -145,6 +149,7 @@ public:
     QString category() const { return m_category; }
     QString selectedId() const { return m_selected; }
     QString error() const { return m_error; }
+    QVariantMap debugRuntime() const { return {{"pending", m_pending.size()}, {"queued", m_outgoing.size()}, {"in_flight", !m_inFlight.isEmpty()}, {"provider_operations", m_googleOperations.size()}, {"engine_pid", m_enginePid}, {"shutting_down", m_shutdown}}; }
     QString draftStatus() const { return m_draftStatus; }
     bool connected() const { return m_connected; }
     bool syntheticProfile() const { return m_syntheticProfile; }
@@ -157,6 +162,11 @@ public:
     QVariantList googleLabels() const { return m_googleLabels; }
     QVariantMap googleLabelState() const;
     bool loading() const { return m_loading; }
+    Q_INVOKABLE void prefetchMore();
+    Q_INVOKABLE void prefetchConversation(const QString &id);
+    Q_INVOKABLE void setBrowsingOlder(bool value) { m_browsingOlder = value; }
+    QString listError() const { return m_listError; }
+    Q_PROPERTY(QString listError READ listError NOTIFY loadingChanged)
     bool mutationInFlight() const { return m_mutatingConversation; }
     bool hasMore() const { return m_nextOffset >= 0 || (m_folder == "sent" && m_outgoingNext.value(m_account, -1) >= 0); }
     QString weekStart() const { return m_weekStart; }
@@ -181,6 +191,8 @@ public:
     QVariantMap calendarSearch() const;
     void setCalendarSearchQuery(const QString &query);
     Q_INVOKABLE void setCalendarSearchContext(bool active, bool combined);
+    Q_INVOKABLE void setCalendarMailActivityContext(bool active, bool combined);
+    QVariantMap calendarMailActivity() const { return m_calendarMailActivity; }
     Q_INVOKABLE void openCalendarSearchResult(const QVariantMap &event);
     QString calendarView() const { return m_calendarView; }
     QString calendarDate() const { return m_calendarDate; }
@@ -357,6 +369,9 @@ public:
     Q_INVOKABLE void remember(const QString &key, const QVariant &value);
     Q_INVOKABLE void shutdown();
 signals:
+    void calendarMailActivityChanged();
+    // Metadata only. Never attach request params, response bodies or account IDs.
+    void debugEvent(const QString &level, const QString &source, const QString &message, const QVariantMap &fields);
     void recipientSuggestionsReply(const QString &ticket, const QVariantMap &result, bool ok);
     void assistanceReply(const QString &ticket, const QString &method, const QVariantMap &result, bool ok);
     void attachmentPreviewReady(const QString &ticket, const QVariantMap &result, bool ok);
@@ -426,6 +441,7 @@ private:
     friend class SendUndoTest;
     friend class DraftDiscardTest;
     friend class CalendarOccurrenceBackendTest;
+    friend class CalendarMailActivityTest;
     friend class AccountLifecycleControlsTest;
     friend class GuiAccountLifecycleSelfTest;
     using Callback = std::function<void(const QJsonObject &, bool)>;
@@ -437,6 +453,20 @@ private:
         int queryBypasses = 0;
     };
     void request(const QString &method, const QString &account, const QJsonObject &params, Callback callback);
+    void requestReader(const QString &account, const QJsonObject &params, Callback callback,
+                       const QString &method = "conversation", bool prefetch = false);
+    GoogleOperation *m_readerOperation = nullptr;
+    GoogleOperation *m_readerPrefetchOperation = nullptr;
+    QString m_readerPrefetchTarget;
+    QTimer m_readerPrefetchTimer;
+    QThreadPool m_readerPool;
+    QFuture<QVariantMap> m_readerFuture, m_readerPrefetchFuture;
+    quint64 m_readerLoadSerial = 0;
+    int m_readerLoadingGeneration = -1;
+    bool m_readerReviewPending = false;
+    void prepareReader(const QString &account, const QString &id, QVariantMap data, int generation,
+                       qint64 lifecycle, bool prefetch, std::function<void(QVariantMap)> ready);
+    QVariantMap retainReaderPresentation(QVariantMap data) const;
     void googleOperation(const QString &method, const QString &account, const QJsonObject &params, Callback callback);
     void cancelGoogleOperations(bool notify = true);
     void cancelGoogleProviderOperations(const QString &account);
@@ -495,6 +525,12 @@ private:
     QString calendarCoverageText(const QJsonObject &coverage) const;
     void publishCalendarWindow(const QJsonObject &result, const QString &from, int days);
     void initializeCalendarSearch();
+    void refreshCalendarMailActivity();
+    QTimer m_calendarMailActivityTimer;
+    QVariantMap m_calendarMailActivity;
+    QString m_calendarMailActivityScope, m_calendarMailActivityStamp;
+    bool m_calendarMailActivityActive = false, m_calendarMailActivityCombined = true, m_calendarMailActivityBusy = false;
+    int m_calendarMailActivityGeneration = 0;
     void refreshCalendarSearchContext();
     void runCalendarSearch();
     QJsonObject calendarSearchParams() const;
@@ -667,6 +703,8 @@ private:
     struct ReaderSnapshot { QVariantMap data; qint64 lifecycle = 0; };
     QCache<QString, MailViewSnapshot> m_mailViewCache{8 * 1024 * 1024};
     QCache<QPair<QString, QString>, ReaderSnapshot> m_readerCache{8 * 1024 * 1024};
+    QCache<QString, ReaderSnapshot> m_sourceCache{8 * 1024 * 1024};
+    mutable QCache<QByteArray, QVariantList> m_bodyCache{4 * 1024 * 1024};
     bool m_initialAccountsLoaded = false, m_initialPreferencesLoaded = false;
     QTimer m_notificationTimer;
     QVariantList m_reminders;
@@ -778,7 +816,9 @@ private:
     int m_launchAttempts = 0, m_launchDelay = 1000;
     bool m_connected = false, m_loading = false;
     bool m_liveProfileRequested = false, m_syntheticProfile = true;
-    bool m_listRefreshPending = false;
+    bool m_listRefreshPending = false, m_browsingOlder = false;
+    QString m_listError;
+    qint64 m_mailRevision = -1;
     bool m_automaticReadScope = false;
     bool m_mutatingConversation = false;
     int m_mailScopeCount = 0;

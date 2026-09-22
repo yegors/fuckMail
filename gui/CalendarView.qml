@@ -8,6 +8,13 @@ Item {
     objectName: "calendarWorkspace"
     property int dayCount: backend.calendarView === "day" ? 1 : 7
     property bool combinedAccounts: true
+    readonly property var mailActivity: backend.calendarMailActivity || ({state: "unavailable"})
+    function updateMailActivityContext() {
+        if (backend.setCalendarMailActivityContext !== undefined)
+            backend.setCalendarMailActivityContext(visible && backend.calendarView !== "agenda", combinedAccounts)
+    }
+    onCombinedAccountsChanged: updateMailActivityContext()
+    Component.onCompleted: updateMailActivityContext()
     readonly property var previewRows: { backend.calendarDate; backend.calendarView; backend.preferences; return editor.opened ? backend.calendarPreview(editor.preview) : [] }
     function editingEvent(event) { return editor.opened && editor.preview.eventId === event.event_id && editor.preview.account === event.account && editor.preview.calendar_id === event.calendar_id }
     function prepareSearch() {
@@ -99,10 +106,10 @@ Item {
         target: backend
         function onAccountChanged() { calendar.cancelRange() }
         function onConnectedChanged() { if (!backend.connected) calendar.cancelRange() }
-        function onEventsChanged() { if (calendar.rangeDrag.index !== undefined && (calendar.rangeDrag.from !== backend.calendarFrom || calendar.rangeDrag.view !== backend.calendarView)) calendar.cancelRange() }
+        function onEventsChanged() { if (calendar.rangeDrag.index !== undefined && (calendar.rangeDrag.from !== backend.calendarFrom || calendar.rangeDrag.view !== backend.calendarView)) calendar.cancelRange(); calendar.updateMailActivityContext() }
     }
     onHourHeightChanged: Qt.callLater(preserveGridPosition)
-    onVisibleChanged: if (!visible) { cancelRange(); details.close(); datePicker.close(); moreMenu.close(); allDayOverflow.close() }
+    onVisibleChanged: { updateMailActivityContext(); if (!visible) { cancelRange(); details.close(); datePicker.close(); moreMenu.close(); allDayOverflow.close() } }
     Shortcut { sequence: "D"; enabled: calendar.shortcutsEnabled; onActivated: backend.setCalendarView("day") }
     Shortcut { sequence: "W"; enabled: calendar.shortcutsEnabled; onActivated: backend.setCalendarView("week") }
     Shortcut { sequence: "M"; enabled: calendar.shortcutsEnabled; onActivated: backend.setCalendarView("month") }
@@ -167,6 +174,13 @@ Item {
                             Text { text: Qt.formatDate(calendar.dateAt(dayHeader.index), "ddd"); color: Theme.subtle; font.pixelSize: Theme.fontSize(12); anchors.baseline: parent.children[0].baseline }
                         }
                     }
+                    CalendarMailCount {
+                        objectName: "calendarMailCount-" + calendar.isoAt(dayHeader.index)
+                        Layout.fillWidth: true; Layout.leftMargin: 8; Layout.rightMargin: 4
+                        date: calendar.isoAt(dayHeader.index); activity: calendar.mailActivity
+                        combined: calendar.combinedAccounts
+                        compact: width < 165
+                    }
                     Repeater { model: dayHeader.allDay.slice(0, 2)
                         Rectangle {
                             id: allDayBox
@@ -205,7 +219,7 @@ Item {
                 onHeightChanged: Qt.callLater(calendar.preserveGridPosition)
                 onContentYChanged: calendar.rememberGridPosition()
                 onMovementEnded: { calendar.retainedTopHour = Math.max(0, contentY) / calendar.hourHeight; backend.remember("calendarY", contentY); Qt.callLater(calendar.preserveGridPosition) }
-                ScrollBar.vertical: ScrollBar {}
+                ScrollBar.vertical: FmScrollBar {}
                 Repeater { model: 25
                     Text { required property int index; objectName: "calendarHour-" + index; x: 0; y: Math.max(0, index * calendar.hourHeight - (index === 24 ? height : index === 0 ? 0 : height / 2)); text: (index < 10 ? "0" : "") + index + ":00"; color: Theme.inkAlpha(index >= calendar.workingStart && index <= calendar.workingEnd ? .5 : .3); font.pixelSize: Theme.fontSize(10) }
                 }
@@ -320,11 +334,17 @@ Item {
             visible: backend.calendarView === "month"; Layout.fillWidth: true; Layout.fillHeight: true; Layout.bottomMargin: 16; columns: 7; columnSpacing: 0; rowSpacing: 0
             Repeater { model: calendar.monthCount
                 Rectangle {
-                    id: monthCell; required property int index; property var dayEvents: calendar.eventsAt(index); property bool inMonth: calendar.dateAt(index).getMonth() === new Date(backend.calendarDate + "T12:00:00").getMonth(); property int shown: Math.min(3, Math.max(0, Math.floor((height - 36) / 21) - (dayEvents.length * 21 > height - 36 ? 1 : 0)))
+                    id: monthCell; required property int index; property var dayEvents: calendar.eventsAt(index); property bool inMonth: calendar.dateAt(index).getMonth() === new Date(backend.calendarDate + "T12:00:00").getMonth(); property int shown: Math.min(3, Math.max(0, Math.floor((height - 58) / 21) - (dayEvents.length * 21 > height - 58 ? 1 : 0)))
                     Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredWidth: 1; Layout.preferredHeight: 1; clip: true
                     color: calendar.isoAt(index) === backend.todayDate ? Theme.bg1 : "transparent"; border.width: 1; border.color: Theme.line
                     Column { x: 8; y: 5; width: parent.width - 16; spacing: 3
                         FmButton { objectName: "calendarMonthDate-" + monthCell.index; text: Qt.formatDate(calendar.dateAt(monthCell.index), "d"); height: 24; width: 30; leftPadding: 0; rightPadding: 0; font.pixelSize: Theme.fontSize(13); foreground: calendar.isoAt(monthCell.index) === backend.todayDate ? Theme.accent : monthCell.inMonth ? Theme.text : Theme.inkAlpha(.5); onClicked: calendar.openDay(monthCell.index) }
+                        CalendarMailCount {
+                            objectName: "calendarMonthMailCount-" + calendar.isoAt(monthCell.index)
+                            width: parent.width; date: calendar.isoAt(monthCell.index)
+                            activity: calendar.mailActivity; combined: calendar.combinedAccounts; compact: true
+                            opacity: monthCell.inMonth ? 1 : 0.6
+                        }
                         Repeater { model: monthCell.dayEvents.slice(0, monthCell.shown)
                             Rectangle {
                                 required property var modelData; width: monthCell.width - 16; height: 18; color: "transparent"

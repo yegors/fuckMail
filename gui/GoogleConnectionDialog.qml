@@ -62,6 +62,7 @@ FmDialog {
         }
     }
     contentItem: ScrollView {
+                ScrollBar.vertical: FmScrollBar {}
         implicitHeight: connectionContents.implicitHeight; contentWidth: availableWidth; clip: true
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         property bool blocksWorkspaceShortcuts: true

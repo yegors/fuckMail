@@ -155,6 +155,7 @@ Popup {
         }
     }
     contentItem: ScrollView {
+                ScrollBar.vertical: FmScrollBar {}
         property bool blocksWorkspaceShortcuts: true
         clip: true; ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         ColumnLayout {
@@ -200,6 +201,7 @@ Popup {
                 color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true
             }
             ScrollView {
+                ScrollBar.vertical: FmScrollBar {}
                 visible: !!details.eventData.description; Layout.fillWidth: true; Layout.preferredHeight: Math.min(100, description.implicitHeight + 4); clip: true
                 TextArea { id: description; text: details.eventData.description || ""; color: Theme.muted; font.pixelSize: Theme.fontSize(12); textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; readOnly: true; selectByMouse: true; background: null; padding: 0 }
             }

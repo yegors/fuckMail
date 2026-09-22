@@ -13,7 +13,7 @@ Rectangle {
         anchors.fill: parent; anchors.margins: 12
         spacing: 14; clip: true
         model: backend.reminders
-        ScrollBar.vertical: ScrollBar { policy: cards.contentHeight > cards.height ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff }
+        ScrollBar.vertical: FmScrollBar {}
         delegate: ColumnLayout {
             required property var modelData
             width: cards.width - 8; spacing: 5

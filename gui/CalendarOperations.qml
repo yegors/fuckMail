@@ -29,7 +29,7 @@ Popup {
         Text { text: history.live ? "Resume sends a recorded, unsent change. Check outcome only reads Google. Google may notify guests or the organizer; notification delivery is unverified." : "Pending operations appear first and can be retried after a restart without creating another event. Load more to reach older activity. No invitations are sent."; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); wrapMode: Text.Wrap; Layout.fillWidth: true }
         ListView {
             id: operationList; objectName: "calendarOperationList"; Layout.fillWidth: true; Layout.fillHeight: true; clip: true; spacing: 6; model: backend.calendarOperations
-            ScrollBar.vertical: ScrollBar { }
+            ScrollBar.vertical: FmScrollBar {}
             delegate: Rectangle {
                 id: operationRow
                 required property var modelData; width: operationList.width; height: operationContent.implicitHeight + 20; color: Theme.canvas; radius: 5; border.color: Theme.line

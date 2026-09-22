@@ -231,16 +231,71 @@ fn parse_callback(bytes: &[u8], expected_host: &str) -> Result<Callback, GoogleE
     Ok(Callback { state, code })
 }
 
-async fn reply(stream: &mut TcpStream, success: bool) {
-    let (status, body) = if success {
-        ("200 OK", "Authorization received. Return to fuckMail.")
+fn callback_page(success: bool) -> String {
+    let (mark, heading, tone, glow) = if success {
+        (
+            r#"<svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="12.25"/><path d="M8.5 14.4 12 17.8 19.6 10.2"/></svg>"#,
+            "Authorization received.",
+            "#C9A36B",
+            "rgba(201,163,107,.09)",
+        )
     } else {
         (
-            "400 Bad Request",
-            "Authorization was not accepted. Return to fuckMail.",
+            r#"<svg viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="12.25"/><path d="M10 10 18 18M18 10 10 18"/></svg>"#,
+            "Authorization was not accepted.",
+            "#E0645A",
+            "rgba(224,100,90,.10)",
         )
     };
-    let response = format!("HTTP/1.1 {status}\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nContent-Security-Policy: default-src 'none'\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n{body}", body.len());
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex">
+<title>fuckMail</title>
+<style>
+html,body{{height:100%;margin:0}}
+body{{
+  background:
+    radial-gradient(42rem 26rem at 50% 38%,{glow},transparent 68%),
+    #0B0C0E;
+  color:#E9EAEC;
+  font-family:Geist,ui-sans-serif,system-ui,"Segoe UI",sans-serif;
+  display:grid;
+  place-items:center;
+}}
+main{{width:min(24rem,calc(100vw - 3.5rem))}}
+svg{{
+  width:1.75rem;height:1.75rem;display:block;margin:0 0 1.6rem;
+  fill:none;stroke:{tone};stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round;
+}}
+.word{{
+  margin:0 0 .7rem;font-size:.68rem;letter-spacing:.24em;text-transform:uppercase;color:{tone};
+}}
+h1{{margin:0;font-weight:500;font-size:1.85rem;letter-spacing:-.035em;line-height:1.2}}
+p{{margin:.9rem 0 0;max-width:22rem;color:rgba(233,234,236,.55);font-size:.95rem;line-height:1.45}}
+</style>
+</head>
+<body>
+<main>
+{mark}
+<p class="word">fuckMail</p>
+<h1>{heading}</h1>
+<p>Return to fuckMail.</p>
+</main>
+</body>
+</html>
+"#
+    )
+}
+
+async fn reply(stream: &mut TcpStream, success: bool) {
+    let status = if success { "200 OK" } else { "400 Bad Request" };
+    let body = callback_page(success);
+    let response = format!("HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n{body}", body.len());
     let _ = tokio::time::timeout(
         Duration::from_millis(100),
         stream.write_all(response.as_bytes()),

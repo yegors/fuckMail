@@ -171,8 +171,8 @@ Rectangle {
                 contentWidth: viewer.actualSize ? Math.max(width, tile.imageWidth) : width
                 contentHeight: viewer.actualSize ? Math.max(height, tile.imageHeight) : height
                 boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: ScrollBar {}
-                ScrollBar.horizontal: ScrollBar {}
+                ScrollBar.vertical: FmScrollBar {}
+                ScrollBar.horizontal: FmScrollBar {}
                 Image {
                     width: viewer.actualSize ? tile.imageWidth : imageScroll.width
                     height: viewer.actualSize ? tile.imageHeight : imageScroll.height

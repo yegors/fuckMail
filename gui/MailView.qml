@@ -68,7 +68,7 @@ Item {
         return people
     }
     function initials(name) { return (name || "?").split(/\s+/).slice(0,2).map(function(part) { return part.charAt(0).toUpperCase() }).join("") }
-    readonly property string conversationSpan: members.length ? (members.length > 1 && members[0].sent_at.slice(0,10) !== latest.sent_at.slice(0,10) ? mail.relativeTime(members[0].sent_at) + " → " : "") + mail.relativeTime(latest.sent_at) : ""
+    readonly property string conversationSpan: members.length ? (members.length > 1 && (members[0].sent_at || "").slice(0,10) !== (latest.sent_at || "").slice(0,10) ? mail.relativeTime(members[0].sent_at) + " → " : "") + mail.relativeTime(latest.sent_at) : ""
 
     readonly property var popularCategories: backend.categories.slice().sort(function(a, b) { return b.conversation_count - a.conversation_count || a.name.localeCompare(b.name) }).slice(0, 7)
     readonly property string expansionKey: backend.account + "/" + backend.selectedId + "/"
@@ -423,7 +423,7 @@ Item {
         function onAccountChanged() { mail.clearSelection(); morePopup.close(); mail.pendingComposeId = ""; mail.syncCollapsedGroups() }
         function onQueryChanged() { mail.clearSelection(); morePopup.close(); mail.syncCollapsedGroups() }
         function onPresentationChanged() { Qt.callLater(mail.restorePosition) }
-        function onConversationsChanged() { Qt.callLater(mail.restoreListPosition) }
+        function onConversationsChanged() { if (mail.restoring) Qt.callLater(mail.restoreListPosition); prefetchTimer.restart() }
         function onConversationChanged() {
             mail.completeMenuCompose()
             const identity = mail.currentComposerIdentity()
@@ -535,9 +535,8 @@ Item {
                     Layout.fillWidth: true; spacing: 6
                     Flickable {
                         enabled: !mail.draftsMode; opacity: enabled ? 1 : .3
-                        Layout.fillWidth: true; implicitHeight: 37; clip: true
+                        Layout.fillWidth: true; implicitHeight: 29; clip: true
                         contentWidth: categoryRow.width; contentHeight: height; boundsBehavior: Flickable.StopAtBounds; flickableDirection: Flickable.HorizontalFlick
-                        ScrollBar.horizontal: ScrollBar { height: 3 }
                         Row {
                             id: categoryRow; spacing: 6
                             FmButton { id: allCategories; text: "All  "+backend.mailScopeCount; selected: backend.category.length===0; prominent: selected; implicitHeight: 29; font.pixelSize: Theme.fontSize(12); background: Rectangle { radius: 15; color: allCategories.selected ? Theme.text : "transparent"; border.color: allCategories.activeFocus ? Theme.accent : Theme.controlBorder } onClicked: backend.category="" }
@@ -592,7 +591,7 @@ Item {
                     id: list; objectName: "conversationList"
                     Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 6
                     clip: true; model: backend.conversationModel; boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar {}
+                    ScrollBar.vertical: FmScrollBar {}
                     // Consume each structural batch before the next can reuse
                     // delegate indexes. Retaining an old layout across several
                     // remove/move batches leaves retired rows over replacements.
@@ -602,7 +601,18 @@ Item {
                         function onRowsMoved() { list.forceLayout() }
                         function onRowsInserted() { list.forceLayout() }
                     }
-                    onContentHeightChanged: Qt.callLater(mail.restoreListPosition)
+                    onContentHeightChanged: { if (mail.restoring) Qt.callLater(mail.restoreListPosition); prefetchTimer.restart() }
+                    onContentYChanged: {
+                        backend.setBrowsingOlder(contentY - originY > height)
+                        if (!mail.restoring && !list.moving) backend.remember("listY", contentY)
+                        prefetchTimer.restart()
+                    }
+                    Timer {
+                        id: prefetchTimer; interval: 40
+                        onTriggered: if (mail.visible && !mail.draftsMode && list.count > 0 && backend.hasMore && !backend.loading
+                            && list.contentY + list.height * 4 >= list.originY + list.contentHeight) backend.prefetchMore()
+                    }
+                    Connections { target: backend; function onLoadingChanged() { if (!backend.loading) prefetchTimer.restart() } }
                     onMovementEnded: if (!mail.restoring) backend.remember("listY",contentY)
                     delegate: Item {
                         id: groupedRow
@@ -640,6 +650,7 @@ Item {
                             Accessible.selected: mail.isSelected(groupedRow.modelData.id)
                             MouseArea {
                                 id: rowMouse; anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton; hoverEnabled: true
+                                onEntered: if (!mail.draftsMode) backend.prefetchConversation(groupedRow.modelData.id)
                                 onClicked: function(mouse) {
                                     row.forceActiveFocus()
                                     if (mouse.button === Qt.RightButton) mail.showRowMenu(groupedRow.modelData.id, row, mouse.x, mouse.y)
@@ -703,7 +714,7 @@ Item {
                         Item {
                             width: list.width; height: backend.hasMore || (backend.folder==="sent" && backend.captures.length) ? 48 : 0
                             Row { anchors.centerIn: parent; spacing: 12
-                                FmButton { objectName: "loadMoreConversations"; visible: backend.hasMore; text: backend.loading ? "Loading…" : "Load more"; enabled: !backend.loading; onClicked: backend.loadMore() }
+                                FmButton { objectName: "loadMoreConversations"; visible: backend.hasMore; text: backend.loading ? "Loading…" : backend.listError ? "Retry loading" : "Load more"; tip: backend.listError; enabled: !backend.loading; onClicked: backend.loadMore() }
                                 FmButton { objectName: "localCapturesButton"; visible: backend.folder==="sent" && backend.captures.length>0; text: "Local captures"; font.pixelSize: Theme.fontSize(12); onClicked: capturePopup.open() }
                             }
                         }
@@ -778,7 +789,7 @@ Item {
                     id: reader; objectName: "reader"
                     Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 8
                     contentWidth: width; contentHeight: readerColumn.implicitHeight+44; clip: true; boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar {}
+                    ScrollBar.vertical: FmScrollBar {}
                     onMovementEnded: if (!mail.restoring) backend.remember("readerY",contentY)
                     ColumnLayout {
                         id: readerColumn
@@ -940,10 +951,18 @@ Item {
                                     id: messageBody
                                     visible: member.isExpanded && !member.modelData.content_error
                                     Layout.fillWidth: true; Layout.leftMargin: 48; spacing: 7
-                                    readonly property var rows: backend.receivedBody(messageSource.hasHtml && !messageSource.plain ? messageSource.result.body_html : "", member.modelData.content_pending ? "Loading sent message…" : member.modelData.text || "(No text)")
-                                    readonly property string projectionKey: messageSource.identity + "/" + messageSource.plain + "/" + messageSource.hasHtml
+                                    property var rows: []
+                                    readonly property string plainText: member.modelData.content_pending ? "Loading sent message…" : member.modelData.text || "(No text)"
+                                    readonly property string projectionKey: messageSource.identity + "/" + messageSource.plain + "/" + messageSource.hasHtml + "/" + member.isExpanded
                                     property var openQuotes: ({})
-                                    onProjectionKeyChanged: openQuotes = ({})
+                                    function project() {
+                                        if (!member.isExpanded) { rows = []; return }
+                                        const prepared = messageSource.plain ? member.modelData.reader_plain_sections : member.modelData.reader_sections
+                                        rows = prepared || backend.receivedBody(messageSource.hasHtml && !messageSource.plain ? messageSource.result.body_html : "", plainText)
+                                    }
+                                    onPlainTextChanged: project()
+                                    onProjectionKeyChanged: { openQuotes = ({}); project() }
+                                    Component.onCompleted: project()
                                     function toggle(key) { const next=Object.assign({},openQuotes); next[key]=!next[key]; openQuotes=next }
                                     Repeater {
                                         model: messageBody.rows
@@ -963,7 +982,7 @@ Item {
                                             }
                                             TextArea {
                                                 objectName: index === 0 ? "messageBody_" + member.modelData.id : "messageBodyPart_" + member.modelData.id + "_" + index
-                                                visible: !modelData.quote; Layout.fillWidth: true; text: modelData.html || ""
+                                                visible: !modelData.quote; Layout.fillWidth: true; text: visible ? modelData.html || "" : ""
                                                 readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.RichText
                                                 color: modelData.parents.length ? Theme.secondary : Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(15)
                                                 leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; background: null
@@ -1044,6 +1063,7 @@ Item {
         onAboutToShow: { const point = allLabels.mapToItem(parent, 0, allLabels.height + 8); x = Math.max(12,Math.min(point.x,parent.width-width-12)); y = Math.max(64,Math.min(point.y,parent.height-height-12)) }
         background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
         contentItem: ScrollView {
+                ScrollBar.vertical: FmScrollBar {}
             property bool blocksWorkspaceShortcuts: true
             clip: true; contentWidth: availableWidth; ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             ColumnLayout {
@@ -1152,6 +1172,7 @@ Item {
         onAboutToShow: { x = morePopup.x + morePopup.width + width < (mail.Overlay.overlay ? mail.Overlay.overlay.width : mail.width)-8 ? morePopup.width-6 : -width-6; y = Math.max(0,Math.min(labelsMenuButton.y,(mail.Overlay.overlay ? mail.Overlay.overlay.height : mail.height)-morePopup.y-height-8)) }
         background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 6 }
         contentItem: ScrollView {
+                ScrollBar.vertical: FmScrollBar {}
             implicitHeight: labelOptions.implicitHeight; clip: true; contentWidth: availableWidth
             ColumnLayout { id: labelOptions; width: labelMenu.availableWidth; spacing: 4
                 Repeater { model: backend.categories
@@ -1188,7 +1209,7 @@ Item {
             Text { text: "Saved MIME copies on this machine. No messages were delivered."; color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); wrapMode: Text.Wrap; Layout.fillWidth: true }
             ListView {
                 Layout.fillWidth: true; Layout.fillHeight: true; clip: true; model: backend.captures; spacing: 8
-                ScrollBar.vertical: ScrollBar {}
+                ScrollBar.vertical: FmScrollBar {}
                 delegate: RowLayout {
                     required property var modelData
                     width: ListView.view.width; height: 52; spacing: 10

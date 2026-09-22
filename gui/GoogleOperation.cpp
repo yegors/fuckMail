@@ -10,7 +10,7 @@ GoogleOperation::GoogleOperation(QString account, QString requestId, QObject *pa
     m_socket.setReadBufferSize(maxFrame + 1);
     m_timer.setSingleShot(true);
     connect(&m_timer, &QTimer::timeout, this, [this] {
-        reject("timeout", m_method == "draft_transfer" ? "Account change not confirmed. Check the same request before editing the original draft." : m_method == "draft_attachment_import"
+        reject("timeout", m_method == "conversation" ? "Loading this conversation timed out. Open it again to retry." : m_method == "draft_transfer" ? "Account change not confirmed. Check the same request before editing the original draft." : m_method == "draft_attachment_import"
             ? "Attachment import timed out. Retry the same attachment to check its saved result."
             : "Google work timed out. Check its saved activity before trying again.");
     });
@@ -46,7 +46,8 @@ void GoogleOperation::start(const QString &profile, qint64 enginePid, const QStr
         && method != "google_send" && method != "google_send_reconcile" && method != "google_send_abandon"
         && method != "google_draft_authoring" && method != "google_draft_copy" && method != "google_draft_adopt"
         && method != "google_draft_delete" && method != "google_draft_delete_reconcile" && method != "google_draft_delete_abandon"
-        && method != "draft_transfer" && method != "draft_attachment_import" && method != "google_draft_source" && method != "google_drafts_refresh") {
+        && method != "draft_transfer" && method != "draft_attachment_import" && method != "google_draft_source" && method != "google_drafts_refresh"
+        && method != "conversation" && method != "message_source" && method != "assist_results" && method != "assist_settings_get") {
         reject("invalid_request", "Unsupported Google operation."); return;
     }
     QString error;
@@ -95,14 +96,15 @@ void GoogleOperation::receive() {
     if (!ok || m_hello) { finish(result, ok); return; }
     const auto mode = result["mode"].toString();
     const bool localImport = m_method == "draft_attachment_import" || m_method == "google_draft_source"
-        || m_method == "google_draft_authoring" || m_method == "google_draft_copy" || m_method == "draft_transfer";
+        || m_method == "google_draft_authoring" || m_method == "google_draft_copy" || m_method == "draft_transfer"
+        || m_method == "conversation" || m_method == "message_source" || m_method == "assist_results" || m_method == "assist_settings_get";
     if (mode != "live" && !(localImport && mode == "synthetic")) {
         reject("profile_mode_mismatch", "Google operations require a live profile."); return;
     }
     m_hello = true;
     // Quota cooldown can exceed the ordinary local query timeout. The user can
     // cancel at any time; no timeout automatically repeats a provider mutation.
-    m_timer.start(localImport ? 60 * 1000 : 10 * 60 * 1000);
+    m_timer.start(m_method == "conversation" || m_method == "message_source" || m_method == "assist_results" || m_method == "assist_settings_get" ? 15000 : localImport ? 60 * 1000 : 10 * 60 * 1000);
     const auto params = std::exchange(m_params, QJsonObject{});
     write("operation", m_method, params);
 }

@@ -295,3 +295,130 @@ fn measure_queued_ingestion(store: &mut Store, source: &str, iterations: usize) 
     assert_eq!(ingest_samples.len(), iterations);
     json!({"model":"independent search and normalized-insertion producers; one serialized Store writer; bounded queue capacity 2; no parallel SQLite writer or provider transport","inserted_messages":iterations*25,"batches":iterations,"messages_per_batch":25,"query_observations":search_samples.len(),"core_query_p50_ms":percentile(&mut search_samples,0.5),"core_query_p95_ms":percentile(&mut search_samples,0.95),"core_query_p99_ms":percentile(&mut search_samples,0.99),"queue_to_response_p50_ms":percentile(&mut queued_samples,0.5),"queue_to_response_p95_ms":percentile(&mut queued_samples,0.95),"queue_to_response_p99_ms":percentile(&mut queued_samples,0.99),"ingestion_batch_p50_ms":percentile(&mut ingest_samples,0.5),"ingestion_batch_p95_ms":percentile(&mut ingest_samples,0.95),"ingestion_batch_p99_ms":percentile(&mut ingest_samples,0.99)})
 }
+
+#[test]
+#[ignore = "Scoped generated mail browsing latency measurement"]
+fn mail_browse_20k() {
+    let temp = tempfile::tempdir().unwrap();
+    let profile = temp.path().join("disposable-search-benchmark");
+    let store = Store::open(&profile).unwrap();
+    let source = store.stage_blob(b"From: Synthetic <benchmark@fixture.example>\r\nSubject: Search benchmark fixture\r\nContent-Type: text/plain; charset=utf-8\r\n\r\nSynthetic source; SQL metadata is generated for an index-density experiment.\r\n").unwrap();
+    {
+        let tx = store.db.unchecked_transaction().unwrap();
+        let mut conversation = tx
+            .prepare("INSERT INTO conversations(account,id,subject,revision) VALUES(?1,?2,?3,1)")
+            .unwrap();
+        let mut message = tx.prepare("INSERT INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,1,0,1,0,?11,1)").unwrap();
+        let mut fts = tx
+            .prepare("INSERT INTO message_fts(rowid,sender,subject,body) VALUES(?1,?2,?3,?4)")
+            .unwrap();
+        for index in 0..20_000 {
+            let account = if index % 2 == 0 {
+                "windscribe"
+            } else {
+                "personal"
+            };
+            let conversation_id = format!("benchmark-{account}-thread-{index:06}");
+            let message_id = format!("benchmark-{account}-message-{index:06}");
+            let subject = if index % 10_000 == 0 {
+                "Benchmark needlequarter planning"
+            } else {
+                "Benchmark weekly planning"
+            };
+            let (name, email) = if account == "windscribe" {
+                ("Alex O’Hara", "alex.o'hara+build@windscribe.example")
+            } else {
+                ("Zoë Chen", "zoe.chen+home@personal.example")
+            };
+            let body = if index % 997 == 0 {
+                "Search benchmark: ultraquartz deployment detail. Café review 日本語."
+            } else {
+                "Search benchmark: ordinary deployment detail. Café review 日本語."
+            };
+            let sent_at = format!(
+                "2026-09-{:02}T{:02}:{:02}:{:02}Z",
+                1 + index % 11,
+                index % 24,
+                index % 60,
+                (index / 60) % 60
+            );
+            conversation
+                .execute(params![account, conversation_id, subject])
+                .unwrap();
+            message
+                .execute(params![
+                    account,
+                    message_id,
+                    conversation_id,
+                    format!("bench-remote-{index:06}"),
+                    name,
+                    email,
+                    format!("you@{account}.example"),
+                    subject,
+                    body,
+                    sent_at,
+                    source
+                ])
+                .unwrap();
+            fts.execute(params![
+                tx.last_insert_rowid(),
+                format!("{name} {email}"),
+                subject,
+                body
+            ])
+            .unwrap();
+        }
+        drop(fts);
+        drop(message);
+        drop(conversation);
+        tx.commit().unwrap();
+    }
+    store
+        .db
+        .execute_batch("ANALYZE; PRAGMA wal_checkpoint(TRUNCATE);")
+        .unwrap();
+
+    let mut store = store;
+    let mut pages = Vec::new();
+    let mut readers = Vec::new();
+    let mut changes = Vec::new();
+    let mut first = String::new();
+    for index in 0..50 {
+        let started = Instant::now();
+        let page = store
+            .handle(
+                "conversations",
+                Some("windscribe"),
+                json!({"folder":"inbox","grouped":true,"limit":100,"offset":index*100}),
+            )
+            .unwrap();
+        pages.push(started.elapsed());
+        assert_eq!(page["conversations"].as_array().unwrap().len(), 100);
+        let id = page["conversations"][0]["id"].as_str().unwrap();
+        if index == 0 {
+            first = id.into();
+        }
+        let started = Instant::now();
+        let read = store
+            .handle("conversation", Some("windscribe"), json!({"id":id}))
+            .unwrap();
+        readers.push(started.elapsed());
+        let started = Instant::now();
+        store.handle("flag",Some("windscribe"),json!({"id":id,"request_id":format!("browse-{index}"),"expected_revision":read["revision"],"message_ids":read["message_ids"],"read":true})).unwrap();
+        store.handle("accounts", None, json!({})).unwrap();
+        store
+            .handle(
+                "conversations",
+                Some("windscribe"),
+                json!({"folder":"inbox","grouped":true,"limit":100}),
+            )
+            .unwrap();
+        changes.push(started.elapsed());
+    }
+    let report = json!({"generated_messages":20000,"observations":50,"profile":"fresh generated, warm OS cache, same build mode",
+        "page_p95_ms":percentile(&mut pages,0.95),"reader_p95_ms":percentile(&mut readers,0.95),"review_refresh_p95_ms":percentile(&mut changes,0.95),"first_id":first});
+    println!("{report}");
+    if let Some(path) = std::env::var_os("FM_BROWSE_REPORT") {
+        std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();
+    }
+}

@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import sqlite3
 import subprocess
 import tempfile
@@ -83,6 +84,11 @@ def verify_navigation(profile, data):
                 require(message in sample["visible_member_ids"], "The measured body is not a visible member")
                 require(hashlib.sha256(members[message].encode("utf-8")).hexdigest() == sample["body_sha256"],
                         "Painted message body differs from retained source text")
+                if sample.get("body_oracle") == "rich_document_unquoted_text":
+                    expected_text = "\n".join(line for line in members[message].replace("\r\n", "\n").replace("\r", "\n").split("\n")
+                                              if not line.lstrip().startswith(">"))
+                    require(re.sub(r"\s", "", sample["rendered_body_text"]) == re.sub(r"\s", "", expected_text),
+                            "Actual rich-text document differs from independently retained message text")
                 checked += 1
     return {"samples_checked": checked, "account_rows_members_and_body_hashes": "passed"}
 

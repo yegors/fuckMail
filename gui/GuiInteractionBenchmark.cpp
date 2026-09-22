@@ -9,6 +9,9 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPointer>
+#include <QQuickTextDocument>
+#include <QRegularExpression>
+#include <QTextDocument>
 #include <QSaveFile>
 #include <QSGRendererInterface>
 #include <QSysInfo>
@@ -56,12 +59,14 @@ QList<QQuickItem *> visibleItems(QQuickWindow *window, const QString &prefix) {
     });
     return visible;
 }
-QQuickItem *bodyItem(QQuickItem *parent, const QString &text, QQuickWindow *window) {
-    if (!parent->isVisible()) return nullptr;
-    if (parent->property("readOnly").toBool() && parent->property("text").toString() == text
-        && visibleRect(parent, window).width() > 16 && visibleRect(parent, window).height() > 8) return parent;
-    for (auto child : parent->childItems()) if (auto found = bodyItem(child, text, window)) return found;
-    return nullptr;
+QString unquotedText(QString text) {
+    text.replace("\r\n", "\n"); text.replace('\r', '\n');
+    QStringList kept;
+    for (const auto &line : text.split('\n')) if (!line.trimmed().startsWith('>')) kept.append(line);
+    return kept.join('\n');
+}
+QString contentCharacters(QString text) {
+    return text.remove(QRegularExpression("\\s", QRegularExpression::UseUnicodePropertiesOption));
 }
 QJsonArray rowIds(const QVariantList &rows) {
     QJsonArray ids;
@@ -130,6 +135,7 @@ void GuiInteractionBenchmark::stopForShutdown() {
     m_phase = Phase::Finished; m_startTimer.stop(); m_inspectTimer.stop(); m_watchdog.stop(); m_paint->arm(0);
 }
 void GuiInteractionBenchmark::startWhenReady() {
+    if (findItem(m_window->contentItem(), "startupOverlay")) return;
     if (m_phase != Phase::Starting || !m_window->isActive() || !m_window->isExposed() || !m_backend.connected()
         || m_backend.loading() || m_backend.conversations().isEmpty() || m_backend.conversation().isEmpty() || m_backend.draft().isEmpty()) return;
     if (m_window->property("workspace").toString() != "mail" || m_window->property("settingsOpen").toBool()
@@ -296,9 +302,25 @@ bool GuiInteractionBenchmark::visibleSnapshot(QJsonObject &snapshot) const {
     if (visibleRows.isEmpty()) return false;
     const auto members = m_backend.conversation()["messages"].toList();
     const auto latest = members.last().toMap(); const auto mid = latest["id"].toString();
+    // Inspect every unquoted body document. Fixture quotations use '>' lines;
+    // original source hashes are checked separately by the SQLite verifier.
+    const auto sections = latest.value("reader_sections").toList();
     auto member = findItem(m_window->contentItem(), "messageMember_" + mid);
-    auto body = member ? bodyItem(member, latest["text"].toString(), m_window) : nullptr;
-    if (!body || visibleRect(member, m_window).isEmpty()) return false;
+    if (!member || visibleRect(member, m_window).isEmpty()) return false;
+    QQuickItem *body = nullptr; QStringList bodyParts;
+    for (qsizetype index = 0; index < sections.size(); ++index) {
+        const auto section = sections[index].toMap();
+        if (section.value("quote").toBool() || !section.value("parents").toList().isEmpty()) continue;
+        const auto name = index == 0 ? "messageBody_" + mid : "messageBodyPart_" + mid + "_" + QString::number(index);
+        auto part = findItem(member, name);
+        if (!part) return false;
+        const auto document = qvariant_cast<QQuickTextDocument *>(part->property("textDocument"));
+        if (!document || !document->textDocument()) return false;
+        bodyParts.append(document->textDocument()->toPlainText());
+        if (!body && visibleRect(part, m_window).width() > 16 && visibleRect(part, m_window).height() > 8) body = part;
+    }
+    const auto text = bodyParts.join('\n');
+    if (!body || contentCharacters(text) != contentCharacters(unquotedText(latest["text"].toString()))) return false;
     QJsonArray memberIds, visibleMembers;
     for (const auto &value : members) memberIds.append(value.toMap()["id"].toString());
     for (auto item : visibleItems(m_window, "messageMember_")) {
@@ -306,10 +328,10 @@ bool GuiInteractionBenchmark::visibleSnapshot(QJsonObject &snapshot) const {
         if (!memberIds.contains(id) || visibleMembers.contains(id)) return false;
         visibleMembers.append(id);
     }
-    const auto text = body->property("text").toString();
     snapshot = {{"account", m_backend.account()}, {"selected_id", m_backend.selectedId()}, {"row_ids", ids}, {"visible_row_ids", visibleRows},
         {"member_ids", memberIds}, {"visible_member_ids", visibleMembers}, {"message_id", mid},
-        {"body_sha256", QString::fromLatin1(QCryptographicHash::hash(text.toUtf8(), QCryptographicHash::Sha256).toHex())},
+        {"body_sha256", QString::fromLatin1(QCryptographicHash::hash(latest["text"].toString().toUtf8(), QCryptographicHash::Sha256).toHex())},
+        {"rendered_body_text", text}, {"body_oracle", "rich_document_unquoted_text"},
         {"body_length", text.size()}, {"qml_visible_row_count", visibleRows.size()}, {"qml_visible_member_count", visibleMembers.size()},
         {"qml_body_type", body->metaObject()->className()}, {"qml_member_object", member->objectName()}};
     return true;
@@ -482,7 +504,7 @@ void GuiInteractionBenchmark::finish(const QString &error) {
         {"boundary", "Native QQuickWindow mouse/key event to the first frame carrying the matching account, conversation model, actual visible row delegates and latest-message body. Generation captured afterSynchronizing, carried through afterRendering and directly timestamped frameSwapped."},
         {"sample_policy", "One unmeasured warmup per route; 100 measured inputs per route; next input 25 ms after the prior correct paint. Normal polling, read-on-open and serial backend queues remain enabled. No pending-queue drain."},
         {"diagnostic_policy", "At most 64 arm events and 64 delivered frame events per input, with separate dropped counts. Arm events retain changed snapshot field names and actual generations; frame events retain acceptance/rejection reason and sync/render/swap/GUI-callback timestamps as offsets from input. Render-thread timestamps use fixed-size copies and constant-time clock reads. Diagnostics do not change any snapshot field, acceptance rule, timer or latency budget; their instrumentation overhead remains in measured runs."},
-        {"identity_oracle", "Every sampled model row, visible delegate, selected conversation and latest body hash is recorded for independent SQLite account/source verification."},
+        {"identity_oracle", "Every sampled model row, visible delegate, selected conversation and latest source-text hash is recorded for independent SQLite verification. Actual QQuickTextDocument content across all unquoted body sections must equal the retained fixture text with > quotation lines omitted and Unicode whitespace normalized. Source bytes are unchanged; arbitrary received-HTML quotation parsing is outside this generated workload."},
         {"accounts", QJsonArray::fromStringList(m_accounts)}, {"host", QSysInfo::prettyProductName()}, {"architecture", QSysInfo::currentCpuArchitecture()},
         {"large_mailbox_account", m_routeCount == 5 ? m_largeMailbox : QString{}}, {"large_mailbox_conversation_count", m_routeCount == 5 ? m_largeMailboxCount : 0},
         {"qt_version", QT_VERSION_STR}, {"renderer_api", int(m_window->rendererInterface()->graphicsApi())},

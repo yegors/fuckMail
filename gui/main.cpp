@@ -1,4 +1,5 @@
 #include "MailBackend.h"
+#include "DebugConsole.h"
 #include "NotificationPresenter.h"
 #include "GuiSelfTest.h"
 #include "GuiCalendarSelfTest.h"
@@ -37,6 +38,8 @@ int main(int argc, char **argv) {
         qputenv("QT_D3D_NO_VBLANK_THREAD", "1");
 #endif
     QApplication app(argc, argv);
+    DebugConsole debugConsole;
+    debugConsole.captureQtMessages();
     app.setApplicationName("fuckMail");
     app.setOrganizationName("fuckMail");
     app.setApplicationVersion("0.1.0");
@@ -165,6 +168,8 @@ int main(int argc, char **argv) {
     const bool requireLive = parser.isSet("live-profile") || parser.isSet("self-test-live-empty")
         || snapshotTest || actionsTest || calendarTest || lifecycleTest || (!selectedProfile && !demoProfile);
     MailBackend backend(profile, program, nullptr, parser.isSet("fixture-clock") || parser.isSet("self-test"), requireLive);
+    debugConsole.attach(&backend);
+    debugConsole.identifyRuntime(program);
     backend.setProperty("demoProfileRequested", demoProfile && !requireLive);
     NotificationPresenter notifications(&backend);
     if (parser.isSet("self-test")) {
@@ -186,6 +191,7 @@ int main(int argc, char **argv) {
     std::unique_ptr<GuiResizeBenchmark> resizeBenchmark;
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("backend", &backend);
+    engine.rootContext()->setContextProperty("debugDiagnostics", &debugConsole);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
     QObject::connect(&backend, &MailBackend::shutdownReady, &app, &QCoreApplication::quit);
     QTimer emptyLiveCheck;
@@ -227,6 +233,9 @@ int main(int argc, char **argv) {
     QObject::connect(&captureTimer, &QTimer::timeout, &app, [&] {
         if (!backend.connected() || backend.loading() || backend.draft().isEmpty()
             || !backend.property("calendarReady").toBool() || !backend.property("timelineReady").toBool()) { settledTicks = 0; return; }
+        const auto captureRoot = engine.rootObjects().value(0);
+        const auto splash = captureRoot ? captureRoot->findChild<QQuickItem *>("startupOverlay") : nullptr;
+        if (splash && splash->isVisible()) { settledTicks = 0; return; }
         if (parser.isSet("screenshot-reply") && !screenshotReplyOpened) {
             auto root = engine.rootObjects().value(0);
             auto mail = root ? root->findChild<QObject *>("mailWorkspace") : nullptr;

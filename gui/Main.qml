@@ -23,7 +23,7 @@ ApplicationWindow {
     property bool allowClose: false
     property var mailFocus: null
     property var calendarFocus: null
-    readonly property bool workspaceShortcutsAllowed: !startupOverlay.visible && !accountLifecycleDialogs.popupOpen && !blocksWorkspaceShortcuts(activeFocusItem)
+    readonly property bool workspaceShortcutsAllowed: !debugConsole.opened && !startupOverlay.visible && !accountLifecycleDialogs.popupOpen && !blocksWorkspaceShortcuts(activeFocusItem)
     readonly property bool singleKeysAllowed: workspaceShortcutsAllowed && !typingInField(activeFocusItem)
     readonly property bool accountKeysAllowed: singleKeysAllowed && !settingsOpen && !searchPopupOpen
         && !(workspace === "mail" ? mailView.popupOpen : calendarView.popupOpen)
@@ -135,10 +135,16 @@ ApplicationWindow {
     Shortcut { sequence: "Ctrl+1"; enabled: window.workspaceShortcutsAllowed; onActivated: window.navigate("mail") }
     Shortcut { sequence: "Ctrl+2"; enabled: window.workspaceShortcutsAllowed; onActivated: window.navigate("calendar") }
     Shortcut { sequence: "Ctrl+,"; enabled: window.workspaceShortcutsAllowed; onActivated: window.navigate("settings") }
-    Shortcut { sequence: "Escape"; enabled: window.settingsOpen; onActivated: window.navigate(window.workspace) }
+    Shortcut { sequence: "Escape"; enabled: window.settingsOpen && !debugConsole.opened; onActivated: window.navigate(window.workspace) }
     Shortcut { sequence: "Escape"; enabled: searchPopupOpen; onActivated: { searchPopup.close(); calendarSearchPopup.close() } }
     Shortcut { sequence: "Tab"; enabled: window.accountKeysAllowed; onActivated: window.cycleAccount(1) }
     Shortcut { sequence: "Shift+Tab"; enabled: window.accountKeysAllowed; onActivated: window.cycleAccount(-1) }
+    DebugConsole {
+        id: debugConsole
+        hostWindow: window
+        diagnostics: typeof debugDiagnostics !== "undefined" ? debugDiagnostics : null
+        searchActive: window.searchPopupOpen
+    }
     SearchPopup {
         id: searchPopup
         parent: Overlay.overlay
@@ -202,7 +208,6 @@ ApplicationWindow {
                     Layout.minimumWidth: 140; Layout.preferredHeight: 32
                     contentWidth: accountsRow.width; contentHeight: height; clip: true
                     boundsBehavior: Flickable.StopAtBounds; flickableDirection: Flickable.HorizontalFlick
-                    ScrollBar.horizontal: ScrollBar { policy: accountTabs.contentWidth > accountTabs.width ? ScrollBar.AsNeeded : ScrollBar.AlwaysOff; height: 3 }
                     Row {
                         id: accountsRow; anchors.verticalCenter: parent.verticalCenter; spacing: 2
                         Repeater {
@@ -213,9 +218,34 @@ ApplicationWindow {
                                 readonly property var modelData: rowData
                                 id: accountTab
                                 objectName: "accountTab_" + modelData.id
+                                readonly property var syncState: { const states = backend.googleSync; return backend.googleSyncState(modelData.id) }
+                                readonly property var syncProgress: syncState.progress || ({})
+                                readonly property bool syncBlocked: syncState.credential_access_required === true || syncProgress.mail === "paused"
+                                readonly property bool syncing: !syncBlocked && (syncState.changing === true || syncState.refresh_requested === true || (syncState.active === true && (syncProgress.mail === "starting" || syncProgress.mail === "running")))
+                                readonly property string syncDetail: syncBlocked ? "Sync paused" : syncing ? ((modelData.coverage || {}).inventory_complete ? "Checking for new mail" : "Syncing · " + Number((modelData.coverage || {}).indexed_messages || 0).toLocaleString(Qt.locale(), 'f', 0) + " messages cached") : ""
+                                Accessible.description: syncDetail
+                                Rectangle {
+                                    objectName: "mailboxSync_" + accountTab.modelData.id
+                                    anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
+                                    anchors.leftMargin: 10; anchors.rightMargin: 10
+                                    height: 2; radius: 1; clip: true
+                                    visible: accountTab.syncing || accountTab.syncBlocked
+                                    color: accountTab.syncBlocked ? Theme.error : Theme.line
+                                    Rectangle {
+                                        width: parent.width * 0.3; height: 2; radius: 1; color: Theme.accent
+                                        visible: accountTab.syncing
+                                        SequentialAnimation on x {
+                                            running: accountTab.syncing && accountTab.visible; loops: Animation.Infinite
+                                            NumberAnimation { from: -accountTab.width * 0.3; to: accountTab.width; duration: 1400; easing.type: Easing.InOutSine }
+                                        }
+                                    }
+                                }
                                 property int reviewCount: modelData.unread_conversation_count || 0
+                                readonly property string badgeText: syncBlocked ? "Paused" : syncing && !(modelData.coverage || {}).inventory_complete
+                                    ? Number((modelData.coverage || {}).indexed_messages || 0).toLocaleString(Qt.locale(), 'f', 0) + " cached"
+                                    : reviewCount > 0 ? String(reviewCount) : ""
                                 readonly property real naturalWidth: 20 + 14 + 8 + accountName.implicitWidth
-                                    + (reviewCount > 0 ? accountCount.implicitWidth + 8 : 0)
+                                    + (badgeText.length ? accountCount.implicitWidth + 8 : 0)
                                 text: modelData.name
                                 height: 28; implicitWidth: Math.min(naturalWidth, Math.max(140, window.width - 820))
                                 leftPadding: 10; rightPadding: 10
@@ -224,14 +254,14 @@ ApplicationWindow {
                                 onWidthChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
                                 onXChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
                                 onSelectedChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
-                                tip: modelData.name + " · " + modelData.email + " · " + reviewCount + " to review, " + (modelData.held_conversation_count || 0) + " delayed"
+                                tip: modelData.name + " · " + modelData.email + " · " + reviewCount + " to review, " + (modelData.held_conversation_count || 0) + " delayed" + (syncDetail ? "\n" + syncDetail : "")
                                 onClicked: { backend.selectAccount(modelData.id); if (window.settingsOpen) window.navigate("mail") }
                                 contentItem: Row {
                                     id: accountContent
                                     spacing: 8
                                     FmIcon { anchors.verticalCenter: parent.verticalCenter; name: Theme.accountIcon(accountTab.modelData.id); size: 14; color: accountTab.selected ? Theme.secondary : Theme.subtle }
-                                    Text { id: accountName; anchors.verticalCenter: parent.verticalCenter; text: accountTab.text; width: Math.max(0, accountTab.availableWidth - 14 - 8 - (accountTab.reviewCount > 0 ? accountCount.implicitWidth + 8 : 0)); elide: Text.ElideRight; color: accountTab.selected ? Theme.text : Theme.muted; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(13); weight: accountTab.selected ? Font.Medium : Font.Normal } }
-                                    Text { id: accountCount; anchors.verticalCenter: parent.verticalCenter; visible: accountTab.reviewCount > 0; text: accountTab.reviewCount; color: accountTab.selected ? Theme.text : Theme.muted; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12); weight: Font.Medium } }
+                                    Text { id: accountName; anchors.verticalCenter: parent.verticalCenter; text: accountTab.text; width: Math.max(0, accountTab.availableWidth - 14 - 8 - (accountTab.badgeText.length ? accountCount.implicitWidth + 8 : 0)); elide: Text.ElideRight; color: accountTab.selected ? Theme.text : Theme.muted; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(13); weight: accountTab.selected ? Font.Medium : Font.Normal } }
+                                    Text { id: accountCount; anchors.verticalCenter: parent.verticalCenter; visible: accountTab.badgeText.length > 0; text: accountTab.badgeText; color: accountTab.syncBlocked ? Theme.error : accountTab.selected ? Theme.text : Theme.muted; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12); weight: Font.Medium } }
                                 }
                             }
                         }

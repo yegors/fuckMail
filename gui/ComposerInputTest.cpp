@@ -112,7 +112,7 @@ static void run() {
     backend.m_allAccounts.append(QVariantMap{{"id","other"},{"name","Personal"},{"email","personal@example.test"},{"lifecycle",QVariantMap{{"state","active"},{"revision",1}}}});
     require(backend.publishAccounts(backend.m_allAccounts),"multiple From choices");
     QTemporaryDir copy; const auto modulePath=copy.filePath("ComposerTest"); require(QDir().mkpath(modulePath),"QML module");
-    for (const auto name : {"Theme.qml","FmDialog.qml","FmConfirmDialog.qml","FmButton.qml","FmToolTip.qml","FmIcon.qml","RecipientField.qml","ReplyComposer.qml"})
+    for (const auto name : {"FmScrollBar.qml","Theme.qml","FmDialog.qml","FmConfirmDialog.qml","FmButton.qml","FmToolTip.qml","FmIcon.qml","RecipientField.qml","ReplyComposer.qml"})
         require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR)+'/'+name,modulePath+'/'+name),"production QML copy");
     QFile module(modulePath+"/qmldir"); require(module.open(QIODevice::WriteOnly),"module registration");
     module.write("module ComposerTest\nsingleton Theme 1.0 Theme.qml\nReplyComposer 1.0 ReplyComposer.qml\nRecipientField 1.0 RecipientField.qml\n"); module.close();
@@ -132,6 +132,13 @@ ApplicationWindow { width: 780; height: 900; visible: true; color: Theme.bg
     await([&]{return window->isExposed();},"composer window exposed before keyboard input");
     window->requestActivate();
     await([&]{return window->isActive();},"composer window active before keyboard input");
+    auto bodyScroll=find(window->contentItem(),"replyBodyScroll");
+    auto bodyBar=bodyScroll ? find(bodyScroll,"persistentScrollBar") : nullptr;
+    require(bodyBar && bodyBar->isVisible() && bodyBar->width() >= 14,"composer has a persistent scrollbar");
+    const auto barEdge=bodyBar->mapToScene(QPointF(bodyBar->width(),0));
+    const auto scrollEdge=bodyScroll->mapToScene(QPointF(bodyScroll->width(),0));
+    require(qAbs(barEdge.x()-scrollEdge.x())<1 && qAbs(bodyBar->height()-bodyScroll->height())<1,
+        "composer scrollbar fills the right edge instead of covering the editor's first column");
     auto from=find(window->contentItem(),"draftFromAccount"); require(from && from->isEnabled(),"From account selector enabled");
     require(QMetaObject::invokeMethod(from,"clicked"),"open real From menu");
     await([&]{return find(window->contentItem(),"composer")->property("popupOpen").toBool();},"From menu blocks workspace shortcuts");

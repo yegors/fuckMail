@@ -1,5 +1,27 @@
 # Quality, performance and release acceptance
 
+## D084 — reader crash and presentation (Quality61)
+
+Use the actual local crash stack to identify the native fault without exporting mailbox memory. Reproduce the error-response path in a synthetic Debug native test, then verify the fix, delayed-source final presentation, repeated navigation and stale-result rejection. Prefetch must not submit read flags. Check that cached HTML/metadata/summaries survive read receipts without reader reconstruction, mailbox tabs have no horizontal track and content scrollbar behavior remains intact. Record exact binaries, failures and source/host limits; query timings alone do not establish perceived reader speed.
+
+## D083 — Calendar mail-count verification (Quality60)
+
+Verify combined/scoped message counts, zero dates, exclusive bounds, midnight and both DST transitions, provider-date precedence, removed-account exclusion and no store writes. Native checks must fence held replies across date/account/hide changes, suppress unchanged revisions, validate returned rows and exercise the real day/week/month QML in all themes. Run the shared query through the built CLI/engine and visually inspect integrated Calendar captures. Preserve exact source/binary identities and failed attempts in ignored storage. Consumers: Core46/Calendar26/Mail UI59/CLI40; no schema/fixture migration, provider action, broad performance, package or other-host acceptance follows.
+
+## D082 — debug-console verification (Quality59)
+
+Use native production-QML input to verify backtick/shifted tilde, editable/search exclusion, Escape/focus restoration, paused-view capture, full clipboard reports and theme layout. Exercise synthetic rate-limit codes/delays, changed sync counters, model-job errors, repeated-state suppression, explicit metadata projections/redaction, threaded Qt capture, 1,000-entry/2,048-character limits and clear. Compile the integrated GUI and check startup with a disposable profile and an identified existing engine; preserve failed attempts and source/binary identities in ignored storage. No real mailbox actions, broad benchmark, package or other-host acceptance follows. Consumers: Mail UI58/native diagnostics; schema29/fixtures0/3/protocol1 unchanged.
+
+## D081 — mail responsiveness
+
+Quality58 requires native signature focus/selection preservation during account count refresh; immediate navigation while another read receipt is pending; correct ordered live pages during insert/delete/flag changes; automatic prefetch and explicit error retry; persistent wider scrollbar controls; and measured synthetic thread/list paint latency. Preserve baseline and failed runs. The scoped performance request supersedes previous deferrals for these paths only.
+
+The [D081 execution record](../research/prototype-september-15.md#d081--mail-responsiveness-and-scrolling-2026-09-22) records six passing final native suites, focused Core paging/lint, improved 20,000-message query timings, inspected scrollbar geometry and a configured relocated Windows candidate. Three full-Core failures reproduce on untouched HEAD. The older paint oracle cannot handle the current segmented reader; rendered latency remains an open gate, with failed attempts retained. Query timings are not a substitute for that gate.
+
+## D080 — local summary reliability (Quality57)
+
+Use synthetic mail only to compare the installed Gemma4, Qwen variants and Muse Glimmer with identities, cold/model-switch and repeated warm timings retained. Exercise the real engine and shared validator; report completion, sender-kind/label quality and factual misses separately. Preserve failed baselines. Verify old saved templates inherit direct answers, explicit overrides survive, whitespace and multilingual punctuation do not cause false rejection, and malformed output, invented/duplicate source IDs, invented labels, tools, stale results and cancellation retain their guards. Verify at most one correction, no intermediate commit, and the shared time/request bounds. Run native assistance controls and a configured relocated package. This scoped inference measurement does not reopen unrelated broad performance work or establish arbitrary-mail accuracy. Local assistance15, schema29, fixtures0/3 and protocol1; readiness remains 0/9.
+
 ## D079 — final interaction review (Quality56)
 
 Verify exact tile geometry across Saving, Saved and long failure states in production QML. Verify generated EXIF portrait dimensions and refusal to preview arbitrary non-image bytes; retain multi-chunk save/atomic failure/navigation checks. Assert one plain production Sending status, keep dispatch/progress and newer-edit protections, and rerun cached-summary/observed-job motion checks. Inspect native cards/viewer captures, then verify a configured relocated empty-profile Windows package. This is focused interaction validation, not a whole-app latency or real-provider acceptance claim.
@@ -81,7 +103,7 @@ D054 requires one native vault attempt across concurrent denied workers, explici
 
 Updated 2026-09-14. Budgets below are acceptance targets; scoped measurements are linked separately. Google-first required behavior includes fast sender/subject/body search, responsive user-owned daily triage, conversation-only mail, full offline messages/attachments, reliable Google calendar views and optional local classification/summaries on Windows/macOS/Linux. The Windows development host is recorded; real mailbox message counts and local models remain unmeasured.
 
-State: Draft · Revision: 49 · Updated: 2026-09-16 · Implementation: D072 account/model feedback at schema29. Scoped evidence is recorded in the prototype execution report; whole-area readiness remains 0/9.
+State: Draft · Revision: 60 · Updated: 2026-09-22 · Implementation: D082 debug console and D083 Calendar mail counts at schema29. Scoped evidence is recorded in the Phase 2 execution report; whole-area readiness remains 0/9.
 
 D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages}}`, `{{partial}}`), combined per-message output, default-on prospective summaries/automatic single-label classification, manual precedence, and summary list previews. Schema 22 fences settings and assisted delivery; fixtures 0/3/protocol 1 unchanged. This supersedes conflicting D051–D053 delivery defaults below; historical evidence remains scoped to its original version. See the D055 decision and Local assistance 8. Windows verification passes 9 validator, 3 Core and 14 Google-mutation tests, scoped strict lint, 14 engine/CLI checks, two scoped native tests, eight installed-model cases, actual schema upgrade/refusal and relocated package checks. See [D055 evidence and limits](../research/local-assistance-execution.md#d055-unified-message-analysis-2026-09-15); this is not full product or other-host acceptance.
 

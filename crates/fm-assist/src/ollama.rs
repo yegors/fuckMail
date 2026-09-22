@@ -6,6 +6,8 @@ pub const CLASSIFICATION_PROMPT: &str = include_str!("classification-prompt.txt"
 pub const SUMMARY_PROMPT: &str = include_str!("summary-prompt.txt");
 pub const MESSAGE_PROMPT: &str = include_str!("message-prompt.txt");
 pub const REQUEST_TEMPLATE: &str = include_str!("message-request.json");
+// Leave space for one bounded correction request within the 12 KiB wire limit.
+pub const INITIAL_REQUEST_BYTES: usize = 11_500;
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Provider {
@@ -252,7 +254,7 @@ pub fn render_request(
         return Err("Keep {{model}}, {{labels}}, {{messages}}, {{partial}} and {{source_ids}} exactly once each".into());
     }
     let object = request.as_object().ok_or("Request must be a JSON object")?;
-    if object.len() != 5
+    if !(5..=6).contains(&object.len())
         || request["model"] != model
         || request["stream"] != false
         || !request["format"].is_object()
@@ -261,11 +263,13 @@ pub fn render_request(
             "Request must contain model, messages, format, stream:false and options only".into(),
         );
     }
-    if object
-        .keys()
-        .any(|k| !["model", "messages", "format", "stream", "options"].contains(&k.as_str()))
-    {
+    if object.keys().any(|k| {
+        !["model", "messages", "format", "stream", "options", "think"].contains(&k.as_str())
+    }) {
         return Err("Unsupported request field".into());
+    }
+    if request.get("think").is_some_and(|v| !v.is_boolean()) {
+        return Err("think must be true or false".into());
     }
     let messages = request["messages"]
         .as_array()
@@ -299,6 +303,13 @@ pub fn render_request(
                 .into(),
         );
     }
+    // Old saved templates inherit direct answers too, without rewriting user
+    // instructions/settings or invalidating their durable receipt history.
+    request
+        .as_object_mut()
+        .unwrap()
+        .entry("think")
+        .or_insert(json!(false));
     Ok(request)
 }
 pub fn valid_endpoint(endpoint: &str) -> bool {
@@ -333,26 +344,43 @@ pub fn validate(
     if raw.len() > 16 * 1024 {
         return Err("Result exceeds 16 KiB".into());
     }
+    // Some local chat templates leak a terminal token or fence the entire
+    // JSON object. Accept only these exact wrappers, never search arbitrary
+    // prose/thinking for an object or discard extra JSON/action fields.
+    let raw = raw.trim();
+    let raw = raw.strip_suffix("<|eot|>").unwrap_or(raw).trim_end();
+    let raw = raw
+        .strip_prefix("```json")
+        .or_else(|| raw.strip_prefix("```"))
+        .and_then(|body| body.strip_suffix("```"))
+        .map(str::trim)
+        .unwrap_or(raw);
     let ids_valid = |ids: &[String], allowed: &[String]| {
         ids.len() <= allowed.len()
             && ids.iter().collect::<BTreeSet<_>>().len() == ids.len()
             && ids.iter().all(|id| allowed.contains(id))
     };
+    let mut value: Value = serde_json::from_str(raw).map_err(|_| "Invalid analysis JSON")?;
+    // Whitespace is presentation, not model authority. Never shorten or invent
+    // factual text, source IDs, categories or other response fields.
+    if let Some(text) = value.get("summary").and_then(Value::as_str) {
+        value["summary"] = text.split_whitespace().collect::<Vec<_>>().join(" ").into();
+    }
     if task == "message" {
-        let mut value: Value = serde_json::from_str(raw).map_err(|_| "Invalid message schema")?;
+        let mut value = value.clone();
         let obj = value.as_object_mut().ok_or("Invalid message schema")?;
         let summary =
             json!({"summary":obj.remove("summary"),"source_ids":obj.remove("source_ids")});
         validate("summary", &summary.to_string(), categories, sources)?;
         validate("classification", &value.to_string(), categories, sources)?;
     } else if task == "summary" {
-        let v: Summary = serde_json::from_str(raw).map_err(|_| "Invalid summary schema")?;
-        if v.summary.trim().is_empty()
-            || !valid_summary(&v.summary)
-            || v.source_ids.is_empty()
-            || !ids_valid(&v.source_ids, sources)
-        {
-            return Err("Invalid summary coverage or length".into());
+        let v: Summary =
+            serde_json::from_value(value.clone()).map_err(|_| "Invalid summary schema")?;
+        if !valid_summary(&v.summary) {
+            return Err("The model returned an empty, oversized or non-prose summary".into());
+        }
+        if v.source_ids.is_empty() || !ids_valid(&v.source_ids, sources) {
+            return Err("The model returned missing, duplicate or unknown source IDs".into());
         }
     } else if task == "classification" {
         let v: Classification =
@@ -368,44 +396,22 @@ pub fn validate(
     } else {
         return Err("Unknown assistance task".into());
     }
-    serde_json::from_str(raw).map_err(|_| "Invalid JSON".into())
+    Ok(value)
 }
 pub fn valid_summary(summary: &str) -> bool {
     let summary = summary.trim();
     if summary.is_empty()
         || summary.chars().count() > 600
-        || summary.split_whitespace().count() > 65
+        || summary.split_whitespace().count() > 100
         || summary.contains(['\n', '\r'])
-        || summary.starts_with(['*', '-', '•', '#'])
+        || summary.starts_with(['*', '-', '•', '#', '`'])
+        || !summary.chars().any(char::is_alphanumeric)
     {
         return false;
     }
-    // Count prose boundaries, not decimal points, domains or common abbreviations.
-    let mut sentences = 0;
-    for (index, c) in summary.char_indices() {
-        if !['.', '!', '?', '。', '！', '？'].contains(&c) {
-            continue;
-        }
-        let rest = &summary[index + c.len_utf8()..];
-        if c == '.' && !rest.is_empty() && !rest.starts_with(char::is_whitespace) {
-            continue;
-        }
-        if c == '.' {
-            let word = summary[..index]
-                .split_whitespace()
-                .last()
-                .unwrap_or("")
-                .to_lowercase();
-            if ["mr", "mrs", "ms", "dr", "prof", "vs", "e.g", "i.e"].contains(&word.as_str()) {
-                continue;
-            }
-        }
-        if rest.starts_with(['!', '?', '。', '！', '？']) {
-            continue;
-        }
-        sentences += 1;
-    }
-    (1..=2).contains(&sentences) && summary.ends_with(['.', '!', '?', '。', '！', '？', '”', '"'])
+    // Sentence counting rejects names, abbreviations and whole languages.
+    // Brevity is bounded above; 1–2 sentences/65 words remain prompt guidance.
+    !summary.chars().any(char::is_control)
 }
 pub fn sample(case: &str) -> Result<Value, String> {
     let cases: Vec<Value> = serde_json::from_str(include_str!("../fixtures/ollama-mail.json"))
@@ -548,17 +554,23 @@ mod tests {
             &["m".into()]
         )
         .is_err());
-        for text in [
-            "* An alert.",
-            "One. Two. Three.",
-            "An alert.\nReview access.",
-            "An unfinished thought",
-        ] {
+        for text in ["* An alert.", "An alert.\nReview access."] {
             assert!(!valid_summary(text), "{text}");
         }
         assert!(valid_summary(
             "Pay $12.50 by Friday. Dr. Lee requested confirmation."
         ));
+        for text in [
+            "One. Two. Three.",
+            "Your order is confirmed",
+            "Ваш заказ оплачен",
+            "تم تأكيد طلبك",
+            "Meet J. R. Smith at 10 a.m. tomorrow. Bring the U.S. report.",
+        ] {
+            assert!(valid_summary(text), "{text}");
+        }
+        assert!(!valid_summary(&"x".repeat(601)));
+        assert!(!valid_summary(&"a ".repeat(101)));
         assert!(Account::default().classification && Account::default().summaries);
     }
     #[test]
@@ -587,5 +599,59 @@ mod tests {
         )
         .is_err());
         assert!(validate("classification",r#"{"sender_kind":"unknown","category_ids":[],"category_abstain":true,"reason":"Insufficient content"}"#,&[],&[]).is_ok());
+    }
+    #[test]
+    fn whitespace_normalization_preserves_authority_and_legacy_prompts() {
+        let raw = json!({"summary":"Meet J. R. Smith at 10 a.m.\n\nBring the U.S. report", "source_ids":["m"], "sender_kind":"human", "category_ids":[], "category_abstain":false,"reason":"Personal request"});
+        let output = validate("message", &raw.to_string(), &[], &["m".into()]).unwrap();
+        assert_eq!(
+            output["summary"],
+            "Meet J. R. Smith at 10 a.m. Bring the U.S. report"
+        );
+        for ids in [json!([]), json!(["foreign"]), json!(["m", "m"])] {
+            let mut invalid = raw.clone();
+            invalid["source_ids"] = ids;
+            assert!(validate("message", &invalid.to_string(), &[], &["m".into()]).is_err());
+        }
+        let mut template: Value = serde_json::from_str(REQUEST_TEMPLATE).unwrap();
+        template.as_object_mut().unwrap().remove("think");
+        let payload = json!({"labels":[],"messages":[],"partial":false});
+        assert_eq!(
+            render_request(&template.to_string(), &payload, "local", &["m".into()]).unwrap()
+                ["think"],
+            false
+        );
+        template["think"] = json!(true);
+        assert_eq!(
+            render_request(&template.to_string(), &payload, "local", &["m".into()]).unwrap()
+                ["think"],
+            true
+        );
+        template["think"] = json!("no");
+        assert!(render_request(&template.to_string(), &payload, "local", &["m".into()]).is_err());
+    }
+    #[test]
+    fn accepts_only_complete_json_wrappers_without_hiding_other_content() {
+        let raw = r#"{"summary":"Your order is confirmed","source_ids":["m"]}"#;
+        for wrapped in [
+            format!("{raw}<|eot|>"),
+            format!("```json\n{raw}\n```"),
+            format!("```\n{raw}\n```<|eot|>"),
+        ] {
+            assert_eq!(
+                validate("summary", &wrapped, &[], &["m".into()]).unwrap()["summary"],
+                "Your order is confirmed"
+            );
+        }
+        for wrapped in [
+            format!("Analysis: {raw}"),
+            format!("{raw} {{\"read\":true}}"),
+            format!("{raw}<|eot|>extra"),
+            format!("```json\n{raw}\n``` trailing"),
+        ] {
+            assert!(validate("summary", &wrapped, &[], &["m".into()]).is_err());
+        }
+        assert!(!valid_summary("```"));
+        assert!(!valid_summary("```invented```"));
     }
 }

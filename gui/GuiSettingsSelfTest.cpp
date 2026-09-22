@@ -245,7 +245,7 @@ void GuiSettingsSelfTest::step() {
         if (m_backend.preferences()["selected_calendars"].isNull() || !m_backend.preferences()["selected_calendars"].toList().isEmpty()
             || !m_backend.events().isEmpty() || !m_backend.todayEvents().isEmpty()) { finish("Hide all did not produce a truthful empty calendar and timeline."); return; }
         ++m_stage;
-        cli({"preferences","show"}, [this](auto result) { const auto chosen=result["preferences"].toObject()["selected_calendars"]; if (!chosen.isArray() || !chosen.toArray().isEmpty()) finish("CLI did not observe explicit empty calendar selection."); });
+        cli({"preferences","show"}, [this](auto result) { const auto chosen=result["preferences"].toObject().value("selected_calendars"); if (!chosen.isArray() || !chosen.toArray().isEmpty()) finish("CLI did not observe explicit empty calendar selection."); });
         break;
     case 17:
         if (!click("calendarSelected_personal_primary")) return;

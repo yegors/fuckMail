@@ -1,5 +1,15 @@
 # Core and storage
 
+## D083 — daily cached mail counts (Core46)
+
+`calendar_mail_activity` reads the existing messages and Google coverage metadata for a half-open range of 1–42 civil days in the saved Calendar display zone. Omitted account means all active accounts (at most 100); explicit account must be active. Count messages, not conversations: the stored sent flag determines sent versus received. Prefer Google's stored internal arrival timestamp; fall back to the source message timestamp only when no provider timestamp exists. Count retained Inbox, archived and Trash messages; exclude removed accounts, provider-deleted messages, local/remote drafts and submissions not yet acquired as mail. Separate account copies count separately. Return every date including zero days, scope, zone, revision and `cached_only: true`; these are retained-cache totals, never a claim of complete historical coverage. No body/recipient/MIME reads, provider work, mutation or new schema. Consumers: Calendar26, Mail UI59, CLI40, Quality60; schema29/fixtures0,3/protocol1 unchanged.
+
+## D081 — mail responsiveness
+
+Core45 adds optional `live_paging` to conversation queries. Default cursors retain strict generation validation. Live cursors bind account/query/engine epoch and the last ordered identity, continuing across acquisition without restarting from page one. Results remain fresh, bounded and account-scoped; clients deduplicate moved identities. Folder counts and ordinary grouped browsing reuse the same invalidated conversation projection instead of scanning all message rows on every page.
+
+`status.mail_generation` identifies in-process mail projection changes separately from view/settings writes; clients reset comparisons on reconnect. Consumers: Core45/Mail UI57/Quality58; CLI39 retains default strict cursors. Schema29, fixtures0/3 and protocol1 are unchanged.
+
 ## D077 — accepted draft projections (Core44)
 
 Shared Drafts queries, search and account counts omit a draft when its persisted last accepted submission revision is at least its current revision. In-flight/unknown drafts remain present. A newer saved revision appears again. Keep authored content, submission receipts and history intact; this projection never discards a draft or grants resend authority. Reopening the store preserves the result. GUI composer cleanup also requires no newer unsaved text or recipient input.
@@ -53,7 +63,7 @@ D058 / P2-LLM2D limits all assistance to received mail. Reader queries expose th
 
 D056 / P2-LLM2B exposes the complete editable Ollama JSON request: system/user messages, all five variables, full response schema and generation options. No hidden envelope or schema is injected. Schema 23 archives and wraps prior prompt text, preserving model/account choices. Application output/action validation remains independent of editable instructions. Consumers: Local assistance 9/Core 32/Mail UI 34/CLI 26/Quality 34; fixtures 0/3/protocol 1 unchanged. See [the current request contract](local-ai.md) and D056 evidence.
 
-State: Draft · Revision: 42 · Updated: 2026-09-16 · Implementation: D072 account/model feedback at schema29. Scoped evidence is recorded in the prototype execution report; whole-area readiness remains 0/9.
+State: Draft · Revision: 46 · Updated: 2026-09-22 · Implementation: D083 daily cached mail counts at schema29. Scoped evidence is recorded in the Phase 2 execution report; whole-area readiness remains 0/9.
 
 D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages}}`, `{{partial}}`), combined per-message output, default-on prospective summaries/automatic single-label classification, manual precedence, and summary list previews. Schema 22 fences settings and assisted delivery; fixtures 0/3/protocol 1 unchanged. This supersedes conflicting D051–D053 delivery defaults below; historical evidence remains scoped to its original version. See the D055 decision and Local assistance 8.
 

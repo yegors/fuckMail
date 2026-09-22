@@ -164,6 +164,7 @@ Rectangle {
                 color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12)
             }
             ScrollView {
+                ScrollBar.vertical: FmScrollBar {}
                 id: snapshotHeaderScroll
                 visible: !backend.draft.transferred
                 Layout.fillWidth: true; Layout.preferredHeight: Math.min(200, snapshotHeaders.implicitHeight)
@@ -287,6 +288,7 @@ Rectangle {
         }
         Item { Layout.fillWidth: true; implicitHeight: 1; Rectangle { y: Theme.snapY(parent, 0); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
         ScrollView {
+                ScrollBar.vertical: FmScrollBar {}
             id: composerScroll
             objectName: "replyBodyScroll"
             Layout.fillWidth: true
@@ -590,6 +592,7 @@ Rectangle {
             }
             Text { Layout.fillWidth: true; text: "Export makes a verified local copy. No external content is fetched."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
             ScrollView {
+                ScrollBar.vertical: FmScrollBar {}
                 id: sourceScroll
                 Layout.fillWidth: true; Layout.fillHeight: true; clip: true
                 contentWidth: availableWidth; ScrollBar.horizontal.policy: ScrollBar.AlwaysOff

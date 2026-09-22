@@ -12,6 +12,7 @@ pub mod assist_store;
 #[cfg(test)]
 mod benchmark;
 mod calendar_editor_options;
+mod calendar_mail_activity;
 mod calendar_projection;
 mod calendar_reminders;
 mod calendar_search;
@@ -585,7 +586,7 @@ impl Store {
             // These describe callable local interfaces. Account grants and
             // connectivity independently gate provider delivery and writes.
             return Ok(
-                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"calendar_generation":self.mail_changes.calendar_generation(),"synthetic":synthetic,"profile_kind":if synthetic {"synthetic"} else {"live"},"fixture_today":if synthetic {Some(FIXTURE_TODAY)} else {None},"capabilities":{"mail":true,"drafts":true,"calendar_read":true,"phase1":synthetic,"typed_filters":true,"preferences":true,"capture_history":synthetic,"calendar_write_local":synthetic,"send":!synthetic,"models":true,"google_auth":!synthetic,"google_sync":!synthetic}}),
+                json!({"schema_version":SCHEMA_VERSION,"fixture_revision":self.fixture_revision()?,"revision":self.revision()?,"calendar_generation":self.mail_changes.calendar_generation(),"mail_generation":self.mail_generation(),"synthetic":synthetic,"profile_kind":if synthetic {"synthetic"} else {"live"},"fixture_today":if synthetic {Some(FIXTURE_TODAY)} else {None},"capabilities":{"mail":true,"drafts":true,"calendar_read":true,"phase1":synthetic,"typed_filters":true,"preferences":true,"capture_history":synthetic,"calendar_write_local":synthetic,"send":!synthetic,"models":true,"google_auth":!synthetic,"google_sync":!synthetic}}),
             );
         }
         match method {
@@ -600,6 +601,7 @@ impl Store {
             }
             "calendar_combined" => return self.calendar_combined(&params),
             "calendar_search" => return self.calendar_search(&params),
+            "calendar_mail_activity" => return self.calendar_mail_activity(account, &params),
             "calendar_reminders" => return self.calendar_reminders(&params),
             "calendar_reminder_ack" => return self.calendar_reminder_ack(account, &params),
             "mail_notifications" => return self.mail_notifications(&params),

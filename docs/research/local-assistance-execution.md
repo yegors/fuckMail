@@ -1,5 +1,41 @@
 # Local assistance execution
 
+## D080 — installed-model summary reliability (2026-09-22)
+
+The founder requested reliability and speed testing of the installed Gemma4, Qwen and Muse Glimmer models. This packet changes fm-assist request rendering/validation, the Core request budget and the Ollama engine adapter. It uses Local assistance15/Quality57, Core44/Gmail24/CLI39/Mail UI56/schema29; live/synthetic fixtures0/3 and protocol1 are unchanged. Parallel D081 UI/query work is excluded from the frozen package source.
+
+### Failures and repairs
+
+- Gemma's baseline consumed all 4,096 response tokens in thinking and returned no answer twice (25.11 and 24.63 seconds). Ollama now receives `think:false` by default, including older saved templates that omit the field. Explicit overrides and saved prompt/settings bytes survive. The parameter follows [Ollama's thinking API](https://ollama.com/blog/thinking).
+- Muse Glimmer appended `<|eot|>` to otherwise valid JSON. Accept that exact terminal wrapper and fences around complete JSON only. Arbitrary prose, extra objects/fields and thinking are still rejected, and the 16 KiB limit applies first.
+- A punctuation-based 1–2 sentence rule rejected normal abbreviations, unpunctuated languages and harmless line wrapping. Normalize whitespace; retain a 600-character/100-word hard bound and reject empty/code-block/punctuation-only summaries. The prompt still requests 1–2 sentences and 65 words. No factual content is truncated or invented.
+- Invalid output receives at most one fixed correction instruction, with the original model, sources, schema and options. Rejected output never enters the prompt or store. Reserve 500 bytes within the 12,000-byte wire budget; both attempts share one 120-second generation deadline. Cancellation, model identity, tools and source/category authority remain enforced. Transport/model/tool failures are not retried.
+
+### Installed model evidence
+
+Windows, Ollama **0.34.2**, five installed model identities recorded in ignored `build/verification/summary-reliability/models.json`. No downloads, global runner changes or real mailbox inference. Eight pre-existing authored synthetic cases cover personal mail, receipts, a human mailing-list post, an operational alert, missing content, Spanish, embedded instructions and conditional security warnings.
+
+Twenty direct baseline/probe requests preserve both thinking modes. Before the complete repairs, the first 80 engine cases completed 12/16 for Gemma, 0/16 for Glimmer and 16/16 for each Qwen. The final repaired path completed **80/80** repeated cases. A separately frozen, packaged engine then completed **40/40** further cases, shown below. These are completion results, not a claim of general semantic accuracy. Concurrent host work and model swaps affect latency; no idle-host or rigorous cold-start percentile claim is made.
+
+| Model | Completed | Median seconds | Maximum seconds (includes load) | Kind / label matches |
+| --- | --- | --- | --- | --- |
+| `gemma4-obliterated:e4b` | 8/8 | 1.52 | 7.75 | 4/8 · 7/8 |
+| `qwen3.8-obliterated:q4` | 8/8 | 1.64 | 19.08 | 8/8 · 8/8 |
+| `qwen3.8-obliterated:q8` | 8/8 | 11.14 | 52.22 | 8/8 · 8/8 |
+| `muse-glimmer:30b` | 8/8 | 2.21 | 34.55 | 8/8 · 4/8 |
+| `qwen3.8:27b` | 8/8 | 1.36 | 15.55 | 8/8 · 8/8 |
+
+Regular `qwen3.8:27b` is the recommended tested model; selections in the founder's real profile were not changed. The repeated repaired run matched all 16 sender kinds and all 16 label sets on both Qwen Q4 variants and Q8. Gemma matched only 8/16 kinds and 14/16 label sets; it added an unsupported recommendation, mistranslated the Spanish case and misclassified the security notice. Glimmer matched 16/16 kinds but only 7/16 label sets, often omitting Work despite describing a matching project discussion. These misses remain preserved; successful JSON validation cannot establish factual reliability. The much larger Q8 offered no observed label/kind benefit on this small set and remained substantially slower.
+
+### Verification and delivery
+
+Thirteen fm-assist tests, eight scoped Core model tests and three compatible-provider engine tests pass, with strict Clippy for assistance/Core/engine/CLI. The synthetic production engine/typed-CLI integration passes **31 HTTP generations**, covering older saved requests, edited instructions/options, exact wrapper handling, normalization, bounded successful/failed correction, cancellation during correction, unknown/duplicate IDs, forbidden fields/tools, manual precedence, staleness, owner isolation and shutdown. It passes again against the isolated package engine. Native production Settings/summary lifecycle/geometry regression exits successfully. Repository hygiene passes.
+
+The isolated source is the recorded Git base plus only the four runtime files named in `source.json`; no concurrent UI or mail-query changes enter it. Release engine/CLI are rebuilt from that snapshot. The GUI and Qt dependencies are byte-identical to the preserved D079 interaction package. The configured candidate is `dist/summary-reliability-windows-amd64`; package checks use disposable profiles and preserve the founder's profile. Exact source, binaries, model outputs, timings, failed attempts and package checks live under ignored `build/verification/summary-reliability/`.
+
+The initial integration attempt failed only its stale schema27 expectation; schema29 and the expanded regression pass afterward. Initial shell execution could not launch the restricted Python runtime; approved execution succeeded. The broad package self-test failure and its baseline comparison remain in `package.log` and `selftest-compare.log`; do not relabel that attempt as passing. Final package readback: relocated SDK-free configured empty-live GUI, CLI setup/status, schema29 reopen and final-client shutdown pass. The unchanged D079 package and repaired package both fail the broader self-test at stage30 (draft discard), with the same MailView slice warning and state, after 69.84/70.34 seconds; this is a preserved pre-existing limitation, not summary acceptance. ZIP: 40,639,751 bytes, SHA-256 81190c5fa9583edac7f6fc1605cdb60ad2ecbc4730c229e585ed07904ab41ec7. A later native rerun encountered concurrent D081 FmScrollBar edits in the shared source; recompiling the exact existing harness against the frozen D079 QML passes all Settings/summary lifecycle and geometry checks. Preserve both attempts and the existing Qt font-directory warning. Whole-area readiness remains **0/9**; other hosts and arbitrary real-mail quality are not qualified by this packet.
+
+
 ## D058 incoming-only analysis and response errors (2026-09-15)
 
 The founder reports absent labels/sender kinds after summarizing and the same generic error twice, then clarifies that sent mail must never be summarized. Read-only profile metadata confirmed both policies enabled: recent received analysis had a saved Human classification and no matching label; the two recent summary-only records belonged to sent messages. No mailbox content or credential data was printed or imported into this report. Source inspection found the reader query omitted `sent`, so the GUI displayed received-message controls for sent messages while the engine excluded classification for them.

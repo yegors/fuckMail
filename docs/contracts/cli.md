@@ -1,5 +1,9 @@
 # CLI and external agent interface
 
+## D083 — daily mail-count query (CLI40)
+
+The existing generic call exposes the same read-only Calendar counts: `fm --json [--account ID] call calendar_mail_activity --params-file range.json`, where the file contains `{"from":"2026-09-01","to":"2026-10-01"}`. Omit account for combined active accounts. Dates use the saved Calendar display zone and an exclusive end; 1–42 days are allowed. Results include each day's received/sent counts and explicit cached-only coverage. CLI uses the shared engine and does not start provider acquisition. Consumers: Core46/Calendar26/Mail UI59/Quality60; schema29/fixtures0,3/protocol1 unchanged.
+
 ## D077 — Drafts parity (CLI39)
 
 CLI Drafts listings, searches and account counts share Core44's accepted-revision filter with the GUI: an unchanged accepted draft is absent, a newer revision is present, and in-flight/unknown work stays visible. Existing authored-history and submission commands preserve their exact identities and explicit recovery semantics. GUI startup acquisition does not change CLI ownership or lifetime.
@@ -49,7 +53,7 @@ D058 / P2-LLM2D limits all assistance to received mail. Reader queries expose th
 
 D056 / P2-LLM2B exposes the complete editable Ollama JSON request: system/user messages, all five variables, full response schema and generation options. No hidden envelope or schema is injected. Schema 23 archives and wraps prior prompt text, preserving model/account choices. Application output/action validation remains independent of editable instructions. Consumers: Local assistance 9/Core 32/Mail UI 34/CLI 26/Quality 34; fixtures 0/3/protocol 1 unchanged. See [the current request contract](local-ai.md) and D056 evidence.
 
-State: Draft · Revision: 37 · Updated: 2026-09-16 · Implementation: D072 account/model feedback at schema29. Scoped evidence is recorded in the prototype execution report; whole-area readiness remains 0/9.
+State: Draft · Revision: 40 · Updated: 2026-09-22 · Implementation: D083 shared daily mail-count call at schema29. Scoped evidence is recorded in the Phase 2 execution report; whole-area readiness remains 0/9.
 
 D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages}}`, `{{partial}}`), combined per-message output, default-on prospective summaries/automatic single-label classification, manual precedence, and summary list previews. Schema 22 fences settings and assisted delivery; fixtures 0/3/protocol 1 unchanged. This supersedes conflicting D051–D053 delivery defaults below; historical evidence remains scoped to its original version. See the D055 decision and Local assistance 8.
 

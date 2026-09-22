@@ -6,6 +6,7 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QDir>
+#include <QDate>
 #include <QGuiApplication>
 #include <QMouseEvent>
 #include <QFontDatabase>
@@ -57,6 +58,7 @@ class CalendarBackendProbe : public QObject {
     Q_PROPERTY(QString calendarFrom MEMBER calendarFrom NOTIFY eventsChanged)
     Q_PROPERTY(QString calendarView MEMBER calendarView NOTIFY eventsChanged)
     Q_PROPERTY(QString calendarCoverage MEMBER calendarCoverage CONSTANT)
+    Q_PROPERTY(QVariantMap calendarMailActivity READ calendarMailActivity NOTIFY eventsChanged)
     Q_PROPERTY(double nowHour MEMBER nowHour CONSTANT)
     Q_PROPERTY(QVariantList calendarOperations MEMBER calendarOperations NOTIFY calendarOperationsChanged)
     Q_PROPERTY(bool calendarOperationsLoading MEMBER calendarOperationsLoading NOTIFY calendarOperationsChanged)
@@ -66,6 +68,14 @@ class CalendarBackendProbe : public QObject {
     Q_PROPERTY(QVariantList googleLabels MEMBER googleLabels NOTIFY googleLabelsChanged)
     Q_PROPERTY(QVariantMap googleLabelState MEMBER googleLabelState NOTIFY googleLabelsChanged)
 public:
+    bool mailCombined = true, mailActive = false;
+    Q_INVOKABLE void setCalendarMailActivityContext(bool active, bool combined) { mailActive = active; if (mailCombined != combined) { mailCombined = combined; emit eventsChanged(); } }
+    QVariantMap calendarMailActivity() const {
+        QVariantList days;
+        const auto first = QDate::fromString(calendarFrom, Qt::ISODate);
+        for (int i = 0; i < 42; ++i) days.append(QVariantMap{{"date",first.addDays(i).toString(Qt::ISODate)}, {"received",mailCombined ? 24 : 7}, {"sent",mailCombined ? 6 : 2}});
+        return {{"state","ready"},{"days",days},{"time_zone","America/Toronto"},{"cached_only",true}};
+    }
     bool syntheticProfile = false, connected = true, capability = true, readCapability = false, active = true;
     bool calendarReady = true, calendarOperationsLoading = false, calendarOperationsHasMore = false;
     double nowHour = 8;
@@ -182,7 +192,8 @@ int main(int argc, char **argv) {
         require(QFontDatabase::addApplicationFont(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/fonts/" + font) >= 0, "Load actual bundled UI fonts");
     app.setFont(QFont("Geist", 10));
     QTemporaryDir copy; require(copy.isValid(), "Temporary QML directory");
-    for (const auto name : {"Theme.qml", "FmDialog.qml", "FmConfirmDialog.qml", "FmDateField.qml", "FmSwitch.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "FmTextField.qml", "CalendarOccurrenceRead.qml", "EventEditor.qml", "EventDetails.qml", "CalendarOperations.qml", "GoogleLabelSetup.qml", "CalendarView.qml", "CalendarEventList.qml", "StartupOverlay.qml"})
+    require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/CalendarMailCount.qml", copy.filePath("CalendarMailCount.qml")), "Copy mail count component");
+    for (const auto name : {"FmScrollBar.qml","Theme.qml", "FmDialog.qml", "FmConfirmDialog.qml", "FmDateField.qml", "FmSwitch.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "FmTextField.qml", "CalendarOccurrenceRead.qml", "EventEditor.qml", "EventDetails.qml", "CalendarOperations.qml", "GoogleLabelSetup.qml", "CalendarView.qml", "CalendarEventList.qml", "StartupOverlay.qml"})
         require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/" + name, copy.filePath(name)), "Copy actual QML control");
     QFile module(copy.filePath("qmldir")); require(module.open(QIODevice::WriteOnly), "QML singleton directory");
     module.write("singleton Theme 1.0 Theme.qml\n"); module.close();
@@ -859,6 +870,25 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     require(named(visualRoot, "calendarEditorPreview-2"), "Last multi-day preview segment exists");
     if (!captureDir.isEmpty()) retainVisual("calendar-multiday-preview");
     call(gridEditor, "close");
+    for (const auto view : {"day", "week", "month"}) {
+        backend.setCalendarView(view);
+        QCoreApplication::processEvents();
+        const auto labelName = (QString(view) == "month" ? "calendarMonthMailCount-" : "calendarMailCount-") + backend.calendarFrom;
+        const auto label = named(visualRoot, labelName.toUtf8().constData());
+        require(label && label->property("ready").toBool(), "Daily mail label exists in day/week/month");
+        require(label->property("explanation").toString().contains("24 emails received, 6 sent"), "Combined mail counts render with explicit directions");
+        require(label->property("explanation").toString().contains("Cached mail only"), "Counts disclose cached coverage");
+        call(named(visualRoot, "calendarCombinedToggle"), "clicked");
+        require(label->property("explanation").toString().contains("7 emails received, 2 sent"), "Mail counts follow Calendar account scope");
+        call(named(visualRoot, "calendarCombinedToggle"), "clicked");
+        if (!captureDir.isEmpty()) {
+            for (const auto theme : {"graphite", "paper", "harbour", "terminal"}) {
+                visualRoot->setProperty("testTheme", theme);
+                retainVisual(QString("calendar-mail-%1-%2").arg(view, theme));
+            }
+        }
+    }
+    calendar->setProperty("visible", false); require(!backend.mailActive, "Hidden Calendar stops count queries");
     visualWindow->close();
     require(!qmlError, "Actual controls run without QML binding errors");
     qInfo() << "Calendar and label controls passed: partial live patches, frozen scope, recovery, sync/capability gates, delete placement, RSVP projection, cached-only labels, offline local binding, explicit remap and synthetic compatibility.";

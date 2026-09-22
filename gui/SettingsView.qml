@@ -247,7 +247,7 @@ Item {
                 id: contentFlick; objectName: "settingsScroll"
                 anchors.fill: parent; contentWidth: width; contentHeight: contents.implicitHeight + 64
                 clip: true; boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: ScrollBar {}
+                ScrollBar.vertical: FmScrollBar {}
                 ColumnLayout {
                     id: contents
                     x: 40; y: 24; width: Math.min(640,contentFlick.width - 80); spacing: 8
@@ -496,12 +496,14 @@ Item {
                             visible: settings.signaturesOpen; Layout.fillWidth: true; spacing: 12
                             Description { text: "Applied to new drafts. Changing a signature leaves existing replies and your edits intact." }
                             Repeater {
-                                model: backend.accounts
+                                model: backend.accountModel
                                 ColumnLayout {
-                                    required property var modelData
+                                    required property var rowData
+                                    readonly property var modelData: rowData
                                     Layout.fillWidth: true; spacing: 8
                                     RowLayout { Layout.fillWidth: true; Text { text: modelData.name; color: Theme.text; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(13); weight: Font.Medium } Layout.fillWidth: true } FmButton { objectName: "saveSignature_" + modelData.id; text: "Save signature"; enabled: settings.accountDirty(modelData); outlined: true; onClicked: settings.saveAccount(modelData) } }
                                     ScrollView {
+                ScrollBar.vertical: FmScrollBar {}
                                         Layout.fillWidth: true; Layout.preferredHeight: 100
                                         TextArea {
                                             objectName: "signature_" + modelData.id

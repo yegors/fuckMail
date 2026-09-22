@@ -45,8 +45,16 @@ Item {
         if (backend.connected && accountId && conversationId)
             latestResults = send("assist_results", {conversation_id: conversationId}, "results")
     }
+    function adoptReader() {
+        const snapshot = backend.conversation
+        if (!snapshot || snapshot.id !== conversationId || snapshot.assistance_results === undefined) return false
+        if (snapshot.assistance_settings && snapshot.assistance_settings.settings) adoptSettings(snapshot.assistance_settings)
+        items = snapshot.assistance_results
+        return true
+    }
     function loadSettings() { if (backend.connected) send("assist_settings_get", {}, "settings") }
     function adoptSettings(result) {
+        if (!result || typeof result.revision !== "number" || !result.settings) return
         if (result.revision < settingsRevision) return
         const changed = settingsRevision !== result.revision
         settingsRevision = result.revision
@@ -84,7 +92,7 @@ Item {
         error = ""
         latestResults = ""
         changeErrors = ({})
-        refresh()
+        if (!adoptReader()) refresh()
     }
     function correct(member, kind) {
         send("assist_correct", {conversation_id: conversationId, message_id: member.id,
@@ -103,7 +111,10 @@ Item {
                 assistance.watching = false
             } else { assistance.loadSettings(); assistance.refresh() }
         }
-        function onConversationChanged() { assistance.refresh(); assistance.loadSettings() }
+        function onConversationChanged() {
+            if (!assistance.adoptReader()) { assistance.refresh(); assistance.loadSettings() }
+            else if (assistance.settingsRevision < 0) assistance.loadSettings()
+        }
         function onAssistanceReply(ticket, method, result, ok) {
             if (method === "assist_settings_save" && ok) {
                 assistance.adoptSettings(result)

@@ -14,13 +14,82 @@ QString identity(const QVariantMap &row) {
 }
 
 void MailBackend::initializeCalendarSearch() {
+    m_calendarMailActivityTimer.setInterval(2000);
+    connect(&m_calendarMailActivityTimer, &QTimer::timeout, this, &MailBackend::refreshCalendarMailActivity);
     m_calendarSearchTimer.setSingleShot(true);
     m_calendarSearchTimer.setInterval(100);
     connect(&m_calendarSearchTimer, &QTimer::timeout, this, &MailBackend::runCalendarSearch);
     for (auto signal : {&MailBackend::eventsChanged, &MailBackend::accountChanged,
             &MailBackend::accountsChanged, &MailBackend::accountLifecycleChanged,
             &MailBackend::preferencesChanged, &MailBackend::connectedChanged})
+    {
         connect(this, signal, this, &MailBackend::refreshCalendarSearchContext);
+        // Invalidate immediately on navigation/permission changes. Revisions
+        // alone refresh at most once per timer interval while Calendar is open.
+        connect(this, signal, this, [this] {
+            if (!m_calendarMailActivityActive) return;
+            refreshCalendarMailActivity();
+        });
+    }
+}
+
+void MailBackend::setCalendarMailActivityContext(bool active, bool combined) {
+    if (active == m_calendarMailActivityActive && combined == m_calendarMailActivityCombined) { refreshCalendarMailActivity(); return; }
+    m_calendarMailActivityActive = active; m_calendarMailActivityCombined = combined;
+    if (active) { m_calendarMailActivityTimer.start(); refreshCalendarMailActivity(); }
+    else {
+        m_calendarMailActivityTimer.stop(); ++m_calendarMailActivityGeneration;
+        m_calendarMailActivityBusy = false; m_calendarMailActivityScope.clear(); m_calendarMailActivityStamp.clear();
+        m_calendarMailActivity.clear(); emit calendarMailActivityChanged();
+    }
+}
+
+void MailBackend::refreshCalendarMailActivity() {
+    if (!m_calendarMailActivityActive || m_shutdown) return;
+    const auto from = calendarFrom();
+    const auto to = QDate::fromString(from, Qt::ISODate).addDays(calendarDays()).toString(Qt::ISODate);
+    const auto account = m_calendarMailActivityCombined ? QString{} : m_account;
+    QJsonArray accounts;
+    for (const auto &entry : m_accounts) accounts.append(entry.toMap().value("id").toString());
+    const auto scope = QString::fromUtf8(QJsonDocument(QJsonArray{from, to, account, accounts,
+        m_preferences.value("calendar_display_time_zone").toString(), m_connected}).toJson(QJsonDocument::Compact));
+    const bool newScope = scope != m_calendarMailActivityScope;
+    if (newScope) {
+        m_calendarMailActivityScope = scope; m_calendarMailActivityStamp.clear(); ++m_calendarMailActivityGeneration;
+        m_calendarMailActivityBusy = false;
+        m_calendarMailActivity = {{"state", "loading"}, {"from", from}, {"to", to}};
+        emit calendarMailActivityChanged();
+    }
+    if (!m_connected || (!m_calendarMailActivityCombined && account.isEmpty())) {
+        m_calendarMailActivity = {{"state", "unavailable"}, {"message", "Mail counts are waiting for the local engine and account."}};
+        emit calendarMailActivityChanged(); return;
+    }
+    const auto stamp = scope + '/' + m_diagnostics.value("revision").toString();
+    if (m_calendarMailActivityBusy || stamp == m_calendarMailActivityStamp) return;
+    // Signals can arrive on every sync page. Keep repeated aggregate reads off
+    // the foreground queue; a changed date/account still loads immediately.
+    if (!newScope && sender() != &m_calendarMailActivityTimer) return;
+    m_calendarMailActivityBusy = true; m_calendarMailActivityStamp = stamp;
+    const auto generation = m_calendarMailActivityGeneration;
+    const auto zone = m_preferences.value("calendar_display_time_zone").toString();
+    request("calendar_mail_activity", account, {{"from", from}, {"to", to}}, [this, generation, from, to, account, zone](auto result, bool ok) {
+        if (generation != m_calendarMailActivityGeneration || !m_calendarMailActivityActive || m_shutdown) return;
+        m_calendarMailActivityBusy = false;
+        const auto rows = result["days"].toArray();
+        const auto first = QDate::fromString(from, Qt::ISODate);
+        const bool zoneRequired = result["state"] == "display_zone_required" && result["time_zone"].isNull() && rows.isEmpty();
+        bool valid = zoneRequired || (result["state"] == "ready" && result["time_zone"] == zone && rows.size() == first.daysTo(QDate::fromString(to, Qt::ISODate)));
+        for (qsizetype i = 0; i < rows.size() && valid; ++i) {
+            const auto day = rows[i].toObject();
+            valid = day["date"] == first.addDays(i).toString(Qt::ISODate);
+            for (const auto field : {"received", "sent"}) valid = valid && day[field].isDouble() && day[field].toInteger(-1) >= 0 && day[field].toDouble() == double(day[field].toInteger(-1));
+        }
+        if (!ok || !valid || result["from"] != from || result["to"] != to || !result["days"].isArray()
+            || (account.isEmpty() ? !result["account"].isNull() : result["account"] != account)) {
+            m_calendarMailActivity = {{"state", "unavailable"}, {"message", result["message"].toString("Mail counts could not load.")}};
+        } else m_calendarMailActivity = result.toVariantMap();
+        emit calendarMailActivityChanged();
+    });
 }
 
 QJsonObject MailBackend::calendarSearchParams() const {

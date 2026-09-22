@@ -57,6 +57,7 @@ Popup {
     Connections { target: backend; function onAccountChanged() { card.close() } }
     Timer { id: hideDelay; interval: 220; onTriggered: card.close() }
     contentItem: ScrollView {
+                ScrollBar.vertical: FmScrollBar {}
         property bool blocksWorkspaceShortcuts: true
         clip: true; contentWidth: availableWidth; ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         HoverHandler { onHoveredChanged: hovered ? card.stayOpen() : card.scheduleClose() }

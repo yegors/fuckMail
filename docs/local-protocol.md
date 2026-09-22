@@ -1,5 +1,17 @@
 # Local protocol — protocol 1, Phase 2 additive boundary
 
+## D083 — Calendar mail activity
+
+`calendar_mail_activity {from,to}` accepts canonical YYYY-MM-DD dates spanning 1–42 days, end exclusive. Account is optional: null/omitted combines active accounts (maximum 100), while an explicit account must be active. The saved Calendar time zone defines civil days, including DST. Ready results contain `from`, `to`, `account` (null for combined), `account_count`, `time_zone`, `state:"ready"`, `days:[{date,received,sent}]`, `cached_only:true`, `header_date_count` and `revision`. All days are present in order. Without a display zone, return the same date/account scope with `state:"display_zone_required"`, `time_zone:null` and an empty `days` array. Malformed ranges/accounts fail explicitly.
+
+Counts cover cached non-deleted messages of active accounts, including retained archived/Trash mail, with stored sent direction. Prefer `google_mail_coverage.internal_date_ms`; otherwise use the source timestamp and include that contribution in `header_date_count`. Drafts and not-yet-acquired submissions contribute nothing. No mail content, provider request or store mutation is involved. Core46/Calendar26/Mail UI59/CLI40/Quality60; protocol1/schema29/fixtures0,3 unchanged.
+
+## D081 — live mail pagination and invalidation
+
+`status` includes `mail_generation`, an in-process mail projection generation. Presentation/preferences writes alone do not invalidate the mail list. It is not a durable revision or mutation precondition; reset client comparisons on reconnect.
+
+`conversations` accepts optional boolean `live_paging` (default false). With true, `next_cursor` binds the account, query, collapsed groups, engine epoch and last ordered row. Pass it unchanged with the same query and `live_paging: true` to continue after that row while sync inserts or removes messages. A removed anchor still permits continuation. This is a live traversal, not a fixed snapshot: moved rows may be repeated and new rows before the anchor appear on refresh; GUI consumers deduplicate by conversation ID. A restart or changed scope still rejects the cursor. Results stay bounded to 100 rows; strict cursor validation remains unchanged for default callers. Core45/Mail UI57/Quality58; schema29, fixtures0/3 and protocol1 unchanged.
+
 P2-06C has a scoped Windows functional interim under D037 against Core 25/Gmail 12/Calendar 18/Platform 13/Mail UI 23/CLI 18/Quality 21/schema 19. Search 5, fixtures 0/3 and protocol 1 remain unchanged. Paired native/CLI one-occurrence organizer edit/cancel and existing account/mail/Calendar workflows pass generated-provider checks from `3242849`; [source-bound evidence](https://github.com/yegors/fuckMail/blob/8155e998d5957e60c491475df7877553db2b453b/docs/research/assets/phase-2/p2-06c-interim/logs-manifest.json) preserves actual upgrade/refusal, regressions and limitations. This does not establish actual provider or current performance acceptance.
 
 ## Explicit local account lifecycle under D036

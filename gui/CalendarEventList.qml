@@ -21,7 +21,7 @@ Popup {
             FmButton { iconName: "close"; implicitWidth: 30; tip: "Close events"; onClicked: eventList.close() }
         }
         ListView {
-            id: rows; Layout.fillWidth: true; Layout.fillHeight: true; clip: true; model: eventList.eventRows; ScrollBar.vertical: ScrollBar { }
+            id: rows; Layout.fillWidth: true; Layout.fillHeight: true; clip: true; model: eventList.eventRows; ScrollBar.vertical: FmScrollBar {}
             delegate: ItemDelegate {
                 required property var modelData; width: rows.width; height: 76
                 background: Rectangle { color: parent.hovered ? Theme.hover : "transparent"; Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.line } }

@@ -149,7 +149,7 @@ Rectangle {
             visible: card.summaryText.length > 0
             contentWidth: width; contentHeight: summaryBody.implicitHeight
             clip: true; boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar {}
+            ScrollBar.vertical: FmScrollBar {}
             TextEdit {
                 id: summaryBody; objectName: "summaryBody"
                 width: Math.max(0, summaryScroll.width - 8)
@@ -196,6 +196,7 @@ Rectangle {
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         background: Rectangle { color: Theme.surface; radius: 6; border.color: Theme.controlBorder }
         contentItem: ScrollView {
+                ScrollBar.vertical: FmScrollBar {}
             id: sourcesScroll
             implicitHeight: Math.min(sourceDetails.implicitHeight, 160)
             clip: true

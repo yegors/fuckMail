@@ -12,6 +12,7 @@ use std::{
 #[derive(Clone)]
 pub(crate) struct ConversationState {
     position: usize,
+    folders: u8,
     unread: bool,
     starred: bool,
     unread_messages: i64,
@@ -26,6 +27,7 @@ impl ConversationState {
     fn empty(position: usize) -> Self {
         Self {
             position,
+            folders: 0,
             unread: false,
             starred: false,
             unread_messages: 0,
@@ -47,6 +49,17 @@ impl ConversationState {
         let at = row.get::<_, Option<f64>>(3)?.unwrap_or(0.0);
         self.latest = self.latest.max(at);
         let incoming = !row.get::<_, bool>(6)?;
+        let inbox = row.get::<_, bool>(8)?;
+        let trash = row.get::<_, bool>(9)?;
+        self.folders |= if trash {
+            8
+        } else {
+            1 | if incoming {
+                16 | if inbox { 2 } else { 0 }
+            } else {
+                4
+            }
+        };
         let id = row.get_ref(5)?.as_str().map_err(|e| {
             rusqlite::Error::FromSqlConversionFailure(5, rusqlite::types::Type::Text, Box::new(e))
         })?;
@@ -70,7 +83,7 @@ fn kind_name(kind: u8) -> &'static str {
         _ => "unknown",
     }
 }
-const STATE_SELECT:&str = "SELECT m.conversation_id,m.unread,m.starred,julianday(m.sent_at),m.rowid,m.id,m.sent,CASE k.kind WHEN 'people' THEN 1 WHEN 'automated' THEN 2 ELSE 0 END FROM messages m LEFT JOIN message_sender_kinds k ON k.account=m.account AND k.message_id=m.id AND k.source_hash=m.source_hash WHERE m.account=?1";
+const STATE_SELECT:&str = "SELECT m.conversation_id,m.unread,m.starred,julianday(m.sent_at),m.rowid,m.id,m.sent,CASE k.kind WHEN 'people' THEN 1 WHEN 'automated' THEN 2 ELSE 0 END,m.inbox,m.trashed FROM messages m LEFT JOIN message_sender_kinds k ON k.account=m.account AND k.message_id=m.id AND k.source_hash=m.source_hash WHERE m.account=?1";
 pub(crate) struct ConversationProjection {
     generation: u64,
     message_count: i64,
@@ -237,6 +250,9 @@ impl MailChanges {
     }
 }
 impl Store {
+    pub(crate) fn mail_generation(&self) -> u64 {
+        self.mail_changes.snapshot(&self.db).search
+    }
     pub(crate) fn accounts(&self) -> Result<Value> {
         self.accounts_including_removed(false)
     }
@@ -482,9 +498,13 @@ impl Store {
         let unread = states.values().filter(|s| s.unread).count();
         let held = states.values().filter(|s| s.starred).count();
         let done = states.values().filter(|s| !s.unread && !s.starred).count();
-        let folders: (i64, i64, i64, i64, i64) = self.db.query_row(
-            "SELECT count(DISTINCT CASE WHEN trashed=0 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=0 AND inbox=1 AND sent=0 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=0 AND sent=1 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=1 THEN conversation_id END), count(DISTINCT CASE WHEN trashed=0 AND sent=0 THEN conversation_id END) FROM messages WHERE account=?1", [account],
-            |r| Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?)))?;
+        let mut totals = [0usize; 5];
+        for state in states.values() {
+            for (index, count) in totals.iter_mut().enumerate() {
+                *count += usize::from(state.folders & (1 << index) != 0);
+            }
+        }
+        let folders = (totals[0], totals[1], totals[2], totals[3], totals[4]);
         Ok(
             json!({"folder_conversation_counts":{"all":folders.0,"inbox":folders.1,"sent":folders.2,"trash":folders.3,"received":folders.4},"conversation_count":states.len(),"unread_conversation_count":unread,"held_conversation_count":held,"done_conversation_count":done,"scope":"all_account_mail_including_archive","held_includes_unread":true}),
         )
@@ -677,6 +697,7 @@ impl Store {
                 "grouped",
                 "cursor",
                 "collapsed_groups",
+                "live_paging",
             ],
         )?;
         let limit = number(p, "limit", 50, 1, 100)?;
@@ -724,6 +745,12 @@ impl Store {
             Some(Value::Bool(b)) => *b,
             _ => return Err(err("invalid_request", "grouped must be a boolean")),
         };
+        let live_paging = match p.get("live_paging") {
+            None => false,
+            Some(Value::Bool(value)) => *value,
+            _ => return Err(err("invalid_request", "live_paging must be a boolean")),
+        };
+        let mut anchor = Value::Null;
         let revision = self.revision()?;
         let search_generation = self.mail_changes.snapshot(&self.db).search;
         let epoch = &self.mail_changes.1;
@@ -751,10 +778,11 @@ impl Store {
                     "fingerprint",
                     "epoch",
                     "search_generation",
+                    "anchor",
                 ],
             )?;
             if cursor["epoch"] != *epoch
-                || cursor["search_generation"] != search_generation
+                || (!live_paging && cursor["search_generation"] != search_generation)
                 || cursor["fingerprint"] != fingerprint
             {
                 return Err(err(
@@ -763,6 +791,18 @@ impl Store {
                 ));
             }
             offset = number(&cursor, "offset", 0, 0, 10_000_000)?;
+            if live_paging {
+                anchor = cursor["anchor"].clone();
+                if anchor.as_array().is_none_or(|a| a.len() != 3)
+                    || anchor[0].as_u64().is_none_or(|rank| rank > 2)
+                    || anchor[1].as_str().is_none() && anchor[1].as_f64().is_none()
+                    || anchor[2]
+                        .as_str()
+                        .is_none_or(|id| id.is_empty() || id.len() > 256)
+                {
+                    return Err(err("invalid_request", "Invalid live page anchor"));
+                }
+            }
         }
         let query = optional_string(p, "query", "")?;
         if query.split_whitespace().any(|word| {
@@ -830,10 +870,10 @@ impl Store {
         // Validation above still runs on every call, including cursor scope.
         let first_page_key = (account.to_owned(), "first_conversation_page");
         let cache_first_page = !recent && offset == 0;
-        let next_cursor = |next: i64| -> Result<String> {
+        let next_cursor = |next: i64, anchor: &Value| -> Result<String> {
             Ok(serde_json::to_string(
                 &json!({"revision":revision,"epoch":epoch,
-                "search_generation":search_generation,"offset":next,"fingerprint":fingerprint}),
+                "search_generation":search_generation,"offset":next,"fingerprint":fingerprint,"anchor":anchor}),
             )?)
         };
         if cache_first_page {
@@ -844,7 +884,12 @@ impl Store {
                     // hit must publish today's envelope, never an old receipt.
                     result["revision"] = revision.into();
                     result["next_cursor"] = match result["next_offset"].as_i64() {
-                        Some(next) => next_cursor(next)?.into(),
+                        Some(next) => {
+                            let prior: Value = serde_json::from_str(
+                                result["next_cursor"].as_str().unwrap_or("{}"),
+                            )?;
+                            next_cursor(next, &prior["anchor"])?.into()
+                        }
                         None => Value::Null,
                     };
                     return Ok(result);
@@ -860,6 +905,21 @@ impl Store {
             latest: String,
         }
         let states = self.conversation_states(account)?;
+        let folder_bit = match folder {
+            "all" => 1,
+            "inbox" => 2,
+            "sent" => 4,
+            "trash" => 8,
+            _ => 16,
+        };
+        let simple = grouped
+            && expression.is_empty()
+            && category.is_empty()
+            && sender.is_empty()
+            && exact_sender.is_empty()
+            && attachment.is_none()
+            && after.is_empty()
+            && before.is_empty();
         let sql = search_matches_sql(!expression.is_empty(), p);
         let mut stmt = self.db.prepare_cached(&sql)?;
         let mut matches: Vec<Option<Matched>> =
@@ -879,56 +939,75 @@ impl Store {
             before,
             exact_sender
         ])?;
-        while let Some(row) = rows.next()? {
-            if !exact_sender.is_empty() {
-                let candidate = row
-                    .get_ref(3)?
+        if simple {
+            page.extend(
+                states
+                    .iter()
+                    .filter(|(_, state)| {
+                        state.folders & folder_bit != 0
+                            && (kind == "all" || kind == kind_name(state.kind))
+                            && match status {
+                                "review" => state.unread,
+                                "held" => state.starred,
+                                "done" => !state.unread && !state.starred,
+                                _ => true,
+                            }
+                    })
+                    .map(|(id, state)| (id.as_str(), state)),
+            );
+        }
+        if !simple {
+            while let Some(row) = rows.next()? {
+                if !exact_sender.is_empty() {
+                    let candidate = row
+                        .get_ref(3)?
+                        .as_str()
+                        .map_err(|_| err("storage_error", "Invalid sender address"))?;
+                    if candidate.trim().to_lowercase() != exact_sender {
+                        continue;
+                    }
+                }
+                let cid = row
+                    .get_ref(0)?
                     .as_str()
-                    .map_err(|_| err("storage_error", "Invalid sender address"))?;
-                if candidate.trim().to_lowercase() != exact_sender {
+                    .map_err(|_| err("storage_error", "Invalid conversation identity"))?;
+                let (cid, state) = states.get_key_value(cid).ok_or_else(|| {
+                    err("storage_error", "Matching conversation has no source state")
+                })?;
+                if kind != "all" && kind != kind_name(state.kind) {
                     continue;
                 }
-            }
-            let cid = row
-                .get_ref(0)?
-                .as_str()
-                .map_err(|_| err("storage_error", "Invalid conversation identity"))?;
-            let (cid, state) = states
-                .get_key_value(cid)
-                .ok_or_else(|| err("storage_error", "Matching conversation has no source state"))?;
-            if kind != "all" && kind != kind_name(state.kind) {
-                continue;
-            }
-            if !match status {
-                "review" => state.unread,
-                "held" => state.starred,
-                "done" => !state.unread && !state.starred,
-                _ => true,
-            } {
-                continue;
-            }
-            let rowid: i64 = row.get(1)?;
-            let at = if grouped || recent {
-                ""
-            } else {
-                row.get_ref(2)?
-                    .as_str()
-                    .map_err(|_| err("storage_error", "Invalid source timestamp"))?
-            };
-            match &mut matches[state.position] {
-                None => {
-                    matches[state.position] = Some(Matched {
-                        first_row: rowid,
-                        other_rows: Vec::new(),
-                        latest: at.into(),
-                    });
-                    page.push((cid.as_str(), state));
+                if !match status {
+                    "review" => state.unread,
+                    "held" => state.starred,
+                    "done" => !state.unread && !state.starred,
+                    _ => true,
+                } {
+                    continue;
                 }
-                Some(entry) => {
-                    if at > entry.latest.as_str() {
-                        entry.latest = at.into();
+                let rowid: i64 = row.get(1)?;
+                let at = if grouped || recent {
+                    ""
+                } else {
+                    row.get_ref(2)?
+                        .as_str()
+                        .map_err(|_| err("storage_error", "Invalid source timestamp"))?
+                };
+                match &mut matches[state.position] {
+                    None => {
+                        matches[state.position] = Some(Matched {
+                            first_row: rowid,
+                            other_rows: Vec::new(),
+                            latest: at.into(),
+                        });
+                        page.push((cid.as_str(), state));
                     }
-                    entry.other_rows.push(rowid);
+                    Some(entry) => {
+                        if at > entry.latest.as_str() {
+                            entry.latest = at.into();
+                        }
+                        entry.other_rows.push(rowid);
+                    }
                 }
             }
         }
@@ -976,25 +1055,77 @@ impl Store {
             };
             order.then_with(|| aid.cmp(bid))
         };
+        let page_offset = if anchor.is_null() { offset } else { 0 };
+        if !anchor.is_null() {
+            let rank = anchor[0].as_u64().unwrap() as usize;
+            let last_id = anchor[2].as_str().unwrap();
+            if (grouped || recent) != anchor[1].is_number() {
+                return Err(err("invalid_request", "Invalid live page ordering"));
+            }
+            page.retain(|(id, state)| {
+                let order = (if grouped {
+                    group_rank(state).cmp(&rank)
+                } else {
+                    std::cmp::Ordering::Equal
+                })
+                .then_with(|| {
+                    if grouped || recent {
+                        anchor[1].as_f64().unwrap().total_cmp(&state.latest)
+                    } else {
+                        anchor[1]
+                            .as_str()
+                            .unwrap()
+                            .cmp(&matches[state.position].as_ref().unwrap().latest)
+                    }
+                })
+                .then_with(|| id.cmp(&last_id));
+                order.is_gt()
+            });
+        }
+        let remaining = page.len();
         // Rank only the requested prefix; exact totals still use every match.
-        let end = ((offset + limit) as usize).min(page.len());
+        let end = ((page_offset + limit) as usize).min(page.len());
         if end < page.len() {
             page.select_nth_unstable_by(end, &compare);
             page.truncate(end);
         }
         page.sort_unstable_by(compare);
-        let more = (offset + limit) < expanded_count as i64;
+        let more = (page_offset + limit) < remaining as i64;
         let page = page
             .into_iter()
-            .skip(offset as usize)
+            .skip(page_offset as usize)
             .take(limit as usize)
             .collect::<Vec<_>>();
+        let next_anchor = if live_paging {
+            page.last()
+                .map(|(id, state)| {
+                    json!([
+                        if grouped { group_rank(state) } else { 0 },
+                        if grouped || recent {
+                            json!(state.latest)
+                        } else {
+                            json!(matches[state.position].as_ref().unwrap().latest)
+                        },
+                        id
+                    ])
+                })
+                .unwrap_or(Value::Null)
+        } else {
+            Value::Null
+        };
         let mut out = Vec::with_capacity(page.len());
         for (cid, state) in page {
-            let matching = matches[state.position].take().unwrap();
-            let matched: std::collections::HashSet<i64> = std::iter::once(matching.first_row)
-                .chain(matching.other_rows)
-                .collect();
+            let matched: HashSet<i64> = if simple {
+                let mut query = self.db.prepare_cached("SELECT rowid FROM messages WHERE account=?1 AND conversation_id=?2 AND ((?3='all' AND trashed=0) OR (?3='inbox' AND trashed=0 AND inbox=1 AND sent=0) OR (?3='sent' AND trashed=0 AND sent=1) OR (?3='trash' AND trashed=1) OR (?3='received' AND trashed=0 AND sent=0))")?;
+                let rows =
+                    query.query_map(params![account, cid, folder], |r| r.get::<_, i64>(0))?;
+                rows.collect::<std::result::Result<_, _>>()?
+            } else {
+                let matching = matches[state.position].take().unwrap();
+                std::iter::once(matching.first_row)
+                    .chain(matching.other_rows)
+                    .collect()
+            };
             let (subject, revision): (String, i64) = self.db.query_row(
                 "SELECT subject,revision FROM conversations WHERE account=?1 AND id=?2",
                 params![account, cid],
@@ -1048,7 +1179,7 @@ impl Store {
             let summary = self.local_model_preview(account, cid, selected)?;
             out.push(json!({"summary":summary,"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if expression.is_empty() && category.is_empty() && sender.is_empty() && exact_sender.is_empty() && after.is_empty() && before.is_empty() && attachment.is_none(){Vec::<String>::new()}else{matching}}));
         }
-        let result = json!({"conversations":out,"folder_conversation_count":self.account_counts(account)?["folder_conversation_counts"][folder],"expanded_conversation_count":expanded_count,"filtered_group_counts":{"review":group_counts[0],"held":group_counts[1],"done":group_counts[2]},"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(next_cursor(offset+limit)?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?});
+        let result = json!({"conversations":out,"folder_conversation_count":self.account_counts(account)?["folder_conversation_counts"][folder],"expanded_conversation_count":expanded_count,"filtered_group_counts":{"review":group_counts[0],"held":group_counts[1],"done":group_counts[2]},"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(next_cursor(offset+limit, &next_anchor)?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?});
         if cache_first_page {
             self.projection_cache.borrow_mut().insert(
                 first_page_key,

@@ -55,7 +55,7 @@ Popup {
             Layout.fillHeight: true
             clip: true; spacing: 4; model: popup.rows
             boundsBehavior: Flickable.StopAtBounds
-            ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+            ScrollBar.vertical: FmScrollBar {}
             delegate: FmButton {
                 id: resultButton
                 required property var modelData

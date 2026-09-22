@@ -1,5 +1,29 @@
 # Mail UI, reader and human composer
 
+## D084 — reader publication and navigation stability (Mail UI60)
+
+Mailbox and label tabs have no horizontal scrollbar; retain horizontal wheel/trackpad and keyboard selection/reveal. Content scrollbars remain wide and visible. Prepare the latest retained message's source, metadata and saved assistance before showing a cold reader, and reuse that prepared view on return. Neighbor/hover prefetch is local, bounded and read-only. Only a deliberate open of a fresh matching snapshot may submit a read receipt. Source/summary loading must not replace an initial plain-text layout with a differently sized HTML layout. Preserve account/source/lifecycle/generation checks and explicit fallback when source data is unavailable. Never retain proxy JSON values after their owning temporary is destroyed.
+
+## D083 — Calendar mail labels (Mail UI59)
+
+Consume Core46 daily counts in the day/week/month date headings. Query only while these Calendar views are visible. Date/account/zone/connection changes invalidate old rows immediately; generation-fence replies and validate their exact scope, dates and nonnegative integer counts before publishing. Refresh changed store revisions at most once per two-second interval; unchanged revisions issue no query. Hide/close stops the observer. Counts follow Calendar's combined-account toggle and remain visibly unavailable on failure, with cached-only coverage and full direction/scope details in an accessible tooltip. The shared `CalendarMailCount` component uses existing fonts, colors and mail icon; reserve its row before month events. Consumers: Calendar26/Core46/CLI40/Quality60; schema29/fixtures0,3/protocol1 unchanged.
+
+## D082 — session debug console (Mail UI58)
+
+Backtick or tilde opens/closes the debug console in the app window; Escape closes and restores prior focus. Do not intercept text in editable fields, including message recipients/subject/body and search, or while either search popup is open. Opening diagnostics must not save, navigate, mark mail read or trigger provider work. Fence workspace shortcuts while open.
+
+Keep up to 1,000 timestamped session events, at most 2,048 characters each, in memory while the console is closed. Include GUI Qt warnings/errors, IPC method/outcome/duration, long-operation activity, observed local-model job outcomes and changed Google sync/progress/error states. Report rate-limit codes and retry delays when supplied by the existing backend; do not invent provider events or cooldown duration. Suppress unchanged routine successful polls. Capture ends with the GUI; raw detached-engine stderr and unobserved between-poll transitions are outside this feed.
+
+Expose selectable plain text, event severity/text filtering, a runtime-state view, pause/resume of the view, clear history and Copy report. Copy always includes current state and all retained severities regardless of filters or pause. State includes GUI/engine fingerprints, schema/fixture/store revisions, connection/queue/editor flags, aliased accounts/counts/coverage, sync and configured quota limits. Diagnostics use explicit metadata projections; no request/response payloads, mail bodies, search phrases, recipients, OAuth material or full profiles. Redact recognizable addresses, secrets, URLs, paths and quoted text from diagnostic strings before retention. New diagnostic fields require explicit projection. Consumers: native GUI/backend and native verification; engine/CLI/storage contracts and schema29/fixtures0/3/protocol1 are unchanged.
+
+## D081 — responsive browsing and stable controls (Mail UI57)
+
+Keep signature editors alive while account counts and sync status change; preserve focus, selection and unsaved text. Mailbox tabs show a quiet two-pixel activity line and the actual cached-message count during acquisition. Unknown inventory totals never become fabricated percentages; pause/error states stop the animation and remain accessible.
+
+Opening another thread changes the reader immediately, independently of a prior thread's pending read receipt; only a fresh deliberate-open snapshot may mark its exact members read. Prioritize current reader work over automatic refreshes, retain bounded observed caches, and avoid rendering collapsed message bodies. Prefetch older mail several viewports ahead. Live paging resumes after the last ordered row across sync changes, deduplicates identities, retains the visible position, and stops automatic retries on errors. Strict snapshot cursors remain the default for existing callers. All scrollbars have a visible, wider hit target and track whenever their scrolling surface is shown.
+
+Consumers: Core45/Mail UI57/Quality58. Gmail24/CLI39/schema29, fixtures0/3 and protocol1 unchanged. This request authorizes scoped navigation, scrolling and acquisition measurements; other Phase 2 acceptance gates stay open.
+
 ## D079 — stable attachment feedback and clear Send state (Mail UI56)
 
 Reserve the attachment filename/status row for idle size, Saving, Saved and failure text. Status changes must not alter the tile height or shift subsequent email content. Elide long errors in place and expose their full text through hover/focus disclosure and accessibility; keep the retry/save control available. Modal saving feedback occupies its existing metadata line. Retain decoded images during asynchronous size changes, begin full-image loading as the viewer becomes visible, and honor raster orientation in preview dimensions and decoding. Close open attachment dialogs on identity change.
@@ -89,7 +113,7 @@ D057 / P2-LLM2C simplifies Settings to editable System/User content with normal 
 
 D056 / P2-LLM2B exposes the complete editable Ollama JSON request: system/user messages, all five variables, full response schema and generation options. No hidden envelope or schema is injected. Schema 23 archives and wraps prior prompt text, preserving model/account choices. Application output/action validation remains independent of editable instructions. Consumers: Local assistance 9/Core 32/Mail UI 34/CLI 26/Quality 34; fixtures 0/3/protocol 1 unchanged. See [the current request contract](local-ai.md) and D056 evidence.
 
-State: Draft · Revision: 49 · Updated: 2026-09-16 · Implementation: D072 account/model feedback at schema29. Scoped evidence is recorded in the prototype execution report; whole-area readiness remains 0/9.
+State: Draft · Revision: 59 · Updated: 2026-09-22 · Implementation: D082 debug console and D083 Calendar mail counts at schema29. Scoped evidence is recorded in the Phase 2 execution report; whole-area readiness remains 0/9.
 
 D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages}}`, `{{partial}}`), combined per-message output, default-on prospective summaries/automatic single-label classification, manual precedence, and summary list previews. Schema 22 fences settings and assisted delivery; fixtures 0/3/protocol 1 unchanged. This supersedes conflicting D051–D053 delivery defaults below; historical evidence remains scoped to its original version. See the D055 decision and Local assistance 8.
 

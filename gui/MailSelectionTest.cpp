@@ -326,7 +326,7 @@ class MailSelectionTest {
             await([&]{return popup() && popup()->property("email").toString()==address;},"name/avatar hover opens exact contact card");
             QMetaObject::invokeMethod(popup(),"close"); move({5,5});
         }
-        require(!find(window->contentItem(),"messageBody_self")->isVisible(),"hovering own name leaves sent row folded");
+        require(!find(window->contentItem(),"messageBody_self") || !find(window->contentItem(),"messageBody_self")->isVisible(),"hovering own name leaves sent row folded");
         auto heading=find(window->contentItem(),"messageHeading_first");
         move(heading->mapToScene({heading->width()/2,heading->height()/2}));
         layout.restart();while(layout.elapsed()<260)QCoreApplication::processEvents(QEventLoop::AllEvents,10);

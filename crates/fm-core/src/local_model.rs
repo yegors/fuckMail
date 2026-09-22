@@ -373,7 +373,7 @@ impl Store {
         // Budget the actual expanded request. Email text is JSON inside a
         // message string, so quotes/newlines can be escaped twice. A raw-byte
         // estimate followed by rejecting the whole message loses usable text.
-        const REQUEST_BYTES: usize = 12000;
+        const REQUEST_BYTES: usize = ollama::INITIAL_REQUEST_BYTES;
         let model_name = &settings.model(task).unwrap().name;
         let request_size = |payload: &Value, sources: &[String]| -> Result<usize> {
             let request =
@@ -862,7 +862,7 @@ mod tests {
                 &plan.sources,
             )
             .unwrap();
-            assert!(serde_json::to_vec(&request).unwrap().len() <= 12000);
+            assert!(serde_json::to_vec(&request).unwrap().len() <= ollama::INITIAL_REQUEST_BYTES);
             assert_eq!(plan.sources, vec![message]);
         }
     }

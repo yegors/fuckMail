@@ -181,16 +181,75 @@ pub async fn infer(
         .model(task)
         .ok_or_else(|| failure("assistance_unavailable", "Select a model for this task"))?;
     qualify(&settings.endpoint, model, cancel).await?;
-    let body = ollama::render_request(settings.prompt(task), &payload, &model.name, sources)
+    let mut body = ollama::render_request(settings.prompt(task), &payload, &model.name, sources)
         .map_err(|s| failure("invalid_request", &s))?;
-    if serde_json::to_vec(&body).unwrap().len() > 12000 {
+    if serde_json::to_vec(&body).unwrap().len() > ollama::INITIAL_REQUEST_BYTES {
         return Err(failure(
             "assistance_limit",
             "Expanded request exceeds the context budget",
         ));
     }
-    let result = request(&settings.endpoint, "chat", Some(body), cancel).await?;
-    if result["model"] != model.name {
+    let generation = async {
+        for attempt in 0..2 {
+            let result = request(&settings.endpoint, "chat", Some(body.clone()), cancel).await?;
+            match response_output(task, &result, &model.name, categories, sources) {
+                Ok(output) => return Ok(output),
+                Err(error)
+                    if attempt == 0
+                        && ["assistance_output_limit", "assistance_format"]
+                            .contains(&error.code.as_str()) =>
+                {
+                    // Retry only format/completion failures once. The rejected
+                    // output never enters the prompt, store or mail actions.
+                    body["messages"].as_array_mut().unwrap().push(json!({"role":"user","content":"Return a complete JSON object with exactly sender_kind, category_ids, category_abstain, reason, summary, source_ids. Use a short factual prose summary, not a code block. Copy IDs from the supplied data only. With no matching label use category_ids:[]; if category_abstain is true the array must be empty. No reasoning or extra text."}));
+                    if serde_json::to_vec(&body).unwrap().len() > 12000 {
+                        return Err(failure(
+                            "assistance_limit",
+                            "Correction request exceeds the context budget",
+                        ));
+                    }
+                }
+                Err(mut error) => {
+                    if error.code == "assistance_format" {
+                        error.code = "invalid_assistance_result".into();
+                    }
+                    return Err(error);
+                }
+            }
+        }
+        unreachable!()
+    };
+    let output = tokio::time::timeout(Duration::from_secs(120), generation)
+        .await
+        .map_err(|_| {
+            failure(
+                "assistance_unavailable",
+                "Ollama analysis timed out after 120 seconds",
+            )
+        })??;
+    // A tag may have been replaced while generation or correction was running.
+    let list = discover(&settings.endpoint, cancel).await?;
+    if !list["models"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|m| m["name"] == model.name && m["digest"] == model.digest && m["eligible"] == true)
+    {
+        return Err(failure(
+            "assistance_stale",
+            "Selected model changed during generation",
+        ));
+    }
+    Ok(output)
+}
+fn response_output(
+    task: &str,
+    result: &Value,
+    model: &str,
+    categories: &[String],
+    sources: &[String],
+) -> Result<Value> {
+    if result["model"] != model {
         return Err(failure(
             "invalid_assistance_result",
             "Ollama responded with a different model",
@@ -213,7 +272,7 @@ pub async fn infer(
     }
     if result["done"] != true {
         return Err(failure(
-            "invalid_assistance_result",
+            "assistance_format",
             "Ollama stopped before completing the response. Try again.",
         ));
     }
@@ -222,24 +281,14 @@ pub async fn infer(
         .filter(|s| !s.trim().is_empty())
         .ok_or_else(|| {
             failure(
-                "invalid_assistance_result",
+                "assistance_format",
                 "The model returned no analysis text. Try again.",
             )
         })?;
-    // A tag may have been replaced while generation was running.
-    let list = discover(&settings.endpoint, cancel).await?;
-    if !list["models"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|m| m["name"] == model.name && m["digest"] == model.digest && m["eligible"] == true)
-    {
-        return Err(failure(
-            "assistance_stale",
-            "Selected model changed during generation",
-        ));
-    }
-    validate_output(task, content, categories, sources)
+    validate_output(task, content, categories, sources).map_err(|mut error| {
+        error.code = "assistance_format".into();
+        error
+    })
 }
 pub(crate) fn validate_output(
     task: &str,

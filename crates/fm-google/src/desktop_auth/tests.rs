@@ -206,7 +206,10 @@ async fn callback_request(redirect: &str, query: &str) {
     socket.write_all(request.as_bytes()).await.unwrap();
     let mut response = Vec::new();
     socket.read_to_end(&mut response).await.unwrap();
-    assert!(!String::from_utf8_lossy(&response).contains(query));
+    let text = String::from_utf8_lossy(&response);
+    assert!(!text.contains(query));
+    assert!(text.contains("text/html"));
+    assert!(text.contains("Return to fuckMail."));
 }
 
 #[tokio::test]

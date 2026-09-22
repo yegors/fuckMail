@@ -61,6 +61,7 @@
     }
   },
   "stream": false,
+  "think": false,
   "options": {
     "temperature": 0,
     "num_ctx": 16384,

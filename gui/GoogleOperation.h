@@ -6,7 +6,7 @@
 #include <functional>
 
 // One explicit provider operation or local draft attachment import. Its
-// connection never carries cached queries.
+// connection also supports one cancellable foreground conversation read.
 // Closing the connection cancels its engine owner; durable outcomes remain there.
 class GoogleOperation final : public QObject {
 public:

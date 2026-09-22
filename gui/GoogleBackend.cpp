@@ -26,6 +26,7 @@ QVariantMap MailBackend::googleSyncState(const QString &account) const {
 
 void MailBackend::googleOperation(const QString &method, const QString &account, const QJsonObject &params, Callback callback) {
     const auto refuseBeforeRequest = [&](const QString &code, const QString &message) {
+        emit debugEvent("WARN", "operation", message, {{"method", method}, {"code", code}});
         QJsonObject error{{"code", code}, {"message", message}};
         if (method == "google_send")
             error["details"] = QJsonObject{{"send_invocation_finished_before_dispatch", true}};
@@ -48,7 +49,20 @@ void MailBackend::googleOperation(const QString &method, const QString &account,
     }
     auto operation = new GoogleOperation(account, params["request_id"].toString(), this);
     m_googleOperations.insert(operation);
-    operation->start(m_profile, m_enginePid, method, params, [this, operation, callback = std::move(callback)](auto result, bool ok) {
+    const auto debugStarted = QDateTime::currentMSecsSinceEpoch();
+    emit debugEvent("INFO", "operation", "Operation started", {{"method", method}});
+    operation->start(m_profile, m_enginePid, method, params, [this, operation, method, debugStarted, callback = std::move(callback)](auto result, bool ok) {
+        QVariantMap fields{{"method", method}, {"elapsed_ms", QDateTime::currentMSecsSinceEpoch() - debugStarted}};
+        const auto outcome = result["state"].toString();
+        fields["phase"] = outcome;
+        if (!ok) {
+            fields["code"] = result["code"].toString();
+            const auto retry = result["details"].toObject().value("retry_after_secs");
+            if (retry.isDouble()) fields["retry_after_secs"] = retry.toInteger();
+        }
+        emit debugEvent(ok ? "INFO" : "ERROR", "operation", ok ? "Operation completed" : result["message"].toString("Operation failed"), fields);
+        if (ok && (outcome == "rejected" || outcome == "acceptance_unknown" || outcome == "failed"))
+            emit debugEvent("WARN", "operation", "Operation needs attention; inspect its saved status", fields);
         m_googleOperations.remove(operation);
         operation->deleteLater();
         callback(result, ok);
@@ -62,9 +76,44 @@ void MailBackend::cancelGoogleOperation(const QString &account, const QString &r
 }
 
 void MailBackend::cancelGoogleOperations(bool notify) {
+    ++m_readerLoadSerial; m_readerLoadingGeneration = -1; m_readerReviewPending = false;
+    m_readerPrefetchTimer.stop(); m_readerPrefetchTarget.clear();
+    m_readerFuture.cancel(); m_readerPrefetchFuture.cancel(); m_readerPool.clear();
+    if (m_readerPrefetchOperation) {
+        auto operation = m_readerPrefetchOperation; m_readerPrefetchOperation = nullptr;
+        operation->cancel(false); operation->deleteLater();
+    }
+    if (m_readerOperation) {
+        auto operation = m_readerOperation; m_readerOperation = nullptr;
+        operation->cancel(false); operation->deleteLater();
+    }
     const auto operations = m_googleOperations;
     for (auto operation : operations) operation->cancel(notify);
     if (!notify) { m_googleOperations.clear(); for (auto operation : operations) delete operation; }
+}
+
+void MailBackend::requestReader(const QString &account, const QJsonObject &params, Callback callback,
+                               const QString &method, bool prefetch) {
+    // At most one foreground read. It must not wait for source-file decoding,
+    // background pages or the previous conversation's receipt on the main pipe.
+    if (m_enginePid <= 0 || !m_connected) {
+        request(method, account, params, std::move(callback)); return;
+    }
+    auto &slot = prefetch ? m_readerPrefetchOperation : m_readerOperation;
+    if (slot) {
+        auto previous = slot; slot = nullptr;
+        previous->cancel(false); previous->deleteLater();
+    }
+    auto operation = new GoogleOperation(account, {}, this);
+    slot = operation;
+    operation->start(m_profile, m_enginePid, method, params,
+        [this, operation, method, prefetch, callback = std::move(callback)](auto result, bool ok) {
+            auto &slot = prefetch ? m_readerPrefetchOperation : m_readerOperation;
+            if (slot == operation) slot = nullptr;
+            operation->deleteLater();
+            if (!ok && !prefetch && method == "conversation") fail(result["message"].toString("Could not load this conversation. Retry opening it."));
+            callback(result, ok);
+        });
 }
 
 void MailBackend::cancelGoogleProviderOperations(const QString &account) {

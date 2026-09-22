@@ -328,6 +328,7 @@ Popup {
         }
         Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
         ScrollView {
+                ScrollBar.vertical: FmScrollBar {}
             id: formScroll; objectName: "eventFormScroll"
             Layout.fillWidth: true; Layout.fillHeight: true; clip: true; contentWidth: availableWidth; ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
             ColumnLayout {

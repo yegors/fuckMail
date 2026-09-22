@@ -5,6 +5,114 @@ const ACCOUNT: &str = "windscribe";
 const THREAD: &str = "windscribe-thread-000";
 
 #[test]
+fn live_mail_pages_continue_during_flag_changes_without_losing_older_threads() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    for grouped in [true, false] {
+        let mut query = json!({"folder":"all","grouped":grouped,"limit":7,"live_paging":true});
+        let mut seen = std::collections::HashSet::new();
+        let mut count = 0;
+        loop {
+            let page = store
+                .handle("conversations", Some(ACCOUNT), query.clone())
+                .unwrap();
+            for row in page["conversations"].as_array().unwrap() {
+                seen.insert(row["id"].as_str().unwrap().to_owned());
+            }
+            count += 1;
+            assert!(
+                count < 25,
+                "pagination must make bounded progress during writes"
+            );
+            if page["next_cursor"].is_null() {
+                break;
+            }
+            query["cursor"] = page["next_cursor"].clone();
+            // Repeated same-value writes still invalidate strict cursors.
+            let read = store.conversation(ACCOUNT, THREAD).unwrap();
+            store.handle("flag",Some(ACCOUNT),json!({"id":THREAD,"message_ids":read["message_ids"],"expected_revision":read["revision"],"request_id":format!("live-{grouped}-{count}"),"starred":read["messages"][0]["starred"]})).unwrap();
+        }
+        assert_eq!(seen.len(), 110);
+        let mut wrong = query.clone();
+        wrong["folder"] = json!("sent");
+        assert_eq!(
+            store
+                .handle("conversations", Some(ACCOUNT), wrong)
+                .unwrap_err()
+                .code,
+            "stale_cursor"
+        );
+    }
+}
+
+#[test]
+fn live_mail_pages_keep_the_order_after_head_insertion_and_deleted_anchor() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    let insert = |store: &Store, id: &str, date: &str| {
+        store.db.execute("INSERT INTO conversations(account,id,subject,revision) VALUES(?1,?2,'Paging test',1)",params![ACCOUNT,id]).unwrap();
+        store.db.execute("INSERT INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision) VALUES(?1,?2,?2,?2,'Paging','paging@example.test','test@example.test','Paging test','Generated paging body',?3,1,0,1,0,'',1)",params![ACCOUNT,id,date]).unwrap();
+    };
+    for index in 1..=30 {
+        insert(
+            &store,
+            &format!("paging-{index:02}"),
+            &format!("2030-01-{index:02}T00:00:00Z"),
+        );
+    }
+    let mut query = json!({"folder":"inbox","grouped":true,"live_paging":true,"limit":5});
+    let first = store
+        .handle("conversations", Some(ACCOUNT), query.clone())
+        .unwrap();
+    assert_eq!(first["conversations"][4]["id"], "paging-26");
+    query["cursor"] = first["next_cursor"].clone();
+    store
+        .db
+        .execute(
+            "DELETE FROM messages WHERE account=?1 AND id='paging-26'",
+            [ACCOUNT],
+        )
+        .unwrap();
+    store
+        .db
+        .execute(
+            "DELETE FROM conversations WHERE account=?1 AND id='paging-26'",
+            [ACCOUNT],
+        )
+        .unwrap();
+    insert(&store, "paging-new-head", "2031-01-01T00:00:00Z");
+    insert(&store, "paging-new-older", "2029-01-01T00:00:00Z");
+    let mut ids = Vec::new();
+    for _ in 0..30 {
+        let page = store
+            .handle("conversations", Some(ACCOUNT), query.clone())
+            .unwrap();
+        ids.extend(
+            page["conversations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| row["id"].as_str().unwrap().to_owned()),
+        );
+        if page["next_cursor"].is_null() {
+            break;
+        }
+        query["cursor"] = page["next_cursor"].clone();
+    }
+    let expected: Vec<_> = (1..=25)
+        .rev()
+        .map(|index| format!("paging-{index:02}"))
+        .collect();
+    assert_eq!(&ids[..25], expected.as_slice());
+    assert_eq!(ids[25], "paging-new-older");
+    assert!(!ids.iter().any(|id| id == "paging-new-head"));
+    assert_eq!(
+        ids.len(),
+        ids.iter().collect::<std::collections::HashSet<_>>().len()
+    );
+}
+
+#[test]
 fn phase1_fixture_counts_filters_groups_and_cursor_agree() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(dir.path()).unwrap();

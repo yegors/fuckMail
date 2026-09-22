@@ -75,6 +75,7 @@ Popup {
         layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.6); shadowBlur: 1; shadowVerticalOffset: 24 }
     }
     contentItem: ScrollView {
+                ScrollBar.vertical: FmScrollBar {}
         clip: true
         contentWidth: availableWidth
         ScrollBar.horizontal.policy: ScrollBar.AlwaysOff

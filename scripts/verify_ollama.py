@@ -38,17 +38,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
         elif self.path == "/api/show": result = {"capabilities":["completion"],"details":{"format":"gguf"}}
         elif self.path == "/v1/models": result = {"data":[{"id":"fixture:latest"}]}
         elif self.path in ("/api/chat", "/v1/chat/completions"):
+            assert len(json.dumps(body, ensure_ascii=False, separators=(',',':')).encode()) <= 12000
             compatible = self.path == "/v1/chat/completions"
             server.calls += 1
             mode = server.mode
             server.started.set()
             if mode == "delay": server.release.wait(8)
             schema = (body["response_format"]["json_schema"]["schema"] if compatible else body["format"])["properties"]
-            data = json.JSONDecoder().raw_decode(body["messages"][-1]["content"])[0]
+            data = json.JSONDecoder().raw_decode(body["messages"][1]["content"])[0]
             expected = expand_template(server.template, dict(data, model=body["model"], source_ids=[m["id"] for m in data["messages"]]))
             if compatible:
                 assert body == {"model":expected["model"],"messages":expected["messages"],"stream":False,"temperature":expected["options"]["temperature"],"max_tokens":expected["options"]["num_predict"],"response_format":{"type":"json_schema","json_schema":{"name":"mail_analysis","strict":True,"schema":expected["format"]}}}, "Compatible HTTP request differs from the saved prompt/schema"
             else:
+                expected.setdefault("think", False)
+                if len(body["messages"]) == len(expected["messages"]) + 1:
+                    correction = body["messages"][-1]
+                    assert correction["role"] == "user" and correction["content"].startswith("Return a complete JSON object")
+                    expected["messages"].append(correction)
                 assert body == expected, "HTTP request differs from the visible request template"
             assert body["messages"][0]["content"] == "Only my visible system instructions."
             assert (body["temperature"] if compatible else body["options"]["temperature"]) == 0.25
@@ -56,9 +62,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if "summary" in schema: output.update( {"summary":"A design review is discussed.","source_ids":[data["messages"][0]["id"]]})
             if "sender_kind" in schema: output.update({"sender_kind":"human","category_ids":[data["labels"][0]["id"]] if data["labels"] else [],"category_abstain":False,"reason":"Personal correspondence."})
             if mode == "invalid": output["read"] = True
+            if mode == "whitespace": output["summary"] = "Meet J. R. Smith at 10 a.m.\n\nBring the U.S. report"
+            if mode == "foreign-source": output["source_ids"] = ["other-message"]
+            if mode == "duplicate-source": output["source_ids"] *= 2
+            if mode == "foreign-label": output["category_ids"] = ["invented-label"]
+            if mode in ("repair-once", "repair-delay"):
+                output["summary"] = "```"
+                server.mode = "delay" if mode == "repair-delay" else "valid"
             if mode == "oversized": output={"summary":"x"*300000,"source_ids":["sample-message"]}
             assert "tools" not in body
             result = {"model":"fixture:latest","done":True,"done_reason":"stop","message":{"content":json.dumps(output)}}
+            if mode == "terminal-token": result["message"]["content"] += "<|eot|>"
+            if mode == "json-fence": result["message"]["content"] = "```json\n" + result["message"]["content"] + "\n```"
             if mode=="null-tools": result["message"]["tool_calls"]=None
             if mode=="truncated": result["done_reason"]="length"
             if mode=="tool-call": result["message"]["tool_calls"]=[{"function":{"name":"test"}}]
@@ -116,7 +131,7 @@ def main():
                     assert time.monotonic()<deadline,"No discovery"
                     time.sleep(.05)
                 discovery=json.loads((profile/"engine.json").read_text()); a=Client(discovery); b=Client(discovery)
-                assert a.call("status")["schema_version"]==27
+                assert a.call("status")["schema_version"]==29
                 state=a.call("assist_settings_get"); settings=state["settings"]
                 assert not settings["accounts"] and server.calls==0
                 settings["endpoint"]="http://127.0.0.1:"+str(server.server_port)
@@ -125,6 +140,7 @@ def main():
                 model={"name":"fixture:latest","digest":"a"*64}
                 settings["model"]=model
                 template=json.loads(settings["prompt"])
+                template.pop("think", None)  # Already-saved pre-D080 prompts.
                 template["messages"][0]["content"]="Only my visible system instructions."
                 template["messages"][1]["content"]='{"labels":{{labels}},"messages":{{messages}},"partial":{{partial}}}'
                 template["options"]["temperature"]=0.25
@@ -176,12 +192,28 @@ def main():
                 typed=subprocess.run([str(cli),"--profile",str(profile),"--engine",str(pathlib.Path(args.engine).resolve()),"--json","assist","test","summary"],capture_output=True,text=True,timeout=20)
                 assert typed.returncode==0,typed.stdout+typed.stderr
                 assert json.loads(typed.stdout)["result"]["status"]=="completed"
-                for mode,code in [("null-tools",None),("truncated","assistance_output_limit"),("tool-call","invalid_assistance_result")]:
+                for mode,code in [("null-tools",None),("whitespace",None),("terminal-token",None),("json-fence",None),("foreign-source","invalid_assistance_result"),("duplicate-source","invalid_assistance_result"),("foreign-label","invalid_assistance_result"),("truncated","assistance_output_limit"),("tool-call","invalid_assistance_result")]:
                     server.mode=mode
+                    calls_before = server.calls
                     probe=a.call("assist_start",{"task":"message","sample":True})["job_id"]
                     result=a.wait(probe)
                     if code: assert result["status"]=="failed" and result["error"]["code"]==code, result
                     else: assert result["status"]=="completed", result
+                    assert server.calls-calls_before == (2 if mode in ("foreign-source","duplicate-source","foreign-label","truncated") else 1)
+                server.mode="repair-once"
+                calls_before=server.calls
+                repaired=a.call("assist_start",{"task":"message","sample":True})["job_id"]
+                assert a.wait(repaired)["status"]=="completed" and server.calls-calls_before==2
+                server.mode="repair-delay";server.release.clear()
+                calls_before=server.calls
+                repairing=a.call("assist_start",{"task":"message","sample":True})["job_id"]
+                deadline=time.monotonic()+5
+                while server.calls < calls_before+2:
+                    assert time.monotonic()<deadline
+                    time.sleep(.02)
+                a.call("assist_cancel",{"job_id":repairing})
+                assert a.wait(repairing)["status"]=="canceled"
+                server.release.set()
                 server.mode="invalid"
                 invalid=a.call("assist_start",{"task":"classification","sample":True})["job_id"]
                 assert a.wait(invalid)["status"]=="failed"
@@ -203,7 +235,7 @@ def main():
                 disconnected=a.call("assist_start",{"task":"summary","sample":True})["job_id"]
                 assert server.started.wait(5)
                 a.close();server.release.set();server.mode="valid"
-                assert b.call("status")["schema_version"]==27
+                assert b.call("status")["schema_version"]==29
                 independent=b.call("assist_start",{"task":"summary","sample":True})["job_id"]
                 assert b.wait(independent)["status"]=="completed"
                 state=b.call("assist_settings_get");compatible=state["settings"]
