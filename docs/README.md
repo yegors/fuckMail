@@ -26,7 +26,8 @@ fuckMail is a personal, opinionated mail/calendar client for large separate acco
 | [Contract index](contracts/README.md) | Living build specifications, including the full CLI, ownership and integration gates |
 | [Current stack recommendation](research/desktop-stack.md) | Rust engine/CLI + C++20/Qt Quick UI proposal, alternatives and evidence needed |
 | [Installation research](research/linux-and-distribution.md) | Required Linux targets and simple GUI/CLI delivery |
-| [Current HTML prototype](research/flight-progress-v2.md) | Phase 1 source review, confirmed interactions, unchanged export and native adaptation |
+| [Current HTML prototype](research/prototype-september-22.md) | September 22 mail-list/Accounts design, native alignment and explicit backlog verification |
+| [Phase 1 design reference](research/flight-progress-v2.md) | Original source review, unchanged exports and native adaptation |
 | [Earlier mockup references](research/design-references.md) | Unchanged Phase 0 PNGs and historical visual direction |
 
 ## Where information belongs

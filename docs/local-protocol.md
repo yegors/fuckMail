@@ -1,5 +1,13 @@
 # Local protocol — protocol 1, Phase 2 additive boundary
 
+## D086 — explicit historical local analysis
+
+`assist_backlog {}` requires an active account and returns `{job_id,status:"scanning"}` immediately. Poll the session-owned `assist_job {job_id}`. Completed coverage has `kind:"coverage"`, `local_messages`, `google_messages:null`, `eligible`, `processed`, `missing`, `ranges:{week,month,year,all}`, account enablement flags and `as_of`. These count messages, not conversations. A missing Google total is unknown. Exclude sent, Trash, provider-deleted/Draft, missing-source-identity/empty-body, future and malformed-date messages from eligible analysis. Local totals still include retained sent/Trash mail.
+
+`assist_batch_start {range:"week"|"month"|"year"|"all"}` starts explicit missing-only analysis in the chosen account. The rolling windows are 7/30/365 days through the captured time. It returns `{job_id,status:"scanning"}`; poll `assist_job` or list owned jobs with `assist_jobs`. Batch states have `kind:"backlog"`, account/range, `total`, `processed`, `completed`, `skipped`, `failed`, elapsed seconds when running, and an optional typed error. Status is scanning/running/completed/completed_with_errors/failed/canceled. `assist_cancel {job_id}` stops unfinished work without deleting results. Opening Accounts only requests coverage. It cannot start inference. A disconnected owner cancels its jobs; reconnect does not resume them. GUI and CLI share the same boundary and fair inference slot.
+
+`conversations` additionally returns the selected preview message's `recipient` for Sent list presentation. Core47/Local assistance16/Mail UI62/CLI41/Quality62; protocol1/schema29/fixtures0,3 remain unchanged.
+
 ## D083 — Calendar mail activity
 
 `calendar_mail_activity {from,to}` accepts canonical YYYY-MM-DD dates spanning 1–42 days, end exclusive. Account is optional: null/omitted combines active accounts (maximum 100), while an explicit account must be active. The saved Calendar time zone defines civil days, including DST. Ready results contain `from`, `to`, `account` (null for combined), `account_count`, `time_zone`, `state:"ready"`, `days:[{date,received,sent}]`, `cached_only:true`, `header_date_count` and `revision`. All days are present in order. Without a display zone, return the same date/account scope with `state:"display_zone_required"`, `time_zone:null` and an empty `days` array. Malformed ranges/accounts fail explicitly.

@@ -1,5 +1,23 @@
 # Mail UI, reader and human composer
 
+## D087 — navigation and reader stability (Mail UI63)
+
+Repeated keyboard input must retain its exact final target without unbounded reader work. Accumulate every key against the cursor, coalesce viewport/open work at a 16 ms frame interval, and cancel queued intent on account/query/mouse/new-message changes. Disable old-reader actions until its cursor target is selected. Received layout tables must not block the UI thread: linearize nested or malformed tables and projections exceeding 64 cells or 32 rows; preserve simple data tables, safe formatting/links and every cell’s text. Stored source and authored composition do not change. Cold navigation must prepare saved source, summary and body together, without provisional body or stale summary replacement. Adopting a prepared summary invalidates earlier controller result tickets. Reserve one status line so provider acknowledgment transitions cannot move the body; elided feedback exposes its full text on hover. Preserve editable focus, draft saves, read-on-open and account/source fences. Consumers: native GUI and verification; shared Core/CLI/schema29/fixtures0,3/protocol1 unchanged.
+
+
+## D086 — mail list and account backlog
+
+The September 22 prototype is the current visual target. Mail rows show sender name and address, subject/count above preview, category and trailing time, with summary icon only for an actual current summary. Use one mouse/keyboard cursor without a stale focused-row border; the open conversation and explicit multi-selection remain distinguishable. Arrow, Page Up/Down and Home/End navigation skips collapsed groups, reveals the target and supports Shift ranges. Typing and popup navigation keep priority. Accounts adds a second three-column statistics row (Messages / Summarized & labeled / Backlog) and a missing-only date-range menu. Show measured processed/total progress, per-message failures and Stop; preserve progress across page/account navigation, cancel on GUI session end. Display unavailable Google totals explicitly, never sample counts or invented duration estimates.
+
+Retired reader components must not request a source under the newly selected account. Admit source requests only for an exact member/version in the current reader, retaining existing generation/lifecycle and source-integrity checks.
+
+Consumers: Core47 / Local assistance16 / Mail UI62 / CLI41 / Quality62. Schema29, fixtures0/3 and protocol1 unchanged.
+
+
+## D085 — scrollbar visibility (Mail UI61)
+
+The conversation list and the thread reader keep a wide always-visible vertical scrollbar. Every other scrolling surface — dialogs, popups, settings, calendar, composer and previews — uses that same scrollbar only when its content overflows. Horizontal mailbox and label tracks stay off. Consumers: native mail list and composer checks. Schema29 and other boundaries unchanged.
+
 ## D084 — reader publication and navigation stability (Mail UI60)
 
 Mailbox and label tabs have no horizontal scrollbar; retain horizontal wheel/trackpad and keyboard selection/reveal. Content scrollbars remain wide and visible. Prepare the latest retained message's source, metadata and saved assistance before showing a cold reader, and reuse that prepared view on return. Neighbor/hover prefetch is local, bounded and read-only. Only a deliberate open of a fresh matching snapshot may submit a read receipt. Source/summary loading must not replace an initial plain-text layout with a differently sized HTML layout. Preserve account/source/lifecycle/generation checks and explicit fallback when source data is unavailable. Never retain proxy JSON values after their owning temporary is destroyed.
@@ -113,7 +131,7 @@ D057 / P2-LLM2C simplifies Settings to editable System/User content with normal 
 
 D056 / P2-LLM2B exposes the complete editable Ollama JSON request: system/user messages, all five variables, full response schema and generation options. No hidden envelope or schema is injected. Schema 23 archives and wraps prior prompt text, preserving model/account choices. Application output/action validation remains independent of editable instructions. Consumers: Local assistance 9/Core 32/Mail UI 34/CLI 26/Quality 34; fixtures 0/3/protocol 1 unchanged. See [the current request contract](local-ai.md) and D056 evidence.
 
-State: Draft · Revision: 59 · Updated: 2026-09-22 · Implementation: D082 debug console and D083 Calendar mail counts at schema29. Scoped evidence is recorded in the Phase 2 execution report; whole-area readiness remains 0/9.
+State: Draft · Revision: 62 · Updated: 2026-09-22 · Implementation: D086 implemented; scoped Rust/native/engine-CLI and signed Mac relocation/startup checks pass. Broader post-arrival scroll-restoration verification remains open. Schema29 and whole-area readiness0/9 unchanged.
 
 D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages}}`, `{{partial}}`), combined per-message output, default-on prospective summaries/automatic single-label classification, manual precedence, and summary list previews. Schema 22 fences settings and assisted delivery; fixtures 0/3/protocol 1 unchanged. This supersedes conflicting D051–D053 delivery defaults below; historical evidence remains scoped to its original version. See the D055 decision and Local assistance 8.
 

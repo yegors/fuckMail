@@ -49,6 +49,9 @@ Item {
         const snapshot = backend.conversation
         if (!snapshot || snapshot.id !== conversationId || snapshot.assistance_results === undefined) return false
         if (snapshot.assistance_settings && snapshot.assistance_settings.settings) adoptSettings(snapshot.assistance_settings)
+        // A query started while the reader was empty may arrive after its
+        // complete snapshot. It cannot replace that newer saved projection.
+        latestResults = ""
         items = snapshot.assistance_results
         return true
     }

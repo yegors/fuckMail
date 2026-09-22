@@ -256,6 +256,10 @@ bool GuiSelfTest::editorStateIntact() const {
         << "cursor=" << editor->property("cursorPosition") << "selection=" << editor->property("selectionStart") << editor->property("selectionEnd");
     return intact;
 }
+bool GuiSelfTest::openReply() {
+    const auto mail = m_window->findChild<QQuickItem *>("mailWorkspace");
+    return (mail && mail->property("replyOpen").toBool()) || click("replyButton");
+}
 bool GuiSelfTest::click(const QString &objectName) {
     auto window = qobject_cast<QQuickWindow *>(m_window);
     auto item = window ? visualChild(window->contentItem(), objectName) : nullptr;
@@ -328,8 +332,10 @@ void GuiSelfTest::step() {
         if (m_backend.accounts().size() != 3) { failed("Expected three isolated synthetic accounts."); return; }
         m_id = m_backend.selectedId();
         m_sender = m_backend.conversation()["messages"].toList().first().toMap()["sender_email"].toString();
-        if (!m_backend.hasMore()) { failed("The fixture must exercise more than one result page."); return; }
-        m_backend.loadMore(); m_stage = 20; break;
+        // Automatic prefetch can finish the second page while the selected
+        // reader/draft is preparing. Both paths must still prove >50 rows below.
+        if (m_backend.hasMore()) m_backend.loadMore();
+        m_stage = 20; break;
     case 20:
         if (m_backend.loading()) return;
         m_loadedCount = int(m_backend.conversations().size());
@@ -344,7 +350,7 @@ void GuiSelfTest::step() {
         m_backend.setStarred(true); ++m_stage; break;
     case 2:
         if (!membersHave("starred", true)) return;
-        if (!click("replyButton")) return;
+        if (!openReply()) return;
         m_stage = 27; break;
     case 27:
         {
@@ -437,6 +443,11 @@ void GuiSelfTest::step() {
     case 30:
         if (m_backend.mutationInFlight() || !membersHave("unread", false)) return;
         if (!membersHave("starred", true)) { failed("Read-on-open cleared held action."); return; }
+        // The saved editor can reopen when returning to its conversation.
+        // Minimize it through the visible control before using reader actions.
+        if (auto mail = m_window->findChild<QQuickItem *>("mailWorkspace"); mail && mail->property("replyOpen").toBool()) {
+            click("collapseReply"); return;
+        }
         if (!click("doneConversationButton")) return;
         m_stage = 31; break;
     case 31:
@@ -624,7 +635,7 @@ void GuiSelfTest::step() {
     case 99:
         if (m_backend.loading() || m_backend.selectedId() != m_discardId || m_backend.draft().isEmpty()) return;
         if (m_backend.draft()["body"].toString() != m_discardBefore["body"].toString()) return;
-        if (!click("replyButton")) return;
+        if (!openReply()) return;
         m_stage = 100; break;
     case 100: {
         auto reader = m_window->findChild<QQuickItem *>("reader");
@@ -703,7 +714,7 @@ void GuiSelfTest::step() {
     case 111:
         if (m_backend.loading() || m_backend.selectedId() != m_id || m_backend.draft().isEmpty()) return;
         if (m_backend.draft()["body"].toString() != m_authored || !m_backend.draft()["attachment_ids"].toList().contains(m_attachmentId)) { failed("Discard verification did not restore the untouched recovery draft."); return; }
-        if (!click("replyButton")) return;
+        if (!openReply()) return;
         m_stage = 112; break;
     case 112: {
         auto editor = m_window->findChild<QQuickItem *>("replyComposer");

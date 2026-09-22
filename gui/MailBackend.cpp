@@ -1477,6 +1477,13 @@ QString MailBackend::labelRequest(const QString &method, const QVariantMap &para
 }
 
 QString MailBackend::requestMessageSource(const QString &id, const QString &version) {
+    // QML can briefly retain the preceding account's member while accountChanged
+    // propagates. Never attach that obsolete source request to the new account.
+    const auto members = m_conversation.value("messages").toList();
+    if (std::none_of(members.cbegin(), members.cend(), [&](const auto &value) {
+        const auto member = value.toMap();
+        return member.value("id").toString() == id && member.value("source_version").toString() == version;
+    })) return {};
     const auto ticket = QUuid::createUuid().toString(QUuid::WithoutBraces), account = m_account;
     const auto lifecycle = lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong();
     const auto key = account + '\n' + id + '\n' + version;

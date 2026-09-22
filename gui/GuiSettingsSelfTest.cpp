@@ -170,7 +170,8 @@ void GuiSettingsSelfTest::step() {
         if (!click("settingsPage_Accounts")) return;
         ++m_stage; break;
     case 4:
-        if (!type("accountName_windscribe", "") || !click("saveAccount_windscribe")) return;
+        if (!type("accountName_windscribe", "")) return;
+        key(item("accountName_windscribe"), Qt::Key_Return);
         ++m_stage; break;
     case 5: {
         auto status = item("settingsStatus");
@@ -185,7 +186,8 @@ void GuiSettingsSelfTest::step() {
         break;
     }
     case 6:
-        if (!type("accountName_windscribe", m_name) || !click("saveAccount_windscribe")) return;
+        if (!type("accountName_windscribe", m_name)) return;
+        key(item("accountName_windscribe"), Qt::Key_Return);
         ++m_stage; break;
     case 7:
         if (!saved() || m_backend.currentAccount()["name"].toString() != m_name) return;

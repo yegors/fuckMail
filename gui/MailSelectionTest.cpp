@@ -87,7 +87,7 @@ class MailSelectionTest {
         require(h.lastQuery["folder"]=="inbox","Inbox uses real Inbox membership so Archive removes mail");
         const auto snapshots=h.backend.snapshotMailRows({"a","b"});
         auto changed=h.rows[1].toMap(); changed["message_ids"]=QVariantList{"b-original","b-later"}; changed["revision"]=4;
-        h.rows[1]=changed; h.backend.publishConversations(h.rows);
+        h.rows[1]=changed; h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
         h.backend.applyMailSelection(snapshots,"done");
         auto first=h.take();
         const auto params=first.request["params"].toObject();
@@ -166,11 +166,21 @@ class MailSelectionTest {
         require(elapsed.elapsed()>=1700,"minimum splash hold respected");
         auto *mail=find(window->contentItem(),"mailWorkspace"); require(mail,"actual mail workspace");
         auto summaryRow=h.rows[0].toMap(); summaryRow["summary"]="Review the design by Friday."; summaryRow["snippet"]="Original body preview"; h.rows[0]=summaryRow;
-        h.backend.publishConversations(h.rows);
+        h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
         await([&]{auto *preview=find(window->contentItem(),"mailPreview_a");return preview && preview->property("text")=="Review the design by Friday.";},"summary replaces source preview");
         require(find(window->contentItem(),"summaryPreviewIcon_a")->isVisible(),"summary preview has assistance icon");
+        auto *senderColumn=find(window->contentItem(),"mailSenderColumn_a");
+        auto *senderAddress=find(window->contentItem(),"mailSenderAddress_a");
+        auto *sourcePreview=find(window->contentItem(),"mailPreview_a");
+        require(senderColumn && senderColumn->isVisible() && senderAddress->property("text")=="sender@example.test","dedicated sender name/address column");
+        require(senderColumn->mapToScene(QPointF(senderColumn->width(),0)).x() < sourcePreview->mapToScene(QPointF()).x(),"sender column precedes subject/preview without overlap");
+        summaryRow["recipient"]="teammate@example.test";h.rows[0]=summaryRow;h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
+        h.backend.m_folder="sent";emit h.backend.queryChanged();
+        await([&]{return find(window->contentItem(),"mailPreview_a")->property("text").toString().startsWith("To teammate@example.test · ");},"Sent preview identifies its recipient");
+        require(!find(window->contentItem(),"mailSenderColumn_a")->isVisible(),"Sent retains the prototype subject/recipient arrangement");
+        h.backend.m_folder="inbox";emit h.backend.queryChanged();
         require(!find(window->contentItem(),"threadSummary") && !find(window->contentItem(),"summarizeConversation"),"no redundant thread summary surface");
-        summaryRow.remove("summary");h.rows[0]=summaryRow;h.backend.publishConversations(h.rows);
+        summaryRow.remove("summary");h.rows[0]=summaryRow;h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
         await([&]{return find(window->contentItem(),"mailPreview_a")->property("text").toString().contains("Original body preview");},"missing summary falls back to source text");
         require(!find(window->contentItem(),"summaryPreviewIcon_a")->isVisible(),"source preview has no assistance icon");
         click(window,find(window->contentItem(),"conversationRow_a"),Qt::RightButton);
@@ -435,11 +445,38 @@ class MailSelectionTest {
         await([&]{return previews.contains(invalidImage);},"invalid preview returns");
         require(previews[invalidImage]["preview_url"].toString().isEmpty() && !previews[invalidImage]["preview_error"].toString().isEmpty(),"non-image bytes cannot become a preview");
         QObject::disconnect(previewConnection);
+        // One shared cursor, viewport paging, edge/range selection and collapsed-group skipping.
+        h.backend.m_folder="inbox"; h.backend.m_selected="a"; emit h.backend.queryChanged();
+        QMetaObject::invokeMethod(mail,"clearSelection");mail->setProperty("selectionAnchor","a");
+        const auto originalRows=h.rows;
+        for(int i=0;i<40;++i) {
+            auto data=originalRows[0].toMap();data["id"]=QString("page-%1").arg(i,2,10,QChar('0'));data["subject"]=QString("Page navigation %1").arg(i);data["unread"]=false;
+            data["group"]=i<20 ? "review" : "held"; h.rows.append(data);
+        }
+        h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
+        auto *list=find(window->contentItem(),"conversationList");require(list,"list focus owner");list->forceActiveFocus();
+        const auto press=[&](int code,Qt::KeyboardModifiers mods={}) { QKeyEvent key(QEvent::KeyPress,code,mods);QCoreApplication::sendEvent(window,&key);QCoreApplication::processEvents(); };
+        press(Qt::Key_PageDown,Qt::ShiftModifier);
+        await([&]{return mail->property("selectionRows").toList().size()>3;},"Page Down advances a viewport and extends the range");
+        require(mail->property("keyboardNavigation").toBool() && mail->property("pointerRow").toString().isEmpty(),"keyboard owns the single hover cursor");
+        require(mail->property("highlightedRow")==mail->property("selectionCursor"),"keyboard highlight follows the range cursor");
+        require(list->hasActiveFocus(),"navigation does not leave focus on an old row");
+        press(Qt::Key_End,Qt::ShiftModifier);
+        await([&]{return mail->property("selectionRows").toList().size()==h.rows.size();},"Shift End selects through the last loaded row");
+        press(Qt::Key_PageUp,Qt::ShiftModifier);
+        require(mail->property("selectionRows").toList().size()<h.rows.size(),"Page Up returns toward the prior viewport");
+        press(Qt::Key_Home,Qt::ShiftModifier);
+        require(mail->property("selectionRows").toList().size()==1,"Shift Home returns to the first row");
+        QMetaObject::invokeMethod(mail,"toggleGroup",Q_ARG(QVariant,"held"));
+        press(Qt::Key_End,Qt::ShiftModifier);
+        require(mail->property("selectionCursor").toString()=="page-19","End skips collapsed groups");
+        QMetaObject::invokeMethod(mail,"toggleGroup",Q_ARG(QVariant,"held"));
+        QMetaObject::invokeMethod(mail,"clearSelection");h.rows=originalRows;h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
         require(!warnings,"no QML errors in production selection/splash controls");
         const auto capture=qEnvironmentVariable("FM_SELECTION_CAPTURE");
         if(!capture.isEmpty()) {
             h.backend.m_folder="inbox"; emit h.backend.queryChanged();
-            auto preview=h.rows[0].toMap();preview["summary"]="You granted Example Mail access to your account data. Review access if you did not authorize it.";preview["subject"]="Security alert";h.rows[0]=preview;h.backend.publishConversations(h.rows);
+            auto preview=h.rows[0].toMap();preview["summary"]="You granted Example Mail access to your account data. Review access if you did not authorize it.";preview["subject"]="Security alert";h.rows[0]=preview;h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
             h.backend.m_selected="a";
             h.backend.m_conversation={{"id","a"},{"subject","Security alert"},{"revision",3},{"messages",QVariantList{QVariantMap{{"id","a-original"},{"subject","Security alert"},{"sender_name","Account security"},{"sender_email","accounts@example.test"},{"recipient","test@example.test"},{"sent_at","2026-09-14T10:00:00Z"},{"text","You allowed Example Mail access to some of your account data. If you did not authorize this, review your account access."},{"kind","automated"},{"sent",false},{"revision",1},{"categories",QVariantList{}}}}}};
             emit h.backend.conversationChanged();
@@ -449,6 +486,57 @@ class MailSelectionTest {
         }
     }
 public:
-    static void run(){mutations();controls();qInfo()<<"Inbox scope, immutable bulk targets, partial failure/account fences, actual context/range selection and splash timing pass.";}
+    static void accountControls() {
+        Harness h;
+        auto ordinary=h.engine.customRequest;
+        int scans=0,starts=0,stops=0; bool stopped=false; QString requestedAccount,requestedRange;
+        h.engine.customRequest=[&](auto *peer,const auto &request) {
+            const auto method=request["method"].toString();QJsonObject result;
+            if(method=="assist_backlog") {++scans;result={{"job_id","coverage"},{"status","scanning"}};}
+            else if(method=="assist_jobs")result={{"items",QJsonArray{}}};
+            else if(method=="assist_batch_start") {++starts;requestedAccount=request["account"].toString();requestedRange=request["params"].toObject()["range"].toString();result={{"job_id","batch"},{"status","running"},{"total",7}};}
+            else if(method=="assist_cancel") {++stops;stopped=true;result={{"job_id","batch"},{"status","canceled"},{"completed",2},{"processed",2},{"total",7}};}
+            else if(method=="assist_job") {
+                if(request["params"].toObject()["job_id"]=="coverage")result={{"job_id","coverage"},{"status","completed"},{"local_messages",1200},{"eligible",1000},{"processed",400},{"missing",600},{"enabled",true},{"summaries",true},{"classification",true},{"ranges",QJsonObject{{"week",7},{"month",40},{"year",500},{"all",600}}}};
+                else result={{"job_id","batch"},{"status",stopped ? "canceled" : "running"},{"completed",2},{"processed",2},{"total",7}};
+            } else return ordinary(peer,request);
+            peer->write(reply(request["id"].toString(),result));return true;
+        };
+        QTemporaryDir copy;const auto path=copy.filePath("AccountsTest");require(QDir().mkpath(path),"account QML module");
+        QByteArray module("module AccountsTest\nsingleton Theme 1.0 Theme.qml\n");
+        for(const auto &name:QDir(QString(FM_GUI_SOURCE_DIR)).entryList({"*.qml"},QDir::Files)) {
+            require(QFile::copy(QString(FM_GUI_SOURCE_DIR)+'/'+name,path+'/'+name),"production account QML");
+            if(name!="Theme.qml")module+=name.chopped(4).toUtf8()+" 1.0 "+name.toUtf8()+'\n';
+        }
+        QFile registration(path+"/qmldir");require(registration.open(QIODevice::WriteOnly),"account QML registration");registration.write(module);registration.close();
+        QQmlApplicationEngine qml;bool warnings=false;
+        QObject::connect(&qml,&QQmlEngine::warnings,[&](const auto &errors){warnings=true;for(const auto &error:errors)qWarning()<<error.toString();});
+        qml.addImportPath(copy.path());qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport AccountsTest\nApplicationWindow {visible:true;width:1280;height:800;color:Theme.canvas;palette.text:Theme.text;palette.base:Theme.surface;palette.window:Theme.canvas;palette.buttonText:Theme.text;function appearance(theme,size){Theme.themeId=theme;Theme.textSize=size} SettingsView {anchors.fill:parent;page:'Accounts'} }",QUrl::fromLocalFile(copy.filePath("Test.qml")));
+        require(!qml.rootObjects().isEmpty(),"native Accounts loads");auto *window=qobject_cast<QQuickWindow*>(qml.rootObjects().first());
+        auto *settings=find(window->contentItem(),"settingsView");require(settings,"account settings present");
+        await([&]{auto *button=find(window->contentItem(),"accountBacklog_personal");return button&&button->isEnabled();},"async coverage enables backlog menu");
+        require(scans==1 && starts==0,"viewing Accounts counts once without starting inference");
+        require(find(window->contentItem(),"accountAnalysisCount_personal")->property("text")=="400","actual processed counts displayed");
+        const auto captureDir=qEnvironmentVariable("FM_BACKLOG_CAPTURE_DIR");
+        auto capture=[&](const QString &name) {
+            bool painted=false;const auto connection=QObject::connect(window,&QQuickWindow::frameSwapped,[&]{painted=true;});window->requestUpdate();await([&]{return painted;},"account frame");QObject::disconnect(connection);
+            if(!captureDir.isEmpty()){require(QDir().mkpath(captureDir),"account capture directory");require(window->grabWindow().save(captureDir+"/"+name+".png"),"account frame saved");}
+        };
+        for(const auto theme:{"graphite","paper","terminal"}) {QMetaObject::invokeMethod(window,"appearance",Q_ARG(QVariant,QString(theme)),Q_ARG(QVariant,"default"));capture(QString("accounts-")+theme);}
+        click(window,find(window->contentItem(),"accountBacklog_personal"),Qt::LeftButton);
+        await([&]{auto *item=find(window->contentItem(),"backlogRange_personal_week");return item&&item->isVisible();},"native date menu opens");
+        capture("backlog-menu");click(window,find(window->contentItem(),"backlogRange_personal_week"),Qt::LeftButton);
+        await([&]{return starts==1 && find(window->contentItem(),"stopBacklog_personal")->isVisible();},"range starts one real account command");
+        require(requestedAccount=="personal"&&requestedRange=="week","batch freezes exact selected account and range");
+        settings->setProperty("page","General");settings->setProperty("page","Accounts");
+        await([&]{return find(window->contentItem(),"accountBatchStatus_personal")->property("text").toString().contains("2 of 7");},"progress survives navigation and reflects completed messages");
+        capture("backlog-running");click(window,find(window->contentItem(),"stopBacklog_personal"),Qt::LeftButton);
+        await([&]{return stops==1 && find(window->contentItem(),"accountBatchStatus_personal")->property("text").toString().contains("Stopped · 2 saved");},"Stop retains saved work and clears busy state");
+        window->resize(960,720);QMetaObject::invokeMethod(window,"appearance",Q_ARG(QVariant,"paper"),Q_ARG(QVariant,"large"));capture("accounts-narrow-large");
+        auto *button=find(window->contentItem(),"accountBacklog_personal");require(button->mapToScene({button->width(),0}).x()<=window->width(),"backlog control stays within narrow settings");
+        require(!warnings,"Accounts coverage/menu/progress has no QML errors");
+    }
+    static void run(){mutations();controls();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
 int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));MailSelectionTest::run();return 0;}

@@ -19,6 +19,28 @@ QString ReplyDocument::limitedHtml(const QString &input, bool received) {
     body.remove(QRegularExpression("<(head|style|script)\\b[^>]*>[\\s\\S]*?</\\1\\s*>", QRegularExpression::CaseInsensitiveOption));
     static const QRegularExpression tags("<[^>]*>");
     static const QRegularExpression name("^<\\s*(/?)\\s*([a-zA-Z0-9]+)");
+    // Qt recursively negotiates the minimum/maximum width of each nested
+    // table. Newsletter layout tables can monopolize the GUI for minutes at
+    // a delegate's initial narrow width. Keep small data tables; linearize
+    // nested/large/malformed ones before any QTextDocument sees them.
+    bool linearTables = false;
+    if (received) {
+        static const QRegularExpression tableTags("<\\s*(/?)\\s*(table|td|th|tr)\\b[^>]*>", QRegularExpression::CaseInsensitiveOption);
+        auto tableMatches = tableTags.globalMatch(body);
+        int depth = 0, cells = 0, rows = 0;
+        while (tableMatches.hasNext()) {
+            const auto token = tableMatches.next();
+            const auto tag = token.captured(2).toLower();
+            const bool closing = !token.captured(1).isEmpty();
+            if (tag == "table") {
+                depth += closing ? -1 : 1;
+                linearTables |= depth < 0 || depth > 1;
+            } else if (!closing) {
+                if (tag == "tr") ++rows; else ++cells;
+            }
+        }
+        linearTables |= depth != 0 || cells > 64 || rows > 32;
+    }
     QString output; qsizetype end = 0;
     auto matches = tags.globalMatch(body);
     while (matches.hasNext()) {
@@ -30,6 +52,11 @@ QString ReplyDocument::limitedHtml(const QString &input, bool received) {
         const auto parsed = name.match(token);
         if (!parsed.hasMatch()) continue;
         const auto tag = parsed.captured(2).toLower(); const bool closing = !parsed.captured(1).isEmpty();
+        if (linearTables && QStringList{"table","tr","td","th","thead","tbody","tfoot","caption"}.contains(tag)) {
+            if (closing && (tag == "td" || tag == "th")) output += " ";
+            else if (closing && (tag == "tr" || tag == "table" || tag == "caption")) output += "<br>";
+            continue;
+        }
         if (received && tag == "img" && !closing) {
             const auto alt = QRegularExpression("\\balt\\s*=\\s*[\"']([^\"']*)[\"']", QRegularExpression::CaseInsensitiveOption).match(token);
             if (alt.hasMatch() && !alt.captured(1).isEmpty()) output += "[" + alt.captured(1).toHtmlEscaped() + "]";

@@ -12,6 +12,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use tokio::sync::Semaphore;
+mod backlog;
 struct Job {
     owner: String,
     account: Option<String>,
@@ -45,6 +46,8 @@ impl Runtime {
                 | "assist_settings_save"
                 | "assist_watch"
                 | "assist_jobs"
+                | "assist_backlog"
+                | "assist_batch_start"
         )
     }
     pub async fn handle(
@@ -67,6 +70,7 @@ impl Runtime {
             ],
             "assist_job" | "assist_cancel" => &["job_id"],
             "assist_settings_save" => &["expected_revision", "settings"],
+            "assist_batch_start" => &["range"],
             _ => &[],
         };
         if !p.is_object()
@@ -81,6 +85,8 @@ impl Runtime {
             ));
         }
         match method {
+            "assist_backlog" => self.backlog(owner, account, cancel).await,
+            "assist_batch_start" => self.start_backlog(owner, cancel, account, &p).await,
             "assist_jobs" => Ok(
                 json!({"items":self.jobs.lock().unwrap().values().filter(|j|j.owner==owner).map(|j|j.state.clone()).collect::<Vec<_>>()}),
             ),
@@ -124,7 +130,12 @@ impl Runtime {
                     .ok_or_else(|| failure("not_found", "Job not found in this session"))?;
                 if method == "assist_cancel" {
                     job.cancel.cancel();
-                    job.state["status"] = "canceled".into();
+                    if matches!(
+                        job.state["status"].as_str(),
+                        Some("queued" | "scanning" | "running")
+                    ) {
+                        job.state["status"] = "canceled".into();
+                    }
                 }
                 Ok(job.state.clone())
             }
@@ -203,8 +214,16 @@ impl Runtime {
             }
         }
     }
-    fn state(&self, id: &str, state: Value) {
+    fn state(&self, id: &str, mut state: Value) {
         if let Some(job) = self.jobs.lock().unwrap().get_mut(id) {
+            if job.cancel.is_cancelled()
+                && matches!(
+                    state["status"].as_str(),
+                    Some("queued" | "scanning" | "running")
+                )
+            {
+                state["status"] = "canceled".into();
+            }
             job.state = state;
         }
     }
@@ -289,7 +308,12 @@ impl Runtime {
             if jobs.len() >= 32 {
                 if let Some(key) = jobs
                     .iter()
-                    .find(|(_, j)| j.state["status"] != "running" && j.state["status"] != "queued")
+                    .find(|(_, j)| {
+                        !matches!(
+                            j.state["status"].as_str(),
+                            Some("running" | "queued" | "scanning")
+                        )
+                    })
                     .map(|(k, _)| k.clone())
                 {
                     jobs.remove(&key);

@@ -22,6 +22,7 @@ private:
     bool membersCategorized(bool present) const;
     bool editorStateIntact() const;
     bool click(const QString &objectName);
+    bool openReply();
     MailBackend &m_backend;
     QObject *m_window;
     QString m_profile, m_engine, m_id, m_sender;

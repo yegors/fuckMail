@@ -15,6 +15,7 @@ Item {
     property bool calendarDetailsOpen: false
     property string reconnectAccount: ""
     property double restoreRevision: -1
+    AccountAnalysis { id: accountAnalysis; objectName: "accountAnalysis"; showing: settings.visible && settings.page === "Accounts" }
     readonly property string modifier: Qt.platform.os === "osx" ? "⌘" : "Ctrl+"
     readonly property var hourLabels: Array.from({length:25}, (_, h) => (h < 10 ? "0" : "") + h + ":00")
     Connections {
@@ -250,7 +251,7 @@ Item {
                 ScrollBar.vertical: FmScrollBar {}
                 ColumnLayout {
                     id: contents
-                    x: 40; y: 24; width: Math.min(640,contentFlick.width - 80); spacing: 8
+                    x: 40; y: 24; width: Math.min(settings.page === "Accounts" ? 800 : 640,contentFlick.width - 80); spacing: 8
                     Heading { text: settings.page === "Diagnostics" ? "Local copy" : settings.page; Layout.rightMargin: 120 }
                     Text {
                         objectName: "settingsStatus"
@@ -322,6 +323,9 @@ Item {
                                 readonly property int observed: backend.syntheticProfile ? modelData.message_count : Number(coverage.observed_messages || 0)
                                 readonly property int indexed: backend.syntheticProfile ? Number((modelData.coverage || {}).indexed_messages || 0) : Number(coverage.indexed_messages || 0)
                                 readonly property bool current: backend.account === modelData.id
+                                readonly property var analysisStats: accountAnalysis.stats[modelData.id] || {}
+                                readonly property var analysisJob: accountAnalysis.jobs[modelData.id] || {}
+                                readonly property bool analyzing: accountAnalysis.running(modelData.id)
                                 readonly property bool signedIn: (modelData.google || {}).connection_state === "connected"
                                 readonly property string stateText: archived ? "Archived" : backend.syntheticProfile ? "Local copy" : !signedIn ? "Needs sign-in" : syncState.active ? "Connected" : "Paused"
                                 Layout.fillWidth: true; implicitHeight: accountContent.implicitHeight
@@ -418,6 +422,92 @@ Item {
                                             Rectangle { width: 1; height: parent.height; color: Theme.line }
                                         }
                                     }
+                                    Rectangle { visible: !accountCard.archived; Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+                                    Row {
+                                        id: analysisStatsRow; visible: !accountCard.archived; Layout.fillWidth: true
+                                        Item {
+                                            width: parent.width / 3; height: 70
+                                            ColumnLayout {
+                                                x: 18; y: 12; width: parent.width - 36; spacing: 4
+                                                Text { text: "MESSAGES"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); font.letterSpacing: .55 }
+                                                Text { objectName: "accountMessageCount_" + accountCard.modelData.id; text: accountCard.analysisStats.local_messages === undefined ? "…" : Number(accountCard.analysisStats.local_messages).toLocaleString(Qt.locale(),"f",0) + " on this machine"; Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.text; font.pixelSize: Theme.fontSize(13) }
+                                            }
+                                            HoverHandler { id: messageCountHover }
+                                            FmToolTip { visible: messageCountHover.hovered; text: "Messages retained on this machine. The Google account total is not currently available." }
+                                        }
+                                        Item {
+                                            width: parent.width / 3; height: 70
+                                            Rectangle { width: 1; height: parent.height; color: Theme.line }
+                                            ColumnLayout {
+                                                x: 18; y: 12; width: parent.width - 36; spacing: 6
+                                                RowLayout {
+                                                    Layout.fillWidth: true; spacing: 6
+                                                    FmIcon { name: "summary"; size: 10; color: Theme.ai }
+                                                    Text { text: accountCard.analysisStats.summaries && accountCard.analysisStats.classification ? "SUMMARIZED & LABELED" : accountCard.analysisStats.summaries ? "SUMMARIZED" : "ANALYZED"; Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.ai; font.pixelSize: Theme.fontSize(11); font.letterSpacing: .55 }
+                                                }
+                                                RowLayout {
+                                                    Layout.fillWidth: true; spacing: 8
+                                                    Text { objectName: "accountAnalysisCount_" + accountCard.modelData.id; text: accountCard.analysisStats.processed === undefined ? "…" : !accountCard.analysisStats.enabled ? "Off" : Number(accountCard.analysisStats.processed).toLocaleString(Qt.locale(),"f",0); color: Theme.text; font.pixelSize: Theme.fontSize(13) }
+                                                    Text { text: accountCard.analysisStats.enabled ? Math.round(100 * (accountCard.analysisStats.processed || 0) / Math.max(1,accountCard.analysisStats.eligible || 0)) + "%" : ""; color: Theme.subtle; font.pixelSize: Theme.fontSize(13) }
+                                                    Rectangle { Layout.fillWidth: true; implicitHeight: 2; color: Theme.inkAlpha(.1); Rectangle { height: 2; width: parent.width * (accountCard.analysisStats.processed || 0) / Math.max(1,accountCard.analysisStats.eligible || 0); color: Theme.ai } }
+                                                }
+                                            }
+                                            HoverHandler { id: analysisCountHover }
+                                            FmToolTip { visible: analysisCountHover.hovered; text: (accountCard.analysisStats.processed || 0) + " of " + (accountCard.analysisStats.eligible || 0) + " eligible received messages have current results. Sent mail and unavailable sources are excluded." }
+                                        }
+                                        Item {
+                                            width: parent.width / 3; height: 70
+                                            Rectangle { width: 1; height: parent.height; color: Theme.line }
+                                            ColumnLayout {
+                                                x: 18; y: 12; width: parent.width - 36; spacing: 4
+                                                Text { text: "BACKLOG"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); font.letterSpacing: .55 }
+                                                FmButton {
+                                                    id: backlogButton; objectName: "accountBacklog_" + accountCard.modelData.id
+                                                    text: accountCard.analyzing ? "Running…" : accountCard.analysisStats.missing === undefined ? "Checking…" : !accountCard.analysisStats.enabled ? "Set up model" : (accountCard.analysisStats.missing + " to process ▾")
+                                                    iconName: "summary"; iconSize: 11; foreground: Theme.ai; implicitHeight: 26; leftPadding: 8; rightPadding: 9
+                                                    Layout.maximumWidth: parent.width; outlined: true
+                                                    enabled: backend.connected && !accountCard.analyzing && accountCard.analysisStats.missing !== undefined && (!accountCard.analysisStats.enabled || accountCard.analysisStats.missing > 0)
+                                                    tip: accountCard.analysisStats.enabled ? "Summarize and label missing received mail with your local model" : "Choose a model and enable account analysis in Local model settings"
+                                                    onClicked: accountCard.analysisStats.enabled ? backlogMenu.open() : settings.selectPage("Local model")
+                                                    Menu {
+                                                        id: backlogMenu; y: backlogButton.height + 6; width: 290
+                                                        Repeater {
+                                                            model: [{key:"week",label:"Last week"},{key:"month",label:"Last month"},{key:"year",label:"Last year"},{key:"all",label:"Everything"}]
+                                                            MenuItem {
+                                                                id: rangeOption
+                                                                required property var modelData
+                                                                objectName: "backlogRange_" + accountCard.modelData.id + "_" + modelData.key
+                                                                text: modelData.label + "    " + ((accountCard.analysisStats.ranges || {})[modelData.key] || 0)
+                                                                enabled: ((accountCard.analysisStats.ranges || {})[modelData.key] || 0) > 0
+                                                                onTriggered: accountAnalysis.start(accountCard.modelData.id,modelData.key)
+                                                                contentItem: RowLayout {
+                                                                    Text { text: rangeOption.modelData.label; color: rangeOption.enabled ? Theme.text : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); Layout.fillWidth: true }
+                                                                    Text { text: (accountCard.analysisStats.ranges || {})[rangeOption.modelData.key] || 0; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+                                                                }
+                                                                background: Rectangle { color: rangeOption.highlighted ? Theme.hover : "transparent"; radius: 4 }
+                                                            }
+                                                        }
+                                                        MenuSeparator {}
+                                                        Label { width: parent.width; padding: 12; text: "Only missing results are processed. Existing summaries stay."; wrapMode: Text.Wrap; color: Theme.subtle; font.pixelSize: Theme.fontSize(12) }
+                                                        background: Rectangle { color: Theme.canvas; border.color: Theme.line2; radius: 6 }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    ColumnLayout {
+                                        visible: !accountCard.archived && !!accountCard.analysisJob.status
+                                        Layout.fillWidth: true; spacing: 0
+                                        Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+                                        RowLayout {
+                                            Layout.fillWidth: true; Layout.margins: 12; Layout.leftMargin: 18; Layout.rightMargin: 18; spacing: 14
+                                            FmIcon { name: "summary"; size: 12; color: Theme.ai }
+                                            Text { objectName: "accountBatchStatus_" + accountCard.modelData.id; text: accountCard.analysisJob.status === "scanning" || accountCard.analysisJob.status === "starting" ? "Counting missing mail…" : accountCard.analyzing ? "Processing " + (accountCard.analysisJob.processed || 0) + " of " + (accountCard.analysisJob.total || 0) : (accountCard.analysisJob.status === "canceled" ? "Stopped" : accountCard.analysisJob.status === "failed" ? "Stopped with an error" : "Finished") + " · " + (accountCard.analysisJob.completed || 0) + " saved" + (accountCard.analysisJob.failed ? " · " + accountCard.analysisJob.failed + " failed" : ""); Layout.fillWidth: true; wrapMode: Text.Wrap; color: Theme.ai; font.pixelSize: Theme.fontSize(13) }
+                                            ProgressBar { visible: accountCard.analyzing; Layout.preferredWidth: 90; from: 0; to: Math.max(1,accountCard.analysisJob.total || 0); value: accountCard.analysisJob.processed || 0; indeterminate: accountCard.analysisJob.status === "scanning" || accountCard.analysisJob.status === "starting" }
+                                            FmButton { objectName: "stopBacklog_" + accountCard.modelData.id; visible: accountCard.analyzing; text: "Stop"; outlined: true; implicitHeight: 26; onClicked: accountAnalysis.stop(accountCard.modelData.id) }
+                                        }
+                                    }
+                                    Text { visible: !!text; Layout.fillWidth: true; Layout.leftMargin: 18; Layout.rightMargin: 18; Layout.bottomMargin: 10; text: accountAnalysis.errors[accountCard.modelData.id] || ""; color: Theme.error; font.pixelSize: Theme.fontSize(12); wrapMode: Text.Wrap; textFormat: Text.PlainText }
                                     Rectangle { Layout.fillWidth: true; implicitHeight: 2; color: Theme.line; Rectangle { height: parent.height; width: parent.width * Math.max(0,Math.min(1,accountCard.indexed / Math.max(1,accountCard.observed))); color: accountCard.syncState.active ? Theme.inkAlpha(0.6) : Theme.subtle } }
                                     Text {
                                         Layout.fillWidth: true; Layout.leftMargin: 18; Layout.rightMargin: 18; Layout.topMargin: 10; Layout.bottomMargin: 10
@@ -604,7 +694,7 @@ Item {
                         Description { text: "Single keys, no modifiers. They work whenever the cursor is not in a text field."; Layout.maximumWidth: 560 }
                         Repeater {
                             model: [
-                                {group:"Mail",rows:[{keys:["j","k","↑","↓"],action:"Next · previous conversation"},{keys:[settings.modifier+"click","⇧click"],action:"Toggle selection · select range"},{keys:[settings.modifier+"A","Esc"],action:"Select loaded conversations · clear selection"},{keys:["u","⌫"],action:"Read/unread · move selected mail to Trash"},{keys:["d"],action:"Delay · undelay"},{keys:["e"],action:"Done"},{keys:["r","a","f"],action:"Reply · Reply all · Forward"},{keys:["n"],action:"New message"},{keys:["s"],action:"Inbox · Sent · Drafts"},{keys:["/",settings.modifier+"K"],action:"Search"},{keys:["Tab","⇧Tab"],action:"Next · previous mailbox"}]},
+                                {group:"Mail",rows:[{keys:["j","k","↑","↓"],action:"Next · previous conversation"},{keys:["PgUp","PgDn"],action:"Previous · next page (Shift extends selection)"},{keys:["Home","End"],action:"First · last loaded conversation (Shift extends selection)"},{keys:[settings.modifier+"click","⇧click"],action:"Toggle selection · select range"},{keys:[settings.modifier+"A","Esc"],action:"Select loaded conversations · clear selection"},{keys:["u","⌫"],action:"Read/unread · move selected mail to Trash"},{keys:["d"],action:"Delay · undelay"},{keys:["e"],action:"Done"},{keys:["r","a","f"],action:"Reply · Reply all · Forward"},{keys:["n"],action:"New message"},{keys:["s"],action:"Inbox · Sent · Drafts"},{keys:["/",settings.modifier+"K"],action:"Search"},{keys:["Tab","⇧Tab"],action:"Next · previous mailbox"}]},
                                 {group:"Calendar",rows:[{keys:["d","w","m"],action:"Day · Week · Month"},{keys:["←","→"],action:"Previous · next"},{keys:["t"],action:"Today"},{keys:["n"],action:"New event"}]},
                                 {group:"Everywhere",rows:[{keys:["v"],action:"Mail · Calendar"},{keys:[","],action:"Settings"},{keys:["Esc"],action:"Close search, event details, the event editor or settings · minimise a draft"}]}
                             ]

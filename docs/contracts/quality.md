@@ -1,5 +1,17 @@
 # Quality, performance and release acceptance
 
+## D087 — navigation and reader stability (Quality63)
+
+Verify pathological nested email tables at initial and final widths, sustained Page Up/Down and arrows with delayed replies, final target and bounded event-loop work, plus actual reader frames for late geometry changes. Retain failing baseline, timings, source/binary identities and prior evidence. Executed: six rebuilt native suites pass in 19.42 s; the final scene-synchronization reader suite passes offscreen and with macOS Cocoa. The latter preserves all 89 observed target frames, handles a 102-key burst in 18 ms with one foreground reader request, and reaches its exact final painted target in 163 ms (including a synthetic 25 ms source delay). Cold/next/warm reader samples are 79/18/11 ms; these are three scoped observations, not a p95 or real-mailbox performance claim. Signed configured Mac relocation, empty-live startup/CLI and shutdown checks pass. No broad or other-host acceptance claim. Consumers: native GUI and verification; shared Core/CLI/schema29/fixtures0,3/protocol1 unchanged.
+
+
+## D086 — mail list and account backlog
+
+D086 requires missing-only/date/account/source selection and preserved current-summary/manual/read-state tests, real engine batch progress/cancellation/session fairness and CLI checks, native sender-column geometry, single-cursor and paging/range navigation, settings controls and a configured Mac build. Keep failed attempts and rendered captures in ignored local evidence. Final evidence: five rebuilt native suites, 17 packaged engine/CLI checks, strict lint and signed Mac relocation/startup pass. The broad GUI self-test is not passed: its post-arrival scroll-restoration stage still times out. See the [execution report](../research/prototype-september-22.md). Source inspection of the supplied HTML is reference evidence; browser policy prevented opening its file URL. No whole-area readiness or other-host package claim follows.
+
+Consumers: Core47 / Local assistance16 / Mail UI62 / CLI41 / Quality62. Schema29, fixtures0/3 and protocol1 unchanged.
+
+
 ## D084 — reader crash and presentation (Quality61)
 
 Use the actual local crash stack to identify the native fault without exporting mailbox memory. Reproduce the error-response path in a synthetic Debug native test, then verify the fix, delayed-source final presentation, repeated navigation and stale-result rejection. Prefetch must not submit read flags. Check that cached HTML/metadata/summaries survive read receipts without reader reconstruction, mailbox tabs have no horizontal track and content scrollbar behavior remains intact. Record exact binaries, failures and source/host limits; query timings alone do not establish perceived reader speed.
@@ -103,7 +115,7 @@ D054 requires one native vault attempt across concurrent denied workers, explici
 
 Updated 2026-09-14. Budgets below are acceptance targets; scoped measurements are linked separately. Google-first required behavior includes fast sender/subject/body search, responsive user-owned daily triage, conversation-only mail, full offline messages/attachments, reliable Google calendar views and optional local classification/summaries on Windows/macOS/Linux. The Windows development host is recorded; real mailbox message counts and local models remain unmeasured.
 
-State: Draft · Revision: 60 · Updated: 2026-09-22 · Implementation: D082 debug console and D083 Calendar mail counts at schema29. Scoped evidence is recorded in the Phase 2 execution report; whole-area readiness remains 0/9.
+State: Draft · Revision: 62 · Updated: 2026-09-22 · Implementation: D086 implemented; scoped Rust/native/engine-CLI and signed Mac relocation/startup checks pass. Broader post-arrival scroll-restoration verification remains open. Schema29 and whole-area readiness0/9 unchanged.
 
 D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages}}`, `{{partial}}`), combined per-message output, default-on prospective summaries/automatic single-label classification, manual precedence, and summary list previews. Schema 22 fences settings and assisted delivery; fixtures 0/3/protocol 1 unchanged. This supersedes conflicting D051–D053 delivery defaults below; historical evidence remains scoped to its original version. See the D055 decision and Local assistance 8. Windows verification passes 9 validator, 3 Core and 14 Google-mutation tests, scoped strict lint, 14 engine/CLI checks, two scoped native tests, eight installed-model cases, actual schema upgrade/refusal and relocated package checks. See [D055 evidence and limits](../research/local-assistance-execution.md#d055-unified-message-analysis-2026-09-15); this is not full product or other-host acceptance.
 

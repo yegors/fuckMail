@@ -8,11 +8,16 @@ Item {
     property var selectionRows: []
     property string selectionAnchor: ""
     property string selectionCursor: ""
+    property string pointerRow: ""
+    property bool keyboardNavigation: false
+    property point pointerPosition: Qt.point(-100000,-100000)
+    readonly property string highlightedRow: !keyboardNavigation && pointerRow ? pointerRow : selectionCursor || (draftsMode ? backend.activeDraftId : backend.selectedId)
     property var menuRows: []
     property bool rowMenu: false
     property var messageMenuSource: null
     readonly property bool hasSelection: selectionRows.length > 0
-    readonly property bool selectionMutable: !backend.mutationInFlight && canMutate && !(morePopup.opened ? menuRows : hasSelection ? selectionRows : [thread]).some(function(row) { return row.is_outgoing })
+    readonly property bool readerMatchesCursor: !keyboardNavigation || hasSelection || !selectionCursor || selectionCursor === (draftsMode ? backend.activeDraftId : backend.selectedId)
+    readonly property bool selectionMutable: readerMatchesCursor && !backend.mutationInFlight && canMutate && !(morePopup.opened ? menuRows : hasSelection ? selectionRows : [thread]).some(function(row) { return row.is_outgoing })
     property var thread: backend.conversation
     property var members: thread.messages || []
     property bool expanded: false
@@ -30,6 +35,7 @@ Item {
     readonly property bool popupOpen: assistancePopupOpen() || labelMenu.opened || discardSelection.opened || folderPopup.opened || filterPopup.opened || categoryPopup.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
     readonly property bool canMutate: { const accounts = backend.accounts; return backend.connected && backend.accountCapability(backend.account,"mail_write") }
     readonly property bool singleKeyActionsAllowed: mail.visible && !popupOpen && mail.ApplicationWindow.window && mail.ApplicationWindow.window.singleKeysAllowed
+    readonly property bool readerKeyActionsAllowed: singleKeyActionsAllowed && readerMatchesCursor
     readonly property bool dateGroups: (backend.folder === "sent" || backend.folder === "drafts") && backend.preferences.mail_date_grouping !== "plain"
     readonly property bool draftsMode: backend.folder === "drafts"
     readonly property bool collapsedDraftVisible: !replyOpen && !backend.sendQueued && !backend.googleSend.sent_current && backend.draftStatus !== "Draft discarded"
@@ -88,12 +94,19 @@ Item {
     }
     onVisibleChanged: if (!visible) { folderPopup.close(); filterPopup.close(); categoryPopup.close(); morePopup.close(); senderCard.close(); railCategories.close() }
     function clearSelection() { selectionRows = []; selectionCursor = "" }
+    function cancelKeyboardOpen() { keyboardOpen.stop(); keyboardOpen.target = "" }
     function listHasFocus() {
         let item = mail.ApplicationWindow.window ? mail.ApplicationWindow.window.activeFocusItem : null
         while (item) { if (item === list) return true; item = item.parent }
         return false
     }
-    function visibleRows() { return backend.conversations.filter(function(row) { return (backend.folder !== "inbox" && !mail.dateGroups) || !mail.groupCollapsed(mail.groupOf(row)) }) }
+    readonly property var navigationRows: backend.conversations.filter(function(row) { return (backend.folder !== "inbox" && !mail.dateGroups) || !mail.groupCollapsed(mail.groupOf(row)) })
+    readonly property var navigationIndexes: {
+        const indexes = ({})
+        backend.conversations.forEach(function(row,index) { indexes[row.id] = index })
+        return indexes
+    }
+    function visibleRows() { return navigationRows }
     function isSelected(id) { return selectionRows.some(function(row) { return row.id === id }) }
     function frozenRows(ids) {
         const snapshots = backend.snapshotMailRows(ids)
@@ -109,6 +122,7 @@ Item {
         selectionCursor = id
     }
     function rowClick(id, modifiers) {
+        cancelKeyboardOpen()
         morePopup.close()
         if (modifiers & Qt.ShiftModifier) { selectRange(id); return }
         if (modifiers & (Qt.ControlModifier | Qt.MetaModifier)) {
@@ -120,7 +134,16 @@ Item {
         }
         clearSelection(); selectionAnchor = id; openRow(id)
     }
+    function pointerMoved(id, item, x, y) {
+        const position = item.mapToGlobal(x,y)
+        // Scrolling can move a delegate under a stationary mouse. Only actual
+        // pointer movement takes the cursor back from keyboard navigation.
+        if (position.x !== pointerPosition.x || position.y !== pointerPosition.y) {
+            pointerPosition = position; keyboardNavigation = false; pointerRow = id
+        }
+    }
     function showRowMenu(id, anchor, x, y) {
+        cancelKeyboardOpen()
         if (!isSelected(id)) clearSelection()
         menuRows = isSelected(id) ? selectionRows.slice() : backend.snapshotMailRows([id])
         if (!menuRows.length) return
@@ -131,6 +154,7 @@ Item {
         morePopup.open()
     }
     function selectionAction(action, category) {
+        if (!readerMatchesCursor) return
         const rows = (morePopup.opened || labelMenu.opened) ? menuRows : selectionRows.length ? selectionRows : backend.snapshotMailRows([backend.selectedId])
         if (!rows.length) return
         morePopup.close(); labelMenu.close()
@@ -253,7 +277,9 @@ Item {
     }
     function senderCardFor(member, anchor) { senderCard.showSender(member.sender_email, member.sent ? "You" : member.sender_name, anchor) }
     function currentComposerIdentity() { return backend.account + (backend.activeDraftId.length ? "/draft/" + backend.activeDraftId : "/" + backend.selectedId) }
-    function newMessage() { backend.beginDraft("new") }
+    function newMessage() {
+        cancelKeyboardOpen(); clearSelection(); backend.beginDraft("new")
+    }
     function openActions() { morePopup.open() }
     function openFilters(anchorItem) {
         const p = anchorItem ? anchorItem.mapToItem(Overlay.overlay,0,anchorItem.height+8) : mail.mapToItem(Overlay.overlay,24,56)
@@ -352,14 +378,49 @@ Item {
         if (backend.selectedId === id && members.length) { if (matchingIds.length) revealMatch(); pendingReveal = "" }
     }
     function moveSelection(delta, extend) {
-        const selected = extend && selectionCursor ? selectionCursor : draftsMode ? backend.activeDraftId : backend.selectedId
-        const rows = backend.conversations.filter(function(row) { return (backend.folder !== "inbox" && !mail.dateGroups) || !mail.groupCollapsed(mail.groupOf(row)) })
+        keyboardNavigation = true
+        pointerRow = ""
+        const selected = selectionCursor || (draftsMode ? backend.activeDraftId : backend.selectedId)
+        const rows = navigationRows
         const current = rows.findIndex(function(row) { return row.id === selected })
         const next = Math.max(0, Math.min(rows.length - 1, current < 0 ? 0 : current + delta))
-        if (!rows.length || next === current) return
-        if (extend) selectRange(rows[next].id); else rowClick(rows[next].id, 0)
-        list.positionViewAtIndex(backend.conversations.findIndex(function(row) { return row.id === rows[next].id }), ListView.Contain)
-        backend.remember("listY", list.contentY)
+        if (!rows.length) return
+        if (next === current) { if (delta > 0 && backend.hasMore && !backend.loading) backend.loadMore(); return }
+        if (extend) selectRange(rows[next].id)
+        else {
+            morePopup.close()
+            selectionRows = []; selectionAnchor = rows[next].id; selectionCursor = rows[next].id
+            // Accumulate every key against the input cursor, but open only the
+            // latest target once per frame. A queued burst must not construct
+            // and discard a reader (or review receipt) for every intermediate row.
+        }
+        keyboardOpen.target = rows[next].id
+        keyboardOpen.openReader = !extend
+        if (!keyboardOpen.running) keyboardOpen.start()
+        list.forceActiveFocus(Qt.OtherFocusReason)
+    }
+    function pageSelection(direction, extend) { moveSelection(direction * Math.max(1,Math.floor((list.height - 34) / rowHeight)),extend) }
+    function edgeSelection(last, extend) { moveSelection(last ? backend.conversations.length : -backend.conversations.length,extend) }
+    Timer {
+        id: keyboardOpen
+        interval: 16
+        property string target: ""
+        property bool openReader: false
+        onTriggered: {
+            const id = target; target = ""
+            if (!mail.visible || !id || mail.navigationIndexes[id] === undefined) return
+            list.positionViewAtIndex(mail.navigationIndexes[id], ListView.Contain)
+            backend.remember("listY", list.contentY)
+            if (openReader) mail.openRow(id)
+        }
+    }
+    function keyboardRowMenu() {
+        const id = selectionCursor || (draftsMode ? backend.activeDraftId : backend.selectedId)
+        const index = backend.conversations.findIndex(function(row) { return row.id === id })
+        if (index < 0) return
+        list.positionViewAtIndex(index,ListView.Contain)
+        const item = list.itemAtIndex(index)
+        if (item) showRowMenu(id,item,24,item.height)
     }
     function setReplyOpen(value) {
         const identity = composerIdentity
@@ -420,8 +481,8 @@ Item {
     }
     Connections {
         target: backend
-        function onAccountChanged() { mail.clearSelection(); morePopup.close(); mail.pendingComposeId = ""; mail.syncCollapsedGroups() }
-        function onQueryChanged() { mail.clearSelection(); morePopup.close(); mail.syncCollapsedGroups() }
+        function onAccountChanged() { mail.cancelKeyboardOpen(); mail.clearSelection(); morePopup.close(); mail.pendingComposeId = ""; mail.syncCollapsedGroups() }
+        function onQueryChanged() { mail.cancelKeyboardOpen(); mail.clearSelection(); morePopup.close(); mail.syncCollapsedGroups() }
         function onPresentationChanged() { Qt.callLater(mail.restorePosition) }
         function onConversationsChanged() { if (mail.restoring) Qt.callLater(mail.restoreListPosition); prefetchTimer.restart() }
         function onConversationChanged() {
@@ -591,7 +652,7 @@ Item {
                     id: list; objectName: "conversationList"
                     Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 6
                     clip: true; model: backend.conversationModel; boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: FmScrollBar {}
+                    ScrollBar.vertical: FmScrollBar { policy: ScrollBar.AlwaysOn }
                     // Consume each structural batch before the next can reuse
                     // delegate indexes. Retaining an old layout across several
                     // remove/move batches leaves retired rows over replacements.
@@ -618,7 +679,7 @@ Item {
                         id: groupedRow
                         required property var rowData
                         required property string previousGroup
-                        readonly property var modelData: rowData
+                        readonly property var modelData: rowData || ({id:"",subject:"",sender_name:"",latest_at:"",message_count:0,unread:false,starred:false})
                         required property int index
                         // Qt can retain a removed delegate with index -1 while
                         // replacements are laid out. Retired rows must neither
@@ -647,12 +708,16 @@ Item {
                             leftPadding: 24; rightPadding: 24; topPadding: 0; bottomPadding: 0; hoverEnabled: true
                             Accessible.name: groupedRow.modelData.subject+", "+groupedRow.modelData.sender_name+(groupedRow.modelData.unread ? ", unread" : ", reviewed")+(groupedRow.modelData.starred ? ", action held" : "")
                             onClicked: mail.rowClick(groupedRow.modelData.id, 0)
-                            Accessible.selected: mail.isSelected(groupedRow.modelData.id)
+                            Accessible.selected: mail.isSelected(groupedRow.modelData.id) || (!mail.hasSelection && (mail.draftsMode ? backend.activeDraftId : backend.selectedId) === groupedRow.modelData.id)
                             MouseArea {
                                 id: rowMouse; anchors.fill: parent; acceptedButtons: Qt.LeftButton | Qt.RightButton; hoverEnabled: true
-                                onEntered: if (!mail.draftsMode) backend.prefetchConversation(groupedRow.modelData.id)
+                                onEntered: { if (!mail.keyboardNavigation) mail.pointerRow = groupedRow.modelData.id; if (!mail.draftsMode) backend.prefetchConversation(groupedRow.modelData.id) }
+                                onPositionChanged: function(mouse) { mail.pointerMoved(groupedRow.modelData.id,rowMouse,mouse.x,mouse.y) }
+                                onExited: if (mail.pointerRow === groupedRow.modelData.id) mail.pointerRow = ""
                                 onClicked: function(mouse) {
-                                    row.forceActiveFocus()
+                                    list.forceActiveFocus(Qt.MouseFocusReason)
+                                    mail.pointerPosition = rowMouse.mapToGlobal(mouse.x,mouse.y)
+                                    mail.keyboardNavigation = false; mail.pointerRow = groupedRow.modelData.id
                                     if (mouse.button === Qt.RightButton) mail.showRowMenu(groupedRow.modelData.id, row, mouse.x, mouse.y)
                                     else mail.rowClick(groupedRow.modelData.id, mouse.modifiers)
                                 }
@@ -663,9 +728,9 @@ Item {
                                 }
                             }
                             background: Rectangle {
-                                color: mail.isSelected(groupedRow.modelData.id) || (!mail.hasSelection && (mail.draftsMode ? backend.activeDraftId : backend.selectedId)===groupedRow.modelData.id) ? Theme.selected : rowMouse.containsMouse ? Theme.surface : "transparent"
-                                border.color: row.activeFocus ? Theme.accent : "transparent"
-                                Rectangle { width: 2; height: parent.height; color: Theme.accent; visible: mail.isSelected(groupedRow.modelData.id) }
+                                objectName: "rowHighlight_" + groupedRow.modelData.id
+                                color: mail.isSelected(groupedRow.modelData.id) || mail.highlightedRow === groupedRow.modelData.id ? Theme.selected : "transparent"
+                                Rectangle { width: 2; height: parent.height; color: Theme.accent; visible: mail.isSelected(groupedRow.modelData.id) || (mail.draftsMode ? backend.activeDraftId : backend.selectedId) === groupedRow.modelData.id }
                             }
                             contentItem: RowLayout {
                                 spacing: 14
@@ -675,7 +740,19 @@ Item {
                                     Rectangle { anchors.centerIn: parent; width: 6; height: 6; radius: 3; color: groupedRow.modelData.unread ? Theme.text : "transparent"; border.width: groupedRow.modelData.starred && !groupedRow.modelData.unread ? 1 : 0; border.color: Theme.muted; visible: !mail.draftsMode && (groupedRow.modelData.unread || groupedRow.modelData.starred) }
                                 }
                                 ColumnLayout {
-                                    Layout.fillWidth: true; spacing: 2
+                                    objectName: "mailSenderColumn_" + groupedRow.modelData.id
+                                    visible: !mail.draftsMode && backend.folder !== "sent" && leftPane.width >= 520
+                                    readonly property real columnWidth: Math.max(120,Math.min(180,(row.width - 68) * .18))
+                                    Layout.minimumWidth: columnWidth; Layout.preferredWidth: columnWidth; Layout.maximumWidth: columnWidth; spacing: 2
+                                    RowLayout {
+                                        Layout.fillWidth: true; spacing: 6
+                                        FmIcon { name: groupedRow.modelData.is_outgoing || backend.folder === "sent" ? "send" : mail.kindIcon(groupedRow.modelData.kind); size: 11; color: Theme.subtle }
+                                        Text { objectName: "mailSender_" + groupedRow.modelData.id; text: groupedRow.modelData.sender_name || groupedRow.modelData.sender_email || "Unknown sender"; color: groupedRow.doneRow ? Theme.muted : Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13.5); font.weight: groupedRow.modelData.unread ? Font.Medium : Font.Normal; Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
+                                    }
+                                    Text { objectName: "mailSenderAddress_" + groupedRow.modelData.id; text: groupedRow.modelData.sender_email || ""; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11.5); Layout.fillWidth: true; Layout.leftMargin: 17; elide: Text.ElideRight; textFormat: Text.PlainText }
+                                }
+                                ColumnLayout {
+                                    Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 2
                                     Item {
                                         Layout.fillWidth: true; implicitHeight: Math.max(subjectText.implicitHeight,17)
                                         Text {
@@ -693,9 +770,9 @@ Item {
                                     }
                                     RowLayout {
                                         Layout.fillWidth: true; spacing: 5
-                                        FmIcon { visible: !mail.draftsMode; name: groupedRow.modelData.is_outgoing ? "send" : mail.kindIcon(groupedRow.modelData.kind); size: 11; color: Theme.subtle }
+                                        FmIcon { visible: !mail.draftsMode && (leftPane.width < 520 || backend.folder === "sent"); name: groupedRow.modelData.is_outgoing || backend.folder === "sent" ? "send" : mail.kindIcon(groupedRow.modelData.kind); size: 11; color: Theme.subtle }
                                         FmIcon { objectName:"summaryPreviewIcon_"+groupedRow.modelData.id; visible:!!groupedRow.modelData.summary; name:"summary"; size:11; color:Theme.ai }
-                                        Text { objectName:"mailPreview_"+groupedRow.modelData.id; text: groupedRow.modelData.summary || (groupedRow.modelData.sender_name+(groupedRow.modelData.snippet ? " · "+groupedRow.modelData.snippet.replace(/\s+/g," ") : "")); color: Theme.secondary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); elide: Text.ElideRight; Layout.fillWidth: true; textFormat: Text.PlainText }
+                                        Text { objectName:"mailPreview_"+groupedRow.modelData.id; text: (backend.folder === "sent" ? "To " + (groupedRow.modelData.recipient_names || groupedRow.modelData.recipient || "recipient") + " · " : leftPane.width < 520 || mail.draftsMode ? (groupedRow.modelData.sender_name || "") + " · " : "") + (groupedRow.modelData.summary || (groupedRow.modelData.snippet || "").replace(/\s+/g," ")); color: Theme.secondary; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 0; textFormat: Text.PlainText }
                                     }
                                 }
                                 Rectangle {
@@ -730,6 +807,7 @@ Item {
         }
         Item {
             id: readerPane
+            enabled: mail.readerMatchesCursor
             SplitView.fillWidth: true; SplitView.minimumWidth: 470
             readonly property int margin: width<620 ? 24 : 40
             Rectangle { anchors.fill: parent; color: Theme.bg0 }
@@ -777,19 +855,27 @@ Item {
                         FmButton { visible: mail.matchingIds.length>0; text: "Show match"; font.pixelSize: Theme.fontSize(11); onClicked: mail.revealMatch() }
                     }
                     Text {
-                        objectName: "mailDeliveryStatus"; visible: !backend.syntheticProfile && text.length > 0
+                        objectName: "mailDeliveryStatus"
+                        // Read-on-open acknowledgments arrive after the reader.
+                        // Keep their one-line slot stable across pending/error/
+                        // success instead of moving every message on each reply.
+                        opacity: !backend.syntheticProfile && text.length > 0 ? 1 : 0
+                        Layout.minimumHeight: Math.ceil(Theme.fontSize(12) * 1.4)
+                        Layout.maximumHeight: Layout.minimumHeight
                         text: mail.thread.is_outgoing ? "" : backend.accountArchived ? "Read-only account archive" : !mail.canMutate ? "Cached copy · reconnect with Mail access to make changes"
                             : ({pending:"Saved locally · waiting for Google",unknown:"Saved locally · checking Google's outcome",failed:"Google did not accept this change · check account access"})[backend.mailDelivery.state] || ""
                         color: backend.mailDelivery.state === "failed" ? Theme.error : Theme.subtle
                         font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12)
-                        Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                        Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
+                        FmToolTip { visible: deliveryHover.hovered && parent.text.length > 0; text: parent.text }
+                        HoverHandler { id: deliveryHover }
                     }
                 }
                 Flickable {
                     id: reader; objectName: "reader"
                     Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 8
                     contentWidth: width; contentHeight: readerColumn.implicitHeight+44; clip: true; boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: FmScrollBar {}
+                    ScrollBar.vertical: FmScrollBar { policy: ScrollBar.AlwaysOn }
                     onMovementEnded: if (!mail.restoring) backend.remember("readerY",contentY)
                     ColumnLayout {
                         id: readerColumn
@@ -1231,19 +1317,28 @@ Item {
     Shortcut { sequence: "Escape"; enabled: mail.visible && mail.hasSelection && !mail.popupOpen; onActivated: mail.clearSelection() }
     Shortcut { sequence: "Down"; enabled: mail.singleKeyActionsAllowed && mail.listHasFocus(); onActivated: mail.moveSelection(1,false) }
     Shortcut { sequence: "Up"; enabled: mail.singleKeyActionsAllowed && mail.listHasFocus(); onActivated: mail.moveSelection(-1,false) }
+    Shortcut { sequence: "PgDown"; enabled: mail.singleKeyActionsAllowed && mail.listHasFocus(); onActivated: mail.pageSelection(1,false) }
+    Shortcut { sequence: "PgUp"; enabled: mail.singleKeyActionsAllowed && mail.listHasFocus(); onActivated: mail.pageSelection(-1,false) }
+    Shortcut { sequence: "Shift+PgDown"; enabled: mail.singleKeyActionsAllowed && mail.listHasFocus(); onActivated: mail.pageSelection(1,true) }
+    Shortcut { sequence: "Shift+PgUp"; enabled: mail.singleKeyActionsAllowed && mail.listHasFocus(); onActivated: mail.pageSelection(-1,true) }
+    Shortcut { sequence: "Home"; enabled: mail.singleKeyActionsAllowed && mail.listHasFocus(); onActivated: mail.edgeSelection(false,false) }
+    Shortcut { sequence: "End"; enabled: mail.singleKeyActionsAllowed && mail.listHasFocus(); onActivated: mail.edgeSelection(true,false) }
+    Shortcut { sequence: "Shift+Home"; enabled: mail.singleKeyActionsAllowed && mail.listHasFocus(); onActivated: mail.edgeSelection(false,true) }
+    Shortcut { sequence: "Shift+End"; enabled: mail.singleKeyActionsAllowed && mail.listHasFocus(); onActivated: mail.edgeSelection(true,true) }
+    Shortcut { sequences: ["Menu","Shift+F10"]; enabled: mail.singleKeyActionsAllowed && mail.listHasFocus(); onActivated: mail.keyboardRowMenu() }
     Shortcut { sequences: ["Delete", "Backspace"]; enabled: mail.singleKeyActionsAllowed && mail.listHasFocus() && mail.selectionMutable; onActivated: {
         if (mail.draftsMode) { discardSelection.rows = mail.hasSelection ? mail.selectionRows : backend.snapshotMailRows([backend.activeDraftId]); if (discardSelection.rows.length) discardSelection.open() }
         else if (!backend.syntheticProfile && backend.folder !== "trash") mail.selectionAction("trash")
     } }
     Shortcut { sequence: "Shift+Down"; enabled: mail.singleKeyActionsAllowed && mail.listHasFocus(); onActivated: mail.moveSelection(1,true) }
     Shortcut { sequence: "Shift+Up"; enabled: mail.singleKeyActionsAllowed && mail.listHasFocus(); onActivated: mail.moveSelection(-1,true) }
-    Shortcut { sequence: "U"; enabled: mail.singleKeyActionsAllowed && !mail.draftsMode && mail.canMutate; onActivated: mail.selectionAction(mail.hasSelection ? (mail.selectionRows.every(function(row) { return row.unread }) ? "read" : "unread") : mail.anyUnread ? "read" : "unread") }
+    Shortcut { sequence: "U"; enabled: mail.readerKeyActionsAllowed && !mail.draftsMode && mail.canMutate; onActivated: mail.selectionAction(mail.hasSelection ? (mail.selectionRows.every(function(row) { return row.unread }) ? "read" : "unread") : mail.anyUnread ? "read" : "unread") }
     Shortcut { sequence: "N"; enabled: mail.singleKeyActionsAllowed; onActivated: mail.newMessage() }
-    Shortcut { sequence: "R"; enabled: mail.singleKeyActionsAllowed && !mail.hasSelection && mail.members.length>0 && !mail.thread.is_outgoing; onActivated: mail.openReply() }
-    Shortcut { sequence: "A"; enabled: mail.singleKeyActionsAllowed && !mail.hasSelection && mail.members.length>0 && backend.draft.reply_all_available === true; onActivated: backend.beginDraft("reply_all") }
-    Shortcut { sequence: "F"; enabled: mail.singleKeyActionsAllowed && !mail.hasSelection && mail.members.length>0 && !mail.thread.is_outgoing; onActivated: backend.beginDraft("forward") }
-    Shortcut { sequence: "E"; enabled: mail.singleKeyActionsAllowed && !mail.draftsMode && (mail.hasSelection || mail.members.length>0) && mail.selectionMutable; onActivated: mail.selectionAction("done") }
-    Shortcut { sequence: "D"; enabled: mail.singleKeyActionsAllowed && !mail.draftsMode && (mail.hasSelection || mail.members.length>0) && mail.selectionMutable; onActivated: mail.selectionAction(mail.hasSelection || !mail.anyStarred ? "delay" : "undelay") }
+    Shortcut { sequence: "R"; enabled: mail.readerKeyActionsAllowed && !mail.hasSelection && mail.members.length>0 && !mail.thread.is_outgoing; onActivated: mail.openReply() }
+    Shortcut { sequence: "A"; enabled: mail.readerKeyActionsAllowed && !mail.hasSelection && mail.members.length>0 && backend.draft.reply_all_available === true; onActivated: backend.beginDraft("reply_all") }
+    Shortcut { sequence: "F"; enabled: mail.readerKeyActionsAllowed && !mail.hasSelection && mail.members.length>0 && !mail.thread.is_outgoing; onActivated: backend.beginDraft("forward") }
+    Shortcut { sequence: "E"; enabled: mail.readerKeyActionsAllowed && !mail.draftsMode && (mail.hasSelection || mail.members.length>0) && mail.selectionMutable; onActivated: mail.selectionAction("done") }
+    Shortcut { sequence: "D"; enabled: mail.readerKeyActionsAllowed && !mail.draftsMode && (mail.hasSelection || mail.members.length>0) && mail.selectionMutable; onActivated: mail.selectionAction(mail.hasSelection || !mail.anyStarred ? "delay" : "undelay") }
     Shortcut { sequence: "S"; enabled: mail.singleKeyActionsAllowed; onActivated: backend.folder=backend.folder==="inbox" ? "sent" : backend.folder==="sent" ? "drafts" : "inbox" }
     Shortcut { sequence: "J"; enabled: mail.singleKeyActionsAllowed; onActivated: mail.moveSelection(1) }
     Shortcut { sequence: "K"; enabled: mail.singleKeyActionsAllowed; onActivated: mail.moveSelection(-1) }

@@ -8,6 +8,7 @@ use std::{
 };
 mod account_archives;
 pub mod account_lifecycle;
+pub mod assist_backlog;
 pub mod assist_store;
 #[cfg(test)]
 mod benchmark;

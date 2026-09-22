@@ -73,8 +73,10 @@ endif()
 install(TARGETS fuckmail-gui BUNDLE DESTINATION . RUNTIME DESTINATION bin)
 if(APPLE)
     set(FM_INSTALL_BIN "fuckmail-gui.app/Contents/MacOS")
+    set(FM_INSTALL_LICENSES "fuckmail-gui.app/Contents/Resources/licenses")
 else()
     set(FM_INSTALL_BIN bin)
+    set(FM_INSTALL_LICENSES "${FM_INSTALL_BIN}/licenses")
 endif()
 install(PROGRAMS
     "${FM_RUST_BIN_DIR}/fm-engine${CMAKE_EXECUTABLE_SUFFIX}"
@@ -84,7 +86,7 @@ if(EXISTS "${FM_GOOGLE_CLIENT_CONFIG}")
     install(FILES "${FM_GOOGLE_CLIENT_CONFIG}" DESTINATION "${FM_INSTALL_BIN}" RENAME "google-oauth-client.json")
 endif()
 install(FILES "${CMAKE_SOURCE_DIR}/gui/fonts/LICENSE-Geist.txt"
-    DESTINATION "${FM_INSTALL_BIN}/licenses")
+    DESTINATION "${FM_INSTALL_LICENSES}")
 # The normal OS plugin remains selected by Qt. Ship offscreen too so the exact
 # relocated development artifact can run its headless integration checks in CI.
 if(APPLE)

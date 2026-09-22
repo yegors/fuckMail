@@ -1,5 +1,12 @@
 # Core and storage
 
+## D086 — mail list and account backlog
+
+Explicit account backlog queries capture account lifecycle, settings revision, maximum retained row ID and a time ceiling. Read bounded pages; exclude sent, Trash, provider-deleted and messages without a source identity or readable cached body. Counts are local metadata, not Google inventory. Conversation list rows additionally expose the selected preview message’s `recipient`, so acquired Sent previews show who received the mail. Recheck current enabled summary/classification projections, preserve valid existing results, and use existing source/manual/provider guards before commit.
+
+Consumers: Core47 / Local assistance16 / Mail UI62 / CLI41 / Quality62. Schema29, fixtures0/3 and protocol1 unchanged.
+
+
 ## D083 — daily cached mail counts (Core46)
 
 `calendar_mail_activity` reads the existing messages and Google coverage metadata for a half-open range of 1–42 civil days in the saved Calendar display zone. Omitted account means all active accounts (at most 100); explicit account must be active. Count messages, not conversations: the stored sent flag determines sent versus received. Prefer Google's stored internal arrival timestamp; fall back to the source message timestamp only when no provider timestamp exists. Count retained Inbox, archived and Trash messages; exclude removed accounts, provider-deleted messages, local/remote drafts and submissions not yet acquired as mail. Separate account copies count separately. Return every date including zero days, scope, zone, revision and `cached_only: true`; these are retained-cache totals, never a claim of complete historical coverage. No body/recipient/MIME reads, provider work, mutation or new schema. Consumers: Calendar26, Mail UI59, CLI40, Quality60; schema29/fixtures0,3/protocol1 unchanged.
@@ -63,7 +70,7 @@ D058 / P2-LLM2D limits all assistance to received mail. Reader queries expose th
 
 D056 / P2-LLM2B exposes the complete editable Ollama JSON request: system/user messages, all five variables, full response schema and generation options. No hidden envelope or schema is injected. Schema 23 archives and wraps prior prompt text, preserving model/account choices. Application output/action validation remains independent of editable instructions. Consumers: Local assistance 9/Core 32/Mail UI 34/CLI 26/Quality 34; fixtures 0/3/protocol 1 unchanged. See [the current request contract](local-ai.md) and D056 evidence.
 
-State: Draft · Revision: 46 · Updated: 2026-09-22 · Implementation: D083 daily cached mail counts at schema29. Scoped evidence is recorded in the Phase 2 execution report; whole-area readiness remains 0/9.
+State: Draft · Revision: 47 · Updated: 2026-09-22 · Implementation: D086 implemented; scoped Rust/native/engine-CLI and signed Mac relocation/startup checks pass. Broader post-arrival scroll-restoration verification remains open. Schema29 and whole-area readiness0/9 unchanged.
 
 D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages}}`, `{{partial}}`), combined per-message output, default-on prospective summaries/automatic single-label classification, manual precedence, and summary list previews. Schema 22 fences settings and assisted delivery; fixtures 0/3/protocol 1 unchanged. This supersedes conflicting D051–D053 delivery defaults below; historical evidence remains scoped to its original version. See the D055 decision and Local assistance 8.
 

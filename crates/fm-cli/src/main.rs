@@ -598,6 +598,13 @@ enum Labels {
 
 #[derive(Subcommand)]
 enum Assist {
+    /// Count retained incoming mail and missing local analysis, without running inference.
+    Backlog,
+    /// Process missing analysis in this account; Ctrl-C stops and keeps finished results.
+    Batch {
+        #[arg(long, value_parser = ["week", "month", "year", "all"])]
+        range: String,
+    },
     /// Discover models from the configured same-machine service.
     Discover {
         #[arg(long)]
@@ -2016,6 +2023,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     ("assist_discover", params)
                 }
                 Assist::Settings => ("assist_settings_get", json!({})),
+                Assist::Backlog => ("assist_backlog", json!({})),
+                Assist::Batch { range } => ("assist_batch_start", json!({"range":range})),
                 Assist::Configure {
                     settings_file,
                     expected_revision,
@@ -2085,7 +2094,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             if matches!(command, Assist::Watch) {
                 tokio::signal::ctrl_c().await?;
                 json!({"version":1,"ok":true,"result":{"status":"canceled"}})
-            } else if method == "assist_start" {
+            } else if ["assist_start", "assist_batch_start", "assist_backlog"].contains(&method) {
                 self::result(result.clone())?;
                 let job = result["result"]["job_id"].clone();
                 loop {
@@ -2094,7 +2103,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                         .call("assist_job", None, json!({"job_id":job}))
                         .await?;
                     self::result(result.clone())?;
-                    if !["queued", "running"]
+                    if !["queued", "scanning", "running"]
                         .contains(&result["result"]["status"].as_str().unwrap_or_default())
                     {
                         break;

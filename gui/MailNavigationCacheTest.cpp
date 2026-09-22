@@ -12,6 +12,7 @@
 #include <QInputMethodEvent>
 #include <QJsonArray>
 #include <QMouseEvent>
+#include <QKeyEvent>
 #include <cstdlib>
 
 namespace {
@@ -66,7 +67,7 @@ class MailNavigationCacheTest {
         auto *window = qobject_cast<QQuickWindow *>(qml.rootObjects().first()); require(window, "native MailView window");
         await([&] { return window->isExposed(); }, "MailView is exposed");
         const auto frame = [&] {
-            bool painted = false; const auto connection = QObject::connect(window, &QQuickWindow::frameSwapped, [&] { painted = true; });
+            bool painted = false; const auto connection = QObject::connect(window, &QQuickWindow::frameSwapped, window, [&] { painted = true; });
             window->requestUpdate(); await([&] { return painted; }, "post-publication native frame"); QObject::disconnect(connection);
         };
         const auto rows = [&] {
@@ -266,6 +267,158 @@ class MailNavigationCacheTest {
         require(statusHeld && !backend.m_inFlight.isEmpty() && backend.m_mutatingConversation,
             "reader bypasses held background query without changing mutation ownership");
     }
+    static void readerFrames() {
+        using GoogleOperationFixture::await;
+        GoogleOperationFixture::Engine engine;
+        MailBackend backend(engine.profile, "unused");
+        backend.m_allAccounts = {account("one")}; backend.publishAccounts(backend.m_allAccounts);
+        auto granted = backend.m_allAccounts[0].toMap();
+        granted["google"] = QVariantMap{{"connection_state","connected"},{"capabilities",QVariantMap{{"mail_read",true},{"mail_write",true}}}};
+        backend.m_allAccounts[0] = granted; backend.publishAccounts(backend.m_allAccounts);
+        backend.m_account = "one"; backend.m_connected = true; backend.m_syntheticProfile = false;
+        backend.m_enginePid = QCoreApplication::applicationPid();
+        backend.m_preferences = {{"notifications","off"},{"theme","paper"},{"text_size","default"}};
+        QVariantList rows;
+        for (int i = 0; i < 1000; ++i) rows.append(QVariantMap{{"id",QString("thread-%1").arg(i)}, {"account","one"},
+            {"subject",QString("Thread %1").arg(i)}, {"sender_name","Example sender"},{"sender_email","sender@example.test"},
+            {"latest_at","2026-09-21T14:00:00Z"},{"group","done"},{"unread",false},{"starred",false},{"message_count",1}});
+        backend.publishConversations(rows);
+        int reads = 0, flags = 0;
+        QStringList requested;
+        const QJsonObject settings{{"revision",1},{"settings",QJsonObject{{"model",QJsonObject{{"name","Synthetic local model"}}},{"accounts",QJsonObject{}}}}};
+        engine.customRequest = [&](auto *peer, const auto &request) {
+            const auto method = request["method"].toString(); const auto params = request["params"].toObject();
+            QJsonObject result;
+            int delay = 0;
+            if (method == "conversation") {
+                ++reads; const auto id = params["id"].toString(); requested.append(id);
+                result = {{"id",id},{"account","one"},{"subject","Prepared " + id},{"revision",1},
+                    {"messages",QJsonArray{QJsonObject{{"id",id+"-message"},{"account","one"},{"text","Plain alternative"},
+                        {"sent_at","2026-09-21T14:00:00Z"},{"sender_name","Example sender"},{"sender_email","sender@example.test"},
+                        {"sent",false},{"kind","people"},{"unread",false},{"source_available",true},{"source_version","version"}}}}};
+            } else if (method == "message_source") {
+                auto html = QString("<p><b>Final body %1</b></p><p>Multiple lines of ordinary content with a useful <a href='https://example.test'>link</a>.</p>").arg(params["id"].toString());
+                for (int i = 0; i < 24; ++i) html = "<table><tr><td>" + html + "</td></tr></table>";
+                result = {{"id",params["id"]},{"account","one"},{"source_version","version"},{"body_html",html},
+                    {"metadata",QJsonArray{QJsonObject{{"label","To"},{"people",QJsonArray{QJsonObject{{"email","me@example.test"},{"name","Me"}}}}}}}};
+                delay = 25;
+            } else if (method == "assist_settings_get") result = settings;
+            else if (method == "assist_results") {
+                const auto target = params["conversation_id"].toString()+"-message";
+                result = {{"items",QJsonArray{QJsonObject{{"task","summary"},{"target",target},{"stale",false},{"partial",false},{"created_at","2026-09-21"},
+                    {"output",QJsonObject{{"summary","A complete saved summary that wraps across several lines to expose any provisional reader geometry. This summary is already stored before the thread is opened."}}}}}}};
+                // The old independent controller query can finish after the
+                // fully prepared foreground reader. It must not replace it.
+                if (request["id"] != "operation") { result = {{"items",QJsonArray{}}}; delay = 90; }
+            } else if (method == "draft_get") result = {{"account","one"},{"conversation_id",params["conversation_id"]},{"revision",0},{"body",""}};
+            else if (method == "flag") ++flags;
+            const auto bytes = GoogleOperationFixture::reply(request["id"].toString(), result);
+            QTimer::singleShot(delay, peer, [peer, bytes] { if (peer->state() == QLocalSocket::ConnectedState) peer->write(bytes); });
+            return true;
+        };
+        QObject::disconnect(&backend.m_socket, SIGNAL(connected()), &backend, nullptr);
+        backend.m_socket.connectToServer(engine.server.serverName());
+        await([&] { return backend.m_socket.state() == QLocalSocket::ConnectedState; }, "frame fixture connected");
+        bool hello = false; backend.request("hello", {}, {{"token","synthetic-operation-token"}}, [&](auto, bool ok) { hello = ok; });
+        await([&] { return hello; }, "frame fixture authenticated");
+        for (const auto &weight : {"Regular", "Medium", "SemiBold"})
+            require(QFontDatabase::addApplicationFont(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/fonts/Geist-" + weight + ".ttf") >= 0, "reader uses the shipped font");
+        QGuiApplication::setFont(QFont("Geist", 10));
+        QTemporaryDir copy; const auto modulePath = copy.filePath("ReaderFrames"); require(QDir().mkpath(modulePath), "reader frame module");
+        QByteArray module("module ReaderFrames\nsingleton Theme 1.0 Theme.qml\n");
+        for (const auto &name : QDir(QString::fromUtf8(FM_GUI_SOURCE_DIR)).entryList({"*.qml"}, QDir::Files)) {
+            require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR)+'/'+name,modulePath+'/'+name), "unchanged actual reader QML");
+            if (name != "Theme.qml") module += name.chopped(4).toUtf8()+" 1.0 "+name.toUtf8()+'\n';
+        }
+        QFile registration(modulePath+"/qmldir"); require(registration.open(QIODevice::WriteOnly), "reader module registration"); registration.write(module); registration.close();
+        qmlRegisterType<ReplyDocument>("ReaderFrames",1,0,"ReplyDocument");
+        QQmlApplicationEngine qml; bool warnings = false;
+        QObject::connect(&qml,&QQmlEngine::warnings,[&](const auto &errors){warnings=true;for(const auto &error:errors)qWarning()<<error.toString();});
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport ReaderFrames 1.0\nApplicationWindow { visible:true; width:1440; height:850; color: Theme.canvas; palette.text: Theme.text; palette.base: Theme.surface; palette.window: Theme.canvas; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("Reader.qml")));
+        require(!qml.rootObjects().isEmpty(), "reader frame window loads");
+        auto *window = qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();}, "reader frame window exposed");
+        const auto find = [&](auto &&self, QQuickItem *item, const QString &name) -> QQuickItem * {
+            if (item->objectName() == name) return item;
+            for (auto *child : item->childItems()) if (auto *match = self(self, child, name)) return match;
+            return nullptr;
+        };
+        auto *list = find(find, window->contentItem(), "conversationList");
+        auto *mail = find(find, window->contentItem(), "mailWorkspace");
+        require(list && mail, "actual reader navigation controls");
+        const auto frame = [&] {
+            bool painted = false; auto c = QObject::connect(window,&QQuickWindow::frameSwapped,window,[&]{painted=true;});
+            window->requestUpdate(); await([&]{return painted;},"reader frame rendered"); QObject::disconnect(c);
+        };
+        // Observe every painted target frame, including its very first one.
+        QList<QVariantList> geometry; QString observed = "thread-0";
+        // Inspect geometry while Qt blocks the GUI for scene synchronization.
+        // A queued frameSwapped handler can instead observe a later model update
+        // that has not yet been polished/painted, producing a false first frame.
+        const auto capture = QObject::connect(window,&QQuickWindow::afterSynchronizing,window,[&] {
+            if (backend.m_conversation.value("id").toString() != observed) return;
+            auto *body = find(find,window->contentItem(),"messageBody_"+observed+"-message");
+            auto *summary = find(find,window->contentItem(),"messageSummary_"+observed+"-message");
+            auto *reader = find(find,window->contentItem(),"reader");
+            if (body && body->isVisible() && summary && reader) {
+                require(body->property("text").toString().contains("Final body " + observed + "-message"), "first body frame uses the exact retained HTML source");
+                require(summary->property("summaryText").toString().startsWith("A complete saved summary"), "first summary frame uses the prepared saved result");
+                geometry.append({body->mapToScene({}).y(), body->height(), summary->height(), reader->property("contentHeight"), reader->property("contentY")});
+            }
+        }, Qt::DirectConnection);
+        for (const auto &target : {QString("thread-0"),QString("thread-1"),QString("thread-0")}) {
+            observed = target; geometry.clear();
+            QElapsedTimer elapsed; elapsed.start(); backend.openConversation(target);
+            await([&]{return !geometry.isEmpty();}, "first complete reader frame");
+            const auto firstMs = elapsed.elapsed();
+            // Provider acknowledgment can arrive after the cached reader paint.
+            // Its status must not move the entire thread down and back up.
+            for (const auto &state : {QString("pending"),QString("unknown"),QString("failed"),QString("acknowledged")}) {
+                backend.m_mailDelivery[qMakePair(QString("one"), target)] = {{"state",state}};
+                emit backend.mailDeliveryChanged();
+                frame();
+            }
+            for (int i=0;i<12;++i) frame();
+            for (const auto &entry : geometry) {
+                if (entry != geometry.last()) qWarning()<<"Reader geometry changed"<<entry<<"to"<<geometry.last();
+                require(entry == geometry.last(), "body/summary/scroll geometry is final on the first painted frame");
+            }
+            qInfo()<<"Reader frame"<<target<<"first paint"<<firstMs<<"ms; stable frames"<<geometry.size()<<geometry.last();
+        }
+        QObject::disconnect(capture);
+        if (QGuiApplication::platformName() != "offscreen") {
+            window->requestActivate();
+            await([&]{return window->isActive();}, "native paging window receives keyboard focus");
+        }
+        list->forceActiveFocus();
+        const auto key = [&](int code) { QKeyEvent event(QEvent::KeyPress,code,Qt::NoModifier); QCoreApplication::sendEvent(window,&event); };
+        const auto captureDir = qEnvironmentVariable("FM_READER_CAPTURE_DIR");
+        if (!captureDir.isEmpty()) {
+            require(QDir().mkpath(captureDir), "reader capture directory");
+            require(window->grabWindow().save(captureDir + "/reader.png"), "actual prepared reader capture");
+        }
+        const auto before = reads;
+        QElapsedTimer burst; burst.start();
+        for (int i=0;i<80;++i) key(Qt::Key_PageDown);
+        key(Qt::Key_End);
+        require(!mail->property("readerMatchesCursor").toBool(), "old reader actions are disabled while a new cursor target waits");
+        key(Qt::Key_E); // Must not mark the previously displayed thread Done.
+        for (int i=0;i<20;++i) key(Qt::Key_Up);
+        const auto inputMs = burst.elapsed();
+        require(inputMs<500, "queued paging burst cannot monopolize the UI");
+        await([&]{return backend.m_conversation.value("id") == "thread-979";}, "burst opens exact accumulated final target");
+        frame();
+        require(reads-before <= 3, "one queued key burst starts bounded reader requests");
+        require(flags==0, "skipped and read synthetic rows create no review mutations");
+        qInfo()<<"102-key burst input"<<inputMs<<"ms; final painted reader"<<burst.elapsed()<<"ms; reader requests"<<reads-before<<"final target"<<backend.selectedId();
+        for (int i=0;i<40;++i) { key(i%2 ? Qt::Key_PageUp : Qt::Key_PageDown); frame(); }
+        key(Qt::Key_Home);
+        await([&]{return backend.m_conversation.value("id") == "thread-0";}, "sustained alternating pages finish and Home stays responsive");
+        frame(); require(!warnings,"production reader and paging have no QML warnings");
+        backend.m_viewTimer.stop(); backend.m_readerPrefetchTimer.stop();
+    }
+
     static void preparedReader() {
         using GoogleOperationFixture::await;
         GoogleOperationFixture::Engine engine;
@@ -315,6 +468,10 @@ class MailNavigationCacheTest {
         backend.loadConversation(false, false);
         await([&] { return backend.m_conversation.value("id") == "fast"; }, "new reader completes while stale source is held");
         require(publications == 1 && flags == 0, "read-only preparation publishes once and does not mark mail reviewed");
+        const auto currentReads = sourceReads;
+        require(backend.requestMessageSource("slow-message", "version").isEmpty(), "retired reader member cannot request source in the new reader scope");
+        QCoreApplication::processEvents();
+        require(sourceReads == currentReads, "stale source controller makes no engine request");
         if (held && held->state() == QLocalSocket::ConnectedState) held->write(GoogleOperationFixture::reply(heldId, {{"account","one"},{"id","slow-message"},{"source_version","version"},{"body_html","Old response"}}));
         QCoreApplication::processEvents(); require(backend.m_conversation.value("id") == "fast", "late source cannot replace selected reader");
         backend.m_conversations = {QVariantMap{{"id","neighbor"},{"revision",1}}};
@@ -327,6 +484,7 @@ class MailNavigationCacheTest {
     }
 public:
     static void run() {
+        readerFrames();
         preparedReader();
         independentReader();
         MailBackend backend("unused", "unused");

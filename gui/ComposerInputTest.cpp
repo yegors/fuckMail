@@ -134,7 +134,8 @@ ApplicationWindow { width: 780; height: 900; visible: true; color: Theme.bg
     await([&]{return window->isActive();},"composer window active before keyboard input");
     auto bodyScroll=find(window->contentItem(),"replyBodyScroll");
     auto bodyBar=bodyScroll ? find(bodyScroll,"persistentScrollBar") : nullptr;
-    require(bodyBar && bodyBar->isVisible() && bodyBar->width() >= 14,"composer has a persistent scrollbar");
+    require(bodyBar && bodyBar->width() >= 14,"composer scrollbar keeps a wide hit target");
+    require(!bodyBar->isVisible(),"composer hides the scrollbar until the body overflows");
     const auto barEdge=bodyBar->mapToScene(QPointF(bodyBar->width(),0));
     const auto scrollEdge=bodyScroll->mapToScene(QPointF(bodyScroll->width(),0));
     require(qAbs(barEdge.x()-scrollEdge.x())<1 && qAbs(bodyBar->height()-bodyScroll->height())<1,

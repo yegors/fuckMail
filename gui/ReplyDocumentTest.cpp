@@ -185,6 +185,25 @@ int main(int argc, char **argv) {
     require(visible.toPlainText() == "Keep bold and link.", "Limited formatting retains the intended visible body text");
     require(limited.contains("https://example.test/meeting"), "An explicit ordinary link survives without extra attributes");
 
+    // Newsletter layout tables can make Qt's recursive width negotiation
+    // exponential, especially at the zero width of a newly inserted delegate.
+    QString newsletter = "<p><b>Nested newsletter</b> <a href='https://example.test/read'>Read details</a></p>";
+    for (int depth = 0; depth < 24; ++depth)
+        newsletter = "<table><tr><td>Before</td><td>" + newsletter + "</td><td>After</td></tr></table>";
+    QElapsedTimer layoutTime; layoutTime.start();
+    QTextDocument newsletterDocument;
+    newsletterDocument.setHtml(ReplyDocument::limitedHtml(newsletter, true));
+    for (const auto width : {0, 1, 320, 740}) {
+        newsletterDocument.setTextWidth(width);
+        require(newsletterDocument.size().height() > 0, "nested newsletter has a finite visible layout");
+    }
+    require(layoutTime.elapsed() < 500, "nested newsletter width negotiation stays bounded");
+    require(newsletterDocument.toPlainText().contains("Nested newsletter")
+        && newsletterDocument.toPlainText().count("Before") == 24
+        && newsletterDocument.toPlainText().count("After") == 24,
+        "bounded received layout preserves all table cell text");
+    qInfo() << "Nested newsletter layout at four widths:" << layoutTime.elapsed() << "ms";
+
     const auto rejectedLink = ReplyDocument::limitedHtml("<p><a href=\"file:///local/example.txt\">label</a></p>");
     const auto received = ReplyDocument::limitedHtml("<table><tr><td><b>Flight</b></td></tr></table><img src=\"https://images.example.test/logo\" alt=\"Logo\"><p style=\"background-image:url(https://images.example.test/bg)\">Details</p>", true);
     require(received.contains("<table>") && received.contains("<b>Flight</b>") && received.contains("[Logo]"), "received formatting retains content and image descriptions");

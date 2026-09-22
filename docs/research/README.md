@@ -4,6 +4,7 @@ Evidence, alternatives and experiments organized by subject. This index is navig
 
 | Scope | Existing material | Build contract |
 | --- | --- | --- |
+| [September 22 prototype](prototype-september-22.md) | Native mail-list/account backlog alignment, explicit shared analysis and scoped Mac verification | [Mail UI](../contracts/mail-ui.md), [Local assistance](../contracts/local-ai.md), [Quality](../contracts/quality.md) |
 | [Evidence storage and recovery](evidence-archive.md) | Verified local snapshot, historical Git links and rules keeping generated outputs out of source | [Quality](../contracts/quality.md) |
 | [Phase 2 execution](phase-2-execution.md) | Live-profile/account boundary, integrated tests and remaining real-account gates | [Core](../contracts/core-storage.md), [Platform](../contracts/platform.md), [Quality](../contracts/quality.md) |
 | [Phase 2 OAuth/vault](phase-2-auth.md) | Desktop authorization, identity/refreshed grant fixtures and isolated native vault evidence | [Platform](../contracts/platform.md), [Gmail](../contracts/gmail.md) |

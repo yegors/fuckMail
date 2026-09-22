@@ -208,7 +208,7 @@ impl Store {
             )),
         }
     }
-    fn local_model_snapshot(
+    pub(super) fn local_model_snapshot(
         &self,
         account: &str,
         conversation: &str,

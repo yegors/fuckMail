@@ -1,5 +1,12 @@
 # CLI and external agent interface
 
+## D086 — mail list and account backlog
+
+`fm --account ID assist backlog` reads cached analysis coverage. `assist batch --range week|month|year|all` starts explicit missing-only account analysis, waits for its result and cancels on Ctrl-C. The GUI uses the same `assist_backlog` and `assist_batch_start` methods plus existing job status/cancel. Session ownership, settings/lifecycle fences and existing incoming-only source/manual precedence apply. No restart or settings-save historical sweep.
+
+Consumers: Core47 / Local assistance16 / Mail UI62 / CLI41 / Quality62. Schema29, fixtures0/3 and protocol1 unchanged.
+
+
 ## D083 — daily mail-count query (CLI40)
 
 The existing generic call exposes the same read-only Calendar counts: `fm --json [--account ID] call calendar_mail_activity --params-file range.json`, where the file contains `{"from":"2026-09-01","to":"2026-10-01"}`. Omit account for combined active accounts. Dates use the saved Calendar display zone and an exclusive end; 1–42 days are allowed. Results include each day's received/sent counts and explicit cached-only coverage. CLI uses the shared engine and does not start provider acquisition. Consumers: Core46/Calendar26/Mail UI59/Quality60; schema29/fixtures0,3/protocol1 unchanged.
@@ -53,7 +60,7 @@ D058 / P2-LLM2D limits all assistance to received mail. Reader queries expose th
 
 D056 / P2-LLM2B exposes the complete editable Ollama JSON request: system/user messages, all five variables, full response schema and generation options. No hidden envelope or schema is injected. Schema 23 archives and wraps prior prompt text, preserving model/account choices. Application output/action validation remains independent of editable instructions. Consumers: Local assistance 9/Core 32/Mail UI 34/CLI 26/Quality 34; fixtures 0/3/protocol 1 unchanged. See [the current request contract](local-ai.md) and D056 evidence.
 
-State: Draft · Revision: 40 · Updated: 2026-09-22 · Implementation: D083 shared daily mail-count call at schema29. Scoped evidence is recorded in the Phase 2 execution report; whole-area readiness remains 0/9.
+State: Draft · Revision: 41 · Updated: 2026-09-22 · Implementation: D086 implemented; scoped Rust/native/engine-CLI and signed Mac relocation/startup checks pass. Broader post-arrival scroll-restoration verification remains open. Schema29 and whole-area readiness0/9 unchanged.
 
 D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages}}`, `{{partial}}`), combined per-message output, default-on prospective summaries/automatic single-label classification, manual precedence, and summary list previews. Schema 22 fences settings and assisted delivery; fixtures 0/3/protocol 1 unchanged. This supersedes conflicting D051–D053 delivery defaults below; historical evidence remains scoped to its original version. See the D055 decision and Local assistance 8.
 

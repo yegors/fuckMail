@@ -1158,10 +1158,10 @@ impl Store {
             let selected = matching
                 .first()
                 .ok_or_else(|| err("storage_error", "Search result has no matching member"))?;
-            let (sender_name, sender_email, body): (String, String, String) = self.db.query_row(
-                "SELECT sender_name,sender_email,body FROM messages WHERE account=?1 AND id=?2",
+            let (sender_name, sender_email, body, recipient): (String, String, String, String) = self.db.query_row(
+                "SELECT sender_name,sender_email,body,recipient FROM messages WHERE account=?1 AND id=?2",
                 params![account, selected],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )?;
             let mut categories = self.db.prepare_cached("SELECT DISTINCT c.id,c.name FROM message_categories mc JOIN messages m ON m.account=mc.account AND m.id=mc.message_id JOIN categories c ON c.account=mc.account AND c.id=mc.category_id WHERE m.account=?1 AND m.conversation_id=?2 ORDER BY c.id")?;
             let categories = categories
@@ -1177,7 +1177,7 @@ impl Store {
                 "done"
             };
             let summary = self.local_model_preview(account, cid, selected)?;
-            out.push(json!({"summary":summary,"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if expression.is_empty() && category.is_empty() && sender.is_empty() && exact_sender.is_empty() && after.is_empty() && before.is_empty() && attachment.is_none(){Vec::<String>::new()}else{matching}}));
+            out.push(json!({"summary":summary,"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"recipient":recipient,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if expression.is_empty() && category.is_empty() && sender.is_empty() && exact_sender.is_empty() && after.is_empty() && before.is_empty() && attachment.is_none(){Vec::<String>::new()}else{matching}}));
         }
         let result = json!({"conversations":out,"folder_conversation_count":self.account_counts(account)?["folder_conversation_counts"][folder],"expanded_conversation_count":expanded_count,"filtered_group_counts":{"review":group_counts[0],"held":group_counts[1],"done":group_counts[2]},"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(next_cursor(offset+limit, &next_anchor)?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?});
         if cache_first_page {

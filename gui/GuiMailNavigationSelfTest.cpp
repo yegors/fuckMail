@@ -11,6 +11,8 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJSValue>
+#include <QQuickTextDocument>
+#include <QTextDocument>
 #include <QScopedValueRollback>
 #include <QUuid>
 #include <array>
@@ -30,9 +32,13 @@ QQuickItem *find(QQuickItem *parent, const QString &name) {
     for (auto child : parent->childItems()) if (auto result = find(child, name)) return result;
     return nullptr;
 }
+QString renderedText(QQuickItem *item) {
+    const auto document=qvariant_cast<QQuickTextDocument *>(item->property("textDocument"));
+    return document ? document->textDocument()->toPlainText() : item->property("text").toString();
+}
 QQuickItem *bodyItem(QQuickItem *parent, const QString &expected) {
     if (parent->isVisible() && parent->property("readOnly").toBool()
-        && parent->property("text").toString().contains(expected)) return parent;
+        && renderedText(parent).simplified().contains(expected.simplified())) return parent;
     for (auto child : parent->childItems()) if (auto result = bodyItem(child, expected)) return result;
     return nullptr;
 }
@@ -458,7 +464,9 @@ void GuiMailNavigationSelfTest::beginQueueCheck(bool fairness) {
         for (int index=1;index<=6;++index) queue("q"+QString::number(index),"conversations");
     } else {
         queue("poll1","accounts",true); queue("poll2","preferences_get",true); queue("q1","conversations");
-        queue("manual","status"); queue("poll3","accounts",true); queue("q2","conversations");
+        // Status is always classified as background polling; use an explicit
+        // accounts read to exercise the manual-read ordering barrier.
+        queue("manual","accounts"); queue("poll3","accounts",true); queue("q2","conversations");
         // Even an accidental automatic scope must never classify a mutation
         // as a bypassable read. The empty patch preserves all user values.
         queue("write","preferences_save",true); queue("poll4","preferences_get",true); queue("q3","conversations");
@@ -523,6 +531,14 @@ void GuiMailNavigationSelfTest::step() {
         const auto maximum=minimum+qMax(0.0,list->property("contentHeight").toDouble()-list->height());
         const auto restored=qBound(minimum,m_backend.presentation()["listY"].toDouble(),maximum);
         if (qAbs(list->property("contentY").toDouble()-restored)>1) return;
+        // Changing the filter can intentionally reset the saved view to its
+        // origin. Establish the scrolled precondition this check requires.
+        if (maximum <= minimum + 1) { finish("Deferred-click fixture needs a scrollable mail list."); return; }
+        if (list->property("contentY").toDouble() <= minimum + 1) {
+            list->setProperty("contentY", qMin(maximum, minimum + 120));
+            QMetaObject::invokeMethod(list, "movementEnded");
+            return;
+        }
         QStringList candidates;
         for (const auto &value:m_backend.conversations()) {
             const auto row=value.toMap();
@@ -570,15 +586,16 @@ void GuiMailNavigationSelfTest::step() {
             if (row["id"].toString()==m_deferredFirst) { m_deferredClickedRow=row; m_deferredClickedIndex=int(index); }
         }
         if (!click("conversationRow_"+m_deferredFirst)) { finish("The previously reviewed row disappeared before the controlled deferred click."); return; }
-        if (!m_backend.m_afterConversationMutation || m_backend.selectedId()!=m_deferredSecond) {
-            finish("A clicked reader did not preserve the pending durable mutation barrier."); return;
+        if (!m_backend.mutationInFlight() || !m_deferredDelegate || m_backend.selectedId()!=m_deferredFirst) {
+            finish("A clicked reader did not open immediately while retaining the pending durable mutation receipt."); return;
         }
         m_backend.loadConversations(false,true); m_stage=95; break;
     case 95: {
         if (m_backend.loading() || !m_backend.m_pending.isEmpty()) return;
-        for (const auto &value:m_backend.conversations()) if (value.toMap()["id"].toString()==m_deferredFirst) {
-            finish("The real Review query did not exclude the already reviewed deferred target."); return;
-        }
+        bool pinned=false;
+        for (const auto &value:m_backend.conversations()) if (value.toMap()["id"].toString()==m_deferredFirst)
+            pinned=value.toMap()["pinned"].toBool();
+        if (!pinned) { finish("The reviewed reader target was not retained as a pinned row outside the Review query."); return; }
         if (!m_backend.mutationInFlight() || !m_deferredDelegate) { finish("The real flag receipt was released before the exclusion check."); return; }
         auto delegate=std::move(m_deferredDelegate); m_deferredDelegate={}; m_deferredHeld=false;
         delegate(m_deferredReceipt,m_deferredOk); m_stage=96; break;
@@ -600,7 +617,7 @@ void GuiMailNavigationSelfTest::step() {
         }
         auto member=find(m_window->contentItem(),"messageMember_"+expected["id"].toString());
         auto body=member ? bodyItem(member,expected["text"].toString()) : nullptr;
-        if (!fullyVisible(body,m_window) || body->property("text").toString()!=expected["text"].toString()) return;
+        if (!fullyVisible(body,m_window) || renderedText(body).simplified()!=expected["text"].toString().simplified()) return;
         m_stage=97;
         arrivalCli({"mail","read",m_deferredFirst},[this,expected](const auto &result) {
             const auto members=result["messages"].toArray();
@@ -612,7 +629,7 @@ void GuiMailNavigationSelfTest::step() {
         break;
     }
     case 97:
-        qInfo() << "Native deferred reader click passed: a real pending flag receipt preserved the clicked row through a real filtered-page exclusion; exact reader body, account, review state and serial write barrier retained.";
+        qInfo() << "Native pending-receipt reader click passed: the reader opens immediately and stays pinned outside the Review query; exact reader body, account, review state and serial write receipt retained.";
         m_backend.applyFilters({}); m_searchPending=false;
         m_queueCheckActive=false; m_backend.m_pollTimer.start(); m_stage=98; break;
     case 98:
@@ -862,6 +879,9 @@ void GuiMailNavigationSelfTest::step() {
         });
         break;
     case 30:
+        if (auto mail=find(m_window->contentItem(),"mailWorkspace"); mail && mail->property("replyOpen").toBool()) {
+            click("collapseReply"); return;
+        }
         if (!find(m_window->contentItem(),"unholdConversationButton")) {
             clickItem(find(m_window->contentItem(),"conversationActionsRow"),Qt::RightButton); return;
         }

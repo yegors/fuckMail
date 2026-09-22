@@ -1051,6 +1051,8 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
     let status = store.handle("status", None, json!({}))?;
     let methods = [
         "assist_jobs",
+        "assist_backlog",
+        "assist_batch_start",
         "assist_catalog",
         "assist_settings_get",
         "assist_settings_save",

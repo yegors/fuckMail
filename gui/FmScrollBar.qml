@@ -4,7 +4,11 @@ import QtQuick.Controls
 ScrollBar {
     id: bar
     objectName: "persistentScrollBar"
-    policy: ScrollBar.AlwaysOn
+    // Always-on tracks belong to the conversation list and thread reader.
+    // Everywhere else the control stays hidden until the content overflows.
+    // The stock style keeps AsNeeded bars visible and only fades the thumb.
+    policy: ScrollBar.AsNeeded
+    visible: policy === ScrollBar.AlwaysOn || (size > 0 && size < 1 && policy !== ScrollBar.AlwaysOff)
     minimumSize: 0.055
     padding: 3
     implicitWidth: horizontal ? 100 : 14
