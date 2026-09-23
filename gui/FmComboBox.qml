@@ -3,16 +3,18 @@ import QtQuick.Controls
 
 ComboBox {
     id: control
+    // Closed-field colour; forms on raised panels use the canvas.
+    property color fill: Theme.surface
     implicitWidth: 150
     implicitHeight: 34
     leftPadding: 11
     rightPadding: 32
     font.family: Theme.fontFamily
-    font.pixelSize: Theme.fontSize(13)
+    font.pointSize: Theme.fontPoints(13)
     hoverEnabled: true
     contentItem: Text { text: control.displayText; color: control.enabled ? Theme.text : Theme.subtle; font: control.font; verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight }
     indicator: FmIcon { x: control.width - width - 10; y: (control.height - height)/2; name: "down"; size: 12 }
-    background: Rectangle { color: control.hovered ? Theme.hover : Theme.surface; radius: 5; border.color: control.activeFocus ? Theme.accent : Theme.controlBorder }
+    background: Rectangle { color: control.hovered ? Theme.hover : control.fill; radius: 5; border.color: control.activeFocus ? Theme.accent : Theme.controlBorder }
     delegate: ItemDelegate {
         id: option
         required property int index

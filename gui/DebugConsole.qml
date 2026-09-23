@@ -60,16 +60,16 @@ Popup {
         spacing: 10
         RowLayout {
             Layout.fillWidth: true
-            Label { text: "Debug console"; color: Theme.text; font.pixelSize: Theme.fontSize(18); font.weight: Font.Medium }
+            Label { text: "Debug console"; color: Theme.text; font.pointSize: Theme.fontPoints(18); font.weight: Font.Medium }
             Item { Layout.fillWidth: true }
-            Label { text: panel.copyStatus; color: Theme.muted; font.pixelSize: Theme.fontSize(12) }
+            Label { text: panel.copyStatus; color: Theme.muted; font.pointSize: Theme.fontPoints(12) }
             FmButton { objectName: "debugCopy"; text: "Copy report"; onClicked: { panel.diagnostics.refresh(); panel.diagnostics.copyReport(); panel.copyStatus = "Copied full report"; copiedTimer.restart() } }
             FmButton { text: "Close  ~"; onClicked: panel.close() }
         }
         Label {
             Layout.fillWidth: true
             text: "This session · " + (panel.diagnostics ? panel.diagnostics.count : 0) + " / 1000 events · " + (panel.diagnostics ? panel.diagnostics.dropped : 0) + " older events evicted · account aliases, no request payloads"
-            color: Theme.muted; font.pixelSize: Theme.fontSize(12); wrapMode: Text.Wrap
+            color: Theme.muted; font.pointSize: Theme.fontPoints(12); wrapMode: Text.Wrap
         }
         RowLayout {
             Layout.fillWidth: true
@@ -104,7 +104,7 @@ Popup {
                 wrapMode: TextEdit.WrapAnywhere
                 rightPadding: 20
                 font.family: Qt.platform.os === "windows" ? "Consolas" : "monospace"
-                font.pixelSize: Theme.fontSize(12)
+                font.pointSize: Theme.fontPoints(12)
                 color: Theme.text; selectionColor: Theme.focusBorder
                 background: Rectangle { color: Theme.canvas; radius: 4 }
                 Accessible.name: panel.showState ? "Runtime application state" : "Runtime events"
@@ -112,7 +112,7 @@ Popup {
         }
         Label {
             text: panel.paused ? "View paused. Capture continues; Copy report includes current state and all retained events." : "Copy report includes current state and all retained events, regardless of filters. Esc or ~ closes."
-            color: Theme.muted; font.pixelSize: Theme.fontSize(12); wrapMode: Text.Wrap; Layout.fillWidth: true
+            color: Theme.muted; font.pointSize: Theme.fontPoints(12); wrapMode: Text.Wrap; Layout.fillWidth: true
         }
     }
     Timer { id: copiedTimer; interval: 2500; onTriggered: panel.copyStatus = "" }

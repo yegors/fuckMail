@@ -1,41 +1,44 @@
 import QtQuick
 import QtQuick.Controls
 
-Item {
+Rectangle {
     id: count
     required property string date
     required property var activity
+    property string accountName: ""
     property bool compact: false
-    property bool combined: true
+    property real textSize: 11
+    signal clicked()
     readonly property var day: (activity.days || []).find(function(row) { return row.date === count.date })
     readonly property bool ready: activity.state === "ready" && !!day
-    readonly property string label: ready
-        ? (compact ? "↓ " + day.received + "   ↑ " + day.sent : day.received + " received · " + day.sent + " sent")
-        : activity.state === "loading" ? "Mail …" : "Mail —"
-    readonly property string explanation: ready
-        ? date + ": " + day.received + " emails received, " + day.sent + " sent.\n"
-          + (combined ? "All active mail accounts" : "Selected mail account") + " · " + activity.time_zone
-          + ".\nCached mail only; undownloaded history and drafts are not counted. Sent mail appears after sync. Google arrival dates are used when available; otherwise the message date."
-        : activity.state === "display_zone_required" ? "Choose a Calendar display time zone to see daily mail counts."
-        : activity.message || "Loading daily cached mail counts…"
+    visible: date <= backend.todayDate && ready
     implicitHeight: 20
-    implicitWidth: labelText.implicitWidth + 17
-    activeFocusOnTab: true
-    Accessible.role: Accessible.StaticText
-    Accessible.name: explanation
-    FmIcon { name: "mail"; size: 12; anchors.left: parent.left; anchors.verticalCenter: parent.verticalCenter }
-    Text {
-        id: labelText
-        anchors.fill: parent
-        anchors.leftMargin: 17
-        text: count.label
-        textFormat: Text.PlainText
-        color: Theme.muted
-        font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontSize(11)
-        elide: Text.ElideRight
-        verticalAlignment: Text.AlignVCenter
+    implicitWidth: counts.implicitWidth + 16
+    radius: 10
+    color: Theme.surface
+    border.color: hover.hovered ? Theme.line3 : Theme.line
+    activeFocusOnTab: visible
+    Accessible.role: Accessible.Button
+    Accessible.name: ready ? day.received + " received, " + day.sent + " sent, " + accountName + ". Open Mail" : ""
+    Accessible.onPressAction: count.clicked()
+    Keys.onReturnPressed: count.clicked()
+    Keys.onSpacePressed: count.clicked()
+    Row {
+        id: counts
+        anchors.centerIn: parent
+        spacing: 8
+        Row {
+            spacing: 3
+            FmIcon { name: "arrowDown"; size: 9; color: received.color; anchors.verticalCenter: parent.verticalCenter }
+            Text { id: received; text: count.ready ? count.day.received : 0; color: hover.hovered ? Theme.text : Theme.muted; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(count.textSize); font.features: { "tnum": 1 } }
+        }
+        Row {
+            spacing: 3
+            FmIcon { name: "arrowUp"; size: 9; color: Theme.accent; anchors.verticalCenter: parent.verticalCenter }
+            Text { text: count.ready ? count.day.sent : 0; color: Theme.accent; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(count.textSize); font.features: { "tnum": 1 } }
+        }
     }
+    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: count.clicked() }
     HoverHandler { id: hover }
-    FmToolTip { visible: hover.hovered || count.activeFocus; text: count.explanation }
+    FmToolTip { visible: hover.hovered || count.activeFocus; text: count.ready ? count.day.received + " received · " + count.day.sent + " sent · " + count.accountName : "" }
 }

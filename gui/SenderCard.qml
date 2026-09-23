@@ -67,17 +67,17 @@ Popup {
                 Layout.fillWidth: true; spacing: 12
                 Rectangle {
                     implicitWidth: 36; implicitHeight: 36; radius: 18; color: Theme.hover
-                    Text { anchors.centerIn: parent; text: card.displayName.split(/\s+/).slice(0, 2).map(function(part) { return part.charAt(0) }).join(""); color: Theme.text; font.pixelSize: Theme.fontSize(12.5); font.weight: Font.Medium }
+                    Text { anchors.centerIn: parent; text: card.displayName.split(/\s+/).slice(0, 2).map(function(part) { return part.charAt(0) }).join(""); color: Theme.text; font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium }
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 2
-                    Text { text: card.displayName; Layout.fillWidth: true; color: Theme.text; font.pixelSize: Theme.fontSize(14); font.weight: Font.Medium; elide: Text.ElideRight; textFormat: Text.PlainText }
-                    Text { text: card.email; Layout.fillWidth: true; color: Theme.muted; font.pixelSize: Theme.fontSize(12.5); elide: Text.ElideRight; textFormat: Text.PlainText }
+                    Text { text: card.displayName; Layout.fillWidth: true; color: Theme.text; font.pointSize: Theme.fontPoints(14); font.weight: Font.Medium; elide: Text.ElideRight; textFormat: Text.PlainText }
+                    Text { text: card.email; Layout.fillWidth: true; color: Theme.muted; font.pointSize: Theme.fontPoints(12.5); elide: Text.ElideRight; textFormat: Text.PlainText }
                 }
             }
             Text {
                 objectName: "senderCardStatus"
-                Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText; font.pixelSize: Theme.fontSize(12)
+                Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText; font.pointSize: Theme.fontPoints(12)
                 color: card.current && card.cardData.error ? Theme.error : Theme.muted
                 text: !card.current || card.cardData.loading ? "Loading conversations…" : card.cardData.error || (card.total + (card.total === 1 ? " conversation" : " conversations") + " · " + (backend.currentAccount.name || card.account))
             }
@@ -93,8 +93,8 @@ Popup {
                         background: Rectangle { color: parent.hovered ? Theme.selected : "transparent"; radius: 3 }
                         contentItem: RowLayout {
                             id: row; spacing: 10
-                            Text { text: modelData.subject; Layout.fillWidth: true; elide: Text.ElideRight; color: modelData.unread ? Theme.text : Theme.secondary; font.pixelSize: Theme.fontSize(12.5); font.weight: modelData.unread ? Font.Medium : Font.Normal; textFormat: Text.PlainText }
-                            Text { text: card.formatAge(modelData.latest_at); color: Theme.subtle; font.pixelSize: Theme.fontSize(11.5) }
+                            Text { text: modelData.subject; Layout.fillWidth: true; elide: Text.ElideRight; color: modelData.unread ? Theme.text : Theme.secondary; font.pointSize: Theme.fontPoints(12.5); font.weight: modelData.unread ? Font.Medium : Font.Normal; textFormat: Text.PlainText }
+                            Text { text: card.formatAge(modelData.latest_at); color: Theme.subtle; font.pointSize: Theme.fontPoints(11.5) }
                         }
                         onClicked: card.openConversation(modelData.id)
                     }
@@ -102,12 +102,12 @@ Popup {
                 FmButton {
                     objectName: "senderCardFilter"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; leftPadding: 0; rightPadding: 0
                     text: (card.total > 3 ? "All " + card.total + " from " : "Filter to ") + card.displayName.split(" ")[0] + " →"
-                    font.pixelSize: Theme.fontSize(12); foreground: Theme.accent
+                    font.pointSize: Theme.fontPoints(12); foreground: Theme.accent
                     onClicked: card.filterSender()
                 }
             }
             FmButton {
-                objectName: "senderCardWrite"; text: "Write"; outlined: true; implicitHeight: 28; font.pixelSize: Theme.fontSize(12)
+                objectName: "senderCardWrite"; text: "Write"; outlined: true; implicitHeight: 28; font.pointSize: Theme.fontPoints(12)
                 enabled: backend.connected && !backend.draftBusy && !backend.accountArchived && !backend.unsavedAccountBuffer
                 onClicked: card.writeMessage()
             }

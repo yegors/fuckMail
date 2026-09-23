@@ -1123,12 +1123,14 @@ impl Store {
                 "Google drafts require a live profile",
             ));
         }
-        if !self.google_account_bindings()?.iter().any(|b| {
-            b.account == account
-                && b.connection_generation == generation
-                && b.state == crate::live_profile::ConnectionState::Connected
-                && fm_google::auth::ScopeSet::new(&b.scopes).mail_write()
-        }) {
+        if !crate::preferences::google_write_enabled(&self.db, account, "mail")?
+            || !self.google_account_bindings()?.iter().any(|b| {
+                b.account == account
+                    && b.connection_generation == generation
+                    && b.state == crate::live_profile::ConnectionState::Connected
+                    && fm_google::auth::ScopeSet::new(&b.scopes).mail_write()
+            })
+        {
             return Err(err(
                 "stale_google_work",
                 "Google account connection or mail permission changed",

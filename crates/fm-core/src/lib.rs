@@ -8,6 +8,7 @@ use std::{
 };
 mod account_archives;
 pub mod account_lifecycle;
+mod account_retention;
 pub mod assist_backlog;
 pub mod assist_store;
 #[cfg(test)]
@@ -27,6 +28,8 @@ mod content;
 mod draft_discard;
 pub mod draft_transfer;
 mod fixture;
+#[cfg(test)]
+mod fresh_schema_tests;
 pub mod google_draft_inventory;
 pub mod label_sync;
 pub mod local_labels;
@@ -55,9 +58,11 @@ mod preferences;
 mod queries;
 #[cfg(test)]
 mod sender_kind_tests;
-#[cfg(test)]
-mod test_profiles;
-pub const SCHEMA_VERSION: u32 = 29;
+const RESET_BASELINE_VERSION: u32 = 32;
+// Append one SQL step per version after the fresh baseline. Each step commits
+// with its own user_version update before normal recovery begins.
+const POST_RESET_MIGRATIONS: &[&str] = &[];
+pub const SCHEMA_VERSION: u32 = RESET_BASELINE_VERSION + POST_RESET_MIGRATIONS.len() as u32;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";
 #[derive(Debug)]
@@ -103,6 +108,7 @@ pub struct Store {
     pub(crate) projection_cache: queries::ProjectionCache,
     pub(crate) coverage_cache: queries::CoverageCache,
     pub(crate) mail_changes: queries::MailChanges,
+    pub(crate) planner_refreshed_at: std::cell::Cell<Option<std::time::Instant>>,
 }
 impl Store {
     pub fn open(profile: &Path) -> Result<Self> {
@@ -157,6 +163,23 @@ impl Store {
         if version > SCHEMA_VERSION {
             return Err(err("schema_mismatch", "This profile needs a newer engine"));
         }
+        if version != 0 && version < RESET_BASELINE_VERSION {
+            return Err(err(
+                "schema_mismatch",
+                "This profile uses the pre-reset store. Start with a fresh profile and reconnect accounts.",
+            ));
+        }
+        if version >= RESET_BASELINE_VERSION {
+            for (index, sql) in POST_RESET_MIGRATIONS.iter().enumerate() {
+                let next = RESET_BASELINE_VERSION + index as u32 + 1;
+                if version < next {
+                    let tx = db.unchecked_transaction()?;
+                    tx.execute_batch(sql)?;
+                    tx.pragma_update(None, "user_version", next)?;
+                    tx.commit()?;
+                }
+            }
+        }
         if version != 0 {
             let stored_kind: Option<i64> = db
                 .query_row("SELECT value FROM meta WHERE key='profile_kind'", [], |r| {
@@ -172,45 +195,17 @@ impl Store {
             }
         }
         if version == 0 {
-            // Kind and fixture sentinel are in the first schema transaction.
-            // A crash between migrations therefore cannot turn live into demo.
+            // Kind, fixture sentinel and final schema version commit together.
+            // A killed first transaction cannot turn live into demo.
             let marker = if requested == Some(live_profile::ProfileKind::Live) {
                 live_profile::live_initialization_marker(profile, true)?;
                 "INSERT INTO meta VALUES('profile_kind',1); INSERT INTO meta VALUES('fixture_revision',0);"
             } else {
                 "INSERT INTO meta VALUES('profile_kind',0);"
             };
-            db.execute_batch(&include_str!("schema.sql").replace(
-                "PRAGMA user_version=2;",
-                &format!("{marker}\nPRAGMA user_version=2;"),
-            ))?;
-        }
-        if version == 1 {
-            db.execute_batch(include_str!("migration-002.sql"))?;
-        }
-        // Read the committed version again: a fresh profile starts at the same
-        // historical schema used by upgrade fixtures, then follows these steps.
-        let version: u32 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 2 {
             db.execute_batch(&format!(
-                "BEGIN IMMEDIATE;\n{}\n{}\nPRAGMA user_version=3;\nCOMMIT;",
-                include_str!("migration-003-drafts.sql"),
-                include_str!("migration-003-google.sql")
-            ))?;
-        }
-        let version: u32 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 3 {
-            db.execute_batch(&format!(
-                "BEGIN IMMEDIATE;\n{}\n{}\nPRAGMA user_version=4;\nCOMMIT;",
-                include_str!("migration-004-calendar.sql"),
-                include_str!("migration-004-assist.sql")
-            ))?;
-        }
-        let version: u32 = db.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 4 {
-            db.execute_batch(&format!(
-                "BEGIN IMMEDIATE;\n{}\nPRAGMA user_version=5;\nCOMMIT;",
-                include_str!("migration-005.sql")
+                "BEGIN IMMEDIATE;\n{}\nINSERT INTO meta VALUES('revision',1);\n{marker}\nINSERT INTO profile_identity VALUES(1,lower(hex(randomblob(32))));\nINSERT INTO calendar_publication VALUES(1,0);\nPRAGMA user_version={SCHEMA_VERSION};\nCOMMIT;",
+                include_str!("fresh-schema.sql")
             ))?;
         }
         let mut store = Self {
@@ -221,6 +216,7 @@ impl Store {
             projection_cache: Default::default(),
             coverage_cache: Default::default(),
             conversation_cache: Default::default(),
+            planner_refreshed_at: Default::default(),
         };
         let seeded: Option<i64> = store
             .db
@@ -244,276 +240,6 @@ impl Store {
             }
             store.seed()?;
         }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 5 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-006.sql"))?;
-            store.freeze_migrated_drafts()?;
-            tx.execute_batch("PRAGMA user_version=6")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 6 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-007.sql"))?;
-            // Revision 3 is written by the atomic fresh seed. If interrupted
-            // before this migration, reopen completes its explicit annotations.
-            // Retained revision 1/2 profiles never receive fixture annotations.
-            if store.fixture_revision()? == 3 {
-                fixture::seed_sender_kinds(&tx)?;
-            }
-            tx.execute_batch("PRAGMA user_version=7")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 7 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-008.sql"))?;
-            tx.execute_batch("PRAGMA user_version=8")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 8 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-009-runtime.sql"))?;
-            tx.execute_batch(include_str!("migration-009-mail.sql"))?;
-            tx.execute_batch(include_str!("migration-009-calendar.sql"))?;
-            tx.execute_batch("PRAGMA user_version=9")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 9 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-010-mail.sql"))?;
-            tx.execute_batch(include_str!("migration-010-calendar-writes.sql"))?;
-            tx.execute_batch("PRAGMA user_version=10")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 10 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-011-labels.sql"))?;
-            tx.execute_batch("PRAGMA user_version=11")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 11 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-012-attachments.sql"))?;
-            tx.execute_batch("PRAGMA user_version=12")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 12 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-013-google-drafts.sql"))?;
-            tx.execute_batch("PRAGMA user_version=13")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 13 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-014-google-send.sql"))?;
-            tx.execute_batch("PRAGMA user_version=14")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 14 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-015-google-draft-inventory.sql"))?;
-            tx.execute_batch("PRAGMA user_version=15")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 15 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-016-google-draft-actions.sql"))?;
-            tx.execute_batch("PRAGMA user_version=16")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 16 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-017-calendar-invitations.sql"))?;
-            tx.execute_batch("PRAGMA user_version=17")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 17 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-018-account-lifecycle.sql"))?;
-            tx.execute_batch("PRAGMA user_version=18")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 18 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-019-calendar-occurrences.sql"))?;
-            tx.execute_batch("PRAGMA user_version=19")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 19 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-020-calendar-workflows.sql"))?;
-            tx.execute_batch("PRAGMA user_version=20")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 20 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-021-ollama.sql"))?;
-            tx.execute_batch("PRAGMA user_version=21")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 21 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch("CREATE TABLE local_model_label_overrides(account TEXT NOT NULL,message_id TEXT NOT NULL,PRIMARY KEY(account,message_id),FOREIGN KEY(account,message_id) REFERENCES messages(account,id) ON DELETE CASCADE); CREATE TABLE local_model_settings_history(revision INTEGER PRIMARY KEY,settings_json TEXT NOT NULL); INSERT INTO local_model_settings_history SELECT revision,settings_json FROM local_model_settings;")?;
-            let old: Option<String> = tx
-                .query_row(
-                    "SELECT settings_json FROM local_model_settings WHERE id=1",
-                    [],
-                    |r| r.get(0),
-                )
-                .optional()?;
-            if let Some(old) = old {
-                let settings = fm_assist::ollama::upgrade_settings(serde_json::from_str(&old)?)
-                    .map_err(|s| err("storage_error", &s))?;
-                tx.execute("UPDATE local_model_settings SET revision=revision+1,settings_json=?1 WHERE id=1",[serde_json::to_string(&settings)?])?;
-            }
-            tx.execute_batch("PRAGMA user_version=22")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 22 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch("INSERT INTO local_model_settings_history SELECT revision,settings_json FROM local_model_settings;")?;
-            let old: Option<String> = tx
-                .query_row(
-                    "SELECT settings_json FROM local_model_settings WHERE id=1",
-                    [],
-                    |r| r.get(0),
-                )
-                .optional()?;
-            if let Some(old) = old {
-                let settings = fm_assist::ollama::upgrade_settings(serde_json::from_str(&old)?)
-                    .map_err(|s| err("storage_error", &s))?;
-                tx.execute("UPDATE local_model_settings SET revision=revision+1,settings_json=?1 WHERE id=1", [serde_json::to_string(&settings)?])?;
-            }
-            tx.execute_batch("PRAGMA user_version=23")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 23 {
-            let tx = store.db.unchecked_transaction()?;
-            let old: Option<String> = tx
-                .query_row(
-                    "SELECT settings_json FROM local_model_settings WHERE id=1",
-                    [],
-                    |r| r.get(0),
-                )
-                .optional()?;
-            if let Some(old) = old {
-                let mut settings: Value = serde_json::from_str(&old)?;
-                let mut request: Value = serde_json::from_str(
-                    settings["prompt"]
-                        .as_str()
-                        .ok_or_else(|| err("storage_error", "Missing prompt"))?,
-                )?;
-                if request["options"]["num_predict"] == 1024 {
-                    tx.execute_batch("INSERT INTO local_model_settings_history SELECT revision,settings_json FROM local_model_settings")?;
-                    request["options"]["num_predict"] = json!(4096);
-                    settings["prompt"] = serde_json::to_string_pretty(&request)?.into();
-                    tx.execute("UPDATE local_model_settings SET revision=revision+1,settings_json=?1 WHERE id=1",[serde_json::to_string(&settings)?])?;
-                }
-            }
-            tx.execute_batch("PRAGMA user_version=24")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 24 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-025-local-providers.sql"))?;
-            tx.execute_batch("PRAGMA user_version=25")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 25 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-026-label-creation.sql"))?;
-            tx.execute_batch("PRAGMA user_version=26")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 26 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-027-draft-transfers.sql"))?;
-            tx.execute_batch("PRAGMA user_version=27")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 27 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-028-draft-discard.sql"))?;
-            tx.execute_batch("PRAGMA user_version=28")?;
-            tx.commit()?;
-        }
-        let version: u32 = store
-            .db
-            .query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version == 28 {
-            let tx = store.db.unchecked_transaction()?;
-            tx.execute_batch(include_str!("migration-029-account-archives.sql"))?;
-            tx.execute_batch("PRAGMA user_version=29")?;
-            tx.commit()?;
-        }
         store.cleanup_deleted_archive_blobs()?;
         store.validate_profile_identity()?;
         store.recover_google_category_projections()?;
@@ -524,6 +250,7 @@ impl Store {
         store.recover_google_draft_deletions()?;
         store.calendar_live_recover()?;
         store.mail_changes.reset_calendar_generation();
+        store.db.execute_batch("PRAGMA optimize=0x10002;")?;
         Ok(store)
     }
     pub fn handle(&mut self, method: &str, account: Option<&str>, params: Value) -> Result<Value> {
@@ -627,11 +354,13 @@ impl Store {
             "attachment",
             "categories",
             "label_catalog",
+            "label_auto_read",
             "label_create",
             "label_describe",
             "label_remove",
             "set_category",
             "mail_filing",
+            "mail_undo",
             "google_mail_mutation_status",
             "google_labels",
             "google_category_bind",
@@ -744,11 +473,11 @@ impl Store {
                 fields(&params, &[])?;
                 self.label_catalog(account)
             }
-            "label_create" | "label_describe" | "label_remove" => {
+            "label_create" | "label_describe" | "label_remove" | "label_auto_read" => {
                 self.label_edit(account, method, &params)
             }
-            "flag" | "set_category" | "mail_filing" | "draft_create" | "draft_save"
-            | "draft_discard" | "draft_undo_discard" | "view_save" => {
+            "flag" | "set_category" | "mail_filing" | "mail_undo" | "draft_create"
+            | "draft_save" | "draft_discard" | "draft_undo_discard" | "view_save" => {
                 self.mutate(method, account, &params)
             }
             "draft_discard_status" => self.draft_discard_status(account, &params),
@@ -770,6 +499,32 @@ impl Store {
             })?)
     }
 }
+impl Store {
+    /// Open-time statistics predate a fresh profile's first sync. Refresh them
+    /// as sync grows the store; SQLite bounds the work and skips unchanged tables.
+    pub(crate) fn refresh_planner_statistics(&self) {
+        const INTERVAL: std::time::Duration = std::time::Duration::from_secs(300);
+        if !self.db.is_autocommit()
+            || self
+                .planner_refreshed_at
+                .get()
+                .is_some_and(|at| at.elapsed() < INTERVAL)
+        {
+            return;
+        }
+        if self.db.execute_batch("PRAGMA optimize=0x10002;").is_ok() {
+            self.planner_refreshed_at
+                .set(Some(std::time::Instant::now()));
+        }
+    }
+}
+impl Drop for Store {
+    fn drop(&mut self) {
+        // SQLite bounds the analysis work. Refresh statistics after ingestion.
+        let _ = self.db.execute_batch("PRAGMA optimize;");
+    }
+}
+
 pub(crate) fn fields(value: &Value, allowed: &[&str]) -> Result<()> {
     if value
         .as_object()

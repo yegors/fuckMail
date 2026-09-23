@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
     json!({"density":"comfortable","mail_date_grouping":"grouped","sync_every_minutes":1,"week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
-        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"calendar_display_time_zone":null,"calendar_account_visibility":"all","google_sync_limits":null,"google_sync_services":{},"notifications":"events"})
+        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"default_reminder_minutes":15,"reminder_snooze_minutes":5,"calendar_display_time_zone":null,"calendar_account_visibility":"all","google_sync_limits":null,"google_sync_services":{},"notifications":"events","shortcuts":{}})
 }
 impl Store {
     pub fn google_service_sync_enabled(&self, account: &str, service: &str) -> Result<bool> {
@@ -108,7 +108,10 @@ impl Store {
                 "google_sync_limits",
                 "google_sync_services",
                 "notifications",
+                "shortcuts",
                 "default_event_duration_minutes",
+                "default_reminder_minutes",
+                "reminder_snooze_minutes",
                 "calendar_display_time_zone",
             ],
         )?;
@@ -116,6 +119,7 @@ impl Store {
         for (key, value) in patch.as_object().unwrap() {
             preferences[key] = value.clone();
         }
+        validate_shortcuts(&preferences["shortcuts"])?;
         let services = preferences["google_sync_services"]
             .as_object()
             .filter(|v| v.len() <= 200)
@@ -134,7 +138,18 @@ impl Store {
             )? {
                 return Err(err("not_found", "Sync account was not found"));
             }
-            fields(choices, &["mail", "calendar"])?;
+            fields(
+                choices,
+                &["mail", "calendar", "mail_access", "calendar_access"],
+            )?;
+            for mode in ["mail_access", "calendar_access"] {
+                if choices
+                    .get(mode)
+                    .is_some_and(|v| !matches!(v.as_str(), Some("read" | "write")))
+                {
+                    return Err(err("invalid_request", "Choose Read or Read & write"));
+                }
+            }
             if !choices["mail"].is_boolean() || !choices["calendar"].is_boolean() {
                 return Err(err(
                     "invalid_request",
@@ -197,6 +212,24 @@ impl Store {
             return Err(err(
                 "invalid_request",
                 "Default event duration must be 30, 45 or 60 minutes",
+            ));
+        }
+        if !matches!(
+            preferences["default_reminder_minutes"].as_i64(),
+            Some(5 | 15 | 60)
+        ) {
+            return Err(err(
+                "invalid_request",
+                "Default reminder must be 5, 15 or 60 minutes",
+            ));
+        }
+        if !matches!(
+            preferences["reminder_snooze_minutes"].as_i64(),
+            Some(1 | 5 | 10)
+        ) {
+            return Err(err(
+                "invalid_request",
+                "Reminder snooze must be 1, 5 or 10 minutes",
             ));
         }
         if ![Some("comfortable"), Some("compact")].contains(&preferences["density"].as_str())
@@ -282,6 +315,7 @@ impl Store {
                 "name",
                 "signature_text",
                 "mail_retention",
+                "sync",
                 "expected_revision",
                 "request_id",
             ],
@@ -346,22 +380,33 @@ impl Store {
                 |r| r.get(0),
             )?;
             if old != retention {
-                let started: bool = tx.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM google_live_lanes WHERE account=?1)",
-                    [account],
-                    |r| r.get(0),
-                )?;
-                if started {
-                    return Err(err(
-                        "retention_already_started",
-                        "Download history is chosen before the first mail sync",
-                    ));
-                }
+                self.change_mail_retention(account, since)?;
                 tx.execute(
                     "UPDATE account_metadata SET mail_retention=?2,mail_since=?3 WHERE account=?1",
                     params![account, retention, since],
                 )?;
             }
+        }
+        if let Some(sync) = p.get("sync") {
+            fields(
+                sync,
+                &["mail", "calendar", "mail_access", "calendar_access"],
+            )?;
+            if !sync["mail"].is_boolean()
+                || !sync["calendar"].is_boolean()
+                || (sync["mail"] == false && sync["calendar"] == false)
+                || !matches!(sync["mail_access"].as_str(), Some("read" | "write"))
+                || !matches!(sync["calendar_access"].as_str(), Some("read" | "write"))
+            {
+                return Err(err(
+                    "invalid_request",
+                    "Enable Mail or Calendar and choose Read or Read & write for each",
+                ));
+            }
+            let current = self.preferences()?;
+            let mut preferences = current["preferences"].clone();
+            preferences["google_sync_services"][account] = sync.clone();
+            tx.execute("INSERT INTO preferences(singleton,revision,json) VALUES(1,?1,?2) ON CONFLICT(singleton) DO UPDATE SET revision=excluded.revision,json=excluded.json",params![current["revision"].as_i64().unwrap()+1,serde_json::to_string(&preferences)?])?;
         }
         tx.execute(
             "UPDATE accounts SET name=?1 WHERE id=?2",
@@ -392,16 +437,161 @@ impl Store {
         Ok(result)
     }
 }
+pub(crate) fn google_write_enabled(
+    db: &rusqlite::Connection,
+    account: &str,
+    service: &str,
+) -> Result<bool> {
+    let saved: Option<String> = db
+        .query_row("SELECT json FROM preferences WHERE singleton=1", [], |r| {
+            r.get(0)
+        })
+        .optional()?;
+    let saved: Value = saved
+        .map(|s| serde_json::from_str(&s))
+        .transpose()?
+        .unwrap_or(json!({}));
+    let choice = &saved["google_sync_services"][account];
+    Ok(choice[service] != false && choice[format!("{service}_access")] != "read")
+}
+
+fn validate_shortcuts(value: &Value) -> Result<()> {
+    let choices = value
+        .as_object()
+        .filter(|m| m.len() <= 32)
+        .ok_or_else(|| err("invalid_request", "Shortcuts must be an action-to-key map"))?;
+    let defaults = [
+        ("next", "mail", "J"),
+        ("prev", "mail", "K"),
+        ("reply", "mail", "R"),
+        ("replyAll", "mail", "A"),
+        ("forward", "mail", "F"),
+        ("unread", "mail", "U"),
+        ("delay", "mail", "D"),
+        ("done", "mail", "E"),
+        ("compose", "mail", "N"),
+        ("scopes", "mail", "S"),
+        ("search", "mail", "/"),
+        ("delete", "mail", "Delete"),
+        ("day", "calendar", "D"),
+        ("week", "calendar", "W"),
+        ("month", "calendar", "M"),
+        ("agenda", "calendar", "A"),
+        ("back", "calendar", "Left"),
+        ("fwd", "calendar", "Right"),
+        ("today", "calendar", "T"),
+        ("newEv", "calendar", "N"),
+        ("view", "all", "V"),
+        ("settings", "all", ","),
+        ("undo", "all", "Z"),
+    ];
+    for (action, key) in choices {
+        if !defaults.iter().any(|v| v.0 == action) {
+            return Err(err("invalid_request", "Unknown shortcut action"));
+        }
+        if key.is_null() {
+            continue;
+        }
+        let key = key
+            .as_str()
+            .filter(|k| {
+                !k.is_empty()
+                    && k.len() <= 64
+                    && k.chars().all(|c| c.is_ascii_graphic() || c == ' ')
+            })
+            .ok_or_else(|| err("invalid_request", "Choose one key or key combination"))?;
+        let mut base = key;
+        for prefix in ["Ctrl+", "Alt+", "Shift+", "Meta+"] {
+            if let Some(rest) = base.strip_prefix(prefix) {
+                base = rest;
+            }
+        }
+        let letter = base.len() == 1
+            && base.as_bytes()[0].is_ascii_graphic()
+            && !base.as_bytes()[0].is_ascii_lowercase();
+        let named = [
+            "Left",
+            "Right",
+            "Up",
+            "Down",
+            "Space",
+            "Delete",
+            "Backspace",
+            "Return",
+            "Home",
+            "End",
+            "PgUp",
+            "PgDown",
+        ]
+        .contains(&base);
+        let function = base
+            .strip_prefix('F')
+            .and_then(|v| v.parse::<u8>().ok())
+            .is_some_and(|n| (1..=35).contains(&n));
+        if !letter && !named && !function {
+            return Err(err(
+                "invalid_request",
+                "Choose one supported key combination",
+            ));
+        }
+        if [
+            "Ctrl+K",
+            "Meta+K",
+            "Ctrl+Return",
+            "Meta+Return",
+            "Esc",
+            "Escape",
+            "Tab",
+            "Shift+Tab",
+        ]
+        .contains(&key)
+        {
+            return Err(err("invalid_request", "This shortcut is fixed"));
+        }
+    }
+    for (i, (action, scope, default)) in defaults.iter().enumerate() {
+        let key = choices
+            .get(*action)
+            .map(|v| v.as_str().unwrap_or(""))
+            .unwrap_or(default);
+        if key.is_empty() {
+            continue;
+        }
+        for (other, other_scope, other_default) in defaults.iter().skip(i + 1) {
+            let other_key = choices
+                .get(*other)
+                .map(|v| v.as_str().unwrap_or(""))
+                .unwrap_or(other_default);
+            if (scope == other_scope || *scope == "all" || *other_scope == "all")
+                && key == other_key
+            {
+                return Err(err(
+                    "invalid_request",
+                    "A shortcut must be removed from its previous action before moving it",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn mail_retention_since(retention: &str) -> Result<Option<i64>> {
     let months = match retention {
         "1_month" => 1,
         "3_months" => 3,
         "1_year" => 12,
+        "2_years" => 24,
+        "5_years" => 60,
+        "90_days" => {
+            return Ok(Some(
+                (chrono::Utc::now() - chrono::Duration::days(90)).timestamp(),
+            ))
+        }
         "all" => return Ok(None),
         _ => {
             return Err(err(
                 "invalid_request",
-                "Choose 1 month, 3 months, 1 year or All",
+                "Choose 90 days, 1 year, 2 years, 5 years or Everything",
             ))
         }
     };
@@ -426,8 +616,23 @@ pub(crate) fn required_revision(p: &Value) -> Result<i64> {
 mod appearance_tests {
     use super::*;
     #[test]
-    fn retention_setup_choices_are_durable_and_frozen_after_acquisition() {
-        for (index, choice) in ["1_month", "3_months", "1_year", "all"].iter().enumerate() {
+    fn shortcut_scope_conflicts_and_fixed_bindings_are_enforced() {
+        assert!(validate_shortcuts(&json!({})).is_ok());
+        assert!(validate_shortcuts(&json!({"reply":"D"})).is_err());
+        assert!(validate_shortcuts(&json!({"reply":"D","delay":null})).is_ok());
+        assert!(validate_shortcuts(&json!({"view":"D","delay":null})).is_err());
+        assert!(validate_shortcuts(&json!({"view":"D","delay":null,"day":null})).is_ok());
+        for key in ["Ctrl+K", "Meta+K", "Ctrl+Return", "Tab", "Esc"] {
+            assert!(validate_shortcuts(&json!({"reply":key})).is_err());
+        }
+        assert!(validate_shortcuts(&json!({"unknown":"X"})).is_err());
+    }
+    #[test]
+    fn retention_setup_choices_are_durable_and_editable_after_acquisition() {
+        for (index, choice) in ["90_days", "1_year", "2_years", "5_years", "all"]
+            .iter()
+            .enumerate()
+        {
             let dir = tempfile::tempdir().unwrap();
             let mut store = Store::open_live(dir.path()).unwrap();
             let account = store
@@ -458,10 +663,10 @@ mod appearance_tests {
                 .google_live_begin(&account, "100", chrono::Utc::now().timestamp())
                 .unwrap();
             let next = if *choice == "all" { "1_month" } else { "all" };
-            assert_eq!(store.handle("account_update",Some(&account),json!({"name":"History","signature_text":"","mail_retention":next,"expected_revision":saved["metadata_revision"],"request_id":"too-late"})).unwrap_err().code,"retention_already_started");
+            assert_eq!(store.handle("account_update",Some(&account),json!({"name":"History","signature_text":"","mail_retention":next,"expected_revision":saved["metadata_revision"],"request_id":"edit-later"})).unwrap()["mail_retention"],next);
             assert_eq!(
-                store.accounts().unwrap()["accounts"][0]["mail_since"],
-                saved["mail_since"]
+                store.accounts().unwrap()["accounts"][0]["mail_since"].is_null(),
+                next == "all"
             );
         }
     }

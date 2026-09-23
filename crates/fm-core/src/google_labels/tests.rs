@@ -552,7 +552,7 @@ fn linking_after_import_projects_saved_labels_without_inbox_or_remote_writes() {
             .db
             .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
             .unwrap(),
-        20
+        crate::SCHEMA_VERSION as i64
     );
     drop(recovered);
     let reopened = Store::open_live(directory.path()).unwrap();

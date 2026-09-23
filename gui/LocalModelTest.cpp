@@ -81,6 +81,7 @@ public:
   });return ticket;
  }
  Q_INVOKABLE void refresh(){}
+ Q_INVOKABLE QString fixedFontFamily() const { return QFontDatabase::systemFont(QFontDatabase::FixedFont).family(); }
 signals:
  void assistanceReply(QString ticket,QString method,QVariantMap result,bool ok);
  void connectedChanged();void conversationChanged();void selectionChanged();
@@ -154,7 +155,7 @@ ApplicationWindow {width:680;height:900;visible:true;color:Theme.canvas
  ++backend.revision;
  QMetaObject::invokeMethod(panel,"editMessage",Q_ARG(QVariant,1),Q_ARG(QVariant,"Unsaved local instructions."));backend.reject=true;QMetaObject::invokeMethod(panel,"save");await([&]{return panel->property("conflict").toBool();});require(panel->property("dirty").toBool(),"conflict retains unsaved edits");QMetaObject::invokeMethod(panel,"reloadSaved");await([&]{return !panel->property("dirty").toBool() && panel->property("revision").toInt()==backend.revision;});backend.reject=false;
  require(!find(window->contentItem(),"summaryModel") && !find(window->contentItem(),"classificationModel"),"only one model selector");
- require(find(window->contentItem(),"enableSummaries")->property("checked").toBool() && find(window->contentItem(),"enableClassification")->property("checked").toBool(),"account defaults on");
+ require(!find(window->contentItem(),"enableSummaries") && !find(window->contentItem(),"enableClassification"),"per-account incoming controls live in Mail settings");
 
  // Switching providers invalidates a late discovery and preserves the complete prompt.
  backend.delayDiscovery=true;QMetaObject::invokeMethod(panel,"refresh");await([&]{return !backend.discoveries.empty();});
@@ -189,20 +190,17 @@ ApplicationWindow {width:680;height:900;visible:true;color:Theme.canvas
  auto capture=[&](const QString &state){if(!motionCapture.isEmpty())require(window->grabWindow().save(motionCapture+"-"+state+".png"),"summary transition capture");};
  capture("idle");backend.delayStart=true;backend.delayPoll=true;
  QMetaObject::invokeMethod(action,"clicked");await([&]{return backend.starts.size()==1;});settle();
- require(action->isVisible() && action->property("text")=="Summarizing…","initial control becomes progress in place");
- qInfo()<<"Summary idle/running geometry"<<idleHeight<<messageCard->height()<<idleBodyY<<receivedBody->y()<<idleWidth<<action->width();
- require(qAbs(messageCard->height()-idleHeight)<0.5 && qAbs(receivedBody->y()-idleBodyY)<0.5 && qAbs(action->width()-idleWidth)<0.5,"queued summary leaves button and email geometry unchanged");
- require(find(messageCard,"summaryProgress")->isVisible(),"indeterminate progress is inside original control");
+ require(!action->isVisible() && find(messageCard,"summaryProgress")->isVisible(),"busy summary replaces compact action with the dashed progress box");
+ require(messageCard->height()>idleHeight && !messageCard->property("heightAnimating").toBool(),"busy box has immediate stable geometry");
+ const auto busyHeight=messageCard->height(),busyBodyY=receivedBody->y();
  require(!find(window->contentItem(),"classificationError_message")->isVisible(),"no external combined-job feedback");
  capture("queued");backend.flush(backend.starts);backend.delayStart=false;await([&]{return !backend.polls.empty();});settle();
- require(qAbs(receivedBody->y()-idleBodyY)<0.5,"running job does not move email text");capture("running");
+ require(qAbs(receivedBody->y()-busyBodyY)<0.5,"running job retains busy-box geometry");capture("running");
  backend.delayResults=true;backend.flush(backend.polls);backend.delayPoll=false;await([&]{return !backend.results.empty();});settle();
- require(controller->property("busy").toBool() && action->property("text")=="Summarizing…","completion waits for committed result without flashing idle control");
- require(qAbs(messageCard->height()-idleHeight)<0.5,"result readback preserves processing height");
- backend.delayResults=false;backend.flush(backend.results);
- QList<double> heights;double previous=idleHeight;QElapsedTimer motion;motion.start();
- while(motion.elapsed()<350){QCoreApplication::processEvents();const auto height=messageCard->height();require(height+0.5>=previous,"summary expansion never jumps backwards");heights.append(height);previous=height;QThread::msleep(8);}
- require(std::any_of(heights.cbegin(),heights.cend(),[&](double height){return height>idleHeight+1 && height<messageCard->height()-1;}) && messageCard->height()>idleHeight+10 && !action->isVisible(),"summary grows smoothly from initial control to text");
+ require(controller->property("busy").toBool() && !action->isVisible(),"completion waits for committed result without flashing idle control");
+ require(qAbs(messageCard->height()-busyHeight)<0.5,"result readback preserves processing height");
+ backend.delayResults=false;backend.flush(backend.results);settle();
+ require(!messageCard->property("heightAnimating").toBool() && !action->isVisible(),"summary text appears without moving the header through animation");
  require(messageCard->property("summaryText").toString()==backend.summaryText,"committed message summary appears in same surface");capture("completed");
  await([&]{return backend.inferences==1 && !controller->property("busy").toBool();});
  require(backend.targets["job-1"].toMap()["message_id"]=="message","message button preserves exact target");
@@ -220,7 +218,7 @@ ApplicationWindow {width:680;height:900;visible:true;color:Theme.canvas
  settle();backend.delayPoll=true;const auto readyHeight=messageCard->height(),readyBodyY=receivedBody->y();
  invokeStart("summary","message");await([&]{return !backend.polls.empty();});settle();
  qInfo()<<"Regeneration geometry"<<readyHeight<<messageCard->height()<<readyBodyY<<receivedBody->y()<<messageCard->property("displayedError");
- require(messageCard->property("summaryText").toString()==backend.summaryText && qAbs(messageCard->height()-readyHeight)<0.5 && qAbs(receivedBody->y()-readyBodyY)<0.5,"regeneration preserves summary text and email placement");
+ require(messageCard->property("summaryText").toString()==backend.summaryText && find(messageCard,"summaryProgress")->isVisible(),"regeneration retains saved result and shows the progress box");
  require(!find(messageCard,"summaryCancel"),"cancel is absent from the inline summary surface");
  QMetaObject::invokeMethod(find(messageCard,"summaryActions"),"clicked");
  await([&]{auto item=find(window->contentItem(),"summaryCancel");return item && item->isVisible();});
@@ -236,7 +234,7 @@ ApplicationWindow {width:680;height:900;visible:true;color:Theme.canvas
  const auto errorHeight=fresh->height(),errorBodyY=receivedBody->y();backend.failPoll=false;backend.delayPoll=true;
  invokeStart("summary","fresh-message");await([&]{return !backend.polls.empty();});settle();
  qInfo()<<"Retry geometry"<<errorHeight<<fresh->height()<<errorBodyY<<receivedBody->y()<<fresh->property("displayedError");
- require(qAbs(fresh->height()-errorHeight)<0.5 && qAbs(receivedBody->y()-errorBodyY)<0.5,"retry retains the expanded error container without collapsing");
+ require(fresh->height()>26 && find(fresh,"summaryProgress")->isVisible(),"retry shows the full progress surface");
  backend.flush(backend.polls);backend.delayPoll=false;await([&]{return !controller->property("busy").toBool();});settle();
  require(!find(fresh,"summaryError")->isVisible() && fresh->property("summaryText").toString()==backend.summaryText,"successful retry replaces error with summary");
  // Navigating to a cached summary must never arm a reveal animation, even after delayed readback.
@@ -252,11 +250,11 @@ ApplicationWindow {width:680;height:900;visible:true;color:Theme.canvas
  const auto screenshots=qEnvironmentVariable("FM_ASSIST_SCREENSHOTS");if(!screenshots.isEmpty())QDir().mkpath(screenshots);
  for(const auto theme:{"graphite","paper","terminal"})for(const auto size:{"small","default","large"}){
   window->setWidth(480);QMetaObject::invokeMethod(window,"appearance",Q_ARG(QVariant,QString(theme)),Q_ARG(QVariant,QString(size)));QCoreApplication::processEvents();
-  auto body=find(card,"summaryBody");require(body && body->width()<=card->width()-35 && body->width()>300,"summary fits narrow card");
+  auto body=find(card,"summaryBody");require(body && body->width()<=card->width()-28 && body->width()>300,"summary fits narrow card");
   require(card->height()>70 && card->height()<300,"compact summary card");
   if(!screenshots.isEmpty() && QString(size)=="default"){window->setWidth(720);QCoreApplication::processEvents();QThread::msleep(30);QCoreApplication::processEvents();require(window->grabWindow().save(screenshots+"/summary-"+theme+".png"),"capture actual native frame");}
  }
- backend.summaryText=QString(600,'W');emit backend.conversationChanged();await([&]{return card->property("summaryText").toString().size()==600;});QCoreApplication::processEvents();require(find(card,"summaryScroll")->height()<=211,"long summary has bounded scroll");
+ backend.summaryText=QString(600,'W');emit backend.conversationChanged();await([&]{return card->property("summaryText").toString().size()==600;});QCoreApplication::processEvents();require(find(card,"summaryBody")->width()<=card->width()-28 && card->height()>70,"long summary wraps within the padded full-width column");
  require(!warnings,"production QML has no runtime warnings");qInfo()<<"Local assistance passed: Settings edits/CAS, incoming-only controls, exact targets/sources, start/poll/cancel/switch/disconnect races, and all theme/text-size geometry";return 0;
 }
 #include "LocalModelTest.moc"

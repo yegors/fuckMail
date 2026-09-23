@@ -1,105 +1,81 @@
 # fuckMail
 
-**D088 / Clean thread Mac candidate:** recognized reply history and quote disclosures are omitted from the reader; every message and the earlier-message group can collapse/reopen. Newly acquired reading/search copies omit quoted history while exact original sources remain in external blobs; existing archive rows are untouched. Scoped Rust, six native suites, final control captures, isolated Cocoa reader and configured relocation checks pass. Close older copies and use `dist/thread-content-darwin-arm64/fuckmail-gui.app`. Core48/Gmail25/Mail UI64/Quality64; CLI41/Local assistance16/schema29/fixtures0,3/protocol1 and readiness0/9 unchanged. Existing broad scroll-restoration and native Cocoa selection-harness limits remain separate. [Evidence and limits](docs/research/prototype-september-22.md#d088--clean-thread-contributions-and-reversible-expansion).
+A fast, focused desktop mail and calendar client for Gmail and Google Workspace. It runs natively on Windows, macOS and Linux, keeps your mail on your own machine, and comes with a command-line client that shares the same data.
 
-**D087 / Navigation and reader Mac candidate:** rapid paging now accumulates the exact final target with bounded reader work. Complex received tables no longer block Qt layout; delivery status and late summary replies no longer shift the prepared reader. Six rebuilt native suites, actual Cocoa frame/paging checks and signed SDK-free relocation/startup pass. Close older copies and use `dist/navigation-reader-darwin-arm64/fuckmail-gui.app`. Mail UI63/Quality63; Core47/Local assistance16/CLI41/schema29, fixtures0/3/protocol1 and readiness0/9 unchanged. The earlier broad post-arrival scroll-restoration gate remains separate. [Evidence and limits](docs/research/prototype-september-22.md#d087--repeated-paging-and-coherent-reader-frames).
+It is built around one daily habit: read what's new, finish what needs doing, and end the day with nothing unread and nothing starred.
 
-**D086 / Mail list and account backlog Mac candidate:** September 22 sender/preview columns, recipient previews, a single mouse/keyboard cursor, arrows/paging/range selection and wider Accounts cards are implemented. Backlog analysis processes only missing enabled results in a chosen date range, with real cached counts, progress, Stop and shared CLI commands. Scoped Rust checks, five rebuilt native suites, 17 packaged engine/CLI scenarios and signed SDK-free relocation/startup checks pass. Close older copies and use `dist/prototype-backlog-darwin-arm64/fuckmail-gui.app`. The broader GUI self-test still times out on post-arrival scroll restoration; that gate remains open. Core47/Local assistance16/Mail UI62/CLI41/Quality62; schema29, fixtures0/3/protocol1 and readiness0/9 unchanged. [Evidence and limits](docs/research/prototype-september-22.md).
+> **Status:** early and under active development. There is no installer or release yet; you build it from source. See [current status](docs/status.md) for what works today.
 
-**D084 / Reader stability Windows candidate:** the reported access violation is reproduced and fixed. Reader source/metadata/saved summaries prepare together, formatting runs off the UI thread, read-only prefetch warms nearby threads, and read receipts retain body layout. Horizontal mailbox/label tracks are removed. Five final Debug native suites pass (30.80 s), along with configured package relocation and the inspected final reader capture. `build/dev/fuckmail-gui.exe` is updated; the optimized package is `dist/reader-stability-windows-amd64/bin/fuckmail-gui.exe`. Rendered speed runs were interrupted, so the full latency gate remains open. [Evidence and limits](docs/research/prototype-september-15.md#d084--crash-repair-and-stable-reader-2026-09-22). Mail UI60/Quality61; Core46/Calendar26/CLI40/schema29, fixtures0/3/protocol1 and readiness0/9 unchanged.
+## Features
 
-**D081 / Mail responsiveness Windows candidate:** mailbox-tab sync activity, stable signature editing, faster cached thread/list reads, automatic older-mail prefetch with explicit error retry, and wider persistent scrollbars. Six native suites, live-paging tests, strict Core lint and configured package relocation pass. In the synthetic 20,000-message query test, page p95 improves from 49 to 31 ms and review-refresh p95 from 81 to 42 ms; rendered latency remains unverified. Close the older app and use `dist/ui-speed-windows-amd64/bin/fuckmail-gui.exe`. [Evidence and known baseline failures](docs/research/prototype-september-15.md#d081--mail-responsiveness-and-scrolling-2026-09-22). Schema29, fixtures0/3/protocol1 and readiness0/9 are unchanged.
+- **Separate accounts.** Personal Gmail and Workspace accounts stay apart. There is no unified inbox, and mail is always shown as conversations.
+- **Simple triage.** Unread means "not reviewed yet" and a star means "action pending". **Done** clears both; **Delay** holds a conversation for later.
+- **Offline mail and search.** Messages, original sources and attachments are stored locally. You can search by sender, subject or body text without a connection.
+- **Writing.** New message, reply, reply all and forward, with attachments. Drafts sync with Gmail, and recent mail actions can be undone.
+- **Gmail labels.** Organize mail with your existing labels.
+- **Calendar.** Day, week and month views across your accounts. Create and edit events, including recurring ones, answer invitations and get reminders. A timeline on the mail screen keeps your day in view.
+- **Optional local AI.** Point it at [Ollama](https://ollama.com) or another local model server. It can summarize messages, tell people from automated mail and suggest labels. It never writes or sends email, and it is off by default.
+- **Command line.** `fm` works with the same accounts and data as the app, so scripts and external tools can use it.
+- **Themes and shortcuts.** Four built-in themes and editable keyboard shortcuts.
 
-**D083 / Calendar mail counts:** day, week and month now show daily received/sent counts beneath each date, following the Calendar's account scope and time zone. Hover for cached-coverage details. Core, native, CLI and integrated synthetic checks pass in the separate developer build; existing packages remain unchanged. [Evidence](docs/research/phase-2-execution.md#d083--calendar-mail-counts-2026-09-22).
+## Build and run
 
-**D082 / Debug console:** press backtick/tilde outside editable fields and search to inspect runtime state, sync activity, warnings/errors and observed rate limits. Filter or pause the event view, then Copy report for current state and the full retained session log. Native console and integrated startup checks pass in a separate developer build; this change is not yet a new packaged release. [Details and evidence](docs/research/phase-2-execution.md#d082--session-debug-console-2026-09-22).
+You need:
 
-**D080 / Summary reliability Windows candidate:** local model requests default to direct answers, accept exact JSON wrappers, normalize summary whitespace and retry malformed output once within the existing time limit. All five installed models complete 80 repeated synthetic engine cases and 40 further cases through the isolated package. Regular `qwen3.8:27b` is the preferred tested choice; Gemma still makes factual/classification mistakes, and Q8 is much slower. Use `dist/summary-reliability-windows-amd64/bin/fuckmail-gui.exe` after closing the older app. Local assistance15/Quality57, schema29 and fixtures0/3/protocol1; readiness remains 0/9. Package scope and the broader GUI self-test limitation are recorded in the local-assistance execution report.
+- **Windows:** Visual Studio 2022 C++ build tools. The bootstrap step can install them.
+- **macOS:** Xcode Command Line Tools (`xcode-select --install`).
+- **Linux (Ubuntu 24.04):** a C++ compiler, Python with venv, and the graphics libraries listed in [the CI workflow](.github/workflows/native.yml).
 
-**D079 / Interaction polish Windows candidate:** the final review fixed attachment status layout shifts, asynchronous image replacement, EXIF orientation and obsolete/duplicate Send wording. Attachment saves use a reserved status line; the viewer retains images during resizing and shows save feedback in place. Four focused native suites pass (22.01 s), including stable tile geometry, exact-byte export failures/navigation, orientation and Send/summary regressions. Configured relocated package291 passes. Close the older app and use `dist/interaction-windows-amd64/bin/fuckmail-gui.exe`. Mail UI56/Quality56; Core44/Gmail24/CLI39/schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Whole-area readiness remains 0/9; no broad latency or actual provider-send claim.
+Bootstrap downloads the pinned Rust, Qt and build tools into `.tools/` inside the checkout, leaving system installs alone.
 
-**D077–D078 / Sending and attachments Windows candidate:** previously initialized accounts resume sync at startup. Send dispatches without the six-second hold, shows progress, and closes unchanged accepted drafts; cached summaries no longer animate on navigation. Image attachments render thumbnails with a fit/actual-size modal, and all available attachments have Save as. Thirty-seven scoped Core tests, strict lint, four native suites and configured relocated package287 pass. Close the older app and use `dist/send-attachments-windows-amd64/bin/fuckmail-gui.exe`. Core44/Gmail24/Mail UI55/CLI39/Quality55/schema29; Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Real provider sending was not automated; whole-area readiness stays 0/9 and D068 remains parked.
+On macOS or Linux, run this once:
 
-**D076 / P2-Summary motion Windows candidate:** Summarize becomes inline progress without moving the email body, then smoothly expands into the result. Cancellation stays in the container menu; regeneration and retry retain their existing surface. Native lifecycle/geometry and reader checks pass, as does configured relocated package269. Close the older app and use `dist/summary-motion-windows-amd64/bin/fuckmail-gui.exe`. Mail UI53/Quality53; Core43/Gmail23/CLI38/schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Whole-area readiness stays 0/9; D068 remains parked.
+```sh
+scripts/dev.sh bootstrap
+```
 
-**D075 / P2-Reader date Windows candidate:** full local dates match the supplied format; the menu centers beside the timestamp block with a consistent ten-pixel gap and right edge. Native date/geometry checks pass across all themes and narrow large text; configured relocated package254 passes. Close the older app and use `dist/reader-date-windows-amd64/bin/fuckmail-gui.exe`. Mail UI52/Quality52; Core43/Gmail23/CLI38/schema29, Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. Whole-area readiness stays 0/9; D068 remains parked.
+Then build and open the app:
 
-**D074 / P2-Reader Windows candidate:** compact received paragraph spacing, default-collapsed nested quoted replies, corrected star/action alignment, CC participants, redundant Reply-To suppression and bounded model-name display are implemented. Three scoped native suites and the configured relocated package246 pass. Close the older app and use `dist/reader-windows-amd64/bin/fuckmail-gui.exe`. Stored email, model input and authored drafts are unchanged. Mail UI51/Quality51; Core43/Gmail23/CLI38/schema29, fixtures0/3/protocol1 unchanged. Whole-area readiness remains 0/9; D068 stays parked.
+```sh
+scripts/dev.sh run
+```
 
-**D073 / P2-Mail feedback:** repair real Inbox/Archive/Trash behavior, empty Google submission framing, prototype sender/participant/recipient contact targets and draft MIME content verification. Seventy-four scoped Core/Google/engine tests, three native reader/draft/assistance checks, strict lint and the configured relocated Windows package pass. Close the older app and use `dist/mail-feedback-windows-amd64/bin/fuckmail-gui.exe`; package236 is preserved separately. Core43/Gmail23/Mail UI50/CLI38/Quality50/schema29; Calendar25, Local assistance14, fixtures0/3 and protocol1 unchanged. No real mailbox mutation was automated; whole-area readiness remains 0/9 and D068 stays parked.
+On Windows, in PowerShell, run this once:
 
-**D072 / P2-Feedback Windows candidate:** permanent local archive deletion, restored-account status cleanup, setup retention (1 month / 3 months / 1 year default / All), removal of the Meetings checkbox, reliable model selection/request sizing and removal of the global error bar are implemented. Fifty-two scoped Core tests, CLI argument checks, three native control tests, strict lint and actual schema28→29 migration/refusal/reopen pass. Configured relocated package197 passes; use `dist/feedback-windows-amd64/bin/fuckmail-gui.exe` after closing the older app. Existing accounts keep their current history; retention controls initial downloads, not rolling deletion. Archive files are cleaned up at the next startup. Core42/Gmail22/Local assistance14/Calendar25/Mail UI49/CLI37/Quality49/schema29, fixtures0/3 and protocol1. Whole-area readiness stays 0/9; full rendered prototype comparison and other-host verification remain open. D068 stays parked. [Evidence](docs/research/prototype-september-15.md).
+```powershell
+./scripts/dev.ps1 bootstrap
+```
 
-**D070–D071 / P2-UI3 Windows candidate:** the remaining identified Calendar UI gaps are implemented: Show/Hide other accounts, collapsed calendar/zone details and real adjacent-day timeline dragging. Native Settings/search/drag, Calendar controls/Undo, typed Core preferences, old-engine round-trip and strict lint checks pass. Configured relocated package182 passes; use `dist/ui3-windows-amd64/bin/fuckmail-gui.exe`. Earlier package176 remains preserved. D068 provider cleanup stays parked; schema28 remains active. Core41/Gmail21/Calendar25/Mail UI48/CLI36/Quality48, fixtures0/3 and protocol1; whole-area readiness remains 0/9. Source/native surface review is complete for the identified UI changes; rendered prototype comparison remains unavailable because of the browser restriction. [Coverage and evidence](docs/research/prototype-september-15.md).
+Then build and open the app:
 
-**D058 / P2-LLM2D:** incoming-only assistance fixes the missing reader sent flag, hides sent summaries and removes duplicate errors. Model response failures are distinguished and the default response allowance grows to 4,096 tokens. Schema 24 retains prior settings/history. Scoped Rust/native checks, strict lint, 16 engine/CLI checks, actual settings migration/refusal and relocated configured package pass. Use `dist/llm2d-windows-amd64/bin/fuckmail-gui.exe`; close the old app first. Readiness remains 0/9.
+```powershell
+./scripts/dev.ps1 run
+```
 
-**D057 / P2-LLM2C:** Settings now shows only editable System/User message content with normal line breaks. Native editing/preservation and relocated package checks pass. Use `dist/llm2c-windows-amd64/bin/fuckmail-gui.exe`; schema 23 and the verified engine/CLI are unchanged.
+To try the app with sample data instead of a real account, pass `--demo-profile`. It uses a separate demo profile:
 
-**D056 / P2-LLM2B:** the Local model editor now contains the complete Ollama JSON request, including system instructions, response schema, options and all variables. Inference sends its expansion without hidden additions. Schema 23 preserves saved instructions and account choices. Scoped Rust/native tests, strict lint, 15 engine/CLI checks including exact HTTP request comparison, actual settings upgrade/refusal and relocated Windows launch pass. The configured app is `dist/llm2b-windows-amd64/bin/fuckmail-gui.exe`; close the older app first. The installed model has a recorded label-quality miss. Readiness remains 0/9.
+```sh
+scripts/dev.sh run -- --demo-profile
+```
 
-**D055 / P2-LLM2 Windows delivery:** one model and visible prompt now handle per-message summaries, human/bot classification and automatic single-label assignment. Defaults, source-matched list summaries and removal of the duplicate thread card are implemented. Scoped Rust/native checks, strict lint, 14 engine/CLI checks, eight installed-model cases and the relocated configured package pass. The app is `dist/llm2-windows-amd64/bin/fuckmail-gui.exe`. Schema 22 preserves prior settings and refuses older engines; close the old app before opening this build. [Evidence and limits](docs/research/local-assistance-execution.md#d055-unified-message-analysis-2026-09-15). Real-mailbox acceptance and other-host qualification remain open; readiness stays 0/9.
+Other commands: `test` runs the test suite, `cli -- --help` shows the CLI, and `package --preset release` builds an optimized package. The [build guide](docs/build-development.md) covers these in detail.
 
-**Updated summary UI (D053):** prototype-aligned Summary cards, independent message/thread actions, working source links and repaired cancellation/Settings state. The verified combined D053+D054 Mac app is `dist/ollama-ui-darwin-arm64/fuckmail-gui.app`. [Verification and limits](docs/research/local-assistance-execution.md#d053-summary-ui-and-lifecycle-repair-2026-09-14).
+## Connecting a Google account
 
-**D054 / header sync and credential denial:** implemented on the current branch. Deny blocks automatic repeated vault attempts until explicit Sync/reconnect; the header fetches new mail and shows the last successful check. Focused engine/Core/Google/native checks and final configured Mac package pass. On-screen Sync → Retry sync behavior after credential refusal is verified; cached messages/drafts are unchanged. The final user build combines D053/D054. Successful real fetch after granting Keychain access remains unverified in this check. Schema 21 is unchanged. See the [execution record](docs/research/phase-2-execution.md).
+Google sign-in needs a Google Cloud **Desktop app** OAuth client, set up once per build:
 
+```sh
+python3 scripts/configure_google.py /path/to/desktop-client.json
+```
 
-**Ollama support implemented (D052):** local model discovery, independent summary/classification models, editable prompts, existing account label suggestions and human/automated annotations. Open Settings → Local model to configure it; assistance defaults off. The separate verified Mac candidate is `dist/ollama-darwin-arm64/fuckmail-gui.app`. [Setup and database-version notes](docs/build-development.md#ollama-feedback-build-d052) · [Tests and model-quality limits](docs/research/local-assistance-execution.md#d052--p2-llm-mac-implementation-2026-09-14).
+The file stays in the ignored `.tools/` folder, so it never goes into Git. Rebuild after running this, then open **Settings → Accounts → Connect Google account**. Signing in imports nothing until you start sync for that account. Access tokens are kept in your operating system's credential store, not in the app's files. [Setup details](docs/build-development.md#email-first-google-setup-d040).
 
-**P2-UI / D049–D050:** active on `codex/phase-2-ui-alignment` from merged `a5bec7f`. Updated reference alignment, context menus and multi-selection, Sent/Drafts date groups, visible splash, complete non-Trash Inbox browsing, retained-label repair and automatic Google limits are implemented and verified in an isolated schema-20 Mac package: 23/23 native checks, generated-account UI/readback and configured relocation checks pass. The package is published at `dist/darwin-arm64/fuckmail-gui.app`; final real on-screen readback awaits macOS unlock. The parallel D052 Ollama/schema-21 work is excluded from this package.
+## Built with
 
-**D047 CI gate cleared on the baseline:** branch `55e9848` and PR merge `1d7dc8b` passed all six macOS/Windows/Ubuntu jobs and relocated packages; merged main has the same tree. New P2-UI changes still need their own hosted verification. Original failures remain recorded.
+Rust (sync engine and CLI), C++20 with Qt Quick (desktop app) and SQLite with full-text search. No Node.js or web runtime is involved.
 
-**D046 repository cleanup:** raw execution evidence is preserved outside the tracked tree; reports and design references remain in Git. See [archive recovery and storage rules](docs/research/evidence-archive.md). Application behavior and Phase 2 acceptance are unchanged.
+## More
 
-**D043–D045 — real-mailbox UI repairs:** the founder has signed into the configured Mac app. Real UI testing found and fixed Calendar creation after first sync, recurring editor invalidation, accessible event activation and search-popup focus/dismissal. Mail and Calendar walkthrough results are recorded below. Performance and the broad workspace sweep remain deferred under D041; this is not full Phase 2 acceptance.
-
-A personal mail and calendar client for separate Google accounts, with a native GUI and CLI sharing one local store. Humans write messages and choose Done/Delayed.
-
-## Current Mac feedback build
-
-**D040 / P2-01C implements email-first Google sign-in.** Open **Settings → Accounts → Connect Google account**, enter a Gmail or Workspace email, and choose **Continue with Google**. Reconnect and Restore share the same browser flow. The app registration is configured once by the developer; individual account users do not select JSON.
-
-The Mac Release build, **22/22 native checks**, final focused search check, relocated UI Package03, and generated-provider CLI/native account walkthroughs pass. The package is `dist/fuckmail-darwin-arm64.tar.gz`; launch `dist/darwin-arm64/fuckmail-gui.app`. D042 bundles the supplied Desktop registration, and relocated setup reports Google sign-in available. Follow the [one-time setup and launch guide](docs/build-development.md#email-first-google-setup-d040).
-
-The packaged UI/mail boundary is **Core 28 / Gmail 14 / Calendar 21 / Platform 16 / Mail UI 29 / CLI 22 / Quality 29 / Search 5 / schema 20**; fixtures 0/3 and protocol 1 are unchanged. Mail composition, Google Drafts/Send, supported Calendar recurrence/invitations/RSVP, reminders, partial grants and cached search retain their existing implementation.
-
-The real test-account walkthrough verifies Calendar create/edit, invitations, all-day and recurring operations, plus mail sending, Reply all, forwarding, attachments, search and triage. All outbound test recipients were explicitly authorized. The Calendar and search repairs have focused native regressions; see [status](docs/status.md) and the [execution record](docs/research/phase-2-execution.md#d043d045--real-test-mailbox-ui-walkthrough).
-
-**Phase 2 remains open; whole-area readiness stays 0/9.** Sustained authorization, actual Workspace policy, complete agreed offline coverage, protected backup/restore and current other-host acceptance remain required. Performance and the broad workspace sweep are deferred under D041.
-
-Normal startup is empty. Sign-in alone does not import: confirm actual Cloud quota limits and protected-profile/backup admission, then choose **Start sync** for each account. Keep real data outside Git and cloud-sync folders. Removing an account archives local data and removes credentials without deleting anything at Google. Reminders and GUI-owned sync stop when the GUI closes; an explicit CLI session owns its own work.
-
-Calendar search covers selected calendars in an explicit **1–42-day range**, with at most 100 matches and visible coverage limits. Following recurrence edits require confirmation and can need explicit partial/unknown recovery. Incomplete mail inventory is not a complete offline copy or a backup.
-
-The historical Windows Package02 at `61a212a`, the `618e8a0` rendering correction and interrupted Package03 retain their [handoff evidence](docs/status.md#computer-handoff--start-here). The immutable 997-artifact Windows archive is preserved.
-
-## Delivery direction
-
-- Separate mail accounts and conversation-only browsing; combined Calendar shows only permitted details.
-- Read-on-open follows a deliberate user action. Done clears unread and stars; Delay is untimed.
-- Preserve MIME, original HTML and attachments while prioritizing readable text and human composition. Best-effort received HTML display is later work.
-- Use Google APIs for current Gmail/Workspace mail and Calendar, including writes. GUI and CLI use the same commands and store.
-- Follow the [September 14 reference](docs/research/assets/2026-09-14/flight-progress-v2/manifest.json), including the three themes and Mail-only timeline.
-- Optional local models may classify or summarize; they never write replies or choose review/action state. Tasks, contacts, dashboards, assistant chat and semantic search are outside scope.
-
-The implementation uses Rust, C++20/Qt Quick/QML, private local IPC and SQLite/FTS5 with retained blobs. Tools are pinned in `rust-toolchain.toml`, `Cargo.lock` and `scripts/toolchain.json`; pinned versions do not establish production readiness. No Node.js or separate JavaScript build pipeline is required.
-
-## Next work
-
-Use the configured Mac package for the founder’s immediate test-mailbox sign-in and fix observed blockers. Performance remains deferred under D041. Full Phase 2 acceptance later follows the [Phase 2 admission and comparison gates](docs/plans/phase-2.md#builds-the-founder-can-test) for controlled personal Gmail and Workspace testing, actual provider reconciliation, sustained refresh and complete agreed source coverage. Verify backup/restore and protection on the real profile volume. Current Windows/Linux CI, physical input, sustained vault behavior and distribution qualification remain separate.
-
-IMAP, SMTP and external iCalendar subscriptions stay deferred until the founder has dogfooded the Google GUI and CLI. CalDAV and a broad public launch have separate scope.
-
-## Historical evidence
-
-Phases 0 and 1 are complete on available hosts. Their [foundation](docs/research/phase-0-execution.md) and [Phase 1 execution](docs/research/phase-1-execution.md) records retain source-specific CI, packages, performance and limitations. Those passes are not current Phase 2 other-host acceptance.
-
-Earlier Phase 2 checkpoints, immutable source/artifact manifests, failed attempts and native diagnostics remain in the [Phase 2 execution record](docs/research/phase-2-execution.md). In particular, [D037 occurrence](https://github.com/yegors/fuckMail/blob/8155e998d5957e60c491475df7877553db2b453b/docs/research/assets/phase-2/p2-06c-interim/logs-manifest.json), [D036 account lifecycle](https://github.com/yegors/fuckMail/blob/8155e998d5957e60c491475df7877553db2b453b/docs/research/assets/phase-2/p2-01b-interim/logs-manifest.json), [D035 invitations](https://github.com/yegors/fuckMail/blob/8155e998d5957e60c491475df7877553db2b453b/docs/research/assets/phase-2/p2-06b-interim/logs-manifest.json), [B3B Drafts](https://github.com/yegors/fuckMail/blob/8155e998d5957e60c491475df7877553db2b453b/docs/research/assets/phase-2/p2-05b3b-interim/logs-manifest.json) and [B2's failed performance checkpoint](https://github.com/yegors/fuckMail/blob/8155e998d5957e60c491475df7877553db2b453b/docs/research/assets/phase-2/p2-05b2-interim/logs-manifest.json) are preserved. D038 resumed measurement; it did not rewrite D031 or its failed result.
-
-## Documentation
-
-- [Status](docs/status.md), [development plan](docs/development-plan.md), [Phase 2 packets](docs/plans/phase-2.md) and [build/launch guide](docs/build-development.md).
-- [Index](docs/README.md), [north star](docs/north-star.md), [scope](docs/product-scope.md), [UI/UX](docs/ui-ux.md) and [decisions](docs/decisions.md).
-- [Contracts](docs/contracts/README.md) own shared behavior; [research](docs/research/README.md) owns evidence and comparisons.
+- [Current status](docs/status.md): what works, what's next and known issues
+- [Product scope](docs/product-scope.md) and [north star](docs/north-star.md): what the product is and is not
+- [Documentation index](docs/README.md): design, contracts, decisions and research

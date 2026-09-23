@@ -9,15 +9,19 @@ ToolButton {
     property string iconName: ""
     property int iconSize: 14
     property int iconSpacing: 7
+    // Trailing icons follow the label, e.g. a picker's chevron.
+    property bool iconTrailing: false
+    property color iconColor: foreground
     property string shortcutHint: ""
     property color foreground: !enabled ? (prominent ? Theme.muted : Theme.subtle) : prominent ? Theme.canvas : selected || outlined ? Theme.text : Theme.muted
     property int textAlignment: Text.AlignHCenter
+    property real radius: 5
     implicitHeight: Math.max(32, contentItem.implicitHeight + 10)
     implicitWidth: contentItem.implicitWidth + leftPadding + rightPadding
     leftPadding: 11
     rightPadding: 11
     font.family: Theme.fontFamily
-    font.pixelSize: Theme.fontSize(13)
+    font.pointSize: Theme.fontPoints(13)
     font.weight: selected || prominent ? Font.Medium : Font.Normal
     hoverEnabled: true
     contentItem: Item {
@@ -28,8 +32,9 @@ ToolButton {
             anchors.verticalCenter: parent.verticalCenter
             x: control.textAlignment === Text.AlignLeft ? 0 : Math.max(0, (parent.width - width) / 2)
             spacing: control.text.length && control.iconName.length ? control.iconSpacing : 0
+            layoutDirection: control.iconTrailing ? Qt.RightToLeft : Qt.LeftToRight
             width: Math.min(label.implicitWidth + parent.hintWidth + (control.iconName.length ? control.iconSize + (control.text.length ? control.iconSpacing : 0) : 0), parent.width)
-            FmIcon { visible: control.iconName.length > 0; name: control.iconName; size: control.iconSize; color: control.foreground; anchors.verticalCenter: parent.verticalCenter }
+            FmIcon { visible: control.iconName.length > 0; name: control.iconName; size: control.iconSize; color: control.iconColor; anchors.verticalCenter: parent.verticalCenter }
             Text {
                 id: label
                 text: control.text
@@ -43,12 +48,12 @@ ToolButton {
             Item {
                 visible: control.shortcutHint.length > 0
                 width: control.contentItem.hintWidth; height: Math.max(label.implicitHeight, control.iconSize)
-                Text { id: hint; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: control.shortcutHint; color: control.foreground; opacity: 0.55; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11) }
+                Text { id: hint; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: control.shortcutHint; color: control.foreground; opacity: 0.55; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11) }
             }
         }
     }
     background: Rectangle {
-        radius: 5
+        radius: control.radius
         color: control.prominent ? (control.enabled ? Theme.text : Theme.controlBorder) : control.down || control.selected ? Theme.selected : control.hovered ? Theme.surface : "transparent"
         border.width: control.activeFocus || control.outlined ? 1 : 0
         border.color: control.activeFocus ? Theme.focusBorder : Theme.controlBorder

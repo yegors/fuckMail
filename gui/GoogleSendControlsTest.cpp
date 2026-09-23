@@ -140,7 +140,7 @@ ApplicationWindow { width: 900; height: 1200; visible: true
                     auto button = qobject_cast<QQuickItem *>(named(root, name));
                     require(button && button->isVisible() && button->isEnabled(), "all prepared recovery actions remain available");
                     const auto font = button->property("font").value<QFont>();
-                    require(QFontInfo(font).family() == "Geist" && font.pixelSize() == (QString(size) == "large" ? 14 : 13),
+                    require(QFontInfo(font).family() == "Geist" && QFontInfo(font).pixelSize() == (QString(size) == "large" ? 14 : 13),
                         "recovery geometry uses the app font and saved text scale");
                     const auto bounds = button->mapRectToItem(composer, QRectF(0, 0, button->width(), button->height()));
                     qInfo() << "Prepared recovery geometry" << size << name << bounds << "available" << available;

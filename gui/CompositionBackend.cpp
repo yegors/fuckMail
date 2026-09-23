@@ -177,7 +177,9 @@ void MailBackend::loadDraftPage(const QString &account, int generation, int offs
                         recipients.append(address.value("name").toString().isEmpty() ? address["email"].toString() : address["name"].toString());
                     }
                     row["sender_name"] = recipients.isEmpty() ? "No recipients" : "To " + recipients.join(", ");
-                    row["latest_at"] = QDateTime::fromSecsSinceEpoch(row["updated_at"].toLongLong(), QTimeZone::UTC).toString(Qt::ISODate);
+                    // An unknown save time stays blank rather than dating the draft to 1970.
+                    const auto updated = row["updated_at"].toLongLong();
+                    row["latest_at"] = updated > 0 ? QDateTime::fromSecsSinceEpoch(updated, QTimeZone::UTC).toString(Qt::ISODate) : QString();
                     row["categories"] = QVariantList{}; row["unread"] = false; row["starred"] = false; row["message_count"] = 1;
                     auto existing = std::find_if(rows.begin(), rows.end(), [&row](const QVariant &value) { return value.toMap()["draft_id"] == row["draft_id"]; });
                     if (existing == rows.end()) rows.append(row); else *existing = row;

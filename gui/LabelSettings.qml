@@ -6,6 +6,7 @@ ColumnLayout {
     id: panel
     spacing: 0
     property string account: backend.account
+    property bool showAccountPicker: true
     property var labels: []
     property var requests: ({})
     property var edits: ({})
@@ -44,7 +45,7 @@ ColumnLayout {
     Connections {
         target: backend
         function onConnectedChanged(){if(backend.connected)panel.load();else {
-            panel.pendingRetry=Object.values(panel.requests).find(r=>r.account===panel.account&&["label_create","label_describe","label_remove","google_labels_sync"].indexOf(r.method)>=0)||null
+            panel.pendingRetry=Object.values(panel.requests).find(r=>r.account===panel.account&&["label_create","label_describe","label_remove","label_auto_read","google_labels_sync"].indexOf(r.method)>=0)||null
             panel.requests={};panel.syncJobs={};panel.loadTicket="";panel.status="Connection lost. Your edits are kept."
         }}
         function onLabelReply(ticket,method,result,ok) {
@@ -86,10 +87,20 @@ ColumnLayout {
     }
     RowLayout {
         Layout.fillWidth:true; Layout.topMargin:28; spacing:16
-        Text{text:"Labels";color:Theme.inkAlpha(0.45);font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(11.5);Layout.fillWidth:true}
-        FmComboBox {objectName:"labelsAccount";Layout.preferredWidth:160;model:backend.accounts;textRole:"name";currentIndex:backend.accounts.findIndex(a=>a.id===panel.account);onActivated:panel.account=backend.accounts[currentIndex].id;Accessible.name:"Labels account"}
+        Text{text:"Labels";color:Theme.inkAlpha(0.45);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11.5);Layout.fillWidth:true}
+        FmComboBox {visible:panel.showAccountPicker;objectName:"labelsAccount";Layout.preferredWidth:160;model:backend.accounts;textRole:"name";currentIndex:backend.accounts.findIndex(a=>a.id===panel.account);onActivated:panel.account=backend.accounts[currentIndex].id;Accessible.name:"Labels account"}
     }
-    Text {Layout.fillWidth:true;Layout.topMargin:6;Layout.bottomMargin:14;text:"Each account keeps its own labels. Descriptions tell the local model what belongs where. Removing a label takes it off every conversation in "+panel.accountName+" here.";wrapMode:Text.Wrap;lineHeight:1.5;color:Theme.muted;font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(13.5)}
+    Text {Layout.fillWidth:true;Layout.topMargin:6;Layout.bottomMargin:14;text:"Each account keeps its own labels. Descriptions tell the local model what belongs where. Removing a label takes it off every conversation in "+panel.accountName+" here.";wrapMode:Text.Wrap;lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight);color:Theme.muted;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(13.5)}
+    Rectangle{Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
+    RowLayout { Layout.fillWidth:true; Layout.minimumHeight:30; spacing:12
+        Text { text:"LABEL"; Layout.preferredWidth:150; color:Theme.subtle; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11); font.letterSpacing:0.66 }
+        Text { text:"DESCRIPTION"; Layout.fillWidth:true; color:Theme.subtle; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11); font.letterSpacing:0.66 }
+        Row { Layout.preferredWidth:84; spacing:5
+            FmIcon { name:"summary"; size:10; color:Theme.ai; anchors.verticalCenter:parent.verticalCenter }
+            Text { text:"AUTO-READ"; color:Theme.ai; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11); font.letterSpacing:0.66 }
+        }
+        Item { Layout.preferredWidth:28 }
+    }
     Rectangle{Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
     Repeater {
         model:panel.labels
@@ -100,19 +111,31 @@ ColumnLayout {
                 Layout.fillWidth:true;Layout.minimumHeight:44;spacing:12
                 RowLayout {
                     Layout.preferredWidth:150;Layout.minimumWidth:150;Layout.maximumWidth:150;spacing:8
-                    Text{text:modelData.name;Layout.fillWidth:true;elide:Text.ElideRight;color:Theme.text;font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(13.5)}
-                    Text{text:modelData.conversation_count;color:Theme.inkAlpha(0.4);font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(11.5)}
+                    Text{text:modelData.name;Layout.maximumWidth:150-countText.implicitWidth-8;elide:Text.ElideRight;color:Theme.text;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(13.5)}
+                    Text{id:countText;text:modelData.conversation_count;color:Theme.inkAlpha(0.4);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11.5)}
+                    Item{Layout.fillWidth:true}
                 }
                 TextField {
                     objectName:"labelDescription_"+modelData.id;Layout.fillWidth:true;implicitHeight:30;padding:0;maximumLength:512
                     text:panel.edits[panel.key(modelData.id)]===undefined ? modelData.description||"" : panel.edits[panel.key(modelData.id)]
-                    placeholderText:"What belongs here — optional, read by the model";color:Theme.inkAlpha(0.75);placeholderTextColor:Theme.subtle;font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(13);selectByMouse:true
+                    placeholderText:"What belongs here — optional, read by the model";color:Theme.inkAlpha(0.75);placeholderTextColor:Theme.subtle;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(13);selectByMouse:true
                     background:Rectangle{color:"transparent";Rectangle{anchors.bottom:parent.bottom;width:parent.width;height:1;color:parent.parent.activeFocus?Theme.focusBorder:"transparent"}}
                     onTextEdited:panel.edit(modelData.id,text)
                     onEditingFinished:panel.describe(modelData)
                     Accessible.name:"Instructions for "+modelData.name
                 }
-                FmButton {objectName:"removeLabel_"+modelData.id;iconName:"close";implicitWidth:28;implicitHeight:28;leftPadding:0;rightPadding:0;enabled:!panel.busy&&backend.connected;Accessible.name:"Remove "+modelData.name;onClicked:{panel.removal={account:panel.account,id:modelData.id,name:modelData.name,provider:modelData.provider_label_id||null};removeDialog.open()}}
+                CheckBox {
+                    id:autoRead; objectName:"labelAutoRead_"+modelData.id; Layout.preferredWidth:84; implicitHeight:28
+                    checked:modelData.auto_read===true; enabled:!panel.busy&&backend.connected
+                    onClicked: panel.send("label_auto_read",{id:modelData.id,expected_auto_read:modelData.auto_read===true,auto_read:checked})
+                    Accessible.name:"Auto-read "+modelData.name
+                    ToolTip.visible:hovered; ToolTip.text:checked ? "Incoming mail assigned this label is marked read" : "Incoming mail assigned this label stays unread"
+                    indicator: Rectangle { width:16; height:16; radius:4; x:0; y:(parent.height-height)/2; color:autoRead.checked ? Theme.ai : "transparent"; border.color:autoRead.checked ? Theme.ai : Theme.line3
+                        FmIcon { anchors.centerIn:parent; name:"check"; size:11; color:Theme.canvas; visible:autoRead.checked }
+                    }
+                    contentItem:Item {}
+                }
+                FmButton {objectName:"removeLabel_"+modelData.id;iconName:"close";iconSize:9;foreground:hovered?Theme.text:Theme.inkAlpha(0.5);implicitWidth:28;implicitHeight:28;leftPadding:0;rightPadding:0;enabled:!panel.busy&&backend.connected;Accessible.name:"Remove "+modelData.name;onClicked:{panel.removal={account:panel.account,id:modelData.id,name:modelData.name,provider:modelData.provider_label_id||null};removeDialog.open()}}
             }
             Rectangle{Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
         }
@@ -123,18 +146,18 @@ ColumnLayout {
             id:newLabel;objectName:"newLabelName";Layout.preferredWidth:150;implicitHeight:30;padding:0;maximumLength:256
             text:panel.newNames[panel.account]||""
             onTextEdited:{const names=Object.assign({},panel.newNames);names[panel.account]=text;panel.newNames=names}
-            placeholderText:"New label";color:Theme.text;placeholderTextColor:Theme.subtle;font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(13.5)
+            placeholderText:"New label";color:Theme.text;placeholderTextColor:Theme.subtle;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(13.5)
             selectByMouse:true;enabled:backend.connected&&!panel.busy;onAccepted:panel.add()
             background:Rectangle{color:"transparent"}
             Accessible.name:"New label name"
         }
-        Text {text:"Enter adds it to "+panel.accountName;Layout.fillWidth:true;wrapMode:Text.Wrap;color:Theme.inkAlpha(0.35);font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(12)}
+        Text {text:"Enter adds it to "+panel.accountName;Layout.fillWidth:true;wrapMode:Text.Wrap;color:Theme.inkAlpha(0.35);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(12)}
     }
     Rectangle{Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
     RowLayout {
         Layout.fillWidth:true;Layout.topMargin:14;spacing:8
-        FmButton {objectName:"syncAccountLabels";text:"Sync with Google";outlined:true;implicitHeight:30;font.pixelSize:Theme.fontSize(12.5);enabled:backend.connected&&!panel.busy&&backend.accountCapability(panel.account,"mail_write");onClicked:panel.send("google_labels_sync",{})}
-        Text {text:panel.status||"Google keeps the names; descriptions stay on this machine.";Layout.fillWidth:true;wrapMode:Text.Wrap;color:Theme.inkAlpha(0.45);font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(12)}
+        FmButton {objectName:"syncAccountLabels";text:"Sync with Google";outlined:true;implicitHeight:30;font.pointSize:Theme.fontPoints(12.5);enabled:backend.connected&&!panel.busy&&backend.accountCapability(panel.account,"mail_write");onClicked:panel.send("google_labels_sync",{})}
+        Text {text:panel.status||"Google keeps the names; descriptions stay on this machine.";Layout.fillWidth:true;wrapMode:Text.Wrap;color:Theme.inkAlpha(0.45);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(12)}
         FmButton {objectName:"retryLabelChange";text:"Retry";visible:!!panel.pendingRetry;enabled:!panel.busy&&backend.connected;onClicked:panel.send(panel.pendingRetry.method,panel.pendingRetry.params,panel.pendingRetry.account)}
         FmButton {text:"Stop";visible:!!panel.syncJobs[panel.account];enabled:backend.connected;onClicked:panel.send("google_labels_sync_cancel",{job_id:panel.syncJobs[panel.account]})}
     }

@@ -86,7 +86,8 @@ static void run() {
     };
     QTemporaryDir copy;const auto modulePath=copy.filePath("DiscardTest");require(QDir().mkpath(modulePath),"module directory");QByteArray module("module DiscardTest\nsingleton Theme 1.0 Theme.qml\n");
     for(const auto &name:QDir(QString::fromUtf8(FM_GUI_SOURCE_DIR)).entryList({"*.qml"},QDir::Files)) {
-        require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR)+'/'+name,modulePath+'/'+name),"production QML");if(name!="Theme.qml")module+=name.chopped(4).toUtf8()+" 1.0 "+name.toUtf8()+'\n';
+        require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR)+'/'+name,modulePath+'/'+name),"production QML");if(name=="ShortcutRegistry.qml") module+="singleton ";
+            if(name!="Theme.qml") module+=name.chopped(4).toUtf8()+" 1.0 "+name.toUtf8()+'\n';
     }
     QFile registration(modulePath+"/qmldir");require(registration.open(QIODevice::WriteOnly),"module registration");registration.write(module);registration.close();
     qmlRegisterType<ReplyDocument>("DiscardTest",1,0,"ReplyDocument");QQmlApplicationEngine qml;bool warnings=false;

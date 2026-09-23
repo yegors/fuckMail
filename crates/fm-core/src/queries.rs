@@ -287,6 +287,12 @@ impl Store {
             out.push(json!({"metadata_revision":metadata_revision,"unread_conversation_count":counts["unread_conversation_count"],"held_conversation_count":counts["held_conversation_count"],"done_conversation_count":counts["done_conversation_count"],"count_scope":"all_account_mail_including_archive","id":account,"name":name,"email":email,"provider":provider,"signature_text":signature_text,"unread_count":unread,"starred_count":starred,"conversation_count":count,"message_count":messages,"coverage":self.coverage(&account)?}));
             out.last_mut().unwrap()["mail_retention"] = json!(mail_retention);
             out.last_mut().unwrap()["mail_since"] = json!(mail_since);
+            let oldest: Option<String> = self.db.query_row(
+                "SELECT min(sent_at) FROM messages WHERE account=?1",
+                [&account],
+                |r| r.get(0),
+            )?;
+            out.last_mut().unwrap()["mail_oldest_at"] = json!(oldest);
             let drafts: i64 = self.db.query_row(
                 "SELECT COUNT(*) FROM drafts d WHERE account=?1 AND discarded=0 AND COALESCE(json_extract(d.google_json,'$.submission.last_accepted_draft_revision'),0)<d.revision AND (origin='local' OR NOT EXISTS(SELECT 1 FROM google_draft_sources s WHERE s.account=d.account AND s.draft_id=d.draft_id AND s.is_current=1 AND s.linked_local_draft_id IS NOT NULL))",
                 [&account],
@@ -295,14 +301,8 @@ impl Store {
             out.last_mut().unwrap()["draft_count"] = json!(drafts);
             out.last_mut().unwrap()["last_mail_sync_at"] =
                 json!(self.google_last_mail_sync(&account)?);
-            out.last_mut().unwrap()["cached_since"] = self
-                .db
-                .query_row(
-                    "SELECT min(sent_at) FROM messages WHERE account=?1",
-                    [&account],
-                    |r| r.get::<_, Option<String>>(0),
-                )?
-                .into();
+            // Both names describe the oldest locally retained message.
+            out.last_mut().unwrap()["cached_since"] = json!(oldest);
             let lifecycle = self.account_lifecycle(&account)?;
             out.last_mut().unwrap()["read_only"] = json!(lifecycle["state"] == "removed");
             out.last_mut().unwrap()["lifecycle"] = lifecycle;
@@ -1176,8 +1176,9 @@ impl Store {
             } else {
                 "done"
             };
+            let attachment_count:i64=self.db.prepare_cached("SELECT COUNT(*) FROM messages m JOIN attachments a ON a.account=m.account AND a.message_id=m.id WHERE m.account=?1 AND m.conversation_id=?2")?.query_row(params![account,cid],|r|r.get(0))?;
             let summary = self.local_model_preview(account, cid, selected)?;
-            out.push(json!({"summary":summary,"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"recipient":recipient,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if expression.is_empty() && category.is_empty() && sender.is_empty() && exact_sender.is_empty() && after.is_empty() && before.is_empty() && attachment.is_none(){Vec::<String>::new()}else{matching}}));
+            out.push(json!({"summary":summary,"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"recipient":recipient,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"attachment_count":attachment_count,"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if expression.is_empty() && category.is_empty() && sender.is_empty() && exact_sender.is_empty() && after.is_empty() && before.is_empty() && attachment.is_none(){Vec::<String>::new()}else{matching}}));
         }
         let result = json!({"conversations":out,"folder_conversation_count":self.account_counts(account)?["folder_conversation_counts"][folder],"expanded_conversation_count":expanded_count,"filtered_group_counts":{"review":group_counts[0],"held":group_counts[1],"done":group_counts[2]},"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(next_cursor(offset+limit, &next_anchor)?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?});
         if cache_first_page {
@@ -1953,11 +1954,13 @@ mod projection_tests {
                 assert_eq!(old, new);
             }
             assert!(store.conversation_cache.borrow().is_empty());
+            let mut durable_reader = receipt.clone();
+            durable_reader.as_object_mut().unwrap().remove("mail_undo");
             assert_eq!(
                 store
                     .handle("conversation", Some("windscribe"), json!({"id":cid}))
                     .unwrap(),
-                receipt
+                durable_reader
             );
         }
         correct(&store);

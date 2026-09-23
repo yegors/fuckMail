@@ -1,5 +1,29 @@
 # Quality, performance and release acceptance
 
+## D095 — legacy schema removal checks (Quality69)
+
+Verify that runtime and active tests reference only `fresh-schema.sql`, that the source tree contains no pre-reset SQL migration files, and that schema32 creation and old-version refusal still pass. Run the Rust workspace, strict lint, formatting and repository hygiene. Consumers: Core52; fixture and protocol revisions unchanged.
+
+## D093 — fresh SQLite reset verification (Quality68)
+
+Verify schema32 creation in one transaction for empty live and synthetic profiles, 60 `STRICT` tables, the expanded retention constraint, `foreign_key_check`, FTS integrity/coverage and refusal of versions 1–31 without rewriting their schema. Reopen after a missing first transaction, finished Gmail page and published Calendar run; compare exact replay and retain failed/uncertain payloads. Exercise the category index and FTS-first rare-term plan with generated two-account data. Run the combined Rust workspace, strict lint, native GUI/CLI and relocated package from the shared D092 tree before handing off a fresh-start binary. Test only disposable profiles; the founder will move the current profile and re-authorize accounts. Generated-corpus figures are diagnostic and do not close the 100k/1m/3m, other-host, power-loss or real-mailbox gates. Consumers: Core51/Search6/Gmail26/Calendar30; schema32, fixtures0/3, protocol1 and readiness0/9.
+
+## D092 — v3 visual and behavior checks (Quality67)
+
+Verify actual header geometry/order, narrow wrapping, per-message HTML/collapse, summary provenance/progress, verified attachment export and real media decoding/playback/seek/mute/release. Check serial single/bulk Undo with immutable receipts/stale revision rejection, actual old/new shortcut activation, recording conflicts/fixed keys, and account retention/access through shared commands. Render wide/narrow/themed native screens and scheduled reminder states. Verify actual schema30→31 preservation/reopen/older-engine refusal and a configured relocated Windows package. Preserve all failed attempts and baseline failures; no executed browser pixel-comparison claim follows when local reference navigation is denied.
+
+The navigation oracle checks displayed HTML against its current prepared source-version document, and plain mail against retained fixture text. HTML and plain alternatives may differ. Keep the existing 100-observation routes and 100ms p95 target; report renderer, incomplete routes and failures explicitly. Evidence belongs in [the scoped implementation record](../research/prototype-september-23.md). Whole-area readiness stays 0/9.
+
+## D090 — updated Calendar/Auto-read acceptance (Quality66)
+
+Verify per-account nonfuture count pills across day/week/month, click-through and event/cell separation; persisted All calendars scope; new-event reminder defaults and existing-event preservation; due/no-historical-burst, snooze/restart/elapsed/dismiss, keyboard and sound escalation/mute; and Receipts default plus disabled/other-label/account isolation. Run focused Core and native checks, an actual schema29→30 upgrade/old-engine refusal and a configured Windows package before calling this an installable candidate. Preserve the older D089 Calendar catch-up evidence separately. Other-host sound/visual and real-account readback are distinct gates. Fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+Windows candidate evidence: nine focused reminder tests, account-local Receipts Auto-read and durable live read-journal checks pass; the Calendar, reminder and label native controls pass; build-tree and relocated offscreen GUI smoke, empty-live startup, schema29→30 upgrade/old-engine refusal, strict lint and repository hygiene pass. The full Core run retains three fixture/count assertion failures (338 passed, three ignored), and the full engine run retains two Gmail inventory/coverage assertion failures (164 passed). No live-account readback or other-host synthesized-sound verification has been performed. [Exact binary and execution record](../research/prototype-september-23.md).
+
+## D089 — Calendar catch-up regression (Quality65)
+
+Verify a synthetic remote event is fetched and visible after a new Calendar worker starts against retained tokens; manual Sync must fetch another remote delta before the normal cadence, including through the native header for a Calendar-only grant. A failed forced pass must preserve retry intent. Verify restricted local selection is disclosed and Show all restores the combined view without a provider mutation. Retain the reported log only in ignored local storage. Record live-profile diagnostics as anonymized metadata, not mailbox contents or account identities. Relocated startup checks pass, while the broad packaged Mail self-test and actual event readback remain open; no full Calendar readiness claim follows from synthetic tests. Consumers: engine/Calendar27/Mail UI65; schema29, fixtures0/3/protocol1 unchanged.
+
 ## D088 — clean threaded messages (Quality64)
 
 Verify plain and HTML reply-header removal, nested quotations, unquoted inline answers, exact source retention and unchanged attachment/composition paths. Exercise expand/collapse/re-expand on earlier, sent and newest messages using production QML and keyboard, across themes and narrow layouts. Re-run reader stability and package checks; keep failures and source/binary identities in ignored evidence. Core48/Gmail25 trim newly acquired reading/search copies while preserving exact source blobs; existing archive rows are not rewritten. Schema29/fixtures0,3/protocol1 and readiness0/9 remain unchanged.
@@ -121,7 +145,7 @@ D054 requires one native vault attempt across concurrent denied workers, explici
 
 Updated 2026-09-14. Budgets below are acceptance targets; scoped measurements are linked separately. Google-first required behavior includes fast sender/subject/body search, responsive user-owned daily triage, conversation-only mail, full offline messages/attachments, reliable Google calendar views and optional local classification/summaries on Windows/macOS/Linux. The Windows development host is recorded; real mailbox message counts and local models remain unmeasured.
 
-State: Draft · Revision: 62 · Updated: 2026-09-22 · Implementation: D086 implemented; scoped Rust/native/engine-CLI and signed Mac relocation/startup checks pass. Broader post-arrival scroll-restoration verification remains open. Schema29 and whole-area readiness0/9 unchanged.
+State: Draft · Revision: 66 · Updated: 2026-09-23 · Implementation: D090 scoped Core and native controls pass; actual schema29→30 upgrade/refusal and configured package remain open. Calendar28/Mail UI66/Local assistance17; whole-area readiness0/9 unchanged. D089 broad packaged Mail navigation failure remains recorded separately.
 
 D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages}}`, `{{partial}}`), combined per-message output, default-on prospective summaries/automatic single-label classification, manual precedence, and summary list previews. Schema 22 fences settings and assisted delivery; fixtures 0/3/protocol 1 unchanged. This supersedes conflicting D051–D053 delivery defaults below; historical evidence remains scoped to its original version. See the D055 decision and Local assistance 8. Windows verification passes 9 validator, 3 Core and 14 Google-mutation tests, scoped strict lint, 14 engine/CLI checks, two scoped native tests, eight installed-model cases, actual schema upgrade/refusal and relocated package checks. See [D055 evidence and limits](../research/local-assistance-execution.md#d055-unified-message-analysis-2026-09-15); this is not full product or other-host acceptance.
 

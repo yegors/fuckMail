@@ -50,6 +50,17 @@ Popup {
         }
         onFailed: function(message) { details.feedback = message }
     }
+    // "1 h", "1 h 30 min" or "45 min", as in the reference popover.
+    function duration(minutes) { const m = Math.round(minutes); return m >= 60 ? Math.floor(m / 60) + " h" + (m % 60 ? " " + (m % 60) + " min" : "") : m + " min" }
+    function relative(hours) { const m = Math.round(hours * 60); return m >= 60 ? Math.floor(m / 60) + " h " + (m % 60) + " min" : m + " min" }
+    function conferenceLabel(url) {
+        const value = String(url || "").toLowerCase()
+        return value.indexOf("meet.google") >= 0 ? "Google Meet" : value.indexOf("teams") >= 0 ? "Teams" : value.indexOf("zoom") >= 0 ? "Zoom" : String(url || "").replace(/^https?:\/\//, "")
+    }
+    readonly property string sourceLabel: {
+        const calendarName = eventData.calendar_name || ""
+        return (eventData.account_name || "") + (calendarName && calendarName !== "Primary" && eventData.calendar_id !== "primary" ? " · " + calendarName : "")
+    }
     property var conflicts: {
         let seen = {}
         return sourceEvents.filter(function(e) {
@@ -66,7 +77,7 @@ Popup {
     closePolicy: saving || deleteConfirmation.visible ? Popup.NoAutoClose : Popup.CloseOnEscape | Popup.CloseOnPressOutside
     background: Rectangle {
         color: Theme.surface; radius: 8; border.color: Theme.controlBorder
-        layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software; layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.6); shadowBlur: .8; shadowVerticalOffset: 12 }
+        layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software; layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.6); shadowBlur: 1; shadowVerticalOffset: 24 }
     }
     enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180 } }
     onAboutToShow: { feedback = ""; pendingResponse = ({}); awaitedEtag = ""; operationState = ""; operationRevision = -1 }
@@ -162,53 +173,72 @@ Popup {
             id: detailContents; width: details.availableWidth; spacing: 10
             RowLayout {
                 Layout.fillWidth: true; spacing: 10
-                Text { text: details.eventData.title || ""; color: Theme.text; font.pixelSize: Theme.fontSize(15); font.weight: Font.Medium; wrapMode: Text.Wrap; Layout.fillWidth: true; textFormat: Text.PlainText }
-                Text { text: details.eventData.account_name || ""; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); Layout.minimumWidth:Math.min(95,implicitWidth);Layout.preferredWidth:Math.min(95,implicitWidth);Layout.maximumWidth: 95; elide: Text.ElideRight; Layout.alignment: Qt.AlignTop; topPadding: 2 }
+                Text { text: details.eventData.title || ""; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15); font.weight: Font.Medium; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(15) * 1.3); wrapMode: Text.Wrap; Layout.fillWidth: true; textFormat: Text.PlainText }
+                Text { text: details.sourceLabel; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); Layout.minimumWidth: Math.min(120, implicitWidth); Layout.preferredWidth: Math.min(120, implicitWidth); Layout.maximumWidth: 120; elide: Text.ElideRight; Layout.alignment: Qt.AlignTop; topPadding: 2; textFormat: Text.PlainText }
             }
             Flow {
-            Layout.fillWidth: true; spacing: 8
-            Text { width: parent.width; wrapMode: Text.Wrap; text: details.eventData.multi_day ? (details.eventData.start_display || "") + " – " + (details.eventData.end_display || "") : details.eventData.all_day ? "All day" : (details.eventData.time_display || "") + " – " + (details.eventData.end_display || ""); color: Theme.accent; font.pixelSize: Theme.fontSize(13); font.weight: Font.Medium }
-            Text {
-                text: (!details.eventData.multi_day && details.eventData.date ? Qt.formatDate(new Date(details.eventData.date + "T12:00:00"), "ddd d MMM") : "")
-                    + (!details.eventData.all_day && !details.eventData.multi_day && details.eventData.duration_hours ? " · " + (details.eventData.duration_minutes || Math.round(details.eventData.duration_hours * 60)) + " min" : "")
-                    + (details.eventData.recurring ? details.eventData.multi_day ? "Repeats" : " · repeats" : "")
-                color: Theme.subtle; font.pixelSize: Theme.fontSize(12)
+                objectName: "eventDetailsWhen"; Layout.fillWidth: true; spacing: 8
+                Text {
+                    width: Math.min(implicitWidth, parent.width); wrapMode: Text.Wrap
+                    text: details.eventData.multi_day ? (details.eventData.start_display || "") + " – " + (details.eventData.end_display || "") : details.eventData.all_day ? "All day" : (details.eventData.time_display || "") + " – " + (details.eventData.end_display || "")
+                    color: Theme.accent; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium
+                    HoverHandler { id: whenHover }
+                    FmToolTip { visible: whenHover.hovered; text: backend.preferences.calendar_display_time_zone || "Time zone unavailable" }
+                }
+                Text {
+                    width: Math.min(implicitWidth, parent.width); wrapMode: Text.Wrap
+                    text: (!details.eventData.multi_day && details.eventData.date ? details.eventData.date === backend.todayDate ? "Today" : Qt.formatDate(new Date(details.eventData.date + "T12:00:00"), "ddd d MMM") : "")
+                        + (!details.eventData.all_day && !details.eventData.multi_day && details.eventData.duration_hours ? " · " + details.duration(details.eventData.duration_minutes || details.eventData.duration_hours * 60) : "")
+                        + (details.eventData.recurring ? details.eventData.multi_day ? "Repeats" : " · repeats" : "")
+                    color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13)
+                }
             }
-            }
-            Text { text: (details.eventData.calendar_name || details.eventData.calendar_id || "") + " · " + (backend.preferences.calendar_display_time_zone || "Time zone unavailable"); color: Theme.subtle; font.pixelSize: Theme.fontSize(10); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
             RowLayout {
                 visible: !!details.eventData.location; Layout.fillWidth: true; spacing: 9
-                FmIcon { name: "info"; size: 13; color: Theme.subtle }
-                Text { text: details.eventData.location || ""; color: Theme.muted; font.pixelSize: Theme.fontSize(13); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                FmIcon { name: "pin"; size: 13; color: Theme.inkAlpha(.45) }
+                Text { text: details.eventData.location || ""; color: Theme.inkAlpha(.75); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
             }
             RowLayout {
                 visible: /^https?:\/\/[^\/]/.test(details.eventData.conference_url || ""); Layout.fillWidth: true; spacing: 9
-                FmIcon { name: "calendar"; size: 13; color: Theme.subtle }
-                FmButton { text: (details.eventData.conference_url || "").replace(/^https?:\/\//, "") + " · join"; font.pixelSize: Theme.fontSize(12); implicitHeight: 24; leftPadding: 0; rightPadding: 0; Layout.fillWidth: true; textAlignment: Text.AlignLeft; tip: details.eventData.conference_url || ""; onClicked: backend.joinCalendarEvent(details.eventData) }
+                FmIcon { name: "video"; size: 13; color: Theme.inkAlpha(.45) }
+                FmButton {
+                    objectName: "eventJoinButton"; text: details.conferenceLabel(details.eventData.conference_url); font.pointSize: Theme.fontPoints(13)
+                    implicitHeight: Math.round(Theme.fontSize(13) * 1.4); leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; Layout.maximumWidth: implicitWidth; Layout.fillWidth: true
+                    textAlignment: Text.AlignLeft; foreground: hovered ? Theme.text : Theme.inkAlpha(.75); background: Item {}
+                    tip: details.eventData.conference_url || ""; onClicked: backend.joinCalendarEvent(details.eventData)
+                }
+                Text { text: "· join"; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); Layout.fillWidth: true }
             }
-            Text { visible: !!details.eventData.organizer; text: "Organized by " + (details.eventData.organizer || ""); color: Theme.subtle; font.pixelSize: Theme.fontSize(11); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Text { visible: !!details.eventData.organizer; text: "Organized by " + (details.eventData.organizer || ""); color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
             RowLayout {
                 visible: (details.eventData.attendees || []).length > 0; Layout.fillWidth: true; spacing: 9
-                FmIcon { name: "person"; size: 13; color: Theme.subtle; Layout.alignment: Qt.AlignTop }
-                Text { text: (details.eventData.attendees || []).map(function(a) { return a.email + (a.self ? " (you)" : "") }).join(", "); color: Theme.muted; font.pixelSize: Theme.fontSize(12); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
+                FmIcon { name: "people"; size: 13; color: Theme.inkAlpha(.45); Layout.alignment: Qt.AlignTop; Layout.topMargin: 3 }
+                Text { text: (details.eventData.attendees || []).map(function(a) { return (a.name || a.email) + (a.self ? " (you)" : "") }).join(", "); color: Theme.inkAlpha(.75); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(13) * 1.45); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
             }
-            Text { visible: details.conflicts.length > 0; text: "Overlaps " + details.conflicts.map(function(e) { return e.title + " (" + e.time_display + " – " + e.end_display + ", " + e.account_name + " / " + e.calendar_name + ")" }).join(", "); color: Theme.accent; font.pixelSize: Theme.fontSize(12); wrapMode: Text.Wrap; textFormat: Text.PlainText; Layout.fillWidth: true }
+            RowLayout {
+                visible: details.conflicts.length > 0; Layout.fillWidth: true; spacing: 9
+                Rectangle { Layout.alignment: Qt.AlignTop; Layout.topMargin: 6; implicitWidth: 7; implicitHeight: 7; radius: 3.5; color: "transparent"; border.width: 1.5; border.color: Theme.accent }
+                Text {
+                    text: "Overlaps " + details.conflicts.map(function(e) { return e.title + " (" + e.time_display + " – " + e.end_display + (e.account !== details.eventData.account ? ", " + e.account_name : "") + ")" }).join(", ")
+                    color: Theme.accent; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(13) * 1.45); wrapMode: Text.Wrap; textFormat: Text.PlainText; Layout.fillWidth: true
+                }
+            }
             Text {
-                visible: details.eventData.date === backend.todayDate && !details.eventData.all_day && !details.eventData.multi_day
+                visible: details.eventData.date === backend.todayDate && !details.eventData.multi_day
                 property real start: details.eventData.start_hour || 0
                 property real end: start + (details.eventData.duration_hours || 0)
-                text: backend.nowHour < start ? "Starts in " + Math.ceil((start - backend.nowHour) * 60) + " min" : backend.nowHour < end ? "Now · ends " + details.eventData.end_display : "Ended " + details.eventData.end_display
-                color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true
+                text: details.eventData.all_day ? "today" : backend.nowHour < start ? "in " + details.relative(start - backend.nowHour) : backend.nowHour < end ? "now · ends " + details.eventData.end_display : "ended " + details.eventData.end_display
+                color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); wrapMode: Text.Wrap; Layout.fillWidth: true
             }
             ScrollView {
                 ScrollBar.vertical: FmScrollBar {}
                 visible: !!details.eventData.description; Layout.fillWidth: true; Layout.preferredHeight: Math.min(100, description.implicitHeight + 4); clip: true
-                TextArea { id: description; text: details.eventData.description || ""; color: Theme.muted; font.pixelSize: Theme.fontSize(12); textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; readOnly: true; selectByMouse: true; background: null; padding: 0 }
+                TextArea { id: description; text: details.eventData.description || ""; color: Theme.muted; font.pointSize: Theme.fontPoints(12); textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; readOnly: true; selectByMouse: true; background: null; padding: 0 }
             }
-            Text { visible: !!details.eventData.busy_only; text: "Availability only · details are not shared."; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Text { visible: !!details.eventData.busy_only; text: "Availability only · details are not shared."; color: Theme.subtle; font.pointSize: Theme.fontPoints(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
             RowLayout {
                 visible: details.recurringScopes.length > 0; Layout.fillWidth: true; spacing: 8
-                Text { text: "Apply to"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11) }
+                Text { text: "Apply to"; color: Theme.subtle; font.pointSize: Theme.fontPoints(11) }
                 FmComboBox {
                     objectName: "eventRecurringScope"; Layout.fillWidth: true; implicitHeight: 30
                     model: details.recurringScopes.map(function(scope) { return {occurrence:"This occurrence",series:"Entire series",following:"This and following"}[scope] })
@@ -217,19 +247,19 @@ Popup {
                     onActivated: details.recurringScope = details.recurringScopes[currentIndex]
                 }
             }
-            Text { visible: !!details.eventData.occurrence_selector && !details.recurringScopes.length; text: "Changes apply to this occurrence only."; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
-            Text { visible: !!details.eventData.read_only && !details.eventData.busy_only; text: "Read-only event"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11) }
+            Text { visible: !!details.eventData.occurrence_selector && !details.recurringScopes.length; text: "Changes apply to this occurrence only."; color: Theme.subtle; font.pointSize: Theme.fontPoints(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Text { visible: !!details.eventData.read_only && !details.eventData.busy_only; text: "Read-only event"; color: Theme.subtle; font.pointSize: Theme.fontPoints(11) }
             ColumnLayout {
                 visible: !!details.eventData.can_rsvp || details.scopedAllowed("rsvp"); spacing: 5; Layout.fillWidth: true
-                Text { text: "Your response"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11) }
+                Text { text: "Your response"; color: Theme.subtle; font.pointSize: Theme.fontPoints(11) }
                 RowLayout {
                     spacing: 4
                     Repeater { model: [{label: "Accept", value: "accepted"}, {label: "Maybe", value: "tentative"}, {label: "Decline", value: "declined"}]
-                        FmButton { required property var modelData; objectName: "eventRsvp-" + modelData.value; text: modelData.label; outlined: true; selected: details.eventData.self_response === modelData.value; implicitHeight: 26; font.pixelSize: Theme.fontSize(11); enabled: !details.saving && !occurrenceRead.busy && !details.awaitedEtag.length && details.accountReady && (!details.live || !details.hasPendingResponse); onClicked: details.respond(modelData.value) }
+                        FmButton { required property var modelData; objectName: "eventRsvp-" + modelData.value; text: modelData.label; outlined: true; selected: details.eventData.self_response === modelData.value; implicitHeight: 26; font.pointSize: Theme.fontPoints(11); enabled: !details.saving && !occurrenceRead.busy && !details.awaitedEtag.length && details.accountReady && (!details.live || !details.hasPendingResponse); onClicked: details.respond(modelData.value) }
                     }
                 }
             }
-            Text { visible: details.live && (!!details.eventData.can_rsvp || details.scopedAllowed("rsvp")); text: "Your response is sent to Google. Google may notify the organizer; notification delivery is unverified."; color: Theme.subtle; font.pixelSize: Theme.fontSize(10); wrapMode: Text.Wrap; Layout.fillWidth: true }
+            Text { visible: details.live && (!!details.eventData.can_rsvp || details.scopedAllowed("rsvp")); text: "Your response is sent to Google. Google may notify the organizer; notification delivery is unverified."; color: Theme.subtle; font.pointSize: Theme.fontPoints(10); wrapMode: Text.Wrap; Layout.fillWidth: true }
             RowLayout {
                 visible: details.live && details.hasPendingResponse; Layout.fillWidth: true; spacing: 6
                 FmButton {
@@ -239,14 +269,14 @@ Popup {
                 }
                 FmButton { objectName: "eventRsvpAbandon"; text: "Abandon"; visible: details.operationRevision >= 0 && ["prepared", "ready", "unknown", "conflict", "rejected"].indexOf(details.operationState) >= 0; enabled: !details.saving && backend.connected; onClicked: responseAbandonConfirmation.open() }
             }
-            Text { visible: details.feedback.length > 0; text: details.feedback; color: Theme.accent; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true; textFormat: Text.PlainText }
+            Text { visible: details.feedback.length > 0; text: details.feedback; color: Theme.accent; font.pointSize: Theme.fontPoints(11); wrapMode: Text.Wrap; Layout.fillWidth: true; textFormat: Text.PlainText }
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
             Flow {
                 Layout.fillWidth: true; Layout.minimumWidth:0; Layout.preferredWidth:1; spacing: 6
-                FmButton { objectName: "eventEditButton"; visible: !!details.eventData.can_edit || details.scopedAllowed("edit") || (!details.recurringScopes.length && details.eventData.can_resolve_occurrence === true); text: occurrenceRead.busy ? "Checking…" : !details.recurringScopes.length && details.eventData.can_resolve_occurrence === true ? "Edit this occurrence" : "Edit"; prominent: true; implicitHeight: 28; font.pixelSize: Theme.fontSize(12); enabled: !details.saving && !occurrenceRead.busy && !details.awaitedEtag.length && details.accountReady && !details.hasPendingResponse; onClicked: { if (details.scopedAllowed("edit") || details.eventData.can_resolve_occurrence === true) details.readScoped("edit"); else { details.editRequested(details.eventData); details.close() } } }
-                FmButton { objectName: "eventScopedCancel"; visible: details.live && (((details.eventData.recurring_scopes||{}).delete||[]).indexOf("occurrence")>=0 || details.scopedAllowed("delete") || (details.eventData.can_delete===true&&!details.recurringScopes.length)); text: details.recurringScope==="following"?"Delete following":details.recurringScopes.length?"Delete this":"Delete"; outlined:true;implicitHeight:28;font.pixelSize:Theme.fontSize(12);enabled:!details.saving&&!occurrenceRead.busy&&details.accountReady&&!details.hasPendingResponse;onClicked:details.deleteEvent(details.recurringScopes.length?(details.recurringScope==="following"?"following":"occurrence"):"") }
-                FmButton { objectName:"eventDeleteSeries";visible:details.live&&((details.eventData.recurring_scopes||{}).delete||[]).indexOf("series")>=0;text:"Delete series";outlined:true;implicitHeight:28;font.pixelSize:Theme.fontSize(12);enabled:!details.saving&&!occurrenceRead.busy&&details.accountReady&&!details.hasPendingResponse;onClicked:details.deleteEvent("series") }
-                FmButton { objectName: "eventDetailsClose"; visible:details.saving||(!details.eventData.can_edit&&!details.scopedAllowed("edit"));text: details.live && details.saving ? "Cancel request" : "Close"; implicitHeight: 28; font.pixelSize: Theme.fontSize(11); enabled: !details.saving || details.live; onClicked: { if (details.live && details.saving) backend.cancelGoogleOperation(details.pendingResponse.account, details.pendingResponse.request_id); else details.close() } }
+                FmButton { objectName: "eventEditButton"; visible: !!details.eventData.can_edit || details.scopedAllowed("edit") || (!details.recurringScopes.length && details.eventData.can_resolve_occurrence === true); text: occurrenceRead.busy ? "Checking…" : !details.recurringScopes.length && details.eventData.can_resolve_occurrence === true ? "Edit this occurrence" : "Edit"; prominent: true; implicitHeight: 28; leftPadding: 12; rightPadding: 12; font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium; enabled: !details.saving && !occurrenceRead.busy && !details.awaitedEtag.length && details.accountReady && !details.hasPendingResponse; onClicked: { if (details.scopedAllowed("edit") || details.eventData.can_resolve_occurrence === true) details.readScoped("edit"); else { details.editRequested(details.eventData); details.close() } } }
+                FmButton { objectName: "eventScopedCancel"; visible: details.live && (((details.eventData.recurring_scopes||{}).delete||[]).indexOf("occurrence")>=0 || details.scopedAllowed("delete") || (details.eventData.can_delete===true&&!details.recurringScopes.length)); text: details.recurringScope==="following"?"Delete following":details.recurringScopes.length?"Delete this":"Delete"; outlined:true;implicitHeight:28;leftPadding:12;rightPadding:12;font.pointSize:Theme.fontPoints(12);font.weight:Font.Medium;foreground:hovered?Theme.error:Theme.inkAlpha(.75);enabled:!details.saving&&!occurrenceRead.busy&&details.accountReady&&!details.hasPendingResponse;onClicked:details.deleteEvent(details.recurringScopes.length?(details.recurringScope==="following"?"following":"occurrence"):"") }
+                FmButton { objectName:"eventDeleteSeries";visible:details.live&&((details.eventData.recurring_scopes||{}).delete||[]).indexOf("series")>=0;text:"Delete series";outlined:true;implicitHeight:28;leftPadding:12;rightPadding:12;font.pointSize:Theme.fontPoints(12);font.weight:Font.Medium;foreground:hovered?Theme.error:Theme.inkAlpha(.75);enabled:!details.saving&&!occurrenceRead.busy&&details.accountReady&&!details.hasPendingResponse;onClicked:details.deleteEvent("series") }
+                FmButton { objectName: "eventDetailsClose"; visible:details.saving||(!details.eventData.can_edit&&!details.scopedAllowed("edit"));text: details.live && details.saving ? "Cancel request" : "Close"; implicitHeight: 28; font.pointSize: Theme.fontPoints(11); enabled: !details.saving || details.live; onClicked: { if (details.live && details.saving) backend.cancelGoogleOperation(details.pendingResponse.account, details.pendingResponse.request_id); else details.close() } }
             }
         }
     }

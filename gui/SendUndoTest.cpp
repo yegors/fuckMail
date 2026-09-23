@@ -70,6 +70,7 @@ static void run() {
     QByteArray registration("module UndoTest\nsingleton Theme 1.0 Theme.qml\n");
     for(const auto &name:QDir(QString::fromUtf8(FM_GUI_SOURCE_DIR)).entryList({"*.qml"},QDir::Files)) {
         require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR)+'/'+name,modulePath+'/'+name),"production QML copy");
+        if(name=="ShortcutRegistry.qml") registration+="singleton ";
         if(name!="Theme.qml") registration+=name.chopped(4).toUtf8()+" 1.0 "+name.toUtf8()+'\n';
     }
     QFile module(modulePath+"/qmldir");require(module.open(QIODevice::WriteOnly),"module registration");

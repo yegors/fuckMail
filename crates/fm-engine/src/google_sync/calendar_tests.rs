@@ -8,7 +8,7 @@ use serde_json::json;
 use std::{
     collections::{BTreeSet, VecDeque},
     path::Path,
-    sync::Mutex,
+    sync::{atomic::Ordering, Mutex},
     time::Duration,
 };
 use tokio::sync::{mpsc, Semaphore};
@@ -324,6 +324,112 @@ async fn initial_inventory(h: &Harness) {
         ),
     );
     assert_eq!(run_pass(&h.context, true).await.unwrap().failures, 0);
+}
+
+#[tokio::test]
+async fn restart_fetches_an_event_created_by_another_instance() {
+    let directory = tempfile::tempdir().unwrap();
+    let h = Harness::new(directory.path());
+    initial_inventory(&h).await;
+    assert_eq!(h.view().await["total"], 1);
+    h.close();
+
+    let h = Harness::new(directory.path());
+    h.http.push(
+        "syncToken=catalog-old",
+        200,
+        json!({"items":[],"nextSyncToken":"catalog-new"}),
+    );
+    h.http.push("calendarList/a", 200, entry("a", "owner"));
+    h.http.push(
+        "syncToken=events-old",
+        200,
+        events(
+            vec![event("remote-new", "Created on another computer")],
+            None,
+            Some("events-new"),
+        ),
+    );
+    let progress = Arc::new(Mutex::new(json!({})));
+    let worker = tokio::spawn(super::super::calendar_loop(h.context.clone(), progress));
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while h.view().await["total"] != 2 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("startup must publish the remote Calendar delta");
+    assert!(h
+        .view()
+        .await
+        .to_string()
+        .contains("Created on another computer"));
+    h.context.cancel.cancel();
+    worker.await.unwrap();
+    h.close();
+}
+
+#[tokio::test]
+async fn manual_refresh_fetches_calendar_delta_before_the_next_poll() {
+    let directory = tempfile::tempdir().unwrap();
+    let h = Harness::new(directory.path());
+    initial_inventory(&h).await;
+    h.http.push(
+        "syncToken=catalog-old",
+        200,
+        json!({"items":[],"nextSyncToken":"catalog-first"}),
+    );
+    h.http.push("calendarList/a", 200, entry("a", "owner"));
+    h.http.push(
+        "syncToken=events-old",
+        200,
+        events(vec![], None, Some("events-first")),
+    );
+    let progress = Arc::new(Mutex::new(json!({})));
+    let worker = tokio::spawn(super::super::calendar_loop(
+        h.context.clone(),
+        progress.clone(),
+    ));
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while progress.lock().unwrap()["calendar"] != "waiting" {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("startup Calendar round must finish");
+    assert_eq!(h.view().await["total"], 1);
+
+    h.http
+        .push("syncToken=catalog-first", 503, json!({"error":"temporary"}));
+    h.http.push(
+        "syncToken=catalog-first",
+        200,
+        json!({"items":[],"nextSyncToken":"catalog-second"}),
+    );
+    h.http.push("calendarList/a", 200, entry("a", "owner"));
+    h.http.push(
+        "syncToken=events-first",
+        200,
+        events(
+            vec![event("remote-new", "New before the next poll")],
+            None,
+            Some("events-second"),
+        ),
+    );
+    h.context
+        .calendar_refresh_requested
+        .store(true, Ordering::Release);
+    h.context.refresh.send_modify(|n| *n += 1);
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while h.view().await["total"] != 2 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("manual refresh must publish the Calendar delta immediately");
+    h.context.cancel.cancel();
+    worker.await.unwrap();
+    h.close();
 }
 
 #[tokio::test]

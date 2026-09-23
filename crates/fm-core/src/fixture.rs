@@ -177,7 +177,7 @@ impl Store {
         for &account in fixture_accounts {
             for (n, state) in [(0, "available"), (1, "missing"), (2, "partial")] {
                 tx.execute(
-                    "INSERT INTO attachments VALUES(?1,?2,?3,?4,'text/plain',?5,?6,?7)",
+                    "INSERT INTO attachments(account,id,message_id,name,mime_type,size,state,blob_hash) VALUES(?1,?2,?3,?4,'text/plain',?5,?6,?7)",
                     params![
                         account,
                         format!("{account}-attachment-{n}"),
@@ -198,7 +198,7 @@ impl Store {
             ];
             for event in sources {
                 tx.execute(
-                    "INSERT INTO calendar_sources VALUES(?1,'primary',?2,?3)",
+                    "INSERT INTO calendar_sources(account,calendar_id,event_id,json) VALUES(?1,'primary',?2,?3)",
                     params![
                         account,
                         event["id"].as_str().unwrap(),
@@ -216,8 +216,21 @@ impl Store {
         }
         if schema >= 5 {
             tx.execute("INSERT INTO account_metadata(account,signature_text) SELECT id,'—'||char(10)||name FROM accounts",[])?;
-            tx.execute("INSERT INTO drafts(account,conversation_id,body,revision,signature_text,from_name,identity_revision) SELECT a.id,a.id||'-thread-003','I will review the rollout window and confirm the timing.',1,m.signature_text,a.name,m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id",[])?;
+            tx.execute("INSERT INTO drafts(account,draft_id,conversation_id,legacy_reply,mode,body,revision,signature_text,from_name,identity_revision) SELECT a.id,a.id||'-thread-003',a.id||'-thread-003',1,'reply','I will review the rollout window and confirm the timing.',1,m.signature_text,a.name,m.revision FROM accounts a JOIN account_metadata m ON m.account=a.id",[])?;
             crate::phase1_calendar::seed_phase1_calendars(&tx)?;
+            if schema >= 31 {
+                seed_sender_kinds(&tx)?;
+                for account in fixture_accounts {
+                    let source = format!("{account}-message-003-000");
+                    let hash: String = tx.query_row(
+                        "SELECT source_hash FROM messages WHERE account=?1 AND id=?2",
+                        params![account, source],
+                        |row| row.get(0),
+                    )?;
+                    let routing = json!({"from":format!("you@{account}.example"),"subject":"Re: WireGuard relay rollout","to_recipients":[{"email":format!("sam@{account}.example")}],"cc_recipients":[],"bcc_recipients":[],"reply_to_message_id":format!("<{source}@fixture.example>"),"references":[],"reply_all_available":false,"source_unavailable":false});
+                    tx.execute("UPDATE drafts SET source_message_id=?3,source_hash=?4,routing_json=?5 WHERE account=?1 AND draft_id=?2",params![account,format!("{account}-thread-003"),source,hash,serde_json::to_string(&routing)?])?;
+                }
+            }
         }
         tx.execute(
             "INSERT INTO meta VALUES('fixture_revision',?1)",

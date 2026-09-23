@@ -33,7 +33,7 @@ public:
     Q_INVOKABLE bool accountCapability(const QString &,const QString &capability) { return capability=="mail_read"; }
     Q_INVOKABLE void connectGoogle(const QString &address,const QString &,bool,const QVariantMap &access) { email=address; requested=access; ++connections; busy=true; auth={{"phase","waiting_for_browser"}}; emit googleAuthChanged(); }
     Q_INVOKABLE void restoreGoogleAccount(const QString &,const QString &,double,bool,const QVariantMap &) { qFatal("ordinary Add cannot restore an archive"); }
-    Q_INVOKABLE void updateAccountPreferences(const QString &id,const QString &name,const QString &signature,const QString &retention) { require(signature=="Original signature","connect preserves account signature"); savedRetention=retention; savedName=name; ++saves; preferencesStatus=saveSucceeds ? "Saved" : "Not saved — synthetic failure"; emit preferencesChanged(); emit accountPreferencesFinished(id,saveSucceeds); }
+    Q_INVOKABLE void updateAccountPreferences(const QString &id,const QString &name,const QString &signature,const QString &retention,const QVariantMap &sync) { require(sync.value("mail").toBool() && !sync.value("calendar").toBool() && sync.value("mail_access")=="read","chosen services and access are saved"); require(signature=="Original signature","connect preserves account signature"); savedRetention=retention; savedName=name; ++saves; preferencesStatus=saveSucceeds ? "Saved" : "Not saved — synthetic failure"; emit preferencesChanged(); emit accountPreferencesFinished(id,saveSucceeds); }
     Q_INVOKABLE void startGoogleSync(const QString &id,const QVariantMap &) { require(saveSucceeds&&!savedName.isEmpty(),"name saves before sync"); syncedAccount=id; ++syncStarts; }
 signals:
     void googleAuthChanged(); void accountsChanged(); void connectedChanged(); void preferencesChanged();
@@ -47,7 +47,7 @@ int main(int argc,char **argv) {
     QTemporaryDir temp; const auto path=temp.filePath("ConnectTest"); require(QDir().mkpath(path),"QML directory");
     QFile module(path+"/qmldir");require(module.open(QIODevice::WriteOnly),"module");module.write("module ConnectTest\n");
     for(const auto &file:QDir(QString(FM_GUI_SOURCE_DIR)).entryList({"*.qml"},QDir::Files)) {
-        require(QFile::copy(QString(FM_GUI_SOURCE_DIR)+"/"+file,path+"/"+file),"copy production QML");const auto name=QFileInfo(file).completeBaseName();module.write(((name=="Theme"?"singleton ":"")+name+" 1.0 "+file+"\n").toUtf8());
+        require(QFile::copy(QString(FM_GUI_SOURCE_DIR)+"/"+file,path+"/"+file),"copy production QML");const auto name=QFileInfo(file).completeBaseName();module.write((((name=="Theme" || name=="ShortcutRegistry")?"singleton ":"")+name+" 1.0 "+file+"\n").toUtf8());
     }
     module.close(); ConnectionBackend backend; QQmlApplicationEngine qml; bool warnings=false;
     QObject::connect(&qml,&QQmlEngine::warnings,[&](const auto &errors){warnings=true;for(const auto &error:errors)qWarning()<<error;});
@@ -59,8 +59,8 @@ int main(int argc,char **argv) {
     auto activate=[&](const QString &name){auto item=control(name);require(item->isVisible()&&item->isEnabled(),"control available");require(QMetaObject::invokeMethod(item,"clicked"),"actual click handler");settle();};
     auto dialog=window->findChild<QObject*>("googleSignInDialog");require(dialog,"connection popup");
     require(!find(window->contentItem(),"connectMeetAccess"),"no redundant Meetings permission");
-    require(control("connectRetention")->property("currentIndex").toInt()==2,"retention defaults to one year");
-    control("connectRetention")->setProperty("currentIndex",1);
+    require(control("connectRetention")->property("currentIndex").toInt()==1,"retention defaults to one year");
+    control("connectRetention")->setProperty("currentIndex",0);
     control("connectMailMode")->setProperty("currentIndex",0);control("connectCalendarAccess")->setProperty("checked",false);settle();
     const auto captures=qEnvironmentVariable("FM_CONNECTION_CAPTURES");
     auto capture=[&](const QString &name) { if(captures.isEmpty())return;require(QDir().mkpath(captures),"capture directory");const auto file=QDir(captures).filePath(name+".png");settle();require(!QFileInfo::exists(file)&&window->grabWindow().save(file),"retain connection frame"); };
@@ -81,7 +81,7 @@ int main(int argc,char **argv) {
     require(dialog->property("step").toInt()==2&&backend.syncStarts==0,"successful sign-in waits for final action");control("connectedAccountName")->setProperty("text","My personal mail");capture("ready-terminal");
     activate("finishGoogleConnection");require(backend.saves==1&&backend.syncStarts==0&&dialog->property("visible").toBool(),"failed display-name save retains form and starts no sync");
     backend.saveSucceeds=true;activate("finishGoogleConnection");require(backend.saves==2&&backend.savedName=="My personal mail"&&backend.syncedAccount=="fixture-account"&&backend.syncStarts==1,"retry saves exact name and starts only the connected account");
-    require(backend.savedRetention=="3_months","selected retention saves before sync");
+    require(backend.savedRetention=="90_days","selected retention saves before sync");
     require(!warnings,"no QML warnings");return 0;
 }
 #include "GoogleConnectionControlsTest.moc"

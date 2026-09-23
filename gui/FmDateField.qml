@@ -9,7 +9,7 @@ FmTextField {
     rightPadding: 30
     placeholderText: "YYYY-MM-DD"
     maximumLength: 10
-    font.pixelSize: Theme.fontSize(13)
+    font.pointSize: Theme.fontPoints(13)
     property bool weekStartsMonday: true
     readonly property bool validDate: parseDate(text) !== null
     function parseDate(value) {
@@ -50,14 +50,14 @@ FmTextField {
             RowLayout {
                 Layout.fillWidth: true
                 FmButton { iconName: "previous"; implicitWidth: 28; tip: "Previous month"; onClicked: picker.moveMonth(-1) }
-                Text { Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; text: Qt.formatDate(new Date(picker.year, picker.month, 1), "MMMM yyyy"); color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); font.weight: Font.Medium }
+                Text { Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; text: Qt.formatDate(new Date(picker.year, picker.month, 1), "MMMM yyyy"); color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium }
                 FmButton { iconName: "next"; implicitWidth: 28; tip: "Next month"; onClicked: picker.moveMonth(1) }
             }
             GridLayout {
                 Layout.fillWidth: true; columns: 7; columnSpacing: 2; rowSpacing: 2
                 Repeater {
                     model: field.weekStartsMonday ? ["M","T","W","T","F","S","S"] : ["S","M","T","W","T","F","S"]
-                    Text { required property string modelData; text: modelData; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); Layout.bottomMargin: 3 }
+                    Text { required property string modelData; text: modelData; Layout.fillWidth: true; horizontalAlignment: Text.AlignHCenter; color: Theme.subtle; font.pointSize: Theme.fontPoints(11); Layout.bottomMargin: 3 }
                 }
                 Repeater {
                     model: 42
@@ -68,7 +68,7 @@ FmTextField {
                         Layout.fillWidth: true; implicitWidth: 30; implicitHeight: 28; leftPadding: 0; rightPadding: 0
                         text: String(day.getDate()); selected: iso === field.text
                         foreground: day.getMonth() === picker.month ? Theme.text : Theme.subtle
-                        font.pixelSize: Theme.fontSize(12)
+                        font.pointSize: Theme.fontPoints(12)
                         Accessible.name: Qt.formatDate(day, "dddd, MMMM d, yyyy")
                         onClicked: { field.text = iso; field.textEdited(); picker.close(); field.forceActiveFocus() }
                     }

@@ -278,6 +278,15 @@ fn visible_parts_replay_resume_and_page_cursor_wait_for_every_outcome() {
     let completed = store.google_live_finish_page(&page).unwrap();
     assert!(matches!(completed.phase,Phase::Full{page_token:Some(ref t),..} if t=="second-page"));
     assert_eq!(store.google_live_finish_page(&page).unwrap(), completed);
+    let retained_payloads: u64 = store.db.query_row("SELECT count(*) FROM google_live_page_items WHERE account=?1 AND manifest_json IS NOT NULL",[&account],|r|r.get(0)).unwrap();
+    assert_eq!(retained_payloads, 0);
+    let replay = prepared(&store, &page, "a", raw("a", "110", "alpha"));
+    assert_eq!(
+        store
+            .google_live_commit_part(&page, std::slice::from_ref(&replay))
+            .unwrap(),
+        receipt
+    );
     assert_eq!(count(&store, &account), 2);
     let fts: u64 = store
         .db

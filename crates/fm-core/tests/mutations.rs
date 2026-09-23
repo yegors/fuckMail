@@ -58,9 +58,11 @@ fn journal_replay_returns_original_response_across_restart_and_later_edits() {
     drop(store);
     let mut store = Store::open(temp.path()).unwrap();
     assert_eq!(call(&mut store, "flag", request.clone()), original);
+    let mut current_reader = current.clone();
+    current_reader.as_object_mut().unwrap().remove("mail_undo");
     assert_eq!(
         call(&mut store, "conversation", json!({"id":initial["id"]})),
-        current
+        current_reader
     );
     request["read"] = json!(false);
     assert_eq!(

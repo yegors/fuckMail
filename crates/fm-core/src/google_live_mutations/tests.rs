@@ -792,6 +792,42 @@ fn assisted_single_label_delivery_acknowledgement_and_manual_override() {
         );
     }
 }
+
+#[test]
+fn assisted_arrival_read_is_durable_and_human_read_choice_wins() {
+    let f = Fixture::new();
+    {
+        let tx = f.store.db.unchecked_transaction().unwrap();
+        assert!(enqueue_assisted_read(&tx, &f.account, &f.message).unwrap());
+        tx.commit().unwrap();
+    }
+    assert!(!f.flags().0, "eligible incoming mail becomes locally read");
+    let work = f.next(1000);
+    assert_eq!(work.desired.len(), 1);
+    assert_eq!(work.desired[0].field, "read");
+    assert_eq!(work.desired[0].label, "UNREAD");
+    assert!(!work.desired[0].present);
+    project_labels(
+        &f.store.db,
+        &f.account,
+        &f.message,
+        &BTreeSet::from(["INBOX".into(), "UNREAD".into()]),
+    )
+    .unwrap();
+    assert!(
+        !f.flags().0,
+        "provider snapshots preserve the pending read overlay"
+    );
+    let mut other = Fixture::new();
+    other
+        .command("flag", "human-unread", json!({"read":false}))
+        .unwrap();
+    let tx = other.store.db.unchecked_transaction().unwrap();
+    assert!(
+        !enqueue_assisted_read(&tx, &other.account, &other.message).unwrap(),
+        "pending human intent has precedence"
+    );
+}
 #[test]
 fn assisted_label_yields_to_new_provider_category_before_submission() {
     let mut f = Fixture::new();
@@ -874,4 +910,257 @@ fn assisted_local_label_waits_for_explicit_link_and_keeps_manual_precedence() {
         MailMutationDecision::Finished
     ));
     assert_eq!(f.flags(), flags);
+}
+
+#[test]
+fn mail_undo_restores_exact_flags_replays_and_rejects_newer_changes() {
+    let mut f = Fixture::new();
+    let before = f.flags();
+    let done = f
+        .command("flag", "done", json!({"read":true,"starred":false}))
+        .unwrap();
+    assert_eq!(f.flags(), (false, false, true, false));
+    let undo = json!({"id":f.conversation,"expected_revision":done["revision"],"undo_request_id":"done","request_id":"undo-done"});
+    let restored = f.store.mutate("mail_undo", &f.account, &undo).unwrap();
+    assert_eq!(f.flags(), before);
+    assert_eq!(restored["undone_request_id"], "done");
+    assert_eq!(
+        f.store.mutate("mail_undo", &f.account, &undo).unwrap(),
+        restored
+    );
+    assert_eq!(f.state("undo-done"), "pending");
+    let done = f
+        .command("flag", "done-again", json!({"read":true,"starred":false}))
+        .unwrap();
+    f.command("flag", "newer", json!({"starred":true})).unwrap();
+    assert_eq!(f.store.mutate("mail_undo",&f.account,&json!({"id":f.conversation,"expected_revision":done["revision"],"undo_request_id":"done-again","request_id":"stale-undo"})).unwrap_err().code,"stale_revision");
+    assert_eq!(f.flags(), (false, true, true, false));
+}
+
+#[test]
+fn mail_undo_trash_restores_provider_trash_before_other_labels() {
+    let mut f = Fixture::new();
+    let deleted = f
+        .command("mail_filing", "trash", json!({"action":"trash"}))
+        .unwrap();
+    f.store.mutate("mail_undo",&f.account,&json!({"id":f.conversation,"expected_revision":deleted["revision"],"undo_request_id":"trash","request_id":"undo-trash"})).unwrap();
+    assert_eq!(f.flags(), (true, true, true, false));
+    // The earlier unsent trash intent is superseded before Undo is sent.
+    let first = f.next(10);
+    f.store
+        .google_mail_mutation_observe(&first, observation(&["TRASH", "UNREAD", "STARRED"], "101"))
+        .unwrap();
+    let next = f.next(11);
+    let attempt = submit(
+        f.store
+            .google_mail_mutation_observe(
+                &next,
+                observation(&["TRASH", "UNREAD", "STARRED"], "102"),
+            )
+            .unwrap(),
+    );
+    assert_eq!(attempt.work.action, MailMutationAction::Restore);
+}
+
+#[test]
+fn mail_undo_records_and_delivers_only_the_fields_it_restores() {
+    let mut f = Fixture::new();
+    for category in ["linked", "local"] {
+        f.store
+            .db
+            .execute(
+                "INSERT INTO categories(account,id,name) VALUES(?1,?2,?2)",
+                params![f.account, category],
+            )
+            .unwrap();
+    }
+    f.store
+        .google_map_category(&f.account, "linked", "Label_linked")
+        .unwrap();
+    let done = f
+        .command("flag", "read-only", json!({"read":true}))
+        .unwrap();
+    f.store.mutate("mail_undo",&f.account,&json!({"id":f.conversation,"expected_revision":done["revision"],"undo_request_id":"read-only","request_id":"undo-read"})).unwrap();
+    let intents: Vec<(String, String)> = f
+        .store
+        .db
+        .prepare("SELECT field,category_id FROM google_manual_intents WHERE account=?1 ORDER BY field,category_id")
+        .unwrap()
+        .query_map([&f.account], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<_>>()
+        .unwrap();
+    assert_eq!(intents, vec![("read".into(), String::new())]);
+    let desired: String = f
+        .store
+        .db
+        .query_row(
+            "SELECT desired_json FROM google_mail_mutations WHERE account=?1 AND request_id='undo-read'",
+            [&f.account],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let desired: Value = serde_json::from_str(&desired).unwrap();
+    assert_eq!(desired.as_array().unwrap().len(), 1, "{desired}");
+    assert_eq!(desired[0]["field"], "read");
+    // Undoing a flag change leaves labels to the model and never queues removals.
+    {
+        let tx = f.store.db.unchecked_transaction().unwrap();
+        assert_ne!(
+            enqueue_assisted_category(&tx, &f.account, &f.message, "linked").unwrap(),
+            "manual_override"
+        );
+    }
+    f.store
+        .google_map_category(&f.account, "local", "Label_local")
+        .unwrap();
+    assert_eq!(
+        f.store.google_label_memberships_queue(&f.account).unwrap(),
+        0
+    );
+}
+
+#[test]
+fn retention_uses_gmail_received_date_and_removes_emptied_conversations() {
+    let mut f = Fixture::new();
+    // An old header date alone does not prune mail Gmail received recently.
+    f.store
+        .db
+        .execute(
+            "UPDATE messages SET sent_at='2020-01-01T00:00:00Z' WHERE account=?1",
+            [&f.account],
+        )
+        .unwrap();
+    let received = chrono::Utc::now().timestamp_millis();
+    f.store.db.execute("INSERT INTO google_mail_coverage(account,remote_id,observed_generation,source_state,index_state,attachment_state,internal_date_ms) VALUES(?1,'first',1,'retained','indexed','complete',?2)",params![f.account,received]).unwrap();
+    let before = f.store.accounts().unwrap()["accounts"][0].clone();
+    let saved=f.store.handle("account_update",Some(&f.account),json!({"name":"Personal","signature_text":"","mail_retention":"90_days","expected_revision":before["metadata_revision"],"request_id":"received-window"})).unwrap();
+    assert_eq!(f.count("messages"), 1);
+    f.store
+        .db
+        .execute(
+            "UPDATE google_mail_coverage SET internal_date_ms=?2 WHERE account=?1",
+            params![f.account, received - 400 * 86_400_000],
+        )
+        .unwrap();
+    f.store.handle("account_update",Some(&f.account),json!({"name":"Personal","signature_text":"","mail_retention":"1_year","expected_revision":saved["metadata_revision"],"request_id":"received-prune"})).unwrap();
+    assert_eq!(f.count("messages"), 0);
+    assert_eq!(f.count("conversations"), 0);
+    assert_eq!(
+        f.store.accounts().unwrap()["accounts"][0]["conversation_count"],
+        0
+    );
+}
+
+#[test]
+fn retention_edit_prunes_local_rows_and_extending_resets_acquisition() {
+    let mut f = Fixture::new();
+    f.store
+        .db
+        .execute(
+            "UPDATE messages SET sent_at='2020-01-01T00:00:00Z' WHERE account=?1",
+            [&f.account],
+        )
+        .unwrap();
+    let before = f.store.accounts().unwrap()["accounts"][0].clone();
+    let saved=f.store.handle("account_update",Some(&f.account),json!({"name":"Personal","signature_text":"","mail_retention":"90_days","expected_revision":before["metadata_revision"],"request_id":"shorten"})).unwrap();
+    assert_eq!(f.count("messages"), 0);
+    assert_eq!(f.count("google_mail_mutations"), 0);
+    assert_eq!(
+        f.store
+            .db
+            .query_row("SELECT count(*) FROM pragma_foreign_key_check", [], |r| r
+                .get::<_, i64>(
+                0
+            ))
+            .unwrap(),
+        0
+    );
+    let generation: i64 = f
+        .store
+        .db
+        .query_row(
+            "SELECT mail_generation FROM google_accounts WHERE account=?1",
+            [&f.account],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let extended=f.store.handle("account_update",Some(&f.account),json!({"name":"Personal","signature_text":"","mail_retention":"all","expected_revision":saved["metadata_revision"],"request_id":"extend"})).unwrap();
+    assert!(extended["mail_since"].is_null());
+    assert_eq!(
+        f.store
+            .db
+            .query_row(
+                "SELECT mail_generation FROM google_accounts WHERE account=?1",
+                [&f.account],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        generation + 1
+    );
+}
+
+#[test]
+fn retention_shortening_rolls_back_while_a_conversation_has_pending_work() {
+    let mut f = Fixture::new();
+    publish(&f.store, &f.account, "second", "101", &["INBOX"]);
+    f.store.db.execute("UPDATE messages SET sent_at='2020-01-01T00:00:00Z' WHERE account=?1 AND remote_id='second'",[&f.account]).unwrap();
+    f.command("flag", "pending-newer", json!({"read":true}))
+        .unwrap();
+    let before = f.store.accounts().unwrap()["accounts"][0].clone();
+    let generation: i64 = f
+        .store
+        .db
+        .query_row(
+            "SELECT mail_generation FROM google_accounts WHERE account=?1",
+            [&f.account],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(f.store.handle("account_update",Some(&f.account),json!({"name":"Personal","signature_text":"","mail_retention":"90_days","expected_revision":before["metadata_revision"],"request_id":"blocked-shorten"})).unwrap_err().code,"retention_work_pending");
+    assert_eq!(f.count("messages"), 2);
+    assert_eq!(f.state("pending-newer"), "pending");
+    assert_eq!(
+        f.store
+            .db
+            .query_row(
+                "SELECT mail_generation FROM google_accounts WHERE account=?1",
+                [&f.account],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        generation
+    );
+}
+
+#[test]
+fn account_local_read_access_survives_restart_and_blocks_provider_writes() {
+    let mut f = Fixture::new();
+    let before = f.store.accounts().unwrap()["accounts"][0].clone();
+    let update = json!({"name":before["name"],"signature_text":"","expected_revision":before["metadata_revision"],"request_id":"read-access","sync":{"mail":true,"calendar":false,"mail_access":"read","calendar_access":"read"}});
+    f.store
+        .handle("account_update", Some(&f.account), update.clone())
+        .unwrap();
+    assert_eq!(
+        f.command("flag", "blocked-read", json!({"read":true}))
+            .unwrap_err()
+            .code,
+        "capability_unavailable"
+    );
+    assert_eq!(f.flags(), (true, true, true, false));
+    drop(f.store);
+    let mut reopened = Store::open_live(f.directory.path()).unwrap();
+    let accounts = reopened.accounts().unwrap();
+    assert_eq!(
+        accounts["accounts"][0]["google"]["capabilities"]["mail_write"],
+        false
+    );
+    assert_eq!(
+        accounts["accounts"][0]["google"]["granted_capabilities"]["mail_write"],
+        true
+    );
+    reopened
+        .handle("account_update", Some(&f.account), update)
+        .unwrap();
+    assert!(!crate::preferences::google_write_enabled(&reopened.db, &f.account, "mail").unwrap());
 }

@@ -8,7 +8,7 @@ TextField {
     color: Theme.text
     placeholderTextColor: Theme.subtle
     font.family: Theme.fontFamily
-    font.pixelSize: Theme.fontSize(13)
+    font.pointSize: Theme.fontPoints(13)
     selectionColor: Theme.selection
     selectedTextColor: Theme.selectedText
     selectByMouse: true

@@ -1,5 +1,9 @@
 # CLI and external agent interface
 
+## D092 — shared Undo and account controls (CLI42)
+
+`mail undo` accepts the original Undo request ID and expected conversation revision, using the same durable `mail_undo` boundary as GUI toasts. `account-update` accepts the extended retention choices plus paired `--mail-access` and `--calendar-access` values (`none`, `read`, `write`). Both cannot be `none`. Preferences expose the same typed editable shortcut map as the GUI; conflicts and fixed-key reservations are validated in Core. Consumers: Core50/Mail UI67/Calendar29/Quality67; schema31, fixtures0/3/protocol1.
+
 ## D086 — mail list and account backlog
 
 `fm --account ID assist backlog` reads cached analysis coverage. `assist batch --range week|month|year|all` starts explicit missing-only account analysis, waits for its result and cancels on Ctrl-C. The GUI uses the same `assist_backlog` and `assist_batch_start` methods plus existing job status/cancel. Session ownership, settings/lifecycle fences and existing incoming-only source/manual precedence apply. No restart or settings-save historical sweep.

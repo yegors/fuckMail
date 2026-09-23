@@ -769,19 +769,12 @@ fn cached_page_reads_only_requested_routing_and_caps_enriched_payload() {
     store
         .db
         .execute(
-            "UPDATE drafts SET updated_at=1,routing_json='{}' WHERE account=?1 AND draft_id=?2",
+            "UPDATE drafts SET updated_at=1,routing_json='{' WHERE account=?1 AND draft_id=?2",
             params![a.account, hidden],
         )
         .unwrap();
-    // Valid JSON with the wrong projection type must not be deserialized on a
-    // page that does not include it. This proves paging precedes row projection.
-    store
-        .db
-        .execute(
-            "UPDATE drafts SET body=X'FF' WHERE account=?1 AND draft_id=?2",
-            params![a.account, hidden],
-        )
-        .unwrap();
+    // Malformed routing JSON must not be parsed on a page that does not
+    // include it. This proves paging precedes row projection with STRICT TEXT.
     let page = store
         .handle("drafts", Some(&a.account), json!({"limit":1}))
         .unwrap();
@@ -794,7 +787,7 @@ fn cached_page_reads_only_requested_routing_and_caps_enriched_payload() {
     store
         .db
         .execute(
-            "UPDATE drafts SET body='' WHERE account=?1 AND draft_id=?2",
+            "UPDATE drafts SET routing_json='{}' WHERE account=?1 AND draft_id=?2",
             params![a.account, hidden],
         )
         .unwrap();
@@ -839,171 +832,4 @@ fn cached_page_reads_only_requested_routing_and_caps_enriched_payload() {
     assert!(serde_json::to_vec(&page["drafts"]).unwrap().len() <= 512 * 1024);
     assert!(page["next_offset"].is_i64());
     assert_eq!(page["total"], 22);
-}
-
-#[test]
-fn schema14_upgrade_preserves_live_draft_journal_and_refuses_future_schema() {
-    let dir = tempfile::tempdir().unwrap();
-    let (mut store, a, _) = setup(dir.path());
-    let id = create(&mut store, &a, "old-local");
-    let (lease, _) = freeze_local(&mut store, &a, &id, "old-operation");
-    store
-        .google_draft_outcome(
-            &lease,
-            GoogleDraftOutcome::Unknown {
-                code: "transport_interrupted".into(),
-            },
-        )
-        .unwrap();
-    let before = draft(&mut store, &a, &id);
-    let journal: String = store
-        .db
-        .query_row(
-            "SELECT json FROM capture_operations WHERE account=?1",
-            [&a.account],
-            |r| r.get(0),
-        )
-        .unwrap();
-    let receipt: String = store
-        .db
-        .query_row(
-            "SELECT result_json FROM operations WHERE account=?1",
-            [&a.account],
-            |r| r.get(0),
-        )
-        .unwrap();
-    crate::test_profiles::restore_schema_fourteen(&store.db);
-    drop(store);
-    let mut store = Store::open_live(dir.path()).unwrap();
-    assert_eq!(store.fixture_revision().unwrap(), 0);
-    assert_eq!(draft(&mut store, &a, &id), before);
-    assert_eq!(count(&store, "google_draft_sources"), 0);
-    assert_eq!(
-        store
-            .db
-            .query_row(
-                "SELECT json FROM capture_operations WHERE account=?1",
-                [&a.account],
-                |r| r.get::<_, String>(0)
-            )
-            .unwrap(),
-        journal
-    );
-    assert_eq!(
-        store
-            .db
-            .query_row(
-                "SELECT result_json FROM operations WHERE account=?1",
-                [&a.account],
-                |r| r.get::<_, String>(0)
-            )
-            .unwrap(),
-        receipt
-    );
-    assert_eq!(
-        store
-            .handle(
-                "draft_create",
-                Some(&a.account),
-                json!({"mode":"new","request_id":"old-local"})
-            )
-            .unwrap(),
-        serde_json::from_str::<Value>(&receipt).unwrap()
-    );
-    store
-        .db
-        .pragma_update(None, "user_version", crate::SCHEMA_VERSION + 1)
-        .unwrap();
-    drop(store);
-    assert_eq!(code(Store::open_live(dir.path())), "schema_mismatch");
-}
-
-#[test]
-fn schema14_mixed_google_journal_preserves_accepted_submission_and_draft_receipts() {
-    let dir = tempfile::tempdir().unwrap();
-    let (mut store, a, _) = setup(dir.path());
-    let local = create(&mut store, &a, "draft-local");
-    let (lease, _) = freeze_local(&mut store, &a, &local, "draft-request");
-    store
-        .google_draft_outcome(
-            &lease,
-            GoogleDraftOutcome::Unknown {
-                code: "transport_interrupted".into(),
-            },
-        )
-        .unwrap();
-    let sent = create(&mut store, &a, "send-local");
-    store.handle("draft_save",Some(&a.account),json!({"draft_id":sent,"expected_revision":1,"request_id":"send-save","body":"Already accepted","to_recipients":[{"email":"reader@example.test"}]})).unwrap();
-    let request = json!({"draft_id":sent,"expected_revision":2,"expected_google_revision":0,"request_id":"send-request"});
-    let GoogleSendStep::Prepare(plan) = store.google_send_begin(&scope(&a), &request).unwrap()
-    else {
-        panic!()
-    };
-    let proof = google_send::prepare_google_send(plan, &CancellationToken::new()).unwrap();
-    let frozen = store.google_send_finish(proof).unwrap();
-    let send = store
-        .google_send_claim(
-            &scope(&a),
-            "send-request",
-            frozen["revision"].as_i64().unwrap(),
-        )
-        .unwrap();
-    let accepted = store
-        .google_send_outcome(
-            &send,
-            GoogleSendOutcome::Accepted {
-                message_id: "accepted".into(),
-                thread_id: "thread".into(),
-            },
-        )
-        .unwrap();
-    let journals = |s: &Store| {
-        s.db.prepare("SELECT id,json,blob_hash FROM capture_operations ORDER BY id")
-            .unwrap()
-            .query_map([], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
-                ))
-            })
-            .unwrap()
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .unwrap()
-    };
-    let receipts = |s: &Store| {
-        s.db.prepare(
-            "SELECT request_id,fingerprint,result_json FROM operations ORDER BY request_id",
-        )
-        .unwrap()
-        .query_map([], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                r.get::<_, String>(1)?,
-                r.get::<_, String>(2)?,
-            ))
-        })
-        .unwrap()
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .unwrap()
-    };
-    let before_journals = journals(&store);
-    let before_receipts = receipts(&store);
-    let before = draft(&mut store, &a, &sent);
-    crate::test_profiles::restore_schema_fourteen(&store.db);
-    drop(store);
-    let mut store = Store::open_live(dir.path()).unwrap();
-    assert_eq!(journals(&store), before_journals);
-    assert_eq!(receipts(&store), before_receipts);
-    assert_eq!(draft(&mut store, &a, &sent), before);
-    let google_send::GoogleSendIntent::Reply(replay) =
-        store.google_send_intent(&scope(&a), &request).unwrap()
-    else {
-        panic!()
-    };
-    assert_eq!(replay, accepted);
-    assert_eq!(
-        store.google_draft_status(&a.account, &local).unwrap()["state"],
-        "acceptance_unknown"
-    );
 }

@@ -65,8 +65,10 @@ bool GuiSettingsSelfTest::click(const QString &name) {
     if (visible.isEmpty()) return false;
     const auto position = visible.center();
     const QPointF global = m_window->mapToGlobal(position.toPoint());
+    QMouseEvent move(QEvent::MouseMove, position, global, Qt::NoButton, Qt::NoButton, Qt::NoModifier);
     QMouseEvent press(QEvent::MouseButtonPress, position, global, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
     QMouseEvent release(QEvent::MouseButtonRelease, position, global, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(m_window, &move);
     QCoreApplication::sendEvent(m_window, &press); QCoreApplication::sendEvent(m_window, &release);
     return true;
 }
@@ -170,12 +172,12 @@ void GuiSettingsSelfTest::step() {
         if (!click("settingsPage_Accounts")) return;
         ++m_stage; break;
     case 4:
-        if (!type("accountName_windscribe", "")) return;
-        key(item("accountName_windscribe"), Qt::Key_Return);
+        if (!item("editAccountName")) { click("syncService_windscribe_mail"); return; }
+        if (!type("editAccountName", "")) return;
         ++m_stage; break;
     case 5: {
-        auto status = item("settingsStatus");
-        if (!status || status->property("text").toString() != "Use a display name between 1 and 80 characters." || item("accountName_windscribe")->property("text").toString() != "") { finish("Empty name validation did not retain the native field and visible error."); return; }
+        auto name = item("editAccountName"), save = item("saveAccountEdit");
+        if (!name || !save || name->property("text").toString() != "" || save->isEnabled()) { finish("Empty name validation did not retain the editor value or disable Save."); return; }
         ++m_stage;
         cli({"accounts"}, [this](auto result) {
             for (const auto &value : result["accounts"].toArray()) if (value.toObject()["id"].toString() == "windscribe") {
@@ -186,8 +188,7 @@ void GuiSettingsSelfTest::step() {
         break;
     }
     case 6:
-        if (!type("accountName_windscribe", m_name)) return;
-        key(item("accountName_windscribe"), Qt::Key_Return);
+        if (!type("editAccountName", m_name) || !click("saveAccountEdit")) return;
         ++m_stage; break;
     case 7:
         if (!saved() || m_backend.currentAccount()["name"].toString() != m_name) return;
@@ -317,7 +318,7 @@ void GuiSettingsSelfTest::step() {
             if (!ok) { finish("Could not observe Calendar settings before appearance check."); return; }
             if (result["calendar_generation"].toInteger(-1) != m_backend.m_calendarRevision
                 || !m_backend.calendarReady() || !m_backend.timelineReady()) return;
-            m_defaultFontSize = item("settingsPage_General")->property("font").value<QFont>().pixelSize();
+            m_defaultFontSize = item("settingsPage_General")->property("font").value<QFont>().pointSizeF();
             m_calendarSnapshotGeneration = m_backend.m_calendarGeneration;
             m_appearanceRevision = m_backend.m_revision;
             if (!click("theme_paper")) return;
@@ -333,17 +334,17 @@ void GuiSettingsSelfTest::step() {
         ++m_stage; break;
     case 33:
         if (!saved() || m_backend.preferences()["text_size"] != "large") return;
-        if (item("settingsPage_General")->property("font").value<QFont>().pixelSize() <= m_defaultFontSize) { finish("Large text did not scale the native sidebar control."); return; }
+        if (item("settingsPage_General")->property("font").value<QFont>().pointSizeF() <= m_defaultFontSize) { finish("Large text did not scale the native sidebar control."); return; }
         if (!click("textSize_small")) return;
         ++m_stage; break;
     case 34:
         if (!saved() || m_backend.preferences()["text_size"] != "small") return;
-        if (item("settingsPage_General")->property("font").value<QFont>().pixelSize() >= m_defaultFontSize) { finish("Small text did not scale the native sidebar control."); return; }
+        if (item("settingsPage_General")->property("font").value<QFont>().pointSizeF() >= m_defaultFontSize) { finish("Small text did not scale the native sidebar control."); return; }
         if (!click("textSize_default") || !click("theme_graphite")) return;
         ++m_stage; break;
     case 35:
         if (!saved() || m_backend.preferences()["text_size"] != "default" || m_backend.preferences()["theme"] != "graphite") return;
-        if (m_window->color() != QColor("#0E0F11") || item("settingsPage_General")->property("font").value<QFont>().pixelSize() != m_defaultFontSize) { finish("Default typography or Graphite palette did not restore."); return; }
+        if (m_window->color() != QColor("#0E0F11") || item("settingsPage_General")->property("font").value<QFont>().pointSizeF() != m_defaultFontSize) { finish("Default typography or Graphite palette did not restore."); return; }
         if (!click("theme_terminal") || !click("startup_calendar")) return;
         ++m_stage; break;
     case 36:

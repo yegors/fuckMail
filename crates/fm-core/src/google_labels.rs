@@ -495,7 +495,11 @@ impl Store {
             return Err(stale());
         }
         let granted = fm_google::auth::ScopeSet::new(&scopes);
-        if write && !granted.mail_write() || generation.is_some() && !granted.mail_read() {
+        if write
+            && (!granted.mail_write()
+                || !crate::preferences::google_write_enabled(&self.db, account, "mail")?)
+            || generation.is_some() && !granted.mail_read()
+        {
             return Err(err(
                 "capability_unavailable",
                 "Google mail permission is required",

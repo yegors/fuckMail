@@ -111,6 +111,11 @@ def bootstrap():
         missing = [name for name in target.get("required_sdk_files", []) if not (qt / name).exists()]
         if missing:
             raise RuntimeError("Official Qt kit is incomplete after acquisition: " + ", ".join(missing))
+    if not (qt / "lib/cmake/Qt6Multimedia/Qt6MultimediaConfig.cmake").exists():
+        if not managed:
+            raise RuntimeError("FM_QT_ROOT must include the matching Qt Multimedia module")
+        run(PYTHON, ROOT / "scripts/bootstrap_qt.py", "install-qt", target["aqt_host"], "desktop", CONFIG["qt"],
+            target["aqt_arch"], "-O", TOOLS / "Qt", "--noarchives", "-m", "qtmultimedia", env=env)
     selected = rust_version()
     compiler = shutil.which("rustc", path=env["PATH"])
     actual = run(compiler, "--version", env=env, capture=True).split()[1] if compiler else None
@@ -333,7 +338,7 @@ def package(preset):
     run(managed_tool("cmake"), "--install", ROOT / "build" / preset, "--prefix", stage, env=env)
     (stage / "README.txt").write_text(
         "fuckMail Phase 2 feedback build (unsigned)\n\n"
-        "Starts with an empty local database. No demo accounts or mock mail.\n"
+        "Schema 32 starts with an empty local database. Close older copies and move the complete old fuckMail/default profile directory before launch; old schemas are refused.\n"
         "Launch fuckmail-gui (inside the .app on macOS, bin elsewhere).\n"
         "Open Settings > Accounts > Connect Google account, enter your email, and continue with Google in your browser.\n"
         "Google sign-in requires the app registration included by the build's developer. No per-account JSON file is needed.\n"

@@ -44,7 +44,7 @@ ColumnLayout {
     }
     RowLayout {
         Layout.fillWidth: true; spacing: 10
-        Text { text: "Google labels · " + ((backend.accounts.find(function(a) { return a.id === setup.account }) || {}).name || setup.account); color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight }
+        Text { text: "Google labels · " + ((backend.accounts.find(function(a) { return a.id === setup.account }) || {}).name || setup.account); color: Theme.muted; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText; Layout.fillWidth: true; elide: Text.ElideRight }
         FmButton { objectName: "googleLabelsRefresh"; text: setup.state.refreshing ? "Refreshing…" : "Refresh Google labels"; outlined: true; implicitHeight: 30; enabled: !setup.busy && setup.refreshReady; onClicked: backend.refreshGoogleLabels(setup.account) }
         FmButton { objectName: "googleLabelsCancelRefresh"; text: "Cancel"; visible: !!setup.state.refreshing; implicitHeight: 30; onClicked: backend.cancelGoogleOperation(setup.account, "") }
     }
@@ -52,13 +52,13 @@ ColumnLayout {
         text: !setup.state.available ? "No cached Google labels yet. Start sync in Accounts, then refresh labels."
             : setup.state.stale_connection || setup.state.connection_state !== "connected" ? "These cached labels are from an earlier connection. You can save links locally; refresh Google labels when sync is available."
             : "Link an existing Google user label to a local label. This setup does not create or rename labels on Google."
-        color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); wrapMode: Text.Wrap; Layout.fillWidth: true
+        color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); wrapMode: Text.Wrap; Layout.fillWidth: true
     }
     ColumnLayout {
         Layout.fillWidth: true; spacing: 8; enabled: !setup.busy && !setup.state.pending
         RowLayout {
             Layout.fillWidth: true; spacing: 10
-            Text { text: "Local label"; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); Layout.preferredWidth: 82 }
+            Text { text: "Local label"; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: 82 }
             FmComboBox {
                 id: localLabel; objectName: "googleLabelsLocalCategory"; Layout.fillWidth: true; implicitHeight: 30
                 model: ["Create a local label"].concat(setup.categories.map(function(category) { return category.name }))
@@ -73,7 +73,7 @@ ColumnLayout {
         }
         RowLayout {
             Layout.fillWidth: true; spacing: 10
-            Text { text: "Google label"; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); Layout.preferredWidth: 82 }
+            Text { text: "Google label"; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: 82 }
             FmComboBox {
                 id: googleLabel; objectName: "googleLabelsProviderLabel"; Layout.fillWidth: true; implicitHeight: 30
                 model: setup.userLabels.map(function(label) { return label.name || label.id })
@@ -89,11 +89,11 @@ ColumnLayout {
         }
         RowLayout {
             visible: !setup.selectedCategoryId.length; Layout.fillWidth: true; spacing: 10
-            Text { text: "Name"; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); Layout.preferredWidth: 82 }
-            TextField { id: localName; objectName: "googleLabelsCreateName"; Layout.fillWidth: true; implicitHeight: 32; maximumLength: 256; placeholderText: "Local label name"; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); background: Rectangle { color: Theme.canvas; border.color: Theme.controlBorder; radius: 5 } }
+            Text { text: "Name"; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: 82 }
+            TextField { id: localName; objectName: "googleLabelsCreateName"; Layout.fillWidth: true; implicitHeight: 32; maximumLength: 256; placeholderText: "Local label name"; color: Theme.text; placeholderTextColor: Theme.subtle; selectByMouse: true; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); background: Rectangle { color: Theme.canvas; border.color: Theme.controlBorder; radius: 5 } }
         }
-        Text { visible: setup.selectedCategoryId.length > 0; text: setup.expectedProviderLabelId ? "Current Google label: " + setup.expectedProviderLabelId : "This local label has no Google link."; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
-        Text { visible: setup.catalogChanged || setup.mappingChanged; text: "The catalog or link changed. Choose the local and Google labels again before saving."; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
+        Text { visible: setup.selectedCategoryId.length > 0; text: setup.expectedProviderLabelId ? "Current Google label: " + setup.expectedProviderLabelId : "This local label has no Google link."; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
+        Text { visible: setup.catalogChanged || setup.mappingChanged; text: "The catalog or link changed. Choose the local and Google labels again before saving."; color: Theme.accent; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
     }
     RowLayout {
         Layout.fillWidth: true; spacing: 8
@@ -114,9 +114,9 @@ ColumnLayout {
     Text {
         visible: backend.googleLabelState.account === setup.account && backend.googleLabels.some(function(label) { return !label.present })
         text: "Unavailable linked Google labels: " + backend.googleLabels.filter(function(label) { return !label.present }).map(function(label) { return label.name || label.id }).join(", ")
-        color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true
+        color: Theme.accent; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true
     }
-    Text { visible: !!setup.state.status; text: setup.state.status || ""; color: Theme.accent; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
+    Text { visible: !!setup.state.status; text: setup.state.status || ""; color: Theme.accent; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
     FmConfirmDialog {
         id: remapConfirmation; objectName: "googleLabelsRemapConfirmation"
         title: "Change the Google label link?"

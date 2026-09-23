@@ -266,8 +266,10 @@ bool GuiSelfTest::click(const QString &objectName) {
     if (!item || !window || !item->isVisible() || !item->isEnabled()) return false;
     const QPointF position = item->mapToScene({item->width() / 2, item->height() / 2});
     const QPointF global = window->mapToGlobal(position.toPoint());
+    QMouseEvent move(QEvent::MouseMove, position, global, Qt::NoButton, Qt::NoButton, Qt::NoModifier);
     QMouseEvent press(QEvent::MouseButtonPress, position, global, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
     QMouseEvent release(QEvent::MouseButtonRelease, position, global, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(window, &move);
     QCoreApplication::sendEvent(window, &press);
     QCoreApplication::sendEvent(window, &release);
     return true;

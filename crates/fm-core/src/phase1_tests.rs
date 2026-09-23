@@ -302,51 +302,6 @@ fn phase1_signature_snapshot_capture_discard_and_history_are_durable() {
 }
 
 #[test]
-fn phase1_schema4_upgrade_preserves_existing_fixture_and_authored_state() {
-    let dir = tempfile::tempdir().unwrap();
-    let db = Connection::open(dir.path().join("store.sqlite3")).unwrap();
-    db.execute_batch(include_str!("schema.sql")).unwrap();
-    db.execute_batch(include_str!("migration-003-drafts.sql"))
-        .unwrap();
-    db.execute_batch(include_str!("migration-003-google.sql"))
-        .unwrap();
-    db.execute_batch(include_str!("migration-004-calendar.sql"))
-        .unwrap();
-    db.execute_batch(include_str!("migration-004-assist.sql"))
-        .unwrap();
-    db.execute_batch("PRAGMA user_version=4; INSERT INTO meta VALUES('fixture_revision',1); INSERT INTO accounts VALUES('original','Original account','original@example.com','synthetic'); INSERT INTO conversations VALUES('original','thread','Keep me',7); INSERT INTO drafts(account,conversation_id,body,revision,body_html,attachments_json) VALUES('original','thread','Old authored text',9,'<p>Old authored text</p>','[]'); INSERT INTO views VALUES('original',2,'{\"query\":\"old search\"}');").unwrap();
-    drop(db);
-    let mut store = Store::open(dir.path()).unwrap();
-    assert_eq!(
-        store.handle("status", None, json!({})).unwrap()["fixture_revision"],
-        1
-    );
-    assert_eq!(
-        store
-            .db
-            .query_row("SELECT COUNT(*) FROM accounts", [], |r| r.get::<_, i64>(0))
-            .unwrap(),
-        1
-    );
-    let saved: (String, i64, String) = store
-        .db
-        .query_row(
-            "SELECT body,revision,signature_text FROM drafts WHERE account=?1",
-            params!["original"],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )
-        .unwrap();
-    assert_eq!(
-        saved,
-        ("Old authored text".into(), 9, "—\nOriginal account".into())
-    );
-    assert_eq!(
-        store.view("original").unwrap()["view"]["query"],
-        "old search"
-    );
-}
-
-#[test]
 fn phase1_discarded_reply_restarts_with_current_identity_and_outgoing_reply_targets_recipient() {
     let dir = tempfile::tempdir().unwrap();
     let mut store = Store::open(dir.path()).unwrap();
@@ -466,7 +421,10 @@ fn phase1_status_filters_use_entire_conversation_and_source_filters_share_one_me
         .conversations(ACCOUNT, &json!({"grouped":true,"offset":1000}))
         .unwrap();
     assert_eq!(all["conversations"], json!([]));
-    assert_eq!(all["filtered_conversation_count"], 90);
+    assert_eq!(
+        all["filtered_conversation_count"],
+        all["account_counts"]["folder_conversation_counts"]["inbox"]
+    );
     let snapshot = store.conversation(ACCOUNT, THREAD).unwrap();
     store.handle("flag",Some(ACCOUNT),json!({"id":THREAD,"message_ids":snapshot["message_ids"],"read":true,"starred":false,"expected_revision":snapshot["revision"],"request_id":"classified-done"})).unwrap();
     let done = store

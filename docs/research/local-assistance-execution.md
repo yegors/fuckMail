@@ -207,7 +207,7 @@ Whole-product readiness remains **0/9**. Current Windows/Linux qualification, a 
 
 ## Phase 0 durable fake-assistance integration
 
-2026-09-11. This experiment consumes [Local assistance revision 3](../contracts/local-ai.md), shared fixture revision 1 and the existing `fm-assist` output validator. It implements [Core's durable adapter](../../crates/fm-core/src/assist_store.rs) and the [schema-4 tables](../../crates/fm-core/src/migration-004-assist.sql). No model, network transport, IPC command or GUI model control is introduced.
+2026-09-11. This experiment consumes [Local assistance revision 3](../contracts/local-ai.md), shared fixture revision 1 and the existing `fm-assist` output validator. It implements [Core's durable adapter](../../crates/fm-core/src/assist_store.rs) and the [historical schema-4 tables](https://github.com/yegors/fuckMail/blob/3168800/crates/fm-core/src/migration-004-assist.sql). No model, network transport, IPC command or GUI model control is introduced.
 
 ## What is connected
 

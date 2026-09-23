@@ -5,6 +5,17 @@
 #include <QTimeZone>
 #include <QJsonDocument>
 #include <QDesktopServices>
+#include <QApplication>
+#include <QThreadPool>
+#include <cmath>
+#include <algorithm>
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <mmsystem.h>
+#endif
 
 namespace {
 QVariantMap calendarPolicies(const QVariantList &sources) {
@@ -136,7 +147,7 @@ void MailBackend::pollNotifications() {
             request("calendar_reminder_ack", account, params, [this, generation, event, key, account](auto receipt, bool acknowledged) {
                 if (generation != m_notificationGeneration || !acknowledged || m_shutdown || accountRemoved(account)
                     || !reminderReceiptMatches(receipt, event, "shown") || m_remindersPresented.contains(key)) return;
-                auto current = receipt["event"].toObject().toVariantMap(); current["timing"] = event.value("timing");
+                auto current = receipt["event"].toObject().toVariantMap(); current["timing"] = event.value("timing"); current["due_at"] = event.value("due_at");
                 m_remindersPresented.insert(key); m_reminders.append(current); emit remindersChanged();
                 if (calendarEventHidden(current)) return;
                 emit desktopNotification(current.value("timing").toString() + " · " + current.value("title").toString(),
@@ -148,20 +159,72 @@ void MailBackend::pollNotifications() {
 
 void MailBackend::dismissCalendarReminder(const QVariantMap &event) { acknowledgeCalendarReminder(event, false); }
 void MailBackend::joinCalendarEvent(const QVariantMap &event) { acknowledgeCalendarReminder(event, true); }
-void MailBackend::acknowledgeCalendarReminder(const QVariantMap &event, bool join) {
+void MailBackend::snoozeCalendarReminder(const QVariantMap &event) { acknowledgeCalendarReminder(event, false, true); }
+void MailBackend::playReminderSound(int level) {
+    if (level < 0 || level > 2 || m_shutdown) return;
+#ifdef Q_OS_WIN
+    // Build a short PCM waveform in memory. The UI controls repeat cadence;
+    // each tone has a soft envelope so stopping one cannot click loudly.
+    constexpr int rate = 22050;
+    struct Note { double hz; double seconds; };
+    const QList<Note> notes = level == 0 ? QList<Note>{{660,0.16},{880,0.22}}
+        : level == 1 ? QList<Note>{{880,0.11},{1175,0.11},{1568,0.18}}
+        : QList<Note>{{880,0.17},{660,0.17},{880,0.17},{660,0.17}};
+    QByteArray pcm;
+    for (const auto &note : notes) {
+        const int samples = int(rate * note.seconds);
+        for (int i=0; i<samples; ++i) {
+            const double phase = std::fmod(note.hz * i / rate, 1.0);
+            const double wave = level == 0 ? std::sin(phase * 6.283185307179586)
+                : level == 1 ? 1.0 - 4.0 * std::abs(phase - 0.5)
+                : (phase < 0.5 ? 1.0 : -1.0);
+            const double envelope = std::min({1.0, i / (rate * 0.012), (samples-i-1) / (rate * 0.02)});
+            const qint16 value = qint16(wave * std::max(0.0,envelope) * (level == 2 ? 4800 : 3000));
+            pcm.append(char(value & 0xff)); pcm.append(char((value >> 8) & 0xff));
+        }
+    }
+    QByteArray wav; wav.reserve(44+pcm.size());
+    auto u16=[&wav](quint16 v){wav.append(char(v&255));wav.append(char((v>>8)&255));};
+    auto u32=[&wav](quint32 v){for(int i=0;i<4;++i)wav.append(char((v>>(8*i))&255));};
+    wav.append("RIFF",4);u32(36+pcm.size());wav.append("WAVEfmt ",8);u32(16);u16(1);u16(1);u32(rate);u32(rate*2);u16(2);u16(16);wav.append("data",4);u32(pcm.size());wav.append(pcm);
+    QThreadPool::globalInstance()->start([wave=std::move(wav)] {
+        PlaySoundA(wave.constData(), nullptr, SND_MEMORY | SND_SYNC | SND_NODEFAULT);
+    });
+#else
+    QApplication::beep();
+#endif
+}
+void MailBackend::stopReminderSound() {
+#ifdef Q_OS_WIN
+    PlaySoundA(nullptr, nullptr, 0);
+#endif
+}
+QString MailBackend::calendarReminderWhen(const QVariantMap &event) const {
+    if (event.value("all_day").toBool()) return QDate::fromString(event.value("start").toString(),Qt::ISODate).toString("dddd d MMM") + " · all day";
+    auto start=QDateTime::fromString(event.value("start").toString(),Qt::ISODate);
+    auto end=QDateTime::fromString(event.value("end").toString(),Qt::ISODate);
+    if (!start.isValid() || !end.isValid()) return {};
+    const QTimeZone zone(m_preferences.value("calendar_display_time_zone").toString().toUtf8());
+    if (zone.isValid()) { start=start.toTimeZone(zone); end=end.toTimeZone(zone); }
+    const auto minutes=std::max<qint64>(0,start.secsTo(end)/60);
+    const auto duration=minutes>=60 ? QString::number(minutes/60)+" h"+(minutes%60 ? " "+QString::number(minutes%60)+" min" : "") : QString::number(minutes)+" min";
+    return start.toString("dddd d MMM · HH:mm") + " – " + end.toString(start.date()==end.date() ? "HH:mm" : "ddd d MMM HH:mm") + " · " + duration;
+}
+void MailBackend::acknowledgeCalendarReminder(const QVariantMap &event, bool join, bool snooze) {
     if (!m_connected || m_shutdown) return;
     const auto account = event.value("account").toString();
     if (account.isEmpty() || accountRemoved(account)) return;
     const auto lifecycle = lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong();
     const auto context = notificationContext();
     const QJsonObject params{{"calendar_id",event.value("calendar_id").toString()}, {"occurrence_id",event.value("id").toString()},
-        {"start",event.value("start").toString()}, {"state","dismissed"}};
-    request("calendar_reminder_ack", account, params, [this, account, lifecycle, context, event, join](auto receipt, bool ok) {
+        {"start",event.value("start").toString()}, {"state",snooze ? "snoozed" : "dismissed"}};
+    request("calendar_reminder_ack", account, params, [this, account, lifecycle, context, event, join, snooze](auto receipt, bool ok) {
         if (!ok || m_shutdown || accountRemoved(account)
-            || context != notificationContext() || !reminderReceiptMatches(receipt, event, "dismissed")
+            || context != notificationContext() || !reminderReceiptMatches(receipt, event, snooze ? "snoozed" : "dismissed")
             || lifecycle != lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong()) return;
         const auto key = reminderKey(event);
         m_reminders.removeIf([&key](const auto &row) { return reminderKey(row.toMap()) == key; }); emit remindersChanged();
+        if (snooze) m_remindersPresented.remove(key);
         if (join) {
             const QUrl url(receipt["event"].toObject()["conference_url"].toString());
             if (url.isValid() && url.scheme() == "https" && !url.host().isEmpty() && url.userInfo().isEmpty())
@@ -312,21 +375,35 @@ void MailBackend::savePreferences() {
         if (m_shutdown) finishShutdown();
     });
 }
-void MailBackend::updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention) {
-    qint64 revision = -1;
-    for (const auto &row : m_accounts) if (row.toMap()["id"].toString() == account) revision = row.toMap()["metadata_revision"].toLongLong();
+void MailBackend::updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention, const QVariantMap &sync) {
+    qint64 revision = -1; bool retentionChanged = false;
+    for (const auto &row : m_accounts) if (row.toMap()["id"].toString() == account) {
+        revision = row.toMap()["metadata_revision"].toLongLong();
+        retentionChanged = !retention.isEmpty() && retention != row.toMap()["mail_retention"].toString();
+    }
     if (revision < 0) return;
     auto params = mutation(); params["expected_revision"] = revision; params["name"] = name; params["signature_text"] = signature;
     if (!retention.isEmpty()) params["mail_retention"] = retention;
+    if (!sync.isEmpty()) params["sync"] = QJsonObject::fromVariantMap(sync);
     m_preferencesStatus = "Saving…"; emit preferencesChanged();
     ++m_accountWrites;
-    request("account_update", account, params, [this, account](auto result, bool ok) {
+    request("account_update", account, params, [this, account, retentionChanged](auto result, bool ok) {
         --m_accountWrites;
         if (!ok) cancelShutdown();
         m_preferencesStatus = ok ? "Saved on this machine — existing replies keep their saved signature" : "Not saved — " + result["message"].toString();
         emit preferencesChanged();
         if (ok || result["code"].toString() == "stale_revision") loadAccounts();
-        if (ok) loadCalendarSources();
+        if (ok) {
+            loadCalendarSources(); loadPreferences();
+            m_mailViewCache.clear(); m_readerCache.clear(); m_sourceCache.clear(); m_bodyCache.clear();
+            if (retentionChanged && account == m_account) {
+                ++m_generation; ++m_readerLoadSerial; m_readerLoadingGeneration = -1;
+                m_readerReviewPending = false; m_readerFuture.cancel(); m_readerPrefetchFuture.cancel();
+                m_pinnedRow.clear(); m_pinnedIndex = -1; m_conversation.clear();
+                emit conversationChanged(); loadConversation(false, false);
+            }
+            loadConversations(false, true);
+        }
         emit accountPreferencesFinished(account, ok);
         if (m_shutdown) finishShutdown();
     });

@@ -1,5 +1,7 @@
 # Local protocol — protocol 1, Phase 2 additive boundary
 
+**D093 profile version:** protocol1 remains unchanged. Ordinary Windows GUI/CLI use `%LOCALAPPDATA%\fuckMail\default` as the empty live profile; `--demo-profile` selects `demo-v1`. New stores are schema32. A schema1–31 profile receives `schema_mismatch` with a fresh-start instruction; startup does not migrate or reseed it. Move the complete old default profile after all clients exit before using the new build. Historical version-specific walkthroughs below describe earlier packages only.
+
 ## D086 — explicit historical local analysis
 
 `assist_backlog {}` requires an active account and returns `{job_id,status:"scanning"}` immediately. Poll the session-owned `assist_job {job_id}`. Completed coverage has `kind:"coverage"`, `local_messages`, `google_messages:null`, `eligible`, `processed`, `missing`, `ranges:{week,month,year,all}`, account enablement flags and `as_of`. These count messages, not conversations. A missing Google total is unknown. Exclude sent, Trash, provider-deleted/Draft, missing-source-identity/empty-body, future and malformed-date messages from eligible analysis. Local totals still include retained sent/Trash mail.

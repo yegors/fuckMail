@@ -31,42 +31,57 @@ fn bounded<'a>(p: &'a Value, key: &str, max: usize) -> Result<&'a str> {
         }
     })
 }
+fn start_instant(event: &Value, window: &fm_calendar::Window) -> Result<Option<DateTime<Utc>>> {
+    let start = string(event, "start")?;
+    if event["all_day"] == true {
+        let day = NaiveDate::parse_from_str(start, "%Y-%m-%d")
+            .map_err(|_| err("storage_error", "Invalid all-day reminder date"))?;
+        Ok(window
+            .calendar_zone
+            .from_local_datetime(&day.and_hms_opt(9, 0, 0).unwrap())
+            .earliest()
+            .map(|v| v.with_timezone(&Utc)))
+    } else {
+        Ok(Some(
+            DateTime::parse_from_rfc3339(start)
+                .map_err(|_| err("storage_error", "Invalid reminder start"))?
+                .with_timezone(&Utc),
+        ))
+    }
+}
 fn due_now(
     event: &Value,
     now: DateTime<Utc>,
     window: &fm_calendar::Window,
+    default_lead: i64,
 ) -> Result<Option<DateTime<Utc>>> {
-    let start = string(event, "start")?;
-    let due = if event["all_day"] == true {
-        let day = NaiveDate::parse_from_str(start, "%Y-%m-%d")
-            .map_err(|_| err("storage_error", "Invalid all-day reminder date"))?;
-        let Some(value) = window
-            .calendar_zone
-            .from_local_datetime(&day.and_hms_opt(9, 0, 0).unwrap())
-            .earliest()
-        else {
-            return Ok(None);
-        };
-        value.with_timezone(&Utc)
-    } else {
-        DateTime::parse_from_rfc3339(start)
-            .map_err(|_| err("storage_error", "Invalid reminder start"))?
-            .with_timezone(&Utc)
+    let Some(due) = start_instant(event, window)? else {
+        return Ok(None);
     };
     let distance = due - now;
+    // Null is an explicit "no reminder" (Google useDefault:false without
+    // overrides, or the editor's None). Only an absent value uses the default.
     let lead = match event.get("reminder_minutes") {
         Some(Value::Null) => return Ok(None),
         Some(value) => value
             .as_i64()
             .filter(|v| (0..=40320).contains(v))
-            .unwrap_or(5),
-        None => 5,
+            .unwrap_or(default_lead),
+        None => default_lead,
     };
     Ok((Duration::seconds(-60)..=Duration::minutes(lead))
         .contains(&distance)
         .then_some(due))
 }
+fn default_lead(preferences: &Value) -> i64 {
+    preferences["preferences"]["default_reminder_minutes"]
+        .as_i64()
+        .unwrap_or(15)
+}
 impl Store {
+    fn default_reminder_minutes(&self) -> Result<i64> {
+        Ok(default_lead(&self.preferences()?))
+    }
     fn reminder_projection(&self, date: NaiveDate) -> Result<Value> {
         let from = date
             .pred_opt()
@@ -79,9 +94,11 @@ impl Store {
     pub(crate) fn calendar_reminders(&self, p: &Value) -> Result<Value> {
         fields(p, &["now"])?;
         let now = clock(p)?;
-        if self.preferences()?["preferences"]["notifications"] == "off" {
+        let preferences = self.preferences()?;
+        if preferences["preferences"]["notifications"] == "off" {
             return Ok(json!({"reminders":[],"coverage":null}));
         }
+        let default_lead = default_lead(&preferences);
         let Some(zone) = self.calendar_display_zone()? else {
             return Ok(json!({"reminders":[],"coverage":{"state":"display_zone_required"}}));
         };
@@ -101,19 +118,55 @@ impl Store {
                 continue;
             }
             let start = string(event, "start")?;
-            // No historical burst after a closed/sleeping client returns. Keep a
-            // shown card current until one minute after its actual start.
-            let Some(due) = due_now(event, now, &window)? else {
+            let receipt: Option<(String,i64)> = self.db.query_row(
+                "SELECT state,recorded_at FROM calendar_reminder_receipts WHERE account=?1 AND calendar_id=?2 AND occurrence_id=?3 AND start=?4",
+                params![string(event,"account")?,string(event,"calendar_id")?,string(event,"id")?,start], |r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+            if receipt
+                .as_ref()
+                .is_some_and(|(state, _)| state == "dismissed")
+            {
+                continue;
+            }
+            let due = if let Some(due) = due_now(event, now, &window, default_lead)? {
+                due
+            } else if receipt
+                .as_ref()
+                .is_some_and(|(state, _)| state == "shown" || state == "snoozed")
+            {
+                // A reminder already presented while due survives its start. A new
+                // client never alerts for an old unpresented event.
+                let Some(due) = start_instant(event, &window)? else {
+                    continue;
+                };
+                let expires = receipt.as_ref().and_then(|(state, at)| {
+                    (state == "shown" && *at < 0).then(|| at.saturating_neg().saturating_add(3600))
+                });
+                if expires.map_or(now > due + Duration::hours(1), |until| {
+                    now.timestamp() > until
+                }) {
+                    continue;
+                }
+                due
+            } else {
                 continue;
             };
-            let state: Option<String> = self.db.query_row(
-                "SELECT state FROM calendar_reminder_receipts WHERE account=?1 AND calendar_id=?2 AND occurrence_id=?3 AND start=?4",
-                params![string(event,"account")?,string(event,"calendar_id")?,string(event,"id")?,start], |r|r.get(0)).optional()?;
-            if state.as_deref() == Some("dismissed") {
+            // A negative recorded_at on a shown receipt stores the absolute
+            // snooze deadline without changing the schema-29 state constraint.
+            if receipt.as_ref().is_some_and(|(state, until)| {
+                state == "shown" && *until < 0 && now.timestamp() < until.saturating_neg()
+            }) {
                 continue;
             }
             let mut reminder = event.clone();
-            reminder["reminder_state"] = state.map(Value::String).unwrap_or(Value::Null);
+            reminder["reminder_state"] = receipt
+                .and_then(|(state, until)| {
+                    if state == "shown" && until < 0 {
+                        None
+                    } else {
+                        Some(Value::String(state))
+                    }
+                })
+                .unwrap_or(Value::Null);
             reminder["timing"] = if due <= now { "Now" } else { "Soon" }.into();
             reminder["due_at"] = due.to_rfc3339().into();
             reminders.push(reminder);
@@ -133,7 +186,7 @@ impl Store {
         let occurrence = bounded(p, "occurrence_id", 8192)?;
         let start = bounded(p, "start", 64)?;
         let state = string(p, "state")?;
-        if !matches!(state, "shown" | "dismissed") {
+        if !matches!(state, "shown" | "dismissed" | "snoozed") {
             return Err(err("invalid_request", "Unknown reminder state"));
         }
         let now = clock(p)?;
@@ -157,6 +210,18 @@ impl Store {
                     "This occurrence changed or is no longer permitted",
                 )
             })?;
+        if state == "snoozed" {
+            let previous:Option<(String,i64)>=self.db.query_row("SELECT state,recorded_at FROM calendar_reminder_receipts WHERE account=?1 AND calendar_id=?2 AND occurrence_id=?3 AND start=?4",params![account,calendar,occurrence,start],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+            if !previous
+                .as_ref()
+                .is_some_and(|(state, at)| state == "shown" && *at >= 0)
+            {
+                return Err(err(
+                    "stale_reminder",
+                    "Show this reminder before snoozing it",
+                ));
+            }
+        }
         if state == "shown" {
             let zone = self
                 .calendar_display_zone()?
@@ -168,8 +233,13 @@ impl Store {
                 &zone,
             )
             .map_err(crate::calendar_store::calendar_error)?;
+            let receipt: Option<(String,i64)> = self.db.query_row("SELECT state,recorded_at FROM calendar_reminder_receipts WHERE account=?1 AND calendar_id=?2 AND occurrence_id=?3 AND start=?4",params![account,calendar,occurrence,start],|r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+            let resumed = receipt.as_ref().is_some_and(|(state, until)| {
+                state == "shown" && *until < 0 && now.timestamp() >= -*until
+            });
             if self.preferences()?["preferences"]["notifications"] == "off"
-                || due_now(event, now, &window)?.is_none()
+                || (!resumed
+                    && due_now(event, now, &window, self.default_reminder_minutes()?)?.is_none())
             {
                 return Err(err(
                     "stale_reminder",
@@ -177,11 +247,21 @@ impl Store {
                 ));
             }
         }
+        let recorded_at = if state == "snoozed" {
+            -(now.timestamp()
+                + self.preferences()?["preferences"]["reminder_snooze_minutes"]
+                    .as_i64()
+                    .unwrap_or(5)
+                    * 60)
+        } else {
+            now.timestamp()
+        };
+        let stored_state = if state == "snoozed" { "shown" } else { state };
         self.db.execute("INSERT INTO calendar_reminder_receipts(account,calendar_id,occurrence_id,start,state,recorded_at) VALUES(?1,?2,?3,?4,?5,?6) ON CONFLICT(account,calendar_id,occurrence_id,start) DO UPDATE SET state=CASE WHEN calendar_reminder_receipts.state='dismissed' THEN 'dismissed' ELSE excluded.state END,recorded_at=excluded.recorded_at",
-            params![account,calendar,occurrence,start,state,now.timestamp()])?;
+            params![account,calendar,occurrence,start,stored_state,recorded_at])?;
         let actual: String = self.db.query_row("SELECT state FROM calendar_reminder_receipts WHERE account=?1 AND calendar_id=?2 AND occurrence_id=?3 AND start=?4",params![account,calendar,occurrence,start],|r|r.get(0))?;
         Ok(
-            json!({"account":account,"calendar_id":calendar,"occurrence_id":occurrence,"start":start,"state":actual,"event":event,"remote_data_changed":false}),
+            json!({"account":account,"calendar_id":calendar,"occurrence_id":occurrence,"start":start,"state":if state == "snoozed" && actual == "shown" { "snoozed" } else { actual.as_str() },"event":event,"remote_data_changed":false}),
         )
     }
     pub(crate) fn mail_notifications(&self, p: &Value) -> Result<Value> {

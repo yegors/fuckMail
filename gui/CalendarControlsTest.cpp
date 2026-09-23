@@ -50,7 +50,7 @@ class CalendarBackendProbe : public QObject {
     Q_PROPERTY(QVariantList calendarSources MEMBER calendarSources NOTIFY eventsChanged)
     Q_PROPERTY(QVariantList events MEMBER events NOTIFY eventsChanged)
     Q_PROPERTY(QVariantList todayEvents MEMBER todayEvents NOTIFY eventsChanged)
-    Q_PROPERTY(QVariantMap preferences MEMBER preferences CONSTANT)
+    Q_PROPERTY(QVariantMap preferences MEMBER preferences NOTIFY eventsChanged)
     Q_PROPERTY(bool calendarReady MEMBER calendarReady CONSTANT)
     Q_PROPERTY(bool timelineReady MEMBER calendarReady CONSTANT)
     Q_PROPERTY(QString todayDate MEMBER todayDate CONSTANT)
@@ -68,7 +68,7 @@ class CalendarBackendProbe : public QObject {
     Q_PROPERTY(QVariantList googleLabels MEMBER googleLabels NOTIFY googleLabelsChanged)
     Q_PROPERTY(QVariantMap googleLabelState MEMBER googleLabelState NOTIFY googleLabelsChanged)
 public:
-    bool mailCombined = true, mailActive = false;
+    bool mailCombined = false, mailActive = false;
     Q_INVOKABLE void setCalendarMailActivityContext(bool active, bool combined) { mailActive = active; if (mailCombined != combined) { mailCombined = combined; emit eventsChanged(); } }
     QVariantMap calendarMailActivity() const {
         QVariantList days;
@@ -124,6 +124,10 @@ public:
     }
     Q_INVOKABLE void cancelGoogleOperation(const QString &account, const QString &id) { lastAction = {{"account", account}, {"request_id", id}, {"action", "cancel"}}; ++actions; }
     Q_INVOKABLE void refresh() { ++refreshes; }
+    Q_INVOKABLE void setPreferences(const QVariantMap &patch) {
+        for (auto it = patch.cbegin(); it != patch.cend(); ++it) preferences[it.key()] = it.value();
+        emit eventsChanged();
+    }
     Q_INVOKABLE void remember(const QString &, const QVariant &) {}
     Q_INVOKABLE void setCalendarView(const QString &view) { calendarView = view; emit eventsChanged(); }
     Q_INVOKABLE void setCalendarDate(const QString &date) { calendarDate = calendarFrom = date; emit eventsChanged(); }
@@ -193,10 +197,10 @@ int main(int argc, char **argv) {
     app.setFont(QFont("Geist", 10));
     QTemporaryDir copy; require(copy.isValid(), "Temporary QML directory");
     require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/CalendarMailCount.qml", copy.filePath("CalendarMailCount.qml")), "Copy mail count component");
-    for (const auto name : {"FmScrollBar.qml","Theme.qml", "FmDialog.qml", "FmConfirmDialog.qml", "FmDateField.qml", "FmSwitch.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "FmTextField.qml", "CalendarOccurrenceRead.qml", "EventEditor.qml", "EventDetails.qml", "CalendarOperations.qml", "GoogleLabelSetup.qml", "CalendarView.qml", "CalendarEventList.qml", "StartupOverlay.qml"})
+    for (const auto name : {"AccountBadge.qml","ShortcutRegistry.qml","FmScrollBar.qml","Theme.qml", "FmDialog.qml", "FmConfirmDialog.qml", "FmDateField.qml", "FmSwitch.qml", "FmSegmented.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "FmTextField.qml", "CalendarOccurrenceRead.qml", "EventEditor.qml", "EventDetails.qml", "CalendarOperations.qml", "GoogleLabelSetup.qml", "CalendarView.qml", "CalendarEventList.qml", "StartupOverlay.qml"})
         require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/" + name, copy.filePath(name)), "Copy actual QML control");
     QFile module(copy.filePath("qmldir")); require(module.open(QIODevice::WriteOnly), "QML singleton directory");
-    module.write("singleton Theme 1.0 Theme.qml\n"); module.close();
+    module.write("singleton Theme 1.0 Theme.qml\nsingleton ShortcutRegistry 1.0 ShortcutRegistry.qml\n"); module.close();
     CalendarBackendProbe backend;
     QQmlApplicationEngine engine;
     bool qmlError = false;
@@ -834,12 +838,28 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     loader->setProperty("startupReady", false); require(!loader->property("visible").toBool(), "Later queries cannot replay startup animation");
     auto calendar = named(visualRoot, "calendarWorkspace");
     require(plain(calendar->property("visibleEvents")).toList().size() == 2, "Calendar defaults to combined permitted projection");
-    const auto savedSelection = backend.preferences;
-    call(named(visualRoot, "calendarCombinedToggle"), "clicked");
-    require(plain(calendar->property("visibleEvents")).toList().size() == 1 && backend.preferences == savedSelection, "Account-only display preserves saved calendar selection");
+    auto scopeNotice = named(visualRoot, "calendarHiddenScopeNotice");
+    require(!scopeNotice->property("visible").toBool(), "All-calendar view has no hidden-scope notice");
+    backend.preferences["selected_calendars"] = QVariantList{QVariantMap{{"account", "beta"}, {"calendar_id", "primary"}}};
+    emit backend.eventsChanged();
+    settle([&] { return scopeNotice->property("visible").toBool(); });
+    require(calendar->property("hiddenCalendarCount").toInt() == 2, "Restricted legacy selection discloses every hidden calendar in the current account scope");
+    require(!calendar->property("combinedAccounts").toBool() && !named(visualRoot, "calendarCombinedToggle")->property("checked").toBool(), "A saved hidden selection cannot claim All calendars is on");
+    call(named(visualRoot, "calendarShowAllFromNotice"), "clicked");
+    settle([&] { return !scopeNotice->property("visible").toBool(); });
+    require(backend.preferences.value("selected_calendars").isNull() && backend.preferences.value("calendar_account_visibility") == "all" && calendar->property("combinedAccounts").toBool(), "Show all restores the combined calendar scope");
+    backend.preferences["calendar_account_visibility"] = "current"; emit backend.eventsChanged();
+    settle([&] { return scopeNotice->property("visible").toBool(); });
+    require(calendar->property("selectedCalendarCount").toInt() == 1, "Saved current-account scope discloses the other calendar");
+    call(named(visualRoot, "calendarShowAllFromNotice"), "clicked");
+    settle([&] { return !scopeNotice->property("visible").toBool(); });
+    require(backend.preferences.value("calendar_account_visibility") == "all", "Show all clears saved account restriction");
+    const auto savedSelection = backend.preferences.value("selected_calendars");
+    backend.setPreferences({{"calendar_account_visibility","current"}});
+    require(plain(calendar->property("visibleEvents")).toList().size() == 1 && backend.preferences.value("selected_calendars") == savedSelection, "Account-only display preserves saved calendar selection");
     backend.account = "beta"; emit backend.accountChanged();
     require(plain(calendar->property("visibleEvents")).toList().first().toMap()["account"] == "beta", "Account-only display follows explicit selected account");
-    backend.account = "alpha"; emit backend.accountChanged(); call(named(visualRoot, "calendarCombinedToggle"), "clicked");
+    backend.account = "alpha"; emit backend.accountChanged(); backend.setPreferences({{"calendar_account_visibility","all"}});
     auto slot = qobject_cast<QQuickItem *>(named(visualRoot, "calendarSlot-0")); auto gridEditor = named(visualRoot, "eventEditor");
     const auto nativeMouse = [&](QEvent::Type type, const QPointF &point, Qt::MouseButton button, Qt::MouseButtons buttons) {
         QMouseEvent mouse(type, point, visualWindow->mapToGlobal(point.toPoint()), button, buttons, Qt::NoModifier); QCoreApplication::sendEvent(visualWindow, &mouse);
@@ -875,12 +895,11 @@ ApplicationWindow { width: 1100; height: 850; visible: true
         QCoreApplication::processEvents();
         const auto labelName = (QString(view) == "month" ? "calendarMonthMailCount-" : "calendarMailCount-") + backend.calendarFrom;
         const auto label = named(visualRoot, labelName.toUtf8().constData());
-        require(label && label->property("ready").toBool(), "Daily mail label exists in day/week/month");
-        require(label->property("explanation").toString().contains("24 emails received, 6 sent"), "Combined mail counts render with explicit directions");
-        require(label->property("explanation").toString().contains("Cached mail only"), "Counts disclose cached coverage");
-        call(named(visualRoot, "calendarCombinedToggle"), "clicked");
-        require(label->property("explanation").toString().contains("7 emails received, 2 sent"), "Mail counts follow Calendar account scope");
-        call(named(visualRoot, "calendarCombinedToggle"), "clicked");
+        require(label && label->property("ready").toBool(), "Daily mail pill exists in day/week/month");
+        require(label->property("day").toMap().value("received") == 7 && label->property("day").toMap().value("sent") == 2, "Counts use the selected mail account");
+        backend.setPreferences({{"calendar_account_visibility","current"}});
+        require(!backend.mailCombined && label->property("day").toMap().value("received") == 7, "Event scope does not change mail count account");
+        backend.setPreferences({{"calendar_account_visibility","all"}});
         if (!captureDir.isEmpty()) {
             for (const auto theme : {"graphite", "paper", "harbour", "terminal"}) {
                 visualRoot->setProperty("testTheme", theme);
@@ -888,6 +907,20 @@ ApplicationWindow { width: 1100; height: 850; visible: true
             }
         }
     }
+    backend.setCalendarView("month"); QCoreApplication::processEvents();
+    auto monthEvent=qobject_cast<QQuickItem *>(named(visualRoot,"calendarMonthEvent-event"));
+    require(monthEvent->isVisible()&&monthEvent->width()>0,"Month event is a separate target");
+    const auto eventPoint=monthEvent->mapToScene({monthEvent->width()/2,monthEvent->height()/2});
+    nativeMouse(QEvent::MouseButtonPress,eventPoint,Qt::LeftButton,Qt::LeftButton);
+    nativeMouse(QEvent::MouseButtonRelease,eventPoint,Qt::LeftButton,Qt::NoButton);
+    settle([&]{return named(visualRoot,"eventDetails")->property("visible").toBool();});
+    require(backend.calendarView=="month","Month event click does not open Day view");
+    call(named(visualRoot,"eventDetails"),"close");
+    auto monthCell=qobject_cast<QQuickItem *>(named(visualRoot,"calendarMonthCell-2026-09-13"));
+    const auto emptyPoint=monthCell->mapToScene({monthCell->width()-5,monthCell->height()-5});
+    nativeMouse(QEvent::MouseButtonPress,emptyPoint,Qt::LeftButton,Qt::LeftButton);
+    nativeMouse(QEvent::MouseButtonRelease,emptyPoint,Qt::LeftButton,Qt::NoButton);
+    require(backend.calendarView=="day"&&backend.calendarDate=="2026-09-13","Month empty cell opens the selected Day view");
     calendar->setProperty("visible", false); require(!backend.mailActive, "Hidden Calendar stops count queries");
     visualWindow->close();
     require(!qmlError, "Actual controls run without QML binding errors");

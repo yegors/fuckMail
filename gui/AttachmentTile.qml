@@ -1,189 +1,99 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-import QtQuick.Dialogs
+import QtMultimedia
 
 Rectangle {
     id: tile
     required property var attachment
     required property string account
+    property bool previewActive:visible
     property bool available: attachment.state === "available"
     property real maximumWidth: 280
     readonly property bool isImage: /^image\//i.test(attachment.mime_type || "") || /\.(png|jpe?g|gif|webp|bmp|ico|tiff?)$/i.test(attachment.name || "")
-    readonly property bool popupOpen: viewer.opened || picker.visible
-    property string pickerAccount: ""
-    property string pickerId: ""
-    property bool previewFinished: false
-    property bool componentReady: false
-    readonly property string identity: account + "\n" + attachment.id
+    readonly property bool isVideo: /^video\//i.test(attachment.mime_type || "") || /\.(mp4|webm|mov|m4v|mkv|avi)$/i.test(attachment.name || "")
+    readonly property bool popupOpen: false
+    readonly property string extension: (attachment.name || "").split(".").pop().toUpperCase()
+    readonly property color fileTint: extension === "PDF" ? Theme.error : ["DOC","DOCX","XLS","XLSX","CSV","PPT","PPTX"].indexOf(extension)>=0 ? Theme.ai : ["ZIP","RAR","7Z","TAR","GZ"].indexOf(extension)>=0 ? Theme.accent : Theme.muted
     property string previewTicket: ""
-    property string saveTicket: ""
     property string previewUrl: ""
+    property bool previewFinished: false
+    property string saveTicket: ""
     property string feedback: ""
     property bool saveFailed: false
-    readonly property string statusText: feedback || (!available ? "Not downloaded yet" : formatSize(attachment.size))
     property int imageWidth: 0
     property int imageHeight: 0
-    objectName: "attachment_" + attachment.id
-    width: Math.max(100, Math.min(280, maximumWidth))
-    implicitHeight: contents.implicitHeight
-    height: implicitHeight
-    radius: 5; color: Theme.bg2; border.color: Theme.line2
-
-    function formatSize(bytes) {
-        if (!(bytes >= 0)) return "Available offline"
-        if (bytes < 1024) return bytes + " B"
-        if (bytes < 1024 * 1024) return Math.ceil(bytes / 1024) + " KB"
-        return (bytes / (1024 * 1024)).toFixed(1) + " MB"
-    }
-    function loadPreview() {
-        if (visible && available && isImage && !previewTicket && !previewUrl)
-            previewTicket = backend.requestAttachmentPreview(account, attachment.id)
-    }
-    function saveTo(destination) {
-        saveFailed = false; feedback = "Saving…"
-        saveTicket = backend.saveAttachment(account, attachment.id, destination)
-    }
-    function chooseDestination() {
-        pickerAccount = account; pickerId = attachment.id
-        picker.selectedFile = backend.attachmentSaveLocation(attachment.name)
-        picker.open()
-    }
-    Component.onCompleted: { componentReady = true; loadPreview() }
-    onIdentityChanged: {
-        if (!componentReady) return
-        viewer.close(); picker.close(); previewUrl = ""; previewTicket = ""; previewFinished = false
-        imageWidth = 0; imageHeight = 0; feedback = ""; saveTicket = ""
-        loadPreview()
-    }
-    onVisibleChanged: loadPreview()
+    readonly property string identity: account+"/"+attachment.id
+    signal openMedia(var attachment)
+    objectName: "attachment_"+attachment.id
+    width: maximumWidth; height: implicitHeight; implicitHeight: (width-12)*10/16+64
+    radius:8; color:Theme.canvas; border.color:tileHover.hovered ? Theme.line3 : Theme.line2
+    HoverHandler {id:tileHover}
+    function formatSize(bytes) { return bytes>=1048576 ? (bytes/1048576).toFixed(1)+" MB" : bytes>=1024 ? Math.ceil(bytes/1024)+" KB" : bytes+" B" }
+    function clock(ms) {const s=Math.floor(ms/1000);return Math.floor(s/60)+":"+String(s%60).padStart(2,"0")}
+    function loadPreview() {if(previewActive && available && (isImage || isVideo) && !previewTicket && !previewFinished)previewTicket=backend.requestAttachmentPreview(account,attachment.id)}
+    function open() {if (!available) return;if(isImage || isVideo)openMedia(attachment);else backend.openAttachment(attachment.id)}
+    Component.onCompleted: loadPreview()
+    onIdentityChanged: {previewUrl="";previewTicket="";previewFinished=false;feedback="";imageWidth=0;imageHeight=0;loadPreview()}
+    onPreviewActiveChanged: loadPreview()
     onAvailableChanged: loadPreview()
     Connections {
-        target: backend
-        function onAttachmentPreviewReady(ticket, result, ok) {
-            if (ticket !== tile.previewTicket) return
-            tile.previewFinished = true
-            if (ok && result.account === tile.account && result.id === tile.attachment.id) {
-                tile.previewUrl = result.preview_url || ""
-                tile.imageWidth = result.width || 0; tile.imageHeight = result.height || 0
-            }
+        target:backend
+        function onAttachmentPreviewReady(ticket,result,ok) {
+            if(ticket!==tile.previewTicket)return
+            tile.previewTicket="";tile.previewFinished=true
+            if(ok && result.account===tile.account && result.id===tile.attachment.id) {tile.previewUrl=result.preview_url||"";tile.imageWidth=result.width||0;tile.imageHeight=result.height||0}
         }
-        function onAttachmentSaved(ticket, error) {
-            if (ticket !== tile.saveTicket) return
-            tile.saveTicket = ""; tile.saveFailed = error.length > 0
-            tile.feedback = error || "Saved"
-        }
+        function onAttachmentSaved(ticket,error) {if(ticket!==tile.saveTicket)return;tile.saveTicket="";tile.saveFailed=!!error;tile.feedback=error}
     }
     ColumnLayout {
-        id: contents; width: parent.width; spacing: 0
+        anchors.fill:parent;spacing:0
         Button {
-            id: previewButton
-            objectName: "attachmentPreview_" + tile.attachment.id
-            visible: tile.isImage; Layout.fillWidth: true; Layout.preferredHeight: 150
-            enabled: thumbnail.status === Image.Ready
-            padding: 8
-            Accessible.name: "View image: " + tile.attachment.name
-            background: Rectangle { color: previewButton.hovered ? Theme.bg4 : "transparent"; radius: 5; border.color: previewButton.activeFocus ? Theme.focusBorder : "transparent" }
-            contentItem: Item {
-                Image {
-                    id: thumbnail; objectName: "attachmentThumbnail_" + tile.attachment.id
-                    anchors.fill: parent; source: tile.previewUrl; asynchronous: true; autoTransform: true; retainWhileLoading: true
-                    sourceSize: Qt.size(560, 300); fillMode: Image.PreserveAspectFit
+            id:previewButton;objectName:"attachmentPreview_"+tile.attachment.id
+            Layout.fillWidth:true;Layout.leftMargin:6;Layout.rightMargin:6;Layout.topMargin:6;Layout.preferredHeight:(tile.width-12)*10/16
+            enabled:tile.available;padding:0;clip:true
+            Accessible.name:"Open "+tile.attachment.name
+            background:Rectangle {radius:5;color:tile.isImage || tile.isVideo ? Theme.bg4 : Theme.bg2;border.color:Theme.line}
+            contentItem:Item {
+                Image {id:thumbnail;objectName:"attachmentThumbnail_"+tile.attachment.id;anchors.fill:parent;visible:tile.isImage;source:tile.isImage ? tile.previewUrl : "";asynchronous:true;autoTransform:true;sourceSize:Qt.size(760,475);fillMode:Image.PreserveAspectCrop}
+                Loader {
+                    id:videoPoster;anchors.fill:parent;active:tile.previewActive && tile.isVideo && !!tile.previewUrl
+                    sourceComponent:Component {
+                        VideoOutput {
+                            id:poster;fillMode:VideoOutput.PreserveAspectCrop
+                            property alias duration:posterPlayer.duration
+                            MediaPlayer {
+                                id:posterPlayer;source:tile.previewUrl;videoOutput:poster;audioOutput:AudioOutput {muted:true}
+                                onMediaStatusChanged:if(mediaStatus===MediaPlayer.LoadedMedia) {play();posterStop.start()}
+                            }
+                            Timer {id:posterStop;interval:100;onTriggered:posterPlayer.pause()}
+                        }
+                    }
                 }
-                Label {
-                    anchors.centerIn: parent; visible: thumbnail.status !== Image.Ready
-                    text: !tile.available ? "Available after sync" : (!tile.previewFinished || thumbnail.status === Image.Loading) ? "Loading preview…" : "Preview unavailable"
-                    color: Theme.muted; font.pixelSize: Theme.fontSize(12)
+                Column {
+                    anchors.centerIn:parent;visible:!tile.isImage && !tile.isVideo;spacing:0
+                    FmIcon {name:"file";size:36;color:tile.fileTint;anchors.horizontalCenter:parent.horizontalCenter}
+                    Text {text:tile.extension;anchors.horizontalCenter:parent.horizontalCenter;color:tile.fileTint;font.pointSize:Theme.fontPoints(9.5);font.weight:Font.DemiBold;font.letterSpacing:.6}
                 }
+                FmIcon {anchors.centerIn:parent;visible:tile.isImage && !tile.previewUrl;name:"image";size:22;color:Theme.inkAlpha(.22)}
+                Rectangle {anchors.centerIn:parent;visible:tile.isVideo;width:38;height:38;radius:19;color:Theme.canvasAlpha(.75);border.color:Theme.inkAlpha(.25);FmIcon {anchors.centerIn:parent;name:"play";size:12;color:Theme.text}}
+                Rectangle {visible:tile.isVideo && !!videoPoster.item && videoPoster.item.duration>0;anchors.right:parent.right;anchors.bottom:parent.bottom;anchors.margins:6;width:durationText.implicitWidth+10;height:18;radius:3;color:Theme.canvasAlpha(.75);Text {id:durationText;anchors.centerIn:parent;text:tile.clock(videoPoster.item ? videoPoster.item.duration : 0);color:Theme.text;font.pointSize:Theme.fontPoints(10.5);font.features:{"tnum":1}}}
             }
-            onClicked: { viewer.actualSize = false; viewer.open() }
+            onClicked:tile.open()
         }
         RowLayout {
-            Layout.fillWidth: true; Layout.margins: 8; spacing: 8
-            FmIcon { name: "attachment"; size: 14 }
+            Layout.fillWidth:true;Layout.leftMargin:12;Layout.rightMargin:8;Layout.topMargin:9;Layout.bottomMargin:9;spacing:8
             AbstractButton {
-                id: filenameButton
-                objectName: "attachmentOpen_" + tile.attachment.id
-                Layout.fillWidth: true; implicitHeight: 42
-                enabled: tile.available && (!tile.isImage || thumbnail.status === Image.Ready)
-                Accessible.name: "Open " + tile.attachment.name
-                background: Rectangle { color: "transparent"; radius: 3; border.color: filenameButton.activeFocus ? Theme.focusBorder : "transparent" }
-                contentItem: Column {
-                    spacing: 3
-                    Label {
-                        width: parent.width; text: tile.attachment.name; textFormat: Text.PlainText
-                        elide: Text.ElideMiddle; color: Theme.text
-                        font.pixelSize: Theme.fontSize(12); font.underline: filenameButton.hovered
-                    }
-                    Label {
-                        objectName: "attachmentStatus_" + tile.attachment.id
-                        width: parent.width; text: tile.statusText; textFormat: Text.PlainText
-                        elide: Text.ElideRight; color: tile.saveFailed ? Theme.error : Theme.muted
-                        font.pixelSize: Theme.fontSize(11)
-                        Accessible.name: tile.statusText
-                    }
+                id:filenameButton;objectName:"attachmentOpen_"+tile.attachment.id;Layout.fillWidth:true;implicitHeight:34;enabled:tile.available
+                contentItem:Column {
+                    spacing:2
+                    Text {width:parent.width;text:tile.attachment.name;elide:Text.ElideRight;color:Theme.text;font.pointSize:Theme.fontPoints(12.5);textFormat:Text.PlainText}
+                    Text {objectName:"attachmentStatus_"+tile.attachment.id;width:parent.width;text:tile.feedback || (!tile.available ? "Available after sync" : tile.formatSize(tile.attachment.size)+" · "+(tile.imageWidth ? tile.imageWidth+" × "+tile.imageHeight : tile.isVideo && videoPoster.item && videoPoster.item.duration>0 ? tile.clock(videoPoster.item.duration) : tile.extension));color:tile.saveFailed ? Theme.error : Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(11.5);elide:Text.ElideRight}
                 }
-                ToolTip.visible: hovered || (activeFocus && tile.saveFailed)
-                ToolTip.text: tile.saveFailed ? tile.feedback : tile.attachment.name
-                onClicked: {
-                    if (tile.isImage) { viewer.actualSize = false; viewer.open() }
-                    else backend.openAttachment(tile.attachment.id)
-                }
+                onClicked:tile.open()
+                FmToolTip {visible:filenameButton.hovered;text:tile.feedback || tile.attachment.name}
             }
-            FmButton {
-                objectName: "attachmentSave_" + tile.attachment.id
-                iconName: tile.saveTicket ? "refresh" : tile.feedback === "Saved" ? "check" : "download"; implicitWidth: 28; implicitHeight: 28
-                enabled: tile.available && !tile.saveTicket
-                tip: "Save attachment"; Accessible.name: "Save " + tile.attachment.name
-                onClicked: tile.chooseDestination()
-            }
-        }
-    }
-
-    FileDialog {
-        id: picker; title: "Save attachment"; fileMode: FileDialog.SaveFile
-        onAccepted: { tile.saveFailed = false; tile.feedback = "Saving…"; tile.saveTicket = backend.saveAttachment(tile.pickerAccount, tile.pickerId, selectedFile) }
-    }
-    FmDialog {
-        id: viewer; objectName: "attachmentViewer_" + tile.attachment.id
-        property bool actualSize: false
-        title: tile.attachment.name
-        width: Math.min(1100, parent ? parent.width - 48 : 1100)
-        height: Math.min(800, parent ? parent.height - 48 : 800)
-        standardButtons: Dialog.Close
-        contentItem: ColumnLayout {
-            spacing: 12
-            RowLayout {
-                Layout.fillWidth: true
-                Label {
-                    Layout.fillWidth: true
-                    text: tile.feedback || tile.imageWidth + " × " + tile.imageHeight
-                    textFormat: Text.PlainText; elide: Text.ElideRight
-                    color: tile.saveFailed ? Theme.error : Theme.muted; font.pixelSize: Theme.fontSize(12)
-                    HoverHandler { id: modalStatusHover }
-                    ToolTip.visible: modalStatusHover.hovered && tile.saveFailed; ToolTip.text: tile.feedback
-                }
-                FmButton { objectName: "attachmentActualSize_" + tile.attachment.id; text: viewer.actualSize ? "Fit image" : "Actual size"; outlined: true; onClicked: { viewer.actualSize = !viewer.actualSize; imageScroll.contentX = 0; imageScroll.contentY = 0 } }
-                FmButton { iconName: "download"; tip: "Save attachment"; Accessible.name: "Save attachment"; enabled: !tile.saveTicket; onClicked: tile.chooseDestination() }
-            }
-            Flickable {
-                id: imageScroll; Layout.fillWidth: true; Layout.fillHeight: true; clip: true
-                contentWidth: viewer.actualSize ? Math.max(width, tile.imageWidth) : width
-                contentHeight: viewer.actualSize ? Math.max(height, tile.imageHeight) : height
-                boundsBehavior: Flickable.StopAtBounds
-                ScrollBar.vertical: FmScrollBar {}
-                ScrollBar.horizontal: FmScrollBar {}
-                Image {
-                    width: viewer.actualSize ? tile.imageWidth : imageScroll.width
-                    height: viewer.actualSize ? tile.imageHeight : imageScroll.height
-                    x: Math.max(0, (imageScroll.contentWidth - width) / 2)
-                    y: Math.max(0, (imageScroll.contentHeight - height) / 2)
-                    source: viewer.visible ? tile.previewUrl : ""; asynchronous: true; autoTransform: true; retainWhileLoading: true
-                    fillMode: Image.PreserveAspectFit
-                    sourceSize: viewer.actualSize ? Qt.size(tile.imageWidth, tile.imageHeight) : Qt.size(Math.ceil(imageScroll.width * 2), Math.ceil(imageScroll.height * 2))
-                }
-            }
+            MessageHeaderButton {objectName:"attachmentSave_"+tile.attachment.id;iconName:"download";iconSize:13;enabled:tile.available && !tile.saveTicket;tip:"Download";onClicked:tile.saveTicket=backend.downloadAttachment(tile.account,tile.attachment.id,tile.attachment.name)}
         }
     }
 }
-

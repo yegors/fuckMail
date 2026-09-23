@@ -31,12 +31,27 @@ QtObject {
     readonly property bool light: current.scheme === "light"
     readonly property real fontScale: textSize === "small" ? 13 / 14 : textSize === "large" ? 15.5 / 14 : 1
     readonly property string fontFamily: "Geist"
-    function fontSize(base) { return Math.max(1, Math.round(base * fontScale)) }
+    // Design sizes include half pixels (12.5px). QFont pixel sizes are whole
+    // numbers, so fonts use fontPoints(); fontSize() stays exact for geometry.
+    function fontSize(base) { return Math.max(1, base * fontScale) }
+    property FontMetrics pointMetrics: FontMetrics { font.family: theme.fontFamily; font.pointSize: 75 }
+    readonly property real pointsPerPixel: proseMetrics.height > 50 && pointMetrics.height > 0 ? 75 * proseMetrics.height / (100 * pointMetrics.height) : 0.75
+    function fontPoints(base) { return fontSize(base) * pointsPerPixel }
+    function fontPixels(font) { return font.pixelSize > 0 ? font.pixelSize : font.pointSize / pointsPerPixel }
     // Only presentation markup is generated here; message/model text remains
     // literal, including any HTML-looking content supplied by a sender.
+    // Rich-text line-height percentages scale the font's natural line height,
+    // whereas the design's CSS multiples scale the font size.
+    property FontMetrics proseMetrics: FontMetrics { font.family: theme.fontFamily; font.pixelSize: 100 }
+    readonly property real naturalLeading: proseMetrics.height > 50 ? proseMetrics.height / 100 : 1
+    function leadingPercent(multiple) { return Math.round(multiple / naturalLeading * 100) }
+    // Qt draws a FixedHeight line at its top; CSS centres it in the line box.
+    // Use as topPadding/bottomPadding to put glyphs where half-leading would.
+    function leadingTop(font, lineHeight) { return (lineHeight - fontPixels(font) * naturalLeading) / 2 }
+    function leadingBottom(font, lineHeight) { return -Math.abs(leadingTop(font, lineHeight)) }
     function proseMarkup(value, leading) {
         const escaped = String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\n/g, "<br>")
-        return '<p style="white-space:pre-wrap;line-height:' + Math.round(leading * 100) + '%;margin:0">' + escaped + '</p>'
+        return '<p style="white-space:pre-wrap;line-height:' + leadingPercent(leading) + '%;margin:0">' + escaped + '</p>'
     }
     function withAlpha(value, opacity) { return Qt.rgba(value.r, value.g, value.b, Math.max(0, Math.min(1, opacity))) }
     function inkAlpha(opacity) { return withAlpha(text, opacity) }

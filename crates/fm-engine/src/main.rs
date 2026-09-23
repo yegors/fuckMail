@@ -621,10 +621,13 @@ async fn session_inner(
             session_write(stream.get_mut(), &reply, &engine_cancel).await?;
             continue;
         }
-        let cadence_changed = request.method == "preferences_save"
+        let cadence_changed = (request.method == "preferences_save"
             && ["sync_every_minutes", "google_sync_services"]
                 .iter()
-                .any(|key| request.params["preferences"].get(key).is_some());
+                .any(|key| request.params["preferences"].get(key).is_some()))
+            || (request.method == "account_update"
+                && (request.params.get("sync").is_some()
+                    || request.params.get("mail_retention").is_some()));
         let id = request.id.clone();
         let Ok(permit) = foreground_slots.clone().try_acquire_owned() else {
             session_write(
@@ -1125,6 +1128,7 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
         "google_sync_status",
         "google_sync_busy",
         "mail_filing",
+        "mail_undo",
         "google_mail_mutation_status",
         "google_calendar_write",
         "google_calendar_reconcile",
@@ -1219,15 +1223,9 @@ mod session_tests {
     }
 
     #[tokio::test]
-    async fn hello_preserves_migrated_fixture_revision_and_advertises_additive_methods() {
-        for expected_fixture in [1, 3] {
+    async fn hello_reports_fresh_fixture_revision_and_advertises_additive_methods() {
+        for expected_fixture in [3] {
             let temp = tempfile::tempdir().unwrap();
-            if expected_fixture == 1 {
-                let db = rusqlite::Connection::open(temp.path().join("store.sqlite3")).unwrap();
-                db.execute_batch(include_str!("../../fm-core/src/schema.sql"))
-                    .unwrap();
-                db.execute_batch("INSERT INTO meta VALUES('fixture_revision',1); INSERT INTO accounts VALUES('original','Original identity','original@example.test','synthetic');").unwrap();
-            }
             let mut store = fm_core::Store::open(temp.path()).unwrap();
             let metadata = Arc::new(handshake_metadata(&mut store).unwrap());
             let (client, server) = tokio::io::duplex(8192);

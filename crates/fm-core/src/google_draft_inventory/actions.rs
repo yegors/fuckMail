@@ -12,8 +12,6 @@ mod deletion;
 pub use authoring::prepare_google_draft_authoring;
 pub use deletion::*;
 #[cfg(test)]
-mod migration_tests;
-#[cfg(test)]
 mod tests;
 
 pub struct GoogleDraftActionRemote {

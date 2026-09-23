@@ -140,30 +140,6 @@ pub(crate) fn validate_routing(routing: &Value) -> Result<()> {
 }
 
 impl Store {
-    pub(crate) fn freeze_migrated_drafts(&self) -> Result<()> {
-        let mut statement = self.db.prepare(
-            "SELECT account,draft_id,conversation_id FROM drafts WHERE routing_json IS NULL",
-        )?;
-        let rows = statement
-            .query_map([], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, String>(2)?,
-                ))
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        drop(statement);
-        for (account, draft, cid) in rows {
-            // The old schema never retained historical routing. Freeze its
-            // currently retained target without rewriting authored data/receipts.
-            let (source, hash, routing, _) = self.legacy_routing(&account, &cid)?;
-            self.db.execute("UPDATE drafts SET source_message_id=?1,source_hash=?2,routing_json=?3 WHERE account=?4 AND draft_id=?5",
-                params![source,hash,serde_json::to_string(&routing)?,account,draft])?;
-        }
-        Ok(())
-    }
-
     #[cfg(test)]
     pub(crate) fn draft(&self, account: &str, cid: &str) -> Result<Value> {
         self.composition(account, &json!({"conversation_id":cid}))

@@ -23,12 +23,21 @@ impl Store {
         let state = self.local_model_settings()?;
         let settings: Settings = serde_json::from_value(state["settings"].clone())?;
         let descriptions = settings.accounts.get(account).map(|a| &a.descriptions);
+        let auto_read = settings.accounts.get(account).map(|a| &a.auto_read);
         let mut catalog = self.categories(account)?;
         for row in catalog["categories"].as_array_mut().unwrap() {
             row["description"] = descriptions
                 .and_then(|d| d.get(row["id"].as_str().unwrap()))
                 .cloned()
                 .unwrap_or_default()
+                .into();
+            let default_auto_read = row["name"]
+                .as_str()
+                .is_some_and(|name| name.eq_ignore_ascii_case("Receipts"));
+            row["auto_read"] = auto_read
+                .and_then(|choices| choices.get(row["id"].as_str().unwrap()))
+                .copied()
+                .unwrap_or(default_auto_read)
                 .into();
             row["creation_state"] = self
                 .db
@@ -48,6 +57,7 @@ impl Store {
             match method {
                 "label_create" => &["request_id", "id", "name"],
                 "label_describe" => &["request_id", "id", "expected_description", "description"],
+                "label_auto_read" => &["request_id", "id", "expected_auto_read", "auto_read"],
                 "label_remove" => &[
                     "request_id",
                     "id",
@@ -93,6 +103,8 @@ impl Store {
         let state = self.local_model_settings()?;
         let mut settings: Settings = serde_json::from_value(state["settings"].clone())?;
         let mut settings_changed = false;
+        // Label descriptions feed model classification; Auto-read does not.
+        let mut descriptions_changed = false;
         match method {
             "label_create" => {
                 if name.is_some() || tx.query_row("SELECT EXISTS(SELECT 1 FROM google_label_creations WHERE account=?1 AND category_id=?2)",params![account,category],|r|r.get::<_,bool>(0))? {
@@ -156,6 +168,35 @@ impl Store {
                     .validate()
                     .map_err(|message| err("invalid_request", &message))?;
                 settings_changed = true;
+                descriptions_changed = description != expected;
+            }
+            "label_auto_read" => {
+                let Some(name) = name.as_deref() else {
+                    return Err(err("not_found", "Label no longer exists"));
+                };
+                let enabled = p["auto_read"]
+                    .as_bool()
+                    .ok_or_else(|| err("invalid_request", "Auto-read must be on or off"))?;
+                let expected = p["expected_auto_read"]
+                    .as_bool()
+                    .ok_or_else(|| err("invalid_request", "Supply the previous Auto-read value"))?;
+                let policy = settings.accounts.entry(account.into()).or_default();
+                let current = policy
+                    .auto_read
+                    .get(category)
+                    .copied()
+                    .unwrap_or_else(|| name.eq_ignore_ascii_case("Receipts"));
+                if current != expected {
+                    return Err(err(
+                        "stale_revision",
+                        "Auto-read changed; reload before saving",
+                    ));
+                }
+                policy.auto_read.insert(category.into(), enabled);
+                settings
+                    .validate()
+                    .map_err(|message| err("invalid_request", &message))?;
+                settings_changed = true;
             }
             "label_remove" => {
                 if name.as_deref() != Some(string(p, "expected_name")?) {
@@ -193,13 +234,17 @@ impl Store {
                 )?;
                 tx.execute("UPDATE views SET json=json_set(json,'$.category',''),revision=revision+1 WHERE account=?1 AND json_extract(json,'$.category')=?2",params![account,category])?;
                 if let Some(policy) = settings.accounts.get_mut(account) {
-                    settings_changed = policy.descriptions.remove(category).is_some();
+                    descriptions_changed = policy.descriptions.remove(category).is_some();
+                    settings_changed =
+                        descriptions_changed | policy.auto_read.remove(category).is_some();
                 }
             }
             _ => unreachable!(),
         }
         if settings_changed {
             tx.execute("INSERT INTO local_model_settings VALUES(1,?1,?2) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,settings_json=excluded.settings_json",params![state["revision"].as_i64().unwrap()+1,serde_json::to_string(&settings)?])?;
+        }
+        if descriptions_changed {
             tx.execute("DELETE FROM message_sender_kinds WHERE account=?1 AND provenance IN ('ollama','openai_compatible')",[account])?;
         }
         let result = json!({"request_id":request,"id":category,"local_only":true});

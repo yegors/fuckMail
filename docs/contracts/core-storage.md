@@ -1,5 +1,31 @@
 # Core and storage
 
+## D096 — audit corrections (Core53, schema32)
+
+`mail_undo` records human intent only for flags, filing labels and categories whose snapshot value differs from the current message, and live delivery sends only the intents written at that undo's new message revision. Unchanged labels keep provider/model state, so undoing a flag change neither blocks later model labels nor queues Gmail label removals. A message already matching its snapshot gets no delivery row.
+
+Shortening retention selects older mail by Gmail's internal received date when coverage records it, else by the header date, matching acquisition's cutoff. Conversations left without messages, drafts or assistance results are deleted in the same transaction, so account conversation counts stay truthful. After a completed Gmail page, the writer refreshes bounded planner statistics at most every five minutes, so a fresh profile's first sync does not keep empty-table search plans until restart. Consumers: GUI and CLI through the shared engine; Gmail26, Search6 and Quality69 unchanged. [Execution record](../research/search-storage.md#2026-09-23-audit-corrections).
+
+## D095 — active schema source (Core52, schema32)
+
+`fresh-schema.sql` is the sole SQL baseline for new live and synthetic profiles. Pre-reset migrations and version-2 test scaffolding are absent from the active source tree; historical versions 1–31 are still refused without modifying their profiles. Add future schema changes to the ordered post-reset migration runner. Consumers: GUI and CLI through the shared engine, Quality69. No data or wire format changes.
+
+## D093 — fresh SQLite baseline (Core51, schema32)
+
+New live and synthetic profiles create schema32 directly in one transaction. All 60 ordinary tables are `STRICT`; the baseline includes D092's expanded account-retention choices. Engines refuse every pre-reset schema (1–31) with `schema_mismatch` and never rewrite that database. Future schema steps belong in the ordered post-reset migration list, each committed with its own `user_version`. Public IDs, fixture revisions 0/3 and protocol1 remain unchanged. Keep the single serialized writer, profile lock, WAL, foreign keys and `synchronous=FULL`. Run bounded SQLite planner optimization after Store recovery and on normal close.
+
+The FTS5 table is contentless-delete and keeps the existing explicit rowid insert/delete/update paths; exact MIME and attachment bytes remain in verified external blobs. A category-first index serves `(account,category_id,message_id)` lookups. Completed Gmail page items retain hashes, revision and part receipts while releasing their staging JSON; successful published Calendar items release staging JSON while failed items retain it. Keep run/page/item proof headers and all unresolved or uncertain work. Consumers: Search6, Gmail26, Calendar30, CLI42, Mail UI67 and Quality68. [Execution record](../research/search-storage.md#2026-09-23-shared-tree-integration).
+
+## D092 — reversible mail actions and account editing (Core50, schema31)
+
+`mail_undo` restores the exact per-message flag, filing and category snapshot in an earlier mutation receipt. It requires the same account, original request ID and current expected conversation revision; retries replay the immutable result. Later writes make an old Undo stale. Live restores enqueue normal durable provider mutations, with Trash restoration before dependent label changes. No action is represented as provider-acknowledged until normal reconciliation completes.
+
+`account_update` accepts 90 days / 1 / 2 / 5 years / all retention and enabled Mail/Calendar read or read/write choices. At least one service stays enabled. Local read access narrows actual authoring and worker authority without erasing granted scopes. Editing retention resets acquisition generation/cursors; shortening removes only older local derived mail, queues unreferenced blob cleanup and refuses while affected conversations have pending writes or retained drafts. Extending makes older provider mail eligible again. Successful account sync/retention edits wake active engine sessions through the existing cadence notification. Schema30→31 rebuilds the metadata constraint while preserving exact existing values, revisions and cutoffs; older engines refuse. Consumers: CLI42, Mail UI67, Calendar29, Local assistance18 and Quality67; fixtures0/3 and protocol1 unchanged.
+
+## D090 — typed reminder preferences and model Auto-read (Core49, schema30)
+
+Calendar reminder and snooze durations use validated saved preferences. Existing events retain their own lead; a missing lead uses the default when the running client evaluates a due occurrence. A shown receipt can encode an absolute snooze deadline and return the occurrence after that time without changing the receipt table. Account-local Auto-read choices are part of typed model settings; only the new-arrival watcher may invoke the local plus durable provider-read transition, with human pending read intent taking precedence. Schema30 rejects older engines before they can drop the new settings field. Consumers: Calendar28, Local assistance17, Mail UI66, Quality66 and CLI's shared command boundary. Fixtures0/3 and protocol1 unchanged.
+
 ## D088 — received contribution projection (Core48)
 
 Google acquisition stores recognizable reply contributions in `messages.body` and FTS instead of repeated quoted history. Preserve unquoted inline answers, intentional forwards and unknown formats. Exact MIME/HTML and attachment bytes remain in the existing verified blob store, outside SQLite; original-source inspection remains available. Apply during new message preparation before the existing text bound, on the shared live/synthetic provider path. Do not rewrite the existing archive, authored drafts, submission receipts, read/star flags or source hashes. No schema migration or claim of reclaimed space in an existing database follows. Summaries/search for newly acquired messages consume the same derived body; existing source/text provenance checks remain authoritative.
@@ -76,7 +102,7 @@ D058 / P2-LLM2D limits all assistance to received mail. Reader queries expose th
 
 D056 / P2-LLM2B exposes the complete editable Ollama JSON request: system/user messages, all five variables, full response schema and generation options. No hidden envelope or schema is injected. Schema 23 archives and wraps prior prompt text, preserving model/account choices. Application output/action validation remains independent of editable instructions. Consumers: Local assistance 9/Core 32/Mail UI 34/CLI 26/Quality 34; fixtures 0/3/protocol 1 unchanged. See [the current request contract](local-ai.md) and D056 evidence.
 
-State: Draft · Revision: 47 · Updated: 2026-09-22 · Implementation: D086 implemented; scoped Rust/native/engine-CLI and signed Mac relocation/startup checks pass. Broader post-arrival scroll-restoration verification remains open. Schema29 and whole-area readiness0/9 unchanged.
+State: Draft · Revision: 49 · Updated: 2026-09-23 · Implementation: D090 scoped Core tests pass; native/package and schema upgrade/refusal evidence remain in progress. Schema30, fixtures0/3, protocol1 and whole-area readiness0/9 unchanged.
 
 D055 / P2-LLM2: one shared model and visible template (`{{labels}}`, `{{messages}}`, `{{partial}}`), combined per-message output, default-on prospective summaries/automatic single-label classification, manual precedence, and summary list previews. Schema 22 fences settings and assisted delivery; fixtures 0/3/protocol 1 unchanged. This supersedes conflicting D051–D053 delivery defaults below; historical evidence remains scoped to its original version. See the D055 decision and Local assistance 8.
 

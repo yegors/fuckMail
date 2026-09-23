@@ -10,7 +10,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 file(READ "${CMAKE_SOURCE_DIR}/scripts/toolchain.json" FM_TOOLCHAIN_JSON)
 string(JSON FM_QT_VERSION GET "${FM_TOOLCHAIN_JSON}" qt)
-find_package(Qt6 ${FM_QT_VERSION} EXACT REQUIRED COMPONENTS Quick QuickControls2 Network Widgets)
+find_package(Qt6 ${FM_QT_VERSION} EXACT REQUIRED COMPONENTS Quick QuickControls2 Network Widgets Multimedia)
 qt_standard_project_setup(REQUIRES 6.8)
 include(CTest)
 if(BUILD_TESTING)

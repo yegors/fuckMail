@@ -106,10 +106,10 @@ ColumnLayout {
             else if (kind==="jobs") panel.jobErrors=(result.items || []).filter(j=>j.error).map(j=>j.error.message).join("\n")
         }
     }
-    Text { Layout.fillWidth:true; Layout.maximumWidth:560; text:"Summarizes messages, labels new mail, and tells people from automated senders. Mail is sent to the local server you choose."; wrapMode:Text.Wrap; lineHeight:1.5; color:Theme.muted; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(13.5) }
-    Text { text:"Provider"; Layout.topMargin:14; color:Theme.inkAlpha(0.45); font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(11.5) }
+    Text { Layout.fillWidth:true; Layout.maximumWidth:560; text:"Summarizes messages, labels new mail, and tells people from automated senders. Mail is sent to the local server you choose."; wrapMode:Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight); color:Theme.muted; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(13.5) }
+    Text { text:"Provider"; Layout.topMargin:14; color:Theme.inkAlpha(0.45); font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11.5) }
     FmComboBox { objectName:"localModelProvider"; Layout.fillWidth:true; Layout.maximumWidth:360; textRole:"name"; model:panel.providers; currentIndex:panel.providers.findIndex(p=>p.id===panel.provider); onActivated:panel.changeProvider(panel.providers[currentIndex].id); Accessible.name:"Local model provider" }
-    Text { Layout.fillWidth:true; Layout.maximumWidth:560; text:panel.provider === "ollama" ? "Connect to Ollama running on this machine to list its installed models." : "Connect to LM Studio, vLLM, or another local compatible server. Its configuration controls where the model runs and its context size."; wrapMode:Text.Wrap; lineHeight:1.5; color:Theme.muted; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(13.5) }
+    Text { Layout.fillWidth:true; Layout.maximumWidth:560; text:panel.provider === "ollama" ? "Connect to Ollama running on this machine to list its installed models." : "Connect to LM Studio, vLLM, or another local compatible server. Its configuration controls where the model runs and its context size."; wrapMode:Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight); color:Theme.muted; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(13.5) }
     RowLayout {
         Layout.fillWidth:true; spacing:10
         FmTextField { objectName:"ollamaEndpoint"; Layout.fillWidth:true; Layout.maximumWidth:360; text:panel.draft.endpoint || ""; placeholderText:panel.provider === "ollama" ? "http://localhost:11434" : "http://localhost:1234"; onTextEdited:panel.editEndpoint(text); Accessible.name:"Local model endpoint" }
@@ -119,36 +119,26 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth:true; Layout.maximumWidth:560; spacing:10
         Rectangle { implicitWidth:8; implicitHeight:8; radius:4; color:panel.models.length ? Theme.accent : Theme.subtle }
-        Text { text:panel.status.length ? panel.status : "Choose a local endpoint, then Detect."; color:Theme.secondary; wrapMode:Text.Wrap; Layout.fillWidth:true; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(13) }
+        Text { text:panel.status.length ? panel.status : "Choose a local endpoint, then Detect."; color:Theme.secondary; wrapMode:Text.Wrap; Layout.fillWidth:true; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(13) }
     }
-    Text { text:"Model"; Layout.topMargin:8; color:Theme.inkAlpha(0.45); font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(11.5) }
+    Text { text:"Model"; Layout.topMargin:8; color:Theme.inkAlpha(0.45); font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11.5) }
     FmComboBox { objectName:"mailModel"; Layout.fillWidth:true; Layout.maximumWidth:360; textRole:"name"; model:panel.choices; currentIndex:panel.indexFor(); onActivated:function(index){const m=panel.choices[index];if(m)panel.edit("model",index===0?null:{name:m.name,digest:m.digest});currentIndex=Qt.binding(function(){return panel.indexFor()})} Accessible.name:"Mail model" }
-    Text { objectName:"modelUnavailable"; visible:panel.discovered && !panel.discovering && !!panel.draft.model && !panel.selectedAvailable; text:"The server no longer lists these model weights. Choose an available model."; color:Theme.secondary; wrapMode:Text.Wrap; Layout.fillWidth:true; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(12) }
-    RowLayout {
-        Layout.fillWidth:true; Layout.maximumWidth:560; Layout.topMargin:18
-        Text { text:"On new mail"; color:Theme.inkAlpha(0.45); font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(11.5); Layout.fillWidth:true }
-        FmComboBox { objectName:"assistanceAccount"; Layout.preferredWidth:160; model:backend.accounts; textRole:"name"; currentIndex:backend.accounts.findIndex(a=>a.id===panel.accountId); onActivated:panel.accountId=backend.accounts[currentIndex].id; Accessible.name:"Assistance account" }
-    }
-    ColumnLayout {
-        Layout.fillWidth:true; Layout.maximumWidth:560; spacing:0
-        FmCheckBox { objectName:"enableSummaries"; Layout.fillWidth:true; text:"Summarize messages"; description:"A short summary of the main point and anything you need to do."; checked:panel.policy.summaries || false; enabled:!!panel.accountId; onClicked:panel.accountEdit("summaries",checked) }
-        FmCheckBox { objectName:"enableClassification"; Layout.fillWidth:true; text:"Label new mail"; description:"Apply one matching label and identify human or automated senders. You can correct either."; checked:panel.policy.classification || false; enabled:!!panel.accountId; onClicked:panel.accountEdit("classification",checked) }
-    }
-    Text { text:"Prompt"; Layout.topMargin:18; color:Theme.inkAlpha(0.45); font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(11.5) }
-    Text { Layout.fillWidth:true; Layout.maximumWidth:560; text:"Sent with each incoming message. Labels and their instructions from Settings → Mail fill {{labels}}; {{messages}} contains the email being analyzed."; wrapMode:Text.Wrap; lineHeight:1.5; textFormat:Text.PlainText; color:Theme.muted; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(13.5) }
+    Text { objectName:"modelUnavailable"; visible:panel.discovered && !panel.discovering && !!panel.draft.model && !panel.selectedAvailable; text:"The server no longer lists these model weights. Choose an available model."; color:Theme.secondary; wrapMode:Text.Wrap; Layout.fillWidth:true; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(12) }
+    Text { text:"Prompt"; Layout.topMargin:18; color:Theme.inkAlpha(0.45); font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11.5) }
+    Text { Layout.fillWidth:true; Layout.maximumWidth:560; text:"Sent with each incoming message. Labels and their instructions from Settings → Mail fill {{labels}}; {{messages}} contains the email being analyzed."; wrapMode:Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight); textFormat:Text.PlainText; color:Theme.muted; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(13.5) }
     Repeater {
         model:panel.promptMessages.length
         ColumnLayout {
             required property int index
             Layout.fillWidth:true; Layout.maximumWidth:560
             readonly property string roleName:panel.promptMessages[index].role === "system" ? "System" : "User"
-            Text { text:parent.roleName; color:Theme.text; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(13) }
+            Text { text:parent.roleName; color:Theme.text; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(13) }
             TextArea {
                 objectName:"mailPrompt"+index; Layout.fillWidth:true; Layout.preferredHeight:Math.max(100,contentHeight+24)
                 text:panel.promptMessages[index].content
                 onTextChanged:if(activeFocus)panel.editMessage(index,text)
-                wrapMode:TextEdit.Wrap; textFormat:TextEdit.PlainText; selectByMouse:true; color:Theme.text
-                font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(13); padding:12
+                wrapMode:TextEdit.Wrap; textFormat:TextEdit.PlainText; selectByMouse:true; color:Theme.inkAlpha(0.85)
+                font.family:backend.fixedFontFamily(); font.pointSize:Theme.fontPoints(12.5); padding:12; leftPadding:14; rightPadding:14
                 background:Rectangle{color:Theme.bg2;radius:6;border.color:parent.activeFocus ? Theme.focusBorder : Theme.line2}
                 Accessible.name:parent.roleName+" prompt"
             }
@@ -159,6 +149,6 @@ ColumnLayout {
         FmButton { text:"Cancel edits"; enabled:panel.dirty; onClicked:panel.discard() }
         FmButton { objectName:"reloadModelSettings"; text:"Reload saved settings"; visible:panel.conflict; onClicked:panel.reloadSaved() }
     }
-    Text { visible:panel.jobErrors.length>0; text:panel.jobErrors; Layout.fillWidth:true; wrapMode:Text.Wrap; color:Theme.secondary; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(12) }
-    Text { visible:panel.models.some(m=>!m.eligible); Layout.fillWidth:true; text:panel.models.filter(m=>!m.eligible).map(m=>m.name+": "+m.reason).join("\n"); wrapMode:Text.Wrap; color:Theme.subtle; font.family:Theme.fontFamily; font.pixelSize:Theme.fontSize(11) }
+    Text { visible:panel.jobErrors.length>0; text:panel.jobErrors; Layout.fillWidth:true; wrapMode:Text.Wrap; color:Theme.secondary; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(12) }
+    Text { visible:panel.models.some(m=>!m.eligible); Layout.fillWidth:true; text:panel.models.filter(m=>!m.eligible).map(m=>m.name+": "+m.reason).join("\n"); wrapMode:Text.Wrap; color:Theme.subtle; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11) }
 }

@@ -10,6 +10,132 @@ fn percentile(samples: &mut [Duration], quantile: f64) -> f64 {
     samples[index].as_secs_f64() * 1000.0
 }
 
+/// Two accounts of generated mail with one rare token in the first account.
+fn seed_planner_mail(store: &Store, accounts: [&str; 2]) {
+    let tx = store.db.unchecked_transaction().unwrap();
+    let mut conversation = tx
+            .prepare("INSERT INTO conversations(account,id,subject,revision) VALUES(?1,?2,'Planner fixture',1)")
+            .unwrap();
+    let mut message = tx.prepare("INSERT INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash,revision) VALUES(?1,?2,?3,?4,'Fixture','fixture@example.test','reader@example.test','Planner fixture',?5,'2026-09-11T12:00:00Z',1,0,1,0,'',1)").unwrap();
+    let mut fts = tx
+            .prepare("INSERT INTO message_fts(rowid,sender,subject,body) VALUES(?1,'Fixture fixture@example.test','Planner fixture',?2)")
+            .unwrap();
+    for index in 0..6_000 {
+        let account = accounts[index % 2];
+        let conversation_id = format!("planner-{account}-{index}");
+        let message_id = format!("planner-message-{index}");
+        let body = if index == 200 {
+            "rareplannertoken"
+        } else {
+            "commonplannertoken"
+        };
+        conversation
+            .execute(params![account, conversation_id])
+            .unwrap();
+        message
+            .execute(params![
+                account,
+                message_id,
+                conversation_id,
+                message_id,
+                body
+            ])
+            .unwrap();
+        fts.execute(params![tx.last_insert_rowid(), body]).unwrap();
+    }
+    drop(fts);
+    drop(message);
+    drop(conversation);
+    tx.commit().unwrap();
+}
+
+fn assert_search_starts_at_fts(store: &Store, account: &str) {
+    let sql = format!(
+        "EXPLAIN QUERY PLAN {}",
+        crate::queries::search_matches_sql(true, &json!({"folder":"inbox"}))
+    );
+    let plan = store
+        .db
+        .prepare(&sql)
+        .unwrap()
+        .query_map(
+            params![
+                account,
+                "inbox",
+                "",
+                "\"rareplannertoken\"*",
+                20,
+                0,
+                "",
+                "",
+                None::<bool>,
+                "",
+                "",
+                ""
+            ],
+            |r| r.get::<_, String>(3),
+        )
+        .unwrap()
+        .collect::<std::result::Result<Vec<_>, _>>()
+        .unwrap();
+    let first = plan
+        .iter()
+        .find(|step| step.contains("message_fts") || step.contains("messages"))
+        .unwrap();
+    assert!(
+        first.contains("message_fts"),
+        "search should start at FTS, got {plan:?}"
+    );
+}
+
+#[test]
+fn reopened_mailbox_builds_search_statistics_and_starts_at_fts() {
+    let temp = tempfile::tempdir().unwrap();
+    let profile = temp.path().join("planner-profile");
+    let store = Store::open(&profile).unwrap();
+    seed_planner_mail(&store, ["windscribe", "personal"]);
+    drop(store);
+
+    let mut store = Store::open(&profile).unwrap();
+    let stats: i64 = store
+        .db
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_stat1 WHERE tbl='messages'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        stats > 0,
+        "opening a populated profile should collect planner statistics"
+    );
+    assert_search_starts_at_fts(&store, "windscribe");
+    let result = store
+        .handle(
+            "conversations",
+            Some("windscribe"),
+            json!({"folder":"inbox","query":"rareplannertoken","limit":20}),
+        )
+        .unwrap();
+    assert_eq!(result["conversations"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn fresh_profile_first_sync_refreshes_search_statistics_without_restart() {
+    let temp = tempfile::tempdir().unwrap();
+    // Open-time statistics are collected while this live profile is empty.
+    let store = Store::open_live(&temp.path().join("fresh-planner")).unwrap();
+    store
+        .db
+        .execute_batch(
+            "INSERT INTO accounts(id,name,email,provider) VALUES('first','First','first@example.test','google'),('second','Second','second@example.test','google');",
+        )
+        .unwrap();
+    seed_planner_mail(&store, ["first", "second"]);
+    store.refresh_planner_statistics();
+    assert_search_starts_at_fts(&store, "first");
+}
+
 #[test]
 #[ignore = "Opt-in 100k search experiment: cargo test -p fm-core --release search_100k -- --ignored --nocapture"]
 fn search_100k() {
@@ -415,8 +541,108 @@ fn mail_browse_20k() {
             .unwrap();
         changes.push(started.elapsed());
     }
+    let contentless_fts_bytes: i64 = store
+        .db
+        .query_row(
+            "SELECT COALESCE(sum(pgsize),0) FROM dbstat WHERE name LIKE 'message_fts_%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    store
+        .db
+        .execute_batch("CREATE VIRTUAL TABLE full_fts USING fts5(sender,subject,body,tokenize='unicode61 remove_diacritics 2',prefix='2 3 4'); INSERT INTO full_fts(rowid,sender,subject,body) SELECT rowid,sender_name||' '||sender_email,subject,body FROM messages;")
+        .unwrap();
+    let full_fts_bytes: i64 = store
+        .db
+        .query_row(
+            "SELECT COALESCE(sum(pgsize),0) FROM dbstat WHERE name LIKE 'full_fts_%'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    store.db.execute_batch("INSERT INTO categories(account,id,name) VALUES('windscribe','bench-common','Common'),('personal','bench-common','Common'),('windscribe','bench-selective','Selective'),('personal','bench-selective','Selective'),('windscribe','bench-write','Write probe'),('personal','bench-write','Write probe');").unwrap();
+    {
+        let tx = store.db.unchecked_transaction().unwrap();
+        let mut category = tx
+            .prepare(
+                "INSERT INTO message_categories(account,message_id,category_id) VALUES(?1,?2,?3)",
+            )
+            .unwrap();
+        for index in 0..20_000 {
+            let account = if index % 2 == 0 {
+                "windscribe"
+            } else {
+                "personal"
+            };
+            let message_id = format!("benchmark-{account}-message-{index:06}");
+            category
+                .execute(params![account, message_id, "bench-common"])
+                .unwrap();
+            if index % 101 == 0 {
+                category
+                    .execute(params![account, message_id, "bench-selective"])
+                    .unwrap();
+            }
+        }
+        drop(category);
+        tx.commit().unwrap();
+    }
+    store
+        .db
+        .execute_batch("DROP INDEX IF EXISTS message_categories_by_category; ANALYZE;")
+        .unwrap();
+    let category_write_probe = |store: &Store| {
+        let start = Instant::now();
+        let tx = store.db.unchecked_transaction().unwrap();
+        let mut insert = tx.prepare("INSERT INTO message_categories(account,message_id,category_id) VALUES(?1,?2,'bench-write')").unwrap();
+        for index in 0..20_000 {
+            let account = if index % 2 == 0 {
+                "windscribe"
+            } else {
+                "personal"
+            };
+            let message_id = format!("benchmark-{account}-message-{index:06}");
+            insert.execute(params![account, message_id]).unwrap();
+        }
+        drop(insert);
+        tx.rollback().unwrap();
+        start.elapsed().as_secs_f64() * 1000.0
+    };
+    let category_write_ms_before = category_write_probe(&store);
+    let category_sql = "SELECT message_id FROM message_categories WHERE account='windscribe' AND category_id='bench-selective'";
+    let category_probe = |store: &Store| {
+        let plan: String = store
+            .db
+            .query_row(&format!("EXPLAIN QUERY PLAN {category_sql}"), [], |row| {
+                row.get(3)
+            })
+            .unwrap();
+        let mut timings = Vec::new();
+        let mut found = 0;
+        for _ in 0..100 {
+            let start = Instant::now();
+            let mut statement = store.db.prepare_cached(category_sql).unwrap();
+            found = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .unwrap()
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .unwrap()
+                .len();
+            timings.push(start.elapsed());
+        }
+        assert!(found > 0);
+        (plan, percentile(&mut timings, 0.95))
+    };
+    let (category_plan_before, category_p95_before) = category_probe(&store);
+    store.db.execute_batch("CREATE INDEX message_categories_by_category ON message_categories(account,category_id,message_id); ANALYZE;").unwrap();
+    let category_write_ms_after = category_write_probe(&store);
+    let (category_plan_after, category_p95_after) = category_probe(&store);
+    let category_index_bytes: i64 = store.db.query_row("SELECT COALESCE(sum(pgsize),0) FROM dbstat WHERE name='message_categories_by_category'",[],|row|row.get(0)).unwrap();
     let report = json!({"generated_messages":20000,"observations":50,"profile":"fresh generated, warm OS cache, same build mode",
-        "page_p95_ms":percentile(&mut pages,0.95),"reader_p95_ms":percentile(&mut readers,0.95),"review_refresh_p95_ms":percentile(&mut changes,0.95),"first_id":first});
+        "page_p95_ms":percentile(&mut pages,0.95),"reader_p95_ms":percentile(&mut readers,0.95),"review_refresh_p95_ms":percentile(&mut changes,0.95),"first_id":first,
+        "fts_contentless_dbstat_bytes":contentless_fts_bytes,"fts_full_dbstat_bytes":full_fts_bytes,
+        "category_plan_before":category_plan_before,"category_plan_after":category_plan_after,"category_p95_ms_before":category_p95_before,"category_p95_ms_after":category_p95_after,"category_index_bytes":category_index_bytes,"category_insert_20k_ms_before":category_write_ms_before,"category_insert_20k_ms_after":category_write_ms_after});
     println!("{report}");
     if let Some(path) = std::env::var_os("FM_BROWSE_REPORT") {
         std::fs::write(path, serde_json::to_vec_pretty(&report).unwrap()).unwrap();

@@ -23,7 +23,8 @@ ApplicationWindow {
     property bool allowClose: false
     property var mailFocus: null
     property var calendarFocus: null
-    readonly property bool workspaceShortcutsAllowed: !debugConsole.opened && !startupOverlay.visible && !accountLifecycleDialogs.popupOpen && !blocksWorkspaceShortcuts(activeFocusItem)
+    readonly property bool modalReminderOpen: backend.reminders.length > 0 && !startupOverlay.visible
+    readonly property bool workspaceShortcutsAllowed: !modalReminderOpen && !debugConsole.opened && !startupOverlay.visible && !accountLifecycleDialogs.popupOpen && !blocksWorkspaceShortcuts(activeFocusItem)
     readonly property bool singleKeysAllowed: workspaceShortcutsAllowed && !typingInField(activeFocusItem)
     readonly property bool accountKeysAllowed: singleKeysAllowed && !settingsOpen && !searchPopupOpen
         && !(workspace === "mail" ? mailView.popupOpen : calendarView.popupOpen)
@@ -38,7 +39,7 @@ ApplicationWindow {
     palette.mid: Theme.scrollPalette
     palette.dark: Theme.scrollPalette
     font.family: Theme.fontFamily
-    font.pixelSize: Theme.fontSize(14)
+    font.pointSize: Theme.fontPoints(14)
     Binding { target: Theme; property: "themeId"; value: backend.preferences.theme || "graphite" }
     Binding { target: Theme; property: "textSize"; value: backend.preferences.text_size || "default" }
     Binding { target: Theme; property: "devicePixelRatio"; value: window.Screen.devicePixelRatio }
@@ -128,15 +129,14 @@ ApplicationWindow {
         startupReady: backend.startupReady === true
         startupFailed: backend.error.length > 0
     }
-    Shortcut { sequences: [StandardKey.Find, "Ctrl+K"]; enabled: window.workspaceShortcutsAllowed; onActivated: window.findMail() }
-    Shortcut { sequence: "/"; enabled: window.singleKeysAllowed && !window.settingsOpen; onActivated: window.findMail() }
-    Shortcut { sequence: "V"; enabled: window.singleKeysAllowed && !window.settingsOpen; onActivated: window.navigate(window.workspace === "mail" ? "calendar" : "mail") }
-    Shortcut { sequence: ","; enabled: window.singleKeysAllowed; onActivated: window.navigate("settings") }
-    Shortcut { sequence: "Ctrl+1"; enabled: window.workspaceShortcutsAllowed; onActivated: window.navigate("mail") }
-    Shortcut { sequence: "Ctrl+2"; enabled: window.workspaceShortcutsAllowed; onActivated: window.navigate("calendar") }
-    Shortcut { sequence: "Ctrl+,"; enabled: window.workspaceShortcutsAllowed; onActivated: window.navigate("settings") }
-    Shortcut { sequence: "Escape"; enabled: window.settingsOpen && !debugConsole.opened; onActivated: window.navigate(window.workspace) }
-    Shortcut { sequence: "Escape"; enabled: searchPopupOpen; onActivated: { searchPopup.close(); calendarSearchPopup.close() } }
+    Shortcut { sequence: "Ctrl+K"; enabled: window.workspaceShortcutsAllowed; onActivated: window.findMail() }
+    Shortcut { sequence: ShortcutRegistry.sequence("search",backend.preferences); enabled: window.singleKeysAllowed && !window.settingsOpen && window.workspace==="mail"; onActivated: window.findMail() }
+    Shortcut { sequence: ShortcutRegistry.sequence("view",backend.preferences); enabled: window.singleKeysAllowed && !window.settingsOpen; onActivated: window.navigate(window.workspace === "mail" ? "calendar" : "mail") }
+    Shortcut { sequence: ShortcutRegistry.sequence("settings",backend.preferences); enabled: window.singleKeysAllowed; onActivated: window.navigate("settings") }
+    Shortcut { sequence: "Escape"; enabled: !window.modalReminderOpen && window.settingsOpen && !settingsView.recordingShortcut && !settingsView.popupOpen && !debugConsole.opened; onActivated: window.navigate(window.workspace) }
+    Shortcut { sequence: "Escape"; enabled: !window.modalReminderOpen && searchPopupOpen; onActivated: { searchPopup.close(); calendarSearchPopup.close() } }
+    Shortcut { sequence: ShortcutRegistry.sequence("undo",backend.preferences); enabled: window.singleKeysAllowed && backend.actionToast.visible && backend.actionToast.action_label === "Undo"; onActivated: backend.activateActionToast() }
+    Shortcut { sequences: [StandardKey.Undo]; enabled: ShortcutRegistry.unassigned("Ctrl+Z",window.workspace,backend.preferences) && window.singleKeysAllowed && backend.actionToast.visible && backend.actionToast.action_label === "Undo"; onActivated: backend.activateActionToast() }
     Shortcut { sequence: "Tab"; enabled: window.accountKeysAllowed; onActivated: window.cycleAccount(1) }
     Shortcut { sequence: "Shift+Tab"; enabled: window.accountKeysAllowed; onActivated: window.cycleAccount(-1) }
     DebugConsole {
@@ -179,8 +179,8 @@ ApplicationWindow {
                     radius: 6; color: Theme.surface
                     Row {
                         id: viewTabs; anchors.centerIn: parent; spacing: 2
-                        FmButton { objectName: "mailWorkspaceButton"; height: 28; text: "Mail"; iconName: "mail"; iconSize: 13; prominent: !window.settingsOpen && window.workspace === "mail"; tip: "Mail · v"; onClicked: window.navigate("mail") }
-                        FmButton { objectName: "calendarWorkspaceButton"; height: 28; text: "Calendar"; iconName: "calendar"; iconSize: 13; prominent: !window.settingsOpen && window.workspace === "calendar"; tip: "Calendar · v"; onClicked: window.navigate("calendar") }
+                        FmButton { objectName: "mailWorkspaceButton"; height: 28; text: "Mail"; iconName: "mail"; iconSize: 13; radius: 4; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; foreground: prominent ? Theme.canvas : Theme.inkAlpha(.5); prominent: !window.settingsOpen && window.workspace === "mail"; tip: "Mail · v"; onClicked: window.navigate("mail") }
+                        FmButton { objectName: "calendarWorkspaceButton"; height: 28; text: "Calendar"; iconName: "calendar"; iconSize: 13; radius: 4; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; foreground: prominent ? Theme.canvas : Theme.inkAlpha(.5); prominent: !window.settingsOpen && window.workspace === "calendar"; tip: "Calendar · v"; onClicked: window.navigate("calendar") }
                     }
                 }
                 Item { implicitWidth: 1; implicitHeight: 20; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, 0); width: Theme.ruleWidth; height: parent.height; color: Theme.line } }
@@ -244,7 +244,7 @@ ApplicationWindow {
                                 readonly property string badgeText: syncBlocked ? "Paused" : syncing && !(modelData.coverage || {}).inventory_complete
                                     ? Number((modelData.coverage || {}).indexed_messages || 0).toLocaleString(Qt.locale(), 'f', 0) + " cached"
                                     : reviewCount > 0 ? String(reviewCount) : ""
-                                readonly property real naturalWidth: 20 + 14 + 8 + accountName.implicitWidth
+                                readonly property real naturalWidth: 20 + 18 + 8 + accountName.implicitWidth
                                     + (badgeText.length ? accountCount.implicitWidth + 8 : 0)
                                 text: modelData.name
                                 height: 28; implicitWidth: Math.min(naturalWidth, Math.max(140, window.width - 820))
@@ -259,9 +259,9 @@ ApplicationWindow {
                                 contentItem: Row {
                                     id: accountContent
                                     spacing: 8
-                                    FmIcon { anchors.verticalCenter: parent.verticalCenter; name: Theme.accountIcon(accountTab.modelData.id); size: 14; color: accountTab.selected ? Theme.secondary : Theme.subtle }
-                                    Text { id: accountName; anchors.verticalCenter: parent.verticalCenter; text: accountTab.text; width: Math.max(0, accountTab.availableWidth - 14 - 8 - (accountTab.badgeText.length ? accountCount.implicitWidth + 8 : 0)); elide: Text.ElideRight; color: accountTab.selected ? Theme.text : Theme.muted; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(13); weight: accountTab.selected ? Font.Medium : Font.Normal } }
-                                    Text { id: accountCount; anchors.verticalCenter: parent.verticalCenter; visible: accountTab.badgeText.length > 0; text: accountTab.badgeText; color: accountTab.syncBlocked ? Theme.error : accountTab.selected ? Theme.text : Theme.muted; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12); weight: Font.Medium } }
+                                    AccountBadge { anchors.verticalCenter: parent.verticalCenter; accountName: accountTab.modelData.name; selected: accountTab.selected }
+                                    Text { id: accountName; anchors.verticalCenter: parent.verticalCenter; text: accountTab.text; width: Math.max(0, accountTab.availableWidth - 18 - 8 - (accountTab.badgeText.length ? accountCount.implicitWidth + 8 : 0)); elide: Text.ElideRight; color: accountTab.selected ? Theme.text : Theme.inkAlpha(.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13); weight: accountTab.selected ? Font.Medium : Font.Normal } }
+                                    Text { id: accountCount; anchors.verticalCenter: parent.verticalCenter; visible: accountTab.badgeText.length > 0; text: accountTab.badgeText; color: accountTab.syncBlocked ? Theme.error : accountTab.selected ? Theme.text : Theme.inkAlpha(.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5); weight: Font.Medium } }
                                 }
                             }
                         }
@@ -278,19 +278,34 @@ ApplicationWindow {
                     readonly property var syncState: { const states = backend.googleSync; return backend.googleSyncState(backend.account) }
                     readonly property var accountRow: backend.accounts.find(a => a.id === backend.account) || ({})
                     readonly property var progress: syncState.progress || ({})
+                    readonly property bool mailGranted: (accountRow.google || {}).capabilities?.mail_read === true
+                    readonly property bool calendarGranted: (accountRow.google || {}).capabilities?.calendar_read === true
                     readonly property bool blocked: syncState.credential_access_required === true
                     readonly property bool syncing: !blocked && (syncState.changing === true || syncState.refresh_requested === true
-                        || (syncState.active === true && (progress.mail === "starting" || progress.mail === "running")))
+                        || (syncState.active === true && ((mailGranted && (progress.mail === "starting" || progress.mail === "running"))
+                            || (calendarGranted && (progress.calendar === "starting" || progress.calendar === "running")))))
                     readonly property double lastSync: syncState.last_mail_sync_at || accountRow.last_mail_sync_at || 0
-                    readonly property string lastTime: lastSync > 0 ? Qt.formatDateTime(new Date(lastSync * 1000), new Date(lastSync * 1000).toDateString() === new Date().toDateString() ? "HH:mm" : "MMM d HH:mm") : ""
-                    text: (blocked || (syncState.active && progress.mail === "paused") ? "Retry sync" : syncing ? "Syncing…" : "Sync") + (lastTime.length ? " · " + lastTime : "")
+                    property int agoTick: 0
+                    Timer { interval: 15000; repeat: true; running: syncButton.visible && syncButton.lastSync > 0; onTriggered: syncButton.agoTick++ }
+                    readonly property string syncedAgo: {
+                        if (lastSync <= 0) return ""
+                        const seconds = Math.max(0, Math.round((Date.now() + agoTick * 0 - lastSync * 1000) / 1000))
+                        return seconds < 5 ? "just now" : seconds < 60 ? seconds + " s ago" : seconds < 3600 ? Math.round(seconds / 60) + " min ago"
+                            : seconds < 172800 ? Math.round(seconds / 3600) + " h ago" : Math.round(seconds / 86400) + " d ago"
+                    }
+                    // A retry keeps the last success visible; "Synced" needs mail access.
+                    text: blocked || (syncState.active && !calendarGranted && progress.mail === "paused") ? "Retry sync" + (mailGranted && syncedAgo.length ? " · " + syncedAgo : "")
+                        : syncing ? "Syncing…" : mailGranted && syncedAgo.length ? "Synced " + syncedAgo : "Sync"
                     iconName: "refresh"; iconSize: 13
-                    height: 30
+                    height: 32; radius: 6; leftPadding: 10; rightPadding: 10; font.pointSize: Theme.fontPoints(12)
+                    foreground: hovered && enabled ? Theme.text : Theme.inkAlpha(.55)
                     enabled: backend.connected && !backend.syntheticProfile && !syncState.changing
-                        && (accountRow.google || {}).capabilities?.mail_read === true && !accountRow.read_only
+                        && (mailGranted || calendarGranted) && !accountRow.read_only
                     Accessible.name: text
-                    tip: (blocked ? "Keychain access was denied or is locked. Click to try again. macOS may ask for your login keychain password. " : "Fetch new mail for this account. ")
-                        + (lastSync > 0 ? "Last successful sync: " + new Date(lastSync * 1000).toLocaleString() : "No successful mail sync yet.")
+                    tip: (blocked ? "Keychain access was denied or is locked. Click to try again. macOS may ask for your login keychain password. "
+                        : mailGranted && calendarGranted ? "Fetch new mail and Calendar events for this account. "
+                        : calendarGranted ? "Fetch new Calendar events for this account. " : "Fetch new mail for this account. ")
+                        + (mailGranted ? (lastSync > 0 ? "Last successful mail sync: " + new Date(lastSync * 1000).toLocaleString() : "No successful mail sync yet.") : "")
                     onClicked: backend.refreshGoogleSync(backend.account)
                 }
                 Rectangle {
@@ -307,7 +322,7 @@ ApplicationWindow {
                             Layout.fillWidth: true; padding: 0
                             placeholderText: window.workspace === "calendar" ? "Search calendar" : "Search " + (backend.currentAccount.name || "mail") + (backend.folder === "sent" ? " · sent" : backend.folder === "drafts" ? " · drafts" : "")
                             color: Theme.text; placeholderTextColor: Theme.faint
-                            font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); selectByMouse: true
+                            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); selectByMouse: true
                             text: window.workspace === "calendar" ? backend.calendarSearchQuery : backend.query
                             onTextEdited: {
                                 window.settingsOpen = false
@@ -327,7 +342,7 @@ ApplicationWindow {
                         FmButton { visible: search.text.length > 0; iconName: "close"; iconSize: 12; implicitWidth: 12; implicitHeight: 20; leftPadding: 0; rightPadding: 0; tip: "Clear search"; onClicked: { if (window.workspace === "calendar") backend.calendarSearchQuery = ""; else backend.query = "" } }
                         Rectangle {
                             implicitWidth: shortcutLabel.implicitWidth + 10; implicitHeight: 19; radius: 3; color: "transparent"; border.color: Theme.line
-                            Text { id: shortcutLabel; anchors.centerIn: parent; text: window.commandKey + "K"; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11); color: Theme.faint }
+                            Text { id: shortcutLabel; anchors.centerIn: parent; text: window.commandKey + "K"; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); color: Theme.faint }
                         }
                     }
                 }
@@ -335,24 +350,25 @@ ApplicationWindow {
                     objectName: window.workspace === "calendar" ? "newEventButton" : "newMessageButton"
                     visible: !window.settingsOpen && (window.workspace === "calendar" || mailView.newMessageAvailable)
                     text: window.workspace === "calendar" ? "New event" : "New message"
-                    iconName: "plus"; iconSize: 13; prominent: true
-                    implicitWidth: contentItem.implicitWidth + 22
+                    iconName: "plus"; iconSize: 13; prominent: true; radius: 6
+                    font.pointSize: Theme.fontPoints(12.5); leftPadding: 10; rightPadding: 12
                     tip: text + " · n"
                     onClicked: { searchPopup.close(); calendarSearchPopup.close(); if (window.workspace === "calendar") calendarView.createEvent(); else mailView.newMessage() }
                 }
                 Item { implicitWidth: 1; implicitHeight: 20; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, 0); width: Theme.ruleWidth; height: parent.height; color: Theme.line } }
-                FmButton { objectName: "settingsButton"; iconName: "settings"; iconSize: 15; implicitWidth: 32; prominent: window.settingsOpen; tip: "Settings · ,"; onClicked: window.navigate(window.settingsOpen ? window.workspace : "settings") }
+                FmButton { objectName: "settingsButton"; iconName: "settings"; iconSize: 15; implicitWidth: 32; radius: 6; foreground: prominent ? Theme.canvas : Theme.inkAlpha(.6); prominent: window.settingsOpen; tip: "Settings · ,"; onClicked: window.navigate(window.settingsOpen ? window.workspace : "settings") }
             }
         }
     }
     ColumnLayout {
+        id: workspaceLayer
         anchors.fill: parent; spacing: 0
         Item { id: timelineHeaderSlot; visible: window.timelineVisible && window.timelineAtTop; Layout.fillWidth: true; implicitHeight: visible ? timeline.implicitHeight : 0 }
         StackLayout {
             Layout.fillWidth: true; Layout.fillHeight: true
             currentIndex: window.settingsOpen ? 2 : window.workspace === "mail" ? 0 : 1
             MailView { id: mailView }
-            CalendarView { id: calendarView }
+            CalendarView { id: calendarView; onOpenMailRequested: window.navigate("mail") }
             SettingsView { id: settingsView; onDone: window.navigate(window.workspace); onArchiveOpened: window.navigate("mail") }
         }
         Item { id: timelineFooterSlot; visible: window.timelineVisible && !window.timelineAtTop; Layout.fillWidth: true; implicitHeight: visible ? timeline.implicitHeight : 0 }
@@ -365,9 +381,11 @@ ApplicationWindow {
         onOpenCalendar: window.navigate("calendar")
     }
     ReminderPopup {
-        anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.margins: 20
-        z: 200
+        anchors.fill: parent
+        backgroundSource: workspaceLayer
+        z: 300
         visible: backend.reminders.length > 0 && !startupOverlay.visible
+        onOpenEventRequested: function(event) { window.navigate("calendar"); calendarView.showEvent(event, calendarView) }
     }
     ActionToast {
         anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom

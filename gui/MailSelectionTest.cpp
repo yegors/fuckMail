@@ -14,6 +14,7 @@
 #include <QKeyEvent>
 #include <QImage>
 #include <QCryptographicHash>
+#include <QBuffer>
 using namespace GoogleOperationFixture;
 
 class MailSelectionTest {
@@ -43,7 +44,7 @@ class MailSelectionTest {
             backend.m_querySummary = {{"filtered_conversation_count",3},{"filtered_group_counts",QVariantMap{{"review",3}}}};
             engine.customRequest = [this](auto *peer, const auto &request) {
                 const auto method = request["method"].toString(); methods.append(method);
-                if (method == "flag" || method == "set_category" || method == "mail_filing" || method == "draft_discard") writes.append({peer,request});
+                if (method == "flag" || method == "set_category" || method == "mail_filing" || method == "draft_discard" || method == "mail_undo") writes.append({peer,request});
                 else {
                     QJsonObject result;
                     if (method == "accounts") result["accounts"] = QJsonArray::fromVariantList(backend.m_allAccounts);
@@ -127,6 +128,28 @@ class MailSelectionTest {
         await([&]{return !filing.backend.m_mutatingConversation && !filing.backend.m_loading;},"filing refreshes Inbox");
         require(filing.backend.m_pinnedRow.isEmpty() && filing.backend.conversations().size()==2,"archived selected row cannot remain pinned in Inbox");
     }
+    static void undoActions() {
+        Harness h;
+        QVariantList restored;
+        QObject::connect(&h.backend,&MailBackend::mailSelectionRestored,[&](const auto &rows){restored=rows;});
+        h.backend.applyMailSelection(h.backend.snapshotMailRows({"a","b"}),"done");
+        for(int i=0;i<2;++i) {
+            const auto held=h.take(); const auto p=held.request["params"].toObject();
+            held.peer->write(reply(held.request["id"].toString(),{{"account","personal"},{"id",p["id"]},{"revision",4},{"message_ids",p["message_ids"]},{"messages",QJsonArray{}},{"mail_undo",QJsonObject{{"version",1},{"request_id",p["request_id"]},{"revision",4}}}}));
+        }
+        await([&]{return !h.backend.m_mutatingConversation;},"bulk action completes before undo");
+        require(h.backend.actionToast().value("action")=="undo_mail" && h.backend.actionToast().value("duration")==6000,"bulk mutation offers six-second Undo");
+        h.backend.activateActionToast();
+        for(int i=0;i<2;++i) {
+            const auto held=h.take();const auto p=held.request["params"].toObject();
+            require(held.request["method"]=="mail_undo" && p["expected_revision"]==4 && !p.contains("message_ids"),"Undo uses frozen receipt and revision, not guessed inverse flags");
+            held.peer->write(reply(held.request["id"].toString(),{{"account","personal"},{"id",p["id"]},{"revision",5},{"undone_request_id",p["undo_request_id"]},{"messages",QJsonArray{QJsonObject{{"id",p["id"].toString()+"-original"},{"unread",true},{"starred",false}}}}}));
+        }
+        await([&]{return !h.backend.m_mutatingConversation && restored.size()==2;},"Undo restores full bulk selection");
+        require(restored[0].toMap().value("revision")==5 && restored[0].toMap().value("unread").toBool(),"restored selection uses returned revision and review state");
+        h.backend.offerMailUndo("Changed",{QVariantMap{{"account","personal"}}},{});
+        h.backend.dismissMailUndo();require(!h.backend.actionToast().value("visible").toBool(),"opening another conversation dismisses stale Undo");
+    }
     static QQuickItem *find(QQuickItem *item,const QString &name) {
         if(item->objectName()==name) return item;
         for(auto *child:item->childItems()) if(auto *found=find(child,name)) return found;
@@ -136,6 +159,8 @@ class MailSelectionTest {
         if (!item || !item->isVisible()) qInfo()<<"hidden target"<<(item ? item->objectName() : "missing");
         require(item && item->isVisible(),"actual selection target visible");
         const auto p=item->mapToScene(item->boundingRect().center());
+        QMouseEvent move(QEvent::MouseMove,p,window->mapToGlobal(p.toPoint()),Qt::NoButton,Qt::NoButton,modifiers);
+        QCoreApplication::sendEvent(window,&move);
         QMouseEvent down(QEvent::MouseButtonPress,p,window->mapToGlobal(p.toPoint()),button,button,modifiers);
         QCoreApplication::sendEvent(window,&down);
         QMouseEvent up(QEvent::MouseButtonRelease,p,window->mapToGlobal(p.toPoint()),button,Qt::NoButton,modifiers);
@@ -147,6 +172,7 @@ class MailSelectionTest {
         QByteArray module("module SelectionTest\nsingleton Theme 1.0 Theme.qml\n");
         for(const auto &name:QDir(QString::fromUtf8(FM_GUI_SOURCE_DIR)).entryList({"*.qml"},QDir::Files)) {
             require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR)+'/'+name,modulePath+'/'+name),"unchanged production QML");
+            if(name=="ShortcutRegistry.qml") module+="singleton ";
             if(name!="Theme.qml") module+=name.chopped(4).toUtf8()+" 1.0 "+name.toUtf8()+'\n';
         }
         QFile registration(modulePath+"/qmldir"); require(registration.open(QIODevice::WriteOnly),"selection registration"); registration.write(module); registration.close();
@@ -176,15 +202,15 @@ class MailSelectionTest {
         require(senderColumn->mapToScene(QPointF(senderColumn->width(),0)).x() < sourcePreview->mapToScene(QPointF()).x(),"sender column precedes subject/preview without overlap");
         summaryRow["recipient"]="teammate@example.test";h.rows[0]=summaryRow;h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
         h.backend.m_folder="sent";emit h.backend.queryChanged();
-        await([&]{return find(window->contentItem(),"mailPreview_a")->property("text").toString().startsWith("To teammate@example.test · ");},"Sent preview identifies its recipient");
+        await([&]{auto recipient=find(window->contentItem(),"mailRecipient_a"), item=find(window->contentItem(),"mailPreview_a");return recipient && recipient->isVisible() && recipient->property("text").toString()=="To teammate@example.test" && item && item->property("text").toString().startsWith("· ");},"Sent preview identifies its recipient");
         require(!find(window->contentItem(),"mailSenderColumn_a")->isVisible(),"Sent retains the prototype subject/recipient arrangement");
         h.backend.m_folder="inbox";emit h.backend.queryChanged();
         require(!find(window->contentItem(),"threadSummary") && !find(window->contentItem(),"summarizeConversation"),"no redundant thread summary surface");
         summaryRow.remove("summary");h.rows[0]=summaryRow;h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
-        await([&]{return find(window->contentItem(),"mailPreview_a")->property("text").toString().contains("Original body preview");},"missing summary falls back to source text");
+        await([&]{auto item=find(window->contentItem(),"mailPreview_a");return item && item->property("text").toString().contains("Original body preview");},"missing summary falls back to source text");
         require(!find(window->contentItem(),"summaryPreviewIcon_a")->isVisible(),"source preview has no assistance icon");
         click(window,find(window->contentItem(),"conversationRow_a"),Qt::RightButton);
-        await([&]{return find(window->contentItem(),"contextDone")->isVisible();},"right click opens actual menu");
+        await([&]{auto item=find(window->contentItem(),"contextDone");return item && item->isVisible();},"right click opens actual menu");
         require(h.writes.isEmpty() && !h.methods.contains("conversation"),"right click is not deliberate open/read");
         QKeyEvent escape(QEvent::KeyPress,Qt::Key_Escape,Qt::NoModifier); QCoreApplication::sendEvent(window,&escape);
         click(window,find(window->contentItem(),"conversationRow_a"),Qt::LeftButton,Qt::ControlModifier);
@@ -192,7 +218,7 @@ class MailSelectionTest {
         require(mail->property("selectionRows").toList().size()==3,"Ctrl click plus Shift range selects three without opening");
         require(h.writes.isEmpty(),"multi-selection never marks read");
         click(window,find(window->contentItem(),"conversationRow_b"),Qt::RightButton);
-        await([&]{return find(window->contentItem(),"contextDone")->isVisible();},"bulk context menu");
+        await([&]{auto item=find(window->contentItem(),"contextDone");return item && item->isVisible();},"bulk context menu");
         require(!find(window->contentItem(),"contextReply")->isVisible(),"reply unavailable for multiple conversations");
         click(window,find(window->contentItem(),"contextDone"),Qt::LeftButton);
         for(int i=0;i<3;++i) h.finish(h.take());
@@ -206,11 +232,21 @@ class MailSelectionTest {
         QElapsedTimer layout; layout.start(); while(layout.elapsed()<100) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
         click(window,find(window->contentItem(),"applyLabel_imported"),Qt::LeftButton);
         auto label=h.take();
-        require(label.request["method"]=="set_category" && label.request["params"].toObject()["category_id"]=="imported" && label.request["params"].toObject()["present"]==true,"submenu applies exact chosen label");
+        require(label.request["method"]=="set_category" && label.request["params"].toObject()["category_id"]=="imported" && label.request["params"].toObject()["present"]==false,"checked submenu label removes exactly that label from conversations that all carry it");
         h.finish(label); await([&]{return !h.backend.m_mutatingConversation;},"label action completes");
         QMetaObject::invokeMethod(mail,"clearSelection");
         mail->setProperty("selectionAnchor","a");
         h.backend.m_selected="a";
+        find(window->contentItem(),"conversationRow_a")->forceActiveFocus();
+        h.backend.m_preferences["shortcuts"]=QVariantMap{{"next","X"}};emit h.backend.preferencesChanged();
+        QKeyEvent oldNext(QEvent::KeyPress,Qt::Key_J,Qt::NoModifier);QCoreApplication::sendEvent(window,&oldNext);
+        QCoreApplication::processEvents(QEventLoop::AllEvents,30);
+        require(h.backend.m_selected=="a","old navigation key stops after rebinding");
+        QKeyEvent newNext(QEvent::KeyPress,Qt::Key_X,Qt::NoModifier);QCoreApplication::sendEvent(window,&newNext);
+        await([&]{return h.backend.m_selected=="b";},"replacement shortcut actually navigates");
+        h.backend.m_preferences.remove("shortcuts");emit h.backend.preferencesChanged();
+        click(window,find(window->contentItem(),"conversationRow_a"),Qt::LeftButton);
+        QMetaObject::invokeMethod(mail,"clearSelection");mail->setProperty("selectionAnchor","a");
         find(window->contentItem(),"conversationRow_a")->forceActiveFocus();
         QKeyEvent rangeKey(QEvent::KeyPress,Qt::Key_Down,Qt::ShiftModifier); QCoreApplication::sendEvent(window,&rangeKey);
         await([&]{return mail->property("selectionRows").toList().size()==2;},"Shift+Down extends the focused list selection");
@@ -223,7 +259,7 @@ class MailSelectionTest {
         await([&]{return !h.backend.m_loading;},"list refresh after label");
         layout.restart(); while(layout.elapsed()<100) QCoreApplication::processEvents(QEventLoop::AllEvents,10);
         click(window,find(window->contentItem(),"conversationRow_b"),Qt::RightButton);
-        await([&]{return find(window->contentItem(),"trashConversation")->isVisible();},"Trash context visible");
+        await([&]{auto item=find(window->contentItem(),"trashConversation");return item && item->isVisible();},"Trash context visible");
         click(window,find(window->contentItem(),"trashConversation"),Qt::LeftButton);
         auto trash=h.take();
         require(trash.request["method"]=="mail_filing" && trash.request["params"].toObject()["action"]=="trash","menu uses recoverable Trash action");
@@ -240,9 +276,9 @@ class MailSelectionTest {
         };
         await([&]{header=renderedHeader(window->contentItem());return header;},"date header painted after layout");
         click(window,header,Qt::LeftButton);
-        require(!find(window->contentItem(),"conversationRow_a")->isVisible(),"date group collapses");
+        require(!find(window->contentItem(),"conversationRow_a") || !find(window->contentItem(),"conversationRow_a")->isVisible(),"date group collapses");
         h.backend.m_preferences["mail_date_grouping"]="plain"; emit h.backend.preferencesChanged();
-        await([&]{return find(window->contentItem(),"conversationRow_a")->isVisible();},"plain list restores rows");
+        await([&]{auto item=find(window->contentItem(),"conversationRow_a");return item && item->isVisible();},"plain list restores rows");
         require(!mail->property("dateGroups").toBool(),"shared plain-list preference applied");
         h.backend.m_folder="inbox"; h.backend.m_selected="a"; emit h.backend.queryChanged();
         h.backend.m_conversation={{"id","a"},{"subject","Source inspection"},{"revision",3},{"message_ids",QVariantList{"a-original"}},{"messages",QVariantList{QVariantMap{{"id","a-original"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"sent_at","2026-09-14T10:00:00Z"},{"text","Retained plain body"},{"source_available",true},{"source_version",QString(64, char(97))},{"sent",false}}}}};
@@ -260,7 +296,7 @@ class MailSelectionTest {
         await([&]{auto item=find(window->contentItem(),"messageFormatPlain");return item && item->isVisible();},"format submenu");
         layout.restart(); while(layout.elapsed()<100)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
         click(window,find(window->contentItem(),"messageFormatPlain"),Qt::LeftButton);
-        await([&]{return find(window->contentItem(),"messageBody_a-original")->property("text").toString().contains("Retained plain body");},"plain format uses retained extracted body");
+        await([&]{auto item=find(window->contentItem(),"messageBody_a-original");return item && item->property("text").toString().contains("Retained plain body");},"plain format uses retained extracted body");
         QMetaObject::invokeMethod(mail,"scrollToMember",Q_ARG(QVariant,QString("a-original")));
         layout.restart(); while(layout.elapsed()<120)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
         click(window,find(window->contentItem(),"messageMore_a-original"),Qt::LeftButton);
@@ -287,29 +323,24 @@ class MailSelectionTest {
         auto sender=find(window->contentItem(),"senderFilter_last");
         auto kind=find(window->contentItem(),"messageSenderKind_last");
         require(sender && kind && kind->isVisible(),"sender identity and correction icon visible");
-        qInfo()<<"Sender geometry"<<sender->mapToScene({0,0})<<sender->size()<<"kind"<<kind->mapToScene({0,0})<<kind->size();
         const auto earlyCapture=qEnvironmentVariable("FM_READER_CAPTURE"); if(!earlyCapture.isEmpty())require(window->grabWindow().save(earlyCapture),"reader layout diagnostic");
-        require(qAbs(kind->mapToScene({0,0}).x()-sender->mapToScene({sender->width(),0}).x()-8)<2,"kind icon sits eight pixels after the actual name");
-        require(find(window->contentItem(),"messageFullDate_last")->isVisible(),"latest incoming message shows full timestamp");
+        require(qAbs(kind->mapToScene({0,0}).x()-sender->mapToScene({sender->width(),0}).x()-6)<2,"kind icon sits six pixels after the name");
+        require(!find(window->contentItem(),"messageFullDate_last"),"full timestamp is confined to the hover tooltip");
         require(!find(window->contentItem(),"recipientName_last_test@example.test"),"redundant received To-self line omitted");
-        auto star=find(window->contentItem(),"messageStar_last");auto more=find(window->contentItem(),"messageMore_last");
-        auto shortDate=find(window->contentItem(),"messageShortDate_last");
-        require(star && star->isVisible() && qAbs(shortDate->mapToScene({0,0}).x()-star->mapToScene({star->width(),0}).x()-8)<2,"star sits beside the short time without displacing the date/menu gap");
         auto verifyDateMenu=[&] {
-            auto block=find(window->contentItem(),"messageDateBlock_last");
-            auto full=find(window->contentItem(),"messageFullDate_last");
-            require(qAbs(more->mapToScene(more->boundingRect().center()).y()-block->mapToScene(block->boundingRect().center()).y())<1,"menu centers vertically beside the complete timestamp block");
-            require(qAbs(more->mapToScene({0,0}).x()-block->mapToScene({block->width(),0}).x()-10)<1,"menu stays ten logical pixels beside the timestamp block");
-            require(qAbs(shortDate->mapToScene({shortDate->width(),0}).x()-full->mapToScene({full->width(),0}).x())<1,"short and full dates share a right edge");
+            for (const auto &id: {"first", "last"}) {
+                auto header=find(window->contentItem(),QString("messageHeading_")+id);
+                auto menu=find(window->contentItem(),QString("messageMore_")+id);
+                auto date=find(window->contentItem(),QString("messageShortDate_")+id);
+                auto chevron=find(window->contentItem(),QString("toggleMessage_")+id);
+                require(header && menu && date && chevron,"single-line header controls exist");
+                require(qAbs(header->height()-44)<1,"expanded header remains exactly 44 pixels");
+                require(qAbs(menu->height()-26)<1 && qAbs(chevron->height()-26)<1,"borderless header controls remain 26 pixels");
+                require(date->mapToScene({date->width(),0}).x()<menu->mapToScene({0,0}).x() && menu->mapToScene({menu->width(),0}).x()<chevron->mapToScene({0,0}).x(),"time, menu, chevron order matches design");
+                require(qAbs(chevron->mapToItem(header,{chevron->width(),0}).x()-header->width())<1,"chevron ends at reader right edge");
+            }
         };
         verifyDateMenu();
-        for (const auto &id: {"first", "last"}) {
-            auto header=find(window->contentItem(),QString("messageHeading_")+id);
-            auto menu=find(window->contentItem(),QString("messageMore_")+id);
-            auto dateBlock=find(window->contentItem(),QString("messageDateBlock_")+id);
-            require(qAbs(menu->mapToItem(header,{menu->width(),0}).x()-header->width())<1,"each expanded message menu stays at the reader right edge");
-            require(qAbs(menu->mapToScene({0,0}).x()-dateBlock->mapToScene({dateBlock->width(),0}).x()-10)<1,"earlier and latest message date/menu gaps match");
-        }
         const auto localInstant=QDateTime(QDate(2026,9,11),QTime(9,12),QTimeZone::systemTimeZone());
         const auto formatted=[&](const QString &value) {
             QVariant result;require(QMetaObject::invokeMethod(mail,"fullTime",Q_RETURN_ARG(QVariant,result),Q_ARG(QVariant,value)),"date formatter available");return result.toString();
@@ -322,8 +353,9 @@ class MailSelectionTest {
         require(find(window->contentItem(),"messageBody_last")->property("text").toString().contains("Final release notes are ready"),"thread reader retains the new contribution");
         auto popup=[&]()->QObject* {for(auto object:window->findChildren<QObject *>("senderCard"))if(object->property("opened").toBool())return object;return nullptr;};
         auto move=[&](const QPointF &p) {QMouseEvent event(QEvent::MouseMove,p,window->mapToGlobal(p.toPoint()),Qt::NoButton,Qt::NoButton,Qt::NoModifier);QCoreApplication::sendEvent(window,&event);};
-        for(const auto &[target,address]:QList<QPair<QString,QString>>{{"participantName_first","priya@example.test"},{"participantAvatar_self","test@example.test"},{"senderFilter_self","test@example.test"},{"senderAvatar_first","priya@example.test"},{"recipientName_last_team@example.test","team@example.test"}}) {
-            auto item=find(window->contentItem(),target);require(item && item->isVisible(),"each contact target is visible");
+        require(!find(window->contentItem(),"participantAvatar_self"),"thread summary lists the other people, not the user");
+        for(const auto &[target,address]:QList<QPair<QString,QString>>{{"participantName_first","priya@example.test"},{"senderAvatar_self","test@example.test"},{"senderFilter_self","test@example.test"},{"senderAvatar_first","priya@example.test"},{"recipientName_last_team@example.test","team@example.test"}}) {
+            auto item=find(window->contentItem(),target);require(item && item->isVisible(),qPrintable("each contact target is visible: "+target));
             move(item->mapToScene(item->boundingRect().center()));
             await([&]{return popup() && popup()->property("email").toString()==address;},"name/avatar hover opens exact contact card");
             QMetaObject::invokeMethod(popup(),"close"); move({5,5});
@@ -364,14 +396,13 @@ class MailSelectionTest {
             QMetaObject::invokeMethod(mail,"scrollToMember",Q_ARG(QVariant,QString("last")));
             layout.restart();while(layout.elapsed()<140)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
             verifyDateMenu();
-            auto date=find(window->contentItem(),"messageFullDate_last");
+            auto date=find(window->contentItem(),"messageShortDate_last");
             auto lastHeader=find(window->contentItem(),"messageHeading_last");
             const auto rect=date->mapRectToItem(lastHeader,date->boundingRect());
             require(rect.left()>=0 && rect.right()<=lastHeader->width()+1 && rect.bottom()<=lastHeader->height()+1,"timestamp remains inside header at narrow large text and all themes");
             require(find(window->contentItem(),"senderFilter_self")->width()>15,"folded own name keeps a usable contact target");
-            auto modelName=find(window->contentItem(),"summaryActionModel_last");auto summaryAction=find(window->contentItem(),"summarizeMessage_last");
-            const auto modelRect=modelName->mapRectToItem(summaryAction,modelName->boundingRect());
-            require(modelRect.left()>=0 && modelRect.right()<=summaryAction->width()-5 && modelName->property("truncated").toBool(),"long qualified model name is elided within the dashed button");
+            auto summaryAction=find(window->contentItem(),"summarizeMessage_last");
+            require(summaryAction && summaryAction->width()<=lastHeader->width()-38,"summary control remains within the indented column");
             if(!readerCapture.isEmpty())require(window->grabWindow().save(readerCapture.chopped(4)+"-"+theme+".png"),"native theme/size reader frame");
         }
         window->resize(1280,800);
@@ -388,11 +419,24 @@ class MailSelectionTest {
             h.attachments[id]={{"account","personal"},{"id",id},{"name",QFileInfo(path).fileName()},{"mime_type",mime},{"state","available"},{"path",path},{"size",bytes.size()},{"sha256",QString::fromLatin1(QCryptographicHash::hash(bytes,QCryptographicHash::Sha256).toHex())}};
         };
         addAttachment("image",pngPath,"image/png");addAttachment("binary",binaryPath,"application/octet-stream");
+        // A real, self-contained Motion JPEG AVI exercises the installed media decoder.
+        const auto aviLe=[](quint32 n){QByteArray b;for(int i=0;i<4;++i)b.append(char((n>>(8*i))&255));return b;};
+        const auto aviChunk=[&](const QByteArray &tag,const QByteArray &payload){return tag+aviLe(quint32(payload.size()))+payload+(payload.size()%2 ? QByteArray(1,'\0') : QByteArray{});};
+        const auto aviWords=[&](std::initializer_list<quint32> values){QByteArray b;for(auto value:values)b+=aviLe(value);return b;};
+        QImage videoFrame(80,48,QImage::Format_RGB32);videoFrame.fill(QColor("#94659e"));QByteArray videoJpeg;QBuffer jpegBuffer(&videoJpeg);jpegBuffer.open(QIODevice::WriteOnly);require(videoFrame.save(&jpegBuffer,"JPEG"),"video JPEG frame");
+        const auto avih=aviWords({50000,0,0,0,60,0,1,quint32(videoJpeg.size()),80,48,0,0,0,0});
+        const auto strh=QByteArray("vidsMJPG")+aviWords({0,0,0,1,20,0,60,quint32(videoJpeg.size()),0xffffffff,0,0,(48u<<16)|80u});
+        const auto strf=aviWords({40,80,48,(24u<<16)|1u})+QByteArray("MJPG")+aviWords({quint32(videoJpeg.size()),0,0,0,0});
+        const auto aviHeader=aviChunk("LIST",QByteArray("hdrl")+aviChunk("avih",avih)+aviChunk("LIST",QByteArray("strl")+aviChunk("strh",strh)+aviChunk("strf",strf)));
+        QByteArray aviFrames("movi");for(int i=0;i<60;++i)aviFrames+=aviChunk("00dc",videoJpeg);
+        const auto avi=aviChunk("RIFF",QByteArray("AVI ")+aviHeader+aviChunk("LIST",aviFrames));
+        const auto videoPath=copy.filePath("motion.avi");QFile videoFile(videoPath);require(videoFile.open(QIODevice::WriteOnly) && videoFile.write(avi)==avi.size(),"synthetic video written");videoFile.close();
+        addAttachment("video",videoPath,"video/x-msvideo");
         h.backend.m_conversation={{"id","a"},{"subject","Attachment preview"},{"revision",3},{"messages",QVariantList{QVariantMap{{"id","photo"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"sent_at","2026-09-14T10:00:00Z"},{"text","Image and binary attachment."},{"sent",false},{"attachments",QVariantList{h.attachments["image"].toVariantMap(),h.attachments["binary"].toVariantMap()}}}}}};
         emit h.backend.conversationChanged();
         await([&]{auto item=find(window->contentItem(),"attachmentPreview_image");return item && item->isEnabled();},"retained image renders in thumbnail");
         auto tile=find(window->contentItem(),"attachment_image");
-        require(tile && tile->property("imageWidth").toInt()==1600,"decoded image dimensions retained");
+        await([&]{return tile && tile->property("imageWidth").toInt()==1600;},"decoded image dimensions retained");
         require(find(window->contentItem(),"attachmentSave_binary")->isEnabled(),"non-image has a save button");
         const auto tileHeight=tile->height();
         for (const auto &feedback: {QString("Saving…"),QString("Saved"),QString("Could not save here. Choose another location and try again.")}) {
@@ -408,13 +452,26 @@ class MailSelectionTest {
         const auto cardsCapture=qEnvironmentVariable("FM_ATTACHMENT_CARDS_CAPTURE");
         if(!cardsCapture.isEmpty())require(window->grabWindow().save(cardsCapture),"attachment cards capture");
         click(window,find(window->contentItem(),"attachmentPreview_image"),Qt::LeftButton);
-        auto viewer=tile->findChild<QObject *>("attachmentViewer_image");
+        auto viewer=window->findChild<QObject *>("attachmentViewer");
         await([&]{return viewer && viewer->property("opened").toBool();},"image opens in modal");
         require(mail->property("popupOpen").toBool(),"image modal blocks reader shortcuts");
-        auto actual=find(window->contentItem(),"attachmentActualSize_image");require(actual,"actual-size control exists");
-        click(window,actual,Qt::LeftButton);require(viewer->property("actualSize").toBool(),"full-size mode activates");
+        await([&]{return viewer->property("ratio").toDouble()==1.6;},"viewer uses the real image aspect ratio");
+        require(viewer->property("width").toInt()==window->width() && viewer->property("height").toInt()==window->height(),"media overlay fills viewport");
         const auto attachmentCapture=qEnvironmentVariable("FM_ATTACHMENT_CAPTURE");
         if(!attachmentCapture.isEmpty()){layout.restart();while(layout.elapsed()<150)QCoreApplication::processEvents(QEventLoop::AllEvents,10);require(window->grabWindow().save(attachmentCapture),"attachment viewer capture");}
+        QMetaObject::invokeMethod(viewer,"close");
+        const QVariant media=QVariantList{h.attachments["video"].toVariantMap(),h.attachments["image"].toVariantMap()};
+        QMetaObject::invokeMethod(viewer,"show",Q_ARG(QVariant,QString("personal")),Q_ARG(QVariant,media),Q_ARG(QVariant,0));
+        auto player=viewer->findChild<QObject *>("attachmentMediaPlayer");auto audio=viewer->findChild<QObject *>("attachmentAudio");
+        require(player && audio,"actual video player and audio controls exist");
+        await([&]{return player->property("duration").toInt()>0 && !viewer->property("preparingPoster").toBool();},"real video decoder loads a paused first frame");
+        require(viewer->property("error").toString().isEmpty() && qAbs(viewer->property("ratio").toDouble()-80.0/48)<.01,"decoded video has correct aspect ratio");
+        QMetaObject::invokeMethod(viewer,"togglePlayback");await([&]{return player->property("position").toInt()>100;},"video playback advances");
+        QMetaObject::invokeMethod(viewer,"togglePlayback");require(player->property("playbackState").toInt()==2,"video pauses");
+        player->setProperty("position",1500);require(player->property("position").toInt()>=1500,"video seek updates position");
+        audio->setProperty("muted",true);require(audio->property("muted").toBool(),"video audio can mute");
+        QMetaObject::invokeMethod(viewer,"step",Q_ARG(QVariant,1));
+        await([&]{return !viewer->property("video").toBool() && player->property("source").toUrl().isEmpty();},"next media releases the video source");
         QMetaObject::invokeMethod(viewer,"close");
         QHash<QString,QString> saves;
         const auto savedConnection=QObject::connect(&h.backend,&MailBackend::attachmentSaved,[&](const auto &ticket,const auto &error){saves[ticket]=error;});
@@ -494,10 +551,13 @@ public:
     static void accountControls() {
         Harness h;
         auto ordinary=h.engine.customRequest;
-        int scans=0,starts=0,stops=0; bool stopped=false; QString requestedAccount,requestedRange;
+        int scans=0,starts=0,stops=0,preferenceWrites=0;QJsonObject savedAccount,savedPreferences; bool stopped=false; QString requestedAccount,requestedRange;
         h.engine.customRequest=[&](auto *peer,const auto &request) {
             const auto method=request["method"].toString();QJsonObject result;
-            if(method=="assist_backlog") {++scans;result={{"job_id","coverage"},{"status","scanning"}};}
+            if(method=="preferences_save") {++preferenceWrites;savedPreferences=request["params"].toObject()["preferences"].toObject();result={{"revision",preferenceWrites},{"preferences",savedPreferences}};}
+            else if(method=="preferences_get")result={{"revision",preferenceWrites},{"preferences",QJsonObject::fromVariantMap(h.backend.preferences())}};
+            else if(method=="account_update") {savedAccount=request["params"].toObject();auto row=h.backend.m_allAccounts[0].toMap();row["name"]=savedAccount["name"].toString();row["mail_retention"]=savedAccount["mail_retention"].toString();row["metadata_revision"]=1;h.backend.m_allAccounts[0]=row;result=QJsonObject::fromVariantMap(row);}
+            else if(method=="assist_backlog") {++scans;result={{"job_id","coverage"},{"status","scanning"}};}
             else if(method=="assist_jobs")result={{"items",QJsonArray{}}};
             else if(method=="assist_batch_start") {++starts;requestedAccount=request["account"].toString();requestedRange=request["params"].toObject()["range"].toString();result={{"job_id","batch"},{"status","running"},{"total",7}};}
             else if(method=="assist_cancel") {++stops;stopped=true;result={{"job_id","batch"},{"status","canceled"},{"completed",2},{"processed",2},{"total",7}};}
@@ -511,7 +571,8 @@ public:
         QByteArray module("module AccountsTest\nsingleton Theme 1.0 Theme.qml\n");
         for(const auto &name:QDir(QString(FM_GUI_SOURCE_DIR)).entryList({"*.qml"},QDir::Files)) {
             require(QFile::copy(QString(FM_GUI_SOURCE_DIR)+'/'+name,path+'/'+name),"production account QML");
-            if(name!="Theme.qml")module+=name.chopped(4).toUtf8()+" 1.0 "+name.toUtf8()+'\n';
+            if(name=="ShortcutRegistry.qml") module+="singleton ";
+            if(name!="Theme.qml") module+=name.chopped(4).toUtf8()+" 1.0 "+name.toUtf8()+'\n';
         }
         QFile registration(path+"/qmldir");require(registration.open(QIODevice::WriteOnly),"account QML registration");registration.write(module);registration.close();
         QQmlApplicationEngine qml;bool warnings=false;
@@ -535,13 +596,37 @@ public:
         await([&]{return starts==1 && find(window->contentItem(),"stopBacklog_personal")->isVisible();},"range starts one real account command");
         require(requestedAccount=="personal"&&requestedRange=="week","batch freezes exact selected account and range");
         settings->setProperty("page","General");settings->setProperty("page","Accounts");
-        await([&]{return find(window->contentItem(),"accountBatchStatus_personal")->property("text").toString().contains("2 of 7");},"progress survives navigation and reflects completed messages");
+        await([&]{auto item=find(window->contentItem(),"accountBatchStatus_personal");return item && item->property("text").toString().contains("2 of 7");},"progress survives navigation and reflects completed messages");
         capture("backlog-running");click(window,find(window->contentItem(),"stopBacklog_personal"),Qt::LeftButton);
         await([&]{return stops==1 && find(window->contentItem(),"accountBatchStatus_personal")->property("text").toString().contains("Stopped · 2 saved");},"Stop retains saved work and clears busy state");
         window->resize(960,720);QMetaObject::invokeMethod(window,"appearance",Q_ARG(QVariant,"paper"),Q_ARG(QVariant,"large"));capture("accounts-narrow-large");
         auto *button=find(window->contentItem(),"accountBacklog_personal");require(button->mapToScene({button->width(),0}).x()<=window->width(),"backlog control stays within narrow settings");
+        window->resize(1280,900);QMetaObject::invokeMethod(window,"appearance",Q_ARG(QVariant,"graphite"),Q_ARG(QVariant,"default"));
+        auto editor=window->findChild<QObject *>("accountEditor");require(editor,"real account editor exists");
+        require(QMetaObject::invokeMethod(editor,"show",Q_ARG(QVariant,h.backend.m_allAccounts[0])),"open account editor");
+        await([&]{return editor->property("opened").toBool();},"account editor opens");
+        capture("account-editor");
+        find(window->contentItem(),"editAccountName")->setProperty("text","Renamed account");
+        find(window->contentItem(),"editAccountRetention")->setProperty("currentIndex",2);
+        find(window->contentItem(),"editAccountMailMode")->setProperty("currentIndex",0);
+        QMetaObject::invokeMethod(find(window->contentItem(),"saveAccountEdit"),"clicked");
+        await([&]{return !savedAccount.isEmpty();},"account edit reaches shared command");
+        require(savedAccount["name"]=="Renamed account" && savedAccount["mail_retention"]=="2_years" && savedAccount["sync"].toObject()["mail_access"]=="read","name, retention and access saved together");
+        await([&]{return !editor->property("opened").toBool();},"saved editor closes");
+        // Missing Calendar grant opens reconnect; close it before shortcut recording.
+        if(auto dialog=window->findChild<QObject *>("googleSignInDialog"))QMetaObject::invokeMethod(dialog,"close");
+        settings->setProperty("page","Shortcuts");
+        auto shortcut=find(window->contentItem(),"shortcut_reply");require(shortcut,"custom shortcut row exists");
+        auto press=[&](int key,Qt::KeyboardModifiers mods=Qt::NoModifier){QKeyEvent down(QEvent::KeyPress,key,mods),up(QEvent::KeyRelease,key,mods);QCoreApplication::sendEvent(window,&down);QCoreApplication::sendEvent(window,&up);};
+        QMetaObject::invokeMethod(shortcut,"clicked");press(Qt::Key_D);
+        await([&]{return preferenceWrites>0 && !h.backend.preferencesPending();},"recorded shortcut saves immediately");
+        require(savedPreferences["shortcuts"].toObject()["reply"]=="D" && savedPreferences["shortcuts"].toObject()["delay"].isNull(),"same-scope conflict moves key and clears previous action");
+        QMetaObject::invokeMethod(shortcut,"clicked");const auto previousWrites=preferenceWrites;press(Qt::Key_K,Qt::ControlModifier);
+        require(settings->property("recordingShortcut").toBool() && preferenceWrites==previousWrites,"fixed search chord cannot be reassigned");
+        press(Qt::Key_Escape);require(!settings->property("recordingShortcut").toBool(),"Escape cancels recording");
+        capture("shortcuts-edited");
         require(!warnings,"Accounts coverage/menu/progress has no QML errors");
     }
-    static void run(){mutations();controls();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
+    static void run(){mutations();undoActions();controls();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
 int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));MailSelectionTest::run();return 0;}

@@ -6,6 +6,9 @@ Control {
     property var model: []
     property var optionNames: []
     property int currentIndex: 0
+    property bool compact: false
+    property bool hoverHighlight: !compact
+    property color fill: compact ? Theme.canvas : Theme.surface
     signal activated(int index)
     padding: 2
     implicitWidth: segments.implicitWidth + 4
@@ -25,7 +28,7 @@ Control {
         else return
         event.accepted = true
     }
-    background: Rectangle { radius: 6; color: Theme.surface; border.color: control.activeFocus ? Theme.focusBorder : "transparent" }
+    background: Rectangle { radius: 6; color: control.fill; border.color: control.activeFocus ? Theme.line3 : "transparent" }
     contentItem: Row {
         id: segments
         spacing: 2
@@ -36,12 +39,13 @@ Control {
                 required property int index
                 id: segment
                 objectName: control.optionNames[index] || ""
-                height: Math.max(28, contentItem.implicitHeight + 10); text: String(modelData); implicitWidth: contentItem.implicitWidth + 24
-                font.pixelSize: Theme.fontSize(12.5)
+                height: Math.max(control.compact ? 22 : 28, contentItem.implicitHeight + (control.compact ? 6 : 10)); text: String(modelData); implicitWidth: contentItem.implicitWidth + (control.compact ? 20 : 24)
+                leftPadding:control.compact ? 10 : 12;rightPadding:leftPadding
+                font.pointSize: Theme.fontPoints(control.compact ? 12 : 12.5)
                 selected: control.currentIndex === index
                 focusPolicy: Qt.NoFocus
                 onClicked: { control.forceActiveFocus(); control.selectIndex(index) }
-                background: Rectangle { radius: 4; color: segment.selected ? Theme.hover : segment.hovered ? Theme.selected : "transparent" }
+                background: Rectangle { radius: 4; color: segment.selected ? Theme.hover : control.hoverHighlight && segment.hovered ? Theme.selected : "transparent" }
             }
         }
     }

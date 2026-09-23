@@ -24,7 +24,7 @@ class LabelBackend:public QObject {
     Q_PROPERTY(QString account MEMBER account)
     Q_PROPERTY(QVariantList accounts MEMBER accounts)
 public:
-    bool connected=true,reject=false;QString account="work",lastAccount,lastRemovalAccount;int sequence=0,created=0,described=0,removed=0,synced=0;
+    bool connected=true,reject=false;QString account="work",lastAccount,lastRemovalAccount;int sequence=0,created=0,described=0,autoReads=0,removed=0,synced=0;
     QVariantList accounts{QVariantMap{{"id","work"},{"name","Work"}},QVariantMap{{"id","personal"},{"name","Personal"}}};
     QMap<QString,QVariantList> labels;
     Q_INVOKABLE bool accountCapability(const QString&,const QString&){return true;}
@@ -34,10 +34,12 @@ public:
             QVariantMap result;bool ok=true;lastAccount=scope;
             if(method=="label_catalog")result={{"categories",labels[scope]}};
             else if(method=="label_create"){
-                ++created;const auto id=params.value("id","label-"+ticket).toString();labels[scope].append(QVariantMap{{"id",id},{"name",params["name"]},{"description",""},{"conversation_count",0}});result={{"id",id}};
+                ++created;const auto id=params.value("id","label-"+ticket).toString();labels[scope].append(QVariantMap{{"id",id},{"name",params["name"]},{"description",""},{"auto_read",false},{"conversation_count",0}});result={{"id",id}};
             }else if(method=="label_describe"){
                 if(reject){ok=false;result={{"message","Not saved — fixture conflict"}};}
                 else{++described;for(auto &row:labels[scope]){auto label=row.toMap();if(label["id"]==params["id"]){label["description"]=params["description"];row=label;}}}
+            }else if(method=="label_auto_read"){
+                ++autoReads;for(auto &row:labels[scope]){auto label=row.toMap();if(label["id"]==params["id"]){require(label["auto_read"]==params["expected_auto_read"],"Auto-read uses captured previous state");label["auto_read"]=params["auto_read"];row=label;}}
             }else if(method=="label_remove"){
                 ++removed;lastRemovalAccount=scope;auto &rows=labels[scope];for(int i=0;i<rows.size();++i)if(rows[i].toMap()["id"]==params["id"]){require(rows[i].toMap()["name"]==params["expected_name"],"captured label name");rows.removeAt(i);break;}
             }else if(method=="google_labels_sync"){++synced;result={{"state","running"},{"job_id","sync-job"}};}
@@ -66,6 +68,8 @@ int main(int argc,char**argv){
     auto id=backend.labels["work"].first().toMap()["id"].toString();waitFor([&]{return find(window->contentItem(),"labelDescription_"+id)!=nullptr;});
     auto description=control("labelDescription_"+id);backend.reject=true;type(description,"Papers and findings");enter(description);waitFor([&]{return panel->property("status").toString().startsWith("Not saved");});require(description->property("text")=="Papers and findings","conflict preserves instructions");
     backend.reject=false;QMetaObject::invokeMethod(control("retryLabelChange"),"clicked");waitFor([&]{return backend.described==1&&!panel->property("busy").toBool();});require(backend.labels["work"].first().toMap()["description"]=="Papers and findings","retry saves captured text");
+    auto autoRead=control("labelAutoRead_"+id);autoRead->setProperty("checked",true);QMetaObject::invokeMethod(autoRead,"clicked");waitFor([&]{return backend.autoReads==1&&!panel->property("busy").toBool();});
+    require(backend.labels["work"].first().toMap()["auto_read"]==true&&backend.labels["personal"].isEmpty(),"Auto-read is saved only for selected account and label");
     const auto capture=qEnvironmentVariable("FM_LABEL_SETTINGS_CAPTURE");if(!capture.isEmpty()){QElapsedTimer paint;paint.start();while(paint.elapsed()<100)QCoreApplication::processEvents();require(window->grabWindow().save(capture),"label settings frame");}
     QMetaObject::invokeMethod(control("removeLabel_"+id),"clicked");waitFor([&]{return find(window->contentItem(),"confirmRemoveLabel")!=nullptr;});
     panel->setProperty("account","personal");QMetaObject::invokeMethod(control("confirmRemoveLabel"),"clicked");waitFor([&]{return backend.removed==1;});require(backend.lastRemovalAccount=="work"&&backend.labels["work"].isEmpty(),"confirmation retains original account through selection change");

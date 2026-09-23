@@ -86,8 +86,14 @@ enum Command {
     },
     /// Update display name and signature, preserving existing draft snapshots.
     AccountUpdate {
-        #[arg(long, value_parser=["1_month","3_months","1_year","all"])]
+        #[arg(long, value_parser=["1_month","3_months","90_days","1_year","2_years","5_years","all"])]
         mail_retention: Option<String>,
+        /// Mail access; supply together with --calendar-access.
+        #[arg(long,value_parser=["none","read","write"],requires="calendar_access")]
+        mail_access: Option<String>,
+        /// Calendar access; supply together with --mail-access.
+        #[arg(long,value_parser=["none","read","write"],requires="mail_access")]
+        calendar_access: Option<String>,
         #[arg(long)]
         name: String,
         #[arg(long)]
@@ -443,6 +449,16 @@ enum Google {
 
 #[derive(Subcommand)]
 enum Mail {
+    /// Restore the exact retained state before a mail action (fails after newer edits).
+    Undo {
+        id: String,
+        #[arg(long)]
+        undo_request_id: String,
+        #[arg(long)]
+        expected_revision: u64,
+        #[arg(long)]
+        request_id: Option<String>,
+    },
     /// Archive, move to Trash or restore the currently loaded conversation members.
     Filing {
         id: String,
@@ -2136,6 +2152,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
         },
         Command::AccountUpdate {
             mail_retention,
+            mail_access,calendar_access,
             name,
             signature_file,
             expected_revision,
@@ -2145,6 +2162,9 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 .map_err(|_| invalid("Signature must be UTF-8"))?;
             let mut params=json!({"name":name,"signature_text":signature,"expected_revision":expected_revision,"request_id":request_id});
             if let Some(retention)=mail_retention {params["mail_retention"]=json!(retention);}
+            if let (Some(mail),Some(calendar))=(mail_access,calendar_access) {
+                params["sync"]=json!({"mail":mail!="none","calendar":calendar!="none","mail_access":if mail=="none" {"read"} else {&mail},"calendar_access":if calendar=="none" {"read"} else {&calendar}});
+            }
             client.call("account_update",scope,params).await?
         }
         Command::CalendarSources => client.call("calendar_sources", None, json!({})).await?,
@@ -2373,6 +2393,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     .call("google_mail_mutation_status", scope, params)
                     .await?
             }
+            Mail::Undo { id,undo_request_id,expected_revision,request_id } => client.call("mail_undo",scope,json!({"id":id,"undo_request_id":undo_request_id,"expected_revision":expected_revision,"request_id":request_id.clone().unwrap_or_else(fm_ipc::random_token)})).await?,
             Mail::Filing {
                 id,
                 action,

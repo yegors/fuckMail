@@ -1,5 +1,9 @@
 # Gmail provider
 
+## D093 — completed page payload release (Gmail26)
+
+Finishing a live page clears each completed item's staging manifest JSON in the same transaction as the completion receipt. Keep manifest hash, part key, applied revision and page/coverage proofs so a repeated part commit returns its exact result after restart. Incomplete and uncertain page data stays available. This applies to newly created schema32 profiles; Core51 owns the storage boundary, Search6 the FTS representation and Quality68 the recovery checks. Fixture0/3 and protocol1 remain unchanged.
+
 ## D088 — acquired reply contributions (Gmail25)
 
 Shared message preparation derives the cached reading/search body from new contributions, omitting recognizable reply history while retaining inline answers and explicit forwarded content. Retain exact RAW MIME and attachment blobs and their checksums; provider identity, labels, checkpoints, replay and authored draft/send handling do not change. Existing retained messages are not backfilled. Core48/Mail UI64/Quality64; CLI41, schema29, fixtures0/3/protocol1 unchanged.

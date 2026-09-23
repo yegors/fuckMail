@@ -5,6 +5,7 @@ import QtQuick.Effects
 Dialog {
     id: dialog
     property bool destructive: false
+    property real cornerRadius: 8
     property string titleObjectName: ""
     parent: Overlay.overlay
     anchors.centerIn: parent
@@ -20,7 +21,7 @@ Dialog {
         + (footer && footer.visible ? footer.implicitHeight + spacing : 0)
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
     font.family: Theme.fontFamily
-    font.pixelSize: Theme.fontSize(13)
+    font.pointSize: Theme.fontPoints(13)
     palette.windowText: Theme.text
     palette.text: Theme.text
     palette.buttonText: Theme.text
@@ -29,18 +30,18 @@ Dialog {
         width: dialog.width
         text: dialog.title
         visible: text.length > 0
-        topPadding: 22; leftPadding: 22; rightPadding: 22; bottomPadding: 0
+        leftPadding: 22; rightPadding: 22
         wrapMode: Text.Wrap
         textFormat: Text.PlainText
         color: Theme.text
         font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontSize(16)
+        font.pointSize: Theme.fontPoints(16)
         font.weight: Font.Medium
         font.letterSpacing: -0.16
-        lineHeight: 1.3
+        lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.3); topPadding: 22 + Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight)
     }
     background: Rectangle {
-        radius: 8; color: Theme.bg2; border.color: Theme.line2
+        radius: dialog.cornerRadius; color: Theme.bg2; border.color: Theme.line2
         layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
         layer.effect: MultiEffect {
             shadowEnabled: true; shadowColor: Theme.shadowAlpha(0.6)
@@ -59,7 +60,7 @@ Dialog {
             readonly property bool affirmative: DialogButtonBox.buttonRole === DialogButtonBox.AcceptRole || DialogButtonBox.buttonRole === DialogButtonBox.DestructiveRole || DialogButtonBox.buttonRole === DialogButtonBox.YesRole
             implicitHeight: 32
             leftPadding: 14; rightPadding: 14
-            font.pixelSize: Theme.fontSize(12.5); font.weight: Font.Medium
+            font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium
             prominent: affirmative
             shortcutHint: affirmative ? "↵" : ""
             outlined: !affirmative

@@ -28,7 +28,7 @@ Popup {
         if (!selected) { if (range.after) filters.after = range.after; filters.before = range.before }
         backend.applyFilters(filters)
     }
-    width: Math.min(440, parent ? parent.width - 24 : 440)
+    width: Math.min(474, parent ? parent.width - 24 : 474)
     height: Math.min(contents.implicitHeight + 32, parent ? parent.height - y - 12 : 560)
     padding: 16
     focus: false
@@ -54,18 +54,18 @@ Popup {
         senderOptions = senders.sort((a,b) => counts[b.email] - counts[a.email] || a.name.localeCompare(b.name)).slice(0,7)
     }
     Connections { target: backend; function onAccountChanged() { popup.close() } }
-    component Label: Text { color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(11) } Layout.fillWidth: true }
+    component Label: Text { color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11) } Layout.fillWidth: true }
     component Chip: FmButton {
         id: chip
-        implicitHeight: 28; implicitWidth: Math.min(popup.availableWidth, contentItem.implicitWidth + leftPadding + rightPadding)
-        font.pixelSize: Theme.fontSize(12)
+        implicitHeight: Math.round(Theme.fontSize(12) * 1.4) + 10; implicitWidth: Math.min(popup.availableWidth, contentItem.implicitWidth + leftPadding + rightPadding)
+        font.pointSize: Theme.fontPoints(12)
         leftPadding: 10; rightPadding: 10
         foreground: selected ? Theme.canvas : Theme.inkAlpha(.7)
         font.weight: Font.Normal
-        background: Rectangle { radius: 14; color: chip.selected ? Theme.text : chip.hovered ? Theme.hover : "transparent"; border.color: chip.activeFocus ? Theme.focusBorder : chip.selected ? Theme.text : Theme.controlBorder }
+        background: Rectangle { radius: height / 2; color: chip.selected ? Theme.text : chip.hovered ? Theme.hover : "transparent"; border.color: chip.activeFocus ? Theme.focusBorder : chip.selected ? Theme.text : Theme.controlBorder }
     }
     component QuickFilter: Chip {
-        implicitHeight: 26; leftPadding: 8; rightPadding: 8
+        implicitHeight: Math.round(Theme.fontSize(12) * 1.4) + 8; leftPadding: 8; rightPadding: 8
         foreground: selected ? Theme.canvas : Theme.inkAlpha(.75)
         background: Rectangle { radius: 4; color: parent.selected ? Theme.text : parent.hovered ? Theme.hover : Theme.selected; border.width: parent.activeFocus ? 1 : 0; border.color: Theme.focusBorder }
     }
@@ -85,8 +85,8 @@ Popup {
             spacing: 14
             RowLayout {
                 Layout.fillWidth: true
-                Text { text: "Search " + (backend.currentAccount.name || "mail") + " — " + (popup.draftScope ? "drafts" : "sender, words, or filters"); color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) } elide: Text.ElideRight; Layout.fillWidth: true }
-                FmButton { text: "Esc"; implicitHeight: 21; implicitWidth: 31; leftPadding: 4; rightPadding: 4; font.pixelSize: Theme.fontSize(11); outlined: true; onClicked: popup.close() }
+                Text { text: "Search " + (backend.currentAccount.name || "mail") + " — " + (popup.draftScope ? "drafts" : "sender, words, or filters"); color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } elide: Text.ElideRight; Layout.fillWidth: true }
+                FmButton { text: "Esc"; implicitHeight: 21; implicitWidth: 31; leftPadding: 4; rightPadding: 4; font.pointSize: Theme.fontPoints(11); outlined: true; onClicked: popup.close() }
             }
             ColumnLayout {
                 Layout.fillWidth: true; spacing: 8
@@ -167,10 +167,10 @@ Popup {
                 Text {
                     Layout.fillWidth: true; wrapMode: Text.Wrap
                     text: popup.draftScope ? "Saved on this machine" : "Indexed " + ((backend.currentAccount.coverage || {}).indexed_messages || 0) + " of " + (backend.currentAccount.message_count || 0) + " messages"
-                    color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) }
+                    color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
                 }
                 FmButton { objectName: "mailFiltersButton"; visible: !popup.draftScope; iconName: "filter"; iconSize: 13; implicitWidth: 26; implicitHeight: 25; leftPadding: 6; rightPadding: 6; tip: "More filters · sender, attachments and dates"; onClicked: popup.moreFiltersRequested() }
-                FmButton { text: "Clear filters"; foreground: Theme.text; font.pixelSize: Theme.fontSize(12); implicitHeight: 25; onClicked: { backend.applyFilters({}); backend.category = ""; backend.query = "" } }
+                FmButton { text: "Clear filters"; foreground: Theme.text; font.pointSize: Theme.fontPoints(12); implicitHeight: 25; onClicked: { backend.applyFilters({}); backend.category = ""; backend.query = "" } }
             }
         }
     }

@@ -6,7 +6,7 @@ import QtQuick.Effects
 Rectangle {
     id: toast; objectName: "actionToast"
     property real maximumWidth: parent ? parent.width * 0.7 : 600
-    visible: opacity > 0
+    visible: backend.actionToast.visible || opacity > 0
     opacity: backend.actionToast.visible ? 1 : 0
     Behavior on opacity { NumberAnimation { duration: 120 } }
     width: Math.min(maximumWidth, message.implicitWidth + action.implicitWidth + (action.visible ? 14 : 0) + (feedbackIcon.visible ? 28 : 0) + 32)
@@ -28,7 +28,7 @@ Rectangle {
         Text {
             id: message; Layout.fillWidth: true
             text: backend.actionToast.text || ""; textFormat: Text.PlainText; elide: Text.ElideRight
-            color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13)
+            color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13)
         }
         Button {
             id: action; objectName: "actionToastButton"
@@ -38,7 +38,14 @@ Rectangle {
             implicitHeight: toast.height - 8; padding: 0
             text: backend.actionToast.action_label || ""
             Accessible.name: text + ": " + (backend.actionToast.text || "")
-            contentItem: Text { text: action.text; color: action.hovered ? Theme.text : Theme.accent; verticalAlignment: Text.AlignVCenter; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13); font.weight: Font.Medium }
+            contentItem: RowLayout {
+                spacing:7
+                Text {text:action.text;color:action.hovered ? Theme.text : Theme.accent;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(13);font.weight:Font.Medium}
+                Rectangle {
+                    visible:action.text==="Undo"; implicitWidth:undoKey.implicitWidth+10; implicitHeight:18; radius:3; color:"transparent"; border.color:Theme.line2
+                    Text {id:undoKey;anchors.centerIn:parent;text:ShortcutRegistry.label(ShortcutRegistry.sequence("undo",backend.preferences));color:Theme.inkAlpha(.45);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11)}
+                }
+            }
             background: Rectangle { color: "transparent"; radius: 3; border.color: action.activeFocus ? Theme.accent : "transparent" }
             onClicked: backend.activateActionToast()
         }

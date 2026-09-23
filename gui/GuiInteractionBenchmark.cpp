@@ -307,7 +307,7 @@ bool GuiInteractionBenchmark::visibleSnapshot(QJsonObject &snapshot) const {
     const auto sections = latest.value("reader_sections").toList();
     auto member = findItem(m_window->contentItem(), "messageMember_" + mid);
     if (!member || visibleRect(member, m_window).isEmpty()) return false;
-    QQuickItem *body = nullptr; QStringList bodyParts;
+    QQuickItem *body = nullptr; QStringList bodyParts, expectedParts;
     for (qsizetype index = 0; index < sections.size(); ++index) {
         const auto section = sections[index].toMap();
         if (section.value("quote").toBool() || !section.value("parents").toList().isEmpty()) continue;
@@ -317,10 +317,17 @@ bool GuiInteractionBenchmark::visibleSnapshot(QJsonObject &snapshot) const {
         const auto document = qvariant_cast<QQuickTextDocument *>(part->property("textDocument"));
         if (!document || !document->textDocument()) return false;
         bodyParts.append(document->textDocument()->toPlainText());
+        QTextDocument expected; expected.setHtml(section.value("html").toString());
+        expectedParts.append(expected.toPlainText());
         if (!body && visibleRect(part, m_window).width() > 16 && visibleRect(part, m_window).height() > 8) body = part;
     }
     const auto text = bodyParts.join('\n');
-    if (!body || contentCharacters(text) != contentCharacters(unquotedText(latest["text"].toString()))) return false;
+    const bool html = !latest.value("reader_source").toMap().value("body_html").toString().isEmpty();
+    // HTML and plain alternatives can legitimately differ. Check the actual
+    // rendered document against the prepared sections for this exact message;
+    // retain the original independent source-text oracle for plain mail.
+    const auto expected = html ? expectedParts.join('\n') : unquotedText(latest["text"].toString());
+    if (!body || contentCharacters(text) != contentCharacters(expected)) return false;
     QJsonArray memberIds, visibleMembers;
     for (const auto &value : members) memberIds.append(value.toMap()["id"].toString());
     for (auto item : visibleItems(m_window, "messageMember_")) {
@@ -331,7 +338,7 @@ bool GuiInteractionBenchmark::visibleSnapshot(QJsonObject &snapshot) const {
     snapshot = {{"account", m_backend.account()}, {"selected_id", m_backend.selectedId()}, {"row_ids", ids}, {"visible_row_ids", visibleRows},
         {"member_ids", memberIds}, {"visible_member_ids", visibleMembers}, {"message_id", mid},
         {"body_sha256", QString::fromLatin1(QCryptographicHash::hash(latest["text"].toString().toUtf8(), QCryptographicHash::Sha256).toHex())},
-        {"rendered_body_text", text}, {"body_oracle", "rich_document_unquoted_text"},
+        {"rendered_body_text", text}, {"body_oracle", html ? "prepared_html_document_text" : "rich_document_unquoted_text"}, {"expected_rendered_body_text",expected},
         {"body_length", text.size()}, {"qml_visible_row_count", visibleRows.size()}, {"qml_visible_member_count", visibleMembers.size()},
         {"qml_body_type", body->metaObject()->className()}, {"qml_member_object", member->objectName()}};
     return true;
@@ -504,7 +511,7 @@ void GuiInteractionBenchmark::finish(const QString &error) {
         {"boundary", "Native QQuickWindow mouse/key event to the first frame carrying the matching account, conversation model, actual visible row delegates and latest-message body. Generation captured afterSynchronizing, carried through afterRendering and directly timestamped frameSwapped."},
         {"sample_policy", "One unmeasured warmup per route; 100 measured inputs per route; next input 25 ms after the prior correct paint. Normal polling, read-on-open and serial backend queues remain enabled. No pending-queue drain."},
         {"diagnostic_policy", "At most 64 arm events and 64 delivered frame events per input, with separate dropped counts. Arm events retain changed snapshot field names and actual generations; frame events retain acceptance/rejection reason and sync/render/swap/GUI-callback timestamps as offsets from input. Render-thread timestamps use fixed-size copies and constant-time clock reads. Diagnostics do not change any snapshot field, acceptance rule, timer or latency budget; their instrumentation overhead remains in measured runs."},
-        {"identity_oracle", "Every sampled model row, visible delegate, selected conversation and latest source-text hash is recorded for independent SQLite verification. Actual QQuickTextDocument content across all unquoted body sections must equal the retained fixture text with > quotation lines omitted and Unicode whitespace normalized. Source bytes are unchanged; arbitrary received-HTML quotation parsing is outside this generated workload."},
+        {"identity_oracle", "Every sampled model row, visible delegate, selected conversation and latest source-text hash is recorded for independent SQLite verification. Actual QQuickTextDocument content across all unquoted body sections must equal the retained plain fixture text, or the current source-version prepared HTML document text when an HTML alternative is displayed, with Unicode whitespace normalized. Source bytes are unchanged; arbitrary received-HTML quotation parsing is outside this generated workload."},
         {"accounts", QJsonArray::fromStringList(m_accounts)}, {"host", QSysInfo::prettyProductName()}, {"architecture", QSysInfo::currentCpuArchitecture()},
         {"large_mailbox_account", m_routeCount == 5 ? m_largeMailbox : QString{}}, {"large_mailbox_conversation_count", m_routeCount == 5 ? m_largeMailboxCount : 0},
         {"qt_version", QT_VERSION_STR}, {"renderer_api", int(m_window->rendererInterface()->graphicsApi())},

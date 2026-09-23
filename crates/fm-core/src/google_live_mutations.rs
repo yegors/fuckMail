@@ -93,7 +93,10 @@ pub(crate) fn enqueue(
     method: &str,
     p: &Value,
 ) -> Result<()> {
-    if !matches!(method, "flag" | "set_category" | "mail_filing") {
+    if !matches!(
+        method,
+        "flag" | "set_category" | "mail_filing" | "mail_undo"
+    ) {
         return Ok(());
     }
     let live: bool = db.query_row(
@@ -117,15 +120,15 @@ pub(crate) fn enqueue(
         Some("restore") => MailMutationAction::Restore,
         _ => MailMutationAction::Modify,
     };
-    let keys: Vec<(&str, String)> = match method {
+    let keys: Vec<(String, String)> = match method {
         "flag" => ["read", "starred"]
             .into_iter()
             .filter(|field| p.get(*field).is_some())
-            .map(|field| (field, String::new()))
+            .map(|field| (field.into(), String::new()))
             .collect(),
-        "set_category" => vec![("category", crate::string(p, "category_id")?.into())],
+        "set_category" => vec![("category".into(), crate::string(p, "category_id")?.into())],
         "mail_filing" => vec![(
-            "label",
+            "label".into(),
             if action == MailMutationAction::Modify {
                 "INBOX"
             } else {
@@ -133,9 +136,30 @@ pub(crate) fn enqueue(
             }
             .into(),
         )],
+        "mail_undo" => vec![],
         _ => unreachable!(),
     };
-    for value in p["message_ids"]
+    let undo_ids;
+    let ids = if method == "mail_undo" {
+        let receipt: String = db.query_row(
+            "SELECT result_json FROM operations WHERE account=?1 AND request_id=?2",
+            params![account, crate::string(p, "undo_request_id")?],
+            |r| r.get(0),
+        )?;
+        let receipt: Value = serde_json::from_str(&receipt)?;
+        undo_ids = Value::Array(
+            receipt["mail_undo"]["messages"]
+                .as_array()
+                .ok_or_else(|| err("storage_error", "Undo snapshot missing"))?
+                .iter()
+                .map(|v| v["id"].clone())
+                .collect(),
+        );
+        &undo_ids
+    } else {
+        &p["message_ids"]
+    };
+    for value in ids
         .as_array()
         .ok_or_else(|| err("invalid_request", "Supply message IDs"))?
     {
@@ -144,9 +168,22 @@ pub(crate) fn enqueue(
             .ok_or_else(|| err("invalid_request", "Invalid message ID"))?;
         let remote:String=db.query_row("SELECT m.remote_id FROM messages m JOIN google_message_state s ON s.account=m.account AND s.message_id=m.id WHERE m.account=?1 AND m.id=?2 AND s.deleted=0",params![account,message],|r|r.get(0)).optional()?.ok_or_else(||err("not_found","Provider message is no longer available"))?;
         let mut desired = Vec::new();
-        for (field, key) in &keys {
+        let restored_keys = if method == "mail_undo" {
+            // Undo bumps each message revision before recording only the fields it
+            // changed, so older human intents are not re-sent as part of it.
+            let mut stmt=db.prepare_cached("SELECT field,category_id FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND revision=(SELECT revision FROM messages WHERE account=?1 AND id=?2) AND (field!='category' OR category_id IN (SELECT category_id FROM google_category_labels WHERE account=?1)) ORDER BY field,category_id")?;
+            let rows = stmt
+                .query_map(params![account, message], |r| {
+                    Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+                })?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            rows
+        } else {
+            keys.clone()
+        };
+        for (field, key) in &restored_keys {
             let (value,revision):(bool,i64)=db.query_row("SELECT value,revision FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field=?3 AND category_id=?4",params![account,message,field,key],|r|Ok((r.get(0)?,r.get(1)?)))?;
-            let (label, present) = match *field {
+            let (label, present) = match field.as_str() {
                 "read" => ("UNREAD".into(), !value),
                 "starred" => ("STARRED".into(), value),
                 "label" => (key.clone(), value),
@@ -162,13 +199,17 @@ pub(crate) fn enqueue(
             desired.push(DesiredField {
                 assisted: false,
                 provider_categories: None,
-                field: (*field).into(),
+                field: field.clone(),
                 key: key.clone(),
                 value,
                 revision,
                 label,
                 present,
             });
+        }
+        if desired.is_empty() && method == "mail_undo" {
+            // This message already matched its snapshot or changed only unlinked labels.
+            continue;
         }
         db.execute("INSERT INTO google_mail_mutations(account,request_id,message_id,remote_id,action,desired_json,state) VALUES(?1,?2,?3,?4,?5,?6,'pending')",params![account,request,message,remote,action.key(),serde_json::to_string(&desired)?])?;
     }
@@ -267,6 +308,73 @@ pub(crate) fn enqueue_assisted_category(
         Ok(if live { "local_only" } else { "applied" })
     }
 }
+
+/// Auto-read is admitted only for an incoming, still-unread message whose
+/// selected model label is enabled. A pending human read choice wins.
+pub(crate) fn enqueue_assisted_read(
+    db: &Transaction<'_>,
+    account: &str,
+    message: &str,
+) -> Result<bool> {
+    let row: Option<(bool,bool,bool,i64,String)> = db.query_row(
+        "SELECT unread,sent,trashed,revision,remote_id FROM messages WHERE account=?1 AND id=?2",
+        params![account,message], |r|Ok((r.get(0)?,r.get(1)?,r.get(2)?,r.get(3)?,r.get(4)?))
+    ).optional()?;
+    let Some((unread, sent, trashed, revision, remote)) = row else {
+        return Ok(false);
+    };
+    if !unread || sent || trashed || db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field='read')",
+        params![account,message], |r|r.get::<_,bool>(0)
+    )? { return Ok(false); }
+    let live: bool = db.query_row(
+        "SELECT value=1 FROM meta WHERE key='profile_kind'",
+        [],
+        |r| r.get(0),
+    )?;
+    if live {
+        if validate_authoring(db, account).is_err() {
+            return Ok(false);
+        }
+        let available:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM google_message_state WHERE account=?1 AND message_id=?2 AND deleted=0)",params![account,message],|r|r.get(0))?;
+        if !available {
+            return Ok(false);
+        }
+    }
+    let next = revision + 1;
+    db.execute(
+        "UPDATE messages SET unread=0,revision=?3 WHERE account=?1 AND id=?2",
+        params![account, message, next],
+    )?;
+    if live {
+        let request = format!("assist-read-{message}-{next}");
+        use sha2::{Digest, Sha256};
+        let fingerprint = format!(
+            "{:x}",
+            Sha256::digest(serde_json::to_vec(&json!([
+                "assist_read_v1",
+                account,
+                message,
+                next
+            ]))?)
+        );
+        let receipt = json!({"kind":"assist_read","message_id":message,"delivery":{"state":"pending","request_id":request}});
+        db.execute("INSERT INTO operations(account,request_id,fingerprint,result_json) VALUES(?1,?2,?3,?4)",params![account,request,fingerprint,serde_json::to_string(&receipt)?])?;
+        db.execute("INSERT INTO google_manual_intents(account,message_id,field,category_id,value,revision) VALUES(?1,?2,'read','',1,?3)",params![account,message,next])?;
+        let desired = vec![DesiredField {
+            assisted: false,
+            provider_categories: None,
+            field: "read".into(),
+            key: String::new(),
+            value: true,
+            revision: next,
+            label: "UNREAD".into(),
+            present: false,
+        }];
+        db.execute("INSERT INTO google_mail_mutations(account,request_id,message_id,remote_id,action,desired_json,state) VALUES(?1,?2,?3,?4,'modify',?5,'pending')",params![account,request,message,remote,serde_json::to_string(&desired)?])?;
+    }
+    Ok(true)
+}
 fn mapped_labels(
     db: &Connection,
     account: &str,
@@ -346,7 +454,9 @@ fn validate_authoring(db: &Connection, account: &str) -> Result<()> {
     let scopes: BTreeSet<String> = serde_json::from_str(
         &scopes.ok_or_else(|| err("not_found", "Google account is unavailable"))?,
     )?;
-    if !fm_google::auth::ScopeSet::new(&scopes).mail_write() {
+    if !fm_google::auth::ScopeSet::new(&scopes).mail_write()
+        || !crate::preferences::google_write_enabled(db, account, "mail")?
+    {
         return Err(err(
             "capability_unavailable",
             "Google mail modification permission is required",
@@ -537,6 +647,19 @@ impl Store {
         tx.execute("UPDATE google_mail_mutations SET state='in_flight',attempt=?4,connection_generation=?5,retry_at_ms=0,error_code=NULL WHERE account=?1 AND request_id=?2 AND message_id=?3",params![work.account,work.request_id,work.message_id,attempt,work.connection_generation])?;
         let mut claimed = work.clone();
         claimed.attempt = attempt;
+        // Trash/restore can change other labels. Reconcile it first, then use
+        // modify for remaining fields in the same durable Undo operation.
+        claimed.action = remaining
+            .iter()
+            .find(|v| v.label == "TRASH")
+            .map(|v| {
+                if v.present {
+                    MailMutationAction::Trash
+                } else {
+                    MailMutationAction::Restore
+                }
+            })
+            .unwrap_or(MailMutationAction::Modify);
         let add_labels = remaining
             .iter()
             .filter(|v| v.present)

@@ -108,7 +108,7 @@ Rectangle {
                         required property int index
                         x: 24 + index / timeline.hours * timeline.trackWidth; height: panel.height
                         Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, 24); width: Theme.ruleWidth; height: panel.shownLanes * 28 + 8; color: Theme.bg3 }
-                        Text { visible: panel.snapshot.date !== backend.todayDate || Math.abs(timeline.firstHour + index - backend.nowHour) > .42; y: 8; x: index === 0 ? 0 : index === timeline.hours ? -width : -width / 2; text: (timeline.firstHour + index < 10 ? "0" : "") + (timeline.firstHour + index); color: Theme.inkAlpha((timeline.firstHour + index) % 3 === 0 ? .5 : .35); font.pixelSize: Theme.fontSize(10.5) }
+                        Text { visible: panel.snapshot.date !== backend.todayDate || Math.abs(timeline.firstHour + index - backend.nowHour) > .42; y: 8; x: index === 0 ? 0 : index === timeline.hours ? -width : -width / 2; text: (timeline.firstHour + index < 10 ? "0" : "") + (timeline.firstHour + index); color: Theme.inkAlpha((timeline.firstHour + index) % 3 === 0 || index === 0 || index === timeline.hours ? .45 : .28); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5) }
                     }
                 }
                 Repeater {
@@ -151,11 +151,12 @@ Rectangle {
                         Keys.onSpacePressed: timeline.showEvent(modelData, eventBlock)
                         Rectangle {
                             width: Math.max(6, eventBlock.modelData.fractionWidth * timeline.trackWidth); height: 22; radius: 3
+                            Rectangle { width: 3; height: parent.height; color: parent.color; visible: parent.color.a > 0 }
                             color: eventBlock.modelData.current ? Theme.errorAlpha(eventMouse.containsMouse ? .3 : .2) : eventBlock.modelData.next ? Theme.accentAlpha(eventMouse.containsMouse ? .32 : .22) : eventBlock.modelData.past ? (eventMouse.containsMouse ? Theme.surface : "transparent") : eventMouse.containsMouse ? Theme.hover : Theme.selected
                             border.width: eventBlock.modelData.past || eventBlock.activeFocus ? 1 : 0; border.color: eventBlock.activeFocus ? Theme.accent : Theme.line
                             Rectangle { width: 2; height: parent.height; color: eventBlock.modelData.busy_only ? Theme.subtle : eventBlock.eventColor }
                         }
-                        Text { id: blockLabel; x: 8; y: 4; width: Math.max(0, parent.width - 8); text: eventBlock.modelData.label; color: eventBlock.eventColor; font.pixelSize: Theme.fontSize(11); font.weight: eventBlock.modelData.current || eventBlock.modelData.next ? Font.Medium : Font.Normal; elide: Text.ElideRight; textFormat: Text.PlainText }
+                        Text { id: blockLabel; x: 8; anchors.verticalCenter: parent.verticalCenter; width: Math.max(0, parent.width - 8); text: eventBlock.modelData.label; color: eventBlock.eventColor; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.weight: eventBlock.modelData.current || eventBlock.modelData.next ? Font.Medium : Font.Normal; elide: Text.ElideRight; textFormat: Text.PlainText }
                         MouseArea {
                             id: eventMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: timeline.dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
                             onPressed: function(mouse) { timeline.beginDrag(mapToItem(timeline, mouse.x, mouse.y).x) }
@@ -173,26 +174,42 @@ Rectangle {
                     visible: panel.snapshot.date === backend.todayDate && backend.nowHour >= timeline.firstHour && backend.nowHour <= timeline.lastHour
                     x: 24 + (backend.nowHour - timeline.firstHour) / timeline.hours * timeline.trackWidth; height: panel.height
                     Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, 22); width: Theme.ruleWidth; height: panel.shownLanes * 28 + 12; color: Theme.accent }
-                    Rectangle { y: 6; x: -nowLabel.implicitWidth / 2 - 3; width: nowLabel.implicitWidth + 6; height: 16; color: Theme.bg0
-                        Text { id: nowLabel; anchors.centerIn: parent; text: (Math.floor(backend.nowHour) < 10 ? "0" : "") + Math.floor(backend.nowHour) + ":" + (Math.floor(backend.nowHour * 60) % 60 < 10 ? "0" : "") + Math.floor(backend.nowHour * 60) % 60; color: Theme.accent; font.pixelSize: Theme.fontSize(10); font.weight: Font.Medium }
+                    Rectangle { y: 5; x: -nowLabel.implicitWidth / 2 - 3; width: nowLabel.implicitWidth + 6; height: 16; color: Theme.bg0
+                        Text { id: nowLabel; anchors.centerIn: parent; text: (Math.floor(backend.nowHour) < 10 ? "0" : "") + Math.floor(backend.nowHour) + ":" + (Math.floor(backend.nowHour * 60) % 60 < 10 ? "0" : "") + Math.floor(backend.nowHour * 60) % 60; color: Theme.accent; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.weight: Font.Medium }
                     }
                 }
-                Text { anchors.right: parent.right; anchors.rightMargin: 24; y: 8; visible: panel.index !== 1; text: Qt.formatDate(new Date(panel.snapshot.date + "T12:00:00"), "ddd d MMM"); color: Theme.subtle; font.pixelSize: Theme.fontSize(10) }
-                Text { x: 24; y: 32; visible: panel.blocks.length === 0; text: panel.snapshot.ready ? "Nothing scheduled in these hours" : panel.index === 1 ? backend.timelineCoverage : "Loading timeline…"; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); width: panel.width - 48; elide: Text.ElideRight }
+                Rectangle {
+                    readonly property int offset: Math.round((new Date(panel.snapshot.date + "T12:00:00") - new Date(backend.todayDate + "T12:00:00")) / 86400000)
+                    visible: panel.snapshot.date !== backend.todayDate
+                    anchors.right: parent.right; anchors.rightMargin: 24 + (timeline.hiddenEvents > 0 ? overflowButton.width + 10 : 0); y: 6
+                    width: awayRow.implicitWidth + 6; height: 16; color: Theme.bg0
+                    Row {
+                        id: awayRow; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 10
+                        Text {
+                            objectName: panel.index === 1 ? "timelineDateLabel" : ""
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: (parent.parent.offset === 1 ? "Tomorrow · " : parent.parent.offset === -1 ? "Yesterday · " : "") + Qt.formatDate(new Date(panel.snapshot.date + "T12:00:00"), "dddd d MMM")
+                            color: Theme.inkAlpha(.6); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.weight: Font.Medium
+                        }
+                        FmButton {
+                            objectName: panel.index === 1 ? "timelineToday" : ""
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: "Back to today"; implicitHeight: 16; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
+                            font.pointSize: Theme.fontPoints(11); foreground: hovered ? Theme.text : Theme.accent
+                            background: Item {}
+                            onClicked: backend.showTimelineToday()
+                        }
+                    }
+                }
+                Text { x: 24; y: 32; visible: panel.blocks.length === 0; text: panel.snapshot.ready ? "Nothing scheduled" : panel.index === 1 ? backend.timelineCoverage : "Loading timeline…"; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); width: panel.width - 48; elide: Text.ElideRight }
             }
         }
     }
 
     Rectangle {
-        anchors.right: parent.right; anchors.rightMargin: 20; y: 3; width: contextRow.implicitWidth + 6; height: 20; color: Theme.bg0
-        Row {
-            id: contextRow; anchors.right: parent.right; spacing: 3
-            FmButton { objectName: "timelinePreviousDay"; iconName: "previous"; iconSize: 10; implicitWidth: 18; implicitHeight: 20; leftPadding: 4; rightPadding: 4; tip: "Previous day"; onClicked: backend.moveTimeline(-1) }
-            FmButton { objectName: "timelineNextDay"; iconName: "next"; iconSize: 10; implicitWidth: 18; implicitHeight: 20; leftPadding: 4; rightPadding: 4; tip: "Next day"; onClicked: backend.moveTimeline(1) }
-            Text { objectName: "timelineDateLabel"; text: Qt.formatDate(new Date(backend.timelineDate + "T12:00:00"), "ddd d MMM"); color: Theme.subtle; font.pixelSize: Theme.fontSize(10); height: 20; verticalAlignment: Text.AlignVCenter }
-            FmButton { objectName: "timelineToday"; visible: backend.timelineDate !== backend.todayDate; text: "Back to today"; foreground: Theme.accent; implicitHeight: 20; font.pixelSize: Theme.fontSize(10); leftPadding: 5; rightPadding: 5; onClicked: backend.showTimelineToday() }
-            FmButton { id: overflowButton; text: timeline.hiddenEvents > 0 ? "+" + timeline.hiddenEvents : ""; iconName: "more"; iconSize: 12; implicitHeight: 20; leftPadding: 5; rightPadding: 5; font.pixelSize: Theme.fontSize(10); tip: "All events · " + (backend.preferences.calendar_display_time_zone || "Time zone unavailable") + " · " + backend.timelineCoverage; onClicked: timelineMenu.open() }
-        }
+        visible: timeline.hiddenEvents > 0
+        anchors.right: parent.right; anchors.rightMargin: 21; y: 4; width: overflowButton.width + 6; height: 20; color: Theme.bg0
+        FmButton { id: overflowButton; objectName: "timelineOverflow"; anchors.right: parent.right; text: "+" + timeline.hiddenEvents + " more"; implicitHeight: 20; leftPadding: 5; rightPadding: 5; font.pointSize: Theme.fontPoints(11); foreground: hovered ? Theme.text : Theme.inkAlpha(.5); tip: "All events · " + (backend.preferences.calendar_display_time_zone || "Time zone unavailable") + " · " + backend.timelineCoverage; onClicked: timelineMenu.open() }
     }
     Popup {
         id: timelineMenu; parent: overflowButton; width: 265; x: parent.width - width; y: timeline.headerPosition ? parent.height + timeline.height : -height - 10; padding: 8; focus: true
@@ -202,7 +219,7 @@ Rectangle {
             spacing: 4
             FmButton { text: "All " + backend.todayEvents.length + " events"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { timelineMenu.close(); dayEvents.open() } }
             FmButton { text: "Open calendar"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { timelineMenu.close(); timeline.openCalendar() } }
-            Text { text: (backend.preferences.calendar_display_time_zone || "Time zone unavailable") + "\n" + backend.timelineCoverage; color: Theme.subtle; font.pixelSize: Theme.fontSize(11); Layout.fillWidth: true; wrapMode: Text.Wrap }
+            Text { text: (backend.preferences.calendar_display_time_zone || "Time zone unavailable") + "\n" + backend.timelineCoverage; color: Theme.subtle; font.pointSize: Theme.fontPoints(11); Layout.fillWidth: true; wrapMode: Text.Wrap }
         }
     }
     EventDetails { id: details; timelineSource: true; timelineInset: timeline.height; timelineAtTop: timeline.headerPosition; timelineEdge: timeline.mapToItem(Overlay.overlay, 0, timeline.headerPosition ? timeline.height : 0).y; onEditRequested: function(event) { editor.editEvent = event; editor.openForDate(event.start.slice(0, 10)) } }

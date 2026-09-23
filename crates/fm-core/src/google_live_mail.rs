@@ -495,8 +495,13 @@ impl Store {
             tx.execute("INSERT INTO meta(key,value) VALUES(?1,unixepoch()) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [format!("last_mail_sync:{}", page.account)])?;
         }
         tx.execute("UPDATE google_live_pages SET complete=1 WHERE account=?1 AND lane=?2 AND generation=?3 AND expected_revision=?4",params![page.account,page.lane.key(),page.generation,page.expected_revision])?;
+        // Completed pages retain hashes and part receipts for exact replay, but
+        // their normalized staging payloads are no longer needed for recovery.
+        tx.execute("UPDATE google_live_page_items SET manifest_json=NULL WHERE account=?1 AND lane=?2 AND generation=?3 AND expected_revision=?4 AND applied_revision IS NOT NULL",params![page.account,page.lane.key(),page.generation,page.expected_revision])?;
         tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
         tx.commit()?;
+        // A fresh profile's first sync must not keep open-time empty-table plans.
+        self.refresh_planner_statistics();
         Ok(record.plan.next)
     }
 

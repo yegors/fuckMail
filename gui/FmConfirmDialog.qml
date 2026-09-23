@@ -24,10 +24,10 @@ FmDialog {
         text: dialog.message
         color: Theme.inkAlpha(0.6)
         font.family: Theme.fontFamily
-        font.pixelSize: Theme.fontSize(13)
+        font.pointSize: Theme.fontPoints(13)
         wrapMode: Text.Wrap
         textFormat: Text.PlainText
-        lineHeight: 1.5
+        lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight)
     }
     onActionEnabledChanged: { const action = standardButton(Dialog.Ok); if (action) action.enabled = actionEnabled }
     Shortcut {

@@ -16,7 +16,7 @@ AbstractButton {
         border.width: control.activeFocus ? 1 : 0
         border.color: Theme.focusBorder
         Rectangle {
-            width: 14; height: 14; radius: 7; y: 2
+            width: parent.height - 4; height: width; radius: width / 2; y: 2
             x: control.checked ? parent.width - width - 2 : 2
             color: control.checked ? Theme.canvas : Theme.inkAlpha(0.7)
             Behavior on x { NumberAnimation { duration: 150 } }

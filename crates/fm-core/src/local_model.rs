@@ -17,6 +17,8 @@ pub struct Prepared {
     pub sources: Vec<String>,
     snapshot: String,
     pub partial: bool,
+    /// Set only by the engine's new-arrival watcher, never by manual or backlog analysis.
+    pub arrival: bool,
 }
 fn encode(v: &Value) -> Result<String> {
     Ok(serde_json::to_string(v)?)
@@ -68,7 +70,7 @@ impl Store {
                 }
                 for (account, policy) in &settings.accounts {
                     self.require_active_account(account)?;
-                    for category in policy.descriptions.keys() {
+                    for category in policy.descriptions.keys().chain(policy.auto_read.keys()) {
                         let exists: bool = tx.query_row(
                             "SELECT EXISTS(SELECT 1 FROM categories WHERE account=?1 AND id=?2)",
                             params![account, category],
@@ -447,6 +449,7 @@ impl Store {
             sources,
             snapshot: encode(&snapshot)?,
             partial,
+            arrival: false,
         })
     }
     pub fn local_model_validate(&self, p: &Prepared) -> Result<()> {
@@ -504,6 +507,30 @@ impl Store {
                     label_state = crate::google_live_mutations::enqueue_assisted_category(
                         &tx, &p.account, &p.target, category,
                     )?;
+                    if p.arrival
+                        && matches!(
+                            label_state,
+                            "pending" | "local_only" | "applied" | "already_present"
+                        )
+                    {
+                        let name: Option<String> = tx
+                            .query_row(
+                                "SELECT name FROM categories WHERE account=?1 AND id=?2",
+                                params![p.account, category],
+                                |r| r.get(0),
+                            )
+                            .optional()?;
+                        let auto_read =
+                            policy.auto_read.get(category).copied().unwrap_or_else(|| {
+                                name.as_deref()
+                                    .is_some_and(|n| n.eq_ignore_ascii_case("Receipts"))
+                            });
+                        if auto_read {
+                            crate::google_live_mutations::enqueue_assisted_read(
+                                &tx, &p.account, &p.target,
+                            )?;
+                        }
+                    }
                 }
             } else {
                 label_state = "partial_source";
@@ -700,120 +727,6 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn local_provider_upgrade_preserves_old_bytes_and_fences_changed_provider() {
-        let (dir, store) = configured_store();
-        let (a, c, m) = (
-            "windscribe",
-            "windscribe-thread-001",
-            "windscribe-message-001-000",
-        );
-        let output = json!({"summary":"The design is approved.","source_ids":[m],"sender_kind":"human","category_ids":[],"category_abstain":false,"reason":"Personal reply"});
-        let plan = store.local_model_prepare(a, c, "message", m).unwrap();
-        store.local_model_finish(&plan, output.clone()).unwrap();
-        let settings: String = store
-            .db
-            .query_row("SELECT settings_json FROM local_model_settings", [], |r| {
-                r.get(0)
-            })
-            .unwrap();
-        assert!(!settings.contains("\"provider\""));
-        let snapshots = |store: &Store| -> Vec<(String, String)> {
-            store
-                .db
-                .prepare("SELECT snapshot_json,result_json FROM local_model_results ORDER BY task")
-                .unwrap()
-                .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-                .unwrap()
-                .collect::<rusqlite::Result<_>>()
-                .unwrap()
-        };
-        let before = snapshots(&store);
-        let count: i64 = store
-            .db
-            .query_row("SELECT count(*) FROM message_sender_kinds", [], |r| {
-                r.get(0)
-            })
-            .unwrap();
-        // Recreate the actual prior CHECK constraint, then reopen through migration 25.
-        crate::test_profiles::restore_schema_twenty_six(&store.db);
-        store.db.execute_batch("ALTER TABLE message_sender_kinds RENAME TO previous_kinds;
-            CREATE TABLE message_sender_kinds(account TEXT NOT NULL,message_id TEXT NOT NULL,source_hash TEXT NOT NULL CHECK(length(source_hash)=64),kind TEXT NOT NULL CHECK(kind IN ('people','automated','unknown')),provenance TEXT NOT NULL CHECK(provenance IN ('fixture','ollama','manual')),PRIMARY KEY(account,message_id),FOREIGN KEY(account,message_id) REFERENCES messages(account,id) ON DELETE CASCADE);
-            INSERT INTO message_sender_kinds SELECT * FROM previous_kinds; DROP TABLE previous_kinds; DROP TABLE google_label_creations; PRAGMA user_version=24;").unwrap();
-        drop(store);
-        let mut store = Store::open_synthetic(dir.path()).unwrap();
-        assert_eq!(
-            store
-                .db
-                .query_row("PRAGMA user_version", [], |r| r.get::<_, u32>(0))
-                .unwrap(),
-            crate::SCHEMA_VERSION
-        );
-        assert_eq!(
-            store
-                .db
-                .query_row("SELECT count(*) FROM message_sender_kinds", [], |r| r
-                    .get::<_, i64>(0))
-                .unwrap(),
-            count
-        );
-        assert_eq!(
-            store
-                .db
-                .query_row("SELECT settings_json FROM local_model_settings", [], |r| {
-                    r.get::<_, String>(0)
-                })
-                .unwrap(),
-            settings
-        );
-        assert_eq!(snapshots(&store), before);
-        assert!(store.local_model_results(a, c).unwrap()["items"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .all(|r| r["stale"] == false));
-        let old_plan = store.local_model_prepare(a, c, "message", m).unwrap();
-        let mut state = store.local_model_settings().unwrap();
-        state["settings"]["provider"] = json!("openai_compatible");
-        state["settings"]["model"]["digest"] = json!("");
-        store
-            .local_model_handle(
-                "assist_settings_save",
-                None,
-                &json!({"expected_revision":state["revision"],"settings":state["settings"]}),
-            )
-            .unwrap();
-        assert_eq!(
-            store
-                .local_model_finish(&old_plan, output.clone())
-                .unwrap_err()
-                .code,
-            "assistance_stale"
-        );
-        let plan = store.local_model_prepare(a, c, "message", m).unwrap();
-        store.local_model_finish(&plan, output.clone()).unwrap();
-        assert_eq!(store.db.query_row("SELECT provenance FROM message_sender_kinds WHERE account=?1 AND message_id=?2",params![a,m],|r|r.get::<_,String>(0)).unwrap(),"openai_compatible");
-        store.db.execute("UPDATE message_sender_kinds SET provenance='manual',kind='automated' WHERE account=?1 AND message_id=?2",params![a,m]).unwrap();
-        let plan = store.local_model_prepare(a, c, "message", m).unwrap();
-        store.local_model_finish(&plan, output).unwrap();
-        assert_eq!(
-            store
-                .db
-                .query_row(
-                    "SELECT kind FROM message_sender_kinds WHERE account=?1 AND message_id=?2",
-                    params![a, m],
-                    |r| r.get::<_, String>(0)
-                )
-                .unwrap(),
-            "automated"
-        );
-        drop(store);
-        let store = Store::open_synthetic(dir.path()).unwrap();
-        assert_eq!(
-            store.local_model_settings().unwrap()["settings"]["provider"],
-            "openai_compatible"
-        );
-    }
     fn configured_store() -> (tempfile::TempDir, Store) {
         let dir = tempfile::tempdir().unwrap();
         let mut s = Store::open_synthetic(dir.path()).unwrap();
@@ -831,6 +744,117 @@ mod tests {
         )
         .unwrap();
         (dir, s)
+    }
+    #[test]
+    fn receipts_auto_read_defaults_on_and_respects_account_label_toggle() {
+        let (dir, mut store) = configured_store();
+        let account = "windscribe";
+        let conversation = "windscribe-thread-001";
+        let message = "windscribe-message-001-000";
+        store
+            .db
+            .execute(
+                "INSERT INTO categories(account,id,name) VALUES(?1,'receipts','Receipts')",
+                [account],
+            )
+            .unwrap();
+        let catalog = store.label_catalog(account).unwrap();
+        assert_eq!(
+            catalog["categories"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["id"] == "receipts")
+                .unwrap()["auto_read"],
+            true
+        );
+        let result = json!({"summary":"A receipt.","source_ids":[message],"sender_kind":"automated","category_ids":["receipts"],"category_abstain":false,"reason":"Purchase receipt"});
+        let mut plan = store
+            .local_model_prepare(account, conversation, "message", message)
+            .unwrap();
+        plan.arrival = true;
+        store.local_model_finish(&plan, result.clone()).unwrap();
+        let unread: bool = store
+            .db
+            .query_row(
+                "SELECT unread FROM messages WHERE account=?1 AND id=?2",
+                params![account, message],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(!unread);
+        store
+            .db
+            .execute(
+                "UPDATE messages SET unread=1,revision=revision+1 WHERE account=?1 AND id=?2",
+                params![account, message],
+            )
+            .unwrap();
+        let manual = store
+            .local_model_prepare(account, conversation, "message", message)
+            .unwrap();
+        store.local_model_finish(&manual, result).unwrap();
+        let still_unread: bool = store
+            .db
+            .query_row(
+                "SELECT unread FROM messages WHERE account=?1 AND id=?2",
+                params![account, message],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            still_unread,
+            "manual or backlog classification cannot silently review mail"
+        );
+        let model_kinds = |store: &Store| -> i64 {
+            store.db.query_row("SELECT count(*) FROM message_sender_kinds WHERE account=?1 AND provenance IN ('ollama','openai_compatible')",[account],|r|r.get(0)).unwrap()
+        };
+        let kinds_before = model_kinds(&store);
+        assert!(kinds_before > 0);
+        store.label_edit(account,"label_auto_read",&json!({"request_id":"disable-receipts","id":"receipts","expected_auto_read":true,"auto_read":false})).unwrap();
+        assert_eq!(
+            model_kinds(&store),
+            kinds_before,
+            "Auto-read does not invalidate People/Automated results"
+        );
+        assert_eq!(
+            store.label_catalog(account).unwrap()["categories"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["id"] == "receipts")
+                .unwrap()["auto_read"],
+            false
+        );
+        let other: String = store
+            .db
+            .query_row(
+                "SELECT id FROM accounts WHERE id<>?1 LIMIT 1",
+                [account],
+                |r| r.get(0),
+            )
+            .unwrap();
+        store
+            .db
+            .execute(
+                "INSERT INTO categories(account,id,name) VALUES(?1,'receipts','Receipts')",
+                [&other],
+            )
+            .unwrap();
+        drop(store);
+        let store = Store::open_synthetic(dir.path()).unwrap();
+        let choice = |account: &str| {
+            store.label_catalog(account).unwrap()["categories"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["id"] == "receipts")
+                .unwrap()["auto_read"]
+                .as_bool()
+                .unwrap()
+        };
+        assert!(!choice(account), "the explicit opt-out survives restart");
+        assert!(choice(&other), "another account keeps the Receipts default");
     }
     #[test]
     fn local_model_escaped_text_is_truncated_to_the_expanded_request_budget() {
@@ -914,45 +938,6 @@ mod tests {
         assert_eq!(stored, 2, "hide old results without deleting history");
     }
     #[test]
-    fn local_model_generation_budget_upgrade_preserves_prompt_and_opt_outs() {
-        let (dir, s) = configured_store();
-        let mut settings = s.local_model_settings().unwrap()["settings"].clone();
-        let mut request: Value =
-            serde_json::from_str(settings["prompt"].as_str().unwrap()).unwrap();
-        request["options"]["num_predict"] = json!(1024);
-        settings["prompt"] = serde_json::to_string_pretty(&request).unwrap().into();
-        settings["accounts"] =
-            json!({"windscribe":{"classification":false,"summaries":true,"descriptions":{}}});
-        let bytes = serde_json::to_string(&settings).unwrap();
-        s.db.execute(
-            "UPDATE local_model_settings SET revision=17,settings_json=?1",
-            [&bytes],
-        )
-        .unwrap();
-        crate::test_profiles::restore_schema_twenty_six(&s.db);
-        s.db.execute_batch("DROP TABLE google_label_creations; PRAGMA user_version=23")
-            .unwrap();
-        drop(s);
-        let s = Store::open_synthetic(dir.path()).unwrap();
-        let upgraded = s.local_model_settings().unwrap();
-        let mut expected = request;
-        expected["options"]["num_predict"] = json!(4096);
-        assert_eq!(
-            serde_json::from_str::<Value>(upgraded["settings"]["prompt"].as_str().unwrap())
-                .unwrap(),
-            expected
-        );
-        assert_eq!(upgraded["settings"]["accounts"], settings["accounts"]);
-        let archived: String =
-            s.db.query_row(
-                "SELECT settings_json FROM local_model_settings_history WHERE revision=17",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(archived, bytes);
-    }
-    #[test]
     fn combined_message_summary_preview_and_manual_label_precedence() {
         let (_dir, mut s) = configured_store();
         let a = "windscribe";
@@ -1008,81 +993,7 @@ mod tests {
         .unwrap();
         assert!(s.local_model_preview(a, c, m).unwrap().is_none());
     }
-    #[test]
-    fn schema22_request_upgrade_preserves_saved_prompt_exactly() {
-        let (dir, s) = configured_store();
-        let mut old = serde_json::to_value(Settings::default()).unwrap();
-        let text = format!(
-            "{}\nCustom instruction: use French. Literal \"quotes\".",
-            ollama::MESSAGE_PROMPT
-        );
-        old["prompt"] = text.clone().into();
-        old["accounts"] = json!({"windscribe":{"classification":false,"summaries":true,"descriptions":{"work":"Projects"}}});
-        let bytes = serde_json::to_string_pretty(&old).unwrap();
-        s.db.execute(
-            "UPDATE local_model_settings SET revision=7,settings_json=?1",
-            [&bytes],
-        )
-        .unwrap();
-        crate::test_profiles::restore_schema_twenty_six(&s.db);
-        s.db.execute_batch("DROP TABLE google_label_creations; PRAGMA user_version=22;")
-            .unwrap();
-        drop(s);
-        let s = Store::open_synthetic(dir.path()).unwrap();
-        let settings = s.local_model_settings().unwrap();
-        let request: Value =
-            serde_json::from_str(settings["settings"]["prompt"].as_str().unwrap()).unwrap();
-        assert_eq!(request["messages"][1]["content"], text);
-        assert!(request["format"]["properties"]["summary"].is_object());
-        assert_eq!(settings["revision"], 8);
-        assert_eq!(settings["settings"]["accounts"], old["accounts"]);
-        let archived: String =
-            s.db.query_row(
-                "SELECT settings_json FROM local_model_settings_history WHERE revision=7",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(archived, bytes);
-        drop(s);
-        let s = Store::open_synthetic(dir.path()).unwrap();
-        assert_eq!(s.local_model_settings().unwrap(), settings);
-    }
 
-    #[test]
-    fn schema21_settings_upgrade_preserves_original_bytes_and_explicit_opt_out() {
-        let (dir, s) = configured_store();
-        let old=json!({"endpoint":"http://127.0.0.1:11434","classification_model":{"name":"classifier","digest":"a".repeat(64)},"summary_model":{"name":"summarizer","digest":"b".repeat(64)},"classification_prompt":ollama::CLASSIFICATION_PROMPT,"summary_prompt":"Please use French.","accounts":{"windscribe":{"classification":false,"summaries":true,"descriptions":{}}}}).to_string();
-        s.db.execute("UPDATE local_model_settings SET settings_json=?1", [&old])
-            .unwrap();
-        crate::test_profiles::restore_schema_twenty_six(&s.db);
-        s.db.execute_batch("DROP TABLE google_label_creations; DROP TABLE local_model_settings_history; DROP TABLE local_model_label_overrides; PRAGMA user_version=21;").unwrap();
-        drop(s);
-        let s = Store::open_synthetic(dir.path()).unwrap();
-        let settings = s.local_model_settings().unwrap();
-        assert_eq!(settings["settings"]["model"]["name"], "classifier");
-        assert_eq!(
-            settings["settings"]["accounts"]["windscribe"]["classification"],
-            false
-        );
-        assert!(settings["settings"]["prompt"]
-            .as_str()
-            .unwrap()
-            .contains("Please use French."));
-        let archived: String =
-            s.db.query_row(
-                "SELECT settings_json FROM local_model_settings_history",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(old, archived);
-        assert_eq!(
-            s.db.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
-                .unwrap(),
-            i64::from(crate::SCHEMA_VERSION)
-        );
-    }
     #[test]
     fn settings_restart_results_manual_precedence_and_stale_guards() {
         let dir = tempfile::tempdir().unwrap();

@@ -18,8 +18,8 @@ CheckBox {
         id: copy
         leftPadding: 28
         spacing: 3
-        Text { width: parent.width - 28; text: control.text; color: control.enabled ? Theme.text : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(14); wrapMode: Text.Wrap; textFormat: Text.PlainText }
-        Text { width: parent.width - 28; visible: text.length > 0; text: control.description; color: Theme.inkAlpha(0.5); font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12.5); wrapMode: Text.Wrap; lineHeight: 1.45; textFormat: Text.PlainText }
+        Text { width: parent.width - 28; text: control.text; color: control.enabled ? Theme.text : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(14); wrapMode: Text.Wrap; textFormat: Text.PlainText }
+        Text { width: parent.width - 28; visible: text.length > 0; text: control.description; color: Theme.inkAlpha(0.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); wrapMode: Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.45); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight); textFormat: Text.PlainText }
     }
     background: Rectangle { color: "transparent"; Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: 1; color: Theme.line } }
 }

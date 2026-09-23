@@ -331,6 +331,12 @@ impl Store {
             "UPDATE calendar_sync_runs SET state='published' WHERE id=?1",
             [lease.run],
         )?;
+        // Source and catalog rows own successfully published content. Keep
+        // failed items for diagnosis and fingerprints/page/run proofs for replay.
+        tx.execute(
+            "UPDATE calendar_sync_items SET json=NULL WHERE run=?1 AND error_code IS NULL",
+            [lease.run],
+        )?;
         tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
         tx.commit()?;
         Ok(

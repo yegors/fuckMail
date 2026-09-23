@@ -445,10 +445,12 @@ void MailBackend::selectAccount(const QString &id) {
     if (!accountRemoved(id)) m_archiveSelection.clear();
     if (!m_attachmentQueues.value(attachmentImportKey()).isEmpty()) m_attachmentQueuePaused.insert(attachmentImportKey());
     m_account = id; m_conversation.clear(); m_draft.clear(); m_activeDraft.clear(); m_recipientInputs.clear(); m_selected.clear(); m_draftStatus.clear(); m_pinnedRow.clear(); m_pinnedIndex = -1;
-    m_query.clear(); m_category.clear(); m_filters.clear(); m_querySummary.clear(); m_captureStatus.clear(); m_folder = "inbox"; publishConversations({}); m_categories.clear(); m_captures.clear(); m_nextOffset = -1; m_nextCursor.clear(); m_loading = false;
+    m_query.clear(); m_category.clear(); m_filters.clear(); m_querySummary.clear(); m_captureStatus.clear(); m_folder = "inbox"; m_categories.clear(); m_captures.clear(); m_nextOffset = -1; m_nextCursor.clear(); m_loading = false;
     // Restore only observed mail projections. The fresh view/source requests
     // below still own current state and every read-on-open mutation.
-    restoreMailView();
+    // Publish the destination once. Clearing first destroys every delegate
+    // before immediately replacing it with the already validated cached view.
+    if (!restoreMailView()) publishConversations({});
     emit accountChanged(); emit currentAccountChanged(); emit accountLifecycleChanged(); emit categoriesChanged(); emit queryChanged(); emit conversationChanged(); emit draftChanged(); emit conversationsChanged(); emit capturesChanged(); emit mailDeliveryChanged();
     request("view_get", id, {}, [this, id, generation](auto result, bool ok) {
         if (m_accountViewRestorationGeneration == generation) m_accountViewRestorationGeneration = -1;
@@ -901,7 +903,7 @@ void MailBackend::loadConversation(bool loadDraft, bool reviewOnLoad) {
                 if (m_mutatingConversation) m_afterConversationMutation = [this, id, account, generation] {
                     if (id == m_selected && account == m_account && generation == m_generation) loadConversation(false, true);
                 };
-                else mutateConversation("flag", {{"read", true}});
+                else mutateConversation("flag", {{"read", true}}, false);
             }
         }
         emit ready();
@@ -931,7 +933,7 @@ QJsonObject MailBackend::mutation() const { return {{"request_id", uuid()}}; }
 void MailBackend::flag(const QString &name, bool value) {
     mutateConversation("flag", {{name, value}});
 }
-void MailBackend::mutateConversation(const QString &method, QJsonObject params) {
+void MailBackend::mutateConversation(const QString &method, QJsonObject params, bool undoable) {
     if (m_selected.startsWith("outgoing:")) return;
     if (m_conversation.isEmpty() || m_mutatingConversation) return;
     if (!accountCapability(m_account, "mail_write")) { fail("Reconnect Google with Mail access to change this conversation."); return; }
@@ -940,7 +942,12 @@ void MailBackend::mutateConversation(const QString &method, QJsonObject params) 
     params["expected_revision"] = m_conversation["revision"].toLongLong();
     const auto id = m_selected, account = m_account;
     m_mutatingConversation = true; emit mutationChanged();
-    request(method, account, params, [this, id, account, method](auto result, bool ok) {
+    const auto undoEpoch = m_mailUndoEpoch;
+    request(method, account, params, [this, id, account, method, params, undoable, undoEpoch](auto result, bool ok) {
+        if (ok && undoable && undoEpoch == m_mailUndoEpoch) {
+            const auto token=mailUndoToken(account,result);
+            if (!token.isEmpty()) offerMailUndo(mailActionLabel(method,params), {token});
+        }
         m_mutatingConversation = false; emit mutationChanged();
         if (!ok) cancelShutdown();
         if (ok && !m_syntheticProfile && result["delivery"].isObject()) {
@@ -1058,6 +1065,8 @@ void MailBackend::applyMailSelection(const QVariantList &rows, const QString &ac
         }
         commands.append(QJsonObject{{"method", method}, {"params", params}, {"reopen", method == "draft_discard" && id == m_activeDraft && presentation().value("replyOpen").toBool()}});
     }
+    m_bulkMailUndo.clear(); m_bulkMailSelection = rows; m_bulkMailUndoEpoch=m_mailUndoEpoch;
+    m_bulkMailAction=commands.isEmpty() ? QString{} : mailActionLabel(commands.first()["method"].toString(),commands.first()["params"].toObject());
     m_bulkCommands = std::move(commands); m_bulkIndex = 0; m_bulkAccount = m_account; m_bulkLifecycle = lifecycle;
     m_bulkIssuedAt = m_actionClock.elapsed(); m_bulkDiscardUndo.clear(); m_bulkDiscardTargets.clear();
     for (const auto &command : m_bulkCommands) if (command["method"] == "draft_discard") m_bulkDiscardTargets.insert(m_bulkAccount + '\n' + command["params"].toObject()["draft_id"].toString());
@@ -1073,6 +1082,8 @@ void MailBackend::runMailSelection() {
         m_mailSelectionStatus = QString::number(m_bulkIndex) + " of " + QString::number(m_bulkCommands.size())
             + (valid ? (m_syntheticProfile ? " updated locally." : " saved locally. Google sync reports delivery separately.") : " updated. Remaining actions stopped after the account or session changed.");
         m_bulkCommands.clear(); m_mutatingConversation = false; emit mutationChanged(); finishBulkDiscardUndo();
+        if (!m_bulkMailUndo.isEmpty() && m_bulkMailUndoEpoch == m_mailUndoEpoch) offerMailUndo(m_bulkMailAction + (m_bulkMailUndo.size()>1 ? " · "+QString::number(m_bulkMailUndo.size())+" conversations" : ""),m_bulkMailUndo,m_bulkMailSelection.size()>1 ? m_bulkMailSelection : QVariantList{});
+        m_bulkMailUndo.clear();
         if (m_shutdown) finishShutdown();
         else if (m_connected) {
             if (m_afterConversationMutation) { auto next = std::move(m_afterConversationMutation); m_afterConversationMutation = {}; next(); }
@@ -1087,12 +1098,16 @@ void MailBackend::runMailSelection() {
         if (!ok) {
             m_mailSelectionStatus = QString::number(m_bulkIndex) + " of " + QString::number(m_bulkCommands.size())
                 + " updated. Stopped: " + result["message"].toString("selection changed or response was lost") + ". Refresh and inspect before selecting again.";
-            m_bulkCommands.clear(); m_mutatingConversation = false; emit mutationChanged(); finishBulkDiscardUndo(); cancelShutdown();
+            m_bulkCommands.clear(); m_mutatingConversation = false; emit mutationChanged(); finishBulkDiscardUndo();
+        if (!m_bulkMailUndo.isEmpty() && m_bulkMailUndoEpoch == m_mailUndoEpoch) offerMailUndo(m_bulkMailAction + (m_bulkMailUndo.size()>1 ? " · "+QString::number(m_bulkMailUndo.size())+" conversations" : ""),m_bulkMailUndo,m_bulkMailSelection.size()>1 ? m_bulkMailSelection : QVariantList{});
+        m_bulkMailUndo.clear(); cancelShutdown();
             if (m_afterConversationMutation) { auto next = std::move(m_afterConversationMutation); m_afterConversationMutation = {}; next(); }
             if (m_connected) { loadAccounts(); loadCategories(); loadConversations(false, true); }
             return;
         }
         ++m_bulkIndex;
+        const auto undoToken=mailUndoToken(account,result);
+        if (!undoToken.isEmpty()) m_bulkMailUndo.append(undoToken);
         if (command["method"] == "draft_discard") {
             const auto token = discardUndoToken(account, result, command["reopen"].toBool());
             if (!token.isEmpty()) m_bulkDiscardUndo.append(token);
@@ -1228,6 +1243,7 @@ void MailBackend::openAttachment(const QString &id) {
         const auto path = result["path"].toString();
         if (path.isEmpty()) { fail("This attachment has no complete, verified local copy (" + result["state"].toString("unavailable") + ")."); return; }
         if (!QDir::isAbsolutePath(path) || !QDesktopServices::openUrl(QUrl::fromLocalFile(path))) fail("No application could open this retained attachment.");
+        else showActionToast("Opening " + result["name"].toString() + "…", {}, {}, 3500);
     });
 }
 QStringList MailBackend::linksInText(const QString &text) const {
@@ -1457,7 +1473,7 @@ QString MailBackend::assistanceRequest(const QString &method, const QVariantMap 
 }
 
 QString MailBackend::labelRequest(const QString &method, const QVariantMap &params, const QString &account) {
-    if (!QStringList{"label_catalog","label_create","label_describe","label_remove","google_labels_sync","google_labels_sync_status","google_labels_sync_cancel"}.contains(method)) return {};
+    if (!QStringList{"label_catalog","label_create","label_describe","label_remove","label_auto_read","google_labels_sync","google_labels_sync_status","google_labels_sync_cancel"}.contains(method)) return {};
     const auto ticket=QUuid::createUuid().toString(QUuid::WithoutBraces);
     auto values=QJsonObject::fromVariantMap(params);
     if(method!="label_catalog"&&!method.endsWith("_status")&&!method.endsWith("_cancel")) {
@@ -1467,7 +1483,7 @@ QString MailBackend::labelRequest(const QString &method, const QVariantMap &para
     QTimer::singleShot(0,this,[this,method,values,account,ticket]{
         request(method,account,values,[this,method,values,account,ticket](auto result,bool ok){
             emit labelReply(ticket,method,result.toVariantMap(),ok);
-            if(ok&&(method=="label_create"||method=="label_describe"||method=="label_remove"||(method.startsWith("google_labels_sync")&&result["state"].toString()=="complete"))) {
+            if(ok&&(method=="label_create"||method=="label_describe"||method=="label_remove"||method=="label_auto_read"||(method.startsWith("google_labels_sync")&&result["state"].toString()=="complete"))) {
                 if(account==m_account&&method=="label_remove"&&values["id"].toString()==m_category) setCategory({});
                 refresh();
             }

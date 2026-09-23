@@ -12,7 +12,7 @@ cargo test -p fm-calendar --locked
 cargo clippy -p fm-core -p fm-calendar --all-targets --locked -- -D warnings
 ```
 
-All **8 Core calendar integration tests passed**; the final test runtime was **13.13 seconds** while other work used the host. All **17 calendar library tests** also passed (0.01 seconds); Clippy passed for both crates. Tests use disposable local profiles. [Implementation](../../crates/fm-core/src/calendar_store.rs), [tests](../../crates/fm-core/src/calendar_store_tests.rs), and [migration](../../crates/fm-core/src/migration-004-calendar.sql) are the executable evidence.
+All **8 Core calendar integration tests passed**; the final test runtime was **13.13 seconds** while other work used the host. All **17 calendar library tests** also passed (0.01 seconds); Clippy passed for both crates. Tests use disposable local profiles. [Implementation](../../crates/fm-core/src/calendar_store.rs), [tests](../../crates/fm-core/src/calendar_store_tests.rs), and the [historical migration](https://github.com/yegors/fuckMail/blob/3168800/crates/fm-core/src/migration-004-calendar.sql) are the executable evidence from that checkpoint.
 
 | Boundary | Verified behavior |
 | --- | --- |

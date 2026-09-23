@@ -22,7 +22,7 @@ ColumnLayout {
             id: kind; objectName: "correctSender_" + panel.message.id
             visible: panel.canClassify && panel.showKindControl
             text: ({people: "Human", automated: "Automated", unknown: "Unknown sender kind"})[panel.message.kind] || "Unknown sender kind"
-            iconName: "down"; iconSize: 10; font.pixelSize: Theme.fontSize(11)
+            iconName: "down"; iconSize: 10; font.pointSize: Theme.fontPoints(11)
             tip: "Correct sender kind or classify this message"; onClicked: correction.open()
         }
 
@@ -32,7 +32,7 @@ ColumnLayout {
         visible: panel.controller.errorFor("classification", panel.message.id).length > 0 && (!panel.controller.summariesEnabled || panel.controller.errorFor("classification", panel.message.id) !== panel.controller.errorFor("summary", panel.message.id))
         text: panel.controller.errorFor("classification", panel.message.id)
         Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: Theme.error
-        font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12)
+        font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
     }
     SummaryCard {
         id: summaryCard; objectName: "messageSummary_" + panel.message.id
@@ -73,7 +73,7 @@ ColumnLayout {
             Text {
                 visible: !!panel.classification; Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
                 text: panel.classification ? (panel.classification.stale ? "Out-of-date classification. " : "") + panel.classification.output.reason : ""
-                color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(11)
+                color: Theme.muted; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11)
             }
         }
     }

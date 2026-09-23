@@ -19,6 +19,12 @@
 #include <QFile>
 #include <QFont>
 #include <QFontDatabase>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMouseEvent>
+#include <QQuickItem>
+#include <functional>
 #include <QApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -71,6 +77,9 @@ int main(int argc, char **argv) {
     parser.addOption({"screenshot-height", "Window height in logical pixels for visual checks.", "pixels", "900"});
     parser.addOption({"screenshot-reply", "Expand the current conversation's inline reply for a screenshot."});
     parser.addOption({"screenshot-reply-bottom", "Scroll the expanded reply to its action footer before capture."});
+    parser.addOption({"screenshot-set", "Set objectName.property=JSON on a named item before capture (repeatable).", "assignment"});
+    parser.addOption({"screenshot-invoke", "Call a no-argument method objectName.method before capture (repeatable, in order).", "call"});
+    parser.addOption({"screenshot-click", "Left-click the centre of a named visible item before capture (repeatable, after assignments and calls).", "objectName"});
     parser.addOption({"benchmark-search-output", "Measure actual QML input to rendered first-page results on a retained generated 100k profile; writes a JSON report.", "file"});
     parser.addOption({"benchmark-navigation-output", "Measure native mailbox and conversation input to correct content paint on a disposable fixture profile.", "file"});
     parser.addOption({"benchmark-resize-output", "Measure native resize frames and retain separate rendering captures on a disposable fixture profile.", "file"});
@@ -230,6 +239,7 @@ int main(int argc, char **argv) {
     int settledTicks = 0;
     bool screenshotReplyOpened = false;
     bool screenshotFooterPositioned = false;
+    bool screenshotStaged = false;
     QObject::connect(&captureTimer, &QTimer::timeout, &app, [&] {
         if (!backend.connected() || backend.loading() || backend.draft().isEmpty()
             || !backend.property("calendarReady").toBool() || !backend.property("timelineReady").toBool()) { settledTicks = 0; return; }
@@ -243,6 +253,49 @@ int main(int argc, char **argv) {
             screenshotReplyOpened = true; settledTicks = 0; return;
         }
         if (++settledTicks < 3) return;
+        if (!screenshotStaged && (parser.isSet("screenshot-set") || parser.isSet("screenshot-invoke") || parser.isSet("screenshot-click"))) {
+            // Visual-check staging only: named items and their existing QML
+            // functions, applied once after the data has settled.
+            screenshotStaged = true; settledTicks = 0;
+            const auto root = engine.rootObjects().value(0);
+            const auto named = [&](const QString &name) -> QObject * {
+                if (name == "backend") return &backend;
+                if (!root) return nullptr;
+                return root->objectName() == name ? root : root->findChild<QObject *>(name);
+            };
+            for (const auto &assignment : parser.values("screenshot-set")) {
+                const auto dot = assignment.indexOf('.'), equals = assignment.indexOf('=');
+                auto target = dot > 0 ? named(assignment.left(dot)) : nullptr;
+                const auto value = QJsonDocument::fromJson(("[" + assignment.mid(equals + 1) + "]").toUtf8()).array().at(0).toVariant();
+                if (!target || equals < dot || !target->setProperty(assignment.mid(dot + 1, equals - dot - 1).toUtf8(), value)) {
+                    qCritical().noquote() << "Screenshot assignment failed:" << assignment; QCoreApplication::exit(2); return;
+                }
+            }
+            for (const auto &call : parser.values("screenshot-invoke")) {
+                const auto dot = call.indexOf('.');
+                auto target = dot > 0 ? named(call.left(dot)) : nullptr;
+                if (!target || !QMetaObject::invokeMethod(target, call.mid(dot + 1).toUtf8())) {
+                    qCritical().noquote() << "Screenshot call failed:" << call; QCoreApplication::exit(2); return;
+                }
+            }
+            const auto window = qobject_cast<QQuickWindow *>(root);
+            for (const auto &name : parser.values("screenshot-click")) {
+                // Delegates are found through the visual tree, not QObject children.
+                QQuickItem *target = nullptr;
+                std::function<void(QQuickItem *)> find = [&](QQuickItem *item) {
+                    if (target || !item || !item->isVisible()) return;
+                    if (item->objectName() == name) { target = item; return; }
+                    for (auto child : item->childItems()) find(child);
+                };
+                if (window) find(window->contentItem());
+                if (!window || !target) { qCritical().noquote() << "Screenshot click failed:" << name; QCoreApplication::exit(2); return; }
+                const auto point = target->mapToScene(QPointF(target->width() / 2, target->height() / 2));
+                QMouseEvent press(QEvent::MouseButtonPress, point, window->mapToGlobal(point), Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+                QMouseEvent release(QEvent::MouseButtonRelease, point, window->mapToGlobal(point), Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+                QCoreApplication::sendEvent(window, &press); QCoreApplication::sendEvent(window, &release);
+            }
+            return;
+        }
         if (parser.isSet("screenshot-reply-bottom") && !screenshotFooterPositioned) {
             const auto root = engine.rootObjects().value(0);
             const auto reader = root ? root->findChild<QQuickItem *>("reader") : nullptr;
@@ -281,6 +334,21 @@ int main(int argc, char **argv) {
         if (parser.isSet("screenshot")) {
             auto window = qobject_cast<QQuickWindow *>(engine.rootObjects().value(0));
             if (!window || !window->grabWindow().save(parser.value("screenshot"))) { QCoreApplication::exit(2); return; }
+            // Named item geometry beside the image, for layout comparisons.
+            QJsonArray items;
+            std::function<void(QQuickItem *)> collect = [&](QQuickItem *item) {
+                if (!item->isVisible()) return;
+                if (!item->objectName().isEmpty()) {
+                    const auto r = item->mapRectToScene(QRectF(0, 0, item->width(), item->height()));
+                    items.append(QJsonObject{{"name", item->objectName()}, {"x", r.x()}, {"y", r.y()}, {"w", r.width()}, {"h", r.height()}});
+                }
+                for (auto child : item->childItems()) collect(child);
+            };
+            auto top = window->contentItem();
+            while (top->parentItem()) top = top->parentItem();
+            collect(top);
+            QFile geometry(parser.value("screenshot") + ".items.json");
+            if (geometry.open(QIODevice::WriteOnly)) geometry.write(QJsonDocument(items).toJson(QJsonDocument::Indented));
         }
         if (parser.isSet("smoke")) backend.shutdown();
     });

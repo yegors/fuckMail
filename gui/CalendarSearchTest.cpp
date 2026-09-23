@@ -82,6 +82,7 @@ class CalendarSearchTest {
                     else if (method == "google_sync_status") result = {{"accounts", QJsonArray::fromVariantList(hSyncRows())}};
                     else if (method == "preferences_save") result = {{"revision",backend.m_preferencesRevision+1},{"preferences",QJsonObject::fromVariantMap(backend.m_preferences)}};
                     else if (method == "calendar_combined") result = response(request, current);
+                    else if (method == "calendar_mail_activity") result = {{"state", "ready"}, {"days", QJsonArray{}}};
                     else if (method == "calendar_sources") result = {{"calendars", catalog}};
                     else if (method == "accounts") result = {{"accounts", QJsonArray::fromVariantList(backend.m_allAccounts)}};
                     else if (method == "view_get") result = {{"revision", 0}, {"view", QJsonObject{}}};
@@ -298,7 +299,8 @@ class CalendarSearchTest {
         QByteArray module("module SearchTest\nsingleton Theme 1.0 Theme.qml\n");
         for (const auto &name : QDir(QString::fromUtf8(FM_GUI_SOURCE_DIR)).entryList({"*.qml"}, QDir::Files)) {
             require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + '/' + name, modulePath + '/' + name), "actual QML copied unchanged");
-            if (name != "Theme.qml") module += name.chopped(4).toUtf8() + " 1.0 " + name.toUtf8() + '\n';
+            if(name=="ShortcutRegistry.qml") module+="singleton ";
+            if(name!="Theme.qml") module+= name.chopped(4).toUtf8() + " 1.0 " + name.toUtf8() + '\n';
         }
         QFile registration(modulePath + "/qmldir"); require(registration.open(QIODevice::WriteOnly), "QML module registration"); registration.write(module); registration.close();
         qmlRegisterType<ReplyDocument>("SearchTest", 1, 0, "ReplyDocument"); qmlRegisterType<HatchItem>("SearchTest", 1, 0, "HatchItem");
@@ -327,9 +329,21 @@ class CalendarSearchTest {
         require(syncAccessible && syncAccessible->actionInterface(), "sync accessible activation");
         syncAccessible->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
         await([&]{return h.methods.contains("google_sync_refresh") && !h.backend.m_googleSyncChanging.contains("personal");}, "real button sends refresh RPC");
+        auto calendarOnly = h.backend.m_allAccounts;
+        auto personal = calendarOnly[0].toMap();
+        auto google = personal["google"].toMap();
+        google["capabilities"] = QVariantMap{{"calendar_read", true}, {"mail_read", false}};
+        personal["google"] = google; calendarOnly[0] = personal;
+        require(h.backend.publishAccounts(calendarOnly), "calendar-only account model updates"); emit h.backend.accountsChanged();
+        require(h.backend.accountCapability("personal", "calendar_read") && !h.backend.accountCapability("personal", "mail_read"), "calendar-only capability reaches native backend");
+        await([&]{return sync->property("enabled").toBool() && !sync->property("text").toString().contains(" · ");}, qPrintable("calendar-only Sync stays available without a mail timestamp: " + sync->property("text").toString() + " enabled=" + QString::number(sync->property("enabled").toBool())));
+        const auto refreshes = h.methods.count("google_sync_refresh");
+        syncAccessible->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
+        await([&]{return h.methods.count("google_sync_refresh") == refreshes + 1 && !h.backend.m_googleSyncChanging.contains("personal");}, "calendar-only Sync sends refresh RPC");
+        require(h.backend.publishAccounts(h.backend.m_allAccounts), "restore mail and Calendar account model"); emit h.backend.accountsChanged();
         auto row=h.backend.m_googleSync["personal"].toMap(); row["credential_access_required"]=false;
         row["progress"]=QVariantMap{{"mail","running"}}; h.backend.m_googleSync["personal"]=row; emit h.backend.googleSyncChanged();
-        require(sync->property("text").toString().startsWith("Syncing… · "), "running keeps previous successful time");
+        require(sync->property("text").toString() == "Syncing…" && sync->property("tip").toString().contains("Last successful mail sync: "), "running label matches the design; the tip keeps the previous successful time");
         h.backend.m_account="workspace"; emit h.backend.accountChanged();
         require(sync->property("lastSync").toDouble()==0, "sync timestamp cannot cross accounts");
         h.backend.m_account="personal"; emit h.backend.accountChanged();
@@ -346,10 +360,8 @@ class CalendarSearchTest {
             await([&]{return !h.backend.m_preferencesSaving;},"Calendar preference save completes");
         };
         require(!named(window,"calendarDisplayTimeZone")->property("visible").toBool(),"Calendar details start collapsed");
-        pressSetting("calendarAccounts_current");
-        require(h.backend.preferences().value("calendar_account_visibility")=="current","Hide saves the typed preference");
-        pressSetting("calendarAccounts_all");
-        require(h.backend.preferences().value("calendar_account_visibility")=="all","Show restores all selected accounts");
+        // Account visibility is the Calendar header's "All calendars" switch, as in the design.
+        require(!named(window,"calendarAccountVisibility"),"Settings does not duplicate the Calendar account switch");
         const auto settingsCaptures=qEnvironmentVariable("FM_CALENDAR_SETTINGS_CAPTURE_DIR");
         if (!settingsCaptures.isEmpty()) {
             require(QDir().mkpath(settingsCaptures),"Calendar Settings capture directory");

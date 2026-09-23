@@ -286,7 +286,9 @@ async fn paired_clients_share_durable_state_and_explicit_lifetimes() {
         .call("conversation", Some("windscribe"), json!({"id":id}))
         .await
         .unwrap());
-    assert_eq!(seen, changed);
+    let mut reader_shape = changed.clone();
+    reader_shape.as_object_mut().unwrap().remove("mail_undo");
+    assert_eq!(seen, reader_shape);
     assert_eq!(
         seen["messages"][0]["unread"], original["messages"][0]["unread"],
         "star must not review mail"

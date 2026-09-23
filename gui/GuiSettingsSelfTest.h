@@ -35,7 +35,7 @@ private:
     const QString m_oversizedSignature = QString(QChar(0x03bb)).repeated(9000);
     double m_listY = 0, m_readerY = 0;
     bool m_editorPrepared = false;
-    int m_defaultFontSize = 0;
+    qreal m_defaultFontSize = 0;
     int m_calendarSnapshotGeneration = 0;
     qint64 m_appearanceRevision = -1;
     int m_stage = 0, m_ticks = 0, m_lastStage = -1;

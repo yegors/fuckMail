@@ -30,22 +30,22 @@ Popup {
                 Layout.fillWidth: true
                 text: popup.combined ? "Search selected calendars" : "Search " + (backend.currentAccount.name || "this account")
                 elide: Text.ElideRight; textFormat: Text.PlainText
-                color: Theme.text; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(13); weight: Font.Medium }
+                color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13); weight: Font.Medium }
             }
-            FmButton { objectName: "calendarSearchClose"; text: "Esc"; implicitHeight: 21; implicitWidth: 31; leftPadding: 4; rightPadding: 4; font.pixelSize: Theme.fontSize(11); outlined: true; onClicked: popup.close() }
+            FmButton { objectName: "calendarSearchClose"; text: "Esc"; implicitHeight: 21; implicitWidth: 31; leftPadding: 4; rightPadding: 4; font.pointSize: Theme.fontPoints(11); outlined: true; onClicked: popup.close() }
         }
         Text {
             objectName: "calendarSearchRange"
             Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
             text: (popup.result.from || "") + " – " + popup.lastDate(popup.result.to)
                 + " · " + (popup.result.time_zone || backend.preferences.calendar_display_time_zone || "display time zone")
-            color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) }
+            color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
         }
         Text {
             objectName: "calendarSearchStatus"
             Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
             text: popup.result.status || "Enter words to search this date range"
-            color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) }
+            color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
         }
         ListView {
             id: results
@@ -71,17 +71,17 @@ Popup {
                     id: label; spacing: 4
                     Text {
                         width: parent.width; text: resultButton.text; textFormat: Text.PlainText; elide: Text.ElideRight
-                        color: Theme.text; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(13); weight: Font.Medium }
+                        color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13); weight: Font.Medium }
                     }
                     Text {
                         width: parent.width; textFormat: Text.PlainText; elide: Text.ElideRight
                         text: (resultButton.modelData.date || "") + " · " + (resultButton.modelData.time_display || "")
-                        color: Theme.secondary; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) }
+                        color: Theme.secondary; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
                     }
                     Text {
                         width: parent.width; textFormat: Text.PlainText; elide: Text.ElideRight
                         text: resultButton.modelData.calendar_name || resultButton.modelData.calendar_id || ""
-                        color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) }
+                        color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
                     }
                 }
             }
@@ -89,12 +89,12 @@ Popup {
         Text {
             Layout.fillWidth: true; visible: !popup.result.busy && !!popup.result.events && !popup.rows.length
             text: "No matching saved events in this date range."
-            wrapMode: Text.Wrap; color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) }
+            wrapMode: Text.Wrap; color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
         }
         Text {
             Layout.fillWidth: true; visible: popup.result.has_more === true
             text: "More matches are available. Narrow the words or date range."
-            wrapMode: Text.Wrap; color: Theme.subtle; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) }
+            wrapMode: Text.Wrap; color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
         }
     }
 }

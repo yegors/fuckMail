@@ -187,7 +187,7 @@ impl Runtime {
                             }) {
                                 continue;
                             }
-                            match runtime.start(&owner,token.clone(),m["account"].as_str(),json!({"task":"message","conversation_id":m["conversation_id"],"message_id":m["id"]})).await {
+                            match runtime.start(&owner,token.clone(),m["account"].as_str(),json!({"task":"message","conversation_id":m["conversation_id"],"message_id":m["id"]}),true).await {
                                 Ok(job)=>loop {
                                     if token.is_cancelled(){return;}
                                     let running=runtime.jobs.lock().unwrap().get(job["job_id"].as_str().unwrap()).is_some_and(|j|j.state["status"]=="queued" || j.state["status"]=="running");
@@ -203,7 +203,8 @@ impl Runtime {
                 });
                 Ok(json!({"watching":true}))
             }
-            "assist_start" => self.start(owner, cancel, account, p).await,
+            // Client requests are never arrivals, so they cannot trigger Auto-read.
+            "assist_start" => self.start(owner, cancel, account, p, false).await,
             _ => Err(failure("unsupported_method", "Unknown assistance method")),
         }
     }
@@ -233,6 +234,7 @@ impl Runtime {
         cancel: CancellationToken,
         account: Option<&str>,
         p: Value,
+        arrival: bool,
     ) -> Result<Value> {
         let task = p["task"]
             .as_str()
@@ -299,6 +301,11 @@ impl Runtime {
                 .core
                 .call(move |s| s.local_model_batch(&account, &conversation, &t, &target))
                 .await?;
+            if arrival {
+                for plan in &mut plans {
+                    plan.arrival = true;
+                }
+            }
         }
         let id = fm_ipc::random_token();
         let token = cancel.child_token();

@@ -418,7 +418,7 @@ mod tests {
     fn store(profile: &Path) -> Store {
         fs::create_dir_all(profile).unwrap();
         let db = Connection::open_in_memory().unwrap();
-        db.execute_batch(include_str!("schema.sql")).unwrap();
+        db.execute_batch(include_str!("fresh-schema.sql")).unwrap();
         Store {
             mail_changes: crate::queries::MailChanges::install(&db),
             db,
@@ -427,6 +427,7 @@ mod tests {
             projection_cache: Default::default(),
             coverage_cache: Default::default(),
             conversation_cache: Default::default(),
+            planner_refreshed_at: Default::default(),
         }
     }
 
@@ -434,7 +435,7 @@ mod tests {
         store
             .db
             .execute(
-                "INSERT INTO accounts VALUES(?1,?1,?1,'synthetic')",
+                "INSERT INTO accounts(id,name,email,provider) VALUES(?1,?1,?1,'synthetic')",
                 [account],
             )
             .unwrap();

@@ -366,6 +366,7 @@ impl Contexts {
             refresh: watch::channel(0).0,
             credential_blocked: Arc::new(AtomicBool::new(false)),
             mail_refresh_requested: Arc::new(AtomicBool::new(false)),
+            calendar_refresh_requested: Arc::new(AtomicBool::new(false)),
         };
         let second = SyncContext {
             account: AccountId::new("synthetic-second").unwrap(),
@@ -386,6 +387,7 @@ impl Contexts {
             refresh: watch::channel(0).0,
             credential_blocked: Arc::new(AtomicBool::new(false)),
             mail_refresh_requested: Arc::new(AtomicBool::new(false)),
+            calendar_refresh_requested: Arc::new(AtomicBool::new(false)),
         };
         Self {
             first,
@@ -1480,6 +1482,10 @@ async fn explicit_refresh_wakes_mail_preserves_owners_and_denial_needs_retry() {
         .await
         .unwrap();
     assert_eq!(result["started"], false);
+    assert!(h.runtime.state.lock().await.jobs[&h.account]
+        .context
+        .calendar_refresh_requested
+        .load(Ordering::Acquire));
     h.wait_owner_count(2).await;
     tokio::time::timeout(Duration::from_secs(5), async {
         loop {

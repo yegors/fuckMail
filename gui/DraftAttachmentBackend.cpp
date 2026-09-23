@@ -189,18 +189,51 @@ QString MailBackend::requestAttachmentPreview(const QString &account, const QStr
             const auto path = result["path"].toString();
             ok = ok && result["account"] == account && result["id"] == id && QDir::isAbsolutePath(path) && QFileInfo(path).isFile();
             if (ok) {
+                const auto mime = result["mime_type"].toString();
+                const auto suffix = QFileInfo(path).suffix().toLower();
+                const bool video = mime.startsWith("video/") && QStringList{"mp4","webm","mov","m4v","mkv","avi"}.contains(suffix);
                 QImageReader reader(path);
                 const auto format = reader.format().toLower();
                 auto size = reader.size();
                 if (reader.transformation() & QImageIOHandler::TransformationRotate90) size.transpose();
                 const bool raster = QList<QByteArray>{"png","jpeg","jpg","gif","webp","bmp","ico","tiff","tif"}.contains(format);
-                if (raster && size.isValid() && qint64(size.width()) * size.height() <= 64000000) {
+                if (video) {
+                    result["preview_url"] = QUrl::fromLocalFile(path).toString();
+                    result["video"] = true;
+                } else if (raster && size.isValid() && qint64(size.width()) * size.height() <= 64000000) {
                     result["preview_url"] = QUrl::fromLocalFile(path).toString();
                     result["width"] = size.width(); result["height"] = size.height();
                 } else result["preview_error"] = "Preview unavailable. You can still save this file.";
             } else result = {{"message", "This attachment is not available on this machine yet."}};
             emit attachmentPreviewReady(ticket, result.toVariantMap(), ok);
         });
+    });
+    return ticket;
+}
+QString MailBackend::downloadAttachment(const QString &account, const QString &id, const QString &name) {
+    const QFileInfo original(attachmentSaveLocation(name).toLocalFile());
+    const auto directory = original.absoluteDir();
+    if (!directory.exists() && !QDir().mkpath(directory.absolutePath())) {
+        showActionToast("Could not open Downloads.", {}, {}, 6000); return {};
+    }
+    QString destination;
+    for (int n = 0; n < 10000; ++n) {
+        const auto filename = n == 0 ? original.fileName() : original.completeBaseName() + " (" + QString::number(n) + ")" + (original.suffix().isEmpty() ? "" : "." + original.suffix());
+        const auto candidate = directory.filePath(filename);
+        QFile reservation(candidate);
+        if (reservation.open(QIODevice::WriteOnly | QIODevice::NewOnly)) { destination = candidate; break; }
+        if (!QFileInfo::exists(candidate)) break;
+    }
+    if (destination.isEmpty()) { showActionToast("Could not save this attachment to Downloads.", {}, {}, 6000); return {}; }
+    const auto ticket = saveAttachment(account, id, QUrl::fromLocalFile(destination));
+    const auto connection = std::make_shared<QMetaObject::Connection>();
+    *connection = connect(this, &MailBackend::attachmentSaved, this, [this, ticket, destination, connection](const QString &reply, const QString &error) {
+        if (reply != ticket) return;
+        disconnect(*connection);
+        if (!error.isEmpty()) {
+            if (QFileInfo(destination).size() == 0) QFile::remove(destination);
+            showActionToast(error, {}, {}, 6000);
+        } else showActionToast("Saved " + QFileInfo(destination).fileName() + " to Downloads", {}, {}, 6000);
     });
     return ticket;
 }

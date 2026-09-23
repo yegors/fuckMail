@@ -53,19 +53,19 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     IpcTrust.cpp
     IpcTrust.h
 )
-set_source_files_properties(Theme.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+set_source_files_properties(Theme.qml ShortcutRegistry.qml PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
 qt_add_qml_module(fuckmail-gui
     URI FuckMail
     VERSION 1.0
     QML_FILES DebugConsole.qml AccountAnalysis.qml
     QML_FILES CalendarMailCount.qml
-    QML_FILES FmScrollBar.qml Main.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml ActionToast.qml FmButton.qml FmDialog.qml FmConfirmDialog.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmDateField.qml FmSwitch.qml FmCheckBox.qml FmComboBox.qml MailView.qml MailFilters.qml SearchPopup.qml CalendarSearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleConnectionDialog.qml LocalModelSettings.qml MailAssistance.qml MessageSource.qml AttachmentTile.qml SummaryCard.qml MessageAssistance.qml GoogleLabelSetup.qml LabelSettings.qml TodayStrip.qml
+    QML_FILES FmScrollBar.qml Main.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml ShortcutRegistry.qml ShortcutSettings.qml ActionToast.qml FmButton.qml FmMenu.qml FmMenuItem.qml FmDialog.qml FmConfirmDialog.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmDateField.qml FmSwitch.qml FmCheckBox.qml FmComboBox.qml MailView.qml MailFilters.qml SearchPopup.qml CalendarSearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleConnectionDialog.qml LocalModelSettings.qml MailAssistance.qml MessageSource.qml AccountBadge.qml MessageHeaderButton.qml AccountAssistanceSettings.qml AccountEditor.qml AttachmentTile.qml AttachmentViewer.qml SummaryCard.qml MessageAssistance.qml GoogleLabelSetup.qml LabelSettings.qml TodayStrip.qml
     RESOURCES fonts/Geist-Regular.ttf fonts/Geist-Medium.ttf fonts/Geist-SemiBold.ttf fonts/LICENSE-Geist.txt
 )
-target_link_libraries(fuckmail-gui PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets)
+target_link_libraries(fuckmail-gui PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets Qt6::Multimedia)
 target_compile_features(fuckmail-gui PRIVATE cxx_std_20)
 if(WIN32)
-    target_link_libraries(fuckmail-gui PRIVATE advapi32)
+    target_link_libraries(fuckmail-gui PRIVATE advapi32 winmm)
 endif()
 set_target_properties(fuckmail-gui PROPERTIES
     MACOSX_BUNDLE_BUNDLE_NAME "fuckMail"
@@ -78,6 +78,10 @@ set_target_properties(fuckmail-gui PROPERTIES
 file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/gui-executable-path.txt"
     CONTENT "$<TARGET_FILE:fuckmail-gui>\n")
 if(BUILD_TESTING)
+    link_libraries(Qt6::Widgets)
+    if(WIN32)
+        link_libraries(winmm)
+    endif()
     add_executable(gui-debug-console-test DebugConsoleTest.cpp DebugConsole.cpp DebugConsole.h)
     target_link_libraries(gui-debug-console-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Test)
     target_compile_definitions(gui-debug-console-test PRIVATE FM_GUI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")

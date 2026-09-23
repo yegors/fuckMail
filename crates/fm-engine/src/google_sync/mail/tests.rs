@@ -21,6 +21,7 @@ struct FixtureState {
     history: String,
     recent: Vec<String>,
     inventory: Vec<String>,
+    recent_query: Option<String>,
     list_page_size: usize,
     raw: BTreeMap<String, Value>,
     history_replies: VecDeque<(u16, Value)>,
@@ -37,6 +38,7 @@ impl FixtureHttp {
             history: "100".into(),
             recent: ids.iter().take(recent_count).cloned().collect(),
             inventory: ids.clone(),
+            recent_query: None,
             list_page_size: usize::MAX,
             raw: ids
                 .iter()
@@ -92,10 +94,15 @@ impl HttpTransport for FixtureHttp {
                     )
                 } else if suffix.starts_with("messages?") {
                     assert!(suffix.contains("includeSpamTrash=true"));
-                    let ids = if suffix.contains("q=after%3A") {
+                    let after = suffix
+                        .split('&')
+                        .find(|part| part.starts_with("q=after%3A"));
+                    if state.recent_query.is_none() {
+                        state.recent_query = after.map(str::to_owned);
+                    }
+                    let ids = if after.is_some() && state.recent_query.as_deref() == after {
                         &state.recent
                     } else {
-                        assert!(!suffix.contains("&q="));
                         &state.inventory
                     };
                     let page: usize = suffix
@@ -345,17 +352,12 @@ async fn interrupted_part_resumes_saved_ids_and_verified_manifests_without_relis
         "staged content must be verified, not downloaded again"
     );
     assert_eq!(h.http.raw_count("m005"), 2);
-    assert_eq!(
-        h.http
-            .0
-            .lock()
-            .unwrap()
-            .requests
-            .iter()
-            .filter(|url| url.contains("q=after%3A"))
-            .count(),
-        1
-    );
+    let requests = h.http.0.lock().unwrap().requests.clone();
+    let recent_url = requests
+        .iter()
+        .find(|url| url.contains("q=after%3A"))
+        .unwrap();
+    assert_eq!(requests.iter().filter(|url| *url == recent_url).count(), 1);
     h.idle(&mut resumed).await;
     assert!(h.coverage().await.offline_complete);
     assert!(h.sql_count("SELECT coalesce(max(n),0) FROM (SELECT count(*) n FROM google_live_page_items WHERE account=?1 AND part_key IS NOT NULL GROUP BY lane,generation,expected_revision,part_key)") <= 10);

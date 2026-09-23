@@ -48,6 +48,8 @@ pub struct Account {
     pub summaries: bool,
     #[serde(default)]
     pub descriptions: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub auto_read: BTreeMap<String, bool>,
 }
 impl Default for Account {
     fn default() -> Self {
@@ -55,6 +57,7 @@ impl Default for Account {
             classification: true,
             summaries: true,
             descriptions: BTreeMap::new(),
+            auto_read: BTreeMap::new(),
         }
     }
 }
@@ -109,9 +112,11 @@ impl Settings {
         if self.accounts.len() > 64
             || self.accounts.values().any(|a| {
                 a.descriptions.len() > 64
+                    || a.auto_read.len() > 64
                     || a.descriptions
                         .iter()
                         .any(|(k, v)| k.is_empty() || k.len() > 128 || v.len() > 512)
+                    || a.auto_read.keys().any(|k| k.is_empty() || k.len() > 128)
             })
         {
             return Err("Account or label descriptions exceed their bounds".into());

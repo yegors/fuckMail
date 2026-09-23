@@ -15,9 +15,11 @@ impl Store {
     }
     fn label_sync_authority(&self, account: &str) -> Result<()> {
         self.require_active_account(account)?;
-        if !self.google_account_bindings()?.iter().any(|binding| {
-            binding.account == account && ScopeSet::new(&binding.scopes).mail_write()
-        }) {
+        if !crate::preferences::google_write_enabled(&self.db, account, "mail")?
+            || !self.google_account_bindings()?.iter().any(|binding| {
+                binding.account == account && ScopeSet::new(&binding.scopes).mail_write()
+            })
+        {
             return Err(err(
                 "capability_unavailable",
                 "Google mail editing permission is required to sync labels",

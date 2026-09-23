@@ -51,7 +51,8 @@ class MailNavigationCacheTest {
         QByteArray module("module NavigationTest\nsingleton Theme 1.0 Theme.qml\n");
         for (const auto &name : QDir(QString::fromUtf8(FM_GUI_SOURCE_DIR)).entryList({"*.qml"}, QDir::Files)) {
             require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + '/' + name, modulePath + '/' + name), "copy actual QML unchanged");
-            if (name != "Theme.qml") module += name.chopped(4).toUtf8() + " 1.0 " + name.toUtf8() + '\n';
+            if(name=="ShortcutRegistry.qml") module+="singleton ";
+            if(name!="Theme.qml") module+= name.chopped(4).toUtf8() + " 1.0 " + name.toUtf8() + '\n';
         }
         QFile registration(modulePath + "/qmldir"); require(registration.open(QIODevice::WriteOnly), "QML registration");
         registration.write(module); registration.close();
@@ -328,7 +329,8 @@ class MailNavigationCacheTest {
         QByteArray module("module ReaderFrames\nsingleton Theme 1.0 Theme.qml\n");
         for (const auto &name : QDir(QString::fromUtf8(FM_GUI_SOURCE_DIR)).entryList({"*.qml"}, QDir::Files)) {
             require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR)+'/'+name,modulePath+'/'+name), "unchanged actual reader QML");
-            if (name != "Theme.qml") module += name.chopped(4).toUtf8()+" 1.0 "+name.toUtf8()+'\n';
+            if(name=="ShortcutRegistry.qml") module+="singleton ";
+            if(name!="Theme.qml") module+= name.chopped(4).toUtf8()+" 1.0 "+name.toUtf8()+'\n';
         }
         QFile registration(modulePath+"/qmldir"); require(registration.open(QIODevice::WriteOnly), "reader module registration"); registration.write(module); registration.close();
         qmlRegisterType<ReplyDocument>("ReaderFrames",1,0,"ReplyDocument");
@@ -349,7 +351,7 @@ class MailNavigationCacheTest {
         require(list && mail, "actual reader navigation controls");
         const auto frame = [&] {
             bool painted = false; auto c = QObject::connect(window,&QQuickWindow::frameSwapped,window,[&]{painted=true;});
-            window->requestUpdate(); await([&]{return painted;},"reader frame rendered"); QObject::disconnect(c);
+            window->update(); await([&]{return painted;},"reader frame rendered"); QObject::disconnect(c);
         };
         // Observe every painted target frame, including its very first one.
         QList<QVariantList> geometry; QString observed = "thread-0";

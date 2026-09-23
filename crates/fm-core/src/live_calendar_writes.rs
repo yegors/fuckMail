@@ -1331,6 +1331,7 @@ pub(crate) fn live(store: &Store, account: &str) -> Result<i64> {
         .ok_or_else(|| err("not_found", "Google account is unavailable"))?;
     if binding.state != crate::live_profile::ConnectionState::Connected
         || !fm_google::auth::ScopeSet::new(&binding.scopes).calendar_events_write()
+        || !crate::preferences::google_write_enabled(&store.db, account, "calendar")?
     {
         return Err(err(
             "permission_denied",

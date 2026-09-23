@@ -13,6 +13,7 @@ impl Store {
         p: &Value,
     ) -> Result<Option<Value>> {
         let allowed: &[&str] = match method {
+            "mail_undo" => &["id", "undo_request_id", "expected_revision", "request_id"],
             "flag" => &[
                 "id",
                 "message_ids",
@@ -183,6 +184,7 @@ impl Store {
                         ));
                     }
                 }
+                let undo_snapshot = self.mail_undo_snapshot(account, &targets)?;
                 if method == "flag" {
                     let read = optional_bool(p, "read")?;
                     let starred = optional_bool(p, "starred")?;
@@ -253,8 +255,11 @@ impl Store {
                     "UPDATE conversations SET revision=revision+1 WHERE account=?1 AND id=?2",
                     params![account, conversation],
                 )?;
-                self.conversation(account, conversation)?
+                let mut result = self.conversation(account, conversation)?;
+                result["mail_undo"] = json!({"version":1,"request_id":request_id,"messages":undo_snapshot,"revision":result["revision"]});
+                result
             }
+            "mail_undo" => self.restore_mail_snapshot(account, p, expected)?,
             "draft_save" => {
                 self.save_composition_prepared(account, p, expected, false, prepared_draft)?
             }
@@ -285,8 +290,10 @@ impl Store {
             }
             _ => unreachable!(),
         };
-        if matches!(method, "flag" | "set_category" | "mail_filing")
-            && self.profile_kind()? == crate::live_profile::ProfileKind::Live
+        if matches!(
+            method,
+            "flag" | "set_category" | "mail_filing" | "mail_undo"
+        ) && self.profile_kind()? == crate::live_profile::ProfileKind::Live
         {
             result["delivery"] = json!({"state":"pending","request_id":request_id});
         }
@@ -298,6 +305,132 @@ impl Store {
         if let Some(before) = flag_projection_stamp {
             self.refresh_committed_flag_projections(account, string(p, "id")?, before);
         }
+        Ok(result)
+    }
+}
+
+impl Store {
+    fn mail_undo_snapshot(&self, account: &str, targets: &[&str]) -> Result<Vec<Value>> {
+        targets.iter().map(|message| {
+            let mut row = self.db.query_row("SELECT unread,starred,inbox,trashed FROM messages WHERE account=?1 AND id=?2",params![account,message],|r| Ok(json!({"id":message,"unread":r.get::<_,bool>(0)?,"starred":r.get::<_,bool>(1)?,"inbox":r.get::<_,bool>(2)?,"trashed":r.get::<_,bool>(3)?})))?;
+            let mut stmt=self.db.prepare_cached("SELECT category_id FROM message_categories WHERE account=?1 AND message_id=?2 ORDER BY category_id")?;
+            row["categories"]=stmt.query_map(params![account,message],|r|r.get::<_,String>(0))?.collect::<std::result::Result<Vec<_>,_>>()?.into();
+            Ok(row)
+        }).collect()
+    }
+    fn restore_mail_snapshot(&self, account: &str, p: &Value, expected: i64) -> Result<Value> {
+        let conversation = string(p, "id")?;
+        let original = string(p, "undo_request_id")?;
+        let receipt: String = self
+            .db
+            .query_row(
+                "SELECT result_json FROM operations WHERE account=?1 AND request_id=?2",
+                params![account, original],
+                |r| r.get(0),
+            )
+            .optional()?
+            .ok_or_else(|| err("not_found", "The original mail action was not found"))?;
+        let receipt: Value = serde_json::from_str(&receipt)?;
+        let undo = &receipt["mail_undo"];
+        if receipt["id"] != conversation
+            || undo["version"] != 1
+            || undo["request_id"] != original
+            || undo["revision"].as_i64() != Some(expected)
+        {
+            return Err(err(
+                "invalid_request",
+                "Undo must identify the original mail action and its revision",
+            ));
+        }
+        let current: i64 = self.db.query_row(
+            "SELECT revision FROM conversations WHERE account=?1 AND id=?2",
+            params![account, conversation],
+            |r| r.get(0),
+        )?;
+        check_revision(expected, current)?;
+        let rows = undo["messages"]
+            .as_array()
+            .filter(|v| !v.is_empty() && v.len() <= 200)
+            .ok_or_else(|| err("invalid_request", "This action has no restorable snapshot"))?;
+        let catalog = self
+            .db
+            .prepare_cached("SELECT id FROM categories WHERE account=?1")?
+            .query_map([account], |r| r.get::<_, String>(0))?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        for row in rows {
+            let message = string(row, "id")?;
+            let belongs:bool=self.db.query_row("SELECT EXISTS(SELECT 1 FROM messages WHERE account=?1 AND id=?2 AND conversation_id=?3)",params![account,message,conversation],|r|r.get(0))?;
+            if !belongs {
+                return Err(err(
+                    "stale_revision",
+                    "A message in the original action is no longer available",
+                ));
+            }
+            let flag = |key: &str| {
+                row[key]
+                    .as_bool()
+                    .ok_or_else(|| err("storage_error", "Undo flags are invalid"))
+            };
+            let (unread, starred, inbox, trashed) = (
+                flag("unread")?,
+                flag("starred")?,
+                flag("inbox")?,
+                flag("trashed")?,
+            );
+            let categories = row["categories"]
+                .as_array()
+                .ok_or_else(|| err("storage_error", "Undo categories are invalid"))?;
+            if categories.iter().any(|c| !catalog.iter().any(|id| c == id)) {
+                return Err(err(
+                    "stale_revision",
+                    "A label from the original action was removed",
+                ));
+            }
+            let before: (bool, bool, bool, bool) = self.db.query_row(
+                "SELECT unread,starred,inbox,trashed FROM messages WHERE account=?1 AND id=?2",
+                params![account, message],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )?;
+            let current_categories = self
+                .db
+                .prepare_cached(
+                    "SELECT category_id FROM message_categories WHERE account=?1 AND message_id=?2",
+                )?
+                .query_map(params![account, message], |r| r.get::<_, String>(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            // The revision bump dates this undo's intents; delivery sends only those.
+            self.db.execute("UPDATE messages SET unread=?3,starred=?4,inbox=?5,trashed=?6,revision=revision+1 WHERE account=?1 AND id=?2",params![account,message,unread,starred,inbox,trashed])?;
+            // Record human intent only for fields this undo changes. Untouched
+            // flags and labels keep their provider/model state and delivery.
+            for (field, key, value, previous) in [
+                ("read", "", !unread, !before.0),
+                ("starred", "", starred, before.1),
+                ("label", "INBOX", inbox, before.2),
+                ("label", "TRASH", trashed, before.3),
+            ] {
+                if value != previous {
+                    record_manual_intent(&self.db, account, message, field, key, value)?;
+                }
+            }
+            for category in &catalog {
+                let present = categories.iter().any(|c| c == category);
+                if present == current_categories.contains(category) {
+                    continue;
+                }
+                if present {
+                    self.db.execute("INSERT INTO message_categories(account,message_id,category_id) VALUES(?1,?2,?3)",params![account,message,category])?;
+                } else {
+                    self.db.execute("DELETE FROM message_categories WHERE account=?1 AND message_id=?2 AND category_id=?3",params![account,message,category])?;
+                }
+                record_manual_intent(&self.db, account, message, "category", category, present)?;
+            }
+        }
+        self.db.execute(
+            "UPDATE conversations SET revision=revision+1 WHERE account=?1 AND id=?2",
+            params![account, conversation],
+        )?;
+        let mut result = self.conversation(account, conversation)?;
+        result["undone_request_id"] = original.into();
         Ok(result)
     }
 }
@@ -317,7 +450,7 @@ fn next_revision(current: i64) -> Result<i64> {
 // A newer provider snapshot must not overwrite an unacknowledged human action.
 // These local overlays share the mutation transaction and its exact message set.
 fn record_manual_intent(
-    tx: &rusqlite::Transaction<'_>,
+    tx: &rusqlite::Connection,
     account: &str,
     message: &str,
     field: &str,
@@ -585,11 +718,15 @@ mod tests {
             .unwrap();
         assert_eq!(review["filtered_conversation_count"], 25);
         assert_eq!(review["conversations"].as_array().unwrap().len(), 25);
+        let expected_counts = json!({"conversation_count":110,"unread_conversation_count":25,
+            "held_conversation_count":held_conversation_count,"done_conversation_count":76,
+            "scope":"all_account_mail_including_archive","held_includes_unread":true});
+        for (key, value) in expected_counts.as_object().unwrap() {
+            assert_eq!(&review["account_counts"][key], value, "account count {key}");
+        }
         assert_eq!(
-            review["account_counts"],
-            json!({"conversation_count":110,"unread_conversation_count":25,
-                "held_conversation_count":held_conversation_count,"done_conversation_count":76,
-                "scope":"all_account_mail_including_archive","held_includes_unread":true})
+            review["account_counts"]["folder_conversation_counts"]["all"],
+            110
         );
         review
     }

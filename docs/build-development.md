@@ -1,5 +1,11 @@
 # Build, run and move between machines
 
+## Fresh SQLite profile switch (D093)
+
+The current Windows staged tree is `dist/windows-amd64/bin/fuckmail-gui.exe`, with `fm.exe` and `fm-engine.exe` beside it. It creates schema32 directly and refuses older profile versions. Close every GUI and CLI/engine instance, then move the **whole** `%LOCALAPPDATA%\fuckMail\default` directory out of that location before launching the new GUI. The directory contains `store.sqlite3`, external `blobs/` and other profile state; if `store.sqlite3-wal` or `store.sqlite3-shm` appears, keep it with the database. Moving only the `.sqlite3` file would separate it from retained source bytes and possibly uncheckpointed writes. `%LOCALAPPDATA%\fuckMail\demo-v1` is a separate synthetic profile and need not be moved for an ordinary live start. A new GUI start creates an empty default profile; connect each account again and explicitly start sync. No old-profile migration or real-profile operation was part of D093 verification.
+
+The staged tree passes relocated GUI smoke and empty-live CLI/GUI checks. The broad GUI self-test passes its corrected D092 Account Editor path but times out later in native search scroll restoration; the package script therefore has not produced a verified archive. [Current execution limits](research/search-storage.md#2026-09-23-shared-tree-integration).
+
 ## Email-first Google setup (D040)
 
 Configured builds use **Settings → Accounts → Connect Google account → email → Continue with Google**. Google opens in the system browser. Reconnect and Restore reuse the saved account identity. Sign-in alone does not start sync; confirm actual quotas and protected-profile/backup admission before importing.

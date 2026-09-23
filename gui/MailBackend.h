@@ -142,6 +142,10 @@ public:
     QVariantList reminders() const { return visibleCalendarEvents(m_reminders, false, false); }
     Q_INVOKABLE void dismissCalendarReminder(const QVariantMap &event);
     Q_INVOKABLE void joinCalendarEvent(const QVariantMap &event);
+    Q_INVOKABLE void snoozeCalendarReminder(const QVariantMap &event);
+    Q_INVOKABLE void playReminderSound(int level);
+    Q_INVOKABLE void stopReminderSound();
+    Q_INVOKABLE QString calendarReminderWhen(const QVariantMap &event) const;
     QVariantMap currentAccount() const;
     QString account() const { return m_account; }
     QString query() const { return m_query; }
@@ -225,6 +229,7 @@ public:
     Q_INVOKABLE QString labelRequest(const QString &method, const QVariantMap &params, const QString &account);
     Q_INVOKABLE QString requestAttachmentPreview(const QString &account, const QString &id);
     Q_INVOKABLE QString saveAttachment(const QString &account, const QString &id, const QUrl &destination);
+    Q_INVOKABLE QString downloadAttachment(const QString &account, const QString &id, const QString &name);
     Q_INVOKABLE QUrl attachmentSaveLocation(const QString &name) const;
     Q_INVOKABLE QString requestMessageSource(const QString &id, const QString &version);
     Q_INVOKABLE QString receivedHtml(const QString &html) const;
@@ -265,6 +270,7 @@ public:
     Q_INVOKABLE void setRead(bool read);
     Q_INVOKABLE void setStarred(bool starred);
     Q_INVOKABLE void doneConversation();
+    Q_INVOKABLE void dismissMailUndo();
     Q_INVOKABLE void setCategoryMembership(const QString &categoryId, bool present);
     Q_INVOKABLE void fileConversation(const QString &action);
     Q_INVOKABLE void editDraft(const QString &body);
@@ -341,7 +347,7 @@ public:
     Q_INVOKABLE void applyFilters(const QVariantMap &filters);
     Q_INVOKABLE void setCollapsedGroups(const QStringList &groups);
     Q_INVOKABLE void setPreferences(const QVariantMap &patch);
-    Q_INVOKABLE void updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention = {});
+    Q_INVOKABLE void updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention = {}, const QVariantMap &sync = {});
     Q_INVOKABLE void setCalendarSelected(const QString &account, const QString &calendar, bool selected);
     Q_INVOKABLE void setCalendarView(const QString &view);
     Q_INVOKABLE void moveCalendar(int delta);
@@ -376,6 +382,7 @@ signals:
     void assistanceReply(const QString &ticket, const QString &method, const QVariantMap &result, bool ok);
     void attachmentPreviewReady(const QString &ticket, const QVariantMap &result, bool ok);
     void attachmentSaved(const QString &ticket, const QString &error);
+    void mailSelectionRestored(const QVariantList &rows);
     void messageSourceReady(const QString &ticket, const QVariantMap &result, bool ok);
     void calendarSearchChanged();
     void calendarSearchResultReady(const QVariantMap &event);
@@ -541,12 +548,21 @@ private:
     QString notificationContext() const;
     void pollNotifications();
     void pollMailNotifications();
-    void acknowledgeCalendarReminder(const QVariantMap &event, bool join);
+    void acknowledgeCalendarReminder(const QVariantMap &event, bool join, bool snooze = false);
     void loadCalendarSources();
     void loadCaptures(bool append = false);
     void savePreferences();
     void flag(const QString &name, bool value);
-    void mutateConversation(const QString &method, QJsonObject params);
+    void mutateConversation(const QString &method, QJsonObject params, bool undoable = true);
+    QVariantMap mailUndoToken(const QString &account, const QJsonObject &result) const;
+    void offerMailUndo(const QString &label, const QVariantList &tokens, const QVariantList &selection = {});
+    void undoMailActions(const QVariantMap &context);
+    void runMailUndo();
+    QString mailActionLabel(const QString &method, const QJsonObject &params, int count = 1) const;
+    QVariantList m_bulkMailUndo, m_bulkMailSelection, m_pendingMailUndo, m_restoredMailSelection;
+    QString m_bulkMailAction;
+    quint64 m_mailUndoEpoch = 0, m_bulkMailUndoEpoch = 0;
+    QVariantList m_mailUndoSelection;
     void saveView(const QString &account);
     void cancelShutdown();
     void finishShutdown();

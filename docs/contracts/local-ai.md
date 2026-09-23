@@ -1,5 +1,17 @@
 # Local mail analysis
 
+## D096 — Auto-read and arrival authority (Local assistance19)
+
+Changing a label's Auto-read choice saves settings without clearing model People/Automated results; only classification or label-description changes invalidate them. The arrival flag that permits Auto-read is set only by the engine's new-arrival watcher. Client `assist_start` requests cannot claim it. Consumers: GUI and CLI through the shared engine; Core53.
+
+## D092 — per-account assistance placement (Local assistance18)
+
+Auto-summarize and Auto-label live in Settings → Mail's selected-account section, above the same account's Labels. They save by compare-and-swap into the existing assistance settings document, preserving other accounts, prompts and label Auto-read. Local model settings retains provider/model/prompt controls. New-arrival work follows the saved account policy; switching a settings account never starts historical analysis. Summary presentation uses the existing result's model and generation timestamp. Consumers: Core50/Mail UI67/Quality67; schema31, fixtures0/3/protocol1 unchanged.
+
+## D090 — per-label Auto-read (Local assistance17)
+
+Each account's label settings hold an explicit Auto-read choice. A missing choice resolves to on for a Receipts label and off for every other label. The choice may be switched independently per account. Only a complete, current classification started by the new-arrival watcher that assigns a permitted label can mark that incoming message read; manual/backlog analysis, summaries, partial results, sent/trashed mail and labels blocked by a manual override cannot. Existing manual read intent wins. Live accounts require mail-write authority and enqueue the same durable Gmail read mutation as an explicit read action; synthetic accounts update local read state. Previously read messages are unchanged. This founder opt-in choice supersedes the earlier manual-only review rule for matching labels. Schema30 fences older engines from silently losing the new typed settings field. Consumers: Core49, Mail UI66, Quality66; fixtures0,3/protocol1 unchanged.
+
 ## D086 — mail list and account backlog
 
 Explicit account backlog analysis is now authorized through the Accounts menu or CLI `assist batch --range week|month|year|all`. It is never triggered by browsing, settings save or startup. `assist_backlog` starts a read-only asynchronous coverage job; poll `assist_job` for local/eligible/processed/missing counts and four date-window counts. GUI counts never hold the IPC connection open for the full scan. Week/month/year mean rolling 7/30/365 days through the captured UTC time; Everything means all eligible cached dates through that time. Future/invalid dates are excluded. `assist_batch_start` creates a session-owned job; existing `assist_job`, `assist_jobs` and `assist_cancel` expose progress and cancellation. Scan bounded pages up to the captured time/row ceiling, then prepare one target at a time. Only missing enabled projections are generated; current summaries survive classification-only work. At most one batch per account and 16 admitted jobs, sharing the single inference slot. Release inference ownership between messages for interactive jobs. Isolated failures remain counted and do not retry indefinitely. Settings or lifecycle changes stop the batch. Completed results persist, canceled jobs do not resume. A current partial result is processed but remains labeled partial in the reader; this avoids endlessly regenerating a source beyond the context limit.
@@ -24,7 +36,7 @@ Consumers: Core42/Gmail22/Local assistance14/Mail UI49/CLI37/Quality49, schema29
 
 D061 / P2-UI3 adds account-local label creation, descriptions and removal plus explicit Google name merging/creation. Removal clears local membership and mappings, retaining historical receipts; it does not delete Gmail labels or mail. Descriptions use the existing assistance settings and stay local. Schema 26 journals provider creation before dispatch; unknown outcomes require inventory reconciliation, with no blind retry. Unmapped local memberships wait for an explicit link/sync before provider delivery. The decision and [prototype execution record](../research/prototype-september-15.md) own the detailed scope and evidence.
 
-State: Draft · Revision: 16 · Updated: 2026-09-22 · Implementation: D086 implemented; scoped Rust/native/engine-CLI and signed Mac relocation/startup checks pass. Broader post-arrival scroll-restoration verification remains open. Schema29 and whole-area readiness0/9 unchanged.
+State: Draft · Revision: 17 · Updated: 2026-09-23 · Implementation: D090 scoped arrival/remote-journal and native label-control checks pass; configured package and real-provider readback remain open. Schema30, fixtures0/3, protocol1 and whole-area readiness0/9 unchanged.
 
 ## Local compatible servers (D060)
 

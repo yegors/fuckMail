@@ -1,4 +1,6 @@
 #pragma once
+#include <QFont>
+#include <QFontMetricsF>
 #include <QRegularExpression>
 #include <QSet>
 #include <QTextDocument>
@@ -9,6 +11,16 @@
 
 // Display-only projection. Source bytes and authored/composer text never change.
 namespace ReceivedBody {
+// Qt's proportional line height scales the font's natural line height; the
+// design's plain-text reader uses CSS line-height 1.65 (a font-size multiple).
+inline int readerLeadingPercent() {
+    static const int percent = [] {
+        QFont font(QStringLiteral("Geist")); font.setPixelSize(100);
+        const qreal natural = QFontMetricsF(font).height() / 100.0;
+        return qRound(1.65 / (natural > 0.5 ? natural : 1.0) * 100);
+    }();
+    return percent;
+}
 inline QString plainHtml(QString text) {
     text.replace("\r\n","\n"); text.replace('\r','\n');
     const auto paragraphs=text.trimmed().split(QRegularExpression("\\n[\\t ]*\\n(?:[\\t ]*\\n)*"));
@@ -22,7 +34,8 @@ inline QString plainHtml(QString text) {
             rendered+=url.isValid()?"<a href=\""+escaped+"\">"+escaped+"</a>":escaped;end=link.capturedEnd();
         }
         rendered+=p.mid(end).toHtmlEscaped();
-        html += "<p style=\"white-space:pre-wrap;margin-top:0;margin-bottom:7px;line-height:145%\">"+rendered.replace('\n',"<br>")+"</p>";
+        // A blank line between paragraphs keeps one reader line of space.
+        html += "<p style=\"white-space:pre-wrap;margin-top:0;margin-bottom:24px;line-height:"+QString::number(readerLeadingPercent())+"%\">"+rendered.replace('\n',"<br>")+"</p>";
     }
     return html;
 }

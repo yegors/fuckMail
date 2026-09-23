@@ -1,3 +1,0 @@
--- D035 changes the interpretation of new Calendar intents and reconciliation.
--- No existing row is rewritten: absent intent/dispatch version remains legacy 1.
--- The schema fence prevents older engines from executing version 2 guest writes.

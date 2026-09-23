@@ -70,6 +70,7 @@ pub(crate) struct SyncContext {
     refresh: watch::Sender<u64>,
     credential_blocked: Arc<AtomicBool>,
     mail_refresh_requested: Arc<AtomicBool>,
+    calendar_refresh_requested: Arc<AtomicBool>,
 }
 impl SyncContext {
     pub(crate) async fn core_call<T, F>(&self, operation: F) -> Result<T>
@@ -364,6 +365,7 @@ impl SyncContext {
             refresh: watch::channel(0).0,
             credential_blocked: Arc::new(AtomicBool::new(false)),
             mail_refresh_requested: Arc::new(AtomicBool::new(false)),
+            calendar_refresh_requested: Arc::new(AtomicBool::new(false)),
         }
     }
 }
@@ -587,6 +589,9 @@ impl Runtime {
             }
             job.context
                 .mail_refresh_requested
+                .store(true, Ordering::Release);
+            job.context
+                .calendar_refresh_requested
                 .store(true, Ordering::Release);
             job.context
                 .refresh
@@ -1257,6 +1262,9 @@ impl Runtime {
                         job.context
                             .mail_refresh_requested
                             .store(true, Ordering::Release);
+                        job.context
+                            .calendar_refresh_requested
+                            .store(true, Ordering::Release);
                         job.context.refresh.send_modify(|n| *n = n.wrapping_add(1));
                     }
                     return Ok(json!({"account":account,"started":false,"active":true}));
@@ -1296,6 +1304,7 @@ impl Runtime {
             refresh: watch::channel(0).0,
             credential_blocked: Arc::new(AtomicBool::new(false)),
             mail_refresh_requested: Arc::new(AtomicBool::new(false)),
+            calendar_refresh_requested: Arc::new(AtomicBool::new(false)),
         };
         let progress = Arc::new(std::sync::Mutex::new(
             json!({"mail":if has_mail {"starting"} else {"not_granted"},"mail_mutations":if has_mail_write {"starting"} else {"not_granted"},"drafts":if has_mail_write {"starting"} else {"not_granted"},"remote_drafts":if has_mail {"starting"} else {"not_granted"},"labels":if has_mail {"starting"} else {"not_granted"},"calendar":if has_calendar {"starting"} else {"not_granted"},"mail_steps":0,"calendar_pages":0}),
@@ -1695,7 +1704,10 @@ async fn calendar_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>)
             }
             continue;
         }
-        let refresh_catalog = refresh.elapsed() >= Duration::from_secs(60);
+        // A manual wake must fetch a Calendar delta even when the ordinary
+        // cadence has not elapsed. The flag survives a pass already in flight.
+        let refresh_catalog = ctx.calendar_refresh_requested.swap(false, Ordering::AcqRel)
+            || refresh.elapsed() >= Duration::from_secs(60);
         match calendar::run_pass(&ctx, refresh_catalog).await {
             Ok(summary) => {
                 if refresh_catalog {
@@ -1757,6 +1769,12 @@ async fn calendar_loop(ctx: SyncContext, progress: Arc<std::sync::Mutex<Value>>)
                 }
             }
             Err(error) => {
+                if refresh_catalog {
+                    // A failed forced pass must still fetch a delta on retry,
+                    // even if the last successful catalog pass was recent.
+                    ctx.calendar_refresh_requested
+                        .store(true, Ordering::Release);
+                }
                 progress_state(&progress, "calendar", "paused", Some(&error.code));
                 let Some(delay) = retry_wait(&error, failures) else {
                     return;

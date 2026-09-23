@@ -25,7 +25,7 @@ Evidence, alternatives and experiments organized by subject. This index is navig
 | [Gmail](gmail.md) | Current Phase 2 OAuth/scopes/quotas, history/offline sync, drafts/send and live-test prerequisites | [Gmail](../contracts/gmail.md) |
 | [IMAP/SMTP](imap-smtp.md) | Deferred: identities, capabilities, folder moves and uncertain sending after Google dogfooding | [IMAP/SMTP](../contracts/imap-smtp.md) |
 | [Calendar](calendar.md) | Current Phase 2 quotas/permissions, sync/free-busy, recurrence/invitations and live-test prerequisites; feeds/CalDAV deferred | [Calendar](../contracts/calendar.md) |
-| [Search/storage](search-storage.md) | SQLite/FTS5, Tantivy, Notmuch, WAL and scale experiments | [Core](../contracts/core-storage.md), [Search](../contracts/search.md) |
+| [Search/storage](search-storage.md) | SQLite/FTS5 options, WAL and scale experiments, plus the schema-29 read-only profile review and reset-plan evidence | [Core](../contracts/core-storage.md), [Search](../contracts/search.md) |
 | [Local AI](local-ai.md) | Ollama/vLLM setup, structured results, supported platforms and evaluation | [Local assistance](../contracts/local-ai.md) |
 | [exec-buddy product lessons](exec-buddy.md) | Source evidence for selected mail/calendar interactions and rejected carryovers | [Triage](../contracts/triage.md), [Calendar](../contracts/calendar.md) |
 | [CLI and local engine](cli-and-local-engine.md) | Headless access, shared process/state and lifecycle tradeoffs | [CLI](../contracts/cli.md), [Core](../contracts/core-storage.md) |

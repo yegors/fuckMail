@@ -172,7 +172,45 @@ fn duplicate_provider_identity_is_retained_as_explicit_incomplete_data() {
         "t1",
     );
     assert_eq!(store.db.query_row("SELECT COUNT(*) FROM calendar_sync_items WHERE run=?1 AND error_code='duplicate_identity'",[lease.run],|r|r.get::<_,i64>(0)).unwrap(),1);
+    assert_eq!(store.db.query_row("SELECT COUNT(*) FROM calendar_sync_items WHERE run=?1 AND error_code='duplicate_identity' AND json IS NOT NULL",[lease.run],|r|r.get::<_,i64>(0)).unwrap(),1);
     assert_eq!(view(&store)["coverage"]["complete"], false);
+    assert_eq!(view(&store)["total"], 1);
+}
+
+#[test]
+fn published_runs_release_staging_json_and_replay_after_reopen() {
+    let (dir, mut store, account) = setup();
+    let lease = publish_events(
+        &mut store,
+        &account,
+        vec![event("retained", "Source-owned content")],
+        CalendarSyncMode::Full,
+        "t1",
+    );
+    let staged: i64 = store
+        .db
+        .query_row(
+            "SELECT count(*) FROM calendar_sync_items WHERE run=?1 AND json IS NOT NULL",
+            [lease.run],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(staged, 0);
+    let proofs: i64 = store
+        .db
+        .query_row(
+            "SELECT count(*) FROM calendar_sync_items WHERE run=?1 AND length(fingerprint)>0",
+            [lease.run],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(proofs, 1);
+    assert_eq!(
+        store.calendar_publish_sync(&lease).unwrap()["state"],
+        "published"
+    );
+    drop(store);
+    let store = Store::open_live(dir.path()).unwrap();
     assert_eq!(view(&store)["total"], 1);
 }
 

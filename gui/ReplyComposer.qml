@@ -107,7 +107,7 @@ Rectangle {
         Rectangle {
             anchors.fill: parent; visible: fileDrop.containsDrag
             color: Theme.surface; opacity: 0.96; border.width: 1; border.color: Theme.accent; radius: 8
-            Text { anchors.centerIn: parent; text: "Drop files to attach"; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(16) }
+            Text { anchors.centerIn: parent; text: "Drop files to attach"; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(16) }
         }
     }
     Component.onCompleted: syncDraft()
@@ -132,7 +132,7 @@ Rectangle {
         spacing: 0
         RowLayout {
             Layout.fillWidth: true; Layout.bottomMargin: 14; spacing: 10
-            Text { text: root.draftTitle; color: Theme.text; font { family: Theme.fontFamily; pixelSize: Theme.fontSize(15); weight: Font.Medium; letterSpacing: -0.15 } }
+            Text { text: root.draftTitle; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(15); weight: Font.Medium; letterSpacing: -0.15 } }
             Item { Layout.fillWidth: true }
             RowLayout {
                 spacing: 6
@@ -145,7 +145,7 @@ Rectangle {
             objectName: "archivedDraftNotice"; visible: backend.accountArchived || backend.unsavedAccountBuffer
             Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
             text: backend.unsavedAccountBuffer ? backend.draftStatus : "Saved account archive · selectable preview. Editing, autosave, sending and provider checks are disabled."
-            color: backend.unsavedAccountBuffer ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13)
+            color: backend.unsavedAccountBuffer ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13)
         }
         ColumnLayout {
             visible: root.readOnly
@@ -161,7 +161,7 @@ Rectangle {
                         ? "\nNot seen in the latest completed check. This does not establish sending or deletion." : "")
                     + (((backend.draft.remote_source || {}).issues || []).length ? "\n" + root.sourceIssues() : "")
                 textFormat: Text.PlainText; wrapMode: Text.Wrap
-                color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12)
+                color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
             }
             ScrollView {
                 ScrollBar.vertical: FmScrollBar {}
@@ -177,7 +177,7 @@ Rectangle {
                         RowLayout {
                             required property var modelData
                             Layout.fillWidth: true; spacing: 10
-                            Text { text: modelData.label; Layout.preferredWidth: 54; Layout.alignment: Qt.AlignTop; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
+                            Text { text: modelData.label; Layout.preferredWidth: 54; Layout.alignment: Qt.AlignTop; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
                             TextArea {
                                 objectName: "draftSnapshotHeader_" + modelData.label
                                 property bool blocksWorkspaceShortcuts: true
@@ -185,7 +185,7 @@ Rectangle {
                                 readOnly: true; selectByMouse: true; textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap
                                 text: modelData.value; placeholderText: "Not present in source"; placeholderTextColor: Theme.subtle
                                 color: Theme.text; selectionColor: Theme.selection; selectedTextColor: Theme.selectedText
-                                font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13)
+                                font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13)
                             }
                         }
                     }
@@ -196,13 +196,13 @@ Rectangle {
                 Layout.fillWidth: true; spacing: 8
                 FmButton { objectName: "draftSourceHistoryButton"; text: "Saved sources"; outlined: true; onClicked: { backend.loadDraftSources(); sourceHistory.open() } }
                 FmButton { objectName: "draftSourceActionsButton"; text: "Actions"; visible: !backend.accountArchived && !backend.unsavedAccountBuffer; outlined: true; onClicked: { backend.loadDraftAuthoring(); sourceActions.open() } }
-                Text { Layout.fillWidth: true; text: "Original MIME, HTML and files are retained. This preview cannot be edited or sent."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+                Text { Layout.fillWidth: true; text: "Original MIME, HTML and files are retained. This preview cannot be edited or sent."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             }
         }
         ColumnLayout {
             visible: !root.snapshotReadOnly && (((backend.draft.remote_source || {}).source_revision || 0) > 0 || (backend.draftAuthoring.original_draft_id || "").length > 0)
             Layout.fillWidth: true; Layout.bottomMargin: 12; spacing: 5
-            Text { Layout.fillWidth: true; text: "Original Google source retained"; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { Layout.fillWidth: true; text: "Original Google source retained"; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             Flow {
                 Layout.fillWidth: true; spacing: 6
                 FmButton { objectName: "authoredDraftSourceHistory"; text: "Saved sources"; outlined: true; visible: ((backend.draft.remote_source || {}).source_revision || 0) > 0; onClicked: { backend.loadDraftSources(); sourceHistory.open() } }
@@ -212,7 +212,7 @@ Rectangle {
         ColumnLayout {
             visible: root.readOnly && ((backend.draftAuthoring.status || "").length > 0 || backend.draftAuthoring.retry || (backend.draftAuthoring.result_draft_id || "").length > 0)
             Layout.fillWidth: true; Layout.bottomMargin: 12; spacing: 5
-            Text { objectName: "draftSourceActionStatus"; Layout.fillWidth: true; text: backend.draftAuthoring.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { objectName: "draftSourceActionStatus"; Layout.fillWidth: true; text: backend.draftAuthoring.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             Flow {
                 Layout.fillWidth: true; spacing: 6
                 FmButton { objectName: "retryDraftSourceAction"; text: "Retry same action"; visible: backend.draftAuthoring.retry || false; enabled: !backend.draftAuthoring.busy; onClicked: backend.retryDraftSourceAction() }
@@ -222,19 +222,19 @@ Rectangle {
         RowLayout {
             visible: !root.readOnly
             Layout.fillWidth: true; Layout.preferredHeight: 38; spacing: 10
-            Text { text: "From"; Layout.preferredWidth: 44; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
+            Text { text: "From"; Layout.preferredWidth: 44; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5) }
             Button {
                 id: fromButton; objectName: "draftFromAccount"
                 Layout.fillWidth: true; Layout.maximumWidth: contentItem.implicitWidth + 20
-                implicitHeight: 30; leftPadding: 8; rightPadding: 8
+                implicitHeight: 30; leftPadding: 0; rightPadding: 4
                 enabled: backend.draftTransfer.can_change && backend.accounts.length > 1
                 Accessible.name: "From account, " + (backend.draft.from || "")
                 onClicked: fromMenu.open()
-                background: Rectangle { color: fromButton.hovered || fromButton.down ? Theme.hover : "transparent"; radius: 4; border.color: fromButton.activeFocus ? Theme.accent : "transparent" }
+                background: Rectangle { x: -6; width: fromButton.width + 8; color: fromButton.hovered || fromButton.down ? Theme.hover : "transparent"; radius: 4; border.color: fromButton.activeFocus ? Theme.accent : "transparent" }
                 contentItem: RowLayout {
-                    spacing: 8
-                    Text { Layout.fillWidth: true; text: (backend.draft.from_name || backend.currentAccount.name || "")+" · "+(backend.draft.from || ""); color: fromButton.enabled ? Theme.text : Theme.subtle; textFormat: Text.PlainText; elide: Text.ElideRight; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
-                    FmIcon { name: "chevronDown"; size: 12; color: Theme.subtle; visible: backend.accounts.length > 1 }
+                    spacing: 6
+                    Text { Layout.fillWidth: true; text: (backend.draft.from_name || backend.currentAccount.name || "")+" · "+(backend.draft.from || ""); color: fromButton.enabled ? Theme.text : Theme.subtle; textFormat: Text.PlainText; elide: Text.ElideRight; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
+                    FmIcon { name: "chevronDown"; size: 10; color: Theme.inkAlpha(.4); visible: backend.accounts.length > 1 }
                 }
                 Menu {
                     id: fromMenu; objectName: "draftFromMenu"; y: fromButton.height
@@ -254,7 +254,7 @@ Rectangle {
                             contentItem: RowLayout {
                                 spacing: 8
                                 FmIcon { name: "check"; size: 14; color: Theme.text; opacity: fromOption.checked ? 1 : 0 }
-                                Text { Layout.fillWidth: true; text: fromOption.text; textFormat: Text.PlainText; elide: Text.ElideRight; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
+                                Text { Layout.fillWidth: true; text: fromOption.text; textFormat: Text.PlainText; elide: Text.ElideRight; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
                             }
                             onTriggered: backend.changeDraftAccount(modelData.id)
                         }
@@ -270,7 +270,7 @@ Rectangle {
         ColumnLayout {
             Layout.fillWidth: true; spacing: 6
             visible: (backend.draftTransfer.status || "").length > 0
-            Text { objectName: "draftTransferStatus"; Layout.fillWidth: true; text: backend.draftTransfer.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { objectName: "draftTransferStatus"; Layout.fillWidth: true; text: backend.draftTransfer.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             Flow {
                 Layout.fillWidth: true; spacing: 8
                 FmButton { objectName: "retryDraftTransfer"; text: "Check account change"; visible: backend.draftTransfer.retry; enabled: !backend.draftTransfer.busy; onClicked: backend.retryDraftTransfer() }
@@ -283,8 +283,8 @@ Rectangle {
         RecipientField { id: bccField; Layout.fillWidth: true; label: "Bcc"; fieldName: "bcc_recipients"; visible: !root.readOnly && (root.bccOpen || (backend.draft.bcc_recipients||[]).length>0 || (backend.recipientInputs.bcc_recipients||"").length>0) }
         RowLayout {
             Layout.fillWidth: true; Layout.preferredHeight: 38; spacing: 10
-            Text { text: "Subject"; Layout.preferredWidth: 44; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
-            TextField { objectName: "draftSubject"; property bool blocksWorkspaceShortcuts: true; Layout.fillWidth: true; padding: 0; text: backend.draft.subject || ""; placeholderText: "Subject"; color: Theme.text; placeholderTextColor: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(14); font.weight: Font.Medium; background: Item {} enabled: root.readOnly || !backend.draftLocked; readOnly: root.readOnly; selectByMouse: true; onTextEdited: backend.setDraftSubject(text) }
+            Text { text: "Subject"; Layout.preferredWidth: 44; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5) }
+            TextField { objectName: "draftSubject"; property bool blocksWorkspaceShortcuts: true; Layout.fillWidth: true; padding: 0; leftPadding: 0; rightPadding: 0; text: backend.draft.subject || ""; placeholderText: "Subject"; color: Theme.text; placeholderTextColor: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(14); font.weight: Font.Medium; background: Item {} enabled: root.readOnly || !backend.draftLocked; readOnly: root.readOnly; selectByMouse: true; onTextEdited: backend.setDraftSubject(text) }
         }
         Item { Layout.fillWidth: true; implicitHeight: 1; Rectangle { y: Theme.snapY(parent, 0); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
         ScrollView {
@@ -313,9 +313,9 @@ Rectangle {
             color: Theme.text
             selectionColor: Theme.selection
             selectedTextColor: Theme.selectedText
-            font { family: Theme.fontFamily; pixelSize: Theme.fontSize(15) }
+            font { family: Theme.fontFamily; pointSize: Theme.fontPoints(15) }
             background: null
-            padding: 0
+            padding: 0; leftPadding: 0; rightPadding: 0
             Accessible.name: root.draftTitle+" body"
             Keys.onPressed: event => {
                 if ((event.modifiers & Qt.ControlModifier) && event.key === Qt.Key_B && root.hasSelection) { document.format("bold"); event.accepted = true }
@@ -346,7 +346,7 @@ Rectangle {
             Layout.fillWidth: true; Layout.bottomMargin: 12
             text: backend.draft.signature_text || ""
             textFormat: Text.PlainText; wrapMode: Text.Wrap
-            color: Theme.muted; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12)
+            color: Theme.muted; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
             TapHandler { enabled: !root.readOnly; onTapped: { root.signatureOpen = true; signature.forceActiveFocus() } }
         }
         TextArea {
@@ -362,7 +362,7 @@ Rectangle {
             selectByMouse: true
             wrapMode: TextEdit.Wrap
             color: Theme.muted
-            font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) }
+            font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
             background: Rectangle { color: Theme.canvas; radius: 4; border.color: Theme.line }
             onTextChanged: if (!root.loading) backend.setDraftSignature(text)
             Accessible.name: "Signature for this reply"
@@ -383,8 +383,8 @@ Rectangle {
                     RowLayout {
                         anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 6; spacing: 8
                         FmIcon { name: "attachment"; size: 14; color: Theme.secondary }
-                        Text { id: chipName; Layout.fillWidth: true; text: attachmentChip.modelData.name; elide: Text.ElideRight; textFormat: Text.PlainText; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
-                        Text { id: chipSize; text: root.attachmentSize(attachmentChip.modelData.size); color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+                        Text { id: chipName; Layout.fillWidth: true; text: attachmentChip.modelData.name; elide: Text.ElideRight; textFormat: Text.PlainText; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
+                        Text { id: chipSize; text: root.attachmentSize(attachmentChip.modelData.size); color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
                         FmButton {
                             objectName: "exportDraftAttachment_" + attachmentChip.modelData.id
                             visible: root.readOnly; text: root.snapshotReadOnly ? "Copy" : "Open"; implicitHeight: 24; leftPadding: 2; rightPadding: 2
@@ -425,12 +425,12 @@ Rectangle {
                 text: backend.syntheticProfile ? "Capture locally" : backend.googleSend.busy ? "Sending…" : "Send"
                 prominent: true
                 leftPadding: 16; rightPadding: 16
-                font.pixelSize: Theme.fontSize(13)
+                font.pointSize: Theme.fontPoints(13)
                 enabled: backend.syntheticProfile ? !backend.draftLocked && !backend.attachmentImport.pending && (document.plainText.trim().length > 0 || root.attachmentIds.length > 0) : backend.googleSend.can_send || false
                 tip: backend.syntheticProfile ? "Record an outgoing MIME copy on this machine; no email is delivered" : "Save and send through Google."
                 onClicked: { if (backend.syntheticProfile) backend.captureDraft(); else backend.sendGoogleDraft() }
             }
-            FmButton { objectName: "draftAttachButton"; visible: !root.readOnly; text: "Attach"; iconName: "attachment"; outlined: true; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pixelSize: Theme.fontSize(13); tip: "Attach a local file or a retained conversation file"; enabled: backend.connected && !backend.draftBusy && !backend.attachmentImportBusy; onClicked: attachmentMenu.popup() }
+            FmButton { objectName: "draftAttachButton"; visible: !root.readOnly; text: "Attach"; iconName: "attachment"; outlined: true; leftPadding: 12; rightPadding: 12; font.weight: Font.Medium; font.pointSize: Theme.fontPoints(13); tip: "Attach a local file or a retained conversation file"; enabled: backend.connected && !backend.draftBusy && !backend.attachmentImportBusy; onClicked: attachmentMenu.popup() }
             Item { Layout.fillWidth: true }
             Text {
                 text: backend.draftStatus
@@ -438,20 +438,20 @@ Rectangle {
                 horizontalAlignment: Text.AlignRight
                 color: text.indexOf("Not saved") >= 0 ? Theme.error : Theme.subtle
                 wrapMode: Text.WordWrap
-                font { family: Theme.fontFamily; pixelSize: Theme.fontSize(12) }
+                font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
             }
         }
         RowLayout {
             visible: !root.readOnly && (backend.attachmentImport.status || "").length > 0
             Layout.fillWidth: true; spacing: 8
-            Text { objectName: "draftAttachmentStatus"; Layout.fillWidth: true; text: backend.attachmentImport.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.attachmentImport.retry ? Theme.warn : text.indexOf("Not attached") === 0 ? Theme.error : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { objectName: "draftAttachmentStatus"; Layout.fillWidth: true; text: backend.attachmentImport.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.attachmentImport.retry ? Theme.warn : text.indexOf("Not attached") === 0 ? Theme.error : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             FmButton { objectName: "retryDraftAttachment"; visible: backend.attachmentImport.retry || backend.attachmentImport.can_resume || false; text: backend.attachmentImport.retry ? "Retry attachment" : "Continue"; outlined: true; enabled: backend.connected && !backend.attachmentImportBusy && !backend.draftBusy; onClicked: { backend.clearError(); backend.retryDraftAttachment() } }
             FmButton { objectName: "skipQueuedAttachments"; visible: (backend.attachmentImport.queued || 0) > 0; text: "Skip remaining"; onClicked: backend.skipQueuedDraftAttachments() }
         }
         ColumnLayout {
             visible: backend.googleSend.visible || false
             Layout.fillWidth: true; Layout.topMargin: visible ? 8 : 0; spacing: 6
-            Text { objectName: "googleSendStatus"; Layout.fillWidth: true; text: backend.googleSend.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.googleSend.warning ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { objectName: "googleSendStatus"; Layout.fillWidth: true; text: backend.googleSend.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.googleSend.warning ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             Flow {
                 Layout.fillWidth: true; spacing: 6
                 FmButton { objectName: "resumeSyncToSend"; text: "Resume sync"; outlined: true; visible: backend.googleSend.can_resume_sync || false; onClicked: backend.startGoogleSync(backend.account, {}) }
@@ -465,7 +465,7 @@ Rectangle {
         ColumnLayout {
             visible: backend.draftDiscard.visible || false
             Layout.fillWidth: true; spacing: 6
-            Text { Layout.fillWidth: true; text: backend.draftDiscard.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.warn; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { Layout.fillWidth: true; text: backend.draftDiscard.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.warn; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             RowLayout {
                 spacing: 6
                 FmButton { objectName: "checkDraftDiscard"; text: "Check discard"; visible: backend.draftDiscard.can_check || false; onClicked: backend.checkDraftDiscard() }
@@ -475,7 +475,7 @@ Rectangle {
         ColumnLayout {
             visible: backend.googleDraft.visible || false
             Layout.fillWidth: true; Layout.topMargin: visible ? 8 : 0; spacing: 6
-            Text { objectName: "googleDraftStatus"; Layout.fillWidth: true; text: backend.googleDraft.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.googleDraft.warning ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { objectName: "googleDraftStatus"; Layout.fillWidth: true; text: backend.googleDraft.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.googleDraft.warning ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             RowLayout {
                 visible: backend.googleDraft.can_check || backend.googleDraft.can_replace || backend.googleDraft.busy || false
                 spacing: 6
@@ -501,7 +501,7 @@ Rectangle {
         ColumnLayout {
             visible: backend.draftConflict
             Layout.fillWidth: true; spacing: 8
-            Text { Layout.fillWidth: true; text: "Another interface saved a newer draft. Your body, formatting, signature and attachments are still here. Choose which version to keep."; color: Theme.error; wrapMode: Text.Wrap; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { Layout.fillWidth: true; text: "Another interface saved a newer draft. Your body, formatting, signature and attachments are still here. Choose which version to keep."; color: Theme.error; wrapMode: Text.Wrap; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             RowLayout {
                 FmButton { objectName: "saveMyDraftVersion"; text: "Save my version…"; outlined: true; enabled: !backend.draftBusy; onClicked: conflictDialog.open() }
                 FmButton { text: "Reload saved draft…"; enabled: !backend.draftBusy; onClicked: reloadDialog.open() }
@@ -510,7 +510,7 @@ Rectangle {
         ColumnLayout {
             visible: backend.draftDeletion.visible || false
             Layout.fillWidth: true; Layout.topMargin: 8; spacing: 6
-            Text { objectName: "draftDeletionStatus"; Layout.fillWidth: true; text: backend.draftDeletion.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.draftDeletion.warning ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { objectName: "draftDeletionStatus"; Layout.fillWidth: true; text: backend.draftDeletion.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.draftDeletion.warning ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             Flow {
                 Layout.fillWidth: true; spacing: 6
                 FmButton { objectName: "readDraftDeletion"; text: "Read saved receipt"; enabled: backend.draftDeletion.can_status || false; onClicked: backend.loadDraftDeletion() }
@@ -525,7 +525,7 @@ Rectangle {
             textFormat: Text.PlainText
             wrapMode: Text.WordWrap
             color: Theme.muted
-            font { family: Theme.fontFamily; pixelSize: Theme.fontSize(11) }
+            font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11) }
         }
     }
     Popup {
@@ -539,15 +539,15 @@ Rectangle {
         background: Rectangle { color: Theme.surface; border.color: Theme.controlBorder; radius: 8 }
         contentItem: ColumnLayout {
             spacing: 6
-            Text { Layout.fillWidth: true; text: backend.draftAuthoring.loading ? "Checking the complete saved source…" : "Actions for this saved Google source"; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { Layout.fillWidth: true; text: backend.draftAuthoring.loading ? "Checking the complete saved source…" : "Actions for this saved Google source"; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             FmButton { objectName: "copyGoogleDraftSource"; Layout.fillWidth: true; text: "Create plain-text copy…"; textAlignment: Text.AlignLeft; enabled: backend.draftAuthoring.copy_allowed || false; onClicked: root.confirmSourceAction("copy") }
-            Text { Layout.fillWidth: true; visible: !backend.draftAuthoring.copy_allowed && (backend.draftAuthoring.copy_reason || "").length > 0; text: backend.draftAuthoring.copy_reason || ""; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { Layout.fillWidth: true; visible: !backend.draftAuthoring.copy_allowed && (backend.draftAuthoring.copy_reason || "").length > 0; text: backend.draftAuthoring.copy_reason || ""; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             FmButton { objectName: "adoptGoogleDraftSource"; Layout.fillWidth: true; text: "Edit Google draft…"; textAlignment: Text.AlignLeft; enabled: backend.draftAuthoring.adopt_allowed || false; onClicked: root.confirmSourceAction("adopt") }
-            Text { Layout.fillWidth: true; visible: !backend.draftAuthoring.adopt_allowed && (backend.draftAuthoring.adopt_reason || "").length > 0; text: backend.draftAuthoring.adopt_reason || ""; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { Layout.fillWidth: true; visible: !backend.draftAuthoring.adopt_allowed && (backend.draftAuthoring.adopt_reason || "").length > 0; text: backend.draftAuthoring.adopt_reason || ""; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
             FmButton { objectName: "deleteGoogleDraftSource"; Layout.fillWidth: true; text: "Delete Google draft permanently…"; textAlignment: Text.AlignLeft; foreground: Theme.error; enabled: backend.draftAuthoring.delete_allowed || false; onClicked: root.confirmSourceAction("delete") }
-            Text { Layout.fillWidth: true; visible: !backend.draftAuthoring.delete_allowed && (backend.draftAuthoring.delete_reason || "").length > 0; text: backend.draftAuthoring.delete_reason || ""; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
-            Text { Layout.fillWidth: true; visible: (backend.draftAuthoring.status || "").length > 0; text: backend.draftAuthoring.status || ""; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { Layout.fillWidth: true; visible: !backend.draftAuthoring.delete_allowed && (backend.draftAuthoring.delete_reason || "").length > 0; text: backend.draftAuthoring.delete_reason || ""; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+            Text { Layout.fillWidth: true; visible: (backend.draftAuthoring.status || "").length > 0; text: backend.draftAuthoring.status || ""; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
         }
     }
     FmConfirmDialog {
@@ -587,10 +587,10 @@ Rectangle {
             spacing: 10
             RowLayout {
                 Layout.fillWidth: true
-                Text { text: "Saved Google draft sources"; Layout.fillWidth: true; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(15); wrapMode: Text.Wrap }
+                Text { text: "Saved Google draft sources"; Layout.fillWidth: true; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15); wrapMode: Text.Wrap }
                 FmButton { objectName: "closeDraftSourceHistory"; text: "Close"; onClicked: sourceHistory.close() }
             }
-            Text { Layout.fillWidth: true; text: "Export makes a verified local copy. No external content is fetched."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { Layout.fillWidth: true; text: "Export makes a verified local copy. No external content is fetched."; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             ScrollView {
                 ScrollBar.vertical: FmScrollBar {}
                 id: sourceScroll
@@ -606,7 +606,7 @@ Rectangle {
                             Layout.fillWidth: true; spacing: 4
                             RowLayout {
                                 Layout.fillWidth: true
-                                Text { Layout.fillWidth: true; text: "Source " + sourceVersion.modelData.source_revision + " · " + sourceVersion.modelData.source_state; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: Theme.text; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(13) }
+                                Text { Layout.fillWidth: true; text: "Source " + sourceVersion.modelData.source_revision + " · " + sourceVersion.modelData.source_state; wrapMode: Text.Wrap; textFormat: Text.PlainText; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
                                 FmButton {
                                     objectName: "exportDraftSource_" + sourceVersion.modelData.source_revision
                                     text: "Export source"; outlined: true
@@ -623,7 +623,7 @@ Rectangle {
                                         required property string modelData
                                         required property int index
                                         objectName: "exportHistoricalDraftAttachment_" + sourceVersion.modelData.source_revision + "_" + modelData
-                                        text: "Copy file " + (index + 1); outlined: true; font.pixelSize: Theme.fontSize(12)
+                                        text: "Copy file " + (index + 1); outlined: true; font.pointSize: Theme.fontPoints(12)
                                         tip: "Export this retained file from source " + sourceVersion.modelData.source_revision
                                         enabled: !backend.draftSources.exporting
                                         onClicked: backend.exportDraftSource(sourceVersion.modelData.source_revision, modelData)
@@ -637,7 +637,7 @@ Rectangle {
                         RowLayout {
                             required property var modelData
                             Layout.fillWidth: true; spacing: 8
-                            Text { Layout.fillWidth: true; text: "Deletion · source " + modelData.source_revision + " · " + modelData.state; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+                            Text { Layout.fillWidth: true; text: "Deletion · source " + modelData.source_revision + " · " + modelData.state; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
                             FmButton { objectName: "inspectDraftDeletion_" + parent.modelData.request_id; text: "Inspect"; onClicked: root.inspectDeletion(parent.modelData.request_id) }
                         }
                     }
@@ -650,7 +650,7 @@ Rectangle {
                     }
                 }
             }
-            Text { objectName: "draftSourceExportStatus"; Layout.fillWidth: true; text: backend.draftSources.status || (backend.draftSources.loading ? "Loading saved sources…" : ""); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pixelSize: Theme.fontSize(12) }
+            Text { objectName: "draftSourceExportStatus"; Layout.fillWidth: true; text: backend.draftSources.status || (backend.draftSources.loading ? "Loading saved sources…" : ""); textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             FmButton { objectName: "showDraftSourceFolder"; text: "Show copy in folder"; visible: ((backend.draftSources.export || {}).path || "").length > 0; onClicked: backend.showDraftSourceFolder() }
         }
     }

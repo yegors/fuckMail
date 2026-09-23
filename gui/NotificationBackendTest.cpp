@@ -8,6 +8,7 @@
 #include <QQmlContext>
 #include <QQuickItem>
 #include <QQuickStyle>
+#include <QQuickWindow>
 
 using namespace GoogleOperationFixture;
 
@@ -155,6 +156,22 @@ class NotificationBackendTest {
         require(urls.opened.size() == 1, "Join cannot follow a different occurrence receipt");
         QDesktopServices::unsetUrlHandler("https");
     }
+    static void explicitSnooze() {
+        Harness h;
+        h.complete(h.prepareAck(),receipt(event()));
+        require(h.backend.reminders().size()==1,"reminder shown before snooze");
+        h.backend.snoozeCalendarReminder(event().toVariantMap());
+        auto held=h.take("calendar_reminder_ack");
+        require(held.request["params"].toObject()["state"]=="snoozed","snooze uses durable occurrence acknowledgement");
+        h.complete(held,receipt(event(),"snoozed"));
+        require(h.backend.reminders().isEmpty(),"snooze hides current reminder");
+        h.poll(); h.complete(h.take("calendar_reminders"),{{"reminders",QJsonArray{}}});
+        h.poll(); h.complete(h.take("calendar_reminders"),{{"reminders",QJsonArray{event()}}});
+        auto resumed=h.take("calendar_reminder_ack");
+        require(resumed.request["params"].toObject()["state"]=="shown","returned snooze can present again");
+        h.complete(resumed,receipt(event()));
+        require(h.backend.reminders().size()==1,"returned snooze is visible");
+    }
     static void mailCursor() {
         Harness h("all",true);
         auto first = h.take("mail_notifications");
@@ -183,6 +200,7 @@ class NotificationBackendTest {
         for (const auto font : {"Geist-Regular.ttf","Geist-Medium.ttf"})
             require(QFontDatabase::addApplicationFont(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/fonts/" + font) >= 0, "bundled popup font");
         auto current = event(); current["title"] = "<b>Human meeting title</b> — a longer invitation 日本語 that wraps without pushing either action outside the card";
+        current["start"]=QDateTime::currentDateTimeUtc().addSecs(600).toString(Qt::ISODate);
         h.backend.m_reminders = {current.toVariantMap()};
         QQmlApplicationEngine engine; bool warnings = false;
         QObject::connect(&engine,&QQmlEngine::warnings,[&](const auto &errors) {
@@ -197,30 +215,37 @@ ApplicationWindow {
     property string textSize: "default"
     Binding { target: Theme; property: "themeId"; value: appearance }
     Binding { target: Theme; property: "textSize"; value: textSize }
-    ReminderPopup { objectName: "reminderPopup"; anchors.centerIn: parent }
+    Rectangle { id: backdrop; anchors.fill: parent; color: Theme.surface }
+    ReminderPopup { objectName: "reminderPopup"; anchors.fill: parent; backgroundSource: backdrop; visible: backend.reminders.length > 0 }
 })QML",QUrl::fromLocalFile(copy.filePath("Test.qml")));
         require(!engine.rootObjects().isEmpty(), "actual reminder popup loads");
         auto *root = engine.rootObjects().first(); auto *panel = root->findChild<QQuickItem *>("reminderPopup");
         require(panel != nullptr, "popup panel exists");
-        const auto button = [&](const QString &text) {
-            QList<QQuickItem *> pending{panel};
-            while (!pending.isEmpty()) {
-                auto *item = pending.takeFirst(); pending.append(item->childItems());
-                if (item->metaObject()->indexOfProperty("prominent") >= 0 && item->property("text") == text) return item;
-            }
-            return static_cast<QQuickItem *>(nullptr);
-        };
-        await([&] { return button("Dismiss") && button("Join"); }, "popup delegates created");
+        const auto button = [&](const char *name) { return panel->findChild<QQuickItem *>(name); };
+        await([&] { return button("reminderDismiss") && button("reminderPrimary") && button("reminderSnooze"); }, "modal actions created");
         for (const auto theme : {"graphite","paper","harbour"}) for (const auto size : {"default","large"}) {
             root->setProperty("appearance",theme); root->setProperty("textSize",size);
-            QCoreApplication::processEvents(QEventLoop::AllEvents,20);
-            const auto *dismiss = button("Dismiss"), *join = button("Join");
-            const auto a = dismiss->mapRectToItem(panel,dismiss->boundingRect()), b = join->mapRectToItem(panel,join->boundingRect());
-            require(a.width() > 40 && b.width() > 30 && a.left() >= 0 && b.right() <= panel->width()
-                && a.bottom() <= panel->height() && b.bottom() <= panel->height() && !a.intersects(b), "default/large themed popup actions fit without overlap");
+            // The action Flow re-lays out on the next polish, not synchronously.
+            await([&] {
+                const auto *dismiss = button("reminderDismiss"), *join = button("reminderPrimary"), *snooze=button("reminderSnooze");
+                const auto a = dismiss->mapRectToItem(panel,dismiss->boundingRect()), b = join->mapRectToItem(panel,join->boundingRect()), c=snooze->mapRectToItem(panel,snooze->boundingRect());
+                return panel->width()==430 && panel->height()==410 && a.width()>40 && b.width()>100 && c.width()>100 && !a.intersects(b) && !b.intersects(c);
+            }, "short-window modal fills viewport and actions do not overlap");
             require(!warnings, "popup produces no QML binding/type warnings");
         }
-        require(QMetaObject::invokeMethod(button("Dismiss"),"clicked",Qt::DirectConnection), "actual QML dismissal handler");
+        const auto capture=qEnvironmentVariable("FM_REMINDER_CAPTURE");
+        if(!capture.isEmpty()) {
+            auto window=qobject_cast<QQuickWindow *>(root);require(window,"reminder capture window");
+            panel->setProperty("muted",true);root->setProperty("appearance","graphite");root->setProperty("textSize","default");
+            window->resize(1440,900);
+            const auto start=panel->property("startMs").toDouble();
+            for(const auto remaining:{300,60,-10}) {
+                panel->setProperty("nowMs",start-remaining*1000.0);
+                QElapsedTimer rendered;rendered.start();while(rendered.elapsed()<100)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+                require(window->grabWindow().save(capture+QString::number(remaining)+".png"),"reminder state capture");
+            }
+        }
+        require(QMetaObject::invokeMethod(button("reminderDismiss"),"clicked",Qt::DirectConnection), "actual QML dismissal handler");
         auto held = h.take("calendar_reminder_ack");
         require(held.request["params"].toObject()["occurrence_id"] == current["id"], "QML keeps the exact card occurrence");
         h.complete(held,receipt(current,"dismissed"));
@@ -229,7 +254,7 @@ ApplicationWindow {
     }
 public:
     static void run() {
-        shownAndRestart(); staleReplies(); mismatchedReceipts(); explicitJoin(); mailCursor(); popup();
+        shownAndRestart(); staleReplies(); mismatchedReceipts(); explicitJoin(); explicitSnooze(); mailCursor(); popup();
         qInfo() << "Notifications passed: private held IPC, exact receipts, current permissions/selection/lifetimes, restart suppression, explicit current Join and independent arrival cursor. No provider or OS notifications.";
     }
 };

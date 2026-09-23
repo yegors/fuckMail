@@ -3,7 +3,7 @@ use crate::live_calendar::{CalendarPage, CalendarSyncMode};
 use std::collections::BTreeSet;
 
 #[test]
-fn selected_reminder_time_and_none_control_the_due_window() {
+fn selected_reminder_time_none_and_default_control_the_due_window() {
     let window = fm_calendar::Window::from_dates(
         NaiveDate::from_ymd_opt(2026, 9, 15).unwrap(),
         NaiveDate::from_ymd_opt(2026, 9, 16).unwrap(),
@@ -14,25 +14,40 @@ fn selected_reminder_time_and_none_control_the_due_window() {
         .unwrap()
         .with_timezone(&Utc);
     let mut event = json!({"start":"2026-09-15T10:00:00Z","all_day":false,"reminder_minutes":60});
-    assert!(due_now(&event, now, &window).unwrap().is_some());
-    assert!(due_now(&event, now - Duration::seconds(1), &window)
+    assert!(due_now(&event, now, &window, 15).unwrap().is_some());
+    assert!(due_now(&event, now - Duration::seconds(1), &window, 15)
         .unwrap()
         .is_none());
+    // Explicit None (Google useDefault:false without overrides) never alerts.
     event["reminder_minutes"] = Value::Null;
-    assert!(due_now(&event, now + Duration::hours(1), &window)
+    for offset in [Duration::minutes(45), Duration::hours(1)] {
+        assert!(due_now(&event, now + offset, &window, 15)
+            .unwrap()
+            .is_none());
+    }
+    // An event that uses the calendar default follows the saved default lead.
+    event.as_object_mut().unwrap().remove("reminder_minutes");
+    assert!(due_now(&event, now + Duration::minutes(44), &window, 15)
         .unwrap()
         .is_none());
+    assert!(due_now(&event, now + Duration::minutes(45), &window, 15)
+        .unwrap()
+        .is_some());
+    assert!(due_now(&event, now + Duration::hours(1), &window, 15)
+        .unwrap()
+        .is_some());
     event["reminder_minutes"] = 0.into();
-    assert!(due_now(&event, now + Duration::minutes(59), &window)
+    assert!(due_now(&event, now + Duration::minutes(59), &window, 15)
         .unwrap()
         .is_none());
-    assert!(due_now(&event, now + Duration::hours(1), &window)
+    assert!(due_now(&event, now + Duration::hours(1), &window, 15)
         .unwrap()
         .is_some());
     assert!(due_now(
         &event,
         now + Duration::hours(1) + Duration::seconds(61),
-        &window
+        &window,
+        15
     )
     .unwrap()
     .is_none());
@@ -132,10 +147,14 @@ fn exact_due_window_all_day_display_zone_and_no_historical_burst() {
         ],
         CalendarSyncMode::Full,
     );
-    assert!(reminders(&store, "2026-09-14T12:54:59.999Z")["reminders"]
-        .as_array()
-        .unwrap()
-        .is_empty());
+    assert_eq!(
+        reminders(&store, "2026-09-14T12:54:59.999Z")["reminders"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2,
+        "events without their own reminder use the 15 minute default"
+    );
     let soon = reminders(&store, "2026-09-14T12:55:00Z");
     assert_eq!(soon["reminders"].as_array().unwrap().len(), 2);
     assert!(soon["reminders"]
@@ -227,6 +246,87 @@ fn reminder_receipts_survive_reopen_and_reschedule_has_a_new_start_identity() {
     assert_eq!(next["start"], "2026-09-14T13:30:00+00:00");
     assert_eq!(
         ack(&store, &next, "shown", "2026-09-14T13:26:00Z").unwrap()["state"],
+        "shown"
+    );
+}
+
+#[test]
+fn google_events_with_reminders_turned_off_never_alert() {
+    let (_dir, mut store, account) = setup();
+    let mut off = event("off", "2026-09-14T13:00:00Z");
+    off["reminders"] = json!({"useDefault":false,"overrides":[]});
+    publish(
+        &mut store,
+        &account,
+        "a",
+        vec![off, event("default", "2026-09-14T13:00:00Z")],
+        CalendarSyncMode::Full,
+    );
+    let due = reminders(&store, "2026-09-14T12:59:00Z");
+    let titles: Vec<_> = due["reminders"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["title"].clone())
+        .collect();
+    assert_eq!(titles, vec![json!("default")]);
+}
+
+#[test]
+fn snoozed_reminder_returns_after_saved_delay_even_past_start() {
+    let (dir, mut store, account) = setup();
+    publish(
+        &mut store,
+        &account,
+        "a",
+        vec![event("one", "2026-09-14T13:00:00Z")],
+        CalendarSyncMode::Full,
+    );
+    let row = reminders(&store, "2026-09-14T12:59:00Z")["reminders"][0].clone();
+    ack(&store, &row, "shown", "2026-09-14T12:59:00Z").unwrap();
+    assert_eq!(
+        ack(&store, &row, "snoozed", "2026-09-14T12:59:02Z").unwrap()["state"],
+        "snoozed"
+    );
+    drop(store);
+    let store = Store::open_live(dir.path()).unwrap();
+    assert!(reminders(&store, "2026-09-14T13:04:01Z")["reminders"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let ready = reminders(&store, "2026-09-14T13:04:02Z")["reminders"][0].clone();
+    assert!(ready["reminder_state"].is_null());
+    assert_eq!(
+        ack(&store, &ready, "shown", "2026-09-14T13:04:02Z").unwrap()["state"],
+        "shown"
+    );
+    assert_eq!(
+        ack(&store, &ready, "dismissed", "2026-09-14T13:04:03Z").unwrap()["state"],
+        "dismissed"
+    );
+}
+
+#[test]
+fn late_snooze_returns_after_the_original_post_start_window() {
+    let (_dir, mut store, account) = setup();
+    publish(
+        &mut store,
+        &account,
+        "a",
+        vec![event("late", "2026-09-14T13:00:00Z")],
+        CalendarSyncMode::Full,
+    );
+    let row = reminders(&store, "2026-09-14T12:59:00Z")["reminders"][0].clone();
+    ack(&store, &row, "shown", "2026-09-14T12:59:00Z").unwrap();
+    ack(&store, &row, "snoozed", "2026-09-14T13:59:00Z").unwrap();
+    assert!(reminders(&store, "2026-09-14T14:03:59Z")["reminders"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let resumed = reminders(&store, "2026-09-14T14:04:00Z")["reminders"][0].clone();
+    assert!(resumed["reminder_state"].is_null());
+    assert_eq!(
+        ack(&store, &resumed, "shown", "2026-09-14T14:04:00Z").unwrap()["state"],
         "shown"
     );
 }
