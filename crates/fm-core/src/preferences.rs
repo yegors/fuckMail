@@ -143,15 +143,30 @@ impl Store {
                     "Sync services must contain at most 200 account choices",
                 )
             })?;
-        for (account, choices) in services {
+        // A stored choice for an account deleted since then is dropped, so it
+        // cannot block every later save. An unknown account the request itself
+        // introduces is still refused.
+        let stored_services = &current["preferences"]["google_sync_services"];
+        let mut stale = Vec::new();
+        for account in services.keys() {
             crate::id(account)?;
             if !self.db.query_row(
                 "SELECT EXISTS(SELECT 1 FROM accounts WHERE id=?1)",
                 [account],
                 |r| r.get::<_, bool>(0),
             )? {
-                return Err(err("not_found", "Sync account was not found"));
+                if stored_services.get(account).is_none() {
+                    return Err(err("not_found", "Sync account was not found"));
+                }
+                stale.push(account.clone());
             }
+        }
+        let services = preferences["google_sync_services"].as_object_mut().unwrap();
+        for account in &stale {
+            services.remove(account);
+        }
+        let services = preferences["google_sync_services"].as_object().unwrap();
+        for (_, choices) in services {
             fields(
                 choices,
                 &["mail", "calendar", "mail_access", "calendar_access"],
@@ -291,6 +306,11 @@ impl Store {
                     )
                 })?;
             let mut seen = std::collections::HashSet::new();
+            let stored_selection = current["preferences"]["selected_calendars"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            let mut kept = Vec::new();
             for source in selected {
                 fields(source, &["account", "calendar_id"])?;
                 let account = string(source, "account")?;
@@ -301,10 +321,14 @@ impl Store {
                     return Err(err("invalid_request", "Repeated calendar source"));
                 }
                 let exists:bool=tx.query_row("SELECT EXISTS(SELECT 1 FROM calendar_sync_state WHERE account=?1 AND calendar_id=?2)",params![account,calendar],|r|r.get(0))?;
-                if !exists {
+                if exists {
+                    kept.push(source.clone());
+                } else if !stored_selection.contains(source) {
                     return Err(err("not_found", "Selected calendar source does not exist"));
                 }
+                // A saved source whose account was since deleted is dropped.
             }
+            preferences["selected_calendars"] = Value::Array(kept);
         }
         let revision = current["revision"].as_i64().unwrap() + 1;
         let result = json!({"revision":revision,"preferences":preferences});
@@ -331,6 +355,7 @@ impl Store {
                 "signature_text",
                 "mail_retention",
                 "sync",
+                "analyze_history",
                 "expected_revision",
                 "request_id",
             ],
@@ -423,6 +448,12 @@ impl Store {
             preferences["google_sync_services"][account] = sync.clone();
             tx.execute("INSERT INTO preferences(singleton,revision,json) VALUES(1,?1,?2) ON CONFLICT(singleton) DO UPDATE SET revision=excluded.revision,json=excluded.json",params![current["revision"].as_i64().unwrap()+1,serde_json::to_string(&preferences)?])?;
         }
+        if let Some(analyze) = p.get("analyze_history") {
+            let analyze = analyze
+                .as_bool()
+                .ok_or_else(|| err("invalid_request", "analyze_history must be true or false"))?;
+            crate::local_model::set_history_analysis(&tx, account, analyze)?;
+        }
         tx.execute(
             "UPDATE accounts SET name=?1 WHERE id=?2",
             params![name, account],
@@ -451,6 +482,36 @@ impl Store {
         tx.commit()?;
         Ok(result)
     }
+}
+/// Remove a deleted account's sync choices and calendar selections from the
+/// shared preferences, so later saves never refer to it.
+pub(crate) fn forget_account(db: &rusqlite::Connection, account: &str) -> Result<()> {
+    let stored: Option<(i64, String)> = db
+        .query_row(
+            "SELECT revision,json FROM preferences WHERE singleton=1",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((revision, raw)) = stored else {
+        return Ok(());
+    };
+    let mut preferences: Value = serde_json::from_str(&raw)?;
+    let mut changed = preferences["google_sync_services"]
+        .as_object_mut()
+        .is_some_and(|services| services.remove(account).is_some());
+    if let Some(selected) = preferences["selected_calendars"].as_array_mut() {
+        let before = selected.len();
+        selected.retain(|source| source["account"] != account);
+        changed |= selected.len() != before;
+    }
+    if changed {
+        db.execute(
+            "UPDATE preferences SET revision=?1,json=?2 WHERE singleton=1",
+            params![revision + 1, serde_json::to_string(&preferences)?],
+        )?;
+    }
+    Ok(())
 }
 pub(crate) fn google_write_enabled(
     db: &rusqlite::Connection,
@@ -769,6 +830,55 @@ mod appearance_tests {
         assert_eq!(
             store.handle("preferences_save", None, command).unwrap(),
             saved
+        );
+    }
+    #[test]
+    fn stale_sync_choices_for_deleted_accounts_never_block_saves() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        let saved = store
+            .handle(
+                "preferences_save",
+                None,
+                json!({"preferences":{"google_sync_services":{"personal":{"mail":false,"calendar":true}}},"expected_revision":0,"request_id":"service-choices"}),
+            )
+            .unwrap();
+        // A choice left behind by an account deleted outside this path is
+        // dropped on the next save rather than blocking every save.
+        let mut stale = saved["preferences"].clone();
+        stale["google_sync_services"]["gone-account"] = json!({"mail":true,"calendar":true});
+        store
+            .db
+            .execute(
+                "UPDATE preferences SET json=?1 WHERE singleton=1",
+                [stale.to_string()],
+            )
+            .unwrap();
+        let repaired = store
+            .handle(
+                "preferences_save",
+                None,
+                json!({"preferences":{"theme":"paper"},"expected_revision":saved["revision"],"request_id":"stale-service"}),
+            )
+            .unwrap();
+        assert!(repaired["preferences"]["google_sync_services"]
+            .get("gone-account")
+            .is_none());
+        assert_eq!(
+            repaired["preferences"]["google_sync_services"]["personal"]["mail"],
+            false
+        );
+        assert_eq!(
+            store
+                .handle(
+                    "preferences_save",
+                    None,
+                    json!({"preferences":{"google_sync_services":{"new-unknown":{"mail":true,"calendar":true}}},"expected_revision":repaired["revision"],"request_id":"unknown-service"}),
+                )
+                .unwrap_err()
+                .code,
+            "not_found",
+            "an unknown account the request introduces is still refused"
         );
     }
     #[test]

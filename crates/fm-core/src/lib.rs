@@ -183,7 +183,7 @@ impl Store {
         if version != 0 && version < RESET_BASELINE_VERSION {
             return Err(err(
                 "schema_mismatch",
-                "This profile uses the pre-reset store. Start with a fresh profile and reconnect accounts.",
+                "This profile was made by an older fuckMail and cannot be opened. Move its folder aside, then try again to start fresh and reconnect your accounts.",
             ));
         }
         if version >= RESET_BASELINE_VERSION {

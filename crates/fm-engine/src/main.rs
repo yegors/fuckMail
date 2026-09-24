@@ -808,9 +808,20 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
                     return Ok(());
                 }
             }
+            if e.code == "schema_mismatch" || e.code == "profile_kind_mismatch" {
+                let _ = fm_ipc::write_startup_refusal(
+                    &profile,
+                    &fm_ipc::StartupRefusal {
+                        pid: std::process::id(),
+                        code: e.code.clone(),
+                        message: e.message.clone(),
+                    },
+                );
+            }
             return Err(e.into());
         }
     };
+    fm_ipc::clear_startup_refusal(&profile);
     let mut fixture = args
         .verification_fixture
         .map(|mode| verification_fixture::Fixture::prepare(mode, &profile, &mut store))

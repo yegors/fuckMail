@@ -820,19 +820,27 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     CalendarView { anchors.fill: parent }
     StartupOverlay { objectName: "readyLoader"; anchors.fill: parent }
     StartupOverlay { objectName: "failedLoader"; anchors.fill: parent; startupFailed: true }
+    StartupOverlay { objectName: "unavailableLoader"; anchors.fill: parent; startupFailed: true; engineUnavailable: true
+        failureMessage: "This profile was made by an older fuckMail and cannot be opened."; profilePath: "/synthetic/profile" }
 })QML", QUrl::fromLocalFile(copy.filePath("VisualTest.qml")));
     require(!visualEngine.rootObjects().isEmpty(), "Actual calendar and startup component load");
     auto visualRoot = visualEngine.rootObjects().first(); auto visualWindow = qobject_cast<QQuickWindow *>(visualRoot);
     auto loader = named(visualRoot, "readyLoader"); require(loader->property("visible").toBool(), "Startup stays covered before hydration");
     require(!named(visualRoot, "failedLoader")->property("visible").toBool(), "Startup failure reveals existing recovery immediately");
+    auto unavailable = named(visualRoot, "unavailableLoader");
+    require(unavailable->property("visible").toBool() && named(unavailable, "startupFailure")->property("visible").toBool()
+        && named(unavailable, "startupRetry")->property("visible").toBool(), "An engine that never started keeps covering the empty app and explains why");
     const auto retainVisual = [&](const QString &name) {
         QElapsedTimer paint; paint.start(); while (paint.elapsed() < 120) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
         const auto file = QDir(captureDir).filePath(name + ".png"); require(!QFile::exists(file) && visualWindow->grabWindow().save(file), "Preserve startup/grid capture without overwrite");
     };
     if (!captureDir.isEmpty()) {
         QElapsedTimer animation; animation.start(); while (animation.elapsed() < 1500) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
-        for (const auto theme : {"graphite", "paper", "terminal"}) { visualRoot->setProperty("testTheme", theme); retainVisual(QString("startup-%1").arg(theme)); }
+        for (const auto theme : {"graphite", "paper", "terminal"}) { visualRoot->setProperty("testTheme", theme); retainVisual(QString("startup-unavailable-%1").arg(theme)); }
     }
+    unavailable->setProperty("visible", false);
+    if (!captureDir.isEmpty())
+        for (const auto theme : {"graphite", "paper", "terminal"}) { visualRoot->setProperty("testTheme", theme); retainVisual(QString("startup-%1").arg(theme)); }
     // Readiness no longer skips the first-frame splash hold. Let the actual
     // animation progress before applying the existing transition watchdog.
     QElapsedTimer splashHold; splashHold.start();

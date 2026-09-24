@@ -424,6 +424,13 @@ pub(crate) fn write_binding(
             "INSERT OR IGNORE INTO meta(key,value) VALUES(?1,1)",
             [crate::label_sync::initial_import_key(account)],
         )?;
+        // Mail already in the account waits for an explicit Backlog run unless
+        // the person chooses to analyze it while it syncs.
+        tx.execute(
+            "DELETE FROM meta WHERE key=?1",
+            [crate::local_model::history_cutoff_key(account)],
+        )?;
+        crate::local_model::set_history_analysis(tx, account, false)?;
     }
     tx.execute("INSERT INTO accounts(id,name,email,provider) VALUES(?1,?2,?2,'google') ON CONFLICT(id) DO UPDATE SET name=CASE WHEN accounts.name=accounts.email THEN excluded.email ELSE accounts.name END,email=excluded.email",params![account,email])?;
     tx.execute(

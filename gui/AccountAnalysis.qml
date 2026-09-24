@@ -10,6 +10,9 @@ Item {
     property var errors: ({})
     property var requests: ({})
     property int session: 0
+    property var seenRevision
+    // Each refresh scans the account's mail, so changes coalesce to one per 3 s.
+    function storeChanged() { if (showing && !changedRefresh.running) changedRefresh.start() }
     readonly property bool busy: Object.keys(jobs).some(function(a) { return running(a) })
     function running(account) { return ["starting", "queued", "scanning", "running"].indexOf((jobs[account] || {}).status) >= 0 }
     function put(field, key, value) { const next = Object.assign({}, analysis[field]); next[key] = value; analysis[field] = next }
@@ -40,7 +43,9 @@ Item {
         if (job.job_id && !pending(account,"cancel")) send("assist_cancel", account, {job_id:job.job_id}, "cancel")
         else if (job.status === "starting") put("jobs", account, Object.assign({},job,{stopRequested:true}))
     }
-    onShowingChanged: if (showing) refreshAll()
+    // Counts change while sync and the model run. Reopening the page or any
+    // account change refreshes them, coalesced so polling cannot flood the engine.
+    onShowingChanged: if (showing) refreshAll(true)
     Component.onCompleted: if (backend.connected) { send("assist_jobs", "", {}, "jobs"); refreshAll() }
     Connections {
         target: backend
@@ -55,7 +60,13 @@ Item {
                 }
             } else { analysis.send("assist_jobs","",{},"jobs"); analysis.refreshAll() }
         }
-        function onAccountsChanged() { analysis.refreshAll() }
+        function onAccountsChanged() { analysis.refreshAll(); analysis.storeChanged() }
+        // Synced mail and saved model results both advance the store revision.
+        function onDiagnosticsChanged() {
+            const revision = (backend.diagnostics || {}).revision
+            if (revision === analysis.seenRevision) return
+            analysis.seenRevision = revision; analysis.storeChanged()
+        }
         function onAssistanceReply(ticket, method, result, ok) {
             if (method === "assist_settings_save" && ok) { analysis.stats = ({}); analysis.refreshAll() }
             const request = analysis.requests[ticket]
@@ -92,6 +103,7 @@ Item {
         }
     }
     Timer { interval: 30000; repeat: true; running: analysis.showing && backend.connected; onTriggered: analysis.refreshAll(true) }
+    Timer { id: changedRefresh; interval: 3000; onTriggered: analysis.refreshAll(true) }
     Timer {
         interval: 500; repeat: true; running: backend.connected && (analysis.busy || Object.keys(analysis.scans).some(function(a) { return !!analysis.scans[a] }))
         onTriggered: {

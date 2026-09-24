@@ -46,6 +46,37 @@ async fn wait_stopped(profile: &Path) {
 }
 
 #[tokio::test]
+async fn older_profile_is_refused_at_once_with_its_reason() {
+    let root = tempfile::tempdir().unwrap();
+    let profile = fm_ipc::private_profile(&root.path().join("old-profile")).unwrap();
+    rusqlite::Connection::open(profile.join("store.sqlite3"))
+        .unwrap()
+        .pragma_update(None, "user_version", 29)
+        .unwrap();
+    let started = std::time::Instant::now();
+    let error = match Client::connect(&profile, Some(&engine())).await {
+        Ok(_) => panic!("an older store must not open"),
+        Err(error) => error,
+    };
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "refusal waited {:?} instead of stopping",
+        started.elapsed()
+    );
+    assert!(error.to_string().contains("older fuckMail"), "{error}");
+    let refusal: Value =
+        serde_json::from_slice(&std::fs::read(profile.join(fm_ipc::STARTUP_REFUSAL_FILE)).unwrap())
+            .unwrap();
+    assert_eq!(refusal["code"], "schema_mismatch");
+    assert!(!profile.join("engine.json").exists());
+    // The refusal is neither retained nor trusted once the store is replaced.
+    std::fs::remove_file(profile.join("store.sqlite3")).unwrap();
+    let mut client = Client::connect(&profile, Some(&engine())).await.unwrap();
+    ok(client.call("status", None, json!({})).await.unwrap());
+    assert!(!profile.join(fm_ipc::STARTUP_REFUSAL_FILE).exists());
+}
+
+#[tokio::test]
 async fn live_profile_stays_empty_through_shared_clients_and_owner_restart() {
     let root = tempfile::tempdir().unwrap();
     let profile = root.path().join("live-profile");

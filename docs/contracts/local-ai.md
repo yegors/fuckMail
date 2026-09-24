@@ -1,5 +1,9 @@
 # Local mail analysis
 
+## D108 — first-sync history waits for the Backlog (Local assistance23)
+
+A newly bound Google account stores its addition time as `local_model_history_cutoff:<account>` (Unix ms) in `meta`. The arrivals watcher skips that account's mail dated before the cutoff, or with an unreadable date. Such mail is left to an explicit Backlog run (`assist_batch_start`). `account_update.analyze_history=true` removes the cutoff and queues the account's synced mail from its first row. `false` sets the cutoff only if none exists. Reconnecting keeps the saved choice. Accounts without a cutoff, including existing and synthetic ones, keep D097 behavior. This supersedes D097 for new accounts only. Consumers: GUI Step 3 **Summarize & label** (shown with a configured model, default New mail only), CLI `account-update --analyze-history`, Core60.
+
 ## D107 — partial summaries reach the list (Local assistance22)
 
 A current summary of the message that supplies a conversation row's preview replaces the source snippet, whether complete or partial. This supersedes the partial exclusion in the row-preview rule below. Long messages are shortened to fit the model, so their summaries are always partial and otherwise never reached the list. The reader still labels a partial summary Partial. Stale summaries and other messages' summaries still cannot replace the preview. Partial results still cannot auto-apply a label or Auto-read. Consumers: Core59, Mail UI76.

@@ -615,7 +615,9 @@ public:
         capture("backlog-menu");click(window,find(window->contentItem(),"backlogRange_personal_week"),Qt::LeftButton);
         await([&]{return starts==1 && find(window->contentItem(),"stopBacklog_personal")->isVisible();},"range starts one real account command");
         require(requestedAccount=="personal"&&requestedRange=="week","batch freezes exact selected account and range");
+        const auto scansBeforeReturn=scans;
         settings->setProperty("page","General");settings->setProperty("page","Accounts");
+        await([&]{return scans>scansBeforeReturn;},"returning to Accounts counts again instead of showing the old snapshot");
         await([&]{auto item=find(window->contentItem(),"accountBatchStatus_personal");return item && item->property("text").toString().contains("2 of 7");},"progress survives navigation and reflects completed messages");
         capture("backlog-running");click(window,find(window->contentItem(),"stopBacklog_personal"),Qt::LeftButton);
         await([&]{return stops==1 && find(window->contentItem(),"accountBatchStatus_personal")->property("text").toString().contains("Stopped · 2 saved");},"Stop retains saved work and clears busy state");

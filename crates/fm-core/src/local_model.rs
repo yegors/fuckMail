@@ -27,6 +27,36 @@ fn encode(v: &Value) -> Result<String> {
 const WATCH_CURSOR: &str = "local_model_watch_cursor";
 /// Lower bound the watcher rescans from once, after an account's inputs change.
 const WATCH_REQUEUE: &str = "local_model_watch_requeue";
+/// Mail dated before this cutoff (Unix ms) was already in the account when it
+/// was added. The arrivals watcher leaves it to an explicit Backlog run, so a
+/// first sync does not send a whole mailbox through the model. No cutoff means
+/// the synced history is processed as it arrives.
+pub(crate) fn history_cutoff_key(account: &str) -> String {
+    format!("local_model_history_cutoff:{account}")
+}
+pub(crate) fn set_history_analysis(
+    db: &rusqlite::Connection,
+    account: &str,
+    analyze: bool,
+) -> Result<()> {
+    if analyze {
+        db.execute(
+            "DELETE FROM meta WHERE key=?1",
+            [history_cutoff_key(account)],
+        )?;
+        // History already stored before this choice is queued too.
+        requeue_after(db, "MIN(rowid)-1", Some(account))
+    } else {
+        db.execute(
+            "INSERT OR IGNORE INTO meta(key,value) VALUES(?1,?2)",
+            params![
+                history_cutoff_key(account),
+                chrono::Utc::now().timestamp_millis()
+            ],
+        )?;
+        Ok(())
+    }
+}
 fn requeue_after(db: &rusqlite::Connection, rowid: &str, account: Option<&str>) -> Result<()> {
     db.execute(&format!("INSERT INTO meta(key,value) SELECT ?1,v FROM (SELECT {rowid} AS v FROM messages WHERE ?2 IS NULL OR account=?2) WHERE v IS NOT NULL ON CONFLICT(key) DO UPDATE SET value=min(value,excluded.value)"),params![WATCH_REQUEUE, account])?;
     Ok(())
@@ -747,10 +777,27 @@ impl Store {
         let mut more = rows.len() == SCAN;
         let mut next = start;
         let mut messages = Vec::new();
+        let mut cutoffs = std::collections::BTreeMap::new();
         for (rowid, account, id, conversation, date, sent, trashed, lifecycle) in rows {
             let policy = settings.accounts.get(&account).cloned().unwrap_or_default();
+            if !cutoffs.contains_key(&account) {
+                let cutoff: Option<i64> = self
+                    .db
+                    .query_row(
+                        "SELECT value FROM meta WHERE key=?1",
+                        [history_cutoff_key(&account)],
+                        |r| r.get(0),
+                    )
+                    .optional()?;
+                cutoffs.insert(account.clone(), cutoff);
+            }
+            let history = cutoffs[&account].is_some_and(|cutoff| {
+                chrono::DateTime::parse_from_rfc3339(&date)
+                    .map_or(true, |date| date.timestamp_millis() < cutoff)
+            });
             let enabled = !sent
                 && !trashed
+                && !history
                 && lifecycle == "active"
                 && settings.model.is_some()
                 && (policy.classification || policy.summaries);
@@ -1220,6 +1267,38 @@ mod tests {
         ids.into_iter()
             .filter(|id| s.local_model_backlog_eligible(account, id).unwrap())
             .collect()
+    }
+    #[test]
+    fn history_cutoff_leaves_existing_mail_to_the_backlog_until_opted_in() {
+        let (_dir, s) = configured_store();
+        let account = "windscribe";
+        let history = "2999-01-01T00:00:00Z";
+        set_history_analysis(&s.db, account, false).unwrap();
+        let (_, queued) = drain_arrivals(&s, history);
+        assert!(
+            queued.iter().all(|m| m["account"] != account),
+            "mail dated before the account was added is not analyzed automatically"
+        );
+        assert!(
+            queued.iter().any(|m| m["account"] != account),
+            "other accounts keep their own policy"
+        );
+        // A second "no" keeps the original cutoff instead of moving it later.
+        let key = history_cutoff_key(account);
+        let cutoff = |s: &Store| -> i64 {
+            s.db.query_row("SELECT value FROM meta WHERE key=?1", [&key], |r| r.get(0))
+                .unwrap()
+        };
+        let first = cutoff(&s);
+        set_history_analysis(&s.db, account, false).unwrap();
+        assert_eq!(cutoff(&s), first);
+        // Opting in removes the cutoff and queues the already-synced history.
+        set_history_analysis(&s.db, account, true).unwrap();
+        let (_, queued) = drain_arrivals(&s, history);
+        assert_eq!(
+            queued.iter().filter(|m| m["account"] == account).count(),
+            eligible(&s, account).len()
+        );
     }
     #[test]
     fn watcher_queues_synced_history_once_without_auto_read_and_resumes_after_restart() {

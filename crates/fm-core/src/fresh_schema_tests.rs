@@ -143,7 +143,7 @@ fn old_profiles_are_refused_without_rewriting_their_schema() {
         drop(db);
         let error = Store::open(temp.path()).err().unwrap();
         assert_eq!(error.code, "schema_mismatch");
-        assert!(error.message.contains("fresh profile"));
+        assert!(error.message.contains("start fresh"));
         let db = Connection::open(&path).unwrap();
         let observed: u32 = db
             .query_row("PRAGMA user_version", [], |row| row.get(0))

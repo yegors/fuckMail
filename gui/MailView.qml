@@ -1007,10 +1007,12 @@ Item {
                                     visible: !mail.draftsMode && backend.folder !== "sent" && leftPane.width >= 520
                                     readonly property real columnWidth: Math.max(120,(row.availableWidth - 20) * .18)
                                     Layout.minimumWidth: columnWidth; Layout.preferredWidth: columnWidth; Layout.maximumWidth: columnWidth; spacing: 2
-                                    // The name elides before its kind glyph, which follows it.
+                                    // The name elides before its kind glyph, which follows it. Its cap is
+                                    // rounded up: fractional (macOS) text widths otherwise lose a sub-pixel
+                                    // to layout rounding and elide a name that fits.
                                     RowLayout {
                                         Layout.fillWidth: true; spacing: 6
-                                        Text { objectName: "mailSender_" + groupedRow.modelData.id; text: groupedRow.modelData.sender_name || groupedRow.modelData.sender_email || "Unknown sender"; color: row.primaryTone; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); font.weight: row.reviewTier ? Font.DemiBold : Font.Normal; Layout.fillWidth: true; Layout.maximumWidth: implicitWidth; elide: Text.ElideRight; textFormat: Text.PlainText }
+                                        Text { objectName: "mailSender_" + groupedRow.modelData.id; text: groupedRow.modelData.sender_name || groupedRow.modelData.sender_email || "Unknown sender"; color: row.primaryTone; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); font.weight: row.reviewTier ? Font.DemiBold : Font.Normal; Layout.fillWidth: true; Layout.maximumWidth: Math.ceil(implicitWidth); elide: Text.ElideRight; textFormat: Text.PlainText }
                                         Text {
                                             objectName: "mailOthers_" + groupedRow.modelData.id
                                             readonly property int others: groupedRow.modelData.others || 0

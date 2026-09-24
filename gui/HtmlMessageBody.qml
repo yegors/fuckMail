@@ -143,7 +143,7 @@ ColumnLayout {
             text: body.proxyFailed ? "Proxy unavailable — images not loaded"
                 : (body.hiddenCount === 1 ? "1 image hidden" : body.hiddenCount + " images hidden") + " to keep senders from tracking you"
             color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
-            elide: Text.ElideRight; Layout.maximumWidth: implicitWidth; Layout.fillWidth: true; Layout.minimumWidth: 0
+            elide: Text.ElideRight; Layout.maximumWidth: Math.ceil(implicitWidth); Layout.fillWidth: true; Layout.minimumWidth: 0
         }
         Text {
             objectName: "htmlLoadImages_" + (body.message.id || "")

@@ -16,12 +16,18 @@ FmDialog {
     property string connectedAccount: ""
     property bool finishing: false
     property bool authStarted: false
+    // A configured local model can also summarize/label the mail this first
+    // sync downloads. Off by default: a large mailbox can take a long time, and
+    // the account's Backlog can process it later.
+    property bool modelConfigured: false
+    property string modelTicket: ""
     readonly property var retentionKeys: ["90_days", "1_year", "2_years", "5_years", "all"]
     readonly property var accountRow: backend.accounts.find(function(account) { return account.id === googleSignIn.connectedAccount }) || ({})
     readonly property var requestedAccess: ({mail: connectMail.checked ? (connectMailMode.currentIndex === 0 ? "read" : "write") : "none", calendar: connectCalendar.checked ? (connectCalendarMode.currentIndex === 0 ? "read" : "write") : "none"})
     onOpened: {
         step = 0; connectedAccount = ""; finishing = false; authStarted = false; connectName.text = ""
-        connectRetention.currentIndex = 1
+        connectRetention.currentIndex = 1; connectHistory.currentIndex = 0
+        modelConfigured = false; modelTicket = backend.connected ? backend.assistanceRequest("assist_settings_get", {}, "") : ""
         connectMail.checked = initialAccess.mail!=="none"; connectCalendar.checked = initialAccess.calendar!=="none"; connectMailMode.currentIndex = initialAccess.mail==="read" ? 0 : 1; connectCalendarMode.currentIndex = initialAccess.calendar==="read" ? 0 : 1
         backend.prepareGoogleSignIn(); googleEmail.forceActiveFocus()
     }
@@ -35,7 +41,7 @@ FmDialog {
     function finish() {
         if (finishing || !accountRow.id || !connectName.text.trim().length) return
         finishing = true
-        backend.updateAccountPreferences(connectedAccount, connectName.text.trim(), accountRow.signature_text || "", reconnectAccount.length ? "" : retentionKeys[connectRetention.currentIndex],{mail:connectMail.checked,calendar:connectCalendar.checked,mail_access:connectMailMode.currentIndex ? "write" : "read",calendar_access:connectCalendarMode.currentIndex ? "write" : "read"})
+        backend.updateAccountPreferences(connectedAccount, connectName.text.trim(), accountRow.signature_text || "", reconnectAccount.length ? "" : retentionKeys[connectRetention.currentIndex],{mail:connectMail.checked,calendar:connectCalendar.checked,mail_access:connectMailMode.currentIndex ? "write" : "read",calendar_access:connectCalendarMode.currentIndex ? "write" : "read"}, connectHistory.visible && connectHistory.currentIndex === 1)
     }
     function grantedAccess() {
         if (!accountRow.id) return "Checking granted access…"
@@ -59,7 +65,12 @@ FmDialog {
         function onAccountPreferencesFinished(account, ok) {
             if (!googleSignIn.opened || !googleSignIn.finishing || account !== googleSignIn.connectedAccount) return
             googleSignIn.finishing = false
-            if (ok) { googleSignIn.close(); backend.account = account; googleSignIn.syncRequested(account) }
+            if (ok) { googleSignIn.close(); backend.selectAccount(account); googleSignIn.syncRequested(account) }
+        }
+        function onAssistanceReply(ticket, method, result, ok) {
+            if (ticket !== googleSignIn.modelTicket) return
+            googleSignIn.modelTicket = ""
+            googleSignIn.modelConfigured = ok && !!(result.settings || {}).model
         }
     }
     contentItem: ScrollView {
@@ -137,6 +148,17 @@ FmDialog {
                 Layout.fillWidth: true; spacing: 6
                 Caption { text: "Display name — shown in the top bar" }
                 FmTextField { id: connectName; objectName: "connectedAccountName"; Layout.fillWidth: true; implicitHeight: 42; font.pointSize: Theme.fontPoints(15); maximumLength: 80; enabled: !googleSignIn.finishing; Accessible.name: "New account display name"; onAccepted: googleSignIn.finish() }
+            }
+            ColumnLayout {
+                visible: googleSignIn.modelConfigured && !googleSignIn.reconnectAccount.length && connectMail.checked
+                Layout.fillWidth: true; spacing: 6
+                Caption { text: "Summarize & label" }
+                FmComboBox { id: connectHistory; objectName: "connectHistoryAnalysis"; Layout.fillWidth: true; model: ["New mail only", "Also the mail being synced now"]; currentIndex: 0; Accessible.name: "Summarize and label" }
+                Caption {
+                    text: connectHistory.currentIndex === 1 ? "The local model works through the downloaded mail during sync. A large mailbox can take a long time."
+                        : "Mail already in this account can be processed later from its Backlog in Accounts."
+                    Layout.fillWidth: true; wrapMode: Text.Wrap
+                }
             }
             Caption { text: "Sync runs while the app is open. New mail arrives first; the offline copy builds in the background." }
         }

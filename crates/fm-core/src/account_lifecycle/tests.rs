@@ -114,6 +114,14 @@ fn archive_deletion_removes_saved_content_and_fences_reconnection() {
         code(store.handle("account_archive_delete", Some(&scope.account), p)),
         "stale_account_revision"
     );
+    let services = json!({scope.account.clone():{"mail":true,"calendar":true,"mail_access":"write","calendar_access":"write"}});
+    store
+        .handle(
+            "preferences_save",
+            None,
+            json!({"preferences":{"google_sync_services":services},"expected_revision":0,"request_id":"archive-services"}),
+        )
+        .unwrap();
     let lease = remove(&mut store, &scope.account, "remove-archive");
     let p = json!({"expected_revision":store.account_lifecycle(&scope.account).unwrap()["revision"],"request_id":"purge"});
     assert_eq!(
@@ -126,6 +134,18 @@ fn archive_deletion_removes_saved_content_and_fences_reconnection() {
         .handle("account_archive_delete", Some(&scope.account), p.clone())
         .unwrap();
     assert_eq!(result["deleted"], true);
+    // Its sync choices go with it, so later preference saves still succeed.
+    let saved = store.preferences().unwrap();
+    assert!(saved["preferences"]["google_sync_services"]
+        .get(&scope.account)
+        .is_none());
+    store
+        .handle(
+            "preferences_save",
+            None,
+            json!({"preferences":{"theme":"paper"},"expected_revision":saved["revision"],"request_id":"after-archive"}),
+        )
+        .unwrap();
     assert_eq!(
         store
             .db

@@ -101,6 +101,17 @@ QJsonObject readPrivateDiscovery(const QString &profile, QString &error) {
     return data;
 }
 
+QString readStartupRefusal(const QString &profile, const QList<qint64> &launched) {
+    if (launched.isEmpty()) return {};
+    const QFileInfo info(QDir(profile).filePath("engine-refusal.json"));
+    if (!info.isFile() || info.isSymLink() || info.size() > 4096) return {};
+    QFile file(info.filePath());
+    if (!file.open(QIODevice::ReadOnly)) return {};
+    const auto data = QJsonDocument::fromJson(file.readAll()).object();
+    if (!launched.contains(data["pid"].toInteger())) return {};
+    return data["message"].toString();
+}
+
 bool verifyEnginePeer(qintptr descriptor, qint64 expectedPid, QString &error) {
     bool ok = false;
 #ifdef Q_OS_WIN

@@ -223,15 +223,22 @@ MailBackend::~MailBackend() {
 void MailBackend::start() {
     if (m_connected || m_socket.state() == QLocalSocket::ConnectingState) return;
     clearError(); cancelShutdown(); m_shutdownEmitted = false; m_buffer.clear(); m_startupClock.start();
-    m_launchAttempts = 0; m_launchDelay = 1000; m_nextLaunch = 0;
+    m_launchAttempts = 0; m_launchDelay = 1000; m_nextLaunch = 0; m_launchedPids.clear();
     m_connectTimer.start(); attemptConnection();
 }
+
+QString MailBackend::profilePath() const { return QDir::toNativeSeparators(m_profile); }
+void MailBackend::revealProfile() { QDesktopServices::openUrl(QUrl::fromLocalFile(m_profile)); }
 
 void MailBackend::attemptConnection() {
     if (m_startupClock.elapsed() >= 30000) {
         m_connectTimer.stop(); m_socket.abort(); fail("Cannot start the local engine. Check that fm-engine is installed beside the app, then reconnect."); return;
     }
     if (m_socket.state() != QLocalSocket::UnconnectedState) return;
+    // An engine that refused this profile will refuse it again; say why now.
+    if (const auto refusal = readStartupRefusal(m_profile, m_launchedPids); !refusal.isEmpty()) {
+        m_connectTimer.stop(); fail(refusal); return;
+    }
     QString trustError;
     const auto info = readPrivateDiscovery(m_profile, trustError);
     if (!trustError.isEmpty()) { m_connectTimer.stop(); fail(trustError); return; }
@@ -263,11 +270,15 @@ void MailBackend::attemptConnection() {
             process.setArguments({"--profile", m_profile, "--verification-fixture", "snapshot"});
         process.setStandardOutputFile(QProcess::nullDevice());
         process.setStandardErrorFile(QProcess::nullDevice());
-        if (!process.startDetached()) {
+        qint64 pid = 0;
+        if (!process.startDetached(&pid)) {
             m_connectTimer.stop(); fail("Could not launch fm-engine. Use --engine to select its executable.");
         }
-        else if (qEnvironmentVariableIsSet("FM_GUI_TEST_TRACE"))
-            qInfo() << "GUI engine launch attempt" << m_launchAttempts;
+        else {
+            m_launchedPids.append(pid);
+            if (qEnvironmentVariableIsSet("FM_GUI_TEST_TRACE"))
+                qInfo() << "GUI engine launch attempt" << m_launchAttempts;
+        }
     }
 }
 

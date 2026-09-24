@@ -1022,3 +1022,36 @@ It covered 515 HTML messages from two accounts:
 - The founder's fidelity review.
 
 Core59/Local assistance22/Mail UI76/CLI45/Quality77 with schema35; Search7, Calendar31, fixtures0/3, protocol1 and readiness0/9 unchanged. [Execution record](research/html-mail.md#d107--sixth-export-list-and-html-fixes-2026-09-24).
+
+
+## D108 — first launch and first sync on the Mac (2026-09-24T18:32:07Z)
+
+The founder began Mac testing of the schema35 build with no accounts and reported three first-launch problems, then three problems with adding the first account.
+
+**First launch.** An older profile made the splash wait 30 seconds, then open an empty app that could not save settings or find models. The engine refused the store at once, but its launchers retried silently. A refusing engine now writes `engine-refusal.json` (pid, code, message) in the profile. The CLI and GUI stop as soon as their own launched engine records one. The GUI splash keeps covering the app and shows the reason with Try again, Show profile folder and Quit. On a new Mac profile, startup, preference saves and Ollama discovery already worked. The Mac's schema29 and schema4 profiles were moved aside, not deleted.
+
+**Start syncing did not start sync.** Step 3 assigned the read-only `backend.account` before emitting its sync request, so the QML handler stopped there. It now calls `selectAccount`. The dialog test's fake backend had declared that property writable; it now matches the real one and catches the fault. The label-import requirement needed no new work: the running sync imports a new account's Gmail labels on its first pass and requeues model work if labels arrive later.
+
+**Analysis of first-sync history.** The founder asked that summarizing/labeling the mail a first sync downloads be a Step 3 choice, off by default, with the account's Backlog processing it later. This supersedes D097's inclusion of a new account's first-sync history in the watcher. A newly bound Google account records when it was added (`local_model_history_cutoff:<account>` in `meta`). The watcher does not analyze mail dated before that, so history waits for an explicit Backlog run. `account_update` accepts `analyze_history`: `true` removes the cutoff and requeues the account's synced mail, and `false` sets it if absent. Step 3 shows **Summarize & label** (New mail only / Also the mail being synced now) when a model is configured. The CLI has `account-update --analyze-history true|false`. Existing accounts and synthetic profiles have no cutoff and behave as before.
+
+Local assistance23/Core60/Mail UI77/CLI46; schema35, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D109 — live Accounts counts and whole sender names (2026-09-24T19:28:42Z)
+
+The founder's first real sync with history analysis worked, but the Accounts card showed 0 messages, and summarizing seemed slow to start. Sender names in the mail list elided with room to spare.
+
+**Accounts counts.** The card's Messages, Summarized & labeled and Backlog numbers came from a snapshot taken when the account connected. That snapshot refreshed only every 30 seconds while the page stayed open, and was reused when the page reopened. The counts now refresh when Accounts opens, and after the store revision advances (synced mail or a saved model result). Refreshes are coalesced to one every 3 seconds because each one scans the account's mail.
+
+**Summarizing start.** The diagnostics show no queueing fault. The watcher began its first message 7 seconds after sync started. That first inference took 19.5 seconds while Ollama loaded the 27B model, and each later message took 7–14 seconds, one at a time.
+
+**Sender names.** A name's layout cap was its fractional implicit width. On macOS the layout rounds that down, for example 86.4 to 86 px, so a fitting name elided ("Colleague …" for "Colleague 10"). The cap is rounded up in the mail list, search chips, HTML attachment names and event details. The real Mac app renders the demo profile's names whole after the change. The offscreen test harness does not constrain those rows, so it cannot reproduce this.
+
+Mail UI78; schema35, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D110 — deleted accounts no longer block preference saves (2026-09-24T20:24:00Z)
+
+After two remove-and-delete cycles, every Settings save failed with "Sync account was not found". Archive deletion removed the account but left its entry in the shared `google_sync_services` preference. `preferences_save` merges each patch into the stored object and validates every account in it, so the leftover entry refused all later saves, including unrelated ones such as theme. A saved `selected_calendars` source for a deleted account had the same flaw.
+
+Archive deletion now removes the account's sync choices and calendar selections in the same transaction. `preferences_save` also drops stored entries whose account or calendar no longer exists, which repairs profiles already affected. An unknown account or calendar that the request itself introduces is still refused. The founder's profile repairs itself on its first save with the new engine.
+
+Core61; schema35, fixtures0/3, protocol1 and readiness0/9 unchanged.

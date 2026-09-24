@@ -94,6 +94,10 @@ enum Command {
         /// Calendar access; supply together with --mail-access.
         #[arg(long,value_parser=["none","read","write"],requires="mail_access")]
         calendar_access: Option<String>,
+        /// Also summarize/label mail that was already in the account when it was
+        /// added (true), or leave it for `assist batch` (false, the default).
+        #[arg(long)]
+        analyze_history: Option<bool>,
         #[arg(long)]
         name: String,
         #[arg(long)]
@@ -2251,6 +2255,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
         Command::AccountUpdate {
             mail_retention,
             mail_access,calendar_access,
+            analyze_history,
             name,
             signature_file,
             expected_revision,
@@ -2260,6 +2265,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 .map_err(|_| invalid("Signature must be UTF-8"))?;
             let mut params=json!({"name":name,"signature_text":signature,"expected_revision":expected_revision,"request_id":request_id});
             if let Some(retention)=mail_retention {params["mail_retention"]=json!(retention);}
+            if let Some(analyze)=analyze_history {params["analyze_history"]=json!(analyze);}
             if let (Some(mail),Some(calendar))=(mail_access,calendar_access) {
                 params["sync"]=json!({"mail":mail!="none","calendar":calendar!="none","mail_access":if mail=="none" {"read"} else {&mail},"calendar_access":if calendar=="none" {"read"} else {&calendar}});
             }

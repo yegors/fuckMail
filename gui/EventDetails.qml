@@ -208,7 +208,7 @@ Popup {
                 FmIcon { name: "video"; size: 13; color: Theme.inkAlpha(.45) }
                 FmButton {
                     objectName: "eventJoinButton"; text: details.conferenceLabel(details.eventData.conference_url); font.pointSize: Theme.fontPoints(13)
-                    implicitHeight: Math.round(Theme.fontSize(13) * 1.4); leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; Layout.maximumWidth: implicitWidth; Layout.fillWidth: true
+                    implicitHeight: Math.round(Theme.fontSize(13) * 1.4); leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; Layout.maximumWidth: Math.ceil(implicitWidth); Layout.fillWidth: true
                     textAlignment: Text.AlignLeft; foreground: hovered ? Theme.text : Theme.inkAlpha(.75); background: Item {}
                     tip: details.eventData.conference_url || ""; onClicked: backend.joinCalendarEvent(details.eventData)
                 }

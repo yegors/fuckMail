@@ -54,6 +54,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QString category READ category WRITE setCategory NOTIFY queryChanged)
     Q_PROPERTY(QString selectedId READ selectedId NOTIFY conversationChanged)
     Q_PROPERTY(QString error READ error NOTIFY errorChanged)
+    Q_PROPERTY(QString profilePath READ profilePath CONSTANT)
     Q_PROPERTY(QVariantMap debugRuntime READ debugRuntime)
     Q_PROPERTY(QString draftStatus READ draftStatus NOTIFY draftChanged)
     Q_PROPERTY(bool connected READ connected NOTIFY connectedChanged)
@@ -243,6 +244,8 @@ public:
     void setFolder(const QString &value);
     void setCategory(const QString &value);
     Q_INVOKABLE void start();
+    Q_INVOKABLE void revealProfile();
+    QString profilePath() const;
     Q_INVOKABLE void selectAccount(const QString &id);
     Q_INVOKABLE void selectConversation(const QString &id);
     Q_INVOKABLE void openConversation(const QString &id);
@@ -378,7 +381,7 @@ public:
     // People after from:; senders, or recipients in Sent and Drafts.
     Q_INVOKABLE void requestSearchPeople(const QString &part);
     Q_INVOKABLE void setPreferences(const QVariantMap &patch);
-    Q_INVOKABLE void updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention = {}, const QVariantMap &sync = {});
+    Q_INVOKABLE void updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention = {}, const QVariantMap &sync = {}, bool analyzeHistory = false);
     Q_INVOKABLE void setCalendarSelected(const QString &account, const QString &calendar, bool selected);
     Q_INVOKABLE void setCalendarView(const QString &view);
     Q_INVOKABLE void moveCalendar(int delta);
@@ -926,6 +929,7 @@ private:
     bool m_lastAccountSelectionDirty = false, m_lastAccountSelectionBusy = false;
     int m_desiredConversationCount = 50;
     int m_launchAttempts = 0, m_launchDelay = 1000;
+    QList<qint64> m_launchedPids;
     bool m_connected = false, m_loading = false;
     bool m_liveProfileRequested = false, m_syntheticProfile = true;
     bool m_listRefreshPending = false, m_browsingOlder = false;

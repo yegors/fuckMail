@@ -189,8 +189,58 @@ pub fn read_discovery(profile: &Path) -> io::Result<Discovery> {
 }
 
 pub fn write_discovery(profile: &Path, d: &Discovery) -> io::Result<()> {
+    replace_private_json(
+        profile,
+        &format!(".engine-{}.json", d.pid),
+        "engine.json",
+        d,
+    )
+}
+
+/// Written by an engine that permanently refuses its profile (an older or
+/// different-kind store). Clients match the pid they launched and stop
+/// retrying, so the reason reaches the person instead of a startup timeout.
+pub const STARTUP_REFUSAL_FILE: &str = "engine-refusal.json";
+
+#[derive(Serialize, Deserialize)]
+pub struct StartupRefusal {
+    pub pid: u32,
+    pub code: String,
+    pub message: String,
+}
+
+pub fn write_startup_refusal(profile: &Path, refusal: &StartupRefusal) -> io::Result<()> {
+    replace_private_json(
+        profile,
+        &format!(".engine-refusal-{}.json", refusal.pid),
+        STARTUP_REFUSAL_FILE,
+        refusal,
+    )
+}
+
+/// The refusal recorded by exactly this engine process, if any.
+pub fn read_startup_refusal(profile: &Path, pid: u32) -> Option<StartupRefusal> {
+    let path = profile.join(STARTUP_REFUSAL_FILE);
+    let md = std::fs::symlink_metadata(&path).ok()?;
+    if !md.is_file() || md.len() > 4096 {
+        return None;
+    }
+    let refusal: StartupRefusal = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
+    (refusal.pid == pid).then_some(refusal)
+}
+
+pub fn clear_startup_refusal(profile: &Path) {
+    let _ = std::fs::remove_file(profile.join(STARTUP_REFUSAL_FILE));
+}
+
+fn replace_private_json(
+    profile: &Path,
+    temp_name: &str,
+    name: &str,
+    value: &impl Serialize,
+) -> io::Result<()> {
     use std::io::Write;
-    let temp = profile.join(format!(".engine-{}.json", d.pid));
+    let temp = profile.join(temp_name);
     #[cfg(unix)]
     let mut f = {
         use std::os::unix::fs::OpenOptionsExt;
@@ -201,18 +251,18 @@ pub fn write_discovery(profile: &Path, d: &Discovery) -> io::Result<()> {
     };
     #[cfg(windows)]
     let mut f = windows::create_private_file(&temp)?;
-    serde_json::to_writer(&mut f, d)?;
+    serde_json::to_writer(&mut f, value)?;
     f.write_all(b"\n")?;
     f.sync_all()?;
     drop(f);
     #[cfg(windows)]
     {
         // Engine holds the profile's exclusive writer lock.
-        if profile.join("engine.json").exists() {
-            std::fs::remove_file(profile.join("engine.json"))?;
+        if profile.join(name).exists() {
+            std::fs::remove_file(profile.join(name))?;
         }
     }
-    std::fs::rename(temp, profile.join("engine.json"))
+    std::fs::rename(temp, profile.join(name))
 }
 
 pub fn endpoint(profile: &Path) -> io::Result<String> {
@@ -306,6 +356,7 @@ impl Client {
         let profile = private_profile(profile)?;
         let until = tokio::time::Instant::now() + STARTUP_TIMEOUT;
         let mut child: Option<tokio::process::Child> = None;
+        let mut child_pid = None;
         let mut next_launch = tokio::time::Instant::now();
         let mut retry_delay = Duration::from_secs(1);
         let mut launches = 0;
@@ -406,6 +457,14 @@ impl Client {
                     {
                         return Err(io::Error::new(io::ErrorKind::InvalidInput, "The selected profile has a different kind; choose a separate profile path"));
                     }
+                    if let Some(refusal) =
+                        child_pid.and_then(|pid| read_startup_refusal(&profile, pid))
+                    {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            format!("{} (profile: {})", refusal.message, profile.display()),
+                        ));
+                    }
                     // Reap our exact child. A losing startup can exit while the
                     // old writer is still closing after discovery was removed.
                     last_exit = Some(status.to_string());
@@ -438,6 +497,7 @@ impl Client {
                 #[cfg(windows)]
                 command.creation_flags(0x08000000); // CREATE_NO_WINDOW, no hidden startup service.
                 child=Some(command.spawn().map_err(|e|io::Error::new(e.kind(),format!("cannot start engine: {e}; install fm-engine beside fm or pass --engine")))?);
+                child_pid = child.as_ref().and_then(|c| c.id());
                 launches += 1;
             }
             tokio::time::sleep_until(

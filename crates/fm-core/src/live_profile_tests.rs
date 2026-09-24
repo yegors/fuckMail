@@ -547,3 +547,49 @@ fn only_a_newly_added_account_waits_for_its_first_label_import() {
         .unwrap();
     assert!(!pending(&store), "reconnecting never repeats the import");
 }
+
+#[test]
+fn a_new_account_leaves_its_existing_mail_to_the_backlog_unless_chosen() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open_live(dir.path()).unwrap();
+    let account = store
+        .bind_google_account("history-owner", "history@example.test", &scopes(), None)
+        .unwrap();
+    let key = crate::local_model::history_cutoff_key(&account);
+    let cutoff = |store: &Store| -> Option<i64> {
+        store
+            .db
+            .query_row("SELECT value FROM meta WHERE key=?1", [&key], |r| r.get(0))
+            .optional()
+            .unwrap()
+    };
+    let added = cutoff(&store).expect("a new account records when it was added");
+    assert!((chrono::Utc::now().timestamp_millis() - added).abs() < 60_000);
+    let row = store.accounts().unwrap()["accounts"][0].clone();
+    store
+        .handle(
+            "account_update",
+            Some(&account),
+            json!({"name":"History","signature_text":"","analyze_history":true,
+                "expected_revision":row["metadata_revision"],"request_id":"analyze-history"}),
+        )
+        .unwrap();
+    assert_eq!(
+        cutoff(&store),
+        None,
+        "opting in analyzes the synced history"
+    );
+    store
+        .bind_google_account(
+            "history-owner",
+            "history@example.test",
+            &scopes(),
+            Some(&account),
+        )
+        .unwrap();
+    assert_eq!(
+        cutoff(&store),
+        None,
+        "reconnecting keeps the person's choice"
+    );
+}

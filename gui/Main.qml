@@ -144,6 +144,12 @@ ApplicationWindow {
         anchors.fill: parent
         startupReady: backend.startupReady === true
         startupFailed: backend.error.length > 0
+        engineUnavailable: startupFailed && !backend.connected && backend.startupReady !== true
+        failureMessage: backend.error
+        profilePath: backend.profilePath
+        onRetryRequested: backend.start()
+        onRevealProfileRequested: backend.revealProfile()
+        onQuitRequested: window.close()
     }
     Shortcut { sequence: "Ctrl+K"; enabled: window.workspaceShortcutsAllowed; onActivated: window.findMail() }
     Shortcut { sequence: ShortcutRegistry.sequence("search",backend.preferences); enabled: window.singleKeysAllowed && !window.settingsOpen && window.workspace==="mail"; onActivated: window.findMail() }

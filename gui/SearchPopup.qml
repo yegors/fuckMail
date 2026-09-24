@@ -176,7 +176,7 @@ Popup {
                                 id: chipLayout
                                 anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 4; spacing: 6
                                 Text { text: readChip.modelData.key; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText }
-                                Text { text: readChip.modelData.value; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.maximumWidth: implicitWidth; textFormat: Text.PlainText }
+                                Text { text: readChip.modelData.value; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.maximumWidth: Math.ceil(implicitWidth); textFormat: Text.PlainText }
                                 RemoveButton {
                                     objectName: "removeMailSearchChip_" + readChip.index
                                     enabled: popup.reading !== null

@@ -20,25 +20,35 @@ class ConnectionBackend : public QObject {
     Q_PROPERTY(QVariantMap googleAuth MEMBER auth NOTIFY googleAuthChanged)
     Q_PROPERTY(QVariantMap googleAuthConfiguration MEMBER configuration NOTIFY googleAuthChanged)
     Q_PROPERTY(QVariantList accounts MEMBER accounts NOTIFY accountsChanged)
-    Q_PROPERTY(QString account MEMBER account)
+    // Read-only, as in MailBackend: QML selects an account through selectAccount().
+    Q_PROPERTY(QString account READ currentAccount NOTIFY accountChanged)
     Q_PROPERTY(QString preferencesStatus MEMBER preferencesStatus NOTIFY preferencesChanged)
 public:
-    bool connected = true, busy = false, saveSucceeds = false;
+    bool connected = true, busy = false, saveSucceeds = false, analyzeHistory = false;
     QVariantMap auth, configuration{{"available",true}}, requested;
     QVariantList accounts{QVariantMap{{"id","fixture-account"},{"name","Personal"},{"email","person@example.test"},{"signature_text","Original signature"}}};
     QString account, email, savedName, syncedAccount, preferencesStatus, savedRetention;
-    int connections=0, syncStarts=0, saves=0;
+    int connections=0, syncStarts=0, saves=0, tickets=0;
+    QString currentAccount() const { return account; }
+    Q_INVOKABLE void selectAccount(const QString &id) { account=id; emit accountChanged(); }
+    Q_INVOKABLE QString assistanceRequest(const QString &method,const QVariantMap &,const QString &) {
+        require(method=="assist_settings_get","dialog only reads model settings");
+        const auto ticket=QString("model-%1").arg(++tickets);
+        QMetaObject::invokeMethod(this,[this,ticket,method] { emit assistanceReply(ticket,method,{{"settings",QVariantMap{{"model",QVariantMap{{"name","fixture"},{"digest",QString(64,'a')}}}}}},true); },Qt::QueuedConnection);
+        return ticket;
+    }
     Q_INVOKABLE void prepareGoogleSignIn() { auth.clear(); emit googleAuthChanged(); }
     Q_INVOKABLE void clearError() {}
     Q_INVOKABLE void cancelGoogleAuth() { busy=false; auth={{"phase","cancelled"}}; emit googleAuthChanged(); }
     Q_INVOKABLE bool accountCapability(const QString &,const QString &capability) { return capability=="mail_read"; }
     Q_INVOKABLE void connectGoogle(const QString &address,const QString &,bool,const QVariantMap &access) { email=address; requested=access; ++connections; busy=true; auth={{"phase","waiting_for_browser"}}; emit googleAuthChanged(); }
     Q_INVOKABLE void restoreGoogleAccount(const QString &,const QString &,double,bool,const QVariantMap &) { qFatal("ordinary Add cannot restore an archive"); }
-    Q_INVOKABLE void updateAccountPreferences(const QString &id,const QString &name,const QString &signature,const QString &retention,const QVariantMap &sync) { require(sync.value("mail").toBool() && !sync.value("calendar").toBool() && sync.value("mail_access")=="read","chosen services and access are saved"); require(signature=="Original signature","connect preserves account signature"); savedRetention=retention; savedName=name; ++saves; preferencesStatus=saveSucceeds ? "Saved" : "Not saved — synthetic failure"; emit preferencesChanged(); emit accountPreferencesFinished(id,saveSucceeds); }
+    Q_INVOKABLE void updateAccountPreferences(const QString &id,const QString &name,const QString &signature,const QString &retention,const QVariantMap &sync,bool history) { analyzeHistory=history; require(sync.value("mail").toBool() && !sync.value("calendar").toBool() && sync.value("mail_access")=="read","chosen services and access are saved"); require(signature=="Original signature","connect preserves account signature"); savedRetention=retention; savedName=name; ++saves; preferencesStatus=saveSucceeds ? "Saved" : "Not saved — synthetic failure"; emit preferencesChanged(); emit accountPreferencesFinished(id,saveSucceeds); }
     Q_INVOKABLE void startGoogleSync(const QString &id,const QVariantMap &) { require(saveSucceeds&&!savedName.isEmpty(),"name saves before sync"); syncedAccount=id; ++syncStarts; }
 signals:
     void googleAuthChanged(); void accountsChanged(); void connectedChanged(); void preferencesChanged();
-    void accountPreferencesFinished(QString account,bool ok);
+    void accountPreferencesFinished(QString account,bool ok); void accountChanged();
+    void assistanceReply(const QString &ticket,const QString &method,const QVariantMap &result,bool ok);
 };
 static QQuickItem *find(QQuickItem *root,const QString &name) { if(root->objectName()==name)return root; for(auto child:root->childItems())if(auto value=find(child,name))return value;return nullptr; }
 int main(int argc,char **argv) {
@@ -80,9 +90,15 @@ int main(int argc,char **argv) {
     require(dialog->property("step").toInt()==1&&backend.syncStarts==0,"browser step does not sync");capture("browser-terminal");
     backend.busy=false;backend.auth={{"phase","connected"},{"account","fixture-account"}};emit backend.googleAuthChanged();settle();
     require(dialog->property("step").toInt()==2&&backend.syncStarts==0,"successful sign-in waits for final action");control("connectedAccountName")->setProperty("text","My personal mail");capture("ready-terminal");
+    const auto history=control("connectHistoryAnalysis");
+    require(history->isVisible()&&history->property("currentIndex").toInt()==0,"a configured model offers history analysis, off by default");
     activate("finishGoogleConnection");require(backend.saves==1&&backend.syncStarts==0&&dialog->property("visible").toBool(),"failed display-name save retains form and starts no sync");
+    require(!backend.analyzeHistory,"default leaves synced history for the Backlog");
+    history->setProperty("currentIndex",1);settle();capture("ready-history-terminal");
     backend.saveSucceeds=true;activate("finishGoogleConnection");require(backend.saves==2&&backend.savedName=="My personal mail"&&backend.syncedAccount=="fixture-account"&&backend.syncStarts==1,"retry saves exact name and starts only the connected account");
     require(backend.savedRetention=="90_days","selected retention saves before sync");
+    require(backend.analyzeHistory,"opting in analyzes the mail this sync downloads");
+    require(backend.account=="fixture-account","the new account becomes current");
     require(!warnings,"no QML warnings");return 0;
 }
 #include "GoogleConnectionControlsTest.moc"
