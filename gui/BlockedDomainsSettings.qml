@@ -15,7 +15,6 @@ ColumnLayout {
     property string error: ""
     readonly property string hint: error || (input.text.trim().length ? (service && service.normalizePattern(input.text) ? "Enter to block" : "Not a domain yet") : "")
     spacing: 0
-    Layout.maximumWidth: 640
     Component.onCompleted: if (service) service.refreshBlockCounts()
     function added(row) {
         const at = row.added_at ? new Date(row.added_at) : null
@@ -27,7 +26,7 @@ ColumnLayout {
     }
     Text { text: "Blocked domains"; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15); font.weight: Font.Medium }
     Text {
-        Layout.fillWidth: true; Layout.maximumWidth: 560; Layout.topMargin: 6; wrapMode: Text.Wrap; textFormat: Text.RichText; lineHeight: 1.5
+        Layout.fillWidth: true; Layout.maximumWidth: 640; Layout.topMargin: 6; wrapMode: Text.Wrap; textFormat: Text.RichText; lineHeight: 1.5
         text: "Links to these are disabled and their images never load — not even with Load images. Applies to every account. <span style=\"font-family:'" + blocked.mono + "'; font-size:" + Theme.fontPoints(12.5) + "pt; color:" + Theme.text + "\">*.example.com</span> covers the domain and all its subdomains."
         color: Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5)
     }

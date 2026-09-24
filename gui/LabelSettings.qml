@@ -7,6 +7,8 @@ ColumnLayout {
     spacing: 0
     property string account: backend.account
     property bool showAccountPicker: true
+    // The Accounts labels modal supplies its own title and explanation.
+    property bool showHeading: true
     property var labels: []
     property var requests: ({})
     property var edits: ({})
@@ -86,11 +88,12 @@ ColumnLayout {
         }
     }
     RowLayout {
+        visible: panel.showHeading
         Layout.fillWidth:true; Layout.topMargin:28; spacing:16
         Text{text:"Labels";color:Theme.inkAlpha(0.45);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11.5);Layout.fillWidth:true}
         FmComboBox {visible:panel.showAccountPicker;objectName:"labelsAccount";Layout.preferredWidth:160;model:backend.accounts;textRole:"name";currentIndex:backend.accounts.findIndex(a=>a.id===panel.account);onActivated:panel.account=backend.accounts[currentIndex].id;Accessible.name:"Labels account"}
     }
-    Text {Layout.fillWidth:true;Layout.topMargin:6;Layout.bottomMargin:14;text:"Each account keeps its own labels. Descriptions tell the local model what belongs where. Removing a label takes it off every conversation in "+panel.accountName+" here.";wrapMode:Text.Wrap;lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight);color:Theme.muted;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(13.5)}
+    Text {visible:panel.showHeading;Layout.fillWidth:true;Layout.topMargin:6;Layout.bottomMargin:14;text:"Each account keeps its own labels. Descriptions tell the local model what belongs where. Removing a label takes it off every conversation in "+panel.accountName+" here.";wrapMode:Text.Wrap;lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight);color:Theme.muted;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(13.5)}
     Rectangle{Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
     RowLayout { Layout.fillWidth:true; Layout.minimumHeight:30; spacing:12
         Text { text:"LABEL"; Layout.preferredWidth:150; color:Theme.subtle; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11); font.letterSpacing:0.66 }

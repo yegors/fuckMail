@@ -8,6 +8,12 @@ fn defaults() -> Value {
         "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"default_reminder_minutes":15,"reminder_snooze_minutes":5,"calendar_display_time_zone":null,"calendar_account_visibility":"all","google_sync_limits":null,"google_sync_services":{},"notifications":"events","shortcuts":{},
         "blocked_hosts":[],"remote_images_from":[],"remote_proxy":{"enabled":false,"host":"","port":443,"username":""}})
 }
+/// The account colour palette: muted swatches shown 8×2 in the picker. A new
+/// account takes the first one no other account uses, cycling when all are.
+pub const ACCOUNT_COLORS: [&str; 16] = [
+    "#C9A36B", "#E0B85A", "#CF8F6A", "#E07F7F", "#D58E9A", "#C98BC9", "#AE97D4", "#8C8FE0",
+    "#8AA9D6", "#6FA3C7", "#6FB5B2", "#7FC4A4", "#8FB39A", "#B9C77A", "#C9A58F", "#A3AAB3",
+];
 impl Store {
     pub fn google_service_sync_enabled(&self, account: &str, service: &str) -> Result<bool> {
         if !matches!(service, "mail" | "calendar") {
@@ -356,6 +362,7 @@ impl Store {
                 "mail_retention",
                 "sync",
                 "analyze_history",
+                "color",
                 "expected_revision",
                 "request_id",
             ],
@@ -448,6 +455,12 @@ impl Store {
             preferences["google_sync_services"][account] = sync.clone();
             tx.execute("INSERT INTO preferences(singleton,revision,json) VALUES(1,?1,?2) ON CONFLICT(singleton) DO UPDATE SET revision=excluded.revision,json=excluded.json",params![current["revision"].as_i64().unwrap()+1,serde_json::to_string(&preferences)?])?;
         }
+        if let Some(color) = p.get("color") {
+            let color = color
+                .as_str()
+                .ok_or_else(|| err("invalid_request", "Choose one of the account colours"))?;
+            set_account_color(&tx, account, color)?;
+        }
         if let Some(analyze) = p.get("analyze_history") {
             let analyze = analyze
                 .as_bool()
@@ -511,6 +524,55 @@ pub(crate) fn forget_account(db: &rusqlite::Connection, account: &str) -> Result
             params![revision + 1, serde_json::to_string(&preferences)?],
         )?;
     }
+    Ok(())
+}
+fn color_key(account: &str) -> String {
+    format!("account_color:{account}")
+}
+/// A newly added account takes the first palette colour no other account uses,
+/// cycling once all are taken. Stored as a palette index beside the account.
+pub(crate) fn assign_account_color(db: &rusqlite::Connection, account: &str) -> Result<()> {
+    let used: Vec<i64> = db
+        .prepare("SELECT value FROM meta WHERE key LIKE 'account_color:%'")?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    let index = (0..ACCOUNT_COLORS.len() as i64)
+        .find(|i| !used.contains(i))
+        .unwrap_or(used.len() as i64 % ACCOUNT_COLORS.len() as i64);
+    db.execute(
+        "INSERT OR REPLACE INTO meta(key,value) VALUES(?1,?2)",
+        params![color_key(account), index],
+    )?;
+    Ok(())
+}
+/// The account's colour: its saved palette entry, or palette order by account.
+pub(crate) fn account_color(db: &rusqlite::Connection, account: &str) -> Result<&'static str> {
+    let saved: Option<i64> = db
+        .query_row("SELECT value FROM meta WHERE key=?1", [color_key(account)], |r| r.get(0))
+        .optional()?;
+    let index = match saved {
+        Some(index) => index,
+        None => db.query_row(
+            "SELECT count(*) FROM accounts WHERE rowid<(SELECT rowid FROM accounts WHERE id=?1)",
+            [account],
+            |r| r.get(0),
+        )?,
+    };
+    Ok(ACCOUNT_COLORS[index.rem_euclid(ACCOUNT_COLORS.len() as i64) as usize])
+}
+pub(crate) fn set_account_color(db: &rusqlite::Connection, account: &str, color: &str) -> Result<()> {
+    let index = ACCOUNT_COLORS
+        .iter()
+        .position(|c| c.eq_ignore_ascii_case(color))
+        .ok_or_else(|| err("invalid_request", "Choose one of the account colours"))?;
+    db.execute(
+        "INSERT OR REPLACE INTO meta(key,value) VALUES(?1,?2)",
+        params![color_key(account), index as i64],
+    )?;
+    Ok(())
+}
+pub(crate) fn forget_account_color(db: &rusqlite::Connection, account: &str) -> Result<()> {
+    db.execute("DELETE FROM meta WHERE key=?1", [color_key(account)])?;
     Ok(())
 }
 pub(crate) fn google_write_enabled(

@@ -1,5 +1,11 @@
 # CLI and external agent interface
 
+## D112 — progress and account colour (CLI47)
+
+- `assist progress` prints per-account analysis counts: done, queued, unprocessed and seconds per message (Local assistance24).
+- `account-update --color #6FB5B2` sets the account's colour from the 16-entry palette. `accounts --json` rows include `color` and `calendar_events`.
+- `account-update --analyze-history true|false` (D108) is unchanged.
+
 ## D107 — list people and message format (CLI45)
 
 - `mail list --json` rows include Core's `others` and `other_names` (Core59).

@@ -1055,3 +1055,61 @@ After two remove-and-delete cycles, every Settings save failed with "Sync accoun
 Archive deletion now removes the account's sync choices and calendar selections in the same transaction. `preferences_save` also drops stored entries whose account or calendar no longer exists, which repairs profiles already affected. An unknown account or calendar that the request itself introduces is still refused. The founder's profile repairs itself on its first save with the new engine.
 
 Core61; schema35, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D111 — local model pipeline refactor proposed (2026-09-24T21:10:00Z)
+
+The founder asked for an audit of the local model pipeline and a refactor plan. The goals: summarize each email without its reply chain, remove wasteful work, keep the system prompt large and the user message minimal, and use one queue for single emails and mass catch-up. New mail goes to the front, and queues can be paused or started. The audit found three things. Gmail bodies are already stored with the reply chain stripped, but only English attributions are recognised, and a separate GUI copy of the rules has drifted. Three schedulers share one inference slot and process oldest mail first. Every request makes three extra Ollama calls and sends a raw user-editable request template. All three installed models (`gemma4:e4b`, `qwen3.8-obliterated:27b`, `qwen3.8-flash-next:125b-mlx`) return valid schema-constrained JSON. The [plan](plans/local-model-pipeline.md) proposes consolidated Rust quote stripping, `{system,user}` prompt settings with a code-owned `{summary,label,sender}` schema, and a single derived priority queue (Now → New → Catch up, newest first) with per-account pause. It also proposes explicit CLI/GUI methods and deleting the watcher, backlog job and legacy prompt code. The design work in progress on the latest prototype owns the visuals. No implementation, contract revision or readiness change follows yet.
+
+The founder answers D111's four questions. First, the model returns the mockup shape `{summary, label, sender: human|bot}`, without `unknown` or `reason`. Second, summaries are one sentence of at most 25 words. Third, a prompt or model change keeps old results with their model caption, with no automatic requeue. Fourth, Catch up runs newest first, and new arrivals still go ahead of it. Implementation starts after the uncommitted pause/progress work in the tree is committed.
+
+## D112 — seventh export: account pipeline, colours, labels modal and Local LLM (2026-09-24T21:32:13Z)
+
+The founder supplied the seventh prototype export with designer notes and asked that every change be captured. This entry is independent of D111's proposed pipeline refactor. That work may later replace the watcher and backlog job that `assist_progress` reads, but it keeps the same visible stages.
+
+**Pipeline.** Each account has two stages: Download (mail and events from Google), then the Local model (summaries and labels for downloaded mail).
+- Newly downloaded mail joins the model's queue when Summarize or Label is on.
+- Pausing an account pauses both stages. The model can also be paused on its own while downloading continues.
+- Estimates come from observed throughput, shown as "about 8 min", "about 2.5 h" or "about 3 days".
+- The engine adds `assist_progress`: cheap per-account done, queued and unprocessed counts, and seconds per message. It also adds a saved per-account model `paused` flag, and holds an account's model work while its sync is paused in the session.
+- The exact per-range scan runs only when Catch up opens.
+
+**Settings → Accounts card.**
+- The header has the avatar in the account colour, name and address, and one status line: Downloading, Processing, Up to date, Paused or Disconnected. Then sync, pause and ⋯ (Edit…, Remove). The Current badge is removed.
+- Rows are a 100 px label, a meter with a 136 px count slot, and controls:
+  - Mail and Calendar, hidden when that sync is off;
+  - Labels, with the account's label names and Edit ›;
+  - Local model: a silver-blue row whose meter shows done and queued. It has Catch up ▾ (last week, month, year or all unprocessed, each with its count and estimate), Summarize and Label chips, and the model's pause.
+- The Last sync, Local retention and Syncing grid, the explainer lines, the job row and the Backlog cell are removed.
+
+**Top bar.**
+- Account badges use the account colour, stronger when active.
+- A ring shows progress: amber while downloading, silver-blue while the model processes. A red dot marks a disconnected account.
+- A 300 px hover card shows the account's review counts and both stages. It takes no input.
+- Names always show. The sync button shows only the icon and time; its tooltip has the full text.
+
+**Account colours.**
+- The avatar opens a 16-swatch picker in an 8×2 grid.
+- The colour marks the top-bar badge, the card avatar and calendar events: the event rule and the corner badge. Other accounts' events show it at half strength.
+- New accounts take the first unused colour. It is stored as a palette index beside the account, not in the shared preferences, so adding an account does not invalidate pending preference saves. `account_update` accepts `color`.
+
+**Labels move to Accounts.**
+- The labels editor is the "Labels · {Account}" modal.
+- Settings → Mail keeps density, grouping and blocked domains, plus Signatures and Remote images, which the exports never had.
+- Auto-summarize and Auto-label live on the model row.
+
+**Settings layout.**
+- Every section uses one 880 px column. Rows and fields fill it; only paragraphs stop near 640 px.
+- Each section has a one-line subtitle, and redundant explainers are removed.
+- "Local model" is renamed Local LLM.
+
+**Local LLM page.**
+- **Test** runs a sample with the current model and prompts. It shows Running with elapsed time, then one of:
+  - Passed: time to first token, total time, tok/s and the returned JSON;
+  - Failed: the raw reply;
+  - Error: names the server.
+- **Prompt boxes.** The prompt is split into a System prompt and a User message. The user message box shows `{{messages}}` and `{{labels}}` as chips above it, and warns when either is missing; `{{labels}}` and `{{partial}}` may now be omitted.
+- Each box has Restore default, Cancel and Save, with a reserved "Unsaved changes" label and a brief "Saved".
+- Choosing a model saves at once.
+- A character and token count covers both boxes.
+
+Local assistance24/Core62/Mail UI79/CLI47; schema35, fixtures0/3, protocol1 and readiness0/9 unchanged. [Research record](research/prototype-september-23.md#d112--seventh-export-2026-09-24).

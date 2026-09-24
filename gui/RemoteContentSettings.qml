@@ -39,7 +39,7 @@ ColumnLayout {
         color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(15); weight: Font.Medium }
     }
     Text {
-        Layout.topMargin: 6; Layout.fillWidth: true; Layout.maximumWidth: 560; wrapMode: Text.Wrap
+        Layout.topMargin: 6; Layout.fillWidth: true; Layout.maximumWidth: 640; wrapMode: Text.Wrap
         text: "HTML mail shows images only after you choose Load images. They are fetched by fuckMail over https, never http, without cookies or referrers."
         color: Theme.muted; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13.5) }
         lineHeight: 1.3
@@ -64,7 +64,7 @@ ColumnLayout {
         }
     }
     GridLayout {
-        Layout.fillWidth: true; Layout.maximumWidth: 640; columns: 2; columnSpacing: 14; rowSpacing: 10
+        Layout.fillWidth: true; columns: 2; columnSpacing: 14; rowSpacing: 10
         Text { text: "Host"; color: Theme.secondary; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13) } }
         FmTextField {
             id: hostField; objectName: "remoteProxyHost"; Layout.fillWidth: true
@@ -119,7 +119,7 @@ ColumnLayout {
         }
     }
     Text {
-        Layout.topMargin: 8; Layout.fillWidth: true; Layout.maximumWidth: 560; wrapMode: Text.Wrap
+        Layout.topMargin: 8; Layout.fillWidth: true; Layout.maximumWidth: 640; wrapMode: Text.Wrap
         text: "The proxy's own name is looked up on this computer; image sites are looked up by the proxy."
         color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
     }

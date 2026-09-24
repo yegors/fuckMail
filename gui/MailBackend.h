@@ -381,7 +381,7 @@ public:
     // People after from:; senders, or recipients in Sent and Drafts.
     Q_INVOKABLE void requestSearchPeople(const QString &part);
     Q_INVOKABLE void setPreferences(const QVariantMap &patch);
-    Q_INVOKABLE void updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention = {}, const QVariantMap &sync = {}, bool analyzeHistory = false);
+    Q_INVOKABLE void updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention = {}, const QVariantMap &sync = {}, bool analyzeHistory = false, const QString &color = {});
     Q_INVOKABLE void setCalendarSelected(const QString &account, const QString &calendar, bool selected);
     Q_INVOKABLE void setCalendarView(const QString &view);
     Q_INVOKABLE void moveCalendar(int delta);

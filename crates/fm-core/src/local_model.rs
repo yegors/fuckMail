@@ -24,9 +24,9 @@ fn encode(v: &Value) -> Result<String> {
     Ok(serde_json::to_string(v)?)
 }
 /// Last synced message row the new-mail watcher has queued.
-const WATCH_CURSOR: &str = "local_model_watch_cursor";
+pub(crate) const WATCH_CURSOR: &str = "local_model_watch_cursor";
 /// Lower bound the watcher rescans from once, after an account's inputs change.
-const WATCH_REQUEUE: &str = "local_model_watch_requeue";
+pub(crate) const WATCH_REQUEUE: &str = "local_model_watch_requeue";
 /// Mail dated before this cutoff (Unix ms) was already in the account when it
 /// was added. The arrivals watcher leaves it to an explicit Backlog run, so a
 /// first sync does not send a whole mailbox through the model. No cutoff means
@@ -156,11 +156,12 @@ impl Store {
                         }
                     }
                 }
-                // Turning an account's assistance on queues its already-synced mail.
+                // Turning an account's assistance on, or resuming it, queues its
+                // already-synced mail: the watcher skipped it while off or paused.
                 for account in previous.accounts.keys().chain(settings.accounts.keys()) {
                     let on = |s: &Settings| {
                         let policy = s.accounts.get(account).cloned().unwrap_or_default();
-                        policy.summaries || policy.classification
+                        (policy.summaries || policy.classification) && !policy.paused
                     };
                     if !on(&previous) && on(&settings) {
                         self.local_model_requeue_account(account)?;
@@ -798,6 +799,7 @@ impl Store {
             let enabled = !sent
                 && !trashed
                 && !history
+                && !policy.paused
                 && lifecycle == "active"
                 && settings.model.is_some()
                 && (policy.classification || policy.summaries);
@@ -830,7 +832,7 @@ impl Store {
         Ok(json!({"after":next,"messages":messages,"more":more}))
     }
     /// Rescan an account's synced mail for missing results after its inputs change.
-    pub(crate) fn local_model_requeue_account(&self, account: &str) -> Result<()> {
+    pub fn local_model_requeue_account(&self, account: &str) -> Result<()> {
         requeue_after(&self.db, "MIN(rowid)-1", Some(account))
     }
 }
@@ -1267,6 +1269,52 @@ mod tests {
         ids.into_iter()
             .filter(|id| s.local_model_backlog_eligible(account, id).unwrap())
             .collect()
+    }
+    #[test]
+    fn a_paused_account_is_skipped_then_its_mail_is_queued_again_on_resume() {
+        let (_dir, mut s) = configured_store();
+        let account = "windscribe";
+        let history = "2999-01-01T00:00:00Z";
+        let save = |s: &mut Store, paused: bool| {
+            let state = s.local_model_settings().unwrap();
+            let mut settings: Settings = serde_json::from_value(state["settings"].clone()).unwrap();
+            settings.accounts.entry(account.into()).or_default().paused = paused;
+            s.local_model_handle(
+                "assist_settings_save",
+                None,
+                &json!({"expected_revision":state["revision"],"settings":settings}),
+            )
+            .unwrap();
+        };
+        save(&mut s, true);
+        let progress = s.local_model_progress(Some(account)).unwrap()["accounts"][0].clone();
+        assert_eq!(progress["paused"], true);
+        assert_eq!(progress["queued"], 0, "a paused account has nothing queued");
+        assert_eq!(progress["unprocessed"], progress["eligible"]);
+        let (_, queued) = drain_arrivals(&s, history);
+        assert!(queued.iter().all(|m| m["account"] != account));
+        save(&mut s, false);
+        let progress = s.local_model_progress(Some(account)).unwrap()["accounts"][0].clone();
+        assert_eq!(progress["queued"], progress["eligible"], "resuming queues every skipped message");
+        let (_, queued) = drain_arrivals(&s, history);
+        assert_eq!(
+            queued.iter().filter(|m| m["account"] == account).count(),
+            eligible(&s, account).len()
+        );
+    }
+    #[test]
+    fn progress_splits_history_before_the_cutoff_from_queued_mail() {
+        let (_dir, s) = configured_store();
+        let account = "windscribe";
+        let before = s.local_model_progress(Some(account)).unwrap()["accounts"][0].clone();
+        assert_eq!(before["done"], 0);
+        assert!(before["queued"].as_i64().unwrap() > 0);
+        set_history_analysis(&s.db, account, false).unwrap();
+        let after = s.local_model_progress(Some(account)).unwrap()["accounts"][0].clone();
+        assert_eq!(after["queued"], 0, "fixture mail predates the cutoff");
+        assert_eq!(after["unprocessed"], after["eligible"]);
+        assert!(after["history_cutoff"].is_i64());
+        assert!(after["local"].as_i64().unwrap() >= after["eligible"].as_i64().unwrap());
     }
     #[test]
     fn history_cutoff_leaves_existing_mail_to_the_backlog_until_opted_in() {

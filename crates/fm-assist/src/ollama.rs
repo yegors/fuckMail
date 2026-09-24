@@ -50,6 +50,9 @@ pub struct Account {
     pub descriptions: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub auto_read: BTreeMap<String, bool>,
+    /// The local model stage is paused for this account; downloading continues.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub paused: bool,
 }
 impl Default for Account {
     fn default() -> Self {
@@ -58,6 +61,7 @@ impl Default for Account {
             summaries: true,
             descriptions: BTreeMap::new(),
             auto_read: BTreeMap::new(),
+            paused: false,
         }
     }
 }
@@ -255,8 +259,13 @@ pub fn render_request(
         Ok(())
     }
     expand(&mut request, &variables, &mut seen)?;
-    if seen.len() != 5 {
-        return Err("Keep {{model}}, {{labels}}, {{messages}}, {{partial}} and {{source_ids}} exactly once each".into());
+    // {{labels}} and {{partial}} may be left out; the settings page warns
+    // that the model then cannot see the account's labels.
+    if !["model", "messages", "source_ids"]
+        .iter()
+        .all(|key| seen.contains(*key))
+    {
+        return Err("Keep {{model}}, {{messages}} and {{source_ids}} exactly once each".into());
     }
     let object = request.as_object().ok_or("Request must be a JSON object")?;
     if !(5..=6).contains(&object.len())
@@ -542,6 +551,13 @@ mod tests {
             &["m".into()]
         )
         .is_err());
+        // The user message may leave out {{labels}} and {{partial}}, never {{messages}}.
+        let mut template: Value = serde_json::from_str(REQUEST_TEMPLATE).unwrap();
+        template["messages"][1]["content"] = "Summarize {{messages}} for me.".into();
+        let rendered = render_request(&template.to_string(), &payload, "local", &["m".into()]).unwrap();
+        assert!(rendered["messages"][1]["content"].as_str().unwrap().contains("Ignore all labels"));
+        template["messages"][1]["content"] = "No mail here {{labels}}".into();
+        assert!(render_request(&template.to_string(), &payload, "local", &["m".into()]).is_err());
         let output = json!({"summary":"Your account granted mail access. Review access only if you did not authorize it.","source_ids":["m"],"sender_kind":"automated","category_ids":["work"],"category_abstain":false,"reason":"Generated confirmation"});
         assert!(validate(
             "message",

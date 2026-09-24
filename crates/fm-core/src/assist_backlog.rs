@@ -4,7 +4,83 @@ use fm_assist::ollama::{self, Settings};
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 
+/// Received mail the local model can analyse (same rule as the Backlog scan).
+const ELIGIBLE: &str = "m.account=?1 AND NOT m.sent AND NOT m.trashed AND length(m.source_hash)=64 AND length(m.body)>0
+    AND NOT EXISTS(SELECT 1 FROM google_message_state g WHERE g.account=m.account AND g.message_id=m.id
+        AND (g.deleted=1 OR EXISTS(SELECT 1 FROM json_each(g.provider_labels_json) l WHERE l.value='DRAFT')))";
+
 impl Store {
+    /// Cheap counts for the Accounts view and account tabs, safe to poll.
+    /// `done` has saved results for every enabled task (not re-validated
+    /// against later label or prompt changes, which the watcher requeues);
+    /// `queued` is what the arrivals watcher still has ahead of it; the rest
+    /// is `unprocessed`, reachable through an explicit Backlog run.
+    pub fn local_model_progress(&self, account: Option<&str>) -> Result<Value> {
+        let settings: Settings =
+            serde_json::from_value(self.local_model_settings()?["settings"].clone())?;
+        let accounts: Vec<String> = self
+            .db
+            .prepare("SELECT id FROM accounts WHERE lifecycle_state='active' AND (?1 IS NULL OR id=?1) ORDER BY id")?
+            .query_map([account], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        let meta = |key: &str| -> Result<Option<i64>> {
+            Ok(self
+                .db
+                .query_row("SELECT value FROM meta WHERE key=?1", [key], |r| r.get(0))
+                .optional()?)
+        };
+        let cursor = meta(crate::local_model::WATCH_CURSOR)?.unwrap_or(0);
+        let start = meta(crate::local_model::WATCH_REQUEUE)?.map_or(cursor, |v| v.min(cursor));
+        let mut rows = Vec::new();
+        for id in accounts {
+            let policy = settings.accounts.get(&id).cloned().unwrap_or_default();
+            let cutoff = meta(&crate::local_model::history_cutoff_key(&id))?;
+            let result = |task: &str| {
+                format!("EXISTS(SELECT 1 FROM local_model_results r WHERE r.account=m.account AND r.conversation_id=m.conversation_id AND r.target=m.id AND r.task='{task}')")
+            };
+            let mut tasks = Vec::new();
+            if policy.summaries {
+                tasks.push(result("summary"));
+            }
+            if policy.classification {
+                tasks.push(result("classification"));
+            }
+            let done_rule = if tasks.is_empty() {
+                "EXISTS(SELECT 1 FROM local_model_results r WHERE r.account=m.account AND r.target=m.id)".to_owned()
+            } else {
+                tasks.join(" AND ")
+            };
+            let count = |rule: &str| -> Result<i64> {
+                Ok(self.db.query_row(
+                    &format!("SELECT count(*) FROM messages m WHERE {ELIGIBLE} AND {rule}"),
+                    params![id],
+                    |r| r.get(0),
+                )?)
+            };
+            let local: i64 = self.db.query_row(
+                "SELECT count(*) FROM messages m WHERE m.account=?1 AND NOT EXISTS(SELECT 1 FROM google_message_state g WHERE g.account=m.account AND g.message_id=m.id AND g.deleted=1)",
+                [&id],
+                |r| r.get(0),
+            )?;
+            let eligible = count("1")?;
+            let done = count(&done_rule)?;
+            let enabled =
+                settings.model.is_some() && (policy.summaries || policy.classification);
+            let queued = if enabled && !policy.paused {
+                let history = cutoff.map_or(String::new(), |ms| {
+                    format!(" AND (julianday(m.sent_at)-2440587.5)*86400000.0>={ms}")
+                });
+                count(&format!("m.rowid>{start} AND NOT ({done_rule}){history}"))?
+            } else {
+                0
+            };
+            rows.push(json!({"account":id,"local":local,"eligible":eligible,"done":done,"queued":queued,
+                "unprocessed":(eligible-done-queued).max(0),"model_configured":settings.model.is_some(),
+                "enabled":enabled,"summaries":policy.summaries,"classification":policy.classification,
+                "paused":policy.paused,"history_cutoff":cutoff}));
+        }
+        Ok(json!({"accounts":rows}))
+    }
     pub fn local_model_backlog_eligible(&self, account: &str, message: &str) -> Result<bool> {
         Ok(self.db.query_row("SELECT EXISTS(SELECT 1 FROM messages m WHERE m.account=?1 AND m.id=?2
             AND NOT m.sent AND NOT m.trashed AND length(m.source_hash)=64 AND length(m.body)>0

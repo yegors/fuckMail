@@ -88,6 +88,17 @@ QtObject {
     readonly property color accent: current.accent
     readonly property color ai: themeId === "paper" ? "#4F6C86" : themeId === "terminal" ? "#7FA98A" : themeId === "harbour" ? "#A7BBD0" : "#9BB0C4"
     readonly property color amber: accent
+    // Account colours, 8×2 in the picker; the engine gives each new account the
+    // first unused one. Accounts without a saved colour use palette order.
+    readonly property var accountPalette: ["#C9A36B", "#E0B85A", "#CF8F6A", "#E07F7F", "#D58E9A", "#C98BC9", "#AE97D4", "#8C8FE0",
+        "#8AA9D6", "#6FA3C7", "#6FB5B2", "#7FC4A4", "#8FB39A", "#B9C77A", "#C9A58F", "#A3AAB3"]
+    function accountColor(account) {
+        const rows = typeof backend === "undefined" || !backend.allAccounts ? [] : backend.allAccounts
+        const index = rows.findIndex(function(row) { return row.id === account })
+        if (index >= 0 && rows[index].color) return rows[index].color
+        return accountPalette[Math.max(0, index) % accountPalette.length]
+    }
+    function accountTint(account, opacity) { return withAlpha(Qt.color(accountColor(account)), opacity) }
     readonly property color warn: current.warn
     readonly property color error: current.red
     readonly property color red: error

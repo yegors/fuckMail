@@ -303,6 +303,7 @@ impl Runtime {
                         .await
                         {
                             Ok(output) => {
+                                self.record_speed(&plan.account, started.elapsed().as_secs_f64());
                                 let facts = json!({"job_ref":&id[..8],"account_ref":crate::diagnostics::reference("account",&plan.account),"target_ref":crate::diagnostics::reference("message",&plan.target),"task":plan.task,"origin":"backlog",
                                     "elapsed_ms":started.elapsed().as_millis(),"summary_chars":output["summary"].as_str().map(|s|s.chars().count()),
                                     "sender_kind":output["sender_kind"],"category_ids":output["category_ids"],

@@ -174,6 +174,7 @@ impl Store {
         }
         tx.execute("UPDATE local_model_settings SET revision=revision+1", [])?;
         crate::preferences::forget_account(&tx, account)?;
+        crate::preferences::forget_account_color(&tx, account)?;
         tx.execute("DELETE FROM accounts WHERE id=?1", [account])?;
         let result = json!({"account":account,"request_id":request,"deleted":true,"remote_data_changed":false,"file_cleanup":"next_startup"});
         tx.execute(

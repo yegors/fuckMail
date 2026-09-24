@@ -172,7 +172,8 @@ void GuiSettingsSelfTest::step() {
         if (!click("settingsPage_Accounts")) return;
         ++m_stage; break;
     case 4:
-        if (!item("editAccountName")) { click("syncService_windscribe_mail"); return; }
+        // The account editor opens from the card's ⋯ menu.
+        if (!item("editAccountName")) { if (!click("editAccount_windscribe")) click("accountOptions_windscribe"); return; }
         if (!type("editAccountName", "")) return;
         ++m_stage; break;
     case 5: {

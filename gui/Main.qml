@@ -138,6 +138,9 @@ ApplicationWindow {
     onClosing: function(event) { if (!allowClose) { event.accepted = false; backend.shutdown() } }
     Connections { target: backend; function onShutdownReady() { window.allowClose = true; window.close() } }
     AccountLifecycleDialogs { id: accountLifecycleDialogs }
+    // One pipeline model for the account tabs, their hover card and Settings.
+    AccountProgress { id: accountProgress }
+    AccountHoverCard { id: accountTip; parent: Overlay.overlay; progress: accountProgress }
     StartupOverlay {
         id: startupOverlay
         parent: Overlay.overlay
@@ -242,50 +245,38 @@ ApplicationWindow {
                                 readonly property var modelData: rowData
                                 id: accountTab
                                 objectName: "accountTab_" + modelData.id
-                                readonly property var syncState: { const states = backend.googleSync; return backend.googleSyncState(modelData.id) }
-                                readonly property var syncProgress: syncState.progress || ({})
-                                readonly property bool syncBlocked: syncState.credential_access_required === true || syncProgress.mail === "paused"
-                                readonly property bool syncing: !syncBlocked && (syncState.changing === true || syncState.refresh_requested === true || (syncState.active === true && (syncProgress.mail === "starting" || syncProgress.mail === "running")))
-                                readonly property string syncDetail: syncBlocked ? "Sync paused" : syncing ? ((modelData.coverage || {}).inventory_complete ? "Checking for new mail" : "Syncing · " + Number((modelData.coverage || {}).indexed_messages || 0).toLocaleString(Qt.locale(), 'f', 0) + " messages cached") : ""
-                                Accessible.description: syncDetail
-                                Rectangle {
-                                    objectName: "mailboxSync_" + accountTab.modelData.id
-                                    anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom
-                                    anchors.leftMargin: 10; anchors.rightMargin: 10
-                                    height: 2; radius: 1; clip: true
-                                    visible: accountTab.syncing || accountTab.syncBlocked
-                                    color: accountTab.syncBlocked ? Theme.error : Theme.line
-                                    Rectangle {
-                                        width: parent.width * 0.3; height: 2; radius: 1; color: Theme.accent
-                                        visible: accountTab.syncing
-                                        SequentialAnimation on x {
-                                            running: accountTab.syncing && accountTab.visible; loops: Animation.Infinite
-                                            NumberAnimation { from: -accountTab.width * 0.3; to: accountTab.width; duration: 1400; easing.type: Easing.InOutSine }
-                                        }
-                                    }
-                                }
+                                readonly property var pipeline: accountProgress.view(modelData.id)
                                 property int reviewCount: modelData.unread_conversation_count || 0
-                                readonly property string badgeText: syncBlocked ? "Paused" : syncing && !(modelData.coverage || {}).inventory_complete
-                                    ? Number((modelData.coverage || {}).indexed_messages || 0).toLocaleString(Qt.locale(), 'f', 0) + " cached"
-                                    : reviewCount > 0 ? String(reviewCount) : ""
-                                readonly property real naturalWidth: 20 + 18 + 8 + accountName.implicitWidth
-                                    + (badgeText.length ? accountCount.implicitWidth + 8 : 0)
+                                readonly property string badgeText: reviewCount > 0 ? String(reviewCount) : ""
+                                readonly property real naturalWidth: 20 + 22 + 7 + accountName.implicitWidth
+                                    + (badgeText.length ? accountCount.implicitWidth + 7 : 0)
+                                Accessible.description: pipeline.status
                                 text: modelData.name
                                 height: 28; implicitWidth: Math.min(naturalWidth, Math.max(140, window.width - 820))
-                                leftPadding: 10; rightPadding: 10
+                                leftPadding: 8; rightPadding: 8
                                 selected: backend.account === modelData.id
                                 Component.onCompleted: if (selected) Qt.callLater(accountTabs.revealSelected)
                                 onWidthChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
                                 onXChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
                                 onSelectedChanged: if (selected) Qt.callLater(accountTabs.revealSelected)
-                                tip: modelData.name + " · " + modelData.email + " · " + reviewCount + " to review, " + (modelData.held_conversation_count || 0) + " delayed" + (syncDetail ? "\n" + syncDetail : "")
-                                onClicked: { backend.selectAccount(modelData.id); if (window.settingsOpen) window.navigate("mail") }
+                                onHoveredChanged: {
+                                    if (hovered) { const point = mapToItem(Overlay.overlay, 0, height + 8); accountTip.show(modelData, point.x, point.y) }
+                                    else if (accountTip.account === modelData.id) accountTip.close()
+                                }
+                                onClicked: { accountTip.close(); backend.selectAccount(modelData.id); if (window.settingsOpen) window.navigate("mail") }
                                 contentItem: Row {
                                     id: accountContent
-                                    spacing: 8
-                                    AccountBadge { anchors.verticalCenter: parent.verticalCenter; accountName: accountTab.modelData.name; selected: accountTab.selected }
-                                    Text { id: accountName; anchors.verticalCenter: parent.verticalCenter; text: accountTab.text; width: Math.max(0, accountTab.availableWidth - 18 - 8 - (accountTab.badgeText.length ? accountCount.implicitWidth + 8 : 0)); elide: Text.ElideRight; color: accountTab.selected ? Theme.text : Theme.inkAlpha(.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13); weight: accountTab.selected ? Font.Medium : Font.Normal } }
-                                    Text { id: accountCount; anchors.verticalCenter: parent.verticalCenter; visible: accountTab.badgeText.length > 0; text: accountTab.badgeText; color: accountTab.syncBlocked ? Theme.error : accountTab.selected ? Theme.text : Theme.inkAlpha(.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5); weight: Font.Medium } }
+                                    spacing: 7
+                                    AccountBadge {
+                                        objectName: "accountTabBadge_" + accountTab.modelData.id
+                                        anchors.verticalCenter: parent.verticalCenter; tipEnabled: false; reserveRing: true
+                                        account: accountTab.modelData.id; accountName: accountTab.modelData.name; selected: accountTab.selected
+                                        // Amber while downloading, silver-blue while the model processes.
+                                        ringShown: accountTab.pipeline.ringShown; ringProgress: accountTab.pipeline.ring; ringColor: accountTab.pipeline.ringColor
+                                        errorShown: accountTab.pipeline.err
+                                    }
+                                    Text { id: accountName; anchors.verticalCenter: parent.verticalCenter; text: accountTab.text; width: Math.max(0, accountTab.availableWidth - 22 - 7 - (accountTab.badgeText.length ? accountCount.implicitWidth + 7 : 0)); elide: Text.ElideRight; color: accountTab.selected ? Theme.text : Theme.inkAlpha(.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13); weight: accountTab.selected ? Font.Medium : Font.Normal } }
+                                    Text { id: accountCount; anchors.verticalCenter: parent.verticalCenter; visible: accountTab.badgeText.length > 0; text: accountTab.badgeText; color: accountTab.selected ? Theme.text : Theme.inkAlpha(.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11.5); weight: Font.Medium } }
                                 }
                             }
                         }
@@ -317,16 +308,17 @@ ApplicationWindow {
                         return seconds < 5 ? "just now" : seconds < 60 ? seconds + " s ago" : seconds < 3600 ? Math.round(seconds / 60) + " min ago"
                             : seconds < 172800 ? Math.round(seconds / 3600) + " h ago" : Math.round(seconds / 86400) + " d ago"
                     }
-                    // A retry keeps the last success visible; "Synced" needs mail access.
-                    text: blocked || (syncState.active && !calendarGranted && progress.mail === "paused") ? "Retry sync" + (mailGranted && syncedAgo.length ? " · " + syncedAgo : "")
-                        : syncing ? "Syncing…" : mailGranted && syncedAgo.length ? "Synced " + syncedAgo : "Sync"
+                    // Icon plus time only; the tooltip carries the full state.
+                    text: blocked || (syncState.active && !calendarGranted && progress.mail === "paused") ? "Retry"
+                        : syncing ? "Syncing" : mailGranted && syncedAgo.length ? syncedAgo.replace(" ago", "") : "Sync"
                     iconName: "refresh"; iconSize: 13
                     height: 32; radius: 6; leftPadding: 10; rightPadding: 10; font.pointSize: Theme.fontPoints(12)
                     foreground: hovered && enabled ? Theme.text : Theme.inkAlpha(.55)
                     enabled: backend.connected && !backend.syntheticProfile && !syncState.changing
                         && (mailGranted || calendarGranted) && !accountRow.read_only
-                    Accessible.name: text
-                    tip: (blocked ? "Keychain access was denied or is locked. Click to try again. macOS may ask for your login keychain password. "
+                    Accessible.name: syncing ? "Syncing" : mailGranted && syncedAgo.length ? "Synced " + syncedAgo : text
+                    tip: (syncing ? "Syncing now. " : mailGranted && syncedAgo.length ? "Synced " + syncedAgo + ". " : "")
+                        + (blocked ? "Keychain access was denied or is locked. Click to try again. macOS may ask for your login keychain password. "
                         : mailGranted && calendarGranted ? "Fetch new mail and Calendar events for this account. "
                         : calendarGranted ? "Fetch new Calendar events for this account. " : "Fetch new mail for this account. ")
                         + (mailGranted ? (lastSync > 0 ? "Last successful mail sync: " + new Date(lastSync * 1000).toLocaleString() : "No successful mail sync yet.") : "")
@@ -401,7 +393,7 @@ ApplicationWindow {
                 property bool built: false
                 active: window.settingsOpen || built
                 onLoaded: built = true
-                sourceComponent: SettingsView { onDone: window.navigate(window.workspace); onArchiveOpened: window.navigate("mail") }
+                sourceComponent: SettingsView { progress: accountProgress; onDone: window.navigate(window.workspace); onArchiveOpened: window.navigate("mail") }
             }
         }
         Item { id: timelineFooterSlot; visible: window.timelineVisible && !window.timelineAtTop; Layout.fillWidth: true; implicitHeight: visible ? timeline.implicitHeight : 0 }

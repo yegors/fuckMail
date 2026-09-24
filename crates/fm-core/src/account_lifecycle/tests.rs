@@ -139,6 +139,14 @@ fn archive_deletion_removes_saved_content_and_fences_reconnection() {
     assert!(saved["preferences"]["google_sync_services"]
         .get(&scope.account)
         .is_none());
+    assert!(!store
+        .db
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM meta WHERE key=?1)",
+            [format!("account_color:{}", scope.account)],
+            |r| r.get::<_, bool>(0),
+        )
+        .unwrap());
     store
         .handle(
             "preferences_save",

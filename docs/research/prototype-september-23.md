@@ -1,5 +1,66 @@
 # September 23 prototype implementation
 
+## D112 — seventh export (2026-09-24)
+
+The founder supplied the seventh export, `fuckMail-7.html` (747,584 bytes, SHA-256 `32c362c08d929983d276aa44c2b6eda1f988558aed470b37d102820985072d29`), with designer notes on account progress, colours, labels and the Local LLM page. The export's bundled component and markup were unpacked. Each note was matched to the component's `pipeV`, `pipeCard` and `pipeTab` logic and its Accounts, hover-card, colour-picker, labels-modal and Local LLM markup. The export was served on `127.0.0.1` and opened in the in-app browser at 1440×900. The sixth export is not on this Mac, so this round follows the designer's list of changes rather than a byte diff.
+
+### Engine support
+
+- **Progress.** `assist_progress` returns cheap per-account counts from indexed COUNT queries. It has no snapshot validation, so it is safe to poll every three seconds:
+  - `local` and `eligible` messages;
+  - `done`: results saved for every enabled task;
+  - `queued`: what the arrivals watcher still has ahead of it, respecting the history cutoff and pause, plus what a running Catch up has left;
+  - `unprocessed`: the rest;
+  - `seconds_per_message`: the engine's running average of real analysis times.
+
+  The exact per-range scan now runs only when Catch up opens.
+- **Pause.** A per-account model `paused` flag is saved in the assistance settings, and resuming requeues the account. Pausing an account's sync holds its model work in this engine session, and resuming sync releases the hold and requeues. Both stages therefore pause and resume together, as the design asks, and sync's own session-only pause is unchanged.
+- **Colours.** Account colours are a palette index in `meta`. A new account gets the first unused colour, `accounts` reports `color`, and `account_update` accepts `color`. Storing them in the shared preferences was tried first. That bumped the preference revision whenever an account was added, which made 40 Core tests expose a real conflict for clients, so colours moved beside the account.
+- **Test.** The sample test reports Ollama's load and prompt time (time to first token), output tokens, generation time, rate and total time, and the raw reply when it is not valid JSON. The OpenAI-compatible path reports tokens and total time only.
+- **Prompt variables.** `{{labels}}` and `{{partial}}` may be left out of the user message; `{{messages}}`, `{{model}}` and `{{source_ids}}` stay required.
+- **Calendar.** `accounts` gains `calendar_events`.
+
+### Choices beyond the notes
+
+- **No invented totals.**
+  - Mail shows "N of M" from Google's listed inventory. While the list is still being counted it shows "M+" and "Counting mail…", with no percentage or estimate.
+  - Google reports no event total, so Calendar shows its count. A first pass shimmers until it finishes, then shows Complete.
+  - Estimates use rates observed over the last minute for downloads, and the engine's average for the model. With no rate yet, no estimate is shown.
+- **Catch up** unpauses the model, as in the export. The model row's pause also stops a running Catch up; finished results stay.
+- **Kept.** The Mail page keeps Signatures and Remote images, which no export ever had, below Blocked domains. Archived accounts keep their archive, cleanup and restore actions on the card.
+- **Removed.** The Shortcuts and Local LLM explainers are gone, and `AccountAssistanceSettings.qml` is deleted: its Summarize and Label controls moved to the card.
+
+### Verification
+
+- Mac release build. New Core tests cover:
+  - the pause and its requeue on resume;
+  - progress with the history cutoff;
+  - palette colours, including that adding an account leaves preference saves valid;
+  - archive deletion clearing an account's colour;
+  - optional prompt variables.
+
+  Engine tests cover Ollama timing extraction and compatible-server token usage.
+- Native tests updated or added:
+  - Accounts shows cheap counts with no scan, and only Catch up scans.
+  - A Catch-up batch shows as queued work, and pausing stops it and saves the pause.
+  - The colour picker saves through `account_update`, and the labels modal opens from the card.
+  - Local LLM saves a model at once and each box on its own, with Restore default, the missing-variable warning, the size note and the Test panel.
+  - The top-bar hover card is 300 px and takes no input.
+  - The header sync label is icon plus time.
+  - The integration walkthrough opens the account editor from ⋯.
+- Offscreen captures compared with the export:
+  - the Accounts card in the Terminal theme, including downloading, Catch up and running states;
+  - the colour picker and the labels modal;
+  - the hover card.
+
+  The real Mac app rendered the Accounts, General, Mail and Local LLM pages on a demo profile.
+
+### Limits
+
+- Mail and Calendar meters were checked in the native harness only, not against a real account's first sync.
+- The account-tab ring was not captured running.
+- "Paused N ago" knows only pauses made in this app session.
+
 ## D104 — fifth export (2026-09-24)
 
 The founder supplied the fifth export, `fuckMail (5).html` (713,629 bytes, SHA-256 `b5cfd8b3…c0722b2ef`), which includes the fourth, with designer notes. Its bundled component and markup were unpacked and diffed against the fourth export. The export was served on `127.0.0.1` and inspected in the in-app browser at 1400×860 for the reader, summary states and Calendar Month. Sizes, colours and rules come from the export's markup and the notes. The changes are in the [decision](../decisions.md) and [Mail UI73](../contracts/mail-ui.md).

@@ -1,5 +1,53 @@
 # Mail UI, reader and human composer
 
+## D112 — seventh export: Accounts, account tabs, colours, labels modal and Local LLM (Mail UI79)
+
+- **Accounts card.**
+  - **Header:** the avatar in the account colour, which opens the colour picker. Name and address, then one status line:
+    - Downloading · about X left, the later of mail and calendar;
+    - Processing · about X left;
+    - Up to date · N min ago;
+    - Paused, or Paused N ago for a pause made in this session;
+    - Disconnected, which opens reconnect when clicked.
+
+    Then icon buttons for sync (spinning while syncing), pause or resume (which also holds the model) and ⋯ (Edit…, Remove). There is no Current badge.
+  - **Rows:** a 100 px label, a meter, then controls. The count sits in a 136 px slot and the short status elides.
+    - **Mail:** "48.2k of 61.8k", or "N of M+" while Google's list is still being counted. Its bar is amber while active and neutral when done. The short status is Complete, "81% · 8 min", Paused at N% or Stopped at N%. The row is hidden when mail sync is off.
+    - **Calendar:** its event count, shimmering during a first pass. The row is hidden when calendar sync is off.
+    - **Labels:** up to four names and "+N", with Edit ›, which opens the labels modal.
+    - **Local model:** a silver-blue row. The meter shows done as a solid segment and queued as a pale one.
+      - Short status: "29% · 3,323 queued · 3 h", "Off · 5.2k not processed", "No model" or Complete.
+      - Controls: Set up (without a model); Catch up ▾, shown only when mail is unprocessed; the Summarize and Label chips; and the model's pause or resume.
+  - **Catch up menu:** "Summarize & label older mail from…", then Last week, Last month, Last year and All N unprocessed, each with its count and estimate. A footnote says it runs in the background and skips processed mail.
+  - Archived accounts keep their archive actions.
+- **Account tabs.**
+  - The badge is 18 px in the account colour, at .22 when active and .12 otherwise.
+  - A 22 px progress ring shows amber while downloading and silver-blue while the model processes; its space is reserved so tabs don't shift. A red dot marks a disconnected account.
+  - Names always show, followed by the review count.
+  - A 300 px hover card appears after 250 ms and takes no input. It shows name, address, "N to review · N delayed" or "All reviewed", then the Mail and model rows, each with a bar, count and status.
+  - The header sync button shows the icon and the time ("2 min", "just now", "Syncing" or "Retry"); its tooltip has the full text.
+- **Colours.** The picker is an 8×2 grid of 22 px swatches with the current one ringed. Calendar events use the account colour for their rule and corner badge; other accounts' events use it at half strength.
+- **Labels modal.** "Labels · {Account}", 720 px wide, with the address and the existing label table and Sync with Google. Esc, the close button or a click outside closes it. Settings → Mail no longer has a per-account section.
+- **Settings.**
+  - Every section uses one 880 px column, and rows fill it; paragraphs stop at 640 px.
+  - One-line subtitles:
+    - General: "Appearance, text size and notifications for the whole app."
+    - Accounts: "Connect accounts and see what each one is syncing and processing."
+    - Local LLM: "Pick the on-device model that summarizes and labels your mail."
+    - Mail: "How the mail list looks, and which domains stay blocked."
+    - Calendar: "Defaults for new events, reminders and the calendar view."
+    - Shortcuts: "Keyboard shortcuts. Click any row to change it."
+  - The Accounts intro, the Shortcuts note and the Local LLM provider explainer are removed.
+- **Local LLM.**
+  - The page contains Provider, the endpoint with Detect, and the model. Choosing a model saves it at once.
+  - **Test** is beside the model picker. Its result panel shows Running with elapsed time, then one of:
+    - Passed: first token, total, tok/s and the returned JSON;
+    - Failed: not valid JSON, with the raw reply;
+    - Error: with the server's address.
+  - **System prompt** and **User message** are separate boxes. The user message box shows `{{messages}}` and `{{labels}}` as chips above it, and an amber warning names a missing variable.
+  - Each box has Restore default on the left, which loads the built-in text as a draft and is disabled at the default. Cancel and Save are on the right, active only with edits, beside a reserved "Unsaved changes" label. Save briefly shows "Saved".
+  - A character and token count covers both boxes.
+
 ## D107 — sixth export list details and one HTML/Text choice (Mail UI76)
 
 **List rows**

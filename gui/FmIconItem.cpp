@@ -134,6 +134,9 @@ bool draw(const QString &name, Sketch &c) {
     else if (n == "image") { c.line({2.5,3.5,13.5,3.5,13.5,12.5,2.5,12.5,2.5,3.5}); c.line({2.5,10,5.5,7,8,9.5,10,7.5,13.5,11}); }
     else if (n == "imageOff") { c.line({2.5,3.5,13.5,3.5,13.5,12.5,2.5,12.5,2.5,3.5}); c.line({2.5,10,5.5,7,8,9.5,10,7.5,13.5,11}); c.line({2,2,14,14}); }
     else if (n == "globe") { c.circle(8,8,6); c.line({2,8,14,8}); c.moveTo(8,2); c.cubicTo(10,4.2,10,11.8,8,14); c.moveTo(8,2); c.cubicTo(6,4.2,6,11.8,8,14); }
+    // Pipeline rows: mail arriving, and an account's labels.
+    else if (n == "fetch") { c.line({8,2.5,8,10.5}); c.line({4.5,7,8,10.5,11.5,7}); c.line({3,13,13,13}); }
+    else if (n == "tag") { c.line({2.5,2.5,7.7,2.5,13.5,8.3,8.3,13.5,2.5,7.7,2.5,2.5}); c.circle(5.4,5.4,0.9); }
     else if (n == "download") { c.line({8,2,8,10}); c.line({4.5,6.5,8,10,11.5,6.5}); c.line({2.5,11,2.5,14,13.5,14,13.5,11}); }
     else if (n == "google") {
         c.moveTo(13.6,8.2); c.cubicTo(13.6,7.8,13.6,7.5,13.5,7.2); c.lineTo(8,7.2); c.lineTo(8,9.2); c.lineTo(11.2,9.2);

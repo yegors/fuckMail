@@ -433,6 +433,9 @@ pub(crate) fn write_binding(
         crate::local_model::set_history_analysis(tx, account, false)?;
     }
     tx.execute("INSERT INTO accounts(id,name,email,provider) VALUES(?1,?2,?2,'google') ON CONFLICT(id) DO UPDATE SET name=CASE WHEN accounts.name=accounts.email THEN excluded.email ELSE accounts.name END,email=excluded.email",params![account,email])?;
+    if added {
+        crate::preferences::assign_account_color(tx, account)?;
+    }
     tx.execute(
         "INSERT OR IGNORE INTO account_metadata(account,signature_text,mail_retention,mail_since) VALUES(?1,'','1_year',?2)",
         params![account,crate::preferences::mail_retention_since("1_year")?],

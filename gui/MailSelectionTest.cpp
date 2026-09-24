@@ -571,13 +571,20 @@ public:
     static void accountControls() {
         Harness h;
         auto ordinary=h.engine.customRequest;
-        int scans=0,starts=0,stops=0,preferenceWrites=0;QJsonObject savedAccount,savedPreferences; bool stopped=false; QString requestedAccount,requestedRange;
+        int scans=0,starts=0,stops=0,preferenceWrites=0,settingsRevision=0;QJsonObject savedAccount,savedPreferences,savedAssist; bool stopped=false; QString requestedAccount,requestedRange;
         h.engine.customRequest=[&](auto *peer,const auto &request) {
             const auto method=request["method"].toString();QJsonObject result;
             if(method=="preferences_save") {++preferenceWrites;savedPreferences=request["params"].toObject()["preferences"].toObject();result={{"revision",preferenceWrites},{"preferences",savedPreferences}};}
             else if(method=="preferences_get")result={{"revision",preferenceWrites},{"preferences",QJsonObject::fromVariantMap(h.backend.preferences())}};
             else if(method=="account_update") {savedAccount=request["params"].toObject();auto row=h.backend.m_allAccounts[0].toMap();row["name"]=savedAccount["name"].toString();row["mail_retention"]=savedAccount["mail_retention"].toString();row["metadata_revision"]=1;h.backend.m_allAccounts[0]=row;result=QJsonObject::fromVariantMap(row);}
             else if(method=="assist_backlog") {++scans;result={{"job_id","coverage"},{"status","scanning"}};}
+            else if(method=="assist_progress") {
+                const bool batch=starts>0&&!stopped;
+                result={{"accounts",QJsonArray{QJsonObject{{"account","personal"},{"local",1200},{"eligible",1000},{"done",400},{"queued",batch?7:0},{"unprocessed",batch?593:600},
+                    {"model_configured",true},{"enabled",true},{"summaries",true},{"classification",true},{"paused",false},{"seconds_per_message",3.0},{"catching_up",batch}}}}};
+            }
+            else if(method=="assist_settings_get") result={{"revision",settingsRevision},{"settings",QJsonObject{{"accounts",QJsonObject{}}}}};
+            else if(method=="assist_settings_save") {++settingsRevision;savedAssist=request["params"].toObject();result={{"revision",settingsRevision},{"settings",savedAssist["settings"]}};}
             else if(method=="assist_jobs")result={{"items",QJsonArray{}}};
             else if(method=="assist_batch_start") {++starts;requestedAccount=request["account"].toString();requestedRange=request["params"].toObject()["range"].toString();result={{"job_id","batch"},{"status","running"},{"total",7}};}
             else if(method=="assist_cancel") {++stops;stopped=true;result={{"job_id","batch"},{"status","canceled"},{"completed",2},{"processed",2},{"total",7}};}
@@ -601,9 +608,12 @@ public:
         qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport AccountsTest\nApplicationWindow {visible:true;width:1280;height:800;color:Theme.canvas;palette.text:Theme.text;palette.base:Theme.surface;palette.window:Theme.canvas;palette.buttonText:Theme.text;function appearance(theme,size){Theme.themeId=theme;Theme.textSize=size} SettingsView {anchors.fill:parent;page:'Accounts'} }",QUrl::fromLocalFile(copy.filePath("Test.qml")));
         require(!qml.rootObjects().isEmpty(),"native Accounts loads");auto *window=qobject_cast<QQuickWindow*>(qml.rootObjects().first());
         auto *settings=find(window->contentItem(),"settingsView");require(settings,"account settings present");
-        await([&]{auto *button=find(window->contentItem(),"accountBacklog_personal");return button&&button->isEnabled();},"async coverage enables backlog menu");
-        require(scans==1 && starts==0,"viewing Accounts counts once without starting inference");
-        require(find(window->contentItem(),"accountAnalysisCount_personal")->property("text")=="400","actual processed counts displayed");
+        // The account is syncing, so its local model stage runs rather than pauses.
+        h.backend.m_googleSync={{"personal",QVariantMap{{"account","personal"},{"active",true},{"owned",true}}}};emit h.backend.googleSyncChanged();
+        await([&]{auto *button=find(window->contentItem(),"accountBacklog_personal");return button&&button->isVisible()&&button->isEnabled();},"unprocessed mail offers Catch up");
+        require(scans==0 && starts==0,"viewing Accounts reads cheap progress: no mail scan and no inference");
+        require(find(window->contentItem(),"accountAnalysisCount_personal")->property("text")=="400 of 1k","processed of eligible mail displayed");
+        require(find(window->contentItem(),"accountAnalysisStatus_personal")->property("text")=="600 not processed","unprocessed mail is named on the model row");
         const auto captureDir=qEnvironmentVariable("FM_BACKLOG_CAPTURE_DIR");
         auto capture=[&](const QString &name) {
             bool painted=false;const auto connection=QObject::connect(window,&QQuickWindow::frameSwapped,[&]{painted=true;});window->requestUpdate();await([&]{return painted;},"account frame");QObject::disconnect(connection);
@@ -611,16 +621,31 @@ public:
         };
         for(const auto theme:{"graphite","paper","terminal"}) {QMetaObject::invokeMethod(window,"appearance",Q_ARG(QVariant,QString(theme)),Q_ARG(QVariant,"default"));capture(QString("accounts-")+theme);}
         click(window,find(window->contentItem(),"accountBacklog_personal"),Qt::LeftButton);
-        await([&]{auto *item=find(window->contentItem(),"backlogRange_personal_week");return item&&item->isVisible();},"native date menu opens");
+        await([&]{auto *item=find(window->contentItem(),"backlogRange_personal_week");return item&&item->isVisible()&&item->isEnabled();},"Catch up counts each range when it opens");
+        require(scans==1,"only opening Catch up scans the account's mail");
         capture("backlog-menu");click(window,find(window->contentItem(),"backlogRange_personal_week"),Qt::LeftButton);
-        await([&]{return starts==1 && find(window->contentItem(),"stopBacklog_personal")->isVisible();},"range starts one real account command");
+        await([&]{return starts==1;},"range starts one real account command");
         require(requestedAccount=="personal"&&requestedRange=="week","batch freezes exact selected account and range");
-        const auto scansBeforeReturn=scans;
+        await([&]{auto *status=find(window->contentItem(),"accountAnalysisStatus_personal");return status&&status->property("text").toString().startsWith("40% · 7 queued");},"the running batch shows as queued work with its estimate");
         settings->setProperty("page","General");settings->setProperty("page","Accounts");
-        await([&]{return scans>scansBeforeReturn;},"returning to Accounts counts again instead of showing the old snapshot");
-        await([&]{auto item=find(window->contentItem(),"accountBatchStatus_personal");return item && item->property("text").toString().contains("2 of 7");},"progress survives navigation and reflects completed messages");
-        capture("backlog-running");click(window,find(window->contentItem(),"stopBacklog_personal"),Qt::LeftButton);
-        await([&]{return stops==1 && find(window->contentItem(),"accountBatchStatus_personal")->property("text").toString().contains("Stopped · 2 saved");},"Stop retains saved work and clears busy state");
+        capture("backlog-running");
+        auto *pause=find(window->contentItem(),"accountAiPause_personal");require(pause&&pause->isVisible(),"queued work can be paused");
+        click(window,pause,Qt::LeftButton);
+        await([&]{return stops==1 && savedAssist["settings"].toObject()["accounts"].toObject()["personal"].toObject()["paused"].toBool();},"pausing the model stops the batch and saves the account's pause");
+        // The avatar opens the colour picker; a swatch saves through account_update.
+        click(window,find(window->contentItem(),"accountAvatar_personal"),Qt::LeftButton);
+        await([&]{auto *swatch=find(window->contentItem(),"accountColor_6FB5B2");return swatch&&swatch->isVisible();},"avatar opens the 16-swatch colour picker");
+        capture("color-picker");
+        click(window,find(window->contentItem(),"accountColor_6FB5B2"),Qt::LeftButton);
+        await([&]{return savedAccount["color"].toString()=="#6FB5B2";},"a swatch saves the account colour");
+        savedAccount={};
+        // Edit › on the Labels row opens the per-account labels modal.
+        click(window,find(window->contentItem(),"editLabels_personal"),Qt::LeftButton);
+        await([&]{auto *title=find(window->contentItem(),"labelsDialogTitle");return title&&title->isVisible();},"Labels opens as a modal from Accounts");
+        require(find(window->contentItem(),"labelsDialogTitle")->property("text").toString().startsWith("Labels · "),"the modal names its account");
+        capture("labels-dialog");
+        click(window,find(window->contentItem(),"closeLabelsDialog"),Qt::LeftButton);
+        await([&]{auto *title=find(window->contentItem(),"labelsDialogTitle");return !title||!title->isVisible();},"the labels modal closes");
         window->resize(960,720);QMetaObject::invokeMethod(window,"appearance",Q_ARG(QVariant,"paper"),Q_ARG(QVariant,"large"));capture("accounts-narrow-large");
         auto *button=find(window->contentItem(),"accountBacklog_personal");require(button->mapToScene({button->width(),0}).x()<=window->width(),"backlog control stays within narrow settings");
         window->resize(1280,900);QMetaObject::invokeMethod(window,"appearance",Q_ARG(QVariant,"graphite"),Q_ARG(QVariant,"default"));

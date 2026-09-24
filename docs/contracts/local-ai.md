@@ -1,5 +1,23 @@
 # Local mail analysis
 
+## D112 — progress, pause and sample timing (Local assistance24)
+
+- **`assist_progress`.** Takes an optional account and returns per active account:
+  - `local` and `eligible` messages;
+  - `done`: every enabled task has a saved result. This is not re-validated against later label or prompt changes, which the watcher requeues;
+  - `queued`: rows past the watcher cursor that are enabled, not paused, missing a result and not before the history cutoff, plus the remaining messages of a running Catch up;
+  - `unprocessed`: `eligible - done - queued`;
+  - `model_configured`, `enabled`, `summaries`, `classification`, `paused`, `held`, `catching_up` and `history_cutoff`;
+  - `seconds_per_message`: the engine's running average (0.8 old, 0.2 new) of completed analysis times for that account, or null.
+
+  All counts are COUNT queries, safe to poll. The Backlog scan (`assist_backlog`) runs only when Catch up opens.
+- **Model pause.** `Account.paused` (default false; omitted when false) makes the watcher skip that account. Turning analysis on, or resuming, requeues its synced mail.
+- **Hold.** A successful `google_sync_release` holds the account's model work in this engine session, and `google_sync_start` releases it and requeues the account.
+- **Sample test.** The sample `assist_start` job adds `metrics` (`first_token_ms`, `output_tokens`, `generation_ms`, `tokens_per_second`, `total_ms`) and `raw` to its item. A failed sample carries both on its error. Only the synthetic sample returns raw reply text.
+- **Prompt variables.** `{{labels}}` and `{{partial}}` may be omitted from the request template; `{{model}}`, `{{messages}}` and `{{source_ids}}` stay required, each at most once.
+
+Consumers: GUI Accounts card, account tabs and hover card, Local LLM page; CLI `assist progress`.
+
 ## D108 — first-sync history waits for the Backlog (Local assistance23)
 
 A newly bound Google account stores its addition time as `local_model_history_cutoff:<account>` (Unix ms) in `meta`. The arrivals watcher skips that account's mail dated before the cutoff, or with an unreadable date. Such mail is left to an explicit Backlog run (`assist_batch_start`). `account_update.analyze_history=true` removes the cutoff and queues the account's synced mail from its first row. `false` sets the cutoff only if none exists. Reconnecting keeps the saved choice. Accounts without a cutoff, including existing and synthetic ones, keep D097 behavior. This supersedes D097 for new accounts only. Consumers: GUI Step 3 **Summarize & label** (shown with a configured model, default New mail only), CLI `account-update --analyze-history`, Core60.

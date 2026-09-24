@@ -27,6 +27,12 @@ pub struct Runtime {
     slots: Arc<Semaphore>,
     active: Arc<Semaphore>,
     watches: Mutex<BTreeMap<String, CancellationToken>>,
+    /// Observed seconds per message for each account, averaged over recent
+    /// completed messages; the Accounts view estimates its remaining time from it.
+    speeds: Mutex<BTreeMap<String, f64>>,
+    /// Accounts whose sync was paused in this engine session. Pausing an account
+    /// pauses both of its stages; resuming queues what the watcher skipped.
+    held: Mutex<std::collections::BTreeSet<String>>,
 }
 /// Failures of the runner or its authority, not of one message: a queue should
 /// stop and retry later rather than record every remaining message as failed.
@@ -50,7 +56,74 @@ impl Runtime {
             slots: Arc::new(Semaphore::new(16)),
             active: Arc::new(Semaphore::new(1)),
             watches: Mutex::new(BTreeMap::new()),
+            speeds: Mutex::new(BTreeMap::new()),
+            held: Mutex::new(Default::default()),
         }
+    }
+    pub fn hold(&self, account: &str) {
+        self.held.lock().unwrap().insert(account.to_owned());
+    }
+    pub async fn release(&self, account: &str) {
+        if self.held.lock().unwrap().remove(account) {
+            let account = account.to_owned();
+            let _ = self
+                .core
+                .call(move |s| s.local_model_requeue_account(&account))
+                .await;
+        }
+    }
+    fn record_speed(&self, account: &str, seconds: f64) {
+        let mut speeds = self.speeds.lock().unwrap();
+        let average = speeds.entry(account.to_owned()).or_insert(seconds);
+        *average = *average * 0.8 + seconds * 0.2;
+    }
+    /// Cheap per-account progress for the Accounts view and account tabs.
+    async fn progress(&self, account: Option<&str>) -> Result<Value> {
+        let account = account.map(str::to_owned);
+        let mut progress = self
+            .core
+            .call(move |s| s.local_model_progress(account.as_deref()))
+            .await?;
+        let speeds = self.speeds.lock().unwrap().clone();
+        let jobs: Vec<(String, u64, u64)> = self
+            .jobs
+            .lock()
+            .unwrap()
+            .values()
+            .filter(|j| {
+                j.state["kind"] == "backlog"
+                    && matches!(j.state["status"].as_str(), Some("queued" | "running"))
+                    && !j.cancel.is_cancelled()
+            })
+            .filter_map(|j| {
+                Some((
+                    j.account.clone()?,
+                    j.state["total"].as_u64().unwrap_or(0),
+                    j.state["processed"]
+                        .as_u64()
+                        .or(j.state["completed"].as_u64())
+                        .unwrap_or(0),
+                ))
+            })
+            .collect();
+        let held = self.held.lock().unwrap().clone();
+        for row in progress["accounts"].as_array_mut().unwrap() {
+            let id = row["account"].as_str().unwrap_or_default().to_owned();
+            row["seconds_per_message"] = json!(speeds.get(&id));
+            row["held"] = json!(held.contains(&id));
+            // A running Catch up moves its remaining messages from unprocessed to queued.
+            let remaining: u64 = jobs
+                .iter()
+                .filter(|(a, _, _)| *a == id)
+                .map(|(_, total, done)| total.saturating_sub(*done))
+                .sum();
+            let unprocessed = row["unprocessed"].as_u64().unwrap_or(0);
+            let moved = remaining.min(unprocessed);
+            row["queued"] = json!(row["queued"].as_u64().unwrap_or(0) + moved);
+            row["unprocessed"] = json!(unprocessed - moved);
+            row["catching_up"] = json!(remaining > 0);
+        }
+        Ok(progress)
     }
     pub fn handles(method: &str) -> bool {
         matches!(
@@ -64,6 +137,7 @@ impl Runtime {
                 | "assist_jobs"
                 | "assist_backlog"
                 | "assist_batch_start"
+                | "assist_progress"
         )
     }
     pub async fn handle(
@@ -101,6 +175,7 @@ impl Runtime {
             ));
         }
         match method {
+            "assist_progress" => self.progress(account).await,
             "assist_backlog" => self.backlog(owner, account, cancel).await,
             "assist_batch_start" => self.start_backlog(owner, cancel, account, &p).await,
             "assist_jobs" => Ok(
@@ -190,6 +265,10 @@ impl Runtime {
                         // sync order. A full queue does not advance past unprocessed mail.
                         let mut admitted = true;
                         for m in rows["messages"].as_array().unwrap() {
+                            // A paused account's mail is queued again when it resumes.
+                            if m["account"].as_str().is_some_and(|a| runtime.held.lock().unwrap().contains(a)) {
+                                continue;
+                            }
                             let request = json!({"task":m["task"],"conversation_id":m["conversation_id"],"message_id":m["id"]});
                             match runtime
                                 .start(
@@ -403,9 +482,18 @@ impl Runtime {
      diagnostics::event("Model","started",json!({"job_ref":&job_id[..8],"target_ref":diagnostics::reference("message","sample-message"),"task":task,"origin":"sample","input_chars":payload.to_string().chars().count(),
         "provider":settings.provider.as_str(),"model":settings.model(&task).map(|m|m.name.as_str()),
         "model_digest":settings.model(&task).map(|m|m.digest.as_str())}));
-     let output=ollama::infer(&settings,&task,payload,&categories,&sources,&token).await?;
+     // The synthetic sample shows its timing and, when invalid, the raw reply.
+     let measure=Mutex::new(Value::Null);
+     let result=ollama::infer_measured(&settings,&task,payload,&categories,&sources,&token,&measure).await;
+     let mut metrics=measure.lock().unwrap().clone();
+     let total_ms=started.elapsed().as_millis() as u64;
+     let raw=metrics.as_object_mut().and_then(|m|m.remove("raw")).unwrap_or(Value::Null);
+     if !metrics.is_object(){metrics=json!({});}
+     metrics["total_ms"]=json!(total_ms);
+     metrics["tokens_per_second"]=json!(metrics["output_tokens"].as_f64().zip(metrics["generation_ms"].as_f64()).filter(|(_,ms)|*ms>0.0).map(|(t,ms)|(t*10000.0/ms).round()/10.0));
+     let output=match result{Ok(output)=>output,Err(mut e)=>{e.details=json!({"metrics":metrics,"raw":raw});return Err(e);}};
      diagnostics::event("Model","completed",analysis_fields(&job_id,"","sample-message",&task,"sample",&output,false,started));
-     outputs.push(json!({"task":task,"output":output,"sample":true}));
+     outputs.push(json!({"task":task,"output":output,"sample":true,"metrics":metrics,"raw":raw}));
     }else{for plan in plans{
      if token.is_cancelled(){return Err(failure("assistance_canceled","Canceled"));}
      let check=plan.clone();runtime.core.call(move|s|s.local_model_validate(&check)).await?;
@@ -415,6 +503,7 @@ impl Runtime {
         "provider":plan.settings.provider.as_str(),"model":plan.settings.model(&task).map(|m|m.name.as_str()),
         "model_digest":plan.settings.model(&task).map(|m|m.digest.as_str())}));
      let output=ollama::infer(&plan.settings,&task,plan.payload.clone(),&plan.categories,&plan.sources,&token).await?;
+     runtime.record_speed(&plan.account,started.elapsed().as_secs_f64());
      let mut facts=analysis_fields(&job_id,&plan.account,&plan.target,&task,origin,&output,plan.partial,started);
      let stop=token.clone();let result=runtime.core.call(move|s|{if stop.is_cancelled(){return Err(failure("assistance_canceled","Canceled"));}s.local_model_finish(&plan,output)}).await?;
      facts["label_state"]=if task=="message" {result["items"].as_array().and_then(|items|items.iter().find(|item|item["task"]=="classification")).map(|item|item["label_state"].clone()).unwrap_or(Value::Null)}else{result["label_state"].clone()};
@@ -430,9 +519,15 @@ impl Runtime {
             } else {
                 "failed"
             };
-            let error = result
-                .err()
-                .map(|e| json!({"code":e.code,"message":e.message}));
+            let error = result.err().map(|e| {
+                let mut error = json!({"code":e.code,"message":e.message});
+                // Only the synthetic sample attaches measurements or its raw reply.
+                if sample && e.details.is_object() {
+                    error["metrics"] = e.details["metrics"].clone();
+                    error["raw"] = e.details["raw"].clone();
+                }
+                error
+            });
             if let Some(error) = &error {
                 diagnostics::event("Model","failed",json!({"job_ref":&job_id[..8],"task":task,"code":error["code"],"completed":outputs.len(),"total":total}));
             } else if status == "canceled" {

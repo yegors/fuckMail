@@ -98,6 +98,9 @@ enum Command {
         /// added (true), or leave it for `assist batch` (false, the default).
         #[arg(long)]
         analyze_history: Option<bool>,
+        /// The account's colour, one of the 16 palette entries such as #6FB5B2.
+        #[arg(long)]
+        color: Option<String>,
         #[arg(long)]
         name: String,
         #[arg(long)]
@@ -668,6 +671,8 @@ enum Labels {
 enum Assist {
     /// Count retained incoming mail and missing local analysis, without running inference.
     Backlog,
+    /// Quick per-account counts: analysed, queued for the watcher and unprocessed.
+    Progress,
     /// Process missing analysis in this account; Ctrl-C stops and keeps finished results.
     Batch {
         #[arg(long, value_parser = ["week", "month", "year", "all"])]
@@ -2142,6 +2147,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 }
                 Assist::Settings => ("assist_settings_get", json!({})),
                 Assist::Backlog => ("assist_backlog", json!({})),
+                Assist::Progress => ("assist_progress", json!({})),
                 Assist::Batch { range } => ("assist_batch_start", json!({"range":range})),
                 Assist::Configure {
                     settings_file,
@@ -2256,6 +2262,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             mail_retention,
             mail_access,calendar_access,
             analyze_history,
+            color,
             name,
             signature_file,
             expected_revision,
@@ -2266,6 +2273,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
             let mut params=json!({"name":name,"signature_text":signature,"expected_revision":expected_revision,"request_id":request_id});
             if let Some(retention)=mail_retention {params["mail_retention"]=json!(retention);}
             if let Some(analyze)=analyze_history {params["analyze_history"]=json!(analyze);}
+            if let Some(color)=color {params["color"]=json!(color);}
             if let (Some(mail),Some(calendar))=(mail_access,calendar_access) {
                 params["sync"]=json!({"mail":mail!="none","calendar":calendar!="none","mail_access":if mail=="none" {"read"} else {&mail},"calendar_access":if calendar=="none" {"read"} else {&calendar}});
             }

@@ -593,3 +593,63 @@ fn a_new_account_leaves_its_existing_mail_to_the_backlog_unless_chosen() {
         "reconnecting keeps the person's choice"
     );
 }
+
+#[test]
+fn new_accounts_take_distinct_palette_colours_that_can_be_changed() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open_live(dir.path()).unwrap();
+    let first = store
+        .bind_google_account("colour-one", "one@example.test", &scopes(), None)
+        .unwrap();
+    let revision = store.preferences().unwrap()["revision"].clone();
+    let second = store
+        .bind_google_account("colour-two", "two@example.test", &scopes(), None)
+        .unwrap();
+    assert_eq!(
+        store.preferences().unwrap()["revision"],
+        revision,
+        "adding an account leaves shared preference saves valid"
+    );
+    let color = |store: &Store, id: &str| -> Value {
+        store.accounts().unwrap()["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == id)
+            .unwrap()["color"]
+            .clone()
+    };
+    assert_eq!(color(&store, &first), crate::preferences::ACCOUNT_COLORS[0]);
+    assert_eq!(color(&store, &second), crate::preferences::ACCOUNT_COLORS[1]);
+    let row = |store: &Store| -> Value {
+        store.accounts().unwrap()["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["id"] == first)
+            .unwrap()
+            .clone()
+    };
+    let before = row(&store);
+    store
+        .handle(
+            "account_update",
+            Some(&first),
+            json!({"name":before["name"],"signature_text":"","color":"#6fb5b2","expected_revision":before["metadata_revision"],"request_id":"colour"}),
+        )
+        .unwrap();
+    assert_eq!(color(&store, &first), "#6FB5B2");
+    let after = row(&store);
+    assert_eq!(
+        store
+            .handle(
+                "account_update",
+                Some(&first),
+                json!({"name":after["name"],"signature_text":"","color":"#123456","expected_revision":after["metadata_revision"],"request_id":"off-palette"}),
+            )
+            .unwrap_err()
+            .code,
+        "invalid_request",
+        "only palette colours are accepted"
+    );
+}

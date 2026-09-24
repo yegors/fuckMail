@@ -14,7 +14,6 @@ ColumnLayout {
         if(local.x<0 || local.y<0 || local.x>activeRow.width || local.y>activeRow.height)recording=""
     }
     spacing: 0
-    Layout.maximumWidth: 560
     onVisibleChanged: if (!visible) recording = ""
     // Single letters read as typed ("j"); combinations keep their names.
     function keyText(key) { const text = ShortcutRegistry.label(key); return /^[A-Z]$/.test(text) ? text.toLowerCase() : text }
@@ -29,11 +28,6 @@ ColumnLayout {
         map[row.id] = key || null
         backend.setPreferences({shortcuts:map}); recording = ""
         hint = moved.length ? ShortcutRegistry.label(key) + " moved from ‘" + moved.join("’, ‘") + "’, which now has no shortcut." : ""
-    }
-    Text {
-        text:"Single keys or combinations with " + (Qt.platform.os === "osx" ? "Ctrl, Alt, Shift or Cmd" : "Ctrl, Alt or Shift") + ". Single keys work whenever the cursor is not in a text field."
-        color:Theme.muted; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(13.5); Layout.fillWidth:true; wrapMode:Text.Wrap
-        lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(13.5) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight)
     }
     Repeater {
         model: ShortcutRegistry.sections

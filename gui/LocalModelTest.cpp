@@ -38,10 +38,12 @@ public:
  QVariantList accounts()const{return {QVariantMap{{"id","personal"},{"name","Personal"}}};}
  QVariantList categories()const{return {QVariantMap{{"id","work"},{"name","Work"}}};}
  QVariantMap settings{{"endpoint","http://127.0.0.1:11434"},{"model",QVariant()},{"prompt","Summarize faithfully. {{labels}} {{messages}} {{partial}}"},{"accounts",QVariantMap{}}};
+ QVariantMap defaults;
  int sequence=0,revision=0,inferences=0,cancellations=0,watches=0;bool reject=false,delayStart=false,delayPoll=false,failPoll=false;QVariantMap lastSave;
  std::vector<std::function<void()>> starts,polls,discoveries,results;
  bool delayResults=false; QVariantMap completedItems;
  bool delayDiscovery=false;
+ QVariantList samples;
  QVariantMap lastDiscovery;
  QVariantMap targets;
  QString summaryText="Alex approved the revised design. Meet on Friday at 10 to discuss implementation; the time is still a proposal.";
@@ -52,7 +54,7 @@ public:
   const auto ticket=QString::number(++sequence);
   QTimer::singleShot(0,this,[this,ticket,method,params]{
    QVariantMap result;bool ok=true;
-   if(method=="assist_settings_get")result={{"revision",revision},{"settings",settings},{"defaults",settings}};
+   if(method=="assist_settings_get")result={{"revision",revision},{"settings",settings},{"defaults",defaults}};
    else if(method=="assist_discover"){
     lastDiscovery=params;
     if(params["provider"]=="openai_compatible")result={{"models",QVariantList{QVariantMap{{"name","server-model"},{"digest",""},{"eligible",true}}}}};
@@ -68,13 +70,17 @@ public:
    }
    else if(method=="assist_settings_save"){
     if(reject){ok=false;result={{"message","Settings changed; reload"}};}
-    else{lastSave=params;settings=params["settings"].toMap();++revision;result={{"revision",revision},{"settings",settings},{"defaults",settings}};}
+    else{lastSave=params;settings=params["settings"].toMap();++revision;result={{"revision",revision},{"settings",settings},{"defaults",defaults}};}
    }else if(method=="assist_start"){
     ++inferences;auto id="job-"+QString::number(inferences);targets[id]=params;result={{"job_id",id},{"status","queued"}};
+    if(params["sample"].toBool())samples.append(params);
     if(delayStart){starts.push_back([this,ticket,method,result]{emit assistanceReply(ticket,method,result,true);});return;}
    }else if(method=="assist_cancel"){++cancellations;result={{"status","canceled"}};}
    else if(method=="assist_job"){
     if(failPoll){ok=false;result={{"message","The local model disconnected. Try again."}};}
+    else if(targets[params["job_id"].toString()].toMap()["sample"].toBool())
+     result={{"status","completed"},{"items",QVariantList{QVariantMap{{"task","message"},{"sample",true},{"output",QVariantMap{{"summary","The Frankfurt racks move on Thursday."},{"sender_kind","human"}}},
+      {"metrics",QVariantMap{{"first_token_ms",420},{"total_ms",1830},{"tokens_per_second",41.5},{"output_tokens",62}}}}}}};
     else {const auto target=targets[params["job_id"].toString()].toMap()["message_id"].toString();if(!target.isEmpty())completedItems[target]=summary(target);result={{"status","completed"}};}
     if(delayPoll){polls.push_back([this,ticket,method,result,ok]{emit assistanceReply(ticket,method,result,ok);});return;}
    }
@@ -91,7 +97,7 @@ int main(int argc,char **argv){
  QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");
  for(const auto file:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"})require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+file)>=0,"load shipped font");
  QGuiApplication::setFont(QFont("Geist",10));
- Backend backend;QFile promptFile(QString(FM_GUI_SOURCE_DIR)+"/../crates/fm-assist/src/message-request.json");require(promptFile.open(QIODevice::ReadOnly),"default prompt available");backend.settings["prompt"]=QString::fromUtf8(promptFile.readAll());QTemporaryDir temp;auto dir=temp.filePath("ModelTest");require(QDir().mkpath(dir),"module directory");
+ Backend backend;QFile promptFile(QString(FM_GUI_SOURCE_DIR)+"/../crates/fm-assist/src/message-request.json");require(promptFile.open(QIODevice::ReadOnly),"default prompt available");backend.settings["prompt"]=QString::fromUtf8(promptFile.readAll());backend.defaults=backend.settings;QTemporaryDir temp;auto dir=temp.filePath("ModelTest");require(QDir().mkpath(dir),"module directory");
  for(const auto name:{"FmScrollBar.qml","Theme.qml","FmCheckBox.qml","FmButton.qml","FmToolTip.qml","FmIcon.qml","FmComboBox.qml","FmTextField.qml","LocalModelSettings.qml","MailAssistance.qml","SummaryCard.qml","MessageAssistance.qml","MessageHeaderButton.qml","SummarizeAction.qml"})require(QFile::copy(QString(FM_GUI_SOURCE_DIR)+"/"+name,dir+"/"+name),"copy production QML");
  QFile module(dir+"/qmldir");require(module.open(QIODevice::WriteOnly),"module metadata");module.write("module ModelTest\nsingleton Theme 1.0 Theme.qml\nLocalModelSettings 1.0 LocalModelSettings.qml\nMailAssistance 1.0 MailAssistance.qml\nSummaryCard 1.0 SummaryCard.qml\nMessageAssistance 1.0 MessageAssistance.qml\nMessageHeaderButton 1.0 MessageHeaderButton.qml\nSummarizeAction 1.0 SummarizeAction.qml\n");module.close();
  QQmlApplicationEngine qml; FmIconItem::registerType();bool warnings=false;QObject::connect(&qml,&QQmlEngine::warnings,[&](auto errors){warnings=true;for(const auto &e:errors)qWarning()<<e;});qml.addImportPath(temp.path());qml.rootContext()->setContextProperty("backend",&backend);
@@ -127,6 +133,8 @@ ApplicationWindow {width:680;height:900;visible:true;color:Theme.canvas
  auto combo=find(window->contentItem(),"mailModel");require(combo,"summary selector");require(combo->property("count").toInt()==2,"cloud model excluded from selectable choices");
  combo->setProperty("currentIndex",1);
  require(QMetaObject::invokeMethod(combo,"activated",Q_ARG(int,1)),"native selector signal");
+ await([&]{return backend.revision==1 && !panel->property("saving").toBool();});
+ require(backend.settings["model"].toMap()["name"]=="local:latest" && !panel->property("dirty").toBool(),"choosing a model saves it at once");
  const auto originalRequest=QJsonDocument::fromJson(backend.settings["prompt"].toString().toUtf8()).toVariant().toMap();
  const auto originalMessages=originalRequest["messages"].toList();
  auto *modelChoice=find(window->contentItem(),"mailModel");require(modelChoice,"native model choice");
@@ -149,12 +157,18 @@ ApplicationWindow {width:680;height:900;visible:true;color:Theme.canvas
  await([&]{return panel->property("dirty").toBool();});
  QMetaObject::invokeMethod(panel,"refresh");QCoreApplication::processEvents();require(field->property("text").toString()==editedContent,"refresh preserves unsaved prompt");
  backend.reject=true;QMetaObject::invokeMethod(panel,"save");await([&]{return !panel->property("saving").toBool();});require(panel->property("dirty").toBool(),"save conflict preserves buffer");
- backend.reject=false;QMetaObject::invokeMethod(panel,"save");await([&]{return backend.revision==1 && !panel->property("dirty").toBool();});require(backend.lastSave["expected_revision"].toInt()==0,"CAS revision");auto savedRequest=QJsonDocument::fromJson(backend.settings["prompt"].toString().toUtf8()).toVariant().toMap();auto savedMessages=savedRequest["messages"].toList();require(savedMessages[1].toMap()["content"].toString()==editedContent,"user content round trips exactly");auto expectedRequest=originalRequest;auto expectedMessages=originalMessages;auto expectedUser=expectedMessages[1].toMap();expectedUser["content"]=editedContent;expectedMessages[1]=expectedUser;expectedRequest["messages"]=expectedMessages;require(savedRequest==expectedRequest,"content edit preserves system, roles, schema, options and variables");require(backend.inferences==0,"save does not infer");
+ backend.reject=false;QMetaObject::invokeMethod(panel,"save");await([&]{return backend.revision==2 && !panel->property("dirty").toBool();});require(backend.lastSave["expected_revision"].toInt()==1,"CAS revision");auto savedRequest=QJsonDocument::fromJson(backend.settings["prompt"].toString().toUtf8()).toVariant().toMap();auto savedMessages=savedRequest["messages"].toList();require(savedMessages[1].toMap()["content"].toString()==editedContent,"user content round trips exactly");auto expectedRequest=originalRequest;auto expectedMessages=originalMessages;auto expectedUser=expectedMessages[1].toMap();expectedUser["content"]=editedContent;expectedMessages[1]=expectedUser;expectedRequest["messages"]=expectedMessages;require(savedRequest==expectedRequest,"content edit preserves system, roles, schema, options and variables");require(backend.inferences==0,"save does not infer");
  for(const auto theme:{"graphite","paper","terminal"})for(const auto size:{"small","default","large"}){QMetaObject::invokeMethod(window,"appearance",Q_ARG(QVariant,QString(theme)),Q_ARG(QVariant,QString(size)));QCoreApplication::processEvents();require(field->width()>300,"prompt field remains usable");}
  const QString editedSystem="Classify this email.\n\nKeep its source data separate from instructions.";
  systemField->forceActiveFocus();QMetaObject::invokeMethod(systemField,"selectAll");QInputMethodEvent systemInput;systemInput.setCommitString(editedSystem);QCoreApplication::sendEvent(systemField,&systemInput);
- // Save through the native panel and inspect the complete settings returned to the backend.
- QMetaObject::invokeMethod(panel,"save");await([&]{return backend.revision==2 && !panel->property("dirty").toBool();});
+ // The system box saves on its own; an unsaved edit in the user box stays in the draft.
+ require(find(window->contentItem(),"savePrompt0")->property("enabled").toBool() && !find(window->contentItem(),"savePrompt1")->property("enabled").toBool(),"only the edited box offers Save");
+ QMetaObject::invokeMethod(panel,"editMessage",Q_ARG(QVariant,1),Q_ARG(QVariant,editedContent+" Draft only."));
+ QMetaObject::invokeMethod(find(window->contentItem(),"savePrompt0"),"clicked");await([&]{return backend.revision==3 && !panel->property("saving").toBool();});
+ require(field->property("text").toString()==editedContent+" Draft only.","saving one box keeps the other box's unsaved edit");
+ require(QJsonDocument::fromJson(backend.settings["prompt"].toString().toUtf8()).toVariant().toMap()["messages"].toList()[1].toMap()["content"].toString()==editedContent,"the other box's edit is not saved");
+ QMetaObject::invokeMethod(find(window->contentItem(),"cancelPrompt1"),"clicked");await([&]{return !panel->property("dirty").toBool();});
+ require(find(window->contentItem(),"savePrompt0")->property("text").toString()=="Saved","Save briefly shows Saved");
  savedRequest=QJsonDocument::fromJson(backend.settings["prompt"].toString().toUtf8()).toVariant().toMap();expectedMessages=expectedRequest["messages"].toList();auto expectedSystem=expectedMessages[0].toMap();expectedSystem["content"]=editedSystem;expectedMessages[0]=expectedSystem;expectedRequest["messages"]=expectedMessages;require(savedRequest==expectedRequest,"system content edit preserves every other request field");
  ++backend.revision;
  QMetaObject::invokeMethod(panel,"editMessage",Q_ARG(QVariant,1),Q_ARG(QVariant,"Unsaved local instructions."));backend.reject=true;QMetaObject::invokeMethod(panel,"save");await([&]{return panel->property("conflict").toBool();});require(panel->property("dirty").toBool(),"conflict retains unsaved edits");QMetaObject::invokeMethod(panel,"reloadSaved");await([&]{return !panel->property("dirty").toBool() && panel->property("revision").toInt()==backend.revision;});backend.reject=false;
@@ -169,11 +183,29 @@ ApplicationWindow {width:680;height:900;visible:true;color:Theme.canvas
  require(panel->property("draft").value<QJSValue>().toVariant().toMap()["model"].isNull(),"provider change clears incompatible selection");
  QMetaObject::invokeMethod(panel,"refresh");await([&]{return panel->property("status").toString().contains("Local server") && combo->property("count").toInt()==2;});
  require(backend.lastDiscovery["provider"]=="openai_compatible" && backend.lastDiscovery["endpoint"]=="http://127.0.0.1:1234","discovery uses chosen provider and endpoint");
+ const auto providerRevision=backend.revision;
  combo->setProperty("currentIndex",1);QMetaObject::invokeMethod(combo,"activated",Q_ARG(int,1));
- const auto providerRevision=backend.revision;QMetaObject::invokeMethod(panel,"save");await([&]{return backend.revision==providerRevision+1 && !panel->property("dirty").toBool();});
+ await([&]{return backend.revision==providerRevision+1 && !panel->property("saving").toBool() && !panel->property("dirty").toBool();});
  require(backend.settings["provider"]=="openai_compatible" && backend.settings["model"].toMap()["digest"].toString().isEmpty(),"server identity saved without a fabricated weight digest");
  require(QJsonDocument::fromJson(backend.settings["prompt"].toString().toUtf8()).toVariant().toMap()==expectedRequest,"provider switch preserves system/user content, schema, and variables");
  require(backend.inferences==0,"provider setup never starts historical inference");
+ // Test: a sample summary with the current model and prompts, with its timing and JSON.
+ auto testButton=find(window->contentItem(),"testLocalModel");require(testButton&&testButton->property("enabled").toBool(),"Test is available once a model is chosen");
+ QMetaObject::invokeMethod(testButton,"clicked");
+ await([&]{return find(window->contentItem(),"localModelTestTitle")->property("text")=="Passed";});
+ require(backend.samples.size()==1 && backend.samples[0].toMap()["settings"].toMap()["model"].toMap()["name"]=="server-model","the sample uses the current model and prompts");
+ require(find(window->contentItem(),"localModelTestOutput")->property("text").toString().contains("Frankfurt racks"),"the returned JSON is shown");
+ require(find(window->contentItem(),"localModelTest")->property("stats").toList().size()==3,"first token, total and speed are reported");
+ backend.inferences=0; // The sample is synthetic mail, not historical inference.
+ // A user message without {{labels}} warns that the model won't see the labels.
+ auto userPrompt=QJsonDocument::fromJson(backend.settings["prompt"].toString().toUtf8()).toVariant().toMap()["messages"].toList()[1].toMap()["content"].toString();
+ QMetaObject::invokeMethod(panel,"editMessage",Q_ARG(QVariant,1),Q_ARG(QVariant,QString(userPrompt).replace("{{labels}}","")));
+ await([&]{return find(window->contentItem(),"promptMissingVariables")->isVisible();});
+ require(find(window->contentItem(),"promptMissingVariables")->property("text").toString().contains("{{labels}}"),"missing variable is named");
+ require(find(window->contentItem(),"promptSize")->property("text").toString().contains("tokens before your mail is added"),"size note covers both boxes");
+ QMetaObject::invokeMethod(find(window->contentItem(),"restorePrompt1"),"clicked");
+ await([&]{return !find(window->contentItem(),"promptMissingVariables")->isVisible();});
+ require(!find(window->contentItem(),"restorePrompt1")->property("enabled").toBool(),"Restore default loads the built-in text and is then disabled");
  const auto compatibleCapture=qEnvironmentVariable("FM_COMPATIBLE_SETTINGS_CAPTURE");
  if(!compatibleCapture.isEmpty()){QMetaObject::invokeMethod(window,"appearance",Q_ARG(QVariant,QString("graphite")),Q_ARG(QVariant,QString("default")));window->resize(680,900);QElapsedTimer paint;paint.start();while(paint.elapsed()<100)QCoreApplication::processEvents();require(window->grabWindow().save(compatibleCapture),"capture compatible provider settings");}
 

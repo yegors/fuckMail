@@ -69,13 +69,14 @@ async fn qualify(endpoint: &str, name: &str, cancel: &CancellationToken) -> Resu
     }
     Ok(())
 }
-pub async fn infer(
+pub async fn infer_measured(
     settings: &Settings,
     task: &str,
     payload: Value,
     categories: &[String],
     sources: &[String],
     cancel: &CancellationToken,
+    measure: &std::sync::Mutex<Value>,
 ) -> Result<Value> {
     let model = settings
         .model(task)
@@ -103,6 +104,13 @@ pub async fn infer(
         cancel,
     )
     .await?;
+    // This non-streaming API reports token usage but no timing.
+    *measure.lock().unwrap() = json!({
+        "first_token_ms": null,
+        "output_tokens": result["usage"]["completion_tokens"],
+        "generation_ms": null,
+        "raw": result["choices"][0]["message"]["content"],
+    });
     let content = response_content(&result, &model.name)?;
     let output = validate_output(task, content, categories, sources)?;
     qualify(&settings.endpoint, &model.name, cancel).await?;
@@ -170,7 +178,7 @@ mod tests {
         json!({"summary":"The design is approved. Reply with your availability for Friday.","source_ids":["message"],"sender_kind":"human","category_ids":["work"],"category_abstain":false,"reason":"Direct personal request"})
     }
     fn response() -> Value {
-        json!({"model":"local-model","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":output().to_string(),"tool_calls":null}}]})
+        json!({"model":"local-model","usage":{"completion_tokens":42},"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":output().to_string(),"tool_calls":null}}]})
     }
     async fn server(
         replies: Vec<(u16, String)>,
@@ -237,17 +245,22 @@ mod tests {
         };
         settings.validate().unwrap();
         let payload = json!({"messages":[{"id":"message","body":"Literal {{labels}} remains email text.\nPlease reply Friday."}],"labels":[{"id":"work","name":"Work"}],"partial":false});
-        let result = crate::ollama::infer(
+        let measure = std::sync::Mutex::new(Value::Null);
+        let result = crate::ollama::infer_measured(
             &settings,
             "message",
             payload.clone(),
             &["work".into()],
             &["message".into()],
             &CancellationToken::new(),
+            &measure,
         )
         .await
         .unwrap();
         assert_eq!(result, output());
+        let measured = measure.lock().unwrap().clone();
+        assert_eq!(measured["output_tokens"], 42, "token usage reaches the sample test");
+        assert!(measured["first_token_ms"].is_null() && measured["raw"].is_string());
         let requests = server.await.unwrap();
         assert_eq!(
             requests.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(),

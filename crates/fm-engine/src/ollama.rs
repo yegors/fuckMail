@@ -173,9 +173,34 @@ pub async fn infer(
     sources: &[String],
     cancel: &CancellationToken,
 ) -> Result<Value> {
+    infer_measured(
+        settings,
+        task,
+        payload,
+        categories,
+        sources,
+        cancel,
+        &std::sync::Mutex::new(Value::Null),
+    )
+    .await
+}
+/// `infer`, also recording what the provider reports about the last reply:
+/// `first_token_ms`, `output_tokens`, `generation_ms` and the `raw` text.
+/// Only the synthetic sample test shows these; real mail text is never kept.
+pub async fn infer_measured(
+    settings: &Settings,
+    task: &str,
+    payload: Value,
+    categories: &[String],
+    sources: &[String],
+    cancel: &CancellationToken,
+    measure: &std::sync::Mutex<Value>,
+) -> Result<Value> {
     if !settings.provider.is_ollama() {
-        return crate::openai_local::infer(settings, task, payload, categories, sources, cancel)
-            .await;
+        return crate::openai_local::infer_measured(
+            settings, task, payload, categories, sources, cancel, measure,
+        )
+        .await;
     }
     let model = settings
         .model(task)
@@ -192,6 +217,7 @@ pub async fn infer(
     let generation = async {
         for attempt in 0..2 {
             let result = request(&settings.endpoint, "chat", Some(body.clone()), cancel).await?;
+            *measure.lock().unwrap() = measurement(&result);
             match response_output(task, &result, &model.name, categories, sources) {
                 Ok(output) => return Ok(output),
                 Err(error)
@@ -242,6 +268,17 @@ pub async fn infer(
         ));
     }
     Ok(output)
+}
+/// Ollama reports nanosecond durations; the first token follows model loading
+/// and prompt evaluation.
+fn measurement(result: &Value) -> Value {
+    let ms = |key: &str| result[key].as_u64().map(|ns| ns / 1_000_000);
+    json!({
+        "first_token_ms": ms("load_duration").zip(ms("prompt_eval_duration")).map(|(a, b)| a + b),
+        "output_tokens": result["eval_count"],
+        "generation_ms": ms("eval_duration"),
+        "raw": result["message"]["content"],
+    })
 }
 fn response_output(
     task: &str,
@@ -307,4 +344,20 @@ pub(crate) fn validate_output(
         output.as_object_mut().unwrap().remove("source_ids");
     }
     Ok(output)
+}
+
+#[cfg(test)]
+mod measurement_tests {
+    use super::*;
+    #[test]
+    fn sample_timing_comes_from_the_reported_durations() {
+        let reply = json!({"load_duration":1_200_000_000u64,"prompt_eval_duration":300_000_000u64,
+            "eval_count":84,"eval_duration":2_000_000_000u64,"message":{"content":"not json"}});
+        assert_eq!(
+            measurement(&reply),
+            json!({"first_token_ms":1500,"output_tokens":84,"generation_ms":2000,"raw":"not json"})
+        );
+        let bare = measurement(&json!({"message":{"content":"{}"}}));
+        assert!(bare["first_token_ms"].is_null() && bare["output_tokens"].is_null());
+    }
 }

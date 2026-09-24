@@ -284,7 +284,14 @@ impl Store {
                 [&account],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )?;
-            out.push(json!({"metadata_revision":metadata_revision,"unread_conversation_count":counts["unread_conversation_count"],"held_conversation_count":counts["held_conversation_count"],"done_conversation_count":counts["done_conversation_count"],"count_scope":"all_account_mail_including_archive","id":account,"name":name,"email":email,"provider":provider,"signature_text":signature_text,"unread_count":unread,"starred_count":starred,"conversation_count":count,"message_count":messages,"coverage":self.coverage(&account)?}));
+            // Events stored for this account's calendars, for the Accounts card.
+            let calendar_events: i64 = self.db.query_row(
+                "SELECT count(*) FROM calendar_sources s LEFT JOIN calendar_event_state e ON e.account=s.account AND e.calendar_id=s.calendar_id AND e.event_id=s.event_id WHERE s.account=?1 AND COALESCE(e.visible,1)=1",
+                [&account],
+                |r| r.get(0),
+            )?;
+            let color = crate::preferences::account_color(&self.db, &account)?;
+            out.push(json!({"color":color,"calendar_events":calendar_events,"metadata_revision":metadata_revision,"unread_conversation_count":counts["unread_conversation_count"],"held_conversation_count":counts["held_conversation_count"],"done_conversation_count":counts["done_conversation_count"],"count_scope":"all_account_mail_including_archive","id":account,"name":name,"email":email,"provider":provider,"signature_text":signature_text,"unread_count":unread,"starred_count":starred,"conversation_count":count,"message_count":messages,"coverage":self.coverage(&account)?}));
             out.last_mut().unwrap()["mail_retention"] = json!(mail_retention);
             out.last_mut().unwrap()["mail_since"] = json!(mail_since);
             let oldest: Option<String> = self.db.query_row(

@@ -32,7 +32,7 @@ constexpr qsizetype maxFrame = 1024 * 1024;
 QString uuid() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 bool quietDiagnosticRead(const QString &method) {
     return method == "status" || method == "google_sync_status" || method == "google_auth_status"
-        || method == "assist_job" || method == "assist_status" || method == "mail_notifications" || method == "calendar_reminders";
+        || method == "assist_job" || method == "assist_status" || method == "assist_progress" || method == "mail_notifications" || method == "calendar_reminders";
 }
 // A message source can carry up to ~1 MB of raw text that only the source
 // dialog shows. Readers and their caches keep the rest.
@@ -286,7 +286,7 @@ void MailBackend::request(const QString &method, const QString &account, const Q
     if (blockArchivedRequest(method, account)) {
         callback({{"code", "account_removed"}, {"message", "This account is a read-only archive. Restore it explicitly before making changes."}}, false); return;
     }
-    const bool automaticRead = method == "status" || method == "message_source" || (m_automaticReadScope && (method == "accounts" || method == "preferences_get"
+    const bool automaticRead = method == "status" || method == "message_source" || method == "assist_progress" || (m_automaticReadScope && (method == "accounts" || method == "preferences_get"
         || method == "categories" || method == "conversation" || method == "draft_get" || method == "capture_history"
         || method == "google_sync_status" || method == "google_mail_mutation_status" || method == "conversations" || method == "google_sent" || method == "google_sent_message"));
     // Synchronous cancellation/error callbacks can issue user work. The caller's

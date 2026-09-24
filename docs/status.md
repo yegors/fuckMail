@@ -1,6 +1,18 @@
 # Current status
 
-**D110 / preference saves after account deletion (2026-09-24):** deleting an account archive left its sync choices in the shared preferences, and every later Settings save then failed with "Sync account was not found". Deletion now removes them. A save also drops stale entries left by earlier deletions and still refuses unknown accounts the request adds. Checks: new Core preference and archive-deletion tests. [Decision](decisions.md).
+**D112 / seventh export (2026-09-24):**
+- **Accounts:** each card now shows the account's Download and Local model stages with meters, counts, estimates and one status line. The model row has Summarize and Label chips, Catch up and its own pause.
+- **Top bar:** tabs use the account colour, with a download or model ring, a red disconnected dot and a hover card. The sync button shows the time only.
+- **Colours:** the account colour comes from a 16-swatch picker and also marks calendar events.
+- **Labels and Settings:** labels moved to a modal on the card. Every Settings section shares one 880 px column with a one-line subtitle.
+- **Local LLM:** renamed from Local model. It has a Test run with timing, and separate System prompt and User message boxes with Restore, Cancel and Save.
+- **Engine:** `assist_progress`, the per-account model pause and sync hold, sample-test timing, account colours and calendar event counts, with CLI parity.
+- **Checks:** new Core, engine and native tests, offscreen and real-app captures compared with the export. See the research record for the full CTest result.
+- **Not verified:** a real account's first sync, and the tab ring captured while running.
+
+[Research record](research/prototype-september-23.md#d112--seventh-export-2026-09-24).
+
+**D110 / preference saves after account deletion (2026-09-24):** deleting an account archive left its sync choices in the shared preferences, and every later Settings save then failed with "Sync account was not found". Deletion now removes them. A save also drops stale entries left by earlier deletions and still refuses unknown accounts the request adds. Checks: new Core preference and archive-deletion tests; full native CTest 36/36. [Decision](decisions.md).
 
 **D109 / Accounts counts and sender names (2026-09-24):** the Accounts card's message, summary and backlog counts now refresh as sync and the local model progress, instead of keeping the snapshot taken at connect. Sender names no longer elide when they fit; fractional text widths lost a sub-pixel to layout rounding on the Mac. The slow first summary was the 27B model loading (19.5 s), then 7–14 s per message. Checks: full native CTest 35/36, plus a before/after render of the real Mac app on a demo profile. `gui-mail-selection` now also checks that reopening Accounts counts again. The one failure, `gui-html-view`'s link-hover check, is intermittent in unchanged code: it failed once in three isolated reruns and passed in the D108 run. [Decision](decisions.md).
 

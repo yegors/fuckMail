@@ -79,6 +79,7 @@ class CalendarSearchTest {
                     if (method == "assist_settings_get") result = {{"revision",1},{"settings",QJsonObject{}},{"defaults",QJsonObject{}}};
                     else if (method == "assist_results") result = {{"items",QJsonArray{}}};
                     else if (method == "assist_watch") result = {{"watching",false}};
+                    else if (method == "assist_progress") result = {{"accounts",QJsonArray{}}};
                     else if (method == "assist_jobs") result = {{"jobs",QJsonArray{}}};
                     else if (method == "google_sync_refresh") {
                         require(request["account"] == "personal" && request["params"].toObject().isEmpty(), "header uses exact account and built-in limits");
@@ -376,12 +377,24 @@ class CalendarSearchTest {
         await([&] { return !named(window, "startupOverlay")->property("visible").toBool(); }, "actual startup overlay finishes before search input");
         auto *sync = named(window, "headerSyncButton");
         require(sync && sync->property("text").toString() == "Sync", "header has a real Sync control");
+        {
+            // The account tab's hover card: name, review counts and both stages.
+            auto *tip = qobject_cast<QQuickItem *>(named(window, "accountHoverCard"));
+            require(tip && !tip->isVisible(), "hover card exists and starts hidden");
+            QVariant row = h.backend.m_allAccounts.value(0);
+            require(QMetaObject::invokeMethod(tip, "show", Q_ARG(QVariant, row), Q_ARG(QVariant, 40.0), Q_ARG(QVariant, 60.0)), "hover card opens for a tab");
+            await([&] { return tip->isVisible(); }, "hover card appears after a short hover");
+            require(tip->width() == 300 && !tip->acceptedMouseButtons(), "300 px card that takes no input");
+            const auto captures = qEnvironmentVariable("FM_ACCOUNT_TIP_CAPTURE");
+            if (!captures.isEmpty()) { QElapsedTimer paint; paint.start(); while (paint.elapsed() < 150) QCoreApplication::processEvents(); require(window->grabWindow().save(captures), "capture hover card"); }
+            QMetaObject::invokeMethod(tip, "close"); require(!tip->isVisible(), "hover card closes with the pointer");
+        }
         h.backend.m_syntheticProfile = false; emit h.backend.connectedChanged();
         await([&]{return sync->property("enabled").toBool();}, "live account can sync");
         h.backend.m_googleSync = {{"personal", QVariantMap{{"account","personal"},{"active",true},{"last_mail_sync_at",1789408800LL},
             {"credential_access_required",true},{"progress",QVariantMap{{"mail","paused"}}}}}};
         emit h.backend.googleSyncChanged();
-        require(sync->property("text").toString().startsWith("Retry sync · "), "denial has explicit retry and keeps last success");
+        require(sync->property("text").toString() == "Retry" && sync->property("tip").toString().startsWith("Synced "), "denial has explicit retry; the tip keeps the last success");
         auto *syncAccessible=QAccessible::queryAccessibleInterface(sync);
         require(syncAccessible && syncAccessible->actionInterface(), "sync accessible activation");
         syncAccessible->actionInterface()->doAction(QAccessibleActionInterface::pressAction());
@@ -400,7 +413,7 @@ class CalendarSearchTest {
         require(h.backend.publishAccounts(h.backend.m_allAccounts), "restore mail and Calendar account model"); emit h.backend.accountsChanged();
         auto row=h.backend.m_googleSync["personal"].toMap(); row["credential_access_required"]=false;
         row["progress"]=QVariantMap{{"mail","running"}}; h.backend.m_googleSync["personal"]=row; emit h.backend.googleSyncChanged();
-        require(sync->property("text").toString() == "Syncing…" && sync->property("tip").toString().contains("Last successful mail sync: "), "running label matches the design; the tip keeps the previous successful time");
+        require(sync->property("text").toString() == "Syncing" && sync->property("tip").toString().contains("Last successful mail sync: "), "running label matches the design; the tip keeps the previous successful time");
         h.backend.m_account="workspace"; emit h.backend.accountChanged();
         require(sync->property("lastSync").toDouble()==0, "sync timestamp cannot cross accounts");
         h.backend.m_account="personal"; emit h.backend.accountChanged();

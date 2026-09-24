@@ -185,7 +185,8 @@ Item {
         else createAt(range.index, low, high)
     }
     function hourText(hour) { const minutes = Math.round(hour * 60); return (Math.floor(minutes / 60) < 10 ? "0" : "") + Math.floor(minutes / 60) + ":" + (minutes % 60 < 10 ? "0" : "") + minutes % 60 }
-    function sourceRule(event) { return event.busy_only || event.account !== backend.account ? Theme.inkAlpha(.45) : Theme.text }
+    // The account colour marks an event; other accounts' events use it at half strength.
+    function sourceRule(event) { return event.busy_only ? Theme.inkAlpha(.45) : event.account === backend.account ? Theme.accountColor(event.account) : Theme.accountTint(event.account, .5) }
     readonly property string accountName: (backend.accounts.find(function(a) { return a.id === backend.account }) || {}).name || backend.account
     function subtitle() {
         const count = agendaEvents.length, events = count + (count === 1 ? " event" : " events")
@@ -514,10 +515,11 @@ Item {
                             MouseArea { id: eventMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: { eventBox.forceActiveFocus(); calendar.showEvent(eventBox.modelData, eventBox) } }
                             FmToolTip { shown: eventMouse.containsMouse; text: eventBox.modelData.title + " · " + eventBox.modelData.start_display + "\n" + eventBox.modelData.account_name + " / " + eventBox.modelData.calendar_name }
                             AccountBadge {
-                                id: accountBadge; diameter: 14; idleColor: Theme.bg6; idleText: Theme.inkAlpha(.65)
+                                id: accountBadge; diameter: 14
                                 anchors.top: parent.top; anchors.right: parent.right; anchors.topMargin: 3; anchors.rightMargin: 4
+                                account: eventBox.modelData.account || ""
                                 accountName: eventBox.modelData.account_name || ""
-                                selected: eventBox.modelData.account === backend.account
+                                selected: true
                                 visible: (eventBox.modelData.columns || 1) === 1
                             }
                             Accessible.role: Accessible.Button; Accessible.name: modelData.title + ", " + modelData.start_display

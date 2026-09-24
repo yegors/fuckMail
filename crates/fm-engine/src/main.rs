@@ -558,6 +558,16 @@ async fn session_inner(
                 else {
                     return Ok(());
                 };
+                // Pausing an account pauses its local model work too.
+                if result.is_ok() {
+                    if let Some(account) = request.account.as_deref() {
+                        match request.method.as_str() {
+                            "google_sync_release" => services.assistance.hold(account),
+                            "google_sync_start" => services.assistance.release(account).await,
+                            _ => {}
+                        }
+                    }
+                }
                 result
             } else {
                 Err(fm_core::CoreError {
