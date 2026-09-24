@@ -53,6 +53,7 @@ impl Store {
             self.db.execute("DELETE FROM operations WHERE account=?1 AND json_type(result_json,'$.messages')='array' AND json_extract(result_json,'$.id') IN (SELECT conversation_id FROM retention_messages)",[account])?;
             self.db.execute("DELETE FROM google_mail_coverage WHERE account=?1 AND remote_id IN (SELECT remote_id FROM retention_messages)",[account])?;
             self.db.execute("DELETE FROM messages WHERE account=?1 AND id IN (SELECT id FROM retention_messages)",[account])?;
+            crate::local_model::local_model_messages_deleted(&self.db)?;
             self.db.execute("UPDATE conversations SET revision=revision+1 WHERE account=?1 AND id IN (SELECT conversation_id FROM retention_messages)",[account])?;
             // Keep empty conversation identities that are referenced by durable
             // authored work; browsing already requires at least one message.

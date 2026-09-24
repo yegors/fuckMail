@@ -52,6 +52,8 @@ Then build and open the app:
 ./scripts/dev.ps1 run
 ```
 
+`run` builds a debug build for development. For everyday use, add `--preset release` (for example `./scripts/dev.ps1 run --preset release`); it is several times faster.
+
 To try the app with sample data instead of a real account, pass `--demo-profile`. It uses a separate demo profile:
 
 ```sh

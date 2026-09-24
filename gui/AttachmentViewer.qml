@@ -18,20 +18,28 @@ Popup {
     property var preview: ({})
     property string error: ""
     property bool preparingPoster:false
+    // The player and its video output are created for the first video shown in
+    // a viewing and released on close, so images and startup never load the
+    // media backend.
+    property bool mediaActive: false
+    readonly property var player: playerLoader.item
+    readonly property var audio: player ? player.audioOutput : null
+    readonly property bool playing: !!player && player.playbackState === MediaPlayer.PlayingState
     readonly property var attachment: items[index] || ({})
     readonly property bool video: /^video\//i.test(attachment.mime_type || "") || /\.(mp4|webm|mov|m4v|mkv|avi)$/i.test(attachment.name || "")
-    readonly property real ratio: video ? (videoOutput.sourceRect.width > 0 && videoOutput.sourceRect.height > 0 ? videoOutput.sourceRect.width/videoOutput.sourceRect.height : 16/9) : preview.width && preview.height ? preview.width/preview.height : 4/3
+    readonly property real ratio: video ? (videoLoader.item && videoLoader.item.sourceRect.width > 0 && videoLoader.item.sourceRect.height > 0 ? videoLoader.item.sourceRect.width/videoLoader.item.sourceRect.height : 16/9) : preview.width && preview.height ? preview.width/preview.height : 4/3
     function show(accountId,media,at) { account=accountId;items=media;index=at;open();load() }
     function load() {
-        preparingPoster=false; player.stop(); player.source=""; preview={}; error=""
+        preparingPoster=false; if (player) { player.stop(); player.source="" } preview={}; error=""
+        if (video) mediaActive=true
         if (opened && attachment.id) ticket=backend.requestAttachmentPreview(account,attachment.id)
     }
     function step(delta) { if (!items.length) return;index=(index+delta+items.length)%items.length }
-    function togglePlayback() { if (video) {preparingPoster=false;posterReady.stop();player.playbackState === MediaPlayer.PlayingState ? player.pause() : player.play()} }
+    function togglePlayback() { if (video && player) {preparingPoster=false;posterReady.stop();playing ? player.pause() : player.play()} }
     function clock(ms) { const s=Math.max(0,Math.floor(ms/1000));return Math.floor(s/60)+":"+String(s%60).padStart(2,"0") }
     function size(bytes) { return bytes >= 1048576 ? (bytes/1048576).toFixed(1)+" MB" : bytes >= 1024 ? Math.ceil(bytes/1024)+" KB" : bytes+" B" }
     onIndexChanged: if (opened) load()
-    onClosed: { preparingPoster=false; posterReady.stop(); player.stop(); player.source=""; ticket=""; preview={}; items=[] }
+    onClosed: { preparingPoster=false; posterReady.stop(); if (player) { player.stop(); player.source="" } mediaActive=false; ticket=""; preview={}; items=[] }
     Connections {
         target: backend
         function onAccountChanged() { viewer.close() }
@@ -40,7 +48,7 @@ Popup {
             viewer.ticket=""
             if (!ok || result.account !== viewer.account || result.id !== viewer.attachment.id || !result.preview_url) { viewer.error=result.preview_error || result.message || "Preview unavailable";return }
             viewer.preview=result
-            if (viewer.video) {viewer.preparingPoster=true; player.source=result.preview_url}
+            if (viewer.video) {viewer.preparingPoster=true; viewer.mediaActive=true; viewer.player.source=result.preview_url}
         }
     }
     background: Rectangle { color: "#e80e0f11" }
@@ -51,7 +59,7 @@ Popup {
             if (event.key === Qt.Key_Left) viewer.step(-1)
             else if (event.key === Qt.Key_Right) viewer.step(1)
             else if (event.key === Qt.Key_Space || event.key === Qt.Key_K) viewer.togglePlayback()
-            else if (event.key === Qt.Key_M && viewer.video) audio.muted=!audio.muted
+            else if (event.key === Qt.Key_M && viewer.video && viewer.audio) viewer.audio.muted=!viewer.audio.muted
             else if (event.key === Qt.Key_Escape) viewer.close()
             else return
             event.accepted=true
@@ -65,11 +73,11 @@ Popup {
             Rectangle {
                 id: frame; Layout.fillWidth:true; Layout.preferredHeight:Math.max(0,Math.min(viewer.height-140,width/viewer.ratio)); radius:6; color:"#090a0c"; clip:true
                 Image { anchors.fill:parent; visible:!viewer.video; source:viewer.video ? "" : viewer.preview.preview_url || ""; asynchronous:true; autoTransform:true; fillMode:Image.PreserveAspectFit; sourceSize:Qt.size(Math.ceil(frame.width*2),Math.ceil(frame.height*2)) }
-                VideoOutput { id: videoOutput; anchors.fill:parent; visible:viewer.video; fillMode:VideoOutput.PreserveAspectFit }
+                Loader { id: videoLoader; anchors.fill:parent; active:viewer.mediaActive; visible:viewer.video; sourceComponent: VideoOutput { fillMode:VideoOutput.PreserveAspectFit } }
                 MouseArea { anchors.fill:parent; hoverEnabled:true; onClicked:viewer.togglePlayback() }
                 HoverHandler { id: mediaHover }
                 FmButton {
-                    anchors.centerIn:parent; visible:viewer.video && player.playbackState !== MediaPlayer.PlayingState && !viewer.error.length
+                    anchors.centerIn:parent; visible:viewer.video && !viewer.playing && !viewer.error.length
                     implicitWidth:64; implicitHeight:64; iconName:"play"; iconSize:22; foreground:"#e9eaec"
                     background:Rectangle { radius:32; color:"#b00e0f11";border.color:"#60e9eaec" }
                     onClicked:viewer.togglePlayback()
@@ -77,20 +85,20 @@ Popup {
                 Text { anchors.centerIn:parent; width:parent.width-32; text:viewer.error || (viewer.ticket ? "Loading…" : ""); color:"#e9eaec"; wrapMode:Text.Wrap; horizontalAlignment:Text.AlignHCenter; font.pointSize:Theme.fontPoints(13) }
                 Rectangle {
                     visible:viewer.video; anchors.left:parent.left;anchors.right:parent.right;anchors.bottom:parent.bottom;height:44
-                    color:"#d00e0f11"; opacity:player.playbackState !== MediaPlayer.PlayingState || mediaHover.hovered || controlsHover.hovered ? 1 : 0
+                    color:"#d00e0f11"; opacity:!viewer.playing || mediaHover.hovered || controlsHover.hovered ? 1 : 0
                     Behavior on opacity { NumberAnimation {duration:180} }
                     HoverHandler {id:controlsHover}
                     RowLayout {
                         anchors.fill:parent;anchors.leftMargin:8;anchors.rightMargin:8;spacing:10
-                        FmButton {iconName:player.playbackState === MediaPlayer.PlayingState ? "pause" : "play";foreground:"#e9eaec";implicitWidth:28;tip:"Play / pause · Space";onClicked:viewer.togglePlayback()}
+                        FmButton {iconName:viewer.playing ? "pause" : "play";foreground:"#e9eaec";implicitWidth:28;tip:"Play / pause · Space";onClicked:viewer.togglePlayback()}
                         Slider {
-                            id:seek;Layout.fillWidth:true;from:0;to:Math.max(1,player.duration);value:player.position
-                            enabled:player.seekable;onMoved:player.position=value
+                            id:seek;Layout.fillWidth:true;from:0;to:Math.max(1,viewer.player ? viewer.player.duration : 0);value:viewer.player ? viewer.player.position : 0
+                            enabled:!!viewer.player && viewer.player.seekable;onMoved:viewer.player.position=value
                             background:Rectangle { x:seek.leftPadding;y:seek.topPadding+seek.availableHeight/2-2;width:seek.availableWidth;height:3;color:"#3a3d44";radius:2;Rectangle {width:seek.visualPosition*parent.width;height:parent.height;radius:2;color:Theme.accent} }
                             handle:Rectangle {x:seek.leftPadding+seek.visualPosition*(seek.availableWidth-width);y:seek.topPadding+seek.availableHeight/2-4;width:8;height:8;radius:4;color:Theme.accent}
                         }
-                        Text {text:viewer.clock(player.position)+" / "+viewer.clock(player.duration);color:"#b8b9bd";font.pointSize:Theme.fontPoints(11.5);font.features:{"tnum":1}}
-                        FmButton {iconName:audio.muted ? "mute" : "volume";foreground:"#e9eaec";implicitWidth:28;tip:"Mute · M";onClicked:audio.muted=!audio.muted}
+                        Text {text:viewer.player ? viewer.clock(viewer.player.position)+" / "+viewer.clock(viewer.player.duration) : viewer.clock(0)+" / "+viewer.clock(0);color:"#b8b9bd";font.pointSize:Theme.fontPoints(11.5);font.features:{"tnum":1}}
+                        FmButton {iconName:viewer.audio && viewer.audio.muted ? "mute" : "volume";foreground:"#e9eaec";implicitWidth:28;tip:"Mute · M";onClicked:if (viewer.audio) viewer.audio.muted=!viewer.audio.muted}
                     }
                 }
             }
@@ -104,9 +112,12 @@ Popup {
         FmButton {anchors.left:parent.left;anchors.leftMargin:24;anchors.verticalCenter:parent.verticalCenter;visible:viewer.items.length>1;iconName:"previous";foreground:"#e9eaec";tip:"Previous · ←";onClicked:viewer.step(-1)}
         FmButton {anchors.right:parent.right;anchors.rightMargin:24;anchors.verticalCenter:parent.verticalCenter;visible:viewer.items.length>1;iconName:"next";foreground:"#e9eaec";tip:"Next · →";onClicked:viewer.step(1)}
     }
-    MediaPlayer { id:player;objectName:"attachmentMediaPlayer";videoOutput:videoOutput;audioOutput:AudioOutput {id:audio;objectName:"attachmentAudio"}
-        onMediaStatusChanged: if (mediaStatus===MediaPlayer.LoadedMedia && viewer.preparingPoster) {audio.muted=true;play();posterReady.start()}
-        onErrorOccurred:{viewer.preparingPoster=false;viewer.error=errorString}
+    Loader {
+        id: playerLoader; active: viewer.mediaActive
+        sourceComponent: MediaPlayer { objectName:"attachmentMediaPlayer";videoOutput:videoLoader.item;audioOutput:AudioOutput {objectName:"attachmentAudio"}
+            onMediaStatusChanged: if (mediaStatus===MediaPlayer.LoadedMedia && viewer.preparingPoster) {audioOutput.muted=true;play();posterReady.start()}
+            onErrorOccurred:{viewer.preparingPoster=false;viewer.error=errorString}
+        }
     }
-    Timer {id:posterReady;interval:100;onTriggered:{if(viewer.preparingPoster) {viewer.preparingPoster=false;player.pause();player.position=0;audio.muted=false}}}
+    Timer {id:posterReady;interval:100;onTriggered:{if(viewer.preparingPoster && viewer.player) {viewer.preparingPoster=false;viewer.player.pause();viewer.player.position=0;viewer.audio.muted=false}}}
 }

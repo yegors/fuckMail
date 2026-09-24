@@ -1,5 +1,106 @@
 # September 23 prototype implementation
 
+## D099 — GUI memory (2026-09-24)
+
+The founder asked for lower GUI memory without making the app slower. The audit ran the optimized Windows build on disposable demo profiles and broke memory down by region. Most private memory was the Windows heap holding QML objects, not textures or images. Per-object probes found the largest avoidable costs:
+
+- Settings, with all its pages, was built at startup and kept alive while hidden.
+- Every line icon owned a `Canvas` and its texture, about 53 KB each, even when the image was identical.
+- Every `FmButton` built the styled Basic ToolButton plus a `Row`, icon and hint slots: 53.5 KB each. The new button costs 37.2 KB with a text label.
+- Reader caches kept each message's raw source text, which only the source dialog shows.
+- Each date field built a hidden month grid, and the attachment viewer built its media player before any video was opened.
+
+The changes are listed in the [decision](../decisions.md) and in [Mail UI70](../contracts/mail-ui.md).
+
+### Measurements
+
+Windows 11 25H2, x86_64, Qt 6.11.2, Direct3D 11, 1.25 device pixel ratio, optimized build. Each view opened on a fresh demo profile with the fixture clock and was measured after 20 seconds. Three runs per view; medians shown. The baseline is the D098 tree without these changes.
+
+| View | Working set before → after | Private bytes before → after | Resident heap before → after |
+| --- | --- | --- | --- |
+| Mail | 269.1 → 220.6 MB | 284.3 → 200.8 MB | 165.7 → 121.6 MB |
+| Calendar | 209.2 → 164.7 MB | 250.0 → 191.8 MB | 134.2 → 93.6 MB |
+| Settings | 200.6 → 162.2 MB | 243.1 → 169.2 MB | 127.5 → 92.5 MB |
+
+Settings is now built on first open, so the Settings row includes it and the page it opens on; other pages are built when first visited and then kept. Mail and Calendar no longer carry Settings until it is opened.
+
+### Startup and Settings
+
+A scratch probe, added only to otherwise identical builds, timed startup to the first frame, the first Settings open and each page's first visit on a fresh demo profile (Direct3D, three runs each). Frame times run from the request to the first swapped frame.
+
+| Measure | Before | After |
+| --- | --- | --- |
+| Startup to first frame, median | 1,057 ms | 901 ms |
+| First Settings open | 9–12 ms | 23–33 ms |
+| First visit: Accounts | 7–13 ms | 23–31 ms |
+| First visit: Local model | 20–27 ms | 15–28 ms |
+| First visit: Mail | 14–18 ms | 15–25 ms |
+| First visit: Calendar | 5–9 ms | 9–14 ms |
+| First visit: Shortcuts | 6–12 ms | 20–35 ms |
+| First visit: Diagnostics | 7–12 ms | 9–11 ms |
+
+Later opens and visits are unchanged. Building the whole Settings view on first open took about 100 ms, so each page is now built when first shown. A background build started by hovering the Settings button was tried first. Qt advanced it only while frames were drawn, so it often had not finished by the click.
+
+### Interaction speed
+
+Both builds used the same engine and CLI. Each route has 100 measured native inputs; p50 / p95 shown. The benchmarks need their window to keep focus. The founder's desktop was in use, so several Direct3D runs lost activation and were discarded. A scratch copy of the verifier that changes only the platform (offscreen) and renderer (software) measured the same routes. Software rendering is slower than Direct3D, so only the comparison matters; it puts both builds' Calendar view switch over the 100 ms budget, which applies to the Direct3D build.
+
+Calendar, Direct3D (`verify_interaction.py --mode calendar`), one of three complete pairs:
+
+| Route | Before | After |
+| --- | --- | --- |
+| Day/Week/Month switch | 25.5 / 46.8 ms | 25.4 / 49.4 ms |
+| Month day click | 11.7 / 23.9 ms | 9.6 / 19.6 ms |
+| Week next/previous | 6.5 / 7.8 ms | 6.4 / 7.8 ms |
+| Month next/previous | 7.4 / 9.7 ms | 6.6 / 10.3 ms |
+
+In all three pairs every median was equal or faster, and the view-switch p95 was 2.6–5.7 ms higher (63.4 → 66.1 and 61.5 → 67.2 ms in the other two). Variation between runs on this desktop was larger: the unchanged baseline's week-step median ranged from 6.5 to 16.4 ms. Two off-screen pairs, run in both orders, did not repeat the view-switch difference:
+
+| Route | Before (two runs) | After (two runs) |
+| --- | --- | --- |
+| Day/Week/Month switch | 95.0 / 110.6, 90.5 / 113.7 ms | 98.1 / 107.0, 93.5 / 106.3 ms |
+| Month day click | 52.5 / 67.9, 54.2 / 69.2 ms | 50.4 / 69.3, 50.4 / 72.7 ms |
+| Week next/previous | 7.0 / 8.5, 7.7 / 8.7 ms | 7.7 / 8.7, 7.3 / 11.1 ms |
+| Month next/previous | 11.3 / 15.8, 13.0 / 15.6 ms | 12.4 / 15.8, 9.9 / 12.9 ms |
+
+Mail navigation, off-screen (`--mode navigation`), the only complete pair of final builds:
+
+| Route | Before | After |
+| --- | --- | --- |
+| Mailbox click | 68.5 / 115.5 ms | 65.4 / 76.9 ms |
+| Mailbox Tab | 66.5 / 78.3 ms | 65.9 / 74.4 ms |
+| Mailbox Shift+Tab | 67.9 / 114.4 ms | 64.1 / 72.7 ms |
+| Conversation click | 23.7 / 64.9 ms | 23.4 / 46.1 ms |
+
+In a second pair the new build measured the three mailbox routes before it stopped at a conversation click (below): medians 67.0/69.1/68.3 ms against 71.0/67.3/70.7 ms, p95 75.2/104.9/116.8 ms against 128.9/86.4/135.6 ms. One Direct3D navigation run of the new build completed (p95 126.0/138.7/138.3/65.7 ms); its baseline lost activation, so it is not compared.
+
+The first implementation drew icons through an image provider. Off-screen, its mailbox-switch medians were 5–35 ms slower than the baseline in two pairs, because each icon cost more to create than a Canvas and requested its image twice. The native icon item replaced it.
+
+Two of three off-screen runs of the new builds, one of them with the image-provider icons, stopped at a conversation click that opened a different conversation, 088 instead of 004. Opening the previous conversation marks it read, and the list refresh that follows reorders rows. The benchmark starts the next click 25 ms after the correct frame without waiting for that refresh, and the new builds paint the reader sooner. Five baseline runs did not stop. D099 does not change the list model, pinning or row clicks; the race is recorded for separate investigation.
+
+### Visual parity
+
+- Icons: all 56 icon names at eight sizes were drawn by the old Canvas and by `FmIconItem` at 1, 1.25, 1.5 and 2 device pixel ratio, with an opaque and a translucent colour. Fractional positions were checked in dark and light. At 1, 1.5 and 2, and at every fractional position, the images are identical. At 1.25, 4 of 456 cells differ by at most 2 of 255 on up to 13 pixels: the Google mark at 11, 13 and 15 px and `more` at 14 px.
+- Buttons: 30 button configurations (text, icon, leading and trailing icon, shortcut hint, left alignment, narrow widths) match the old button pixel for pixel at 1, 1.25, 1.5 and 2 device pixel ratio, rechecked with the final icon item. Fractional heights were checked at 75 heights with the earlier image icon.
+- App frames: 14 fixture-clock captures (Mail, reply, reply footer, four Calendar views, seven Settings pages) were compared. On this day two captures of the same build differed by 1 of 255 on about a thousand pixels, so frames were compared ignoring 1-level differences; at that tolerance repeated captures match. The seven Settings pages are identical. Each Calendar view differs in 1 pixel and Mail in 2 pixels, by 2 of 255. Both reply captures differ in 11 pixels, at most 31 of 255 at the tip of the Attach paperclip. The paperclip difference also appeared with an image-based icon and was not reproduced outside the app; it is not visible at normal size.
+
+### Verification
+
+- The release GUI suite passes 28 of 34. The same six tests fail with the same messages on a build of the same tree without this change:
+  - `gui-integration`: search timeout at stage 81.
+  - `gui-attachments`: newer-draft conflict at stage 98.
+  - `gui-send-undo`: one request only after the real six-second window.
+  - `gui-mail-selection`: the checked label submenu toggles the wrong way.
+  - Both Google draft authoring and snapshot tests: an unexpected operation method.
+- `gui-mail-selection` stops before its source-dialog and account-settings checks. A scratch copy that only logs the known label failure passes the rest of the test on both builds, including the source dialog that now reads raw text on demand.
+- Timing probes built 30 list rows or 30 buttons and painted the first frame, alternating old and new versions. The native icon and new button build and paint faster than the Canvas icon and old button (for example, rows: 1.6 → 1.1 ms to build, 8.3 → 6.1 ms including the frame, off-screen). An earlier image-based icon built slower than Canvas and requested every image twice, so it was replaced.
+
+### Limits
+
+- Measured on Windows only. macOS and Linux were not run.
+- On Direct3D 11 a video tile keeps its poster frame after its decoder is destroyed. This was checked only on Windows; the software renderer used by native tests never shows video.
+- The first Settings open and each page's first visit now include that page's build time, up to about 25 ms more than before; see the table above.
+
 ## D094 — Flight Progress v2 detail review
 
 The Claude Design import required `/design-login`, which this session could not complete. The review therefore used the local third export `fuckMail (3).html`: 666,474 bytes, the same file as D092. The export was served on `127.0.0.1` and captured with headless Chrome over CDP at the native window size. Mail, thread, composer, Calendar day/week/month, event details, event editor and each Settings page were compared with offscreen native frames. The native frames came from disposable demo profiles with a fixture clock. Comparison was by side-by-side crops, not a pixel diff. Captures and scripts stay in session scratch storage, not Git.

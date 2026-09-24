@@ -82,6 +82,9 @@ struct Harness {
 }
 impl Harness {
     fn new() -> Self {
+        Self::with_scope("https://www.googleapis.com/auth/gmail.modify")
+    }
+    fn with_scope(scope: &'static str) -> Self {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().to_owned();
         let (sender, mut receiver) = mpsc::channel(8);
@@ -92,7 +95,7 @@ impl Harness {
                 .bind_google_account(
                     "label-worker",
                     "reader@example.test",
-                    &BTreeSet::from(["https://www.googleapis.com/auth/gmail.modify".into()]),
+                    &BTreeSet::from([scope.into()]),
                     None,
                 )
                 .unwrap();
@@ -139,6 +142,16 @@ impl Harness {
             .call(move |s| s.google_labels(&account, &json!({})))
             .await
             .unwrap()
+    }
+    async fn categories(&self) -> Vec<Value> {
+        let account = self.ctx.account.as_str().to_owned();
+        let catalog = self
+            .ctx
+            .core
+            .call(move |s| s.label_catalog(&account))
+            .await
+            .unwrap();
+        catalog["categories"].as_array().unwrap().clone()
     }
     fn close(self) {
         drop(self.ctx);
@@ -381,5 +394,59 @@ async fn invalid_complete_response_cannot_replace_the_last_good_catalog() {
     assert!(refresh(&h.ctx).await.is_err());
     assert_eq!(h.cached().await, previous);
     assert_eq!(h.ctx.preparation.available_permits(), 1);
+    h.close();
+}
+
+#[tokio::test]
+async fn first_catalog_refresh_imports_a_new_accounts_gmail_labels_once() {
+    let h = Harness::new();
+    let mut worker = LabelsWorker::default();
+    let before = *h.ctx.refresh.borrow();
+    assert_eq!(worker.step(&h.ctx, 0).await.unwrap(), Step::Progress);
+    let categories = h.categories().await;
+    assert_eq!(categories.len(), 1, "system labels are not imported");
+    assert_eq!(categories[0]["name"], "Alpha");
+    assert_eq!(categories[0]["provider_label_id"], "A");
+    assert!(*h.ctx.refresh.borrow() > before);
+    assert_eq!(h.http.creates.load(Ordering::SeqCst), 0);
+    // Later Gmail labels wait for an explicit sync, so removed labels stay removed.
+    h.http.body.lock().unwrap()["labels"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id":"B","name":"Beta","type":"user"}));
+    assert_eq!(
+        worker.step(&h.ctx, REFRESH_INTERVAL_MS).await.unwrap(),
+        Step::Progress
+    );
+    assert_eq!(h.categories().await.len(), 1);
+    let account = h.ctx.account.as_str().to_owned();
+    let again = h
+        .ctx
+        .core
+        .call(move |s| s.google_labels_initial_import(&account))
+        .await
+        .unwrap();
+    assert!(again.is_none());
+    h.close();
+}
+
+#[tokio::test]
+async fn read_only_account_refreshes_labels_without_importing_them() {
+    let h = Harness::with_scope("https://www.googleapis.com/auth/gmail.readonly");
+    let mut worker = LabelsWorker::default();
+    assert_eq!(worker.step(&h.ctx, 0).await.unwrap(), Step::Progress);
+    assert_eq!(h.cached().await["labels"][0]["name"], "Alpha");
+    assert!(h.categories().await.is_empty());
+    let account = h.ctx.account.as_str().to_owned();
+    let pending = h
+        .ctx
+        .core
+        .call(move |s| s.google_labels_initial_import(&account))
+        .await
+        .unwrap();
+    assert!(
+        pending.is_none(),
+        "the manual path remains after a read-only first sync"
+    );
     h.close();
 }

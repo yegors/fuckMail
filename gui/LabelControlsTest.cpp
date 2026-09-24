@@ -1,3 +1,4 @@
+#include "FmIconItem.h"
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -56,7 +57,7 @@ int main(int argc,char**argv){
     QTemporaryDir temp;auto path=temp.filePath("LabelTest");require(QDir().mkpath(path),"module directory");
     QFile module(path+"/qmldir");require(module.open(QIODevice::WriteOnly),"module metadata");module.write("module LabelTest\n");
     for(const auto& file:QDir(QString(FM_GUI_SOURCE_DIR)).entryList({"*.qml"},QDir::Files)){require(QFile::copy(QString(FM_GUI_SOURCE_DIR)+"/"+file,path+"/"+file),"copy production QML");auto name=QFileInfo(file).completeBaseName();module.write(((name=="Theme"?"singleton ":"")+name+" 1.0 "+file+"\n").toUtf8());}module.close();
-    LabelBackend backend;QQmlApplicationEngine qml;bool warnings=false;QObject::connect(&qml,&QQmlEngine::warnings,[&](auto errors){warnings=true;for(const auto&e:errors)qWarning()<<e;});qml.addImportPath(temp.path());qml.rootContext()->setContextProperty("backend",&backend);
+    LabelBackend backend;QQmlApplicationEngine qml; FmIconItem::registerType();bool warnings=false;QObject::connect(&qml,&QQmlEngine::warnings,[&](auto errors){warnings=true;for(const auto&e:errors)qWarning()<<e;});qml.addImportPath(temp.path());qml.rootContext()->setContextProperty("backend",&backend);
     qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport LabelTest\nApplicationWindow{width:760;height:640;visible:true;color:Theme.canvas;LabelSettings{objectName:'panel';x:40;y:30;width:680}}",QUrl::fromLocalFile(temp.filePath("Harness.qml")));
     require(!qml.rootObjects().isEmpty(),"label QML loads");auto window=qobject_cast<QQuickWindow*>(qml.rootObjects().first());
     auto control=[&](QString name){auto item=find(window->contentItem(),name);require(item,"label control exists");return item;};

@@ -1,3 +1,4 @@
+#include "FmIconItem.h"
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -93,7 +94,7 @@ int main(int argc,char **argv){
  Backend backend;QFile promptFile(QString(FM_GUI_SOURCE_DIR)+"/../crates/fm-assist/src/message-request.json");require(promptFile.open(QIODevice::ReadOnly),"default prompt available");backend.settings["prompt"]=QString::fromUtf8(promptFile.readAll());QTemporaryDir temp;auto dir=temp.filePath("ModelTest");require(QDir().mkpath(dir),"module directory");
  for(const auto name:{"FmScrollBar.qml","Theme.qml","FmCheckBox.qml","FmButton.qml","FmToolTip.qml","FmIcon.qml","FmComboBox.qml","FmTextField.qml","LocalModelSettings.qml","MailAssistance.qml","SummaryCard.qml","MessageAssistance.qml"})require(QFile::copy(QString(FM_GUI_SOURCE_DIR)+"/"+name,dir+"/"+name),"copy production QML");
  QFile module(dir+"/qmldir");require(module.open(QIODevice::WriteOnly),"module metadata");module.write("module ModelTest\nsingleton Theme 1.0 Theme.qml\nLocalModelSettings 1.0 LocalModelSettings.qml\nMailAssistance 1.0 MailAssistance.qml\nSummaryCard 1.0 SummaryCard.qml\nMessageAssistance 1.0 MessageAssistance.qml\n");module.close();
- QQmlApplicationEngine qml;bool warnings=false;QObject::connect(&qml,&QQmlEngine::warnings,[&](auto errors){warnings=true;for(const auto &e:errors)qWarning()<<e;});qml.addImportPath(temp.path());qml.rootContext()->setContextProperty("backend",&backend);
+ QQmlApplicationEngine qml; FmIconItem::registerType();bool warnings=false;QObject::connect(&qml,&QQmlEngine::warnings,[&](auto errors){warnings=true;for(const auto &e:errors)qWarning()<<e;});qml.addImportPath(temp.path());qml.rootContext()->setContextProperty("backend",&backend);
  qml.loadData(R"(import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts

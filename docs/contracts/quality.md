@@ -1,5 +1,13 @@
 # Quality, performance and release acceptance
 
+## D099 — GUI memory checks (Quality71)
+
+Memory is measured on the optimized build with three fresh demo profiles per view (Mail, Calendar, Settings), the fixture clock and a 20-second settle. Record working set, private bytes and resident Windows heap. A memory change must also show no visual change: compare icons and buttons with their former rendering at 1, 1.25, 1.5 and 2 device pixel ratio, and the 14 deterministic app captures. The Mail navigation and Calendar benchmarks must not regress against the previous build on the same host, and the native suite must add no failures. UI that is now built on first use is timed against the previous build: startup to first frame, the first Settings open and each page's first visit. These must stay within the existing 100 ms interaction budget. Consumers: Mail UI70. [Execution record](../research/prototype-september-23.md#d099--gui-memory-2026-09-24).
+
+## D098 — native Calendar view benchmark (Quality70)
+
+`fuckmail-gui --benchmark-calendar-output <file>` measures a disposable synthetic profile. `scripts/verify_interaction.py --mode calendar --bin <dir> --report <file>` owns the profile, engine and verification. There are four routes: Day/Week/Month segment cycle, Month date click into Day, Week next/previous and Month next/previous. Each route gets one warmup and 100 measured native mouse inputs. A sample runs from input to the first swapped frame whose view, date, exact-range published rows and visible event delegates match. The verifier checks every painted event identity against `calendar_sources`. The report also counts frames painted before the correct one, the visible jank. The cached calendar view switch budget stays p95 <= 100 ms per route, and the verifier's exit code follows it. Measure optimized builds; the debug build is for development only. Consumers: Mail UI69 and Core55. [Execution record](../research/phase-2-calendar.md#d098--calendar-view-performance-2026-09-23).
+
 ## D095 — legacy schema removal checks (Quality69)
 
 Verify that runtime and active tests reference only `fresh-schema.sql`, that the source tree contains no pre-reset SQL migration files, and that schema32 creation and old-version refusal still pass. Run the Rust workspace, strict lint, formatting and repository hygiene. Consumers: Core52; fixture and protocol revisions unchanged.

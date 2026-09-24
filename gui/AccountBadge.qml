@@ -18,5 +18,5 @@ Rectangle {
         font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(badge.diameter === 14 ? 8 : 10); font.weight: Font.DemiBold
     }
     HoverHandler { id: hover }
-    FmToolTip { visible: hover.hovered; text: badge.accountName }
+    FmToolTip { shown: hover.hovered; text: badge.accountName }
 }

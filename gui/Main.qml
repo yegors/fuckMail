@@ -13,6 +13,8 @@ ApplicationWindow {
     color: Theme.canvas
     property string workspace: "mail"
     property bool settingsOpen: false
+    // Settings is built on its first opening and then kept; most sessions never open it.
+    readonly property Item settingsView: settingsLoader.item
     property bool suppressStartupPreference: false
     property bool startupPreferenceApplied: false
     readonly property bool timelineAtTop: backend.preferences.timeline_position === "header"
@@ -87,7 +89,7 @@ ApplicationWindow {
         else if (belongsTo(activeFocusItem, calendarView)) calendarFocus = activeFocusItem
     }
     function navigate(target) {
-        if (settingsOpen && target !== "settings" && settingsView.modelDirty) { settingsView.confirmLeave(function(){window.navigate(target)}); return }
+        if (settingsOpen && target !== "settings" && settingsView && settingsView.modelDirty) { settingsView.confirmLeave(function(){window.navigate(target)}); return }
         if (!backend.accountNavigationAllowed()) return
         searchPopup.close()
         calendarSearchPopup.close()
@@ -133,7 +135,7 @@ ApplicationWindow {
     Shortcut { sequence: ShortcutRegistry.sequence("search",backend.preferences); enabled: window.singleKeysAllowed && !window.settingsOpen && window.workspace==="mail"; onActivated: window.findMail() }
     Shortcut { sequence: ShortcutRegistry.sequence("view",backend.preferences); enabled: window.singleKeysAllowed && !window.settingsOpen; onActivated: window.navigate(window.workspace === "mail" ? "calendar" : "mail") }
     Shortcut { sequence: ShortcutRegistry.sequence("settings",backend.preferences); enabled: window.singleKeysAllowed; onActivated: window.navigate("settings") }
-    Shortcut { sequence: "Escape"; enabled: !window.modalReminderOpen && window.settingsOpen && !settingsView.recordingShortcut && !settingsView.popupOpen && !debugConsole.opened; onActivated: window.navigate(window.workspace) }
+    Shortcut { sequence: "Escape"; enabled: !window.modalReminderOpen && window.settingsOpen && !!settingsView && !settingsView.recordingShortcut && !settingsView.popupOpen && !debugConsole.opened; onActivated: window.navigate(window.workspace) }
     Shortcut { sequence: "Escape"; enabled: !window.modalReminderOpen && searchPopupOpen; onActivated: { searchPopup.close(); calendarSearchPopup.close() } }
     Shortcut { sequence: ShortcutRegistry.sequence("undo",backend.preferences); enabled: window.singleKeysAllowed && backend.actionToast.visible && backend.actionToast.action_label === "Undo"; onActivated: backend.activateActionToast() }
     Shortcut { sequences: [StandardKey.Undo]; enabled: ShortcutRegistry.unassigned("Ctrl+Z",window.workspace,backend.preferences) && window.singleKeysAllowed && backend.actionToast.visible && backend.actionToast.action_label === "Undo"; onActivated: backend.activateActionToast() }
@@ -369,7 +371,13 @@ ApplicationWindow {
             currentIndex: window.settingsOpen ? 2 : window.workspace === "mail" ? 0 : 1
             MailView { id: mailView }
             CalendarView { id: calendarView; onOpenMailRequested: window.navigate("mail") }
-            SettingsView { id: settingsView; onDone: window.navigate(window.workspace); onArchiveOpened: window.navigate("mail") }
+            Loader {
+                id: settingsLoader
+                property bool built: false
+                active: window.settingsOpen || built
+                onLoaded: built = true
+                sourceComponent: SettingsView { onDone: window.navigate(window.workspace); onArchiveOpened: window.navigate("mail") }
+            }
         }
         Item { id: timelineFooterSlot; visible: window.timelineVisible && !window.timelineAtTop; Layout.fillWidth: true; implicitHeight: visible ? timeline.implicitHeight : 0 }
     }

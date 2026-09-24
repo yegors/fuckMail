@@ -19,7 +19,7 @@ void MailBackend::initializeCalendarSearch() {
     m_calendarSearchTimer.setSingleShot(true);
     m_calendarSearchTimer.setInterval(100);
     connect(&m_calendarSearchTimer, &QTimer::timeout, this, &MailBackend::runCalendarSearch);
-    for (auto signal : {&MailBackend::eventsChanged, &MailBackend::accountChanged,
+    for (auto signal : {&MailBackend::eventsChanged, &MailBackend::calendarSourcesChanged, &MailBackend::accountChanged,
             &MailBackend::accountsChanged, &MailBackend::accountLifecycleChanged,
             &MailBackend::preferencesChanged, &MailBackend::connectedChanged})
     {
@@ -36,7 +36,7 @@ void MailBackend::initializeCalendarSearch() {
 void MailBackend::setCalendarMailActivityContext(bool active, bool combined) {
     if (active == m_calendarMailActivityActive && combined == m_calendarMailActivityCombined) { refreshCalendarMailActivity(); return; }
     m_calendarMailActivityActive = active; m_calendarMailActivityCombined = combined;
-    if (active) { m_calendarMailActivityTimer.start(); refreshCalendarMailActivity(); }
+    if (active) { m_calendarMailActivityTimer.start(); refreshCalendarMailActivity(); m_calendarPrefetchTimer.start(); }
     else {
         m_calendarMailActivityTimer.stop(); ++m_calendarMailActivityGeneration;
         m_calendarMailActivityBusy = false; m_calendarMailActivityScope.clear(); m_calendarMailActivityStamp.clear();
@@ -46,8 +46,10 @@ void MailBackend::setCalendarMailActivityContext(bool active, bool combined) {
 
 void MailBackend::refreshCalendarMailActivity() {
     if (!m_calendarMailActivityActive || m_shutdown) return;
-    const auto from = calendarFrom();
-    const auto to = QDate::fromString(from, Qt::ISODate).addDays(calendarDays()).toString(Qt::ISODate);
+    // Counts cover the whole month window, so day/week/month switches reuse them.
+    const auto window = calendarBaseWindow(m_calendarDate);
+    const auto from = window.from;
+    const auto to = QDate::fromString(from, Qt::ISODate).addDays(window.days).toString(Qt::ISODate);
     const auto account = m_calendarMailActivityCombined ? QString{} : m_account;
     QJsonArray accounts;
     for (const auto &entry : m_accounts) accounts.append(entry.toMap().value("id").toString());
@@ -64,7 +66,8 @@ void MailBackend::refreshCalendarMailActivity() {
         m_calendarMailActivity = {{"state", "unavailable"}, {"message", "Mail counts are waiting for the local engine and account."}};
         emit calendarMailActivityChanged(); return;
     }
-    const auto stamp = scope + '/' + m_diagnostics.value("revision").toString();
+    // Only mail changes move counts; calendar and model writes do not.
+    const auto stamp = scope + '/' + m_diagnostics.value("mail_generation", m_diagnostics.value("revision")).toString();
     if (m_calendarMailActivityBusy || stamp == m_calendarMailActivityStamp) return;
     // Signals can arrive on every sync page. Keep repeated aggregate reads off
     // the foreground queue; a changed date/account still loads immediately.
@@ -87,7 +90,13 @@ void MailBackend::refreshCalendarMailActivity() {
         if (!ok || !valid || result["from"] != from || result["to"] != to || !result["days"].isArray()
             || (account.isEmpty() ? !result["account"].isNull() : result["account"] != account)) {
             m_calendarMailActivity = {{"state", "unavailable"}, {"message", result["message"].toString("Mail counts could not load.")}};
-        } else m_calendarMailActivity = result.toVariantMap();
+        } else {
+            m_calendarMailActivity = result.toVariantMap();
+            // Each day badge looks its row up directly instead of searching the list.
+            QVariantMap byDate;
+            for (const auto &row : rows) byDate.insert(row.toObject()["date"].toString(), row.toObject().toVariantMap());
+            m_calendarMailActivity["by_date"] = byDate;
+        }
         emit calendarMailActivityChanged();
     });
 }
@@ -215,7 +224,8 @@ void MailBackend::openCalendarSearchResult(const QVariantMap &event) {
     // saved visibility and individual source selection.
     params["calendars"] = effectiveCalendarSelection();
     m_calendarSearchBusy = true; m_calendarSearchStatus = "Opening the current saved event…"; emit calendarSearchChanged();
-    request("calendar_combined", {}, params, [this, event, date, generation, stamp, params](auto result, bool ok) {
+    const auto epoch = m_calendarCacheEpoch;
+    request("calendar_combined", {}, params, [this, event, date, generation, stamp, params, epoch](auto result, bool ok) {
         if (generation != m_calendarSearchGeneration || stamp != calendarSearchContextStamp()) return;
         m_calendarSearchBusy = false;
         QVariantList fresh;
@@ -231,14 +241,11 @@ void MailBackend::openCalendarSearchResult(const QVariantMap &event) {
             m_calendarSearchStatus = "This event changed or is no longer visible on that date. Search again.";
             emit calendarSearchChanged(); return;
         }
-        // Publish only the fresh shared query, using the same presentation as
-        // loadCalendar. Fence older window reads before navigating to this day.
-        ++m_calendarGeneration; m_calendarView = "day"; m_calendarDate = date.toString(Qt::ISODate);
-        m_weekStart = m_calendarDate; publishCalendarWindow(result, m_calendarDate, 1);
-        m_calendarScope = QString::fromUtf8(QJsonDocument(params).toJson(QJsonDocument::Compact)) + "/"
-            + m_preferences.value("calendar_display_time_zone").toString();
-        setPreferences({{"calendar_view", "day"}, {"calendar_date", m_calendarDate}});
-        emit eventsChanged();
+        // Show exactly this fresh read: it is cached under the visible day's own key.
+        m_calendarView = "day"; m_calendarDate = date.toString(Qt::ISODate);
+        if (epoch == m_calendarCacheEpoch) storeCalendarWindow(calendarWindow(m_calendarDate, 1).key, result);
+        rememberCalendarNavigation({{"calendar_view", "day"}, {"calendar_date", m_calendarDate}});
+        showCalendarRange();
         emit calendarSearchResultReady(selected);
     });
 }

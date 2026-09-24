@@ -84,15 +84,16 @@ Item {
     property string draftDay: ""
     onDraftsModeChanged: draftDay = ""
     readonly property var dayOptions: [{key:"0",name:"Today"},{key:"1",name:"Yesterday"},{key:"older",name:"Earlier this week"}]
+    // Day-level labels follow backend.clockDay, which changes only at midnight.
     function dayKey(value, utc) {
-        const date = new Date(value), now = new Date(backend.clockNow)
+        const date = new Date(value), now = new Date(backend.clockDay)
         if (isNaN(date.getTime())) return ""
         const days = utc ? Math.round((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())) / 86400000)
             : Math.round((Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())) / 86400000)
         return days === 0 ? "0" : days === 1 ? "1" : days >= 2 && days < 7 ? "older" : ""
     }
     function sentDayBounds(key) {
-        const now = new Date(backend.clockNow), day = function(offset) { return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - offset)).toISOString().slice(0,10) }
+        const now = new Date(backend.clockDay), day = function(offset) { return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - offset)).toISOString().slice(0,10) }
         return key === "0" ? {after: day(0), before: day(-1)} : key === "1" ? {after: day(1), before: day(0)} : {after: day(6), before: day(1)}
     }
     readonly property string sentDay: {
@@ -234,7 +235,7 @@ Item {
     }
     function categoryCount(id) { return members.filter(function(m) { return (m.categories || []).indexOf(id) >= 0 }).length }
     function dateGroup(row) {
-        const date = new Date(row.latest_at), today = new Date(backend.clockNow)
+        const date = new Date(row.latest_at), today = new Date(backend.clockDay)
         if (isNaN(date.getTime())) return "Earlier"
         const days = Math.round((Date.UTC(today.getFullYear(),today.getMonth(),today.getDate()) - Date.UTC(date.getFullYear(),date.getMonth(),date.getDate())) / 86400000)
         if (days === 0) return "Today"
@@ -390,7 +391,7 @@ Item {
     function rowTime(value) {
         const date = new Date(value)
         if (isNaN(date.getTime())) return ""
-        const day = Qt.formatDate(date, "yyyy-MM-dd"), now = new Date(backend.clockNow)
+        const day = Qt.formatDate(date, "yyyy-MM-dd"), now = new Date(backend.clockDay)
         const days = (Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) - Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())) / 86400000
         return day === backend.todayDate ? Qt.formatTime(date,"HH:mm") : days >= 0 && days < 5 ? Qt.formatDateTime(date,"ddd HH:mm") : Qt.formatDate(date,date.getFullYear() === now.getFullYear() ? "d MMM" : "d MMM yyyy")
     }
@@ -900,7 +901,7 @@ Item {
                                             FmIcon {name:"attachment";size:11;color:Theme.inkAlpha(.5);anchors.verticalCenter:parent.verticalCenter}
                                             Text {text:groupedRow.modelData.attachment_count || 0;color:Theme.inkAlpha(.5);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11);font.features:{"tnum":1};anchors.verticalCenter:parent.verticalCenter}
                                             HoverHandler {id:attachmentCountHover}
-                                            FmToolTip {visible:attachmentCountHover.hovered;text:(groupedRow.modelData.attachment_count || 0)+" attachments in this thread"}
+                                            FmToolTip {shown:attachmentCountHover.hovered;text:(groupedRow.modelData.attachment_count || 0)+" attachments in this thread"}
                                         }
                                     }
                                     RowLayout {
@@ -932,7 +933,7 @@ Item {
                                 }
                                 Text { text: groupedRow.modelData.is_outgoing ? groupedRow.modelData.send_status : mail.rowTime(groupedRow.modelData.latest_at); color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); Layout.preferredWidth: Theme.fontSize(68); horizontalAlignment: Text.AlignRight; elide: Text.ElideLeft }
                             }
-                            FmToolTip { visible: rowMouse.containsMouse; text: groupedRow.modelData.subject + "\n" + mail.kindTitle(groupedRow.modelData.kind) + " · " + mail.fullTime(groupedRow.modelData.latest_at) + ((groupedRow.modelData.categories || []).length ? "\n" + groupedRow.modelData.categories.map(function(c) { return c.name }).join(" · ") : "") + (groupedRow.group === "held" ? "\nDelayed without a timer." : "") + (groupedRow.modelData.pinned ? "\nKept in place while open. Current state: "+mail.groupTitle(groupedRow.modelData.group)+"." : "") }
+                            FmToolTip { shown: rowMouse.containsMouse; text: groupedRow.modelData.subject + "\n" + mail.kindTitle(groupedRow.modelData.kind) + " · " + mail.fullTime(groupedRow.modelData.latest_at) + ((groupedRow.modelData.categories || []).length ? "\n" + groupedRow.modelData.categories.map(function(c) { return c.name }).join(" · ") : "") + (groupedRow.group === "held" ? "\nDelayed without a timer." : "") + (groupedRow.modelData.pinned ? "\nKept in place while open. Current state: "+mail.groupTitle(groupedRow.modelData.group)+"." : "") }
                         }
                     }
                     footer: Column {
@@ -1006,7 +1007,7 @@ Item {
                             id: participantNames
                             Layout.fillWidth: true; spacing: 0
                             Text { text: mail.members.length + (mail.members.length === 1 ? " message · " : " messages · "); color: Theme.inkAlpha(0.62); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
-                            Text { text: mail.conversationSpan; color: Theme.inkAlpha(0.85); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); FmToolTip { visible: spanHover.hovered; text: "First message → latest message" } HoverHandler { id: spanHover } }
+                            Text { text: mail.conversationSpan; color: Theme.inkAlpha(0.85); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); FmToolTip { shown: spanHover.hovered; text: "First message → latest message" } HoverHandler { id: spanHover } }
                             Text { text: " · "; color: Theme.inkAlpha(0.62); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
                             Repeater {
                                 model: mail.participants
@@ -1031,7 +1032,7 @@ Item {
                             color: backend.mailDelivery.state === "failed" ? Theme.error : Theme.subtle
                             font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
                             elide: Text.ElideRight; textFormat: Text.PlainText
-                            FmToolTip { visible: deliveryHover.hovered && parent.text.length > 0; text: parent.text }
+                            FmToolTip { shown: deliveryHover.hovered && parent.text.length > 0; text: parent.text }
                             HoverHandler { id: deliveryHover }
                         }
                     }
@@ -1150,7 +1151,7 @@ Item {
                                                 text: mail.messageTime(member.modelData.sent_at, member.index === mail.members.length - 1 && !member.modelData.sent)
                                                 color: Theme.inkAlpha(member.isExpanded ? .5 : .45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.features: {"tnum":1}
                                                 Layout.rightMargin: 8
-                                                FmToolTip { visible: memberDateHover.hovered; text: mail.fullTime(member.modelData.sent_at) }
+                                                FmToolTip { shown: memberDateHover.hovered; text: mail.fullTime(member.modelData.sent_at) }
                                                 HoverHandler { id: memberDateHover }
                                             }
                                             MessageHeaderButton {
@@ -1164,7 +1165,7 @@ Item {
                                                 id: memberMore; objectName: "messageMore_" + member.modelData.id; visible: member.isExpanded
                                                 iconName: "more"; iconSize: 14; tip: "Message options"
                                                 onClicked: {
-                                                    mail.menuRows = backend.snapshotMailRows([member.modelData.is_outgoing ? member.modelData.id : backend.selectedId]); mail.rowMenu = true; mail.messageMenuSource = member.modelData.is_outgoing ? null : messageSource
+                                                    mail.menuRows = backend.snapshotMailRows([member.modelData.is_outgoing ? member.modelData.id : backend.selectedId]); mail.rowMenu = true; mail.messageMenuSource = member.modelData.is_outgoing ? null : messageSource; if (mail.messageMenuSource) mail.messageMenuSource.loadRaw()
                                                     const point = memberMore.mapToItem(Overlay.overlay, width, height)
                                                     morePopup.x = Math.max(8, point.x - morePopup.width); morePopup.y = point.y + 6; morePopup.open()
                                                 }
@@ -1420,7 +1421,7 @@ Item {
                 x=Math.max(8,Math.min(p.x-width,parent.width-width-8)); y=Math.max(8,Math.min(p.y,parent.height-implicitHeight-8))
             }
         }
-        onClosed: { mail.rowMenu = false; labelMenu.close(); formatMenu.close(); mail.messageMenuSource = null }
+        onClosed: { const source = mail.messageMenuSource; mail.rowMenu = false; labelMenu.close(); formatMenu.close(); mail.messageMenuSource = null; if (source) Qt.callLater(function() { if (source && source.releaseRaw) source.releaseRaw() }) }
         readonly property bool drafts: mail.menuRows.length > 0 && mail.menuRows.every(function(row) { return row.is_draft === true })
         readonly property bool allUnread: mail.menuRows.length > 0 && mail.menuRows.every(function(row) { return row.unread === true })
         readonly property bool single: mail.menuRows.length === 1

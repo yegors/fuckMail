@@ -11,7 +11,7 @@ QtObject {
     property int generation: 0
     property string correlation: ""
     property var captured: ({})
-    readonly property var sourceEvents: timelineSource ? backend.todayEvents : backend.events
+    readonly property var sourceEvents: !active ? [] : timelineSource ? backend.todayEvents : backend.events
     readonly property var authority: {
         backend.accounts; backend.calendarSources; backend.googleSync
         return backend.calendarOccurrenceContext(selection.account || "", selection.calendar_id || "")

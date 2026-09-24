@@ -1,4 +1,5 @@
 #include "MailBackend.h"
+#include "FmIconItem.h"
 #include "DebugConsole.h"
 #include "NotificationPresenter.h"
 #include "GuiSelfTest.h"
@@ -11,6 +12,7 @@
 #include "GuiSearchBenchmark.h"
 #include "GuiInteractionBenchmark.h"
 #include "GuiResizeBenchmark.h"
+#include "GuiCalendarBenchmark.h"
 
 #include <QCommandLineParser>
 #include <QDir>
@@ -83,6 +85,7 @@ int main(int argc, char **argv) {
     parser.addOption({"benchmark-search-output", "Measure actual QML input to rendered first-page results on a retained generated 100k profile; writes a JSON report.", "file"});
     parser.addOption({"benchmark-navigation-output", "Measure native mailbox and conversation input to correct content paint on a disposable fixture profile.", "file"});
     parser.addOption({"benchmark-resize-output", "Measure native resize frames and retain separate rendering captures on a disposable fixture profile.", "file"});
+    parser.addOption({"benchmark-calendar-output", "Measure native Calendar view and date input to correct grid paint on a disposable fixture profile.", "file"});
     parser.addOption({"google-drafts-self-test", "Verify cached imported Google drafts without starting provider sync.", "report"});
     parser.addOption({"google-drafts-expectation", "Independently verified cached draft/source expectation for the dedicated walkthrough.", "file"});
     parser.addOption({"google-draft-actions-self-test", "Verify explicit Google draft source actions on an isolated provider fixture.", "report"});
@@ -102,32 +105,32 @@ int main(int argc, char **argv) {
             || parser.isSet("screenshot") || parser.isSet("fixture-clock") || parser.isSet("self-test-startup-workspace")
             || parser.isSet("self-test-calendar-restart") || parser.isSet("self-test-composition-restart")
             || parser.isSet("benchmark-search-output") || parser.isSet("benchmark-navigation-output")
-            || parser.isSet("benchmark-resize-output")))) parser.showHelp(1);
+            || parser.isSet("benchmark-resize-output") || parser.isSet("benchmark-calendar-output")))) parser.showHelp(1);
     if (calendarTest != parser.isSet("google-calendar-expectation")
         || (calendarTest && (actionsTest || snapshotTest || !parser.isSet("profile") || !parser.isSet("engine")
             || parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("self-test-live-empty")
             || parser.isSet("screenshot") || parser.isSet("fixture-clock") || parser.isSet("self-test-startup-workspace")
             || parser.isSet("self-test-calendar-restart") || parser.isSet("self-test-composition-restart")
             || parser.isSet("benchmark-search-output") || parser.isSet("benchmark-navigation-output")
-            || parser.isSet("benchmark-resize-output")))) parser.showHelp(1);
+            || parser.isSet("benchmark-resize-output") || parser.isSet("benchmark-calendar-output")))) parser.showHelp(1);
     if (actionsTest != parser.isSet("google-draft-actions-expectation")
         || (actionsTest && (snapshotTest || !parser.isSet("profile") || !parser.isSet("engine")
             || parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("self-test-live-empty")
             || parser.isSet("screenshot") || parser.isSet("fixture-clock") || parser.isSet("self-test-startup-workspace")
             || parser.isSet("self-test-calendar-restart") || parser.isSet("self-test-composition-restart")
             || parser.isSet("benchmark-search-output") || parser.isSet("benchmark-navigation-output")
-            || parser.isSet("benchmark-resize-output")))) parser.showHelp(1);
+            || parser.isSet("benchmark-resize-output") || parser.isSet("benchmark-calendar-output")))) parser.showHelp(1);
     if (snapshotTest != parser.isSet("google-drafts-expectation")
         || (snapshotTest && (!parser.isSet("profile") || !parser.isSet("engine")
             || parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("self-test-live-empty")
             || parser.isSet("screenshot") || parser.isSet("fixture-clock")
             || parser.isSet("self-test-startup-workspace") || parser.isSet("self-test-calendar-restart")
             || parser.isSet("self-test-composition-restart") || parser.isSet("benchmark-search-output")
-            || parser.isSet("benchmark-navigation-output") || parser.isSet("benchmark-resize-output")))) parser.showHelp(1);
+            || parser.isSet("benchmark-navigation-output") || parser.isSet("benchmark-resize-output") || parser.isSet("benchmark-calendar-output")))) parser.showHelp(1);
     if (parser.isSet("self-test-attachments") && (!parser.isSet("self-test") || parser.isSet("profile")
         || parser.isSet("smoke") || parser.isSet("screenshot") || parser.isSet("live-profile")
         || parser.isSet("self-test-live-empty") || parser.isSet("benchmark-search-output")
-        || parser.isSet("benchmark-navigation-output") || parser.isSet("benchmark-resize-output"))) parser.showHelp(1);
+        || parser.isSet("benchmark-navigation-output") || parser.isSet("benchmark-resize-output") || parser.isSet("benchmark-calendar-output"))) parser.showHelp(1);
     if (parser.isSet("demo-profile") && (parser.isSet("live-profile") || parser.isSet("self-test-live-empty") || lifecycleTest || calendarTest || actionsTest || snapshotTest)) parser.showHelp(1);
     if (parser.isSet("live-profile") && (!parser.isSet("profile") || parser.isSet("self-test") || parser.isSet("fixture-clock"))) parser.showHelp(1);
     if (parser.isSet("self-test-live-empty") && (parser.isSet("self-test") || parser.isSet("fixture-clock") || parser.isSet("smoke") || parser.isSet("screenshot"))) parser.showHelp(1);
@@ -137,7 +140,8 @@ int main(int argc, char **argv) {
     if (parser.isSet("self-test-calendar-restart") && (!parser.isSet("smoke") || !parser.isSet("profile") || parser.isSet("self-test"))) parser.showHelp(1);
     if (parser.isSet("self-test-composition-restart") && (!parser.isSet("smoke") || !parser.isSet("profile") || parser.isSet("self-test") || parser.isSet("self-test-calendar-restart"))) parser.showHelp(1);
     if (parser.isSet("benchmark-search-output") && (!parser.isSet("profile") || parser.isSet("smoke") || parser.isSet("self-test"))) parser.showHelp(1);
-    const int benchmarkCount = int(parser.isSet("benchmark-search-output")) + int(parser.isSet("benchmark-navigation-output")) + int(parser.isSet("benchmark-resize-output"));
+    const int benchmarkCount = int(parser.isSet("benchmark-search-output")) + int(parser.isSet("benchmark-navigation-output")) + int(parser.isSet("benchmark-resize-output"))
+        + int(parser.isSet("benchmark-calendar-output"));
     if (benchmarkCount && (benchmarkCount != 1 || !parser.isSet("profile") || parser.isSet("smoke") || parser.isSet("self-test") || parser.isSet("screenshot"))) parser.showHelp(1);
     const auto captureView = parser.value("screenshot-view");
     if (captureView != "mail" && captureView != "calendar" && captureView != "settings") parser.showHelp(1);
@@ -198,7 +202,8 @@ int main(int argc, char **argv) {
     std::unique_ptr<GuiSearchBenchmark> searchBenchmark;
     std::unique_ptr<GuiInteractionBenchmark> interactionBenchmark;
     std::unique_ptr<GuiResizeBenchmark> resizeBenchmark;
-    QQmlApplicationEngine engine;
+    std::unique_ptr<GuiCalendarBenchmark> calendarBenchmark;
+    QQmlApplicationEngine engine; FmIconItem::registerType();
     engine.rootContext()->setContextProperty("backend", &backend);
     engine.rootContext()->setContextProperty("debugDiagnostics", &debugConsole);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app, [] { QCoreApplication::exit(1); }, Qt::QueuedConnection);
@@ -406,6 +411,11 @@ int main(int argc, char **argv) {
         if (!window) return 7;
         resizeBenchmark = std::make_unique<GuiResizeBenchmark>(backend, window, parser.value("benchmark-resize-output"), &app);
     }
+    if (parser.isSet("benchmark-calendar-output") && !engine.rootObjects().isEmpty()) {
+        auto window = qobject_cast<QQuickWindow *>(engine.rootObjects().first());
+        if (!window) return 7;
+        calendarBenchmark = std::make_unique<GuiCalendarBenchmark>(backend, window, parser.value("benchmark-calendar-output"), &app);
+    }
     if (parser.isSet("self-test") && !engine.rootObjects().isEmpty()) {
         if (parser.isSet("self-test-attachments")) {
             auto window=qobject_cast<QQuickWindow *>(engine.rootObjects().first());
@@ -442,6 +452,7 @@ int main(int argc, char **argv) {
     if (searchBenchmark) searchBenchmark->stopForShutdown();
     if (interactionBenchmark) interactionBenchmark->stopForShutdown();
     if (resizeBenchmark) resizeBenchmark->stopForShutdown();
+    if (calendarBenchmark) calendarBenchmark->stopForShutdown();
     const bool selfTestCompleted = backend.property("selfTestCompleted").toBool();
     const bool restartVerified = result != 0 || !selfTest || !selfTestCompleted || selfTest->verifyRestart();
     if (result==0 && parser.isSet("self-test-attachments") && selfTestCompleted) {
@@ -475,5 +486,6 @@ int main(int argc, char **argv) {
     if (result == 0 && searchBenchmark && !searchBenchmark->passed()) return 9;
     if (result == 0 && interactionBenchmark && !interactionBenchmark->passed()) return 9;
     if (result == 0 && resizeBenchmark && !resizeBenchmark->passed()) return 9;
+    if (result == 0 && calendarBenchmark && !calendarBenchmark->passed()) return 9;
     return result;
 }

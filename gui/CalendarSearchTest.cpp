@@ -1,4 +1,5 @@
 #include "GoogleOperationTestFixture.h"
+#include "FmIconItem.h"
 #include "MailBackend.h"
 #include "ReplyDocument.h"
 #include "HatchItem.h"
@@ -50,6 +51,9 @@ class CalendarSearchTest {
         QJsonArray current{event(), event("workspace")};
         QJsonArray catalog;
         bool holdWindow = false;
+        // Every Calendar window read, and whether wide windows exceed the occurrence budget.
+        QList<QJsonObject> windows;
+        bool limitWide = false;
         Harness() {
             backend.m_account = "personal"; backend.m_enginePid = QCoreApplication::applicationPid();
             backend.m_calendarDate = "2026-09-14"; backend.m_timelineDate = "2026-09-14";
@@ -68,6 +72,7 @@ class CalendarSearchTest {
             catalog = QJsonArray::fromVariantList(backend.m_calendarSources);
             engine.customRequest = [this](auto *peer, const auto &request) {
                 const auto method = request["method"].toString(); methods.append(method);
+                if (method == "calendar_combined") windows.append(request["params"].toObject());
                 if (method == "calendar_search" || (method == "calendar_combined" && holdWindow)) requests.append({peer, request});
                 else {
                     QJsonObject result;
@@ -81,7 +86,10 @@ class CalendarSearchTest {
                     }
                     else if (method == "google_sync_status") result = {{"accounts", QJsonArray::fromVariantList(hSyncRows())}};
                     else if (method == "preferences_save") result = {{"revision",backend.m_preferencesRevision+1},{"preferences",QJsonObject::fromVariantMap(backend.m_preferences)}};
-                    else if (method == "calendar_combined") result = response(request, current);
+                    else if (method == "calendar_combined") {
+                        result = response(request, current);
+                        if (limitWide && span(request["params"].toObject()) > 7) result["coverage"] = QJsonObject{{"state", "partial"}, {"projection_limited", true}};
+                    }
                     else if (method == "calendar_mail_activity") result = {{"state", "ready"}, {"days", QJsonArray{}}};
                     else if (method == "calendar_sources") result = {{"calendars", catalog}};
                     else if (method == "accounts") result = {{"accounts", QJsonArray::fromVariantList(backend.m_allAccounts)}};
@@ -106,6 +114,9 @@ class CalendarSearchTest {
         }
         QVariantList hSyncRows() const { QVariantList rows; for (const auto &v : backend.m_googleSync) rows.append(v); return rows; }
         ~Harness() { backend.m_shutdown = true; backend.m_calendarSearchTimer.stop(); backend.m_connected = false; backend.m_socket.abort(); }
+        static int span(const QJsonObject &params) {
+            return int(QDate::fromString(params["from"].toString(), Qt::ISODate).daysTo(QDate::fromString(params["to"].toString(), Qt::ISODate)));
+        }
         static QJsonObject response(const QJsonObject &request, const QJsonArray &events) {
             const auto params = request["params"].toObject();
             QJsonObject result{{"from", params["from"]}, {"to", params["to"]}, {"time_zone", "UTC"}, {"revision", 9},
@@ -147,8 +158,8 @@ class CalendarSearchTest {
         h.backend.moveTimeline(1);
         require(h.backend.timelineReady() && h.backend.todayEvents().size()==2 && h.backend.timelineDate()=="2026-09-15","adjacent navigation keeps its cached events while refreshing");
         require(h.backend.m_timelineDayEvents.size()==2 && !h.backend.timelinePanels()[2].toMap()["ready"].toBool(),"evict the old outer day and mark the new outer day loading");
-        calendar=h.take("calendar_combined"); h.complete(calendar,Harness::response(calendar.request,h.current));
         strip=h.take("calendar_combined");
+        require(strip.request["params"].toObject()["from"]=="2026-09-14" && h.windows.size()==3,"moving the timeline reads only its own three days, not the Calendar grid");
         h.backend.m_preferences["calendar_display_time_zone"]="America/Toronto";
         h.backend.loadCalendar();
         require(h.backend.todayEvents().isEmpty() && h.backend.m_timelineDayEvents.isEmpty(),"display zone changes invalidate all cached day geometry");
@@ -157,6 +168,36 @@ class CalendarSearchTest {
         calendar=h.take("calendar_combined"); h.complete(calendar,Harness::response(calendar.request,{}));
         strip=h.take("calendar_combined"); h.complete(strip,Harness::response(strip.request,{}));
         require(h.backend.m_timelineDayEvents.size()==3,"timeline retains at most the three requested days");
+    }
+    static void windowCache() {
+        Harness h; h.backend.m_calendarView = "month";
+        const auto base = [&](const QString &date) { return h.backend.calendarBaseWindow(date).params; };
+        h.backend.setCalendarMailActivityContext(true, false);
+        h.backend.loadCalendar();
+        await([&] { return h.backend.m_pending.isEmpty() && h.windows.size() == 4; }, "open Calendar loads its month and prefetches both neighbours while idle");
+        require(h.windows[0] == base("2026-09-14") && Harness::span(h.windows[1]) == 3 && h.windows[2] == base("2026-10-14")
+            && h.windows[3] == base("2026-08-14"), "one six-week grid, the three-day timeline, then the next and previous months");
+        const auto reads = h.windows.size();
+        h.backend.setCalendarView("week");
+        require(h.windows.size() == reads && h.backend.calendarReady() && h.backend.events().size() == h.current.size(), "month to week reuses the month window without a read");
+        h.backend.openCalendarDay("2026-09-20");
+        require(h.backend.calendarView() == "day" && h.backend.calendarDate() == "2026-09-20" && h.backend.calendarReady()
+            && h.backend.events().isEmpty() && h.windows.size() == reads, "a month-day click shows that day at once, sliced from the same window");
+        h.backend.setCalendarDate("2026-10-14");
+        require(h.windows.size() == reads && h.backend.calendarReady(), "the prefetched next month is shown without waiting for the engine");
+        await([&] { return h.backend.m_pending.isEmpty() && h.windows.size() == reads + 1; }, "moving a month prefetches only the one new neighbour");
+        require(h.windows.last() == base("2026-11-14"), "the new neighbour is the following month");
+
+        Harness wide; wide.limitWide = true; wide.backend.m_calendarView = "week";
+        wide.backend.setCalendarMailActivityContext(true, false);
+        wide.backend.loadCalendar();
+        await([&] { return wide.backend.m_pending.isEmpty() && wide.backend.calendarReady(); }, "an over-budget month falls back to the visible week");
+        QElapsedTimer idle; idle.start(); while (idle.elapsed() < 400) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+        QList<int> spans; for (const auto &params : wide.windows) spans.append(Harness::span(params));
+        require(spans == QList<int>{42, 3, 7}, "one over-budget month read, the timeline, then only the exact week; no neighbour prefetch");
+        wide.backend.setCalendarView("day");
+        await([&] { return wide.backend.m_pending.isEmpty() && wide.backend.calendarReady(); }, "an over-budget day reads its own range");
+        require(wide.windows.size() == 4 && Harness::span(wide.windows.last()) == 1, "a limited month is never re-read for a narrower view");
     }
     static void accountVisibility() {
         Harness h; h.holdWindow = true;
@@ -243,7 +284,7 @@ class CalendarSearchTest {
             if (kind == 3) { auto row = h.backend.m_allAccounts[0].toMap(); row["lifecycle"] = QVariantMap{{"state", "active"}, {"revision", 3}}; h.backend.m_allAccounts[0] = row; emit h.backend.accountsChanged(); }
             if (kind == 4) { h.backend.m_calendarDate = "2026-09-21"; emit h.backend.eventsChanged(); }
             if (kind == 5) { h.backend.m_preferences["selected_calendars"] = QVariantList{}; emit h.backend.preferencesChanged(); }
-            if (kind == 6) { auto source = h.backend.m_calendarSources[0].toMap(); source["revision"] = 2; h.backend.m_calendarSources[0] = source; emit h.backend.eventsChanged(); }
+            if (kind == 6) { auto source = h.backend.m_calendarSources[0].toMap(); source["revision"] = 2; h.backend.m_calendarSources[0] = source; emit h.backend.calendarSourcesChanged(); }
             h.complete(old, Harness::response(old.request, {event("personal", "Obsolete response")}));
             require(h.backend.calendarSearch().value("events").toList().isEmpty(), "old query, popup epoch, account, lifecycle, date, visibility and catalog replies are refused");
             auto fresh = h.take("calendar_search");
@@ -307,7 +348,7 @@ class CalendarSearchTest {
         for (const auto &weight : {"Regular", "Medium", "SemiBold"})
             require(QFontDatabase::addApplicationFont(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/fonts/Geist-" + weight + ".ttf") >= 0, "real bundled font");
         QGuiApplication::setFont(QFont("Geist", 10));
-        QQmlApplicationEngine qml; bool warnings = false;
+        QQmlApplicationEngine qml; FmIconItem::registerType(); bool warnings = false;
         QObject::connect(&qml, &QQmlEngine::warnings, [&](const auto &errors) { warnings = true; for (const auto &error : errors) qWarning() << error.toString(); });
         qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend", &h.backend);
         qml.loadData("import SearchTest 1.0\nMain { width: 1000; height: 700 }", QUrl::fromLocalFile(copy.filePath("Test.qml")));
@@ -487,6 +528,8 @@ class CalendarSearchTest {
         }
         QVariant lastDate; require(QMetaObject::invokeMethod(popup, "lastDate", Q_RETURN_ARG(QVariant, lastDate), Q_ARG(QVariant, "2026-03-09")), "civil date caption function");
         require(lastDate == "2026-03-08", "DST weekend caption uses civil subtraction");
+        // Visible Calendar prefetches its neighbouring months while idle; let that settle first.
+        await([&] { return !h.backend.m_calendarPrefetchTimer.isActive() && h.backend.m_pending.isEmpty(); }, "idle Calendar prefetch settles");
         h.holdWindow = true; auto *button = named(window, "calendarSearchResult_0");
         require(QMetaObject::invokeMethod(button, "clicked"), "actual saved result click");
         auto fresh = h.take("calendar_combined"); h.complete(fresh, Harness::response(fresh.request, {event("personal", "Current permitted title"), event("workspace")}));
@@ -509,7 +552,7 @@ class CalendarSearchTest {
         await([&] { return details->property("opened").toBool(); }, "accessible press opens the timed event");
         require(QMetaObject::invokeMethod(details, "close"), "close timed event");
         await([&] { return !details->property("visible").toBool(); }, "timed details close");
-        h.backend.m_todayEvents = h.backend.m_events; h.backend.m_timelineReady = true; emit h.backend.eventsChanged();
+        h.backend.m_todayEvents = h.backend.m_events; h.backend.m_timelineReady = true; emit h.backend.timelineChanged();
         require(QMetaObject::invokeMethod(window, "navigate", Q_ARG(QVariant, "mail")), "return to Mail");
         require(field->property("text") == "mail-only words" && h.backend.calendarSearchQuery() == "project", "context switching preserves both independent queries");
         press("timelineEvent-instance");
@@ -559,7 +602,7 @@ class CalendarSearchTest {
     }
 public:
     static void run() {
-        accountVisibility(); timelineNavigation(); catalogPolling(); contexts(); selection(); controls();
+        windowCache(); accountVisibility(); timelineNavigation(); catalogPolling(); contexts(); selection(); controls();
         qInfo() << "Calendar search passed: shared cached IPC, independent Main search, complete context fences, fresh exact occurrence navigation, full Combined visibility and three-theme/default-large controls. No provider or performance claim.";
     }
 };

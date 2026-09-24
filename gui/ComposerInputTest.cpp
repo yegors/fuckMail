@@ -1,4 +1,5 @@
 #include "GoogleOperationTestFixture.h"
+#include "FmIconItem.h"
 #include "MailBackend.h"
 #include "ReplyDocument.h"
 #include <QGuiApplication>
@@ -117,7 +118,7 @@ static void run() {
     QFile module(modulePath+"/qmldir"); require(module.open(QIODevice::WriteOnly),"module registration");
     module.write("module ComposerTest\nsingleton Theme 1.0 Theme.qml\nReplyComposer 1.0 ReplyComposer.qml\nRecipientField 1.0 RecipientField.qml\n"); module.close();
     qmlRegisterType<ReplyDocument>("ComposerTest",1,0,"ReplyDocument");
-    QQmlApplicationEngine qml; bool warnings=false;
+    QQmlApplicationEngine qml; FmIconItem::registerType(); bool warnings=false;
     QObject::connect(&qml,&QQmlEngine::warnings,[&](const QList<QQmlError> &errors){warnings=true; for(const auto &error:errors) qWarning()<<error.toString();});
     qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&backend);
     qml.loadData(R"QML(import QtQuick

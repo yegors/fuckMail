@@ -16,11 +16,16 @@ QtObject {
         {name:"Everywhere",scope:"all",rows:[
             {id:"view",label:"Mail · Calendar",key:"V"},{id:"settings",label:"Settings",key:","},{id:"undo",label:"Undo",key:"Z"},
             {id:"send",label:"Send the message · save the event",key:"Ctrl+Return",fixed:true},{id:"close",label:"Close or cancel",key:"Esc",fixed:true}]}]
+    // Every Shortcut re-reads its key whenever preferences change; look defaults up directly.
+    readonly property var defaults: {
+        const keys = {}
+        for (const section of sections) for (const row of section.rows) if (keys[row.id] === undefined) keys[row.id] = row.key
+        return keys
+    }
     function sequence(id, preferences) {
         const overrides = (preferences || {}).shortcuts || {}
         if (overrides[id] !== undefined) return overrides[id] || ""
-        for (const section of sections) for (const row of section.rows) if (row.id === id) return row.key
-        return ""
+        return defaults[id] !== undefined ? defaults[id] : ""
     }
     function unassigned(key,scope,preferences) {
         for(const section of sections) if(section.scope===scope || section.scope==="all")

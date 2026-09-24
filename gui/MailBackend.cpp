@@ -32,6 +32,9 @@ bool quietDiagnosticRead(const QString &method) {
     return method == "status" || method == "google_sync_status" || method == "google_auth_status"
         || method == "assist_job" || method == "assist_status" || method == "mail_notifications" || method == "calendar_reminders";
 }
+// A message source can carry up to ~1 MB of raw text that only the source
+// dialog shows. Readers and their caches keep the rest.
+QJsonObject withoutRaw(QJsonObject source) { source.remove(QStringLiteral("raw")); return source; }
 
 }
 
@@ -67,7 +70,7 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
     m_notificationTimer.setInterval(15000);
     connect(&m_notificationTimer, &QTimer::timeout, this, &MailBackend::pollNotifications);
     for (auto signal : {&MailBackend::preferencesChanged, &MailBackend::connectedChanged, &MailBackend::startupReadyChanged,
-            &MailBackend::accountsChanged, &MailBackend::eventsChanged})
+            &MailBackend::accountsChanged, &MailBackend::calendarSourcesChanged})
         connect(this, signal, this, &MailBackend::configureNotifications);
     connect(this, &MailBackend::draftChanged, this, [this] {
         if (!m_googleSendPending.isEmpty() && m_googleSendPending["authored"].toObject() != googleSendAuthorSnapshot())
@@ -88,9 +91,16 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
     connect(this, &MailBackend::googleSyncChanged, this, &MailBackend::draftDeletionChanged);
     connect(this, &MailBackend::googleSyncChanged, this, &MailBackend::draftChanged);
     m_calendarDate = todayDate(); m_timelineDate = todayDate();
-    m_clockTimer.setInterval(30000);
-    connect(&m_clockTimer, &QTimer::timeout, this, [this] { emit eventsChanged(); });
-    m_clockTimer.start();
+    m_clockTimer.setSingleShot(true);
+    connect(&m_clockTimer, &QTimer::timeout, this, &MailBackend::tickClock);
+    // A changed display zone or profile kind can move today and the current minute.
+    connect(this, &MailBackend::preferencesChanged, this, &MailBackend::tickClock);
+    connect(this, &MailBackend::connectedChanged, this, &MailBackend::tickClock);
+    tickClock();
+    m_calendarPrefetchTimer.setSingleShot(true); m_calendarPrefetchTimer.setInterval(250);
+    connect(&m_calendarPrefetchTimer, &QTimer::timeout, this, &MailBackend::prefetchCalendarWindows);
+    m_navigationSaveTimer.setSingleShot(true); m_navigationSaveTimer.setInterval(800);
+    connect(&m_navigationSaveTimer, &QTimer::timeout, this, &MailBackend::savePreferences);
     m_socket.setReadBufferSize(maxFrame + 1);
     m_connectTimer.setInterval(150);
     connect(&m_connectTimer, &QTimer::timeout, this, &MailBackend::attemptConnection);
@@ -157,7 +167,8 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
         if (!m_syntheticProfile && (!m_queryActivity.isValid() || m_queryActivity.elapsed() >= 500)) { pollGoogleSync(); pollMailDelivery(); }
         request("status", {}, {}, [this](auto result, bool ok) {
             if (!ok) return;
-            m_diagnostics = result.toVariantMap(); emit preferencesChanged();
+            const auto diagnostics = result.toVariantMap();
+            if (diagnostics != m_diagnostics) { m_diagnostics = diagnostics; emit diagnosticsChanged(); }
             auto revision = result["revision"].toInteger();
             const auto calendarRevision = result["calendar_generation"].toInteger(-1);
             const bool calendarChanged = calendarRevision < 0 || calendarRevision != m_calendarRevision;
@@ -200,7 +211,7 @@ MailBackend::~MailBackend() {
     // A fatal GUI exit may destroy a still-connected backend. Detach callbacks
     // before member destruction: QLocalSocket::~QLocalSocket can emit signals
     // after the pending-request maps and buffers have already been destroyed.
-    for (auto timer : {&m_clockTimer, &m_connectTimer, &m_pollTimer, &m_searchTimer, &m_draftTimer, &m_viewTimer, &m_notificationTimer, &m_actionTimer, &m_calendarMailActivityTimer}) {
+    for (auto timer : {&m_clockTimer, &m_connectTimer, &m_pollTimer, &m_searchTimer, &m_draftTimer, &m_viewTimer, &m_notificationTimer, &m_actionTimer, &m_calendarMailActivityTimer, &m_calendarPrefetchTimer, &m_navigationSaveTimer}) {
         timer->stop(); QObject::disconnect(timer, nullptr, this, nullptr);
     }
     QObject::disconnect(&m_socket, nullptr, this, nullptr);
@@ -278,7 +289,7 @@ void MailBackend::request(const QString &method, const QString &account, const Q
     if (!account.isEmpty()) envelope["account"] = account;
     const auto wire = QJsonDocument(envelope).toJson(QJsonDocument::Compact) + '\n';
     if (wire.size() > maxFrame) { fail("This request is too large for the current local interface."); callback({}, false); return; }
-    m_pending.insert(id, {std::move(callback), 0, method, account, m_generation, m_listGeneration, m_calendarGeneration, m_senderCardGeneration, automaticRead, 0});
+    m_pending.insert(id, {std::move(callback), 0, method, account, m_generation, m_listGeneration, m_quietCalendarRead ? -1 : m_calendarGeneration, m_senderCardGeneration, automaticRead, 0});
     m_outgoing.enqueue({id, wire});
     sendNext();
 }
@@ -824,8 +835,9 @@ void MailBackend::prepareReader(const QString &account, const QString &id, QVari
         auto latest = members.last().toMap();
         if (ok && result.value("account").toString() == account && result.value("id").toString() == message
             && result.value("source_version").toString() == version) {
-            const auto source = result.toVariantMap();
-            const auto bytes = QJsonDocument(result).toJson(QJsonDocument::Compact).size();
+            const auto prepared = withoutRaw(result);
+            const auto source = prepared.toVariantMap();
+            const auto bytes = QJsonDocument(prepared).toJson(QJsonDocument::Compact).size();
             m_sourceCache.insert(key, new ReaderSnapshot{source, lifecycle}, int(bytes + 128));
             latest["reader_source"] = source; latest["metadata"] = source.value("metadata");
         } else latest["reader_error"] = result.value("message").toString("Message source is unavailable.");
@@ -1285,89 +1297,188 @@ QVariantList MailBackend::timelinePanels() const {
     }
     return panels;
 }
+MailBackend::CalendarWindow MailBackend::calendarWindow(const QString &from, int days) const {
+    const QJsonObject params{{"from", from}, {"to", QDate::fromString(from, Qt::ISODate).addDays(days).toString(Qt::ISODate)},
+        {"calendars", effectiveCalendarSelection()}};
+    return {from, days, params, QString::fromUtf8(QJsonDocument(params).toJson(QJsonDocument::Compact)) + "/"
+        + m_preferences.value("calendar_display_time_zone").toString()};
+}
+// Day, week and month views all read their month's six-week grid, so moving
+// between them, or within the month, needs no engine read.
+MailBackend::CalendarWindow MailBackend::calendarBaseWindow(const QString &date) const {
+    if (m_calendarView == "agenda") return calendarWindow(calendarRangeStart("agenda", date), 42);
+    return calendarWindow(calendarRangeStart("month", date), 42);
+}
+namespace {
+// A window over the engine's occurrence budget cannot stand in for a narrower range.
+bool calendarWindowLimited(const QJsonObject &result) {
+    return result["limited"].toBool() || result["coverage"].toObject()["projection_limited"].toBool();
+}
+}
+void MailBackend::setCalendarStatus(bool ready, const QString &coverage) {
+    if (ready == m_calendarReady && coverage == m_calendarCoverage) return;
+    m_calendarReady = ready; m_calendarCoverage = coverage; emit calendarStatusChanged();
+}
+void MailBackend::storeCalendarWindow(const QString &key, const QJsonObject &result) {
+    m_calendarWindowOrder.removeAll(key); m_calendarWindowOrder.append(key);
+    m_calendarWindows.insert(key, result);
+    while (m_calendarWindowOrder.size() > 8) m_calendarWindows.remove(m_calendarWindowOrder.takeFirst());
+}
+bool MailBackend::publishCachedCalendar() {
+    const auto exact = calendarWindow(calendarFrom(), calendarDays());
+    // The exact range's own read is shown even when incomplete; a wider window only when whole.
+    auto source = m_calendarWindows.constFind(exact.key);
+    if (source == m_calendarWindows.cend() || (*source)["limited"].toBool()) {
+        source = m_calendarWindows.constFind(calendarBaseWindow(m_calendarDate).key);
+        if (source == m_calendarWindows.cend() || calendarWindowLimited(*source)) return false;
+    }
+    const auto display = QString::number(m_calendarCacheEpoch) + '#' + source.key() + '#' + exact.key;
+    if (display != m_calendarDisplayKey) {
+        m_events = calendarPresentation((*source)["events"].toArray(), QDate::fromString(exact.from, Qt::ISODate), exact.days,
+            QTimeZone((*source)["time_zone"].toString().toUtf8()));
+        m_calendarDisplayKey = display;
+    }
+    setCalendarStatus(m_connected, m_connected ? calendarCoverageText((*source)["coverage"].toObject())
+                                               : QStringLiteral("Cached calendar is stale — reconnect to refresh"));
+    return true;
+}
+void MailBackend::requestCalendarWindow(const CalendarWindow &window) {
+    if (!m_connected || m_calendarWindowRequests.contains(window.key)) return;
+    m_calendarWindowRequests.insert(window.key);
+    const auto epoch = m_calendarCacheEpoch; const auto key = window.key;
+    // Window reads never raise the global error; the callback reports displayed failures.
+    QScopedValueRollback<bool> quiet(m_quietCalendarRead, true);
+    request("calendar_combined", {}, window.params, [this, epoch, key](auto result, bool ok) {
+        if (epoch != m_calendarCacheEpoch) return;
+        m_calendarWindowRequests.remove(key);
+        const auto code = result["code"].toString();
+        if (!ok && code == "limit_exceeded") storeCalendarWindow(key, {{"limited", true}});
+        else if (ok) storeCalendarWindow(key, result);
+        const auto exact = calendarWindow(calendarFrom(), calendarDays());
+        if (key != exact.key && key != calendarBaseWindow(m_calendarDate).key) return;
+        const auto before = m_calendarDisplayKey;
+        if (publishCachedCalendar()) { if (m_calendarDisplayKey != before) emit eventsChanged(); return; }
+        // An over-budget month falls back to exactly the visible range.
+        if ((ok || code == "limit_exceeded") && key != exact.key) { requestCalendarWindow(exact); return; }
+        if (code == "permission_denied" || code == "not_found" || code == "scope_mismatch") {
+            m_events.clear(); m_calendarDisplayKey.clear(); emit eventsChanged();
+        }
+        setCalendarStatus(false, (m_events.isEmpty() ? "Calendar unavailable: " : "Cached calendar is stale: ") + result["message"].toString());
+        // Open event details re-check readiness on the window signal.
+        emit eventsChanged();
+        fail(result["message"].toString("The operation failed."));
+    });
+}
+void MailBackend::showCalendarRange() {
+    ++m_calendarGeneration;
+    m_weekStart = calendarFrom();
+    if (!publishCachedCalendar()) {
+        // Earlier rows belong to another range and cannot be drawn at this one's positions.
+        m_events.clear(); m_calendarDisplayKey.clear();
+        const auto base = calendarBaseWindow(m_calendarDate);
+        const auto cached = m_calendarWindows.constFind(base.key);
+        setCalendarStatus(false, m_connected ? QStringLiteral("Loading calendars…") : QStringLiteral("Calendar is waiting for the local engine"));
+        requestCalendarWindow(cached != m_calendarWindows.cend() && calendarWindowLimited(*cached) ? calendarWindow(calendarFrom(), calendarDays()) : base);
+    }
+    emit eventsChanged();
+    m_calendarPrefetchTimer.start();
+}
+// Neighbouring months load while Calendar is open and the connection is idle,
+// so the next move is already local and never queues ahead of user work.
+void MailBackend::prefetchCalendarWindows() {
+    if (!m_connected || m_shutdown || !m_calendarMailActivityActive || m_calendarView == "agenda") return;
+    if (!m_pending.isEmpty()) { m_calendarPrefetchTimer.start(); return; }
+    // Neighbours of an over-budget month would exceed it too.
+    const auto current = m_calendarWindows.constFind(calendarBaseWindow(m_calendarDate).key);
+    if (current != m_calendarWindows.cend() && calendarWindowLimited(*current)) return;
+    const auto date = QDate::fromString(m_calendarDate, Qt::ISODate);
+    for (int offset : {0, 1, -1}) {
+        const auto window = calendarBaseWindow(date.addMonths(offset).toString(Qt::ISODate));
+        if (!m_calendarWindows.contains(window.key)) requestCalendarWindow(window);
+    }
+}
 void MailBackend::loadCalendar() {
-    const auto from = calendarFrom(), timeline = m_timelineDate;
-    const int days = calendarDays(), generation = ++m_calendarGeneration;
-    m_weekStart = from;
+    ++m_calendarCacheEpoch; ++m_calendarGeneration;
+    m_calendarWindows.clear(); m_calendarWindowOrder.clear(); m_calendarWindowRequests.clear();
+    m_weekStart = calendarFrom();
+    const auto exact = calendarWindow(calendarFrom(), calendarDays());
+    // Keep rows for this same range visible until the refreshed read replaces them.
+    const bool current = !m_calendarDisplayKey.isEmpty() && m_calendarDisplayKey.endsWith('#' + exact.key);
+    if (!current) { m_events.clear(); emit eventsChanged(); }
+    m_calendarDisplayKey = current ? QStringLiteral("stale#") + exact.key : QString{};
+    const bool snapshot = current && m_calendarReady;
+    if (!m_connected) {
+        setCalendarStatus(false, snapshot ? QStringLiteral("Cached calendar is stale — reconnect to refresh") : QStringLiteral("Calendar is waiting for the local engine"));
+    } else {
+        setCalendarStatus(snapshot, snapshot ? QStringLiteral("Refreshing cached calendar…") : QStringLiteral("Loading calendars…"));
+        requestCalendarWindow(calendarBaseWindow(m_calendarDate));
+        m_calendarPrefetchTimer.start();
+    }
+    loadTimeline(true);
+}
+void MailBackend::loadTimeline(bool force) {
+    const auto timeline = m_timelineDate;
     const auto selection = effectiveCalendarSelection();
-    const QJsonObject calendarParams{{"from", from}, {"to", QDate::fromString(from, Qt::ISODate).addDays(days).toString(Qt::ISODate)}, {"calendars", selection}};
     const auto timelineDay = QDate::fromString(timeline, Qt::ISODate);
-    const QJsonObject timelineParams{{"from", timelineDay.addDays(-1).toString(Qt::ISODate)}, {"to", timelineDay.addDays(2).toString(Qt::ISODate)}, {"calendars", selection}};
+    const QJsonObject params{{"from", timelineDay.addDays(-1).toString(Qt::ISODate)}, {"to", timelineDay.addDays(2).toString(Qt::ISODate)}, {"calendars", selection}};
     const auto displayZone = m_preferences.value("calendar_display_time_zone").toString();
-    const auto timelineContext = QString::fromUtf8(QJsonDocument(QJsonArray{selection}).toJson(QJsonDocument::Compact)) + "/" + displayZone;
-    if (timelineContext != m_timelineCacheContext) {
-        m_timelineCacheContext = timelineContext; m_timelineDayEvents.clear();
-    }
-    const auto calendarScope = QString::fromUtf8(QJsonDocument(calendarParams).toJson(QJsonDocument::Compact)) + "/" + displayZone;
-    const auto timelineScope = QString::fromUtf8(QJsonDocument(timelineParams).toJson(QJsonDocument::Compact)) + "/" + displayZone;
-    if (calendarScope != m_calendarScope) {
-        m_calendarScope = calendarScope; m_events.clear(); m_calendarReady = false;
-    }
-    if (timelineScope != m_timelineScope) {
-        m_timelineScope = timelineScope;
+    const auto context = QString::fromUtf8(QJsonDocument(QJsonArray{selection}).toJson(QJsonDocument::Compact)) + "/" + displayZone;
+    if (context != m_timelineCacheContext) { m_timelineCacheContext = context; m_timelineDayEvents.clear(); force = true; }
+    const auto scope = QString::fromUtf8(QJsonDocument(params).toJson(QJsonDocument::Compact)) + "/" + displayZone;
+    bool changed = false;
+    if (scope != m_timelineScope) {
+        m_timelineScope = scope; force = true; changed = true;
         m_todayEvents = m_timelineDayEvents.value(timeline).toList();
         m_timelineReady = m_timelineDayEvents.contains(timeline);
         for (const auto &date : m_timelineDayEvents.keys())
             if (qAbs(timelineDay.daysTo(QDate::fromString(date, Qt::ISODate))) > 1) m_timelineDayEvents.remove(date);
     }
-    const bool hadCalendarSnapshot = m_calendarReady, hadTimelineSnapshot = m_timelineReady;
+    // The same timeline window with unchanged data needs no read.
+    if (!force) { if (changed) emit timelineChanged(); return; }
+    const bool snapshot = m_timelineReady;
+    const int generation = ++m_timelineGeneration;
     if (!m_connected) {
-        m_calendarCoverage = hadCalendarSnapshot ? "Cached calendar is stale — reconnect to refresh" : "Calendar is waiting for the local engine";
-        m_timelineCoverage = hadTimelineSnapshot ? "Cached timeline is stale — reconnect to refresh" : "Timeline is waiting for the local engine";
-        m_calendarReady = false; m_timelineReady = false; emit eventsChanged(); return;
+        m_timelineCoverage = snapshot ? "Cached timeline is stale — reconnect to refresh" : "Timeline is waiting for the local engine";
+        m_timelineReady = false; emit timelineChanged(); return;
     }
-    m_calendarCoverage = hadCalendarSnapshot ? "Refreshing cached calendar…" : "Loading calendars…";
-    m_timelineCoverage = hadTimelineSnapshot ? "Refreshing cached timeline…" : "Loading timeline…";
-    emit eventsChanged();
-    auto coverageText = [this](const QJsonObject &coverage) {
-        return calendarCoverageText(coverage);
-    };
-    request("calendar_combined", {}, calendarParams,
-      [this, from, days, generation, hadCalendarSnapshot, coverageText](auto result, bool ok) {
-        if (generation != m_calendarGeneration) return;
+    m_timelineCoverage = snapshot ? "Refreshing cached timeline…" : "Loading timeline…";
+    emit timelineChanged();
+    request("calendar_combined", {}, params, [this, timeline, generation, snapshot](auto result, bool ok) {
+        if (generation != m_timelineGeneration || timeline != m_timelineDate) return;
         if (!ok) {
-            m_calendarReady = false;
+            m_timelineReady = false;
             const auto code = result["code"].toString();
-            if (!hadCalendarSnapshot || code == "permission_denied" || code == "not_found" || code == "scope_mismatch") m_events.clear();
-            m_calendarCoverage = (m_events.isEmpty() ? "Calendar unavailable: " : "Cached calendar is stale: ") + result["message"].toString();
-            emit eventsChanged(); return;
-        }
-        publishCalendarWindow(result, from, days);
-        emit eventsChanged();
-    });
-    request("calendar_combined", {}, timelineParams,
-        [this, timeline, generation, hadTimelineSnapshot, coverageText](auto result, bool ok) {
-            if (generation != m_calendarGeneration || timeline != m_timelineDate) return;
-            if (!ok) {
-                m_timelineReady = false;
-                const auto code = result["code"].toString();
-                if (!hadTimelineSnapshot || code == "permission_denied" || code == "not_found" || code == "scope_mismatch") {
-                    m_todayEvents.clear(); m_timelineDayEvents.clear();
-                }
-                m_timelineCoverage = (m_todayEvents.isEmpty() ? "Timeline unavailable: " : "Cached timeline is stale: ") + result["message"].toString();
-                emit eventsChanged(); return;
+            if (!snapshot || code == "permission_denied" || code == "not_found" || code == "scope_mismatch") {
+                m_todayEvents.clear(); m_timelineDayEvents.clear();
             }
-            m_timelineDayEvents.clear();
-            const auto day = QDate::fromString(timeline, Qt::ISODate);
-            const auto zone = QTimeZone(result["time_zone"].toString().toUtf8());
-            for (int offset = -1; offset <= 1; ++offset)
-                m_timelineDayEvents[day.addDays(offset).toString(Qt::ISODate)] = calendarPresentation(result["events"].toArray(), day.addDays(offset), 1, zone);
-            m_todayEvents = m_timelineDayEvents.value(timeline).toList();
-            m_timelineReady = true; m_timelineCoverage = coverageText(result["coverage"].toObject()); emit eventsChanged();
-        });
+            m_timelineCoverage = (m_todayEvents.isEmpty() ? "Timeline unavailable: " : "Cached timeline is stale: ") + result["message"].toString();
+            emit timelineChanged(); return;
+        }
+        m_timelineDayEvents.clear();
+        const auto day = QDate::fromString(timeline, Qt::ISODate);
+        const auto zone = QTimeZone(result["time_zone"].toString().toUtf8());
+        for (int offset = -1; offset <= 1; ++offset)
+            m_timelineDayEvents[day.addDays(offset).toString(Qt::ISODate)] = calendarPresentation(result["events"].toArray(), day.addDays(offset), 1, zone);
+        m_todayEvents = m_timelineDayEvents.value(timeline).toList();
+        m_timelineReady = true; m_timelineCoverage = calendarCoverageText(result["coverage"].toObject()); emit timelineChanged();
+    });
 }
 void MailBackend::moveWeek(int delta) {
     m_calendarView = "week"; m_calendarDate = QDate::fromString(m_calendarDate, Qt::ISODate).addDays(delta * 7).toString(Qt::ISODate);
-    loadCalendar(); emit eventsChanged();
+    showCalendarRange();
 }
 void MailBackend::showFixtureWeek() {
-    m_calendarView = "week"; m_calendarDate = m_fixtureToday; loadCalendar(); emit eventsChanged();
+    m_calendarView = "week"; m_calendarDate = m_fixtureToday; showCalendarRange();
 }
 void MailBackend::refresh() { m_listRefreshPending = false; refreshState(true, true); }
 void MailBackend::refreshState(bool refreshList, bool refreshCalendar, bool automatic) {
     {
         QScopedValueRollback<bool> origin(m_automaticReadScope, automatic);
-        loadAccounts(); loadPreferences(); loadCategories();
+        // Polling reloads preferences only after another client saved them.
+        const auto savedRevision = m_diagnostics.value("preferences_revision");
+        const bool preferencesCurrent = automatic && m_initialPreferencesLoaded && savedRevision.isValid()
+            && savedRevision.toLongLong() == m_preferencesRevision;
+        loadAccounts(); if (!preferencesCurrent) loadPreferences(); loadCategories();
     }
     if (refreshList) { QScopedValueRollback<bool> origin(m_automaticReadScope, automatic); loadConversations(false, true); }
     {
@@ -1450,7 +1561,7 @@ void MailBackend::shutdown() {
     savePreferences(); saveDraft(); finishShutdown();
 }
 void MailBackend::finishShutdown() {
-    if (!m_shutdown || m_shutdownEmitted || m_draftDirty || draftBusy() || !m_draftDiscardUi.isEmpty() || m_preferencesSaving || !m_preferencesPending.isEmpty() || m_calendarWrites || m_accountWrites || m_mutatingConversation || !m_viewSaving.isEmpty() || !m_viewDirty.isEmpty()) return;
+    if (!m_shutdown || m_shutdownEmitted || m_draftDirty || draftBusy() || !m_draftDiscardUi.isEmpty() || m_preferencesSaving || !m_preferencesPending.isEmpty() || (m_connected && !m_navigationPending.isEmpty()) || m_calendarWrites || m_accountWrites || m_mutatingConversation || !m_viewSaving.isEmpty() || !m_viewDirty.isEmpty()) return;
     m_shutdownEmitted = true;
     m_pollTimer.stop();
     m_socket.disconnectFromServer(); emit shutdownReady();
@@ -1492,7 +1603,7 @@ QString MailBackend::labelRequest(const QString &method, const QVariantMap &para
     return ticket;
 }
 
-QString MailBackend::requestMessageSource(const QString &id, const QString &version) {
+QString MailBackend::requestMessageSource(const QString &id, const QString &version, bool withRaw) {
     // QML can briefly retain the preceding account's member while accountChanged
     // propagates. Never attach that obsolete source request to the new account.
     const auto members = m_conversation.value("messages").toList();
@@ -1504,17 +1615,19 @@ QString MailBackend::requestMessageSource(const QString &id, const QString &vers
     const auto lifecycle = lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong();
     const auto key = account + '\n' + id + '\n' + version;
     const auto generation = m_generation;
-    QTimer::singleShot(0, this, [this, ticket, account, id, version, key, lifecycle, generation] {
+    QTimer::singleShot(0, this, [this, ticket, account, id, version, key, lifecycle, generation, withRaw] {
         if (generation != m_generation || account != m_account) return;
-        if (auto cached = m_sourceCache.object(key); cached && cached->lifecycle == lifecycle) {
+        // The cache holds sources without raw text, so a raw request always reads.
+        if (auto cached = m_sourceCache.object(key); !withRaw && cached && cached->lifecycle == lifecycle) {
             emit messageSourceReady(ticket, cached->data, true); return;
         }
-        request("message_source", account, {{"id",id},{"source_version",version}}, [this, ticket, account, key, lifecycle, generation](auto result, bool ok) {
+        request("message_source", account, {{"id",id},{"source_version",version}}, [this, ticket, account, key, lifecycle, generation, withRaw](auto result, bool ok) {
+            const auto prepared = withoutRaw(result);
             if (ok && lifecycle == lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong()) {
-                const auto bytes = QJsonDocument(result).toJson(QJsonDocument::Compact).size();
-                m_sourceCache.insert(key, new ReaderSnapshot{result.toVariantMap(), lifecycle}, int(bytes + 128));
+                const auto bytes = QJsonDocument(prepared).toJson(QJsonDocument::Compact).size();
+                m_sourceCache.insert(key, new ReaderSnapshot{prepared.toVariantMap(), lifecycle}, int(bytes + 128));
             }
-            if (account == m_account && generation == m_generation) emit messageSourceReady(ticket, result.toVariantMap(), ok);
+            if (account == m_account && generation == m_generation) emit messageSourceReady(ticket, (withRaw ? result : prepared).toVariantMap(), ok);
         });
     });
     return ticket;

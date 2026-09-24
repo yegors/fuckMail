@@ -164,7 +164,7 @@ Rectangle {
                             onReleased: if (!timeline.endDrag()) timeline.showEvent(eventBlock.modelData, eventBlock)
                             onCanceled: timeline.cancelDrag()
                         }
-                        FmToolTip { visible: eventMouse.containsMouse && !timeline.dragging; text: modelData.title + "\n" + modelData.time_display + " – " + modelData.end_display + "\n" + modelData.account_name + " / " + modelData.calendar_name }
+                        FmToolTip { shown: eventMouse.containsMouse && !timeline.dragging; text: modelData.title + "\n" + modelData.time_display + " – " + modelData.end_display + "\n" + modelData.account_name + " / " + modelData.calendar_name }
                         Accessible.ignored: panel.index !== 1
                         Accessible.role: Accessible.Button; Accessible.name: modelData.title + ", " + modelData.start_display
                         Accessible.onPressAction: timeline.showEvent(modelData, eventBlock)

@@ -343,16 +343,7 @@ impl Runtime {
                         }
                         // A stopped runner or changed authority affects the entire remaining
                         // batch. Do not spend one timeout on every message in the mailbox.
-                        if matches!(
-                            e.code.as_str(),
-                            "assistance_unavailable"
-                                | "assistance_disabled"
-                                | "engine_stopped"
-                                | "account_removed"
-                                | "account_not_found"
-                                | "model_changed"
-                                | "model_unavailable"
-                        ) {
+                        if super::runner_failure(&e.code) {
                             return Err(e);
                         }
                         state["error"] = json!({"code":e.code,"message":e.message});

@@ -10,6 +10,9 @@ Item {
     property string ticket: ""
     property var result: ({})
     property string error: ""
+    // Raw text is read for the dialog only and released when it closes.
+    property string raw: ""
+    property string rawTicket: ""
     property bool plain: false
     readonly property string identity: account + "/" + (message.id || "") + "/" + (message.source_version || "")
     readonly property bool hasHtml: !!result.body_html && !result.html_truncated
@@ -23,7 +26,7 @@ Item {
         if (message.reader_error) { error = message.reader_error; return true }
         return false
     }
-    onIdentityChanged: { ticket = ""; result = ({}); error = ""; plain = false; original.close(); adopt(); deferredLoad.restart() }
+    onIdentityChanged: { ticket = ""; result = ({}); error = ""; raw = ""; rawTicket = ""; plain = false; original.close(); adopt(); deferredLoad.restart() }
     onMessageChanged: adopt()
     onActiveChanged: if (active) load()
     Component.onCompleted: { adopt(); load() }
@@ -32,11 +35,22 @@ Item {
         if (!active || !backend.connected || !message.source_available || !message.source_version || ticket || result.id || error) return
         ticket = backend.requestMessageSource(message.id, message.source_version)
     }
-    function show() { if (error) error = ""; load(); original.open() }
+    function loadRaw() {
+        if (raw || rawTicket || !backend.connected || !message.source_available || !message.source_version) return
+        rawTicket = backend.requestMessageSource(message.id, message.source_version, true)
+    }
+    function releaseRaw() { if (!original.opened) { raw = ""; rawTicket = "" } }
+    function show() { if (error) error = ""; load(); loadRaw(); original.open() }
     Connections {
         target: backend
-        function onConnectedChanged() { if (!backend.connected) ticket = ""; else source.load() }
+        function onConnectedChanged() { if (!backend.connected) { ticket = ""; rawTicket = "" } else source.load() }
         function onMessageSourceReady(request, content, ok) {
+            if (request === source.rawTicket) {
+                source.rawTicket = ""
+                if (ok && content.id === source.message.id && content.account === source.account && content.source_version === source.message.source_version) source.raw = content.raw || ""
+                else if (original.opened) source.error = content.message || "Message source is unavailable."
+                return
+            }
             if (request !== source.ticket) return
             source.ticket = ""
             if (ok && content.id === source.message.id && content.account === source.account && content.source_version === source.message.source_version) source.result = content
@@ -47,18 +61,19 @@ Item {
         id: original; objectName: "messageSourceDialog_" + source.message.id
         width: Math.min(800, parent.width - 48); height: Math.min(640, parent.height - 48)
         title: "Message source"; standardButtons: Dialog.Close
+        onClosed: source.releaseRaw()
         contentItem: ColumnLayout {
             spacing: 12; property bool blocksWorkspaceShortcuts: true
             RowLayout {
                 Layout.fillWidth: true
                 Text { text: source.message.subject || ""; Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.secondary; font.pointSize: Theme.fontPoints(13); textFormat: Text.PlainText }
-                FmButton { text: "Copy"; outlined: true; implicitHeight: 28; enabled: !!source.result.raw; onClicked: backend.copyText(source.result.raw) }
+                FmButton { text: "Copy"; outlined: true; implicitHeight: 28; enabled: !!source.raw; onClicked: backend.copyText(source.raw) }
             }
             Text { visible: !!source.error || !!source.result.raw_truncated; text: source.error || "This source preview is shortened. The full message remains stored locally."; color: source.error ? Theme.error : Theme.muted; font.pointSize: Theme.fontPoints(12); wrapMode: Text.Wrap; Layout.fillWidth: true }
             ScrollView {
                 ScrollBar.vertical: FmScrollBar {}
                 Layout.fillWidth: true; Layout.fillHeight: true; clip: true
-                TextArea { objectName: "messageSourceText_" + source.message.id; text: original.opened ? (source.result.raw || (source.ticket ? "Loading source…" : "Source unavailable.")) : ""; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(12); color: Theme.secondary; background: Rectangle { color: Theme.canvas; radius: 4 } }
+                TextArea { objectName: "messageSourceText_" + source.message.id; text: original.opened ? (source.raw || (source.ticket || source.rawTicket ? "Loading source…" : "Source unavailable.")) : ""; textFormat: TextEdit.PlainText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(12); color: Theme.secondary; background: Rectangle { color: Theme.canvas; radius: 4 } }
             }
         }
     }

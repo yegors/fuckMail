@@ -49,13 +49,19 @@ QVariantList layoutSegments(std::vector<Segment> &timed, std::vector<Segment> &a
 QVariantList calendarPresentation(const QJsonArray &events, QDate first, int days, const QTimeZone &zone) {
     if (!first.isValid() || days < 1 || days > 42 || !zone.isValid()) return {};
     const auto last = first.addDays(days);
+    // Civil day boundaries are shared by every timed event in the range.
+    std::vector<QDateTime> bounds;
+    bounds.reserve(days + 1);
+    for (int day = 0; day <= days; ++day) bounds.push_back(first.addDays(day).startOfDay(zone));
     std::vector<Segment> timed, allDay;
     for (const auto &entry : events) {
-        auto event = entry.toObject().toVariantMap();
-        if (event["all_day"].toBool()) {
-            const auto start = QDate::fromString(event["start"].toString(), Qt::ISODate);
-            const auto end = QDate::fromString(event["end"].toString(), Qt::ISODate);
+        // Reject rows outside the range before building their display map.
+        const auto object = entry.toObject();
+        if (object["all_day"].toBool()) {
+            const auto start = QDate::fromString(object["start"].toString(), Qt::ISODate);
+            const auto end = QDate::fromString(object["end"].toString(), Qt::ISODate);
             if (!start.isValid() || !end.isValid() || end <= start || start >= last || end <= first) continue;
+            auto event = object.toVariantMap();
             const auto clipped = std::max(start, first), clippedEnd = std::min(end, last);
             const int day = static_cast<int>(first.daysTo(clipped));
             event["date"] = clipped.toString(Qt::ISODate);
@@ -69,18 +75,20 @@ QVariantList calendarPresentation(const QJsonArray &events, QDate first, int day
             allDay.push_back({event, day, double(day), double(first.daysTo(clippedEnd))});
             continue;
         }
-        const auto start = QDateTime::fromString(event["start"].toString(), Qt::ISODate).toTimeZone(zone);
-        const auto end = QDateTime::fromString(event["end"].toString(), Qt::ISODate).toTimeZone(zone);
+        const auto start = QDateTime::fromString(object["start"].toString(), Qt::ISODate).toTimeZone(zone);
+        const auto end = QDateTime::fromString(object["end"].toString(), Qt::ISODate).toTimeZone(zone);
         if (!start.isValid() || !end.isValid() || end <= start) continue;
+        if (bounds.front().isValid() && bounds.back().isValid() && (end <= bounds.front() || start >= bounds.back())) continue;
+        auto event = object.toVariantMap();
         const bool offsetChanges = start.offsetFromUtc() != end.offsetFromUtc();
         event["multi_day"] = start.date() != end.date();
         event["duration_minutes"] = start.secsTo(end) / 60;
         event["start_display"] = start.toString(offsetChanges ? "ddd d MMM, HH:mm t" : "ddd d MMM, HH:mm");
         event["end_display"] = end.toString(start.date() == end.date() ? (offsetChanges ? "HH:mm t" : "HH:mm") : (offsetChanges ? "ddd d MMM, HH:mm t" : "ddd d MMM, HH:mm"));
         for (int day = 0; day < days; ++day) {
-            const auto date = first.addDays(day);
-            const auto dayStart = date.startOfDay(zone), dayEnd = date.addDays(1).startOfDay(zone);
+            const auto &dayStart = bounds[day], &dayEnd = bounds[day + 1];
             if (!dayStart.isValid() || !dayEnd.isValid() || start >= dayEnd || end <= dayStart) continue;
+            const auto date = first.addDays(day);
             const auto clipped = std::max(start, dayStart), clippedEnd = std::min(end, dayEnd);
             const double fromHour = hour(clipped.time());
             // Civil day columns have 24 display hours, even across an offset change.

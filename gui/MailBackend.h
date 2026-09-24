@@ -7,6 +7,7 @@
 #include <QLocalSocket>
 #include <QTimer>
 #include <QDateTime>
+#include <QTimeZone>
 #include <QVariantList>
 #include <QVariantMap>
 #include <QSet>
@@ -40,7 +41,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QString activeDraftId READ activeDraftId NOTIFY draftChanged)
     Q_PROPERTY(QVariantMap recipientInputs READ recipientInputs NOTIFY draftChanged)
     Q_PROPERTY(QVariantList events READ events NOTIFY eventsChanged)
-    Q_PROPERTY(QVariantList todayEvents READ todayEvents NOTIFY eventsChanged)
+    Q_PROPERTY(QVariantList todayEvents READ todayEvents NOTIFY timelineChanged)
     Q_PROPERTY(QVariantList reminders READ reminders NOTIFY remindersChanged)
     Q_PROPERTY(QString account READ account NOTIFY accountChanged)
     Q_PROPERTY(QVariantMap currentAccount READ currentAccount NOTIFY currentAccountChanged)
@@ -65,12 +66,12 @@ class MailBackend final : public QObject {
     Q_PROPERTY(bool mutationInFlight READ mutationInFlight NOTIFY mutationChanged)
     Q_PROPERTY(bool hasMore READ hasMore NOTIFY conversationsChanged)
     Q_PROPERTY(QString weekStart READ weekStart NOTIFY eventsChanged)
-    Q_PROPERTY(QString fixtureToday READ fixtureToday NOTIFY eventsChanged)
+    Q_PROPERTY(QString fixtureToday READ fixtureToday NOTIFY todayChanged)
     Q_PROPERTY(QVariantMap presentation READ presentation NOTIFY presentationChanged)
     Q_PROPERTY(QVariantMap preferences READ preferences NOTIFY preferencesChanged)
     Q_PROPERTY(QString preferencesStatus READ preferencesStatus NOTIFY preferencesChanged)
     Q_PROPERTY(bool preferencesPending READ preferencesPending NOTIFY preferencesChanged)
-    Q_PROPERTY(QVariantMap diagnostics READ diagnostics NOTIFY preferencesChanged)
+    Q_PROPERTY(QVariantMap diagnostics READ diagnostics NOTIFY diagnosticsChanged)
     Q_PROPERTY(QVariantMap filters READ filters NOTIFY queryChanged)
     Q_PROPERTY(QStringList collapsedGroups READ collapsedGroups NOTIFY queryChanged)
     Q_PROPERTY(QVariantMap querySummary READ querySummary NOTIFY conversationsChanged)
@@ -95,7 +96,7 @@ class MailBackend final : public QObject {
     Q_PROPERTY(bool attachmentImportBusy READ attachmentImportBusy NOTIFY draftChanged)
     Q_PROPERTY(QVariantMap googleDraft READ googleDraft NOTIFY draftChanged)
     Q_PROPERTY(QVariantMap googleSend READ googleSend NOTIFY draftChanged)
-    Q_PROPERTY(QVariantList calendarSources READ calendarSources NOTIFY eventsChanged)
+    Q_PROPERTY(QVariantList calendarSources READ calendarSources NOTIFY calendarSourcesChanged)
     Q_PROPERTY(QString calendarSearchQuery READ calendarSearchQuery WRITE setCalendarSearchQuery NOTIFY calendarSearchChanged)
     Q_PROPERTY(QVariantMap calendarSearch READ calendarSearch NOTIFY calendarSearchChanged)
     Q_PROPERTY(QVariantMap calendarMailActivity READ calendarMailActivity NOTIFY calendarMailActivityChanged)
@@ -103,19 +104,22 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QString calendarDate READ calendarDate NOTIFY eventsChanged)
     Q_PROPERTY(QString calendarFrom READ calendarFrom NOTIFY eventsChanged)
     Q_PROPERTY(int calendarDays READ calendarDays NOTIFY eventsChanged)
-    Q_PROPERTY(QString calendarCoverage READ calendarCoverage NOTIFY eventsChanged)
-    Q_PROPERTY(QString timelineCoverage READ timelineCoverage NOTIFY eventsChanged)
-    Q_PROPERTY(bool calendarReady READ calendarReady NOTIFY eventsChanged)
-    Q_PROPERTY(bool timelineReady READ timelineReady NOTIFY eventsChanged)
-    Q_PROPERTY(QVariantList timelinePanels READ timelinePanels NOTIFY eventsChanged)
+    Q_PROPERTY(QString calendarCoverage READ calendarCoverage NOTIFY calendarStatusChanged)
+    Q_PROPERTY(QString timelineCoverage READ timelineCoverage NOTIFY timelineChanged)
+    Q_PROPERTY(bool calendarReady READ calendarReady NOTIFY calendarStatusChanged)
+    Q_PROPERTY(bool timelineReady READ timelineReady NOTIFY timelineChanged)
+    Q_PROPERTY(QVariantList timelinePanels READ timelinePanels NOTIFY timelineChanged)
     Q_PROPERTY(QVariantList calendarOperations READ calendarOperations NOTIFY calendarOperationsChanged)
     Q_PROPERTY(bool calendarOperationsLoading READ calendarOperationsLoading NOTIFY calendarOperationsChanged)
     Q_PROPERTY(bool calendarOperationsHasMore READ calendarOperationsHasMore NOTIFY calendarOperationsChanged)
     Q_PROPERTY(QString calendarOperationStatus READ calendarOperationStatus NOTIFY calendarOperationsChanged)
-    Q_PROPERTY(QString timelineDate READ timelineDate NOTIFY eventsChanged)
-    Q_PROPERTY(QString todayDate READ todayDate NOTIFY eventsChanged)
-    Q_PROPERTY(double nowHour READ nowHour NOTIFY eventsChanged)
-    Q_PROPERTY(QDateTime clockNow READ clockNow NOTIFY eventsChanged)
+    Q_PROPERTY(QString timelineDate READ timelineDate NOTIFY timelineChanged)
+    // The clock notifies only when its value changes: the date, or the minute.
+    // Read live; the notify signals fire only when the displayed day or minute changes.
+    Q_PROPERTY(QString todayDate READ todayDate NOTIFY todayChanged)
+    Q_PROPERTY(QDateTime clockDay READ clockNow NOTIFY todayChanged)
+    Q_PROPERTY(double nowHour READ nowHour NOTIFY clockChanged)
+    Q_PROPERTY(QDateTime clockNow READ clockNow NOTIFY clockChanged)
 public:
     explicit MailBackend(QString profile, QString engine, QObject *parent = nullptr, bool fixtureClock = false, bool liveProfile = false);
     ~MailBackend() override;
@@ -231,7 +235,8 @@ public:
     Q_INVOKABLE QString saveAttachment(const QString &account, const QString &id, const QUrl &destination);
     Q_INVOKABLE QString downloadAttachment(const QString &account, const QString &id, const QString &name);
     Q_INVOKABLE QUrl attachmentSaveLocation(const QString &name) const;
-    Q_INVOKABLE QString requestMessageSource(const QString &id, const QString &version);
+    // withRaw adds the raw text for the source dialog; it is never cached.
+    Q_INVOKABLE QString requestMessageSource(const QString &id, const QString &version, bool withRaw = false);
     Q_INVOKABLE QString receivedHtml(const QString &html) const;
     Q_INVOKABLE QVariantList receivedBody(const QString &html, const QString &plain) const;
     Q_INVOKABLE QString fixedFontFamily() const;
@@ -352,6 +357,8 @@ public:
     Q_INVOKABLE void setCalendarView(const QString &view);
     Q_INVOKABLE void moveCalendar(int delta);
     Q_INVOKABLE void setCalendarDate(const QString &date);
+    // One update for a month-day click instead of a date change then a view change.
+    Q_INVOKABLE void openCalendarDay(const QString &date);
     Q_INVOKABLE void showCalendarToday();
     Q_INVOKABLE void moveTimeline(int delta);
     Q_INVOKABLE void showTimelineToday();
@@ -413,7 +420,14 @@ signals:
     void draftSourcesChanged();
     void draftAuthoringChanged();
     void draftDeletionChanged();
+    // Calendar window: events plus the view, date and range they belong to.
     void eventsChanged();
+    void calendarStatusChanged();
+    void calendarSourcesChanged();
+    void timelineChanged();
+    void todayChanged();
+    void clockChanged();
+    void diagnosticsChanged();
     void preferencesChanged();
     void accountPreferencesFinished(const QString &account, bool ok);
     void capturesChanged();
@@ -436,6 +450,7 @@ private:
     friend class NotificationBackendTest;
     friend class GuiMailNavigationSelfTest;
     friend class GuiInteractionBenchmark;
+    friend class GuiCalendarBenchmark;
     friend class GuiSettingsSelfTest;
     friend class GuiCompositionSelfTest;
     friend class GoogleDraftControlsTest;
@@ -528,9 +543,25 @@ private:
     bool restoreConversation(const QString &account, const QString &id);
     void loadConversationPage(const QString &account, int generation, QJsonObject params, QVariantList collected, int desiredCount, int cursorRetries = 0);
     void loadConversation(bool loadDraft, bool reviewOnLoad = false);
+    // Force a fresh read of the visible calendar and timeline; cached windows are dropped.
     void loadCalendar();
-    QString calendarCoverageText(const QJsonObject &coverage) const;
+    // Navigation: show a cached window at once, else request it.
+    void showCalendarRange();
+    void loadTimeline(bool force);
+    struct CalendarWindow { QString from; int days = 0; QJsonObject params; QString key; };
+    CalendarWindow calendarWindow(const QString &from, int days) const;
+    CalendarWindow calendarBaseWindow(const QString &date) const;
+    QString calendarRangeStart(const QString &view, const QString &date) const;
     void publishCalendarWindow(const QJsonObject &result, const QString &from, int days);
+    void requestCalendarWindow(const CalendarWindow &window);
+    void storeCalendarWindow(const QString &key, const QJsonObject &result);
+    bool publishCachedCalendar();
+    void prefetchCalendarWindows();
+    void setCalendarStatus(bool ready, const QString &coverage);
+    void rememberCalendarNavigation(const QVariantMap &values);
+    void tickClock();
+    QTimeZone clockZone() const;
+    QString calendarCoverageText(const QJsonObject &coverage) const;
     void initializeCalendarSearch();
     void refreshCalendarMailActivity();
     QTimer m_calendarMailActivityTimer;
@@ -794,9 +825,25 @@ private:
     QString m_preferencesStatus, m_captureStatus, m_nextCursor;
     int m_captureNextOffset = -1, m_captureGeneration = 0;
     QString m_calendarView = "week", m_calendarDate, m_timelineDate, m_calendarCoverage;
-    QString m_timelineCoverage, m_calendarScope, m_timelineScope;
+    QString m_timelineCoverage, m_calendarDisplayKey, m_timelineScope;
     QString m_timelineCacheContext;
     QVariantMap m_timelineDayEvents;
+    // Raw engine windows by request key; valid until the calendar generation changes.
+    QHash<QString, QJsonObject> m_calendarWindows;
+    QStringList m_calendarWindowOrder;
+    QSet<QString> m_calendarWindowRequests;
+    quint64 m_calendarCacheEpoch = 0;
+    QTimer m_calendarPrefetchTimer;
+    // View and date are saved quietly after navigation settles.
+    QVariantMap m_navigationPending;
+    QTimer m_navigationSaveTimer;
+    QString m_clockDayKey;
+    double m_clockHour = -1;
+    mutable QString m_clockZoneId;
+    mutable QTimeZone m_clockZone;
+    mutable bool m_clockZoneCached = false;
+    bool m_quietCalendarRead = false;
+    int m_timelineGeneration = 0;
     bool m_calendarReady = false, m_timelineReady = false;
     QVariantList m_calendarOperations;
     QHash<QString, QJsonObject> m_calendarOperationCursors;

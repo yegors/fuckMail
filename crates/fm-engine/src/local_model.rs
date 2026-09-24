@@ -26,6 +26,20 @@ pub struct Runtime {
     active: Arc<Semaphore>,
     watches: Mutex<BTreeMap<String, CancellationToken>>,
 }
+/// Failures of the runner or its authority, not of one message: a queue should
+/// stop and retry later rather than record every remaining message as failed.
+fn runner_failure(code: &str) -> bool {
+    matches!(
+        code,
+        "assistance_unavailable"
+            | "assistance_disabled"
+            | "engine_stopped"
+            | "account_removed"
+            | "account_not_found"
+            | "model_changed"
+            | "model_unavailable"
+    )
+}
 impl Runtime {
     pub fn new(core: CoreBridge) -> Self {
         Self {
@@ -160,45 +174,81 @@ impl Runtime {
                 let runtime = self.clone();
                 let owner = owner.to_owned();
                 tokio::spawn(async move {
+                    let mut delay = std::time::Duration::ZERO;
+                    let mut unavailable = false;
                     loop {
-                        tokio::select! {biased;_=token.cancelled()=>break,_=tokio::time::sleep(std::time::Duration::from_secs(5))=>{}}
+                        tokio::select! {biased;_=token.cancelled()=>break,_=tokio::time::sleep(delay)=>{}}
                         let since = since.clone();
                         let rows = runtime
                             .core
                             .call(move |s| s.local_model_arrivals(after, &since))
                             .await;
                         let Ok(rows) = rows else { break };
-                        // A full queue does not advance the cursor over unprocessed incoming mail.
+                        // Core returns only messages still missing an enabled result, in
+                        // sync order. A full queue does not advance past unprocessed mail.
                         let mut admitted = true;
                         for m in rows["messages"].as_array().unwrap() {
-                            let a = m["account"].as_str().unwrap().to_owned();
-                            let c = m["conversation_id"].as_str().unwrap().to_owned();
-                            let target = m["id"].clone();
-                            let current = runtime
-                                .core
-                                .call(move |s| s.local_model_results(&a, &c))
-                                .await;
-                            if current.is_ok_and(|r| {
-                                r["items"].as_array().unwrap().iter().any(|i| {
-                                    (i["task"] == "classification" || i["task"] == "summary")
-                                        && i["target"] == target
-                                        && i["stale"] == false
-                                })
-                            }) {
-                                continue;
-                            }
-                            match runtime.start(&owner,token.clone(),m["account"].as_str(),json!({"task":"message","conversation_id":m["conversation_id"],"message_id":m["id"]}),true).await {
-                                Ok(job)=>loop {
-                                    if token.is_cancelled(){return;}
-                                    let running=runtime.jobs.lock().unwrap().get(job["job_id"].as_str().unwrap()).is_some_and(|j|j.state["status"]=="queued" || j.state["status"]=="running");
-                                    if !running{break;}
-                                    tokio::select!{biased;_=token.cancelled()=>return,_=tokio::time::sleep(std::time::Duration::from_millis(200))=>{}}
-                                },Err(e)=>{admitted=e.code!="assistance_busy";break;}
+                            let request = json!({"task":m["task"],"conversation_id":m["conversation_id"],"message_id":m["id"]});
+                            match runtime
+                                .start(
+                                    &owner,
+                                    token.clone(),
+                                    m["account"].as_str(),
+                                    request,
+                                    m["arrival"] == true,
+                                )
+                                .await
+                            {
+                                Ok(job) => {
+                                    let outcome = loop {
+                                        if token.is_cancelled() {
+                                            return;
+                                        }
+                                        let state = runtime
+                                            .jobs
+                                            .lock()
+                                            .unwrap()
+                                            .get(job["job_id"].as_str().unwrap())
+                                            .map(|j| j.state.clone());
+                                        if !state.as_ref().is_some_and(|s| {
+                                            s["status"] == "queued" || s["status"] == "running"
+                                        }) {
+                                            break state;
+                                        }
+                                        tokio::select! {biased;_=token.cancelled()=>return,_=tokio::time::sleep(std::time::Duration::from_millis(200))=>{}}
+                                    };
+                                    // An unreachable model fails every message the same way. Keep
+                                    // the queue position and retry later instead of skipping mail.
+                                    if outcome.is_some_and(|s| {
+                                        s["status"] == "failed"
+                                            && runner_failure(
+                                                s["error"]["code"].as_str().unwrap_or_default(),
+                                            )
+                                    }) {
+                                        admitted = false;
+                                        unavailable = true;
+                                        break;
+                                    }
+                                }
+                                Err(e) if e.code == "assistance_busy" => {
+                                    admitted = false;
+                                    break;
+                                }
+                                // One message that cannot be prepared must not skip the rest.
+                                Err(_) => continue,
                             }
                         }
                         if admitted {
                             after = rows["after"].as_i64();
                         }
+                        // Work through synced history promptly; poll for new mail otherwise.
+                        delay = if std::mem::take(&mut unavailable) {
+                            std::time::Duration::from_secs(30)
+                        } else if admitted && rows["more"] == true {
+                            std::time::Duration::from_millis(50)
+                        } else {
+                            std::time::Duration::from_secs(5)
+                        };
                     }
                 });
                 Ok(json!({"watching":true}))

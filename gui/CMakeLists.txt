@@ -1,3 +1,7 @@
+# FmIcon.qml wraps this item; every process that loads it registers the type first.
+add_library(fm-gui-icons STATIC FmIconItem.cpp FmIconItem.h)
+target_link_libraries(fm-gui-icons PUBLIC Qt6::Quick)
+target_compile_features(fm-gui-icons PUBLIC cxx_std_20)
 qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     main.cpp
     DebugConsole.cpp DebugConsole.h
@@ -46,10 +50,13 @@ qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     GuiSearchBenchmark.cpp
     GuiSearchBenchmark.h
     GuiPaintObserver.h
+    GuiBenchmarkSupport.h
     GuiInteractionBenchmark.cpp
     GuiInteractionBenchmark.h
     GuiResizeBenchmark.cpp
     GuiResizeBenchmark.h
+    GuiCalendarBenchmark.cpp
+    GuiCalendarBenchmark.h
     IpcTrust.cpp
     IpcTrust.h
 )
@@ -62,7 +69,7 @@ qt_add_qml_module(fuckmail-gui
     QML_FILES FmScrollBar.qml Main.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml ShortcutRegistry.qml ShortcutSettings.qml ActionToast.qml FmButton.qml FmMenu.qml FmMenuItem.qml FmDialog.qml FmConfirmDialog.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmDateField.qml FmSwitch.qml FmCheckBox.qml FmComboBox.qml MailView.qml MailFilters.qml SearchPopup.qml CalendarSearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleConnectionDialog.qml LocalModelSettings.qml MailAssistance.qml MessageSource.qml AccountBadge.qml MessageHeaderButton.qml AccountAssistanceSettings.qml AccountEditor.qml AttachmentTile.qml AttachmentViewer.qml SummaryCard.qml MessageAssistance.qml GoogleLabelSetup.qml LabelSettings.qml TodayStrip.qml
     RESOURCES fonts/Geist-Regular.ttf fonts/Geist-Medium.ttf fonts/Geist-SemiBold.ttf fonts/LICENSE-Geist.txt
 )
-target_link_libraries(fuckmail-gui PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets Qt6::Multimedia)
+target_link_libraries(fuckmail-gui PRIVATE fm-gui-icons Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets Qt6::Multimedia)
 target_compile_features(fuckmail-gui PRIVATE cxx_std_20)
 if(WIN32)
     target_link_libraries(fuckmail-gui PRIVATE advapi32 winmm)
@@ -78,7 +85,7 @@ set_target_properties(fuckmail-gui PROPERTIES
 file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/gui-executable-path.txt"
     CONTENT "$<TARGET_FILE:fuckmail-gui>\n")
 if(BUILD_TESTING)
-    link_libraries(Qt6::Widgets)
+    link_libraries(Qt6::Widgets fm-gui-icons)
     if(WIN32)
         link_libraries(winmm)
     endif()

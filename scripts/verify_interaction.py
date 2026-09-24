@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure native navigation/resize or capture visuals on owned disposable synthetic profiles."""
+"""Measure native navigation/resize/Calendar or capture visuals on owned disposable synthetic profiles."""
 import argparse
 from contextlib import closing
 import hashlib
@@ -91,6 +91,30 @@ def verify_navigation(profile, data):
                             "Actual rich-text document differs from independently retained message text")
                 checked += 1
     return {"samples_checked": checked, "account_rows_members_and_body_hashes": "passed"}
+
+
+def verify_calendar(profile, data):
+    expected = {"view_switch", "month_day_click", "week_step", "month_step"}
+    classes = data.get("classes", [])
+    require({item.get("class") for item in classes} == expected and len(classes) == len(expected),
+            "The report must include all four Calendar routes")
+    checked = painted = 0
+    with closing(sqlite3.connect((profile / "store.sqlite3").as_uri() + "?mode=ro", uri=True)) as db:
+        sources = set(db.execute("SELECT account,calendar_id,event_id FROM calendar_sources"))
+        for group in classes:
+            samples = group.get("samples", [])
+            require(group["observations"] == 100 and len(samples) == 100, "Each Calendar route needs 100 observations")
+            for sample in samples:
+                require(sample["view"] == sample["target_view"] and sample["date"] == sample["target_date"],
+                        "A sample painted the wrong Calendar view or date")
+                for identity in sample["identities"]:
+                    if identity["event_id"]:
+                        require((identity["account"], identity["calendar_id"], identity["event_id"]) in sources,
+                                "A painted event is outside the stored calendar sources")
+                        painted += 1
+                checked += 1
+    require(painted, "The Calendar routes painted no stored events")
+    return {"samples_checked": checked, "painted_events_checked": painted, "view_date_and_event_identities": "passed"}
 
 
 def run(args):
@@ -211,7 +235,7 @@ def run(args):
                         if args.reply_footer:
                             gui_command.append("--screenshot-reply-bottom")
                     else:
-                        gui_command += ["--benchmark-" + ("navigation" if args.mode == "navigation" else "resize") + "-output", str(output)]
+                        gui_command += ["--benchmark-" + args.mode + "-output", str(output)]
                     gui = subprocess.Popen(gui_command,
                                            cwd=scratch, env=env, stdin=subprocess.DEVNULL, stdout=gui_stream, stderr=subprocess.STDOUT)
                     children.append(gui)
@@ -221,7 +245,8 @@ def run(args):
                             require(gui.poll() is None and time.monotonic() < deadline, "GUI screenshot/handoff failed; inspect its log")
                             time.sleep(.02)
                     else:
-                        marker = b"Native interaction benchmark prepared" if args.mode == "navigation" else b"Native resize benchmark prepared"
+                        marker = {"navigation": b"Native interaction benchmark prepared", "resize": b"Native resize benchmark prepared",
+                                  "calendar": b"Native calendar benchmark prepared"}[args.mode]
                         while marker not in gui_log.read_bytes():
                             require(gui.poll() is None and time.monotonic() < deadline, "GUI preparation/handoff failed; inspect its log")
                             time.sleep(.02)
@@ -253,6 +278,12 @@ def run(args):
                     require(data["budget_passed"] == (result["gui_exit_code"] == 0), "Exit code and navigation budget disagree")
                     result["classes"] = [{k: group[k] for k in ("class", "observations", "p95_ms", "max_ms")}
                                          for group in data["classes"]]
+                elif args.mode == "calendar":
+                    result["identity_verification"] = verify_calendar(profile, data)
+                    require(type(data.get("budget_passed")) is bool, "Native Calendar budget result is missing")
+                    require(data["budget_passed"] == (result["gui_exit_code"] == 0), "Exit code and Calendar budget disagree")
+                    result["classes"] = [{k: group[k] for k in ("class", "observations", "p50_ms", "p95_ms", "max_ms")}
+                                         for group in data["classes"]]
                 elif args.mode == "resize":
                     require(data.get("measurement_complete") is True and len(data.get("surfaces", [])) == 2,
                             "Both native resize traces must complete")
@@ -279,7 +310,7 @@ def run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bin", type=Path, required=True)
-    parser.add_argument("--mode", choices=("navigation", "resize", "visual"), required=True)
+    parser.add_argument("--mode", choices=("navigation", "resize", "calendar", "visual"), required=True)
     parser.add_argument("--theme", choices=("graphite", "paper", "harbour"), default="graphite")
     parser.add_argument("--width", type=int, default=1440, help="Visual mode: logical window width")
     parser.add_argument("--height", type=int, default=900, help="Visual mode: logical window height")

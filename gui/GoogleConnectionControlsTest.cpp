@@ -1,3 +1,4 @@
+#include "FmIconItem.h"
 #include <QGuiApplication>
 #include <QFontDatabase>
 #include <QQuickStyle>
@@ -49,7 +50,7 @@ int main(int argc,char **argv) {
     for(const auto &file:QDir(QString(FM_GUI_SOURCE_DIR)).entryList({"*.qml"},QDir::Files)) {
         require(QFile::copy(QString(FM_GUI_SOURCE_DIR)+"/"+file,path+"/"+file),"copy production QML");const auto name=QFileInfo(file).completeBaseName();module.write((((name=="Theme" || name=="ShortcutRegistry")?"singleton ":"")+name+" 1.0 "+file+"\n").toUtf8());
     }
-    module.close(); ConnectionBackend backend; QQmlApplicationEngine qml; bool warnings=false;
+    module.close(); ConnectionBackend backend; QQmlApplicationEngine qml; FmIconItem::registerType(); bool warnings=false;
     QObject::connect(&qml,&QQmlEngine::warnings,[&](const auto &errors){warnings=true;for(const auto &error:errors)qWarning()<<error;});
     qml.addImportPath(temp.path());qml.rootContext()->setContextProperty("backend",&backend);
     qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport ConnectTest\nApplicationWindow { width:1000;height:720;visible:true;color:Theme.canvas; function appearance(theme,size) { Theme.themeId=theme;Theme.textSize=size } GoogleConnectionDialog { id:dialog; email:'person@example.test'; onSyncRequested: function(account) { backend.startGoogleSync(account,{}) } Component.onCompleted:open() } }");

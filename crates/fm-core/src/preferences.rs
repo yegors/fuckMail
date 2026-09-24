@@ -28,6 +28,14 @@ impl Store {
             )),
         }
     }
+    /// Lets polling clients skip reloading unchanged preferences.
+    pub(crate) fn preferences_revision(&self) -> Result<i64> {
+        Ok(self.db.query_row(
+            "SELECT COALESCE((SELECT revision FROM preferences WHERE singleton=1),0)",
+            [],
+            |r| r.get(0),
+        )?)
+    }
     pub(crate) fn preferences(&self) -> Result<Value> {
         let mut profile_defaults = defaults();
         if self.profile_kind()? == crate::live_profile::ProfileKind::Synthetic {

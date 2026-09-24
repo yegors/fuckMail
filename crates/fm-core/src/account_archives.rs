@@ -153,6 +153,7 @@ impl Store {
                 )?;
             }
         }
+        crate::local_model::local_model_messages_deleted(&tx)?;
         for table in ["local_model_settings", "local_model_settings_history"] {
             let rows = tx
                 .prepare(&format!("SELECT rowid,settings_json FROM {table}"))?

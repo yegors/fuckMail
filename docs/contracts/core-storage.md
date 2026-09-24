@@ -1,5 +1,13 @@
 # Core and storage
 
+## D098 — Calendar mail-count range and preferences revision (Core55, schema33)
+
+Schema33 is the first post-reset migration. It adds the partial index `google_mail_coverage_by_date(account,internal_date_ms) WHERE deleted=0`, and fresh profiles create it directly. `calendar_mail_activity` reads provider coverage through that index, so counting a six-week window touches only its date range instead of the account's whole coverage. An engine at schema32 upgrades once in place; newer schemas are still refused. `status` adds `preferences_revision`, the saved preferences revision, so clients can skip reloading unchanged preferences on every poll. Consumers: Mail UI69 (GUI polling) and Quality70; CLI42 unchanged, since its `status` output only gains a field. [Execution record](../research/phase-2-calendar.md#d098--calendar-view-performance-2026-09-23).
+
+## D097 — first label import and watcher cursor (Core54, schema32)
+
+Binding a new account inserts `labels_initial_import:<account>` into `meta` in the binding transaction; reconnecting an existing account does not. `google_labels_initial_import` runs the name merge with request `initial-import` while that key exists; any completed merge deletes it, as does missing mail editing permission. When the import adds labels it sets the watcher's requeue bound to that account's first message. `local_model_arrivals` stores its cursor and consumes the requeue bound in `meta`. Retention pruning and account removal lower the requeue bound to the highest remaining message row in their transactions. No table or index changes. Consumers: GUI and CLI through the shared engine; Gmail27, Local assistance20, Quality69 unchanged.
+
 ## D096 — audit corrections (Core53, schema32)
 
 `mail_undo` records human intent only for flags, filing labels and categories whose snapshot value differs from the current message, and live delivery sends only the intents written at that undo's new message revision. Unchanged labels keep provider/model state, so undoing a flag change neither blocks later model labels nor queues Gmail label removals. A message already matching its snapshot gets no delivery row.

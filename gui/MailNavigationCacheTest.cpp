@@ -1,4 +1,5 @@
 #include "MailBackend.h"
+#include "FmIconItem.h"
 #include "ReplyDocument.h"
 #include "GoogleOperationTestFixture.h"
 #include <QFontDatabase>
@@ -60,7 +61,7 @@ class MailNavigationCacheTest {
         for (const auto &weight : {"Regular", "Medium", "SemiBold"})
             require(QFontDatabase::addApplicationFont(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/fonts/Geist-" + weight + ".ttf") >= 0, "actual bundled font");
         QGuiApplication::setFont(QFont("Geist", 10));
-        QQmlApplicationEngine qml; bool warnings = false;
+        QQmlApplicationEngine qml; FmIconItem::registerType(); bool warnings = false;
         QObject::connect(&qml, &QQmlEngine::warnings, [&](const auto &errors) { warnings = true; for (const auto &error : errors) qWarning() << error.toString(); });
         qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend", &backend);
         qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport NavigationTest 1.0\nApplicationWindow { visible: true; width: 1440; height: 700; color: Theme.canvas; palette.text: Theme.text; palette.base: Theme.surface; palette.window: Theme.canvas; palette.button: Theme.surface; palette.buttonText: Theme.text; property bool singleKeysAllowed: true; property bool searchPopupOpen: false; Binding { target: Theme; property: 'themeId'; value: backend.preferences.theme } Binding { target: Theme; property: 'textSize'; value: backend.preferences.text_size } MailView { objectName: \"testMail\"; anchors.fill: parent } SettingsView { anchors.fill: parent; visible: false } }", QUrl::fromLocalFile(copy.filePath("Test.qml")));
@@ -334,7 +335,7 @@ class MailNavigationCacheTest {
         }
         QFile registration(modulePath+"/qmldir"); require(registration.open(QIODevice::WriteOnly), "reader module registration"); registration.write(module); registration.close();
         qmlRegisterType<ReplyDocument>("ReaderFrames",1,0,"ReplyDocument");
-        QQmlApplicationEngine qml; bool warnings = false;
+        QQmlApplicationEngine qml; FmIconItem::registerType(); bool warnings = false;
         QObject::connect(&qml,&QQmlEngine::warnings,[&](const auto &errors){warnings=true;for(const auto &error:errors)qWarning()<<error.toString();});
         qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&backend);
         qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport ReaderFrames 1.0\nApplicationWindow { visible:true; width:1440; height:850; color: Theme.canvas; palette.text: Theme.text; palette.base: Theme.surface; palette.window: Theme.canvas; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("Reader.qml")));

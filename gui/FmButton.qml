@@ -1,6 +1,12 @@
 import QtQuick
 import QtQuick.Controls
-ToolButton {
+import QtQuick.Templates as T
+
+// Lists, grids and dialogs repeat this button hundreds of times, so a plain
+// label builds only its text and background; the icon, shortcut hint and
+// hover help are created when used. Geometry is that of the former Row:
+// [icon][label][hint], centred as a group unless aligned left.
+T.ToolButton {
     id: control
     property bool selected: false
     property bool prominent: false
@@ -18,6 +24,9 @@ ToolButton {
     property real radius: 5
     implicitHeight: Math.max(32, contentItem.implicitHeight + 10)
     implicitWidth: contentItem.implicitWidth + leftPadding + rightPadding
+    // The Basic style's ToolButton defaults.
+    padding: 6
+    spacing: 6
     leftPadding: 11
     rightPadding: 11
     font.family: Theme.fontFamily
@@ -25,30 +34,63 @@ ToolButton {
     font.weight: selected || prominent ? Font.Medium : Font.Normal
     hoverEnabled: true
     contentItem: Item {
-        readonly property real hintWidth: control.shortcutHint.length ? hint.implicitWidth + 8 : 0
-        implicitWidth: label.implicitWidth + hintWidth + (control.iconName.length ? control.iconSize + (control.text.length ? control.iconSpacing : 0) : 0)
+        id: content
+        implicitWidth: label.implicitWidth + (row.item ? row.item.extraWidth : 0)
         implicitHeight: Math.max(label.implicitHeight, control.iconSize)
-        Row {
-            anchors.verticalCenter: parent.verticalCenter
-            x: control.textAlignment === Text.AlignLeft ? 0 : Math.max(0, (parent.width - width) / 2)
-            spacing: control.text.length && control.iconName.length ? control.iconSpacing : 0
-            layoutDirection: control.iconTrailing ? Qt.RightToLeft : Qt.LeftToRight
-            width: Math.min(label.implicitWidth + parent.hintWidth + (control.iconName.length ? control.iconSize + (control.text.length ? control.iconSpacing : 0) : 0), parent.width)
-            FmIcon { visible: control.iconName.length > 0; name: control.iconName; size: control.iconSize; color: control.iconColor; anchors.verticalCenter: parent.verticalCenter }
-            Text {
-                id: label
-                text: control.text
-                font: control.font
-                width: Math.max(0, parent.width - control.contentItem.hintWidth - (control.iconName.length ? control.iconSize + parent.spacing : 0))
-                color: control.foreground
-                verticalAlignment: Text.AlignVCenter
-                textFormat: Text.PlainText
-                elide: Text.ElideRight
-            }
-            Item {
-                visible: control.shortcutHint.length > 0
-                width: control.contentItem.hintWidth; height: Math.max(label.implicitHeight, control.iconSize)
-                Text { id: hint; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: control.shortcutHint; color: control.foreground; opacity: 0.55; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11) }
+        // The Row was centred by anchors, which land on whole pixels.
+        function centred(outer, inner) {
+            const half = function(size) { return Math.trunc(size) % 2 ? (size + 1) / 2 : size / 2 }
+            return Math.round(half(outer) - half(inner))
+        }
+        Text {
+            id: label
+            // A Row skips and hides a zero-width item; unconstrained, text would draw in full.
+            visible: width > 0
+            x: row.item ? row.item.labelX : control.textAlignment === Text.AlignLeft ? 0 : Math.max(0, (content.width - width) / 2)
+            y: row.item ? row.item.y : content.centred(content.height, implicitHeight)
+            width: row.item ? row.item.labelWidth : Math.min(implicitWidth, content.width)
+            text: control.text
+            font: control.font
+            color: control.foreground
+            verticalAlignment: Text.AlignVCenter
+            textFormat: Text.PlainText
+            elide: Text.ElideRight
+        }
+        // The rest of the row, only for buttons with an icon or a shortcut hint.
+        Loader {
+            id: row
+            active: control.iconName.length > 0 || control.shortcutHint.length > 0
+            sourceComponent: Item {
+                readonly property bool hasIcon: control.iconName.length > 0
+                readonly property real gap: control.text.length && hasIcon ? control.iconSpacing : 0
+                readonly property real iconPart: hasIcon ? control.iconSize + gap : 0
+                readonly property real hintWidth: hint.item ? hint.item.textWidth + 8 : 0
+                readonly property real extraWidth: iconPart + hintWidth
+                readonly property real labelWidth: Math.max(0, width - hintWidth - iconPart)
+                readonly property real labelOffset: hasIcon ? control.iconSize + gap : 0
+                readonly property real labelX: x + placed(labelOffset, labelWidth)
+                // Row offsets run left to right; a trailing icon mirrors them.
+                function placed(offset, size) { return control.iconTrailing ? width - offset - size : offset }
+                width: Math.min(label.implicitWidth + extraWidth, content.width)
+                height: Math.max(labelWidth > 0 ? label.implicitHeight : 0, hasIcon ? control.iconSize : 0,
+                    hint.active ? Math.max(label.implicitHeight, control.iconSize) : 0)
+                x: control.textAlignment === Text.AlignLeft ? 0 : Math.max(0, (content.width - width) / 2)
+                y: content.centred(content.height, height)
+                FmIcon {
+                    visible: parent.hasIcon
+                    x: parent.placed(0, width); anchors.verticalCenter: parent.verticalCenter
+                    name: control.iconName; size: control.iconSize; color: control.iconColor
+                }
+                Loader {
+                    id: hint
+                    active: control.shortcutHint.length > 0
+                    x: parent.placed(parent.labelWidth > 0 ? parent.labelOffset + parent.labelWidth + parent.gap : parent.labelOffset, width)
+                    width: parent.hintWidth; height: Math.max(label.implicitHeight, control.iconSize)
+                    sourceComponent: Item {
+                        readonly property real textWidth: hintText.implicitWidth
+                        Text { id: hintText; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; text: control.shortcutHint; color: control.foreground; opacity: 0.55; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11) }
+                    }
+                }
             }
         }
     }
@@ -58,6 +100,6 @@ ToolButton {
         border.width: control.activeFocus || control.outlined ? 1 : 0
         border.color: control.activeFocus ? Theme.focusBorder : Theme.controlBorder
     }
-    FmToolTip { visible: control.hovered && control.tip.length > 0; text: control.tip }
+    Loader { active: control.hovered && control.tip.length > 0; sourceComponent: FmToolTip { target: control; shown: true; text: control.tip } }
     Accessible.name: text.length ? text : tip
 }

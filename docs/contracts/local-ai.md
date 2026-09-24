@@ -1,5 +1,9 @@
 # Local mail analysis
 
+## D097 — synced-mail queue (Local assistance20)
+
+The watcher processes every synced received message missing an enabled summary or classification, in store order, from a cursor persisted in `meta` (`local_model_watch_cursor`). This includes a new account's first-sync history and mail synced while no watcher ran. Each writer call scans at most 32 rows and returns at most four messages; the watcher runs them one at a time through the shared inference seat. A busy seat retries after five seconds. A runner-level failure (assistance unavailable or disabled, model changed or unavailable, engine stopped, account removed) holds the cursor and retries after 30 seconds. A message that cannot be analysed is skipped. The cursor advances only past admitted work. A message is an arrival, eligible for label Auto-read, only when dated at or after the watcher's start and at most one minute in the future. A one-shot lower bound (`local_model_watch_requeue`) rescans when an account's assistance turns from off to on, when its first label import adds labels, and after messages are deleted, because SQLite can reuse the newest row IDs. An absent account policy still means Auto-summarize and Auto-label on. Consumers: GUI and CLI `assist watch` through the shared engine; Core54, Gmail27.
+
 ## D096 — Auto-read and arrival authority (Local assistance19)
 
 Changing a label's Auto-read choice saves settings without clearing model People/Automated results; only classification or label-description changes invalidate them. The arrival flag that permits Auto-read is set only by the engine's new-arrival watcher. Client `assist_start` requests cannot claim it. Consumers: GUI and CLI through the shared engine; Core53.

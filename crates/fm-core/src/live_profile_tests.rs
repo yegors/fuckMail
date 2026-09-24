@@ -513,3 +513,37 @@ fn subject_binding_deduplicates_preserves_drafts_and_rejects_wrong_reconnect() {
         "unsupported_method"
     );
 }
+
+#[test]
+fn only_a_newly_added_account_waits_for_its_first_label_import() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open_live(dir.path()).unwrap();
+    let account = store
+        .bind_google_account("label-import-owner", "reader@example.test", &scopes(), None)
+        .unwrap();
+    let key = crate::label_sync::initial_import_key(&account);
+    let pending = |store: &Store| -> bool {
+        store
+            .db
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM meta WHERE key=?1)",
+                [&key],
+                |r| r.get(0),
+            )
+            .unwrap()
+    };
+    assert!(pending(&store));
+    store
+        .db
+        .execute("DELETE FROM meta WHERE key=?1", [&key])
+        .unwrap();
+    store
+        .bind_google_account(
+            "label-import-owner",
+            "reader@example.test",
+            &scopes(),
+            Some(&account),
+        )
+        .unwrap();
+    assert!(!pending(&store), "reconnecting never repeats the import");
+}

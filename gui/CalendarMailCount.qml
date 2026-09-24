@@ -4,13 +4,15 @@ import QtQuick.Controls
 Rectangle {
     id: count
     required property string date
-    required property var activity
+    property var activity: ({})
     property string accountName: ""
     property bool compact: false
     property real textSize: 11
     signal clicked()
-    readonly property var day: (activity.days || []).find(function(row) { return row.date === count.date })
-    readonly property bool ready: activity.state === "ready" && !!day
+    // Callers holding a date map pass the day's row directly.
+    property var row: activity.by_date ? activity.by_date[count.date] : (activity.days || []).find(function(row) { return row.date === count.date })
+    readonly property var day: row
+    readonly property bool ready: !!day && (activity.state === undefined || activity.state === "ready")
     visible: date <= backend.todayDate && ready
     implicitHeight: 20
     implicitWidth: counts.implicitWidth + 16
@@ -40,5 +42,5 @@ Rectangle {
     }
     MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: count.clicked() }
     HoverHandler { id: hover }
-    FmToolTip { visible: hover.hovered || count.activeFocus; text: count.ready ? count.day.received + " received · " + count.day.sent + " sent · " + count.accountName : "" }
+    FmToolTip { shown: hover.hovered || count.activeFocus; text: count.ready ? count.day.received + " received · " + count.day.sent + " sent · " + count.accountName : "" }
 }

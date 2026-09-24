@@ -1,5 +1,6 @@
 #include <QCoreApplication>
 #include "CalendarLayout.h"
+#include "FmIconItem.h"
 #include <QJsonObject>
 #include <QDebug>
 #include <QElapsedTimer>
@@ -202,7 +203,7 @@ int main(int argc, char **argv) {
     QFile module(copy.filePath("qmldir")); require(module.open(QIODevice::WriteOnly), "QML singleton directory");
     module.write("singleton Theme 1.0 Theme.qml\nsingleton ShortcutRegistry 1.0 ShortcutRegistry.qml\n"); module.close();
     CalendarBackendProbe backend;
-    QQmlApplicationEngine engine;
+    QQmlApplicationEngine engine; FmIconItem::registerType();
     bool qmlError = false;
     QObject::connect(&engine, &QQmlEngine::warnings, [&](const QList<QQmlError> &errors) { qmlError = true; for (const auto &error : errors) qWarning() << error.toString(); });
     engine.rootContext()->setContextProperty("backend", &backend);
@@ -805,7 +806,7 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     auto visualA = event(); visualA["start_display"] = "Sun 13 Sep 09:00"; visualA["time_display"] = "09:00"; visualA["end_display"] = "10:00"; visualA["day_index"] = 0; visualA["start_hour"] = 9.; visualA["duration_hours"] = 1.;
     auto visualB = visualA; visualB["id"] = "beta:event"; visualB["account"] = "beta"; visualB["event_id"] = "beta-event";
     backend.events = {visualA, visualB}; emit backend.eventsChanged();
-    QQmlApplicationEngine visualEngine; visualEngine.rootContext()->setContextProperty("backend", &backend);
+    QQmlApplicationEngine visualEngine; FmIconItem::registerType(); visualEngine.rootContext()->setContextProperty("backend", &backend);
     QObject::connect(&visualEngine, &QQmlEngine::warnings, [&](const QList<QQmlError> &errors) { qmlError = true; for (const auto &error : errors) qWarning() << error.toString(); });
     visualEngine.loadData(R"QML(import QtQuick
 import QtQuick.Controls

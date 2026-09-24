@@ -23,6 +23,19 @@ pub struct Prepared {
 fn encode(v: &Value) -> Result<String> {
     Ok(serde_json::to_string(v)?)
 }
+/// Last synced message row the new-mail watcher has queued.
+const WATCH_CURSOR: &str = "local_model_watch_cursor";
+/// Lower bound the watcher rescans from once, after an account's inputs change.
+const WATCH_REQUEUE: &str = "local_model_watch_requeue";
+fn requeue_after(db: &rusqlite::Connection, rowid: &str, account: Option<&str>) -> Result<()> {
+    db.execute(&format!("INSERT INTO meta(key,value) SELECT ?1,v FROM (SELECT {rowid} AS v FROM messages WHERE ?2 IS NULL OR account=?2) WHERE v IS NOT NULL ON CONFLICT(key) DO UPDATE SET value=min(value,excluded.value)"),params![WATCH_REQUEUE, account])?;
+    Ok(())
+}
+/// Deleting the newest messages lets SQLite reuse their rowids, so the watcher
+/// rescans from the highest remaining row and still sees mail stored under them.
+pub(crate) fn local_model_messages_deleted(db: &rusqlite::Connection) -> Result<()> {
+    requeue_after(db, "COALESCE(MAX(rowid),0)", None)
+}
 fn failure() -> crate::CoreError {
     err(
         "assistance_stale",
@@ -111,6 +124,16 @@ impl Store {
                         {
                             tx.execute("DELETE FROM message_sender_kinds WHERE provenance IN ('ollama','openai_compatible') AND account=?1", [account])?;
                         }
+                    }
+                }
+                // Turning an account's assistance on queues its already-synced mail.
+                for account in previous.accounts.keys().chain(settings.accounts.keys()) {
+                    let on = |s: &Settings| {
+                        let policy = s.accounts.get(account).cloned().unwrap_or_default();
+                        policy.summaries || policy.classification
+                    };
+                    if !on(&previous) && on(&settings) {
+                        self.local_model_requeue_account(account)?;
                     }
                 }
                 tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
@@ -680,47 +703,87 @@ impl Store {
         }
         Ok(result)
     }
+    /// Queue synced mail for the watcher in sync order, including history from a
+    /// first sync. The cursor persists, so mail synced while no watcher ran is
+    /// still processed. Only mail dated after `since` (the watcher's start) is an
+    /// arrival eligible for label Auto-read; history never changes review state.
     pub fn local_model_arrivals(&self, after: Option<i64>, since: &str) -> Result<Value> {
-        let max: i64 =
-            self.db
-                .query_row("SELECT COALESCE(MAX(rowid),0) FROM messages", [], |r| {
-                    r.get(0)
-                })?;
-        let Some(after) = after else {
-            return Ok(json!({"after":max,"messages":[]}));
+        const SCAN: usize = 32;
+        const QUEUE: usize = 4;
+        let meta = |key: &str| -> Result<Option<i64>> {
+            Ok(self
+                .db
+                .query_row("SELECT value FROM meta WHERE key=?1", [key], |r| r.get(0))
+                .optional()?)
         };
+        let requeue = meta(WATCH_REQUEUE)?;
+        let base = match after {
+            Some(after) => after,
+            None => meta(WATCH_CURSOR)?.unwrap_or(0),
+        };
+        let start = requeue.map_or(base, |from| from.min(base));
+        if requeue.is_some() {
+            self.db
+                .execute("DELETE FROM meta WHERE key=?1", [WATCH_REQUEUE])?;
+        }
+        self.db.execute(
+            "INSERT INTO meta(key,value) VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            params![WATCH_CURSOR, start],
+        )?;
+        if after.is_none() {
+            return Ok(json!({"after":start,"messages":[],"more":true}));
+        }
         let state = self.local_model_settings()?;
         let settings: Settings = serde_json::from_value(state["settings"].clone())?;
-        let mut stmt=self.db.prepare("SELECT m.rowid,m.account,m.id,m.conversation_id,m.sent_at,m.sent,m.trashed,a.lifecycle_state FROM messages m JOIN accounts a ON a.id=m.account WHERE m.rowid>?1 ORDER BY m.rowid LIMIT 1000")?;
-        let mut rows = stmt.query([after])?;
-        let mut next = after;
+        let since = chrono::DateTime::parse_from_rfc3339(since).ok();
+        let now = chrono::Utc::now();
+        let rows = self.db.prepare("SELECT m.rowid,m.account,m.id,m.conversation_id,m.sent_at,m.sent,m.trashed,a.lifecycle_state FROM messages m JOIN accounts a ON a.id=m.account WHERE m.rowid>?1 ORDER BY m.rowid LIMIT ?2")?
+            .query_map(params![start, SCAN as i64], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?,
+                    r.get::<_, String>(4)?, r.get::<_, bool>(5)?, r.get::<_, bool>(6)?, r.get::<_, String>(7)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut more = rows.len() == SCAN;
+        let mut next = start;
         let mut messages = Vec::new();
-        while let Some(row) = rows.next()? {
-            let account: String = row.get(1)?;
-            let date: String = row.get(4)?;
-            let eligible = !row.get::<_, bool>(5)?
-                && !row.get::<_, bool>(6)?
-                && row.get::<_, String>(7)? == "active"
+        for (rowid, account, id, conversation, date, sent, trashed, lifecycle) in rows {
+            let policy = settings.accounts.get(&account).cloned().unwrap_or_default();
+            let enabled = !sent
+                && !trashed
+                && lifecycle == "active"
                 && settings.model.is_some()
-                && {
-                    let policy = settings.accounts.get(&account).cloned().unwrap_or_default();
-                    policy.classification || policy.summaries
-                }
-                && chrono::DateTime::parse_from_rfc3339(&date)
-                    .ok()
-                    .zip(chrono::DateTime::parse_from_rfc3339(since).ok())
-                    .is_some_and(|(d, s)| {
-                        d >= s && d <= chrono::Utc::now() + chrono::Duration::minutes(1)
-                    });
-            if eligible && messages.len() == 16 {
+                && (policy.classification || policy.summaries);
+            if enabled && messages.len() == QUEUE {
+                more = true;
                 break;
             }
-            next = row.get(0)?;
-            if eligible {
-                messages.push(json!({"account":account,"id":row.get::<_,String>(2)?,"conversation_id":row.get::<_,String>(3)?}));
+            next = rowid;
+            // A message that cannot be analysed is skipped, never a watcher failure.
+            let task = if enabled
+                && self
+                    .local_model_backlog_eligible(&account, &id)
+                    .unwrap_or(false)
+            {
+                self.local_model_missing_task(&account, &conversation, &id)
+                    .ok()
+                    .flatten()
+            } else {
+                None
+            };
+            if let Some(task) = task {
+                let arrival = since
+                    .zip(chrono::DateTime::parse_from_rfc3339(&date).ok())
+                    .is_some_and(|(since, date)| {
+                        date >= since && date <= now + chrono::Duration::minutes(1)
+                    });
+                messages.push(json!({"account":account,"id":id,"conversation_id":conversation,"task":task,"arrival":arrival}));
             }
         }
-        Ok(json!({"after":next,"messages":messages}))
+        Ok(json!({"after":next,"messages":messages,"more":more}))
+    }
+    /// Rescan an account's synced mail for missing results after its inputs change.
+    pub(crate) fn local_model_requeue_account(&self, account: &str) -> Result<()> {
+        requeue_after(&self.db, "MIN(rowid)-1", Some(account))
     }
 }
 
@@ -1126,5 +1189,144 @@ mod tests {
         drop(s);
         let s = Store::open_synthetic(dir.path()).unwrap();
         assert_eq!(s.local_model_settings().unwrap()["revision"], 3);
+    }
+
+    fn drain_arrivals(s: &Store, since: &str) -> (i64, Vec<Value>) {
+        let mut after = s.local_model_arrivals(None, since).unwrap()["after"]
+            .as_i64()
+            .unwrap();
+        let mut queued = Vec::new();
+        loop {
+            let page = s.local_model_arrivals(Some(after), since).unwrap();
+            assert!(page["messages"].as_array().unwrap().len() <= 4);
+            queued.extend(page["messages"].as_array().unwrap().iter().cloned());
+            after = page["after"].as_i64().unwrap();
+            if page["more"] == false {
+                // Record the end, as the idle watcher does on its next call.
+                s.local_model_arrivals(Some(after), since).unwrap();
+                return (after, queued);
+            }
+        }
+    }
+    fn eligible(s: &Store, account: &str) -> Vec<String> {
+        let ids: Vec<String> =
+            s.db.prepare("SELECT id FROM messages WHERE account=?1 ORDER BY rowid")
+                .unwrap()
+                .query_map([account], |r| r.get(0))
+                .unwrap()
+                .collect::<rusqlite::Result<_>>()
+                .unwrap();
+        ids.into_iter()
+            .filter(|id| s.local_model_backlog_eligible(account, id).unwrap())
+            .collect()
+    }
+    #[test]
+    fn watcher_queues_synced_history_once_without_auto_read_and_resumes_after_restart() {
+        let (dir, s) = configured_store();
+        let account = "windscribe";
+        let history = "2999-01-01T00:00:00Z";
+        let (end, queued) = drain_arrivals(&s, history);
+        let expected = eligible(&s, account);
+        let mine: Vec<_> = queued.iter().filter(|m| m["account"] == account).collect();
+        assert!(
+            expected.len() > 4,
+            "the fixture must span several watcher pages"
+        );
+        assert_eq!(
+            mine.len(),
+            expected.len(),
+            "every synced message is queued once"
+        );
+        assert!(queued
+            .iter()
+            .all(|m| m["arrival"] == false && m["task"] == "message"));
+        drop(s);
+        let mut s = Store::open_synthetic(dir.path()).unwrap();
+        assert_eq!(
+            s.local_model_arrivals(None, history).unwrap()["after"],
+            end,
+            "the cursor survives restart"
+        );
+        assert!(drain_arrivals(&s, history).1.is_empty());
+
+        // Turning an account's assistance back on queues its synced mail again.
+        let mut settings: Settings =
+            serde_json::from_value(s.local_model_settings().unwrap()["settings"].clone()).unwrap();
+        settings.accounts.insert(
+            account.into(),
+            ollama::Account {
+                summaries: false,
+                classification: false,
+                ..Default::default()
+            },
+        );
+        for on in [false, true] {
+            settings.accounts.get_mut(account).unwrap().summaries = on;
+            let revision = s.local_model_settings().unwrap()["revision"].clone();
+            s.local_model_handle(
+                "assist_settings_save",
+                None,
+                &json!({"expected_revision":revision,"settings":settings}),
+            )
+            .unwrap();
+            let requeued = drain_arrivals(&s, history).1;
+            let mine: Vec<_> = requeued
+                .iter()
+                .filter(|m| m["account"] == account)
+                .collect();
+            assert_eq!(mine.len(), if on { expected.len() } else { 0 });
+            assert!(mine.iter().all(|m| m["task"] == "summary"));
+        }
+
+        // Only mail dated after the watcher starts is an arrival for label Auto-read.
+        let since = chrono::Utc::now() - chrono::Duration::hours(2);
+        let (recent, future) = (&expected[0], &expected[1]);
+        for (id, at) in [
+            (recent, chrono::Utc::now() - chrono::Duration::hours(1)),
+            (future, chrono::Utc::now() + chrono::Duration::days(1)),
+        ] {
+            s.db.execute(
+                "UPDATE messages SET sent_at=?3 WHERE account=?1 AND id=?2",
+                params![account, id, at.to_rfc3339()],
+            )
+            .unwrap();
+        }
+        s.local_model_requeue_account(account).unwrap();
+        let queued = drain_arrivals(&s, &since.to_rfc3339()).1;
+        let arrival = |id: &str| queued.iter().find(|m| m["id"] == id).unwrap()["arrival"].clone();
+        assert_eq!(arrival(recent), true);
+        assert_eq!(arrival(future), false);
+        assert_eq!(
+            queued.iter().filter(|m| m["arrival"] == true).count(),
+            1,
+            "older synced history never auto-reads"
+        );
+    }
+    #[test]
+    fn watcher_scans_new_mail_stored_under_a_reused_rowid() {
+        let (_dir, s) = configured_store();
+        let history = "2999-01-01T00:00:00Z";
+        let copy = |id: &str| {
+            s.db.execute("INSERT INTO messages(account,id,conversation_id,remote_id,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash) SELECT account,?1,conversation_id,?1,sender_name,sender_email,recipient,subject,body,sent_at,unread,starred,inbox,sent,source_hash FROM messages WHERE account='windscribe' AND id='windscribe-message-001-000'",[id]).unwrap();
+            s.db.last_insert_rowid()
+        };
+        let ids = |queued: &[Value]| queued.iter().map(|m| m["id"].clone()).collect::<Vec<_>>();
+        drain_arrivals(&s, history);
+        let reused = copy("watch-new-1");
+        let (end, queued) = drain_arrivals(&s, history);
+        assert_eq!(ids(&queued), vec![json!("watch-new-1")]);
+        s.db.execute("DELETE FROM messages WHERE id='watch-new-1'", [])
+            .unwrap();
+        local_model_messages_deleted(&s.db).unwrap();
+        assert_eq!(
+            copy("watch-new-2"),
+            reused,
+            "SQLite reuses the deleted rowid"
+        );
+        let page = s.local_model_arrivals(Some(end), history).unwrap();
+        assert_eq!(
+            ids(page["messages"].as_array().unwrap()),
+            vec![json!("watch-new-2")]
+        );
     }
 }

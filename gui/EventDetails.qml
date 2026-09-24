@@ -39,7 +39,8 @@ Popup {
     property real timelineInset: 0
     property bool timelineAtTop: false
     property real timelineEdge: parent.height - timelineInset
-    property var sourceEvents: timelineSource ? backend.todayEvents : backend.events
+    // Closed details do not track event lists.
+    property var sourceEvents: !visible ? [] : timelineSource ? backend.todayEvents : backend.events
     CalendarOccurrenceRead {
         id: occurrenceRead; selection: details.eventData; active: details.visible; timelineSource: details.timelineSource
         scope: details.recurringScopes.length ? details.recurringScope : ""
@@ -136,7 +137,11 @@ Popup {
     }
     Connections {
         target: backend
-        function onEventsChanged() {
+        // Timeline rows arrive separately from the Calendar window.
+        ignoreUnknownSignals: true
+        function onEventsChanged() { if (!details.timelineSource) refresh() }
+        function onTimelineChanged() { if (details.timelineSource) refresh() }
+        function refresh() {
             if (!details.opened || details.saving || !details.eventData.id) return
             if (!(details.timelineSource ? backend.timelineReady : backend.calendarReady)) { details.eventData = ({}); details.close(); return }
             let candidates = (details.timelineSource ? backend.todayEvents : backend.events).filter(function(e) { return e.id === details.eventData.id })
@@ -183,7 +188,7 @@ Popup {
                     text: details.eventData.multi_day ? (details.eventData.start_display || "") + " – " + (details.eventData.end_display || "") : details.eventData.all_day ? "All day" : (details.eventData.time_display || "") + " – " + (details.eventData.end_display || "")
                     color: Theme.accent; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium
                     HoverHandler { id: whenHover }
-                    FmToolTip { visible: whenHover.hovered; text: backend.preferences.calendar_display_time_zone || "Time zone unavailable" }
+                    FmToolTip { shown: whenHover.hovered; text: backend.preferences.calendar_display_time_zone || "Time zone unavailable" }
                 }
                 Text {
                     width: Math.min(implicitWidth, parent.width); wrapMode: Text.Wrap

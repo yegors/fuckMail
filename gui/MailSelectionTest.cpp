@@ -1,4 +1,5 @@
 #include "GoogleOperationTestFixture.h"
+#include "FmIconItem.h"
 #include "MailBackend.h"
 #include "ReplyDocument.h"
 #include <QGuiApplication>
@@ -177,7 +178,7 @@ class MailSelectionTest {
         }
         QFile registration(modulePath+"/qmldir"); require(registration.open(QIODevice::WriteOnly),"selection registration"); registration.write(module); registration.close();
         qmlRegisterType<ReplyDocument>("SelectionTest",1,0,"ReplyDocument");
-        QQmlApplicationEngine qml; bool warnings=false;
+        QQmlApplicationEngine qml; FmIconItem::registerType(); bool warnings=false;
         QObject::connect(&qml,&QQmlEngine::warnings,[&](const auto &errors){warnings=true;for(const auto &error:errors) qWarning()<<error.toString();});
         qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
         qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; function present(theme,size) { Theme.themeId=theme; Theme.textSize=size } MailView { anchors.fill:parent } StartupOverlay { id:splash; anchors.fill:parent; startupReady:true } }",QUrl::fromLocalFile(copy.filePath("Test.qml")));
@@ -575,7 +576,7 @@ public:
             if(name!="Theme.qml") module+=name.chopped(4).toUtf8()+" 1.0 "+name.toUtf8()+'\n';
         }
         QFile registration(path+"/qmldir");require(registration.open(QIODevice::WriteOnly),"account QML registration");registration.write(module);registration.close();
-        QQmlApplicationEngine qml;bool warnings=false;
+        QQmlApplicationEngine qml; FmIconItem::registerType();bool warnings=false;
         QObject::connect(&qml,&QQmlEngine::warnings,[&](const auto &errors){warnings=true;for(const auto &error:errors)qWarning()<<error.toString();});
         qml.addImportPath(copy.path());qml.rootContext()->setContextProperty("backend",&h.backend);
         qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport AccountsTest\nApplicationWindow {visible:true;width:1280;height:800;color:Theme.canvas;palette.text:Theme.text;palette.base:Theme.surface;palette.window:Theme.canvas;palette.buttonText:Theme.text;function appearance(theme,size){Theme.themeId=theme;Theme.textSize=size} SettingsView {anchors.fill:parent;page:'Accounts'} }",QUrl::fromLocalFile(copy.filePath("Test.qml")));

@@ -1,4 +1,5 @@
 #include "GoogleOperationTestFixture.h"
+#include "FmIconItem.h"
 #include "MailBackend.h"
 #include "ReplyDocument.h"
 #include <QFontDatabase>
@@ -90,7 +91,7 @@ static void run() {
             if(name!="Theme.qml") module+=name.chopped(4).toUtf8()+" 1.0 "+name.toUtf8()+'\n';
     }
     QFile registration(modulePath+"/qmldir");require(registration.open(QIODevice::WriteOnly),"module registration");registration.write(module);registration.close();
-    qmlRegisterType<ReplyDocument>("DiscardTest",1,0,"ReplyDocument");QQmlApplicationEngine qml;bool warnings=false;
+    qmlRegisterType<ReplyDocument>("DiscardTest",1,0,"ReplyDocument");QQmlApplicationEngine qml; FmIconItem::registerType();bool warnings=false;
     QObject::connect(&qml,&QQmlEngine::warnings,[&](const QList<QQmlError> &errors){warnings=true;for(const auto &error:errors)qWarning()<<error;});
     qml.addImportPath(copy.path());qml.rootContext()->setContextProperty("backend",&backend);
     qml.loadData(R"QML(import QtQuick

@@ -1,4 +1,5 @@
 #include "GoogleOperationTestFixture.h"
+#include "FmIconItem.h"
 #include "MailBackend.h"
 #include "ReplyDocument.h"
 #include <QGuiApplication>
@@ -76,7 +77,7 @@ static void run() {
     QFile module(modulePath+"/qmldir");require(module.open(QIODevice::WriteOnly),"module registration");
     module.write(registration);module.close();
     qmlRegisterType<ReplyDocument>("UndoTest",1,0,"ReplyDocument");
-    QQmlApplicationEngine qml;bool warnings=false;
+    QQmlApplicationEngine qml; FmIconItem::registerType();bool warnings=false;
     QObject::connect(&qml,&QQmlEngine::warnings,[&](const QList<QQmlError> &errors){warnings=true;for(const auto &error:errors)qWarning()<<error;});
     qml.addImportPath(copy.path());qml.rootContext()->setContextProperty("backend",&backend);
     qml.loadData(R"QML(import QtQuick

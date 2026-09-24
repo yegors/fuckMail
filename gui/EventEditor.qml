@@ -292,6 +292,8 @@ Popup {
     }
     Connections {
         target: backend
+        ignoreUnknownSignals: true
+        function onTimelineChanged() { onEventsChanged() }
         function onEventsChanged() {
             if (editor.opened && editor.live && editor.editEvent.event_id && !editor.occurrence) {
                 let current = backend.events.concat(backend.todayEvents).find(function(e) { return e.account === editor.editEvent.account && e.calendar_id === editor.editEvent.calendar_id && e.event_id === editor.editEvent.event_id })

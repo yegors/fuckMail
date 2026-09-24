@@ -233,11 +233,30 @@ void MailBackend::acknowledgeCalendarReminder(const QVariantMap &event, bool joi
     });
 }
 
+// Building a QTimeZone from its ID is costly; reuse it until the preference changes.
+QTimeZone MailBackend::clockZone() const {
+    const auto id = m_syntheticProfile ? QStringLiteral("America/Toronto") : m_preferences.value("calendar_display_time_zone").toString();
+    if (!m_clockZoneCached || id != m_clockZoneId) {
+        const QTimeZone chosen(id.toUtf8());
+        m_clockZone = chosen.isValid() ? chosen : QTimeZone::systemTimeZone();
+        m_clockZoneId = id; m_clockZoneCached = true;
+    }
+    return m_clockZone;
+}
 QDateTime MailBackend::clockNow() const {
-    const QTimeZone chosen(m_preferences.value("calendar_display_time_zone").toString().toUtf8());
-    const auto zone = m_syntheticProfile ? QTimeZone("America/Toronto") : chosen.isValid() ? chosen : QTimeZone::systemTimeZone();
+    const auto zone = clockZone();
     return m_fixtureClock ? QDateTime::fromString("2026-09-11T10:42:00-04:00", Qt::ISODate).toTimeZone(zone)
                           : QDateTime::currentDateTimeUtc().toTimeZone(zone);
+}
+// Publish the clock only when a displayed value changes: the minute, or the
+// date in the display zone, the host zone or UTC used by mail date labels.
+void MailBackend::tickClock() {
+    const auto now = clockNow();
+    const auto day = now.date().toString(Qt::ISODate) + '|' + now.toLocalTime().date().toString(Qt::ISODate) + '|' + now.toUTC().date().toString(Qt::ISODate);
+    const double hour = now.time().hour() + now.time().minute() / 60.0;
+    if (day != m_clockDayKey) { m_clockDayKey = day; emit todayChanged(); }
+    if (hour != m_clockHour) { m_clockHour = hour; emit clockChanged(); }
+    m_clockTimer.start(60000 - int(QDateTime::currentMSecsSinceEpoch() % 60000) + 20);
 }
 QString MailBackend::todayDate() const { return clockNow().date().toString(Qt::ISODate); }
 QString MailBackend::calendarDateTime(const QString &date, const QString &time, const QString &zone) const {
@@ -255,21 +274,32 @@ QVariantList MailBackend::calendarPreview(const QVariantMap &event) const {
     return calendarPresentation({QJsonObject::fromVariantMap(event)}, QDate::fromString(calendarFrom(), Qt::ISODate), calendarDays(), zone);
 }
 int MailBackend::calendarDays() const { return m_calendarView == "day" ? 1 : m_calendarView == "week" ? 7 : 42; }
-QString MailBackend::calendarFrom() const {
-    auto day = QDate::fromString(m_calendarDate, Qt::ISODate);
-    if (m_calendarView == "day" || m_calendarView == "agenda") return day.toString(Qt::ISODate);
-    if (m_calendarView == "month") day = QDate(day.year(), day.month(), 1);
+QString MailBackend::calendarRangeStart(const QString &view, const QString &date) const {
+    auto day = QDate::fromString(date, Qt::ISODate);
+    if (view == "day" || view == "agenda") return day.toString(Qt::ISODate);
+    if (view == "month") day = QDate(day.year(), day.month(), 1);
     const int first = m_preferences.value("week_start", "monday").toString() == "sunday" ? 7 : 1;
     return day.addDays(-((day.dayOfWeek() - first + 7) % 7)).toString(Qt::ISODate);
+}
+QString MailBackend::calendarFrom() const { return calendarRangeStart(m_calendarView, m_calendarDate); }
+// Navigation is remembered without a save on every step; see savePreferences.
+void MailBackend::rememberCalendarNavigation(const QVariantMap &values) {
+    for (auto it = values.cbegin(); it != values.cend(); ++it) { m_preferences[it.key()] = it.value(); m_navigationPending[it.key()] = it.value(); }
+    m_navigationSaveTimer.start();
 }
 void MailBackend::setCalendarView(const QString &view) {
     if (view != "day" && view != "week" && view != "month" && view != "agenda") return;
     if (view == m_calendarView) return;
-    m_calendarView = view; setPreferences({{"calendar_view", view}}); loadCalendar(); emit eventsChanged();
+    m_calendarView = view; rememberCalendarNavigation({{"calendar_view", view}}); showCalendarRange();
 }
 void MailBackend::setCalendarDate(const QString &date) {
     if (!QDate::fromString(date, Qt::ISODate).isValid() || date == m_calendarDate) return;
-    m_calendarDate = date; setPreferences({{"calendar_date", date}}); loadCalendar(); emit eventsChanged();
+    m_calendarDate = date; rememberCalendarNavigation({{"calendar_date", date}}); showCalendarRange();
+}
+void MailBackend::openCalendarDay(const QString &date) {
+    if (!QDate::fromString(date, Qt::ISODate).isValid() || (date == m_calendarDate && m_calendarView == "day")) return;
+    m_calendarDate = date; m_calendarView = "day";
+    rememberCalendarNavigation({{"calendar_date", date}, {"calendar_view", "day"}}); showCalendarRange();
 }
 void MailBackend::moveCalendar(int delta) {
     auto day = QDate::fromString(m_calendarDate, Qt::ISODate);
@@ -279,9 +309,9 @@ void MailBackend::moveCalendar(int delta) {
 void MailBackend::showCalendarToday() { setCalendarDate(todayDate()); }
 void MailBackend::moveTimeline(int delta) {
     m_timelineDate = QDate::fromString(m_timelineDate, Qt::ISODate).addDays(delta).toString(Qt::ISODate);
-    setPreferences({{"timeline_date", m_timelineDate}}); loadCalendar(); emit eventsChanged();
+    rememberCalendarNavigation({{"timeline_date", m_timelineDate}}); loadTimeline(false);
 }
-void MailBackend::showTimelineToday() { m_timelineDate = todayDate(); setPreferences({{"timeline_date", m_timelineDate}}); loadCalendar(); emit eventsChanged(); }
+void MailBackend::showTimelineToday() { m_timelineDate = todayDate(); rememberCalendarNavigation({{"timeline_date", m_timelineDate}}); loadTimeline(false); }
 void MailBackend::loadCalendarSources() {
     request("calendar_sources", {}, {}, [this](auto result, bool ok) {
         if (!ok) return;
@@ -293,7 +323,7 @@ void MailBackend::loadCalendarSources() {
         // very occurrence lookup that performed that recheck. Keep a local
         // epoch so a revoke/restore cycle still fences older UI callbacks.
         if (calendarPolicies(m_calendarSources) != calendarPolicies(sources)) ++m_calendarAuthorityEpoch;
-        m_calendarSources = sources; emit eventsChanged();
+        m_calendarSources = sources; emit calendarSourcesChanged();
         if (previousSelection != effectiveCalendarSelection()) loadCalendar();
     });
 }
@@ -324,6 +354,7 @@ void MailBackend::loadPreferences() {
         m_preferencesRevision = result["revision"].toInteger();
         auto preferences = result["preferences"].toObject().toVariantMap();
         for (auto it = m_preferencesPending.cbegin(); it != m_preferencesPending.cend(); ++it) preferences[it.key()] = it.value();
+        for (auto it = m_navigationPending.cbegin(); it != m_navigationPending.cend(); ++it) preferences[it.key()] = it.value();
         if (preferences != m_preferences) {
             const bool reloadCalendar = changesCalendarQuery(m_preferences, preferences);
             m_preferences = preferences;
@@ -345,17 +376,29 @@ void MailBackend::setPreferences(const QVariantMap &patch) {
     if (patch.isEmpty() && m_preferencesPending.isEmpty()) return;
     const auto previousVisibility = m_preferences.value("calendar_account_visibility");
     for (auto it = patch.cbegin(); it != patch.cend(); ++it) { m_preferences[it.key()] = it.value(); m_preferencesPending[it.key()] = it.value(); }
-    if (previousVisibility != m_preferences.value("calendar_account_visibility")) emit eventsChanged();
+    if (previousVisibility != m_preferences.value("calendar_account_visibility")) { emit eventsChanged(); emit timelineChanged(); }
     m_preferencesStatus = "Saving…"; emit preferencesChanged(); savePreferences();
 }
 void MailBackend::savePreferences() {
-    if (m_preferencesSaving || m_preferencesPending.isEmpty()) return;
-    if (!m_connected) { m_preferencesStatus = "Not saved — reconnect and retry."; cancelShutdown(); emit preferencesChanged(); return; }
-    const auto submitted = m_preferencesPending;
+    m_navigationSaveTimer.stop();
+    if (m_preferencesSaving || (m_preferencesPending.isEmpty() && m_navigationPending.isEmpty())) return;
+    // Navigation alone saves silently and waits for a connection without an error.
+    const bool quiet = m_preferencesPending.isEmpty();
+    if (!m_connected) {
+        if (!quiet) { m_preferencesStatus = "Not saved — reconnect and retry."; cancelShutdown(); emit preferencesChanged(); }
+        return;
+    }
+    auto submitted = m_navigationPending;
+    for (auto it = m_preferencesPending.cbegin(); it != m_preferencesPending.cend(); ++it) submitted[it.key()] = it.value();
     auto params = mutation(); params["preferences"] = QJsonObject::fromVariantMap(submitted); params["expected_revision"] = m_preferencesRevision;
     m_preferencesSaving = true;
-    request("preferences_save", {}, params, [this, submitted](auto result, bool ok) {
+    request("preferences_save", {}, params, [this, submitted, quiet](auto result, bool ok) {
         m_preferencesSaving = false;
+        if (!ok && quiet) {
+            if (result["code"].toString() == "stale_revision" && !m_shutdown) { loadPreferences(); m_navigationSaveTimer.start(); }
+            else { m_navigationPending.clear(); if (m_shutdown) finishShutdown(); }
+            return;
+        }
         if (!ok) {
             m_preferencesStatus = "Not saved — " + result["message"].toString("retry after reconnecting");
             cancelShutdown(); emit preferencesChanged();
@@ -365,13 +408,18 @@ void MailBackend::savePreferences() {
             return;
         }
         m_preferencesRevision = result["revision"].toInteger();
-        for (auto it = submitted.cbegin(); it != submitted.cend(); ++it)
+        for (auto it = submitted.cbegin(); it != submitted.cend(); ++it) {
             if (m_preferencesPending.value(it.key()) == it.value()) m_preferencesPending.remove(it.key());
-        m_preferencesStatus = m_preferencesPending.isEmpty() ? "Saved on this machine" : "Saving…";
-        emit preferencesChanged();
+            if (m_navigationPending.value(it.key()) == it.value()) m_navigationPending.remove(it.key());
+        }
+        if (!quiet) {
+            m_preferencesStatus = m_preferencesPending.isEmpty() ? "Saved on this machine" : "Saving…";
+            emit preferencesChanged();
+        }
         for (const auto &key : {"week_start", "selected_calendars", "calendar_account_visibility", "calendar_display_time_zone"})
             if (submitted.contains(key)) { loadCalendar(); break; }
-        if (!m_preferencesPending.isEmpty()) savePreferences();
+        if (!m_preferencesPending.isEmpty() || (m_shutdown && !m_navigationPending.isEmpty())) savePreferences();
+        else if (!m_navigationPending.isEmpty()) m_navigationSaveTimer.start();
         if (m_shutdown) finishShutdown();
     });
 }

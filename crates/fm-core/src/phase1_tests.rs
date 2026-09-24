@@ -205,6 +205,11 @@ fn phase1_preferences_validate_replay_and_keep_none_distinct_from_all() {
             .unwrap(),
         saved
     );
+    // Polling clients compare this before reloading preferences.
+    assert_eq!(
+        store.handle("status", None, json!({})).unwrap()["preferences_revision"],
+        saved["revision"]
+    );
     assert_eq!(store.handle("preferences_save",None,json!({"preferences":{"calendar_start_hour":22,"calendar_end_hour":7},"expected_revision":1,"request_id":"bad-hours"})).unwrap_err().code,"invalid_request");
     assert_eq!(
         store

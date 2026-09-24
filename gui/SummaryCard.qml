@@ -118,7 +118,7 @@ Rectangle {
                 text: card.busy ? "Summarizing · " + card.modelName + " · on this machine · keep reading" : [card.captionModel,card.generatedAt].filter(Boolean).join(" · ")
                 color: Theme.withAlpha(Theme.ai,.6); font.pointSize: Theme.fontPoints(11); textFormat: Text.PlainText
                 HoverHandler { id: captionHover }
-                FmToolTip { visible: captionHover.hovered; text: parent.text }
+                FmToolTip { shown: captionHover.hovered; text: parent.text }
                 }
                 Layout.fillWidth:true;implicitHeight:contentItem.implicitHeight
             }

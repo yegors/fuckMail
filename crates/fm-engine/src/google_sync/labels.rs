@@ -25,8 +25,22 @@ impl LabelsWorker {
             )));
         }
         refresh(ctx).await?;
+        initial_import(ctx).await;
         self.next_refresh_ms = now_ms.saturating_add(REFRESH_INTERVAL_MS);
         Ok(Step::Progress)
+    }
+}
+/// A newly added account links its existing Gmail labels once, right after the
+/// first catalog refresh, so model labeling can use them without a manual sync.
+/// Nothing is created at Google. A failed attempt retries on the next refresh.
+async fn initial_import(ctx: &SyncContext) {
+    let account = ctx.account.as_str().to_owned();
+    let imported = ctx
+        .core_call(move |store| store.google_labels_initial_import(&account))
+        .await;
+    if imported.is_ok_and(|result| result.is_some()) {
+        ctx.refresh
+            .send_modify(|revision| *revision = revision.wrapping_add(1));
     }
 }
 pub(crate) async fn refresh(ctx: &SyncContext) -> Result<Value> {

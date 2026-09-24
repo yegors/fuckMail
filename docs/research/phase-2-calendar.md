@@ -1,5 +1,58 @@
 # Phase 2 Google Calendar adapter
 
+## D098 — Calendar view performance (2026-09-23)
+
+The founder reported that Day/Week/Month switches were not instant, with content appearing and shifting into place, and that a Month day click took about two seconds on a test account with almost no events. An audit on a disposable demo profile found the time was spent in the GUI, not the engine.
+
+Before this change:
+
+- Every view switch, date move or Month day click cleared the events and showed "Loading calendars…", which moved the layout. It then waited for two serial engine reads (grid and Mail timeline) behind any background writer work.
+- A Month day click made two calendar reads and two preference writes.
+- One `eventsChanged` signal carried rows, view, date, the timeline, the catalog, readiness, today and the 30-second clock. Each emit re-evaluated every Calendar binding, including hidden Day/Week/Month/Agenda views and date pickers. A 30-second clock tick re-evaluated Mail day labels too.
+- Every button created a tooltip popup and an icon canvas up front.
+- Calendar mail counts scanned the account's whole Gmail coverage.
+- The default `dev` preset is an unoptimized debug build.
+
+The D098 changes are listed in the [decision](../decisions.md) and in [Mail UI69](../contracts/mail-ui.md), [Core55](../contracts/core-storage.md) and [Quality70](../contracts/quality.md).
+
+### Measurements
+
+Windows 11 25H2, x86_64, Qt 6.11.2, Direct3D 11, 1440×900 logical at 1.25 device pixel ratio, synthetic demo profile, optimized (`release`) build. The native Calendar benchmark (`verify_interaction.py --mode calendar`) measures native input to the first frame showing the correct view, date and events. It verified 400 samples and 2,427 painted event identities against the store.
+
+| Route (100 samples) | HEAD `8b01259` p50 / p95 / max | D098 p50 / p95 / max |
+| --- | --- | --- |
+| Day/Week/Month switch | 407.5 / 482.7 / 574.7 ms | 32.2 / 63.8 / 68.2 ms |
+| Month day click into Day | 457.5 / 528.9 / 659.5 ms | 14.3 / 28.7 / 39.1 ms |
+| Week next/previous | 292.5 / 343.0 / 388.2 ms | 3.0 / 4.1 / 15.5 ms |
+| Month next/previous | 263.3 / 358.0 / 447.3 ms (56 samples) | 6.5 / 9.8 / 11.2 ms |
+
+At HEAD, every sample painted one to four frames of wrong or empty content before the correct one. After D098, only 5 of the 400 samples painted even one such frame. All four D098 routes pass the p95 <= 100 ms budget.
+
+The HEAD column comes from the same benchmark ported onto a scratch checkout of `8b01259`. Only the displayed-range check and Month cell-count property were adapted to that tree's names. Its first run ended at sample 56 of Month next/previous, and a second attempt stopped after four samples, both because the window lost activation on the founder's desktop. The partial run is reported as measured.
+
+An earlier scratch probe on the same profile timed each action until its reads settled plus one frame:
+
+- HEAD release: 241–723 ms p50 per route, up to 810 ms p95. Each action blocked the UI for 117–190 ms, and one `eventsChanged` cost 41–65 ms of QML work.
+- HEAD debug build: 1.4–3.3 s per action.
+- D098 release: 10–35 ms p50, and one `eventsChanged` costs 0.9–3.6 ms.
+
+The debug build was not re-measured after D098. The audit timed the old mail-count scan at about 170–230 ms on a 100k-message account. D098's indexed range read is covered by a query-plan test but was not timed at that scale. No large-calendar profile was measured.
+
+### Verification
+
+- Scoped Core tests pass for schema33 creation, a schema32 profile upgrading once with the index in its query plan, and `status.preferences_revision`.
+- `gui-calendar-search` adds a window-cache test: one month read serves Week and a Month day click, the prefetched next month shows without a read, the new neighbour prefetches, and an over-budget month falls back to exact Week and Day reads with no prefetch.
+- Existing native tests were updated for the split signals: timeline, catalog and Mail-timeline assertions. The timeline test now requires that moving the timeline reads only its three days.
+- The final release GUI suite passes 26 of 32. The other six fail identically on a scratch build of HEAD `8b01259`, so this change did not cause them:
+  - `gui-integration`: search timeout at stage 81.
+  - `gui-attachments`: newer-draft conflict at stage 98.
+  - `gui-send-undo`.
+  - `gui-mail-selection`: label submenu toggles the wrong way. It passed once at HEAD and failed four times on each tree.
+  - Both Google draft-controls tests: an unexpected `google_sent` request.
+- `gui-startup-recovery` timed out once on each tree and passed in the final run.
+- Temporary probe and profiler hooks were removed before the final build.
+- The offline Rust workspace passes 701 tests with 6 ignored and none failed. Strict Clippy, formatting and repository hygiene pass.
+
 ## D089 — Calendar catch-up and local visibility (2026-09-23)
 
 The founder reported a Calendar event created by a second fuckMail instance, visible there and in Google Calendar but missing on this Windows instance after time online and manual Sync. The retained debug excerpt shows Calendar page counters advancing; it does not prove the event's identity or a successful display query. Read-only, metadata-only inspection of this host's active profile found recent successful token-based Calendar publications with no recorded Calendar sync errors. Its saved display selection includes one non-primary calendar and excludes the primary calendar for the same connected account. The exact reported event was not matched by ID/title, so this is strong evidence of a local visibility cause, not proof about that event's stored row. No live-profile settings or provider data were changed.

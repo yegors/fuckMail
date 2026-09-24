@@ -159,3 +159,32 @@ fn old_profiles_are_refused_without_rewriting_their_schema() {
         assert_eq!(tables, 0);
     }
 }
+
+#[test]
+fn baseline_profiles_upgrade_to_the_current_schema_once() {
+    let temp = tempfile::tempdir().unwrap();
+    drop(Store::open_live(temp.path()).unwrap());
+    let path = temp.path().join("store.sqlite3");
+    let db = Connection::open(&path).unwrap();
+    // A schema32 profile predates the calendar mail count date index.
+    db.execute_batch("DROP INDEX google_mail_coverage_by_date; PRAGMA user_version=32;")
+        .unwrap();
+    drop(db);
+    let store = Store::open(temp.path()).unwrap();
+    let version: u32 = store
+        .db
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, SCHEMA_VERSION);
+    let plan: String = store
+        .db
+        .query_row(
+            "EXPLAIN QUERY PLAN SELECT c.internal_date_ms FROM google_mail_coverage c INDEXED BY google_mail_coverage_by_date WHERE c.account='a' AND c.deleted=0 AND c.internal_date_ms>=0 AND c.internal_date_ms<1",
+            [],
+            |row| row.get(3),
+        )
+        .unwrap();
+    assert!(plan.contains("google_mail_coverage_by_date") && plan.contains("internal_date_ms>?"));
+    drop(store);
+    Store::open(temp.path()).unwrap();
+}

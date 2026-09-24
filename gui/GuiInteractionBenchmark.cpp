@@ -1,4 +1,5 @@
 #include "GuiInteractionBenchmark.h"
+#include "GuiBenchmarkSupport.h"
 #include <QCoreApplication>
 #include <QCryptographicHash>
 #include <QDateTime>
@@ -18,33 +19,13 @@
 #include <QtMath>
 #include <algorithm>
 
+using namespace GuiBenchmarkSupport;
 namespace {
 const QStringList labels{"mailbox_click", "mailbox_tab", "mailbox_shift_tab", "conversation_click", "large_mailbox_conversation_click"};
-QQuickItem *findItem(QQuickItem *parent, const QString &name) {
-    if (!parent->isVisible()) return nullptr;
-    if (parent->objectName() == name) return parent;
-    for (auto child : parent->childItems()) if (auto found = findItem(child, name)) return found;
-    return nullptr;
-}
 QQuickItem *findAnyItem(QQuickItem *parent, const QString &name) {
     if (parent->objectName() == name) return parent;
     for (auto child : parent->childItems()) if (auto found = findAnyItem(child, name)) return found;
     return nullptr;
-}
-QRectF visibleRect(QQuickItem *item, QQuickWindow *window) {
-    if (!item || !item->isVisible() || item->opacity() <= 0 || item->width() <= 0 || item->height() <= 0) return {};
-    auto rect = item->mapRectToScene(QRectF(0, 0, item->width(), item->height()));
-    rect = rect.intersected(QRectF(0, 0, window->width(), window->height()));
-    for (auto parent = item->parentItem(); parent; parent = parent->parentItem()) {
-        if (!parent->isVisible() || parent->opacity() <= 0) return {};
-        if (parent->clip()) rect = rect.intersected(parent->mapRectToScene(QRectF(0, 0, parent->width(), parent->height())));
-    }
-    return rect;
-}
-void namedItems(QQuickItem *parent, const QString &prefix, QList<QQuickItem *> &result) {
-    if (!parent->isVisible()) return;
-    if (parent->objectName().startsWith(prefix)) result.append(parent);
-    for (auto child : parent->childItems()) namedItems(child, prefix, result);
 }
 QList<QQuickItem *> visibleItems(QQuickWindow *window, const QString &prefix) {
     QList<QQuickItem *> items, visible;
@@ -72,14 +53,6 @@ QJsonArray rowIds(const QVariantList &rows) {
     QJsonArray ids;
     for (const auto &row : rows) ids.append(row.toMap()["id"].toString());
     return ids;
-}
-QJsonObject summary(const QJsonArray &samples, const QString &field) {
-    QList<double> values;
-    for (const auto &sample : samples) values.append(sample.toObject()[field].toDouble());
-    if (values.isEmpty()) return {};
-    std::sort(values.begin(), values.end());
-    auto percentile = [&values](double p) { return values[qCeil((values.size() - 1) * p)]; };
-    return {{"p50_ms", percentile(.5)}, {"p95_ms", percentile(.95)}, {"p99_ms", percentile(.99)}, {"max_ms", values.last()}};
 }
 QJsonObject rectJson(const QRectF &rect) {
     return {{"x", rect.x()}, {"y", rect.y()}, {"width", rect.width()}, {"height", rect.height()}};

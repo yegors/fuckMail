@@ -1,4 +1,5 @@
 #include "GoogleOperationTestFixture.h"
+#include "FmIconItem.h"
 #include "MailBackend.h"
 #include <QDesktopServices>
 #include <QGuiApplication>
@@ -100,7 +101,7 @@ class NotificationBackendTest {
                 backend.m_preferences["selected_calendars"] = QVariantList{}; emit backend.preferencesChanged();
             } else {
                 auto source = backend.m_calendarSources[0].toMap(); source["permission"] = "free_busy"; source["revision"] = 2;
-                backend.m_calendarSources = {source}; emit backend.eventsChanged();
+                backend.m_calendarSources = {source}; emit backend.calendarSourcesChanged();
             }
         }
     };
@@ -202,7 +203,7 @@ class NotificationBackendTest {
         auto current = event(); current["title"] = "<b>Human meeting title</b> — a longer invitation 日本語 that wraps without pushing either action outside the card";
         current["start"]=QDateTime::currentDateTimeUtc().addSecs(600).toString(Qt::ISODate);
         h.backend.m_reminders = {current.toVariantMap()};
-        QQmlApplicationEngine engine; bool warnings = false;
+        QQmlApplicationEngine engine; FmIconItem::registerType(); bool warnings = false;
         QObject::connect(&engine,&QQmlEngine::warnings,[&](const auto &errors) {
             warnings = true; for (const auto &error : errors) qWarning() << error.toString();
         });

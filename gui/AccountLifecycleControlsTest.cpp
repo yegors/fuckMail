@@ -1,4 +1,5 @@
 #include "GoogleOperationTestFixture.h"
+#include "FmIconItem.h"
 #include "MailBackend.h"
 #include "ReplyDocument.h"
 #include <QGuiApplication>
@@ -111,7 +112,7 @@ static void run() {
     for (const auto font : {"Geist-Regular.ttf", "Geist-Medium.ttf", "Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/fonts/" + font) >= 0, "bundled fonts");
     QGuiApplication::setFont(QFont("Geist", 10));
     qmlRegisterType<ReplyDocument>("LifecycleTest", 1, 0, "ReplyDocument");
-    QQmlApplicationEngine qml; bool warnings = false;
+    QQmlApplicationEngine qml; FmIconItem::registerType(); bool warnings = false;
     QObject::connect(&qml, &QQmlEngine::warnings, [&](const QList<QQmlError> &errors) { warnings = true; for (const auto &error : errors) qWarning() << error; });
     qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend", &backend);
     qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport LifecycleTest\nApplicationWindow { id: testWindow; width: 1000; height: 720; visible: true; color: Theme.canvas; property bool settingsShown: false; function appearance(theme,size) { Theme.themeId=theme; Theme.textSize=size } AccountLifecycleDialogs {} ScrollView { visible: !testWindow.settingsShown; anchors.fill: parent; ReplyComposer { width: 440 } } SettingsView { visible: testWindow.settingsShown; anchors.fill: parent; page: 'Accounts' } }");

@@ -60,7 +60,7 @@ QVariantList MailBackend::visibleCalendarEvents(const QVariantList &rows, bool r
     for (const auto &row : rows) if ((!currentOnly || row.toMap().value("account").toString() == m_account) && !calendarEventHidden(row.toMap())) result.append(row);
     return reflow && result.size() != rows.size() ? reflowCalendarPresentation(result) : result;
 }
-void MailBackend::calendarDeletionVisibilityChanged() { emit eventsChanged(); emit calendarSearchChanged(); emit remindersChanged(); }
+void MailBackend::calendarDeletionVisibilityChanged() { emit eventsChanged(); emit timelineChanged(); emit calendarSearchChanged(); emit remindersChanged(); }
 
 QString MailBackend::queueCalendarDeletion(const QVariantMap &values, const QVariantMap &event) {
     const auto account = values.value("account").toString(), calendar = values.value("calendar_id").toString();

@@ -271,6 +271,7 @@ CREATE INDEX google_mail_coverage_scan ON google_mail_coverage(account,last_inve
 CREATE INDEX google_mail_gaps ON google_mail_coverage(account,remote_id) WHERE issue IS NOT NULL AND deleted=0;
 CREATE INDEX google_mail_mutations_ready ON google_mail_mutations(account,state,retry_at_ms);
 CREATE INDEX google_mail_reconcile ON google_mail_coverage(account,deleted,observed_generation,remote_id);
+CREATE INDEX google_mail_coverage_by_date ON google_mail_coverage(account,internal_date_ms) WHERE deleted=0;
 CREATE INDEX google_send_known_target ON capture_operations(account,json_extract(json,'$.provider_draft_id')) WHERE execution_kind='google';
 CREATE INDEX google_send_recovery ON capture_operations(account,id)
 WHERE execution_kind='google' AND json_extract(json,'$.kind')='send' AND json_extract(json,'$.state')='in_flight';

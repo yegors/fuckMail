@@ -5,6 +5,10 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+pub(crate) fn initial_import_key(account: &str) -> String {
+    format!("labels_initial_import:{account}")
+}
+
 impl Store {
     pub fn google_label_memberships_queue(&self, account: &str) -> Result<usize> {
         self.label_sync_authority(account)?;
@@ -111,9 +115,43 @@ impl Store {
         }
         let pending=self.db.prepare("SELECT c.id,c.name,g.state FROM categories c LEFT JOIN google_label_creations g ON g.account=c.account AND g.category_id=c.id WHERE c.account=?1 AND NOT EXISTS(SELECT 1 FROM google_category_labels m WHERE m.account=c.account AND m.category_id=c.id) ORDER BY c.id")?.query_map([account],|r|Ok(json!({"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?,"state":r.get::<_,Option<String>>(2)?})))?.collect::<rusqlite::Result<Vec<_>>>()?;
         let missing:i64=self.db.query_row("SELECT count(*) FROM google_category_labels g WHERE g.account=?1 AND NOT EXISTS(SELECT 1 FROM google_label_catalog_items i WHERE i.account=g.account AND i.generation=(SELECT generation FROM google_label_catalogs WHERE account=g.account) AND i.label_id=g.provider_label_id AND i.label_type='user')",[account],|r|r.get(0))?;
+        // Any completed merge satisfies a new account's pending first import.
+        self.db.execute(
+            "DELETE FROM meta WHERE key=?1",
+            [initial_import_key(account)],
+        )?;
         Ok(
             json!({"pulled":pulled,"renamed":renamed,"skipped":skipped,"pending":pending,"missing":missing}),
         )
+    }
+    /// Import a newly added account's Gmail labels once, after its first catalog
+    /// refresh. This only links existing Gmail labels; it never creates labels at
+    /// Google. Returns None when no import is pending or mail editing is unavailable.
+    pub fn google_labels_initial_import(&mut self, account: &str) -> Result<Option<Value>> {
+        let key = initial_import_key(account);
+        let pending: bool = self.db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM meta WHERE key=?1)",
+            [&key],
+            |r| r.get(0),
+        )?;
+        if !pending {
+            return Ok(None);
+        }
+        match self.google_labels_merge(account, "initial-import") {
+            Ok(result) => {
+                if result["pulled"].as_u64().is_some_and(|pulled| pulled > 0) {
+                    // Mail classified before the import saw no labels; queue it again.
+                    self.local_model_requeue_account(account)?;
+                }
+                Ok(Some(result))
+            }
+            // Linking labels needs mail editing; read-only accounts keep the manual path.
+            Err(e) if e.code == "capability_unavailable" => {
+                self.db.execute("DELETE FROM meta WHERE key=?1", [&key])?;
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
     }
     pub fn google_label_create_begin(
         &self,

@@ -11,9 +11,9 @@ Popup {
     readonly property bool draftScope: backend.folder === "drafts"
     readonly property bool sentScope: backend.folder === "sent"
     readonly property bool inboxScope: !draftScope && !sentScope
-    readonly property string currentYear: new Date(backend.clockNow).getUTCFullYear().toString()
+    readonly property string currentYear: new Date(backend.clockDay).getUTCFullYear().toString()
     function dateBounds(offset, older) {
-        const date = new Date(backend.clockNow)
+        const date = new Date(backend.clockDay)
         const end = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - offset + 1))
         const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - offset))
         return {after: older ? "" : start.toISOString().slice(0,10), before: (older ? start : end).toISOString().slice(0,10)}

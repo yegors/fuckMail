@@ -1,5 +1,9 @@
 # Gmail provider
 
+## D097 — first label import (Gmail27)
+
+After a newly added account's labels worker publishes its first complete catalog, it runs the explicit name merge once. Existing Gmail user labels become or link local labels, and memberships already retained from Gmail appear locally. Nothing is created at Google and no label membership write is queued. The GUI and CLI refresh from the published revision. Without mail editing permission the import is skipped and Settings → Labels Sync with Google or CLI `labels sync` remain the path. Later Gmail labels still wait for explicit sync. Consumers: GUI Settings → Labels, CLI `labels sync`; Core54, Local assistance20.
+
 ## D093 — completed page payload release (Gmail26)
 
 Finishing a live page clears each completed item's staging manifest JSON in the same transaction as the completion receipt. Keep manifest hash, part key, applied revision and page/coverage proofs so a repeated part commit returns its exact result after restart. Incomplete and uncertain page data stays available. This applies to newly created schema32 profiles; Core51 owns the storage boundary, Search6 the FTS representation and Quality68 the recovery checks. Fixture0/3 and protocol1 remain unchanged.

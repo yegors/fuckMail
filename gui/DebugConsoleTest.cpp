@@ -1,4 +1,5 @@
 #include "DebugConsole.h"
+#include "FmIconItem.h"
 #include <QClipboard>
 #include <QFile>
 #include <QDir>
@@ -79,7 +80,7 @@ private slots:
             QVERIFY2(QFile::copy(QString(FM_GUI_SOURCE_DIR) + '/' + name, modulePath + '/' + name), name);
         QFile module(modulePath + "/qmldir"); QVERIFY(module.open(QIODevice::WriteOnly));
         module.write("module ConsoleTest\nsingleton Theme 1.0 Theme.qml\nDebugConsole 1.0 DebugConsole.qml\n"); module.close();
-        QQmlApplicationEngine qml;
+        QQmlApplicationEngine qml; FmIconItem::registerType();
         QStringList warnings;
         connect(&qml, &QQmlEngine::warnings, this, [&](const QList<QQmlError> &items) { for (const auto &item : items) warnings.append(item.toString()); });
         qml.addImportPath(dir.path()); qml.rootContext()->setContextProperty("testDiagnostics", &log);

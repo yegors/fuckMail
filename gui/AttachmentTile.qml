@@ -23,6 +23,7 @@ Rectangle {
     property bool saveFailed: false
     property int imageWidth: 0
     property int imageHeight: 0
+    property int videoDuration: 0
     readonly property string identity: account+"/"+attachment.id
     signal openMedia(var attachment)
     objectName: "attachment_"+attachment.id
@@ -34,7 +35,7 @@ Rectangle {
     function loadPreview() {if(previewActive && available && (isImage || isVideo) && !previewTicket && !previewFinished)previewTicket=backend.requestAttachmentPreview(account,attachment.id)}
     function open() {if (!available) return;if(isImage || isVideo)openMedia(attachment);else backend.openAttachment(attachment.id)}
     Component.onCompleted: loadPreview()
-    onIdentityChanged: {previewUrl="";previewTicket="";previewFinished=false;feedback="";imageWidth=0;imageHeight=0;loadPreview()}
+    onIdentityChanged: {previewUrl="";previewTicket="";previewFinished=false;feedback="";imageWidth=0;imageHeight=0;videoDuration=0;loadPreview()}
     onPreviewActiveChanged: loadPreview()
     onAvailableChanged: loadPreview()
     Connections {
@@ -61,12 +62,18 @@ Rectangle {
                     sourceComponent:Component {
                         VideoOutput {
                             id:poster;fillMode:VideoOutput.PreserveAspectCrop
-                            property alias duration:posterPlayer.duration
-                            MediaPlayer {
-                                id:posterPlayer;source:tile.previewUrl;videoOutput:poster;audioOutput:AudioOutput {muted:true}
-                                onMediaStatusChanged:if(mediaStatus===MediaPlayer.LoadedMedia) {play();posterStop.start()}
+                            // The decoder runs only until the poster frame arrives; the output keeps that frame.
+                            property bool framed:false
+                            Connections {target:poster.videoSink;function onVideoFrameChanged() {poster.framed=true}}
+                            Loader {
+                                id:decoder;active:!(poster.framed && posterStop.done)
+                                sourceComponent:MediaPlayer {
+                                    source:tile.previewUrl;videoOutput:poster
+                                    onDurationChanged:tile.videoDuration=duration
+                                    onMediaStatusChanged:if(mediaStatus===MediaPlayer.LoadedMedia) {play();posterStop.start()}
+                                }
                             }
-                            Timer {id:posterStop;interval:100;onTriggered:posterPlayer.pause()}
+                            Timer {id:posterStop;interval:100;property bool done:false;onTriggered:{if(decoder.item)decoder.item.pause();done=true}}
                         }
                     }
                 }
@@ -77,7 +84,7 @@ Rectangle {
                 }
                 FmIcon {anchors.centerIn:parent;visible:tile.isImage && !tile.previewUrl;name:"image";size:22;color:Theme.inkAlpha(.22)}
                 Rectangle {anchors.centerIn:parent;visible:tile.isVideo;width:38;height:38;radius:19;color:Theme.canvasAlpha(.75);border.color:Theme.inkAlpha(.25);FmIcon {anchors.centerIn:parent;name:"play";size:12;color:Theme.text}}
-                Rectangle {visible:tile.isVideo && !!videoPoster.item && videoPoster.item.duration>0;anchors.right:parent.right;anchors.bottom:parent.bottom;anchors.margins:6;width:durationText.implicitWidth+10;height:18;radius:3;color:Theme.canvasAlpha(.75);Text {id:durationText;anchors.centerIn:parent;text:tile.clock(videoPoster.item ? videoPoster.item.duration : 0);color:Theme.text;font.pointSize:Theme.fontPoints(10.5);font.features:{"tnum":1}}}
+                Rectangle {visible:tile.isVideo && tile.videoDuration>0;anchors.right:parent.right;anchors.bottom:parent.bottom;anchors.margins:6;width:durationText.implicitWidth+10;height:18;radius:3;color:Theme.canvasAlpha(.75);Text {id:durationText;anchors.centerIn:parent;text:tile.clock(tile.videoDuration);color:Theme.text;font.pointSize:Theme.fontPoints(10.5);font.features:{"tnum":1}}}
             }
             onClicked:tile.open()
         }
@@ -88,10 +95,10 @@ Rectangle {
                 contentItem:Column {
                     spacing:2
                     Text {width:parent.width;text:tile.attachment.name;elide:Text.ElideRight;color:Theme.text;font.pointSize:Theme.fontPoints(12.5);textFormat:Text.PlainText}
-                    Text {objectName:"attachmentStatus_"+tile.attachment.id;width:parent.width;text:tile.feedback || (!tile.available ? "Available after sync" : tile.formatSize(tile.attachment.size)+" · "+(tile.imageWidth ? tile.imageWidth+" × "+tile.imageHeight : tile.isVideo && videoPoster.item && videoPoster.item.duration>0 ? tile.clock(videoPoster.item.duration) : tile.extension));color:tile.saveFailed ? Theme.error : Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(11.5);elide:Text.ElideRight}
+                    Text {objectName:"attachmentStatus_"+tile.attachment.id;width:parent.width;text:tile.feedback || (!tile.available ? "Available after sync" : tile.formatSize(tile.attachment.size)+" · "+(tile.imageWidth ? tile.imageWidth+" × "+tile.imageHeight : tile.isVideo && tile.videoDuration>0 ? tile.clock(tile.videoDuration) : tile.extension));color:tile.saveFailed ? Theme.error : Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(11.5);elide:Text.ElideRight}
                 }
                 onClicked:tile.open()
-                FmToolTip {visible:filenameButton.hovered;text:tile.feedback || tile.attachment.name}
+                FmToolTip {shown:filenameButton.hovered;text:tile.feedback || tile.attachment.name}
             }
             MessageHeaderButton {objectName:"attachmentSave_"+tile.attachment.id;iconName:"download";iconSize:13;enabled:tile.available && !tile.saveTicket;tip:"Download";onClicked:tile.saveTicket=backend.downloadAttachment(tile.account,tile.attachment.id,tile.attachment.name)}
         }

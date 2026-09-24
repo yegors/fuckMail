@@ -1,0 +1,42 @@
+#pragma once
+#include <QColor>
+#include <QImage>
+#include <QQuickItem>
+
+class FmIconCache;
+
+// Line icons for FmIcon.qml, drawn with the same 16×16 geometry the former
+// Canvas used. Each window draws a name, colour and pixel size once and shares
+// that texture, so an icon costs one item instead of a canvas or an image.
+class FmIconItem : public QQuickItem {
+    Q_OBJECT
+    Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged)
+    Q_PROPERTY(QColor color READ color WRITE setColor NOTIFY colorChanged)
+    // The icon is size×size logical pixels.
+    Q_PROPERTY(int size READ iconSize WRITE setIconSize NOTIFY sizeChanged)
+public:
+    explicit FmIconItem(QQuickItem *parent = nullptr);
+    QString name() const { return m_name; }
+    void setName(const QString &name);
+    QColor color() const { return m_color; }
+    void setColor(const QColor &color);
+    int iconSize() const { return m_size; }
+    void setIconSize(int size);
+    // `scale` maps the 16×16 grid onto the image in device pixels.
+    static QImage render(const QString &name, const QColor &color, const QSize &pixels, const QSizeF &scale);
+    // Registers FmIconItem in FuckMail.Icons; call before loading FmIcon.qml.
+    static void registerType();
+signals:
+    void nameChanged();
+    void colorChanged();
+    void sizeChanged();
+protected:
+    QSGNode *updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *) override;
+    void geometryChange(const QRectF &newGeometry, const QRectF &oldGeometry) override;
+    void itemChange(ItemChange change, const ItemChangeData &data) override;
+private:
+    QString m_name;
+    QColor m_color = Qt::black;
+    int m_size = 16;
+    FmIconCache *m_cache = nullptr;
+};

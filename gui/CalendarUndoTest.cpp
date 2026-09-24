@@ -1,4 +1,5 @@
 #include "GoogleOperationTestFixture.h"
+#include "FmIconItem.h"
 #include "MailBackend.h"
 #include "CalendarLayout.h"
 #include "ReplyDocument.h"
@@ -39,7 +40,7 @@ static void run() {
     backend.m_allAccounts = {account}; backend.publishAccounts({account}); backend.m_googleSync = {{"fixture-account", QVariantMap{{"active", true}}}};
     backend.m_calendarSources = {QVariantMap{{"account", "fixture-account"}, {"calendar_id", "calendar"}, {"writable", true}, {"can_create", true}, {"permission", "owner"}, {"time_zone", "America/Toronto"}}};
     QJsonArray raw{QJsonObject::fromVariantMap(event("a")), QJsonObject::fromVariantMap(event("b")), QJsonObject::fromVariantMap(event("a", "other-account"))};
-    auto publish = [&] { backend.m_events = calendarPresentation(raw, QDate(2026,9,15), 7, QTimeZone("America/Toronto")); backend.m_todayEvents = backend.m_events; backend.m_calendarSearchResult["events"] = backend.m_events; emit backend.eventsChanged(); };
+    auto publish = [&] { backend.m_events = calendarPresentation(raw, QDate(2026,9,15), 7, QTimeZone("America/Toronto")); backend.m_todayEvents = backend.m_events; backend.m_calendarSearchResult["events"] = backend.m_events; emit backend.eventsChanged(); emit backend.timelineChanged(); };
     publish();
     backend.m_reminders = backend.m_events;
     auto row = [&](const QString &id) { for (const auto &v : backend.m_events) if (v.toMap()["event_id"] == id && v.toMap()["account"] == "fixture-account") return v.toMap(); return QVariantMap{}; };
@@ -70,7 +71,7 @@ static void run() {
         if (name != "Theme.qml") registration += name.chopped(4).toUtf8() + " 1.0 " + name.toUtf8() + '\n';
     }
     QFile module(path + "/qmldir"); require(module.open(QIODevice::WriteOnly), "module registration"); module.write(registration); module.close();
-    qmlRegisterType<ReplyDocument>("CalendarUndo", 1, 0, "ReplyDocument"); QQmlApplicationEngine qml; bool warnings = false;
+    qmlRegisterType<ReplyDocument>("CalendarUndo", 1, 0, "ReplyDocument"); QQmlApplicationEngine qml; FmIconItem::registerType(); bool warnings = false;
     QObject::connect(&qml, &QQmlEngine::warnings, [&](const QList<QQmlError> &errors) { warnings = true; for (const auto &e : errors) qWarning() << e; });
     qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend", &backend);
     qml.loadData(R"QML(import QtQuick

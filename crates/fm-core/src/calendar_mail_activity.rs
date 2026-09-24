@@ -77,7 +77,7 @@ impl Store {
         // One range read per account, never a full-history query per day. Filter
         // small provider metadata before joining message identities; never read
         // bodies, recipients, retained MIME or draft/submission payloads.
-        let mut provider = self.db.prepare_cached("SELECT c.internal_date_ms,m.sent FROM google_mail_coverage c JOIN messages m ON m.account=c.account AND m.remote_id=c.remote_id WHERE c.account=?1 AND c.deleted=0 AND c.internal_date_ms>=?2 AND c.internal_date_ms<?3")?;
+        let mut provider = self.db.prepare_cached("SELECT c.internal_date_ms,m.sent FROM google_mail_coverage c INDEXED BY google_mail_coverage_by_date JOIN messages m ON m.account=c.account AND m.remote_id=c.remote_id WHERE c.account=?1 AND c.deleted=0 AND c.internal_date_ms>=?2 AND c.internal_date_ms<?3")?;
         // Header dates are normalized UTC in production. The padded indexed
         // range also admits valid offset dates in older/synthetic profiles;
         // parsed instants below determine the actual civil day.

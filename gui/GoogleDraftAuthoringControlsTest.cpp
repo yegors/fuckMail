@@ -1,4 +1,5 @@
 #include "GoogleOperationTestFixture.h"
+#include "FmIconItem.h"
 #include "MailBackend.h"
 #include "ReplyDocument.h"
 #include <QGuiApplication>
@@ -91,7 +92,7 @@ static void run() {
     module.write("module DraftTest\nsingleton Theme 1.0 Theme.qml\nReplyComposer 1.0 ReplyComposer.qml\nFmButton 1.0 FmButton.qml\nFmToolTip 1.0 FmToolTip.qml\nFmIcon 1.0 FmIcon.qml\nRecipientField 1.0 RecipientField.qml\n");module.close();
     for(const auto font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"})
         require(QFontDatabase::addApplicationFont(QString::fromUtf8(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled fonts");
-    qmlRegisterType<ReplyDocument>("DraftTest",1,0,"ReplyDocument");QQmlApplicationEngine qml;bool warnings=false;
+    qmlRegisterType<ReplyDocument>("DraftTest",1,0,"ReplyDocument");QQmlApplicationEngine qml; FmIconItem::registerType();bool warnings=false;
     QObject::connect(&qml,&QQmlEngine::warnings,[&](const QList<QQmlError>&errors){warnings=true;for(const auto &e:errors)qWarning()<<e;});
     qml.addImportPath(copy.path());qml.rootContext()->setContextProperty("backend",&backend);
     qml.loadData(R"QML(import QtQuick

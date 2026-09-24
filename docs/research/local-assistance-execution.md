@@ -1,5 +1,19 @@
 # Local assistance execution
 
+## D097 — first label import and synced-mail analysis (2026-09-23)
+
+Founder report: a new account with a local model neither summarized nor labeled its mail until labels were synced by hand. Root causes: the watcher started at the newest stored message and only accepted mail dated after its own start, so first-sync history was never queued, and Gmail labels were imported only by the manual Sync with Google job, leaving Auto-label with no labels to choose. The per-account default was already on.
+
+Changes: a one-time label import after a new account's first catalog; a persisted watcher cursor that queues all synced mail missing a result; one-shot rescans after policy re-enable, label import and message deletion; history runs never Auto-read. Generated and disposable test profiles only. No real profile, account or model was used.
+
+Checks on Windows:
+
+- The full offline Rust workspace passes **700 tests, 6 ignored, zero failed**. Strict Clippy (`-D warnings`) and formatting pass.
+- New Core tests: synced history is queued once across several watcher pages, with no Auto-read, and the cursor survives reopening; assistance turned off and on queues the account again; only mail dated after the watcher starts is an arrival; mail stored under a reused row ID after deletion is still queued; only a new account (not a reconnect) waits for the import.
+- New engine tests: the first label catalog refresh imports Gmail user labels once, creates no Google labels and publishes a refresh; later Gmail labels wait for explicit sync; a read-only account refreshes labels without importing them.
+
+Not checked: native GUI tests, packages, real Gmail accounts and real model throughput on large mailboxes. A large first sync is analysed one message at a time, so completion depends on model speed.
+
 ## D080 — installed-model summary reliability (2026-09-22)
 
 The founder requested reliability and speed testing of the installed Gemma4, Qwen and Muse Glimmer models. This packet changes fm-assist request rendering/validation, the Core request budget and the Ollama engine adapter. It uses Local assistance15/Quality57, Core44/Gmail24/CLI39/Mail UI56/schema29; live/synthetic fixtures0/3 and protocol1 are unchanged. Parallel D081 UI/query work is excluded from the frozen package source.

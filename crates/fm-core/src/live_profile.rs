@@ -413,6 +413,18 @@ pub(crate) fn write_binding(
     scopes: &BTreeSet<String>,
     client: Option<(&str, &str)>,
 ) -> Result<()> {
+    let added: bool = tx.query_row(
+        "SELECT NOT EXISTS(SELECT 1 FROM accounts WHERE id=?1)",
+        [account],
+        |r| r.get(0),
+    )?;
+    if added {
+        // A new account imports its Gmail labels once, before model labeling needs them.
+        tx.execute(
+            "INSERT OR IGNORE INTO meta(key,value) VALUES(?1,1)",
+            [crate::label_sync::initial_import_key(account)],
+        )?;
+    }
     tx.execute("INSERT INTO accounts(id,name,email,provider) VALUES(?1,?2,?2,'google') ON CONFLICT(id) DO UPDATE SET name=CASE WHEN accounts.name=accounts.email THEN excluded.email ELSE accounts.name END,email=excluded.email",params![account,email])?;
     tx.execute(
         "INSERT OR IGNORE INTO account_metadata(account,signature_text,mail_retention,mail_since) VALUES(?1,'','1_year',?2)",
