@@ -17,15 +17,10 @@ private:
     void step();
     void finish(const QString &error = {});
     bool typeQuery(const QString &query);
-    bool typeField(const QString &name, const QString &text);
-    bool choose(const QString &name, int index);
     bool click(const QString &name);
     bool clickItem(QQuickItem *item, Qt::MouseButton button = Qt::LeftButton);
     bool hoverSender();
     QObject *senderPopup() const;
-    bool openAdvancedFilters();
-    QObject *filterPopup() const;
-    bool filterFeedback(const QString &message) const;
     bool filterResultMatches() const;
     void holdInFlightResponse();
     void observeArrivalReceipt();
@@ -59,7 +54,6 @@ private:
     QString m_originalWorkspace;
     QString m_expectedQuery;
     QVariantList m_unfilteredRows;
-    QVariantMap m_expectedFilters;
     MailBackend::Callback m_heldDelegate;
     QJsonObject m_heldResult;
     QString m_heldRequestId;

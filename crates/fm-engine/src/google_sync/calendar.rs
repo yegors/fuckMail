@@ -12,7 +12,7 @@ use fm_core::{
     CoreError, Result,
 };
 use fm_google::{scheduler::WorkClass, transport::TransportError, GoogleError};
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::OwnedSemaphorePermit;
 
@@ -45,6 +45,7 @@ pub(crate) struct PassSummary {
 /// coordinator immediately schedules another backfill pass. Metadata refresh is
 /// independent of event inventory size and deliberately independent of deltas.
 pub(crate) async fn run_pass(ctx: &SyncContext, refresh_catalog: bool) -> Result<PassSummary> {
+    let started = std::time::Instant::now();
     let mut summary = PassSummary::default();
     let account = ctx.account.as_str().to_owned();
     let checkpoint = ctx
@@ -86,6 +87,10 @@ pub(crate) async fn run_pass(ctx: &SyncContext, refresh_catalog: bool) -> Result
             break;
         }
     }
+    crate::diagnostics::event("Sync", "calendar_pass_completed", json!({"account_ref":crate::diagnostics::reference("account",ctx.account.as_str()),"catalog_refresh":refresh_catalog,
+        "calendars":summary.calendars,"pages":summary.pages,"failures":summary.failures,
+        "more":summary.more,"first_error_code":summary.first_failure,
+        "elapsed_ms":started.elapsed().as_millis(),"connection_generation":ctx.connection_generation}));
     Ok(summary)
 }
 

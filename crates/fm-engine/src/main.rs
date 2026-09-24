@@ -19,12 +19,14 @@ use tokio::{
     sync::{mpsc, oneshot, OwnedSemaphorePermit, Semaphore},
 };
 mod core_tasks;
+mod diagnostics;
 mod google_auth;
 mod google_sync;
 mod local_content;
 mod local_model;
 mod ollama;
 mod openai_local;
+mod remote_content;
 mod verification_fixture;
 mod verification_google;
 
@@ -293,6 +295,7 @@ struct SessionServices {
     google: Option<GoogleServices>,
     content: Arc<local_content::Runtime>,
     assistance: Arc<local_model::Runtime>,
+    remote: Arc<remote_content::Runtime>,
 }
 
 #[cfg(test)]
@@ -305,9 +308,14 @@ impl SessionServices {
                 Arc::new(Semaphore::new(16)),
             ))),
             content: Arc::new(local_content::Runtime::new(core_tasks::CoreBridge::new(
-                queue,
+                queue.clone(),
                 Arc::new(Semaphore::new(verification_fixture::BACKGROUND_LIMIT)),
             ))),
+            remote: Arc::new(remote_content::Runtime::new(
+                core_tasks::CoreBridge::new(queue, Arc::new(Semaphore::new(4))),
+                &std::env::temp_dir(),
+                None,
+            )),
         }
     }
 }
@@ -461,6 +469,37 @@ async fn session_inner(
             services
                 .assistance
                 .cancel_account(request.account.as_deref());
+        }
+        if request.method == "account_remove" {
+            services.remote.forget_account(request.account.as_deref());
+        }
+        if remote_content::Runtime::handles(&request.method) {
+            let work = services.remote.handle(
+                owner_cancel.clone(),
+                &request.method,
+                request.account.as_deref(),
+                request.params,
+            );
+            // Closing the connection cancels an image fetch; nothing is cached for it.
+            let Some(result) = await_sync_reply(work, &mut stream, &owner_cancel, false).await?
+            else {
+                return Ok(());
+            };
+            let reply = match result {
+                Ok(v) => response(&request.id, v),
+                Err(e) => error(&request.id, &e.code, &e.message),
+            };
+            let reply = if serde_json::to_vec(&reply)?.len() + 1 > fm_ipc::MAX_FRAME {
+                error(
+                    &request.id,
+                    "response_too_large",
+                    "Message content exceeds its bound",
+                )
+            } else {
+                reply
+            };
+            session_write(stream.get_mut(), &reply, &engine_cancel).await?;
+            continue;
         }
         if google_auth::Runtime::handles(&request.method) {
             let reply = if let Some(provider) = &services.google {
@@ -792,6 +831,7 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             )
         })
         .transpose()?;
+    diagnostics::initialize(&profile);
     #[cfg(not(feature = "verification-google"))]
     let provider_namespace = (store.profile_kind()? == fm_core::live_profile::ProfileKind::Live)
         .then(|| store.vault_namespace())
@@ -861,7 +901,13 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             queue.clone(),
             background_slots.clone(),
         ))),
+        remote: Arc::new(remote_content::Runtime::new(
+            core_tasks::CoreBridge::new(queue.clone(), background_slots.clone()),
+            &profile,
+            store.vault_namespace().ok(),
+        )),
     };
+    services.remote.start_link_indexer(engine_cancel.clone());
     let owners = Arc::new(AtomicUsize::new(0));
     let authenticated_work = Arc::new(AtomicBool::new(false));
     let schedule = Arc::new(verification_fixture::Schedule::default());
@@ -1107,6 +1153,14 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
         "draft_create",
         "sender_summary",
         "recipient_suggestions",
+        "search_senders",
+        "message_html",
+        "message_image",
+        "link_host_summary",
+        "link_pattern_counts",
+        "remote_proxy_test",
+        "remote_proxy_password",
+        "remote_image_cache",
         "draft_transfer",
         "draft_transfer_status",
         "draft_transfer_retry",

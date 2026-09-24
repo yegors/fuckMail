@@ -45,9 +45,11 @@ Popup {
     function scheduleClose() { hideDelay.restart() }
     function stayOpen() { hideDelay.stop() }
     function openConversation(id) { close(); conversationOpened(id) }
+    // The search box shows this filter, so it can be read and removed there.
+    // All mail is the scope the card's count covers.
     function filterSender() {
-        const filters = Object.assign({}, backend.filters, {exact_sender: email})
-        close(); backend.applyFilters(filters)
+        const address = email
+        close(); backend.folder = "all"; backend.query = "from:" + address
     }
     function writeMessage() {
         const address = email, name = displayName

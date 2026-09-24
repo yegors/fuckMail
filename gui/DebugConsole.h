@@ -3,26 +3,30 @@
 #include <QPointer>
 #include <QTimer>
 #include <QElapsedTimer>
+#include <QDateTime>
 #include <QMutex>
 #include <QVariantMap>
 #include <deque>
 
-// Session-only diagnostics. Never serialize request/response bodies or a profile.
+// Metadata-only diagnostics. Never serialize request/response bodies or credentials.
 class DebugConsole final : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString stateText READ stateText NOTIFY changed)
     Q_PROPERTY(int count READ count NOTIFY changed)
     Q_PROPERTY(qulonglong dropped READ dropped NOTIFY changed)
+    Q_PROPERTY(QString logDirectory READ logDirectory NOTIFY changed)
 public:
     explicit DebugConsole(QObject *parent = nullptr);
     ~DebugConsole() override;
     void attach(QObject *backend);
     void captureQtMessages();
     void identifyRuntime(const QString &engine);
+    void setLogDirectory(const QString &profile);
+    QString logDirectory() const;
     QString stateText() const;
     int count() const;
     qulonglong dropped() const;
-    Q_INVOKABLE QString events(const QString &level = {}, const QString &filter = {}) const;
+    Q_INVOKABLE QString events(const QString &level = {}, const QString &filter = {}, const QString &scope = {}) const;
     Q_INVOKABLE QString report() const;
     Q_INVOKABLE void copyReport() const;
     Q_INVOKABLE void clear();
@@ -44,9 +48,17 @@ private:
     QVariantMap m_identity, m_assistance;
     QMap<QString, QVariantMap> m_jobs;
     QMap<QString, QString> m_aliases;
-    struct Entry { QString level, line; };
+    void append(const QString &level, const QString &scope, const QString &line, bool persist);
+    void activateLogDirectory();
+    void readEngineLog();
+    struct Entry { QString level, scope, line; };
     mutable QMutex m_mutex;
     std::deque<Entry> m_entries;
     qulonglong m_dropped = 0;
+    QString m_logDirectory;
+    QString m_profile;
+    qint64 m_engineOffset = 0;
+    QDateTime m_engineBirthTime;
+    QByteArray m_enginePartial;
     bool m_dirty = false, m_capturing = false;
 };

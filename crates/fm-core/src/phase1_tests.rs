@@ -178,7 +178,11 @@ fn phase1_fixture_counts_filters_groups_and_cursor_agree() {
         json!({"after":"2026-02-30"}),
         json!({"before":"2026-09-10","after":"2026-09-11"}),
         json!({"has_attachment":"yes"}),
-        json!({"query":"from:maya"}),
+        json!({"query":"is:snoozed"}),
+        json!({"query":"is:done","status":"review"}),
+        json!({"query":"has:attachment","has_attachment":false}),
+        json!({"query":"label:nosuchlabel"}),
+        json!({"query":"subject:!!"}),
     ] {
         assert_eq!(
             store
@@ -443,4 +447,290 @@ fn phase1_status_filters_use_entire_conversation_and_source_filters_share_one_me
         .unwrap()
         .iter()
         .any(|row| row["id"] == THREAD && row["group"] == "done"));
+}
+
+// Search 7: the search box grammar GUI and CLI share.
+#[test]
+fn search_grammar_scopes_fields_labels_state_and_recipients() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    // Three single-message Inbox conversations with distinctive text.
+    let picked: Vec<(i64, String)> = store
+        .db
+        .prepare("SELECT rowid,conversation_id FROM messages WHERE account=?1 AND inbox=1 AND sent=0 AND trashed=0 AND conversation_id IN (SELECT conversation_id FROM messages WHERE account=?1 GROUP BY conversation_id HAVING COUNT(*)=1) ORDER BY id LIMIT 3")
+        .unwrap()
+        .query_map([ACCOUNT], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<std::result::Result<_, _>>()
+        .unwrap();
+    assert_eq!(picked.len(), 3);
+    for ((rowid, _), (name, email, subject, body)) in picked.iter().zip([
+        (
+            "Quentin Ruiz",
+            "quentin@fixture.example",
+            "Zeppelin plans",
+            "Orchid budget notes",
+        ),
+        (
+            "Orchid Team",
+            "team@fixture.example",
+            "Weekly",
+            "Nothing new",
+        ),
+        (
+            "Pat Moss",
+            "pat@fixture.example",
+            "Other",
+            "zeppelin orchid",
+        ),
+    ]) {
+        store.db.execute("UPDATE messages SET sender_name=?2,sender_email=?3,subject=?4,body=?5 WHERE rowid=?1", params![rowid, name, email, subject, body]).unwrap();
+        store
+            .db
+            .execute("DELETE FROM message_fts WHERE rowid=?1", [rowid])
+            .unwrap();
+        store
+            .db
+            .execute(
+                "INSERT INTO message_fts(rowid,sender,subject,body) VALUES(?1,?2,?3,?4)",
+                params![rowid, format!("{name} {email}"), subject, body],
+            )
+            .unwrap();
+    }
+    let ids = |store: &mut Store, query: &str, folder: &str| -> Vec<String> {
+        let result = store
+            .handle(
+                "conversations",
+                Some(ACCOUNT),
+                json!({"query":query,"folder":folder,"limit":100}),
+            )
+            .unwrap();
+        let mut ids: Vec<String> = result["conversations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap().to_owned())
+            .collect();
+        ids.sort();
+        ids
+    };
+    let [a, b, c] = [&picked[0].1, &picked[1].1, &picked[2].1].map(String::clone);
+    let sorted = |mut v: Vec<String>| {
+        v.sort();
+        v
+    };
+    // Bare words search subject or text, never the sender.
+    assert_eq!(
+        ids(&mut store, "orchid", "inbox"),
+        sorted(vec![a.clone(), c.clone()])
+    );
+    assert_eq!(ids(&mut store, "from:orchid", "inbox"), vec![b.clone()]);
+    assert_eq!(
+        ids(&mut store, "subject:zeppelin", "inbox"),
+        vec![a.clone()]
+    );
+    assert_eq!(ids(&mut store, "body:zeppelin", "inbox"), vec![c.clone()]);
+    assert_eq!(
+        ids(&mut store, "zeppelin orchid", "inbox"),
+        sorted(vec![a.clone(), c.clone()])
+    );
+    assert_eq!(
+        ids(&mut store, "QUENTIN@fixture.example", "inbox"),
+        vec![a.clone()]
+    );
+    assert_eq!(
+        ids(
+            &mut store,
+            "subject:\"zeppelin plans\" from:quentin",
+            "inbox"
+        ),
+        vec![a.clone()]
+    );
+    assert_eq!(ids(&mut store, "from:", "inbox").len(), 85);
+    // label:, is: and has: agree with the typed filters they stand for.
+    let count = |store: &mut Store, p: Value| {
+        store.handle("conversations", Some(ACCOUNT), p).unwrap()["filtered_conversation_count"]
+            .clone()
+    };
+    assert_eq!(
+        count(&mut store, json!({"query":"label:INF"})),
+        count(&mut store, json!({"category":"infra"}))
+    );
+    assert_eq!(
+        count(&mut store, json!({"query":"is:delayed","folder":"all"})),
+        count(&mut store, json!({"status":"held","folder":"all"}))
+    );
+    assert_eq!(
+        count(&mut store, json!({"query":"has:attachment","folder":"all"})),
+        count(&mut store, json!({"has_attachment":true,"folder":"all"}))
+    );
+    assert_eq!(
+        count(
+            &mut store,
+            json!({"query":"is:done","status":"done","folder":"all"})
+        ),
+        count(&mut store, json!({"status":"done","folder":"all"}))
+    );
+    let terms = store
+        .handle(
+            "conversations",
+            Some(ACCOUNT),
+            json!({"query":"relay subject:board deck is:held label:inf"}),
+        )
+        .unwrap()["search_terms"]
+        .clone();
+    assert_eq!(terms["words"], "relay");
+    assert_eq!(terms["subject"], json!(["board deck"]));
+    assert_eq!(terms["is"], "delayed");
+    assert_eq!(terms["label"], "Infra");
+    assert!(store
+        .handle("conversations", Some(ACCOUNT), json!({}))
+        .unwrap()["search_terms"]
+        .is_null());
+    // In Sent, from: names the recipient.
+    let sent: (i64, String) = store.db.query_row("SELECT rowid,conversation_id FROM messages WHERE account=?1 AND sent=1 AND trashed=0 ORDER BY id LIMIT 1", [ACCOUNT], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    store
+        .db
+        .execute(
+            "UPDATE messages SET recipient='zed@fixture.example' WHERE rowid=?1",
+            [sent.0],
+        )
+        .unwrap();
+    assert_eq!(ids(&mut store, "from:zed", "sent"), vec![sent.1]);
+    assert!(ids(&mut store, "from:zed", "inbox").is_empty());
+}
+
+// Done is presented by month; counts cover the filtered set and a collapsed
+// month's rows leave paging.
+#[test]
+fn done_months_count_in_the_client_zone_and_collapse_independently() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    let request =
+        json!({"grouped":true,"folder":"inbox","limit":100,"month_zone":"America/Toronto"});
+    // Spread three Done conversations over other months. 02:00 UTC on
+    // 1 August is still July in Toronto.
+    let done: Vec<String> = store
+        .handle("conversations", Some(ACCOUNT), request.clone())
+        .unwrap()["conversations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["group"] == "done")
+        .take(3)
+        .map(|r| r["id"].as_str().unwrap().to_owned())
+        .collect();
+    for (conversation, at) in done.iter().zip([
+        "2026-07-15T12:00:00-04:00",
+        "2025-12-03T12:00:00-05:00",
+        "2026-08-01T02:00:00Z",
+    ]) {
+        store
+            .db
+            .execute(
+                "UPDATE messages SET sent_at=?3 WHERE account=?1 AND conversation_id=?2",
+                params![ACCOUNT, conversation, at],
+            )
+            .unwrap();
+    }
+    let full = store
+        .handle("conversations", Some(ACCOUNT), request.clone())
+        .unwrap();
+    let months = full["done_months"].as_array().unwrap().clone();
+    assert_eq!(
+        months
+            .iter()
+            .map(|m| m["month"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        ["2026-08", "2026-07", "2025-12"]
+    );
+    assert_eq!(months[1]["count"], 2);
+    let total: i64 = months.iter().map(|m| m["count"].as_i64().unwrap()).sum();
+    assert_eq!(
+        total,
+        full["filtered_group_counts"]["done"].as_i64().unwrap()
+    );
+    let names: Vec<&str> = months
+        .iter()
+        .map(|m| m["month"].as_str().unwrap())
+        .collect();
+    let mut newest_first = names.clone();
+    newest_first.sort_by(|a, b| b.cmp(a));
+    assert_eq!(names, newest_first);
+    let zone: fm_calendar::Tz = "America/Toronto".parse().unwrap();
+    let month_of = |row: &Value| {
+        chrono::DateTime::parse_from_rfc3339(row["latest_at"].as_str().unwrap())
+            .unwrap()
+            .with_timezone(&zone)
+            .format("%Y-%m")
+            .to_string()
+    };
+    for month in &months {
+        let key = month["month"].as_str().unwrap();
+        let rows = full["conversations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| r["group"] == "done" && month_of(r) == key)
+            .count();
+        assert_eq!(rows as i64, month["count"].as_i64().unwrap(), "{key}");
+    }
+    let collapsed = names[0];
+    let mut folded = request.clone();
+    folded["collapsed_months"] = json!([collapsed]);
+    let result = store
+        .handle("conversations", Some(ACCOUNT), folded)
+        .unwrap();
+    assert_eq!(result["done_months"], full["done_months"]);
+    assert_eq!(
+        result["expanded_conversation_count"].as_i64().unwrap(),
+        full["expanded_conversation_count"].as_i64().unwrap()
+            - months[0]["count"].as_i64().unwrap()
+    );
+    assert!(result["conversations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|r| r["group"] != "done" || month_of(r) != collapsed));
+    assert!(store
+        .handle("conversations", Some(ACCOUNT), json!({"grouped":true}))
+        .unwrap()["done_months"]
+        .is_null());
+    for bad in [
+        json!({"collapsed_months":["2026-09"]}),
+        json!({"month_zone":"Mars/Olympus"}),
+        json!({"month_zone":"America/Toronto","collapsed_months":["2026-13"]}),
+        json!({"month_zone":"America/Toronto","collapsed_months":["2026-09","2026-09"]}),
+    ] {
+        assert_eq!(
+            store
+                .handle("conversations", Some(ACCOUNT), bad)
+                .unwrap_err()
+                .code,
+            "invalid_request"
+        );
+    }
+    // Each month's state is saved with the account's view, as are recent searches.
+    let saved = store.handle("view_save", Some(ACCOUNT), json!({"view":{"collapsedSections":["review","done:2026-08"],"recentSearches":["from:maya","subject:board deck"]},"expected_revision":0,"request_id":"sections"})).unwrap();
+    assert_eq!(
+        saved["view"]["collapsedSections"],
+        json!(["review", "done:2026-08"])
+    );
+    for bad in [
+        json!({"collapsedSections":["done:2026-8"]}),
+        json!({"recentSearches":["a","b","c","d","e","f","g"]}),
+        json!({"recentSearches":["two\nlines"]}),
+    ] {
+        assert_eq!(
+            store
+                .handle(
+                    "view_save",
+                    Some(ACCOUNT),
+                    json!({"view":bad,"expected_revision":1,"request_id":"bad-view"})
+                )
+                .unwrap_err()
+                .code,
+            "invalid_request"
+        );
+    }
 }

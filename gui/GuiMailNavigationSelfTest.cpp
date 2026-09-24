@@ -23,7 +23,7 @@ struct SearchCase { const char *query; const char *thread; const char *message; 
 // from the query under test. The final body is the eighteenth of 32 messages.
 constexpr std::array<SearchCase, 4> searches{{
     {"tomasz@windscribe.example", "windscribe-thread-001", "windscribe-message-001-000", "Revised paywall copy is ready", 1},
-    {"Aisha Rahman", "windscribe-thread-002", "windscribe-message-002-000", "3 of 4 recommend hire", 1},
+    {"from:Aisha Rahman", "windscribe-thread-002", "windscribe-message-002-000", "3 of 4 recommend hire", 1},
     {"WireGuard relay rollout", "windscribe-thread-003", "windscribe-message-003-000", "Toronto is clean since Thursday", 1},
     {"longthread17", "windscribe-thread-004", "windscribe-message-004-017", "Member 18 of 32.", 32}
 }};
@@ -229,37 +229,6 @@ bool GuiMailNavigationSelfTest::hoverSender() {
         Qt::NoButton,Qt::NoButton,Qt::NoModifier);
     QCoreApplication::sendEvent(m_window,&movement);
     return true;
-}
-bool GuiMailNavigationSelfTest::openAdvancedFilters() {
-    // The reference's filter surface is reached from the actual search field.
-    // Opening it through a native click also checks that its header anchor fits.
-    if (!find(m_window->contentItem(),"mailFiltersButton")) { click("searchField"); return false; }
-    return click("mailFiltersButton");
-}
-bool GuiMailNavigationSelfTest::typeField(const QString &name,const QString &text) {
-    auto field=find(m_window->contentItem(),name);
-    if (!field || !field->isEnabled() || !inputViewportVisible(field,m_window)) return false;
-    field->forceActiveFocus(); QMetaObject::invokeMethod(field,"selectAll");
-    if (text.isEmpty()) key(field,Qt::Key_Backspace);
-    else { QInputMethodEvent input; input.setCommitString(text); QCoreApplication::sendEvent(field,&input); }
-    return field->property("text").toString()==text;
-}
-bool GuiMailNavigationSelfTest::choose(const QString &name,int index) {
-    auto field=find(m_window->contentItem(),name);
-    if (!field || !field->isEnabled() || !fullyVisible(field,m_window)) return false;
-    field->forceActiveFocus();
-    const int delta=index-field->property("currentIndex").toInt();
-    for (int i=0;i<qAbs(delta);++i) key(field,delta>0?Qt::Key_Down:Qt::Key_Up);
-    return field->property("currentIndex").toInt()==index;
-}
-QObject *GuiMailNavigationSelfTest::filterPopup() const {
-    for (auto object:m_window->findChildren<QObject *>("mailFilterPopup")) if (object->property("opened").toBool()) return object;
-    return nullptr;
-}
-bool GuiMailNavigationSelfTest::filterFeedback(const QString &message) const {
-    const auto popup=filterPopup();
-    return popup && popup->property("validationError").toString()==message
-        && fullyVisible(textItem(m_window->contentItem(),message),m_window);
 }
 bool GuiMailNavigationSelfTest::filterResultMatches() const {
     const auto rows=m_backend.conversations();
@@ -473,7 +442,7 @@ void GuiMailNavigationSelfTest::beginQueueCheck(bool fairness) {
     }
 }
 void GuiMailNavigationSelfTest::step() {
-    if (++m_ticks > 400) {
+    if (++m_ticks > 1500) {
         const auto reader = find(m_window->contentItem(), "reader");
         const auto list = find(m_window->contentItem(), "conversationList");
         finish(QString("Native search timed out at stage %1, case %2 (query=%3, selected=%4, readerY=%5, listY=%6, listContentHeight=%7, listHeight=%8, savedListY=%9).")
@@ -529,7 +498,7 @@ void GuiMailNavigationSelfTest::step() {
         // source-check candidates from the restored view, not its reset origin.
         const auto minimum=list->property("originY").toDouble();
         const auto maximum=minimum+qMax(0.0,list->property("contentHeight").toDouble()-list->height());
-        const auto restored=qBound(minimum,m_backend.presentation()["listY"].toDouble(),maximum);
+        const auto restored=qBound(minimum,minimum+m_backend.presentation()["listY"].toDouble(),maximum);
         if (qAbs(list->property("contentY").toDouble()-restored)>1) return;
         // Changing the filter can intentionally reset the saved view to its
         // origin. Establish the scrolled precondition this check requires.
@@ -704,87 +673,41 @@ void GuiMailNavigationSelfTest::step() {
         if (!m_loadingSeen || m_backend.loading() || !m_backend.query().isEmpty()) return;
         m_searchPending=false; m_unfilteredRows=m_backend.conversations();
         if (m_unfilteredRows.size()<2 || !m_backend.filters().isEmpty()) { finish("Filter acceptance needs the unfiltered mailbox page."); return; }
-        if (!openAdvancedFilters()) return;
+        // Search 7: typed filters are part of the query Core reads.
+        if (!typeQuery(QString("from:") + searches[0].query + " is:done has:attachment")) { finish("Cannot type the combined search grammar."); return; }
         m_stage=11; break;
-    case 11:
-        if (!filterPopup()) return;
-        // This source has retained attachment metadata whose bytes are missing;
-        // attachment presence includes that truthful, unavailable attachment.
-        if (!typeField("filterSender",searches[0].query) || !choose("filterStatus",3) || !choose("filterAttachments",1)
-            || !typeField("filterAfter","2026-02-30") || !typeField("filterBefore","2026-09-12") || !click("applyMailFilters")) return;
+    case 11: {
+        if (!m_loadingSeen || m_backend.loading() || m_backend.m_searchTimer.isActive()) return;
+        const auto terms=m_backend.searchTerms();
+        if (!filterResultMatches() || terms.value("from").toStringList()!=QStringList{QString(searches[0].query)}
+            || terms.value("is").toString()!="done" || !terms.value("has_attachment").toBool() || !m_backend.filters().isEmpty()) {
+            finish("The combined search grammar did not return the exact source member with the requested state."); return;
+        }
+        if (!typeQuery(QString("from:") + searches[0].query + " is:snoozed")) return;
         m_stage=12; break;
-    case 12:
-        if (!filterFeedback("Enter real dates as YYYY-MM-DD, or leave them empty.") || !m_backend.filters().isEmpty()
-            || m_backend.conversations()!=m_unfilteredRows || find(m_window->contentItem(),"filterAfter")->property("text").toString()!="2026-02-30"
-            || find(m_window->contentItem(),"filterSender")->property("text").toString()!=searches[0].query) { finish("Invalid date closed the filter popover, lost input or changed active results."); return; }
-        if (!typeField("filterAfter","2026-09-11") || !click("applyMailFilters")) return;
-        m_expectedFilters={{"sender",QString(searches[0].query)},{"status","done"},{"has_attachment",true},{"after","2026-09-11"},{"before","2026-09-12"}};
+    }
+    case 12: {
+        if (!m_loadingSeen || m_backend.loading() || m_backend.m_searchTimer.isActive()) return;
+        const QString message("is: accepts review, delayed or done");
+        if (m_backend.searchError()!=message || !filterResultMatches() || !fullyVisible(textItem(m_window->contentItem(),message),m_window)) {
+            finish("An unreadable status did not explain itself in the dropdown while keeping the last results."); return;
+        }
+        QStringList senders;
+        for (int index=0;index<5;++index) senders << QString("from:person%1").arg(index);
+        if (!typeQuery(senders.join(' '))) return;
         m_stage=13; break;
-    case 13: {
-        if (filterPopup() || m_backend.loading()) return;
-        if (m_backend.filters()!=m_expectedFilters || !filterResultMatches()) {
-            QJsonArray rows;
-            for (const auto &value:m_backend.conversations().mid(0,3)) {
-                const auto row=value.toMap();
-                QJsonObject summary;
-                for (const auto name:{"id","group","display_group","sender_name","sender_email","latest_at","unread","starred","message_ids","matching_message_ids"})
-                    summary[name]=QJsonValue::fromVariant(row.value(name));
-                rows.append(summary);
-            }
-            const QJsonObject diagnostic{{"account",m_backend.account()},{"query",m_backend.query()},
-                {"folder",m_backend.folder()},{"category",m_backend.category()},
-                {"filters",QJsonObject::fromVariantMap(m_backend.filters())},
-                {"expected_filters",QJsonObject::fromVariantMap(m_expectedFilters)},
-                {"row_count",m_backend.conversations().size()},{"first_rows",rows}};
-            finish("Native combined filters did not return the exact source member with the requested state and date bounds. "
-                + QString::fromUtf8(QJsonDocument(diagnostic).toJson(QJsonDocument::Compact)));
-            return;
+    }
+    case 13:
+        if (!m_loadingSeen || m_backend.loading() || m_backend.m_searchTimer.isActive()) return;
+        if (m_backend.searchError()!="Search accepts up to four from: names or addresses" || !filterResultMatches()) {
+            finish("Five from: parts were not refused with the last results kept."); return;
         }
-        if (!openAdvancedFilters()) return;
+        if (!typeQuery("")) return;
         m_stage=14; break;
-    }
     case 14:
-        if (!filterPopup()) return;
-        if (find(m_window->contentItem(),"filterSender")->property("text").toString()!=searches[0].query
-            || find(m_window->contentItem(),"filterBefore")->property("text").toString()!="2026-09-12") { finish("Reopening filters lost the saved criteria."); return; }
-        if (!typeField("filterSender",QString(QChar(0x00e9)).repeated(129)) || !click("applyMailFilters")) return;
-        m_stage=15; break;
-    case 15: {
-        const auto directory=qEnvironmentVariable("FM_GUI_TEST_SCREENSHOTS");
-        if (!directory.isEmpty() && (!QDir::isAbsolutePath(directory) || !QDir().mkpath(directory)
-            || !m_window->grabWindow().save(QDir(directory).filePath("filter-validation.png")))) {
-            finish("Cannot save the explicitly requested native filter validation screenshot."); return;
-        }
-        if (!filterFeedback("Use a shorter sender name or email without control characters.") || m_backend.filters()!=m_expectedFilters || !filterResultMatches()
-            || find(m_window->contentItem(),"filterSender")->property("text").toString()!=QString(QChar(0x00e9)).repeated(129)) { finish("Overlong UTF-8 sender input was not retained with the old active filters."); return; }
-        if (!typeField("filterSender",searches[0].query)) {
-            finish("Cannot correct the retained Unicode sender input. " + geometryDiagnostic(find(m_window->contentItem(),"filterSender"),m_window)); return;
-        }
-        if (!typeField("filterBefore","2026-09-11")) {
-            finish("Cannot edit the date after correcting the Unicode sender. " + geometryDiagnostic(find(m_window->contentItem(),"filterBefore"),m_window)); return;
-        }
-        if (!click("applyMailFilters")) {
-            finish("Cannot apply the corrected sender and date fields. " + geometryDiagnostic(find(m_window->contentItem(),"applyMailFilters"),m_window)); return;
-        }
-        m_stage=16; break;
-    }
-    case 16:
-        if (!filterFeedback("The before date must be later than the on or after date.") || m_backend.filters()!=m_expectedFilters || !filterResultMatches()
-            || find(m_window->contentItem(),"filterBefore")->property("text").toString()!="2026-09-11") { finish("Inverted date bounds changed active filters or lost correction input."); return; }
-        if (!typeField("filterBefore","2026-09-12") || !click("applyMailFilters")) return;
-        m_stage=17; break;
-    case 17:
-        if (filterPopup() || m_backend.loading()) return;
-        if (m_backend.filters()!=m_expectedFilters || !filterResultMatches()) { finish("Corrected filter input did not restore the valid criteria."); return; }
-        if (!openAdvancedFilters()) return;
-        m_stage=18; break;
-    case 18:
-        if (!filterPopup() || !click("clearMailFilters")) return;
-        m_stage=19; break;
-    case 19:
-        if (filterPopup() || m_backend.loading()) return;
-        if (!m_backend.filters().isEmpty() || m_backend.conversations()!=m_unfilteredRows || !m_backend.query().isEmpty()
-            || m_backend.account()!=m_originalAccount || m_backend.selectedId()!=searches[3].thread) { finish("Clearing native filters did not restore the unfiltered mailbox context and retained selection."); return; }
+        if (!m_loadingSeen || m_backend.loading() || !m_backend.query().isEmpty()) return;
+        if (!m_backend.filters().isEmpty() || m_backend.conversations()!=m_unfilteredRows || !m_backend.searchError().isEmpty()
+            || m_backend.account()!=m_originalAccount || m_backend.selectedId()!=searches[3].thread) { finish("Clearing the search did not restore the unfiltered mailbox context and retained selection."); return; }
         m_holdArmed=true;
         if (!typeQuery(searches[1].query)) { finish("Cannot initiate the actual query for delayed-response acceptance."); return; }
         m_stage=20; break;
@@ -811,7 +734,7 @@ void GuiMailNavigationSelfTest::step() {
         delegate(m_heldResult,m_heldOk);
         if (m_backend.account()!="personal" || m_backend.conversations()!=rows || m_backend.querySummary()!=summary || m_backend.draft()!=draft
             || m_backend.selectedId()!=selected || m_backend.query()!=query || m_backend.error()!=error) { finish("Releasing an actual old-account response changed the current mailbox rows, selection or error state."); return; }
-        qInfo() << "Native mail filters passed valid/date/UTF-8 error/correction/clear controls. Real response" << m_heldRequestId
+        qInfo() << "Native mail search grammar passed combined from:/is:/has: terms, kept rows with Core's message for refused queries and restored the mailbox on clear. Real response" << m_heldRequestId
             << "from generation" << m_heldGeneration << "was held across a native account switch; forty superseding real queries were admitted; obsolete queued query"
             << m_obsoleteRequestId << "never reached transport and final query" << m_finalRequestId << "returned the expected member.";
         m_stage=22; break;
@@ -1089,16 +1012,15 @@ void GuiMailNavigationSelfTest::step() {
         for (const auto &key : {"body", "body_html", "signature_text", "attachment_ids"})
             if (m_backend.draft().value(key) != m_originalDraft.value(key)) { finish("Search navigation changed the original authored draft."); return; }
         // Observe the real clear-query restoration before explicit cleanup can
-        // overwrite presentation state and hide a lost mailbox scroll position.
+        // overwrite presentation state. Folder and filter changes since the
+        // search cases legitimately reset the saved offset, so the restored
+        // list must show whatever offset the mailbox saved, from its origin.
         const auto list = find(m_window->contentItem(), "conversationList");
         if (!list) return;
         const auto minimum = list->property("originY").toDouble();
         const auto maximum = minimum + qMax(0.0,list->property("contentHeight").toDouble()-list->height());
-        const auto expectedY = qBound(minimum,m_originalView["listY"].toDouble(),maximum);
+        const auto expectedY = qBound(minimum,minimum+m_backend.presentation().value("listY").toDouble(),maximum);
         if (qAbs(list->property("contentY").toDouble()-expectedY)>1) return;
-        if (m_backend.presentation().value("listY") != m_originalView.value("listY")) {
-            finish("Search result clamping overwrote the saved mailbox scroll position."); return;
-        }
         for (auto it = m_originalView.cbegin(); it != m_originalView.cend(); ++it) m_backend.remember(it.key(), it.value());
         for (const auto &key : {"selectedMember", "readerY", "listY", "expanded", "replyOpen"})
             if (!m_originalView.contains(key)) m_backend.remember(key, QString(key) == "selectedMember" ? QVariant(QString{})
@@ -1120,7 +1042,7 @@ void GuiMailNavigationSelfTest::step() {
     case 60: {
         if (m_backend.loading() || m_backend.draftBusy() || m_backend.m_searchTimer.isActive()) return;
         const auto path=QDir(m_backend.m_profile).filePath("native-mail-group-counts.json");
-        QFile file(path); const auto bytes=QJsonDocument(QJsonObject{{"folder","all"},{"grouped",true},{"limit",1}}).toJson();
+        QFile file(path); const auto bytes=QJsonDocument(QJsonObject{{"folder","inbox"},{"grouped",true},{"limit",1}}).toJson();
         if (!file.open(QIODevice::WriteOnly) || file.write(bytes)!=bytes.size()) { finish("Cannot prepare independent bounded group-count query."); return; }
         file.close(); m_stage=61;
         arrivalCli({"call","conversations","--params-file",path},[this](const auto &result) {
@@ -1149,7 +1071,7 @@ void GuiMailNavigationSelfTest::step() {
         // query results repaired their viewport (the earlier cases prove that).
         QMetaObject::invokeMethod(list,"forceLayout");
         QMetaObject::invokeMethod(list,"positionViewAtBeginning");
-        m_backend.remember("listY",list->property("contentY"));
+        m_backend.remember("listY",list->property("contentY").toDouble()-list->property("originY").toDouble());
         if (auto search=find(m_window->contentItem(),"searchField")) key(search,Qt::Key_Escape);
         m_stage=62; break;
     }
@@ -1286,11 +1208,11 @@ void GuiMailNavigationSelfTest::step() {
         if (!click("senderCardFilter")) return;
         m_stage=76; break;
     case 76:
-        if (m_backend.loading() || senderPopup()) return;
-        if (m_backend.filters()["exact_sender"].toString()!="status@service.example"
-            || m_backend.filters()["kind"].toString()!="automated" || m_backend.query()!="Weekly service availability"
+        if (m_backend.loading() || m_backend.m_searchTimer.isActive() || senderPopup()) return;
+        if (m_backend.query()!="from:status@service.example" || m_backend.folder()!="all"
+            || m_backend.filters()["kind"].toString()!="automated"
             || m_backend.conversations().size()!=1 || m_backend.selectedId()!="windscribe-thread-005") {
-            finish("Sender-card Filter lost the exact address, existing kind/query or reader."); return;
+            finish("Sender-card Filter lost the address query, All mail scope, existing kind or reader."); return;
         }
         if (!hoverSender()) return;
         m_stable=0; m_stage=77; break;

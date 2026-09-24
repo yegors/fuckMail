@@ -1,4 +1,5 @@
 #include "FmIconItem.h"
+#include "FmHtmlView.h"
 #include <QHash>
 #include <QPainter>
 #include <QPainterPath>
@@ -131,6 +132,8 @@ bool draw(const QString &name, Sketch &c) {
     }
     else if (n == "file") { c.line({3,1,9,1,13,5,13,15,3,15,3,1}); c.line({9,1,9,5,13,5}); }
     else if (n == "image") { c.line({2.5,3.5,13.5,3.5,13.5,12.5,2.5,12.5,2.5,3.5}); c.line({2.5,10,5.5,7,8,9.5,10,7.5,13.5,11}); }
+    else if (n == "imageOff") { c.line({2.5,3.5,13.5,3.5,13.5,12.5,2.5,12.5,2.5,3.5}); c.line({2.5,10,5.5,7,8,9.5,10,7.5,13.5,11}); c.line({2,2,14,14}); }
+    else if (n == "globe") { c.circle(8,8,6); c.line({2,8,14,8}); c.moveTo(8,2); c.cubicTo(10,4.2,10,11.8,8,14); c.moveTo(8,2); c.cubicTo(6,4.2,6,11.8,8,14); }
     else if (n == "download") { c.line({8,2,8,10}); c.line({4.5,6.5,8,10,11.5,6.5}); c.line({2.5,11,2.5,14,13.5,14,13.5,11}); }
     else if (n == "google") {
         c.moveTo(13.6,8.2); c.cubicTo(13.6,7.8,13.6,7.5,13.5,7.2); c.lineTo(8,7.2); c.lineTo(8,9.2); c.lineTo(11.2,9.2);
@@ -256,4 +259,6 @@ QImage FmIconItem::render(const QString &name, const QColor &color, const QSize 
 void FmIconItem::registerType() {
     static const int type = qmlRegisterType<FmIconItem>("FuckMail.Icons", 1, 0, "FmIconItem");
     Q_UNUSED(type);
+    // Every process that loads the reader also needs the HTML item.
+    FmHtmlView::registerType();
 }

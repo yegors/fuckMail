@@ -227,6 +227,107 @@ impl CredentialVault for NativeCredentialVault {
     }
 }
 
+/// One app-level secret in the OS vault under its own service name, such as
+/// the remote-content proxy password. Never Google credentials.
+pub struct NativeSecret {
+    service: String,
+    user: &'static str,
+    operations: Mutex<()>,
+}
+
+impl NativeSecret {
+    pub fn proxy_password(profile_namespace: &str) -> Result<Self, GoogleError> {
+        if !(16..=256).contains(&profile_namespace.len())
+            || !profile_namespace
+                .bytes()
+                .all(|v| v.is_ascii_alphanumeric() || v == b'-' || v == b'_')
+        {
+            return Err(GoogleError::InvalidResponse(
+                "invalid credential profile namespace",
+            ));
+        }
+        Ok(Self {
+            service: format!(
+                "fuckmail.proxy.v1.{:x}",
+                Sha256::digest(profile_namespace.as_bytes())
+            ),
+            user: "remote-content",
+            operations: Mutex::new(()),
+        })
+    }
+
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+    fn entry(&self) -> Result<keyring::Entry, GoogleError> {
+        #[cfg(target_os = "windows")]
+        let builder = keyring::windows::default_credential_builder();
+        #[cfg(target_os = "macos")]
+        let builder = keyring::macos::default_credential_builder();
+        #[cfg(target_os = "linux")]
+        let builder = keyring::secret_service::default_credential_builder();
+        builder
+            .build(None, &self.service, self.user)
+            .map(keyring::Entry::new_with_credential)
+            .map_err(|_| GoogleError::StoreUnavailable)
+    }
+
+    pub fn load(&self) -> Result<Option<Zeroizing<String>>, GoogleError> {
+        let _guard = self
+            .operations
+            .lock()
+            .map_err(|_| GoogleError::StoreUnavailable)?;
+        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        {
+            let bytes = match self.entry()?.get_secret() {
+                Ok(bytes) => Zeroizing::new(bytes),
+                Err(keyring::Error::NoEntry) => return Ok(None),
+                Err(_) => return Err(GoogleError::StoreUnavailable),
+            };
+            if bytes.len() > 4096 {
+                return Err(GoogleError::StoreUnavailable);
+            }
+            String::from_utf8(bytes.to_vec())
+                .map(|s| Some(Zeroizing::new(s)))
+                .map_err(|_| GoogleError::StoreUnavailable)
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        Err(GoogleError::StoreUnavailable)
+    }
+
+    pub fn store(&self, secret: &str) -> Result<(), GoogleError> {
+        let _guard = self
+            .operations
+            .lock()
+            .map_err(|_| GoogleError::StoreUnavailable)?;
+        if secret.is_empty() || secret.len() > 1024 {
+            return Err(GoogleError::InvalidResponse("invalid secret"));
+        }
+        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        {
+            self.entry()?
+                .set_secret(secret.as_bytes())
+                .map_err(|_| GoogleError::StoreUnavailable)
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        Err(GoogleError::StoreUnavailable)
+    }
+
+    pub fn remove(&self) -> Result<(), GoogleError> {
+        let _guard = self
+            .operations
+            .lock()
+            .map_err(|_| GoogleError::StoreUnavailable)?;
+        #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
+        {
+            match self.entry()?.delete_credential() {
+                Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+                Err(_) => Err(GoogleError::StoreUnavailable),
+            }
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+        Err(GoogleError::StoreUnavailable)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

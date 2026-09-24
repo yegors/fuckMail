@@ -15,6 +15,8 @@ Item {
     property var menuRows: []
     property bool rowMenu: false
     property var messageMenuSource: null
+    // The opened message menu's summary controls, for Resummarize.
+    property var messageMenuAssistance: null
     readonly property bool hasSelection: selectionRows.length > 0
     readonly property bool readerMatchesCursor: !keyboardNavigation || hasSelection || !selectionCursor || selectionCursor === (draftsMode ? backend.activeDraftId : backend.selectedId)
     readonly property bool selectionMutable: readerMatchesCursor && !backend.mutationInFlight && canMutate && !(morePopup.opened ? menuRows : hasSelection ? selectionRows : [thread]).some(function(row) { return row.is_outgoing })
@@ -33,7 +35,7 @@ Item {
     property string replyRevealIdentity: ""
     readonly property string composerIdentity: backend.account + (backend.activeDraftId.length ? "/draft/" + backend.activeDraftId : "/" + backend.selectedId)
     readonly property bool newMessageAvailable: backend.connected && backend.account.length > 0 && !backend.accountArchived && !backend.unsavedAccountBuffer
-    readonly property bool popupOpen: mediaViewer.opened || assistancePopupOpen() || labelMenu.opened || discardSelection.opened || folderPopup.opened || filterPopup.opened || categoryPopup.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
+    readonly property bool popupOpen: mediaViewer.opened || assistancePopupOpen() || labelMenu.opened || discardSelection.opened || folderPopup.opened || categoryPopup.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
     readonly property bool canMutate: { const accounts = backend.accounts; return backend.connected && backend.accountCapability(backend.account,"mail_write") }
     readonly property bool singleKeyActionsAllowed: mail.visible && !popupOpen && mail.ApplicationWindow.window && mail.ApplicationWindow.window.singleKeysAllowed
     readonly property bool readerKeyActionsAllowed: singleKeyActionsAllowed && readerMatchesCursor
@@ -148,7 +150,7 @@ Item {
         if (f.before) labels.push("Before " + f.before + " UTC")
         return labels.join(" · ")
     }
-    onVisibleChanged: if (!visible) { folderPopup.close(); filterPopup.close(); categoryPopup.close(); morePopup.close(); senderCard.close(); railCategories.close() }
+    onVisibleChanged: if (!visible) { folderPopup.close(); categoryPopup.close(); morePopup.close(); senderCard.close(); railCategories.close() }
     function clearSelection() { selectionRows = []; selectionCursor = "" }
     function cancelKeyboardOpen() { keyboardOpen.stop(); keyboardOpen.target = "" }
     function listHasFocus() {
@@ -243,24 +245,97 @@ Item {
         if (days > 1 && days < 7) return Qt.formatDate(date,"dddd")
         return Qt.formatDate(date,"MMMM yyyy")
     }
-    function groupOf(row) { return dateGroups && row ? dateGroup(row) : row ? row.display_group || row.group || "done" : "done" }
-    function groupTitle(group) { return {review:"To review",held:"Delayed",done:"Done"}[group] || group }
-    function groupCount(group) { return dateGroups ? backend.conversations.filter(function(row) { return mail.groupOf(row) === group }).length : (backend.querySummary.filtered_group_counts || {})[group] || 0 }
+    function groupOf(row) { return dateGroups && row ? dateGroup(row) : row ? row.section || row.display_group || row.group || "done" : "done" }
+    function groupTitle(group) {
+        const fixed = {review:"To review",held:"Delayed",done:"Done","done:undated":"Undated"}[group]
+        if (fixed) return fixed
+        // A Done month; the year appears only outside the current year.
+        if (group.indexOf("done:") === 0) {
+            const month = new Date(Number(group.slice(5, 9)), Number(group.slice(10, 12)) - 1, 1, 12)
+            return Qt.formatDate(month, month.getFullYear() === new Date(backend.clockDay).getFullYear() ? "MMMM" : "MMMM yyyy")
+        }
+        return group
+    }
+    // Inbox sections in order. To review and Delayed stay while browsing, even
+    // when empty; searching or filtering shows only sections with matches.
+    // Done is one section per month, newest first, with Core's full counts.
+    readonly property var inboxSections: {
+        const summary = backend.querySummary
+        if (backend.folder !== "inbox" || !summary.filtered_group_counts) return []
+        const counts = summary.filtered_group_counts, sections = []
+        for (const key of ["review", "held"])
+            if (!filtering || (counts[key] || 0) > 0) sections.push({key: key, count: counts[key] || 0})
+        for (const month of summary.done_months || [])
+            if (month.count > 0) sections.push({key: "done:" + month.month, count: month.count})
+        return sections
+    }
+    // Sorts review, held, then Done months newest first and undated last.
+    function sectionOrder(key) {
+        if (key === "review") return "0"
+        if (key === "held") return "1"
+        const month = /^done:(\d{4})-(\d{2})$/.exec(key)
+        return month ? "2" + ("00000000" + (99999999 - (Number(month[1]) * 12 + Number(month[2])))).slice(-8) : "3"
+    }
+    function sectionCount(key) { const section = inboxSections.find(function(s) { return s.key === key }); return section ? section.count : 0 }
+    function groupCount(group) { return dateGroups ? backend.conversations.filter(function(row) { return mail.groupOf(row) === group }).length : backend.folder === "inbox" ? sectionCount(group) : (backend.querySummary.filtered_group_counts || {})[group] || 0 }
     function groupKey(group) { return backend.account + "/" + backend.folder + "/" + group }
-    function groupCollapsed(group) { return collapsedGroups[groupKey(group)] === true }
-    function syncCollapsedGroups() { backend.setCollapsedGroups(backend.folder === "inbox" ? ["review", "held", "done"].filter(function(group) { return mail.groupCollapsed(group) }) : []) }
-    function toggleGroup(group) { const next = Object.assign({}, collapsedGroups); next[groupKey(group)] = !groupCollapsed(group); collapsedGroups = next; syncCollapsedGroups() }
-    function collapsedBetween(previous, next) {
-        if (backend.folder !== "inbox") return []
-        const groups = ["review", "held", "done"]
-        return groups.filter(function(group, index) { return index > previous && index < next && mail.groupCollapsed(group) && mail.groupCount(group) > 0 })
+    // Inbox sections keep their collapsed state in the account's saved view.
+    function groupCollapsed(group) { return backend.folder === "inbox" ? backend.collapsedGroups.indexOf(group) >= 0 : collapsedGroups[groupKey(group)] === true }
+    function toggleGroup(group, header) {
+        if (header) { anchoredSection = group; anchoredOffset = header.mapToItem(list, 0, 0).y; anchorExpiry.restart() }
+        if (backend.folder === "inbox") {
+            const next = backend.collapsedGroups.filter(function(key) { return key !== group })
+            if (next.length === backend.collapsedGroups.length) next.push(group)
+            backend.setCollapsedGroups(next); return
+        }
+        const next = Object.assign({}, collapsedGroups); next[groupKey(group)] = !groupCollapsed(group); collapsedGroups = next
+        Qt.callLater(restoreSectionAnchor)
     }
-    function collapsedBefore(index, previous, current) {
-        const groups = ["review", "held", "done"]
-        if (index < 0 || (index > 0 && previous === current)) return []
-        return collapsedBetween(index > 0 ? groups.indexOf(previous) : -1, groups.indexOf(current))
+    // A clicked section header stays where it was on screen while its rows
+    // collapse or expand, as on a page. Inbox rows reload after the click.
+    property string anchoredSection: ""
+    property real anchoredOffset: 0
+    Timer { id: anchorExpiry; interval: 2000; onTriggered: mail.anchoredSection = "" }
+    function findNamed(item, name) {
+        if (!item) return null
+        if (item.objectName === name && item.visible) return item
+        for (let i = 0; i < item.children.length; ++i) { const found = findNamed(item.children[i], name); if (found) return found }
+        return null
     }
-    readonly property var trailingCollapsed: collapsedBetween(backend.conversations.length ? ["review", "held", "done"].indexOf(groupOf(backend.conversations[backend.conversations.length - 1])) : -1, 3)
+    // The row whose delegate draws a section's header: its first row, or the
+    // next row when it has none loaded. -1 is the list's footer.
+    function sectionHostIndex(group) {
+        const rows = backend.conversations, order = sectionOrder(group)
+        for (let i = 0; i < rows.length; ++i) if (sectionOrder(groupOf(rows[i])) >= order) return i
+        return -1
+    }
+    function sectionHeader(name) { return findNamed(list.contentItem, name) || findNamed(list.footerItem, name) }
+    function restoreSectionAnchor() {
+        if (!anchoredSection || backend.loading) return
+        const name = "mailGroup_" + anchoredSection
+        list.forceLayout()
+        let header = sectionHeader(name)
+        if (!header) {
+            const index = backend.folder === "inbox" ? sectionHostIndex(anchoredSection) : -1
+            if (index >= 0) list.positionViewAtIndex(index, ListView.Beginning); else list.positionViewAtEnd()
+            list.forceLayout(); header = sectionHeader(name)
+        }
+        anchoredSection = ""
+        if (!header) return
+        const minimum = list.originY, maximum = minimum + Math.max(0, list.contentHeight - list.height)
+        list.contentY = Math.max(minimum, Math.min(maximum, list.contentY + header.mapToItem(list, 0, 0).y - anchoredOffset))
+    }
+    // Sections with no loaded rows between two rows: collapsed or empty.
+    function sectionsBetween(previous, next) {
+        const low = previous === undefined ? "" : sectionOrder(previous), high = next === undefined ? "4" : sectionOrder(next)
+        return inboxSections.filter(function(section) { const order = sectionOrder(section.key); return order > low && order < high })
+    }
+    function sectionsBefore(index, previous, current) {
+        if (backend.folder !== "inbox" || index < 0 || (index > 0 && previous === current)) return []
+        return sectionsBetween(index > 0 ? previous : undefined, current)
+    }
+    readonly property var trailingSections: backend.folder !== "inbox" || backend.hasMore ? []
+        : sectionsBetween(backend.conversations.length ? groupOf(backend.conversations[backend.conversations.length - 1]) : undefined, undefined)
     component ReaderAction: FmButton {
         leftPadding: 14; rightPadding: 14
         font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium
@@ -296,10 +371,14 @@ Item {
         objectName: "mailGroup_" + group
         height: 34; leftPadding: 24; rightPadding: 24; topPadding: 0; bottomPadding: 0; hoverEnabled: true
         enabled: backend.folder === "inbox" || mail.dateGroups
-        onClicked: mail.toggleGroup(group)
+        onClicked: mail.toggleGroup(group, heading)
         background: Item {}
         Accessible.name: mail.groupTitle(group) + ", " + mail.groupCount(group) + " conversations, " + (collapsed ? "collapsed" : "expanded")
         readonly property color tone: hovered ? Theme.text : Theme.inkAlpha(.45)
+        FmToolTip {
+            shown: heading.hovered && heading.enabled
+            text: { const count = mail.groupCount(heading.group); return heading.collapsed ? (count ? "Show " + count + (count === 1 ? " conversation" : " conversations") : "Expand") : "Collapse" }
+        }
         contentItem: RowLayout {
             spacing: 12
             Row {
@@ -315,7 +394,29 @@ Item {
             }
         }
     }
-    Component.onCompleted: syncCollapsedGroups()
+    // A section with no loaded rows: its header and, when empty and open, one
+    // line saying so. Every section after the list's first sits 10px lower.
+    component SectionBlock: Column {
+        id: block
+        required property var section
+        property bool first: false
+        Item { width: 1; height: block.first ? 0 : 10 }
+        GroupHeader { group: block.section.key; width: block.width }
+        Item {
+            objectName: "mailSectionEmpty_" + block.section.key
+            visible: block.section.count === 0 && !mail.groupCollapsed(block.section.key)
+            width: block.width; height: visible ? 40 : 0
+            Row {
+                x: 25; anchors.verticalCenter: parent.verticalCenter; spacing: 8
+                FmIcon { anchors.verticalCenter: parent.verticalCenter; name: "check"; size: 12; color: Theme.accent }
+                Text {
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: block.section.key === "review" ? (mail.sectionCount("held") > 0 ? "All reviewed. Nice work." : "Inbox zero. Enjoy it.") : "Nothing waiting on later."
+                    color: Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
+                }
+            }
+        }
+    }
     function setKind(kind) {
         const next = Object.assign({}, backend.filters)
         if (next.kind === kind) delete next.kind; else next.kind = kind
@@ -326,6 +427,7 @@ Item {
     component ContactName: FmButton {
         id: contact
         property string email: ""
+        property bool underline: true
         leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
         implicitHeight: contentItem.implicitHeight
         textAlignment: Text.AlignLeft
@@ -335,8 +437,50 @@ Item {
         background: Item {
             Row {
                 anchors.bottom: parent.bottom; spacing: 2
-                visible: contact.hovered || contact.activeFocus
+                visible: contact.underline && (contact.hovered || contact.activeFocus)
                 Repeater { model: Math.floor(contact.width / 3); Rectangle { width: 1; height: 1; color: contact.foreground } }
+            }
+        }
+    }
+    // An 18px avatar and the sender's name as one hover element: a rounded pill
+    // whose hover fill covers both, opening the contact card. Folded rows keep
+    // the card but not the fill.
+    component SenderPill: AbstractButton {
+        id: pill
+        property string email: ""
+        property string personName: ""
+        property bool own: false
+        property bool open: true
+        property string avatarName: ""
+        hoverEnabled: true
+        implicitHeight: 24; leftPadding: 3; rightPadding: 8; topPadding: 0; bottomPadding: 0
+        implicitWidth: leftPadding + 25 + pillName.implicitWidth + rightPadding
+        Accessible.name: "Contact: " + personName
+        onHoveredChanged: hovered ? senderCard.showSender(email, personName, pill) : senderCard.scheduleClose()
+        onClicked: senderCard.showSender(email, personName, pill)
+        background: Rectangle {
+            radius: 12; color: pill.open && pill.hovered ? Theme.bg4 : "transparent"
+            border.width: pill.activeFocus ? 1 : 0; border.color: Theme.focusBorder
+            Behavior on color { ColorAnimation { duration: 120 } }
+        }
+        contentItem: Item {
+            implicitHeight: 18
+            Rectangle {
+                objectName: pill.avatarName
+                width: 18; height: 18; radius: 9; anchors.verticalCenter: parent.verticalCenter
+                color: pill.own ? Theme.accentAlpha(0.18) : Theme.bg4
+                Text {
+                    anchors.centerIn: parent
+                    text: mail.initials(pill.own && backend.currentAccount.name ? backend.currentAccount.name : pill.personName)
+                    color: pill.own ? Theme.accent : Theme.inkAlpha(.8)
+                    font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(8.5); font.weight: Font.DemiBold; font.letterSpacing: -.17
+                }
+            }
+            Text {
+                id: pillName; x: 25; width: Math.max(0, parent.width - 25); anchors.verticalCenter: parent.verticalCenter
+                text: pill.personName; elide: Text.ElideRight; textFormat: Text.PlainText
+                color: pill.own ? Theme.accent : Theme.text
+                font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium
             }
         }
     }
@@ -373,20 +517,15 @@ Item {
         cancelKeyboardOpen(); clearSelection(); backend.beginDraft("new")
     }
     function openActions() { morePopup.open() }
-    function openFilters(anchorItem) {
-        const p = anchorItem ? anchorItem.mapToItem(Overlay.overlay,0,anchorItem.height+8) : mail.mapToItem(Overlay.overlay,24,56)
-        filterPopup.x = Math.max(12,Math.min(p.x,Overlay.overlay.width-filterPopup.width-12))
-        filterPopup.y = Math.min(p.y,Overlay.overlay.height-filterPopup.height-12)
-        filterPopup.open()
-    }
     function restoreListPosition() {
         if (list.moving) return
         list.forceLayout()
         const minimum = list.originY
         const maximum = minimum + Math.max(0,list.contentHeight-list.height)
-        // A shorter result set must remain visible. Keep the saved position so
-        // clearing the query can restore the longer mailbox's previous offset.
-        list.contentY = Math.max(minimum,Math.min(maximum,backend.presentation.listY||0))
+        // The saved offset is from the list's origin, which moves as rows above
+        // change. A shorter result set must remain visible. Keep the saved
+        // offset so clearing the query can restore the longer mailbox's place.
+        list.contentY = Math.max(minimum,Math.min(maximum,minimum + (backend.presentation.listY||0)))
     }
     function rowTime(value) {
         const date = new Date(value)
@@ -513,7 +652,7 @@ Item {
             const id = target; target = ""
             if (!mail.visible || !id || mail.navigationIndexes[id] === undefined) return
             list.positionViewAtIndex(mail.navigationIndexes[id], ListView.Contain)
-            backend.remember("listY", list.contentY)
+            backend.remember("listY", list.contentY - list.originY)
             if (openReader) mail.openRow(id)
         }
     }
@@ -584,10 +723,11 @@ Item {
     }
     Connections {
         target: backend
-        function onAccountChanged() { mail.cancelKeyboardOpen(); mail.clearSelection(); morePopup.close(); mail.pendingComposeId = ""; mail.syncCollapsedGroups() }
-        function onQueryChanged() { mail.cancelKeyboardOpen(); mail.clearSelection(); morePopup.close(); mail.syncCollapsedGroups() }
+        function onAccountChanged() { mail.cancelKeyboardOpen(); mail.clearSelection(); morePopup.close(); mail.pendingComposeId = "" }
+        function onQueryChanged() { mail.cancelKeyboardOpen(); mail.clearSelection(); morePopup.close() }
         function onPresentationChanged() { Qt.callLater(mail.restorePosition) }
-        function onConversationsChanged() { if (mail.restoring) Qt.callLater(mail.restoreListPosition); prefetchTimer.restart() }
+        function onConversationsChanged() { if (mail.restoring) Qt.callLater(mail.restoreListPosition); prefetchTimer.restart(); if (mail.anchoredSection) Qt.callLater(mail.restoreSectionAnchor) }
+        function onLoadingChanged() { if (!backend.loading && mail.anchoredSection) Qt.callLater(mail.restoreSectionAnchor) }
         function onConversationChanged() {
             mail.completeMenuCompose()
             const identity = mail.currentComposerIdentity()
@@ -760,14 +900,6 @@ Item {
                     Layout.fillWidth: true; Layout.leftMargin: 24; Layout.rightMargin: 24
                     wrapMode: Text.Wrap; color: Theme.subtle; font.pointSize: Theme.fontPoints(12)
                 }
-                Item {
-                        Layout.fillWidth:true;implicitHeight:backend.folder === "inbox" && !mail.filtering && mail.groupCount("review")===0 && mail.groupCount("held")>0 ? 104 : 0
-                        visible:implicitHeight>0
-                        Column {anchors.centerIn:parent;spacing:8
-                            FmIcon {name:"check";size:22;color:Theme.accent;anchors.horizontalCenter:parent.horizontalCenter}
-                            Text {text:"All reviewed";color:Theme.text;font.pointSize:Theme.fontPoints(15);font.weight:Font.Medium}
-                        }
-                    }
                 ListView {
                     id: list; objectName: "conversationList"
                     Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 6
@@ -785,7 +917,7 @@ Item {
                     onContentHeightChanged: { if (mail.restoring) Qt.callLater(mail.restoreListPosition); prefetchTimer.restart() }
                     onContentYChanged: {
                         backend.setBrowsingOlder(contentY - originY > height)
-                        if (!mail.restoring && !list.moving) backend.remember("listY", contentY)
+                        if (!mail.restoring && !list.moving) backend.remember("listY", contentY - originY)
                         prefetchTimer.restart()
                     }
                     Timer {
@@ -794,7 +926,7 @@ Item {
                             && list.contentY + list.height * 4 >= list.originY + list.contentHeight) backend.prefetchMore()
                     }
                     Connections { target: backend; function onLoadingChanged() { if (!backend.loading) prefetchTimer.restart() } }
-                    onMovementEnded: if (!mail.restoring) backend.remember("listY",contentY)
+                    onMovementEnded: if (!mail.restoring) backend.remember("listY",contentY - originY)
                     delegate: Item {
                         id: groupedRow
                         required property var rowData
@@ -809,15 +941,17 @@ Item {
                         enabled: index >= 0 && !dayHidden
                         readonly property string group: mail.groupOf(modelData)
                         readonly property bool firstInGroup: index===0 || (mail.dateGroups ? mail.groupOf(backend.conversations[index-1]) : previousGroup)!==group
-                        readonly property bool doneRow: group==="done" && backend.folder === "inbox"
+                        // Inbox styling follows the section: To review, Delayed or Done.
+                        readonly property string tier: group === "review" || group === "held" ? group : "done"
                         readonly property bool collapsed: (backend.folder === "inbox" || mail.dateGroups) && mail.groupCollapsed(group)
-                        readonly property int headingHeight: firstInGroup && (mail.dateGroups || (backend.folder !== "sent" && !mail.draftsMode)) ? (index === 0 ? 34 : 44) : 0
+                        readonly property var sectionsAbove: mail.sectionsBefore(index, previousGroup, group)
+                        readonly property int headingHeight: firstInGroup && (mail.dateGroups || (backend.folder !== "sent" && !mail.draftsMode)) ? (index === 0 && sectionsAbove.length === 0 ? 34 : 44) : 0
                         width: list.width; height: dayHidden ? 0 : collapsedHeaders.height + headingHeight + (collapsed ? 0 : mail.rowHeight)
                         Column {
                             id: collapsedHeaders; width: parent.width
                             Repeater {
-                                model: mail.collapsedBefore(groupedRow.index, groupedRow.previousGroup, groupedRow.group)
-                                GroupHeader { required property string modelData; group: modelData; width: collapsedHeaders.width }
+                                model: groupedRow.sectionsAbove
+                                SectionBlock { required property var modelData; required property int index; section: modelData; first: groupedRow.index === 0 && index === 0; width: collapsedHeaders.width }
                             }
                         }
                         GroupHeader { group: groupedRow.group; visible: groupedRow.headingHeight > 0; width: parent.width; y: collapsedHeaders.height + groupedRow.headingHeight - height }
@@ -855,28 +989,32 @@ Item {
                                 color: multi ? Theme.bg4 : opened ? Theme.accentAlpha(.08) : mail.highlightedRow === groupedRow.modelData.id ? Theme.surface : "transparent"
                                 Rectangle { width: parent.multi ? 2 : 3; height: parent.height; color: parent.multi ? Theme.accentAlpha(.55) : Theme.accent; visible: parent.multi || parent.opened }
                             }
-                            // Reference row: 6px state dot, then a 16px-gapped grid of
-                            // sender, subject/preview, first label and time.
+                            // Reference row: a 16px-gapped grid of sender, subject/preview,
+                            // first label and time. Sections carry review state, so rows
+                            // start flush; Sent and Drafts keep their leading arrow.
                             readonly property bool outgoingScope: mail.draftsMode || backend.folder === "sent"
-                            readonly property color primaryTone: outgoingScope ? Theme.inkAlpha(groupedRow.modelData.subject === "(No subject)" ? .5 : .9) : groupedRow.modelData.unread ? Theme.text : groupedRow.doneRow ? Theme.inkAlpha(.6) : Theme.inkAlpha(.85)
+                            readonly property bool reviewTier: !outgoingScope && groupedRow.tier === "review"
+                            readonly property color primaryTone: outgoingScope ? Theme.inkAlpha(groupedRow.modelData.subject === "(No subject)" ? .5 : .9) : reviewTier ? Theme.text : groupedRow.tier === "held" ? Theme.inkAlpha(.85) : Theme.inkAlpha(.6)
                             contentItem: RowLayout {
                                 spacing: 16
                                 Item {
+                                    visible: row.outgoingScope
                                     implicitWidth: 6; implicitHeight: 12; Layout.rightMargin: -2
-                                    FmIcon { anchors.centerIn: parent; visible: mail.draftsMode || backend.folder === "sent"; name: mail.draftsMode ? "edit" : "arrowRight"; size: 12; color: Theme.inkAlpha(.4) }
-                                    Rectangle { anchors.centerIn: parent; width: 6; height: 6; radius: 3; color: groupedRow.modelData.unread ? Theme.text : "transparent"; border.width: groupedRow.modelData.starred && !groupedRow.modelData.unread ? 1 : 0; border.color: Theme.muted; visible: !mail.draftsMode && backend.folder !== "sent" && (groupedRow.modelData.unread || groupedRow.modelData.starred) }
+                                    FmIcon { anchors.centerIn: parent; name: mail.draftsMode ? "edit" : "arrowRight"; size: 12; color: Theme.inkAlpha(.4) }
                                 }
                                 ColumnLayout {
                                     objectName: "mailSenderColumn_" + groupedRow.modelData.id
                                     visible: !mail.draftsMode && backend.folder !== "sent" && leftPane.width >= 520
                                     readonly property real columnWidth: Math.max(120,(row.availableWidth - 20) * .18)
                                     Layout.minimumWidth: columnWidth; Layout.preferredWidth: columnWidth; Layout.maximumWidth: columnWidth; spacing: 2
+                                    // The name elides before its kind glyph, which follows it.
                                     RowLayout {
                                         Layout.fillWidth: true; spacing: 6
-                                        FmIcon { name: groupedRow.modelData.is_outgoing || backend.folder === "sent" ? "send" : mail.kindIcon(groupedRow.modelData.kind); size: 11; color: Theme.subtle }
-                                        Text { objectName: "mailSender_" + groupedRow.modelData.id; text: groupedRow.modelData.sender_name || groupedRow.modelData.sender_email || "Unknown sender"; color: row.primaryTone; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); font.weight: groupedRow.modelData.unread ? Font.Medium : Font.Normal; Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
+                                        Text { objectName: "mailSender_" + groupedRow.modelData.id; text: groupedRow.modelData.sender_name || groupedRow.modelData.sender_email || "Unknown sender"; color: row.primaryTone; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); font.weight: row.reviewTier ? Font.DemiBold : Font.Normal; Layout.fillWidth: true; Layout.maximumWidth: implicitWidth; elide: Text.ElideRight; textFormat: Text.PlainText }
+                                        FmIcon { objectName: "mailSenderKind_" + groupedRow.modelData.id; name: groupedRow.modelData.is_outgoing ? "send" : mail.kindIcon(groupedRow.modelData.kind); size: 11; color: Theme.inkAlpha(.45) }
+                                        Item { Layout.fillWidth: true }
                                     }
-                                    Text { objectName: "mailSenderAddress_" + groupedRow.modelData.id; text: groupedRow.modelData.sender_email || ""; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); Layout.fillWidth: true; Layout.leftMargin: 17; elide: Text.ElideRight; textFormat: Text.PlainText }
+                                    Text { objectName: "mailSenderAddress_" + groupedRow.modelData.id; text: groupedRow.modelData.sender_email || ""; color: row.reviewTier ? Theme.inkAlpha(.5) : Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
                                 }
                                 ColumnLayout {
                                     Layout.fillWidth: true; Layout.minimumWidth: 0; spacing: 2
@@ -886,7 +1024,7 @@ Item {
                                             id: subjectText; anchors.verticalCenter: parent.verticalCenter
                                             width: Math.max(0,Math.min(implicitWidth,parent.width-(countBadge.visible ? countBadge.width+8 : 0)-(attachmentCount.visible ? attachmentCount.width+8 : 0)))
                                             text: groupedRow.modelData.subject; color: row.primaryTone
-                                            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(14); font.weight: groupedRow.modelData.unread || row.outgoingScope ? Font.Medium : Font.Normal
+                                            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(14); font.weight: row.outgoingScope ? Font.Medium : row.reviewTier ? Font.DemiBold : Font.Normal
                                             elide: Text.ElideRight; textFormat: Text.PlainText
                                         }
                                         Rectangle {
@@ -914,7 +1052,7 @@ Item {
                                             color: Theme.inkAlpha(.72); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; textFormat: Text.PlainText
                                         }
                                         FmIcon { objectName:"summaryPreviewIcon_"+groupedRow.modelData.id; visible:!!groupedRow.modelData.summary; name:"summary"; size:10; color:Theme.ai }
-                                        Text { objectName:"mailPreview_"+groupedRow.modelData.id; text: (row.outgoingScope ? "· " : leftPane.width < 520 ? (groupedRow.modelData.sender_name || "") + " · " : "") + (groupedRow.modelData.summary || (groupedRow.modelData.snippet || "").replace(/\s+/g," ")); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 0; textFormat: Text.PlainText }
+                                        Text { objectName:"mailPreview_"+groupedRow.modelData.id; text: (row.outgoingScope ? "· " : leftPane.width < 520 ? (groupedRow.modelData.sender_name || "") + " · " : "") + (groupedRow.modelData.summary || (groupedRow.modelData.snippet || "").replace(/\s+/g," ")); color: row.reviewTier ? Theme.inkAlpha(.68) : Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 0; textFormat: Text.PlainText }
                                     }
                                 }
                                 FmButton {
@@ -938,7 +1076,7 @@ Item {
                     }
                     footer: Column {
                         width: list.width
-                        Repeater { model: mail.trailingCollapsed; GroupHeader { required property string modelData; group: modelData; width: list.width } }
+                        Repeater { model: mail.trailingSections; SectionBlock { required property var modelData; required property int index; section: modelData; first: list.count === 0 && index === 0; width: list.width } }
                         Item {
                             width: list.width; height: backend.hasMore || (backend.folder==="sent" && backend.captures.length) ? 48 : 0
                             Row { anchors.centerIn: parent; spacing: 12
@@ -949,7 +1087,7 @@ Item {
                     }
                     ColumnLayout {
                         anchors.horizontalCenter: parent.horizontalCenter; y: 48; width: parent.width-48;spacing:9
-                        visible:list.count===0 && mail.trailingCollapsed.length===0
+                        visible:list.count===0 && mail.trailingSections.length===0
                         Text {
                             Layout.fillWidth:true;horizontalAlignment:Text.AlignHCenter;wrapMode:Text.Wrap
                             text:!backend.connected ? "Connecting to your local mail…" : !backend.accounts.length ? "No accounts connected." : backend.loading ? "Searching…" : mail.filtering ? "No matches" : "No conversations in this view."
@@ -980,7 +1118,7 @@ Item {
                         readonly property int titleLine: Math.round(Theme.fontSize(28) * 1.15)
                         Item {
                             visible: (mail.thread.categories || []).length > 0; width: categoriesButton.implicitWidth; height: readerHeading.titleLine
-                            HeaderLabel { id: categoriesButton; objectName: "categoryAssignmentButton"; y: (parent.height - height) / 2 + 3; text: parent.visible ? mail.thread.categories[0].name : "Label"; onClicked: categoryPopup.open() }
+                            HeaderLabel { id: categoriesButton; objectName: "categoryAssignmentButton"; y: (parent.height - height) / 2 + 3; text: ((mail.thread.categories || [])[0] || {}).name || "Label"; onClicked: categoryPopup.open() }
                         }
                         Item {
                             objectName: "readerSubjectLine"
@@ -1070,20 +1208,22 @@ Item {
                                 required property var rowData
                                 required property int index
                                 Layout.fillWidth:true
-                                Layout.bottomMargin:item && item.isExpanded ? 28 : 0
+                                Layout.bottomMargin:0
                                 readonly property bool firstVisible: index === 0 || (!mail.expanded && index === mail.members.length-1)
                                 active:false
                                 visible:!mail.draftsMode && (mail.expanded || index===mail.members.length-1)
                                 onVisibleChanged:if(visible)active=true
                                 Component.onCompleted:if(visible)active=true
                                 readonly property bool assistancePopupOpen:item ? item.assistancePopupOpen : false
-                                sourceComponent:ColumnLayout {
+                                sourceComponent:Item {
                                 id: member
                                 property var modelData: memberLoader.rowData
                                 property int index:memberLoader.index
                                 readonly property bool isExpanded: mail.memberIsExpanded(modelData.id,index)
                                 readonly property bool isMatch: mail.matchingIds.indexOf(modelData.id)>=0
                                 readonly property bool assistancePopupOpen: messageAssistance.popupOpen || messageSource.popupOpen || attachmentPopupOpen()
+                                readonly property bool isLast: index === mail.members.length - 1
+                                readonly property int attachmentCount: (modelData.attachments || []).length
                                 function attachmentPopupOpen() {
                                     for (let i = 0; i < attachmentRepeater.count; ++i) {
                                         const tile = attachmentRepeater.itemAt(i)
@@ -1092,45 +1232,50 @@ Item {
                                     return false
                                 }
                                 objectName: "messageMember_"+modelData.id
-                                Layout.fillWidth: true; spacing: member.isExpanded ? 14 : 0; Layout.topMargin: 0; Layout.bottomMargin: 0; visible: mail.expanded || index===mail.members.length-1
+                                implicitHeight: memberColumn.implicitHeight + (isExpanded ? 22 : 0)
+                                visible: mail.expanded || isLast
+                                // Every other message sits on a 2.8% ink block, rounded and bled
+                                // 12px into the margin so text keeps its alignment; no rules between.
+                                Rectangle {
+                                    objectName: "messageTone_" + member.modelData.id
+                                    x: -12; width: parent.width + 24; height: parent.height; radius: 8
+                                    color: !member.isExpanded && memberHeading.hovered ? Theme.inkAlpha(member.index % 2 ? .05 : .022) : member.index % 2 ? Theme.inkAlpha(.028) : "transparent"
+                                    Behavior on color { ColorAnimation { duration: 150 } }
+                                }
                                 MessageSource { id: messageSource; message: member.modelData; active: member.isExpanded && member.visible; visible: false; onMetadataChanged: mail.recordMetadata(member.modelData.id, metadata) }
-                                // The divider sits directly on the header, outside the open body's spacing.
                                 ColumnLayout {
-                                    Layout.fillWidth: true; spacing: 0
-                                Rectangle { visible: !memberLoader.firstVisible; Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+                                id: memberColumn
+                                width: parent.width; spacing: 0
                                 ItemDelegate {
                                     id: memberHeading
                                     Layout.fillWidth: true; implicitHeight: 44; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
                                     objectName: "messageHeading_" + member.modelData.id
                                     focusPolicy: Qt.StrongFocus
+                                    hoverEnabled: true
                                     Accessible.name: (member.isExpanded ? "Collapse message from " : "Expand message from ") + (member.modelData.sender_name || member.modelData.sender_email)
                                     onClicked: { forceActiveFocus(); mail.toggleMember(member.modelData.id,member.index) }
-                                    background: Rectangle { x: -4; width: memberHeading.width + 8; height: memberHeading.height; color: !member.isExpanded && memberHeading.hovered ? Theme.canvas : "transparent"; border.color: memberHeading.activeFocus ? Theme.accent : "transparent"; radius: 4 }
+                                    background: Rectangle { x: -12; width: memberHeading.width + 24; height: memberHeading.height; color: "transparent"; border.color: memberHeading.activeFocus ? Theme.accent : "transparent"; radius: 8 }
                                     contentItem: RowLayout {
-                                        spacing: 12
-                                        ContactAvatar {
-                                            objectName: "senderAvatar_" + member.modelData.id
-                                            diameter: 26; own: !!member.modelData.sent
-                                            personName: member.modelData.sent ? "You" : member.modelData.sender_name || member.modelData.sender_email
-                                            email: member.modelData.sender_email || ""
-                                        }
+                                        spacing: 10
                                         RowLayout {
                                             id: senderIdentity
+                                            // The pill's 3px inset keeps the avatar flush with the text column.
+                                            transform: Translate { x: -3 }
                                             Layout.fillWidth:false
-                                            Layout.maximumWidth: Math.max(0, memberHeading.width - headerActions.implicitWidth - 62) * .6
+                                            Layout.maximumWidth: Math.max(0, memberHeading.width - headerActions.implicitWidth - 20) * .6
                                             spacing: 6
-                                            ContactName {
+                                            SenderPill {
                                                 id: memberSender; objectName: "senderFilter_"+member.modelData.id
-                                                text: member.modelData.sent ? "You" : member.modelData.sender_name || member.modelData.sender_email
+                                                avatarName: "senderAvatar_" + member.modelData.id
+                                                own: !!member.modelData.sent; open: member.isExpanded
+                                                personName: member.modelData.sent ? "You" : member.modelData.sender_name || member.modelData.sender_email
                                                 email: member.modelData.sender_email || ""
-                                                foreground: member.modelData.sent ? Theme.accent : Theme.text
-                                                font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium
                                                 Layout.fillWidth: true; Layout.minimumWidth: 0
                                             }
                                             FmButton {
                                                 id: senderKind; objectName: "messageSenderKind_" + member.modelData.id
                                                 visible: member.isExpanded && !member.modelData.sent && assistance.classificationEnabled
-                                                iconName: mail.kindIcon(member.modelData.kind); iconSize: 12
+                                                iconName: mail.kindIcon(member.modelData.kind); iconSize: 12; opacity: .8
                                                 implicitWidth: 12; implicitHeight: 18; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
                                                 tip: mail.kindTitle(member.modelData.kind) + " · correct sender kind"
                                                 background: Item {}
@@ -1141,14 +1286,14 @@ Item {
                                             objectName: "messageInlineDetail_" + member.modelData.id
                                             text: member.isExpanded ? member.modelData.sender_email || "" : (member.modelData.text || "").replace(/\s+/g," ")
                                             Layout.fillWidth: true; Layout.minimumWidth: 0; elide: Text.ElideRight
-                                            color: Theme.inkAlpha(.45); font.pointSize: Theme.fontPoints(13); textFormat: Text.PlainText
+                                            color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); textFormat: Text.PlainText
                                         }
                                         RowLayout {
                                             id: headerActions; Layout.fillWidth: false; spacing: 2
-                                            FmIcon { visible: !member.isExpanded && (member.modelData.attachments || []).length > 0; name: "attachment"; size: 10; color: Theme.subtle; Layout.rightMargin: 10 }
+                                            FmIcon { visible: !member.isExpanded && member.attachmentCount > 0; name: "attachment"; size: 10; color: Theme.inkAlpha(.4); Layout.rightMargin: 8 }
                                             Text {
                                                 objectName: "messageShortDate_" + member.modelData.id
-                                                text: mail.messageTime(member.modelData.sent_at, member.index === mail.members.length - 1 && !member.modelData.sent)
+                                                text: mail.messageTime(member.modelData.sent_at, member.isLast && !member.modelData.sent)
                                                 color: Theme.inkAlpha(member.isExpanded ? .5 : .45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.features: {"tnum":1}
                                                 Layout.rightMargin: 8
                                                 FmToolTip { shown: memberDateHover.hovered; text: mail.fullTime(member.modelData.sent_at) }
@@ -1158,14 +1303,21 @@ Item {
                                                 objectName: "messageFormatToggle_" + member.modelData.id
                                                 visible: member.isExpanded && messageSource.hasHtml
                                                 text: messageSource.plain ? "TEXT" : "HTML"
-                                                tip: messageSource.plain ? "Show HTML" : "Show plain text"
+                                                tip: messageSource.plain ? "Showing plain text — click for HTML" : "Showing HTML — click for plain text"
                                                 onClicked: messageSource.plain = !messageSource.plain
+                                            }
+                                            SummarizeAction {
+                                                objectName: "summarizeMessage_" + member.modelData.id
+                                                visible: member.isExpanded && messageAssistance.showSummarize
+                                                enabled: messageAssistance.canSummarize; modelName: messageAssistance.modelName
+                                                onClicked: messageAssistance.summarize()
                                             }
                                             MessageHeaderButton {
                                                 id: memberMore; objectName: "messageMore_" + member.modelData.id; visible: member.isExpanded
-                                                iconName: "more"; iconSize: 14; tip: "Message options"
+                                                iconName: "more"; iconSize: 14; tip: "More"
                                                 onClicked: {
                                                     mail.menuRows = backend.snapshotMailRows([member.modelData.is_outgoing ? member.modelData.id : backend.selectedId]); mail.rowMenu = true; mail.messageMenuSource = member.modelData.is_outgoing ? null : messageSource; if (mail.messageMenuSource) mail.messageMenuSource.loadRaw()
+                                                    mail.messageMenuAssistance = messageAssistance
                                                     const point = memberMore.mapToItem(Overlay.overlay, width, height)
                                                     morePopup.x = Math.max(8, point.x - morePopup.width); morePopup.y = point.y + 6; morePopup.open()
                                                 }
@@ -1173,62 +1325,63 @@ Item {
                                             MessageHeaderButton {
                                                 objectName: "toggleMessage_" + member.modelData.id
                                                 iconName: member.isExpanded ? "up" : "down"
-                                                tip: member.isExpanded ? "Collapse message" : "Expand message"
+                                                tip: member.isExpanded ? "Collapse" : "Expand"
                                                 onClicked: mail.toggleMember(member.modelData.id,member.index)
                                             }
                                         }
                                     }
                                 }
-                                }
+                                // Envelope: one quiet line per recipient field, names only;
+                                // the address shows on hover and each name opens its card.
                                 ColumnLayout {
                                     id: recipients
-                                    opacity: visible ? 1 : 0
-                                    Behavior on opacity { NumberAnimation {duration:140} }
                                     readonly property var rows: mail.visibleMetadata(member.modelData, messageSource.metadata)
-                                    readonly property real keyWidth: { let widest = 0; for (const row of rows) widest = Math.max(widest, recipientKeyMetrics.advanceWidth(row.label.toUpperCase()) + row.label.length * 0.66); return Math.ceil(widest) }
-                                    FontMetrics { id: recipientKeyMetrics; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11) }
-                                    visible: member.isExpanded && rows.length > 0; Layout.fillWidth: true; Layout.leftMargin: 38; Layout.topMargin: -16; spacing: 6
+                                    visible: member.isExpanded && rows.length > 0; Layout.fillWidth: true; Layout.topMargin: -8; Layout.bottomMargin: 2; spacing: 2
                                     Repeater {
                                         model: recipients.rows
-                                        RowLayout {
-                                            required property var modelData; Layout.fillWidth: true; spacing: 14
-                                            Text { text: modelData.label.toUpperCase(); Layout.preferredWidth: recipients.keyWidth; Layout.alignment: Qt.AlignTop; Layout.topMargin: 2; color: Theme.inkAlpha(0.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.letterSpacing: 0.66 }
-                                            Flow {
-                                                id: recipientPeople
-                                                Layout.fillWidth: true; spacing: 14
-                                                Repeater {
-                                                    model: parent.parent.modelData.people
-                                                    Flow {
-                                                        required property var modelData
-                                                        width: Math.min(recipientContact.implicitWidth + (recipientAddress.visible ? recipientAddress.implicitWidth + 6 : 0), recipientPeople.width); spacing: 6
-                                                        ContactName { id: recipientContact; objectName: "recipientName_" + member.modelData.id + "_" + parent.modelData.email; email: parent.modelData.email; text: parent.modelData.name || parent.modelData.email; width: Math.min(implicitWidth, recipientPeople.width); font.pointSize: Theme.fontPoints(13) }
-                                                        Text { id: recipientAddress; visible: !!parent.modelData.name; text: parent.modelData.email; width: Math.min(implicitWidth, recipientPeople.width); elide: Text.ElideRight; color: Theme.subtle; font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText }
-                                                    }
+                                        Flow {
+                                            id: recipientLine
+                                            required property var modelData
+                                            Layout.fillWidth: true; spacing: 0
+                                            Text { text: recipientLine.modelData.label.toLowerCase(); width: Math.max(18, implicitWidth) + 6; color: Theme.inkAlpha(.35); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); textFormat: Text.PlainText }
+                                            Repeater {
+                                                model: recipientLine.modelData.people
+                                                ContactName {
+                                                    required property var modelData
+                                                    required property int index
+                                                    objectName: "recipientName_" + member.modelData.id + "_" + modelData.email
+                                                    email: modelData.email
+                                                    text: (modelData.name || modelData.email) + (index < recipientLine.modelData.people.length - 1 ? "," : "")
+                                                    rightPadding: index < recipientLine.modelData.people.length - 1 ? 6 : 0
+                                                    width: Math.min(implicitWidth, recipientLine.width)
+                                                    underline: false; foreground: hovered ? Theme.text : Theme.inkAlpha(.55)
+                                                    font.pointSize: Theme.fontPoints(12.5)
+                                                    tip: modelData.email
                                                 }
                                             }
                                         }
                                     }
                                 }
                                 RowLayout {
-                                    visible: member.isExpanded && !!member.modelData.text_truncated; Layout.fillWidth: true; Layout.leftMargin: 38; spacing: 12
-                                    Text { visible: !!member.modelData.text_truncated; text: "This preview is shortened."; color: Theme.subtle; font.pointSize: Theme.fontPoints(12) }
+                                    visible: member.isExpanded && !!member.modelData.text_truncated; Layout.fillWidth: true; Layout.topMargin: 6; spacing: 12
+                                    Text { visible: !!member.modelData.text_truncated; text: "This preview is shortened."; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
                                 }
                                 MessageAssistance {
                                     id: messageAssistance
-                                    opacity: visible ? 1 : 0
-                                    Behavior on opacity { NumberAnimation {duration:140} }
-                                    Layout.fillWidth: true; Layout.leftMargin: 38
+                                    Layout.fillWidth: true; Layout.topMargin: summaryShowing ? 10 : 0
                                     controller: assistance; message: member.modelData
                                     showKindControl: false
                                     visible: member.isExpanded && !member.modelData.sent && (assistance.summariesEnabled || (assistance.classificationEnabled && !member.modelData.sent) || !!summary || !!classification)
                                 }
-                                Text { visible: member.isExpanded && !!member.modelData.content_error; Layout.fillWidth: true; Layout.leftMargin: 38; text: member.modelData.content_error || ""; color: Theme.error; wrapMode: Text.Wrap; font.pointSize: Theme.fontPoints(13) }
+                                Text { visible: member.isExpanded && !!member.modelData.content_error; Layout.fillWidth: true; Layout.topMargin: 10; text: member.modelData.content_error || ""; color: Theme.error; wrapMode: Text.Wrap; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
                                 ColumnLayout {
                                     id: messageBody
                                     opacity: visible ? 1 : 0
                                     Behavior on opacity { NumberAnimation {duration:140} }
                                     visible: member.isExpanded && !member.modelData.content_error
-                                    Layout.fillWidth: true; Layout.leftMargin: 38; spacing: 7
+                                    // 16px after a summary or its progress, 10px after the recipients line, else 2px.
+                                    Layout.fillWidth: true; Layout.topMargin: messageAssistance.visible && messageAssistance.summaryShowing && !messageAssistance.summaryFailed ? 16 : recipients.visible ? 10 : 2
+                                    spacing: 7
                                     property var rows: []
                                     readonly property string plainText: member.modelData.content_pending ? "Loading sent message…" : member.modelData.text || "(No text)"
                                     readonly property string projectionKey: messageSource.identity + "/" + messageSource.plain + "/" + messageSource.hasHtml + "/" + member.isExpanded
@@ -1240,26 +1393,61 @@ Item {
                                     onPlainTextChanged: project()
                                     onProjectionKeyChanged: project()
                                     Component.onCompleted: project()
+                                    // HTML mode renders through the HTML reader; its failure falls back to text.
+                                    readonly property bool htmlMode: messageSource.hasHtml && !messageSource.plain && !!backend.htmlContent
+                                    readonly property bool htmlShown: htmlMode && htmlBody.item !== null && !htmlBody.item.failed
+                                    Loader {
+                                        id: htmlBody
+                                        active: messageBody.htmlMode && member.isExpanded
+                                        visible: messageBody.htmlShown; Layout.fillWidth: true
+                                        sourceComponent: HtmlMessageBody {
+                                            message: member.modelData; account: backend.account; conversation: backend.selectedId
+                                            active: member.isExpanded && member.visible
+                                            onLinkHovered: function(href, box) { const p = mapToItem(Overlay.overlay, box.x, box.y); linkCard.show(href, Qt.rect(p.x, p.y, box.width, box.height), backend.selectedId) }
+                                            onLinkExited: linkCard.scheduleHide()
+                                        }
+                                    }
+                                    Text {
+                                        visible: messageBody.htmlMode && htmlBody.item !== null && htmlBody.item.failed && !!htmlBody.item.failure
+                                        Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                                        text: htmlBody.item ? htmlBody.item.failure || "" : ""
+                                        color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
+                                    }
                                     Repeater {
-                                        model: messageBody.rows
+                                        model: messageBody.htmlShown ? [] : messageBody.rows
                                         TextArea {
                                             required property var modelData
                                             required property int index
                                             objectName: index === 0 ? "messageBody_" + member.modelData.id : "messageBodyPart_" + member.modelData.id + "_" + index
-                                            Layout.fillWidth: true; text: modelData.html || ""
+                                            Layout.fillWidth: true; text: mail.presentLinks(modelData.html)
                                             readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.RichText
-                                            color: member.index === mail.members.length - 1 ? Theme.text : Theme.inkAlpha(.78); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15)
+                                            palette.link: Theme.text
+                                            color: member.isLast ? Theme.text : Theme.inkAlpha(.78); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15)
                                             leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; background: null
                                             Accessible.name: "Message from " + member.modelData.sender_name
-                                            onLinkActivated: function(link) { backend.openLink(link) }
+                                            onLinkActivated: function(link) { mail.openBodyLink(link) }
+                                            HoverHandler { id: bodyHover }
+                                            onHoveredLinkChanged: {
+                                                if (!hoveredLink) { linkCard.scheduleHide(); return }
+                                                const r = positionToRectangle(positionAt(bodyHover.point.position.x, bodyHover.point.position.y))
+                                                const p = mapToItem(Overlay.overlay, r.x, r.y)
+                                                linkCard.show(hoveredLink, Qt.rect(p.x, p.y, Math.max(1, r.width), r.height), backend.selectedId)
+                                            }
                                         }
                                     }
+                                }
+                                // "4 ATTACHMENTS" and a hairline to the edge, 24px above the cards.
+                                RowLayout {
+                                    objectName: "messageAttachmentsCaption_" + member.modelData.id
+                                    visible: member.isExpanded && member.attachmentCount > 0; Layout.fillWidth: true; Layout.topMargin: 24; Layout.bottomMargin: 10; spacing: 10
+                                    Text { text: (member.attachmentCount === 1 ? "1 attachment" : member.attachmentCount + " attachments").toUpperCase(); color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.letterSpacing: .55 }
+                                    Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                                 }
                                 Flow {
                                     id: attachmentFlow
                                     opacity: visible ? 1 : 0
                                     Behavior on opacity { NumberAnimation {duration:140} }
-                                    visible: member.isExpanded && (member.modelData.attachments||[]).length > 0; Layout.fillWidth: true; Layout.leftMargin: 38; Layout.maximumWidth: 798; spacing: 10
+                                    visible: member.isExpanded && member.attachmentCount > 0; Layout.fillWidth: true; Layout.maximumWidth: 798; spacing: 10
                                     Repeater {
                                         id: attachmentRepeater
                                         model: member.modelData.attachments||[]
@@ -1272,6 +1460,7 @@ Item {
                                             available: !member.modelData.is_outgoing && modelData.state === "available"
                                         }
                                     }
+                                }
                                 }
                                 }
                             }
@@ -1354,6 +1543,21 @@ Item {
     }
     Connections { target: backend; function onMailSelectionRestored(rows) { mail.selectionRows=rows; if(rows.length) { mail.selectionAnchor=rows[0].id; mail.selectionCursor=rows[rows.length-1].id } } }
     SenderCard { id: senderCard; formatAge: mail.relativeTime; onConversationOpened: function(id) { backend.openConversation(id) } }
+    LinkCard { id: linkCard }
+    // Plain-text links read without "https://www." in ink with an underline,
+    // and blocked ones are struck through; the content service owns the block
+    // list. Rich text ignores palette.link, so the colour is inline.
+    function presentLinks(html) {
+        const service = backend.htmlContent
+        const labelled = String(html || "").replace(/(<a\b[^>]*>)https?:\/\/(?:www\.)?/gi, "$1")
+        const styled = service && service.revision >= 0 ? service.styleLinks(labelled) : labelled
+        return styled.replace(/<a (?![^>]*\bstyle=)([^>]*)>/gi, "<a $1 style=\"color:" + Theme.text + ";text-decoration:underline\">")
+    }
+    function openBodyLink(link) {
+        const service = backend.htmlContent
+        if (service && service.linkBlocked(link)) return
+        backend.openLink(link)
+    }
     Popup {
         id: railCategories; objectName: "allCategoriesPopup"; parent: Overlay.overlay; width: 280; padding: 12
         height: Math.min(categoryChoices.implicitHeight + 24, parent.height - 100); focus: true
@@ -1372,7 +1576,6 @@ Item {
             }
         }
     }
-    MailFilters { id: filterPopup; parent: Overlay.overlay }
     Popup {
         id: categoryPopup; objectName: "categoryAssignmentPopup"; parent: Overlay.overlay; width: 350; padding: 16
         onAboutToShow: { const p=categoriesButton.mapToItem(parent,0,categoriesButton.height+6); x=Math.min(p.x,parent.width-width-12); y=p.y }
@@ -1421,7 +1624,7 @@ Item {
                 x=Math.max(8,Math.min(p.x-width,parent.width-width-8)); y=Math.max(8,Math.min(p.y,parent.height-implicitHeight-8))
             }
         }
-        onClosed: { const source = mail.messageMenuSource; mail.rowMenu = false; labelMenu.close(); formatMenu.close(); mail.messageMenuSource = null; if (source) Qt.callLater(function() { if (source && source.releaseRaw) source.releaseRaw() }) }
+        onClosed: { const source = mail.messageMenuSource; mail.rowMenu = false; labelMenu.close(); formatMenu.close(); mail.messageMenuSource = null; mail.messageMenuAssistance = null; if (source) Qt.callLater(function() { if (source && source.releaseRaw) source.releaseRaw() }) }
         readonly property bool drafts: mail.menuRows.length > 0 && mail.menuRows.every(function(row) { return row.is_draft === true })
         readonly property bool allUnread: mail.menuRows.length > 0 && mail.menuRows.every(function(row) { return row.unread === true })
         readonly property bool single: mail.menuRows.length === 1
@@ -1444,6 +1647,13 @@ Item {
             FmMenuItem { objectName: "unholdConversationButton"; visible: morePopup.mailRows && mail.menuRows.some(function(row) { return row.starred }); text: "Remove delay"; shortcut: mail.menuRows.every(function(row) { return row.starred }) ? mail.menuKey("delay") : ""; enabled: mail.selectionMutable; onClicked: mail.selectionAction("undelay") }
             FmMenuItem { objectName: "contextDone"; visible: morePopup.mailRows && backend.folder !== "sent"; text: "Mark done"; shortcut: mail.menuKey("done"); enabled: mail.selectionMutable; onClicked: mail.selectionAction("done") }
             FmMenuItem { id: labelsMenuButton; objectName: "contextLabels"; visible: morePopup.mailRows && backend.folder !== "sent"; text: "Labels"; shortcut: labelMenu.flip ? "‹" : "›"; enabled: mail.selectionMutable && backend.categories.length > 0; onClicked: labelMenu.open(); onHoveredChanged: if (hovered && enabled && !labelMenu.opened) { formatMenu.close(); labelMenu.open() } }
+            FmMenuItem {
+                objectName: "contextResummarize"; text: "Resummarize"
+                visible: mail.rowMenu && !!mail.messageMenuAssistance && mail.messageMenuAssistance.canResummarize
+                enabled: !!mail.messageMenuAssistance && mail.messageMenuAssistance.canSummarize
+                foreground: !enabled ? Theme.faint : Theme.ai
+                onClicked: { const panel = mail.messageMenuAssistance; morePopup.close(); panel.summarize() }
+            }
             FmMenuItem { id: formatMenuButton; objectName: "contextFormat"; visible: !!mail.messageMenuSource && mail.messageMenuSource.hasHtml; text: "Format"; shortcut: "‹"; onClicked: formatMenu.open(); onHoveredChanged: if (hovered && !formatMenu.opened) { labelMenu.close(); formatMenu.open() } }
             FmMenuItem { objectName: "contextMessageSource"; visible: !!mail.messageMenuSource; text: "View source"; onClicked: { const source = mail.messageMenuSource; morePopup.close(); source.show() } }
             FmMenuItem { objectName: "archiveConversation"; visible: morePopup.mailRows && !backend.syntheticProfile && backend.folder !== "trash"; separatorAbove: true; text: "Archive in Gmail"; enabled: mail.selectionMutable; onClicked: mail.selectionAction("archive") }

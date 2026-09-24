@@ -1,5 +1,65 @@
 # Core and storage
 
+## D105 — HTML view, message images, link index and remote preferences (Core57, schema34)
+
+**HTML view.** `message_html(account, {id, source_version})` is read-only and allowed for archived accounts. It reads the retained MIME directly, under the existing raw limit, and chooses the first real `text/html` part by content type. Plain-only mail returns `has_html: false`, and `message_source` uses the same choice.
+
+The engine's `fm_mail::html_view` sanitiser (version 1) rebuilds the HTML from allowlists:
+- tags, attributes and CSS properties and values;
+- scoped `<style>` rules with prefixed classes and ids;
+- `@media` only;
+- links as `fm-link:N` (http, https and mailto only);
+- images and CSS backgrounds as `fm-res:N`.
+
+It removes quoted history unless the message is a forward, and applies the planned limits:
+- 4 MiB HTML, 50,000 nodes, depth 256, table depth 16;
+- 2,000 CSS rules, 256 KiB CSS;
+- 500 resources, 2,000 links, 8 KiB URLs, 2 MiB `data:` URIs.
+
+The result has:
+- `too_large`;
+- `html`, or `html_path` to a private cache file when over 512 KiB (the newest 16 files are kept);
+- `resources[{id, kind: remote|cid|data|insecure, host?, alt, width?, height?, image?}]` and `links[{id, href, scheme, host}]`;
+- `trackers`, `quote_removed` and `sanitizer_version`.
+
+Images at most 3×3, zero-sized or hidden are counted in `trackers` and never listed. `image {path, width, height}` appears for a resource already in the image cache.
+
+**Images.** `message_image(account, {id, source_version, resource, cached_only?})` is the only way to get an image a message refers to. It rechecks the account, the message, the current source version and that the resource belongs to that version's manifest; the newest 16 manifests are kept.
+- It returns `state` `ready` (with `path`, `width` and `height`), `not_cached`, `blocked` (with `by`), `insecure`, `proxy_unavailable` or `failed` (with `reason`).
+- `cid:` parts (up to 25 MiB), `data:` images and remote images are decoded in memory-safe Rust: PNG, JPEG, GIF first frame or WebP by magic bytes, at most 16 megapixels. They are re-encoded as PNG at most 1600 px wide. SVG is refused.
+- Images are cached under `<profile>/cache/images/<account-key>/`, within 256 MiB in total with the oldest evicted first. Only pixels are stored.
+- `cached_only` never reaches the network. `insecure` (`http://`) sources are never requested.
+- The engine's remote-content runtime owns the network policy; see [Platform 19](platform.md).
+- `remote_image_cache({op: stats|clear})` reports `{bytes, limit}` or clears the cache.
+
+**Link index (schema34).** One post-reset migration adds three tables, mirrored in `fresh-schema.sql`:
+- `link_hosts(id, rhost UNIQUE)`, where `rhost` is the host with its labels reversed;
+- `message_link_hosts(host, message_rowid)`, which cascades on message delete, plus an index by message;
+- `link_index_state(singleton, indexed_rowid)`.
+
+An engine task indexes messages in rowid order, 100 per batch, off the writer. It reads each retained source's HTML and text links, at most 200 hosts per message, and falls back to reading text when no source is retained.
+- `link_host_summary(account, {host, conversation?})` returns `{host, messages, complete}` for messages in every account outside that conversation.
+- `link_pattern_counts({patterns})` returns `{counts, complete}` for normalised blocklist patterns; a `*.domain` pattern is one reversed-host range scan.
+
+A schema33 profile upgrades once and starts indexing from the beginning. Older binaries refuse schema34.
+
+**Preferences.**
+- `blocked_hosts`: at most 1,000 unique `{pattern, source: settings|link, added_at}` entries. A pattern must already be normalised: a lowercase ASCII host without `www.`, or `*.domain`.
+- `remote_images_from`: at most 2,000 unique `{account, email}` entries.
+- `remote_proxy {enabled, host, port 1–65535, username ≤256}`. The host must be a host name.
+
+The proxy password is never a preference. `remote_proxy_password({op: status|set|clear})` stores it in the OS vault and returns only `saved`.
+
+Consumers: Mail UI74, CLI44, Platform19 and Quality75; Search7, Calendar30, fixtures0/3 and protocol1 unchanged. [Execution record](../research/html-mail.md#d105--html-reader-implementation-2026-09-24).
+
+## D101 — search grammar, people lookup, Done months and view keys (Core56, schema33)
+
+`conversations` and `drafts` parse the search text with the [Search 7 grammar](search.md#query-grammar-revision-7) and return `search_terms`. `conversations` rejects `is:` together with a different `status` field and `has:attachment` together with `has_attachment:false`; `label:` resolves to the account's category ID and ANDs with any `category` field. `from:` values bind as escaped `LIKE` patterns on the sender name and address, or on `recipient` in Sent; `label:` binds one category slot. Both join the existing numbered bindings, and `matching_message_ids` applies them to members.
+
+`conversations` accepts `month_zone`, an IANA zone name, and `collapsed_months` (at most 256 unique `YYYY-MM` values, requiring `month_zone`). With a zone, each Done conversation belongs to the month of its latest message in that zone, and the response adds `done_months:[{month,count}]` over the whole filtered set, newest first, with `undated` last; without one it is `null`. A collapsed month's rows leave paging like a collapsed group and count toward neither `expanded_conversation_count` nor the page, while `done_months` keeps full counts. Cursor scope includes both fields.
+
+`search_senders(account, {query, folder, limit})` is a read-only method on the allowlist of Core and the engine; see [Search 7](search.md#query-grammar-revision-7). `view_save` accepts two more account view keys: `recentSearches`, at most six non-blank strings of up to 512 bytes without line breaks, and `collapsedSections`, at most 258 unique values from `review`, `held`, `done:undated` and `done:YYYY-MM`. The 16 KiB view limit is unchanged. No table, index or migration changes. Consumers: Mail UI71, CLI43, Search7 and Quality72. [Execution record](../research/prototype-september-23.md#d101--fourth-export-2026-09-24).
+
 ## D098 — Calendar mail-count range and preferences revision (Core55, schema33)
 
 Schema33 is the first post-reset migration. It adds the partial index `google_mail_coverage_by_date(account,internal_date_ms) WHERE deleted=0`, and fresh profiles create it directly. `calendar_mail_activity` reads provider coverage through that index, so counting a six-week window touches only its date range instead of the account's whole coverage. An engine at schema32 upgrades once in place; newer schemas are still refused. `status` adds `preferences_revision`, the saved preferences revision, so clients can skip reloading unchanged preferences on every poll. Consumers: Mail UI69 (GUI polling) and Quality70; CLI42 unchanged, since its `status` output only gains a field. [Execution record](../research/phase-2-calendar.md#d098--calendar-view-performance-2026-09-23).

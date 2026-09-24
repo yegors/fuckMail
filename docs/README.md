@@ -12,6 +12,7 @@ fuckMail is a personal, opinionated mail/calendar client for large separate acco
 | [Visual design and UX](ui-ux.md) | Working brief for the founder/Claude design collaboration: screen elements, layout, state meanings and review scenarios |
 | [Development plan](development-plan.md) | Full phased route, integration milestones, ownership and decisions to resolve as needed |
 | [Phase 2 execution plan](plans/phase-2.md) | Current Google mail/Calendar packets, real-account admission, API limits and founder test milestones |
+| [HTML reader plan](plans/html-reader.md) | Proposed D100 safe HTML rendering, blocked remote images through an engine fetch path and optional proxy, link hover cards and domain blocklist |
 | [SQLite storage reset plan](plans/sqlite-storage-reset.md) | Implemented schema32 fresh start, storage measurements and remaining scale gates |
 | [Phase 1 execution plan](plans/phase-1.md) | Completed local client and navigation/rendering packets with scoped acceptance |
 | [Phase 0 execution backlog](plans/phase-0.md) | Completed foundation packets and their original acceptance scope |

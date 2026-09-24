@@ -301,6 +301,12 @@ void MailBackend::openCalendarDay(const QString &date) {
     m_calendarDate = date; m_calendarView = "day";
     rememberCalendarNavigation({{"calendar_date", date}, {"calendar_view", "day"}}); showCalendarRange();
 }
+// Month view's week numbers open that week in one step.
+void MailBackend::openCalendarWeek(const QString &date) {
+    if (!QDate::fromString(date, Qt::ISODate).isValid() || (date == m_calendarDate && m_calendarView == "week")) return;
+    m_calendarDate = date; m_calendarView = "week";
+    rememberCalendarNavigation({{"calendar_date", date}, {"calendar_view", "week"}}); showCalendarRange();
+}
 void MailBackend::moveCalendar(int delta) {
     auto day = QDate::fromString(m_calendarDate, Qt::ISODate);
     day = m_calendarView == "month" ? day.addMonths(delta) : day.addDays(delta * (m_calendarView == "week" ? 7 : m_calendarView == "agenda" ? 42 : 1));

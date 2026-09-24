@@ -205,6 +205,15 @@ fn composition_new_draft_capture_and_restart_never_manufacture_received_mail() {
     );
     assert_eq!(
         call(&mut store, "drafts", json!({"query":"release private"}))["total"],
+        0
+    );
+    // Bare words search subject and text; from: names a draft's recipients.
+    assert_eq!(
+        call(
+            &mut store,
+            "drafts",
+            json!({"query":"release from:private"})
+        )["total"],
         1
     );
     drop(store);
@@ -441,14 +450,22 @@ fn composition_drafts_page_search_scope_and_invalid_edits_are_bounded() {
             json!({"draft_id":draft["draft_id"],"expected_revision":1,"request_id":format!("page-save-{index}"),"body":format!("Punctuation-safe Café draft {index}"),"subject":"Paged subject","to_recipients":[{"email":"unique@fixture.example"}]}),
         );
     }
-    let first = call(&mut store, "drafts", json!({"query":"paged uni","limit":2}));
+    assert_eq!(
+        call(&mut store, "drafts", json!({"query":"paged uni"}))["total"],
+        0
+    );
+    let first = call(
+        &mut store,
+        "drafts",
+        json!({"query":"paged from:uni","limit":2}),
+    );
     assert_eq!(first["draft_count"], 4);
     assert_eq!(first["total"], 3);
     assert_eq!(first["next_offset"], 2);
     let last = call(
         &mut store,
         "drafts",
-        json!({"query":"paged uni","limit":2,"offset":2}),
+        json!({"query":"paged from:uni","limit":2,"offset":2}),
     );
     assert!(last["next_offset"].is_null());
     let mut listed = first["drafts"]
@@ -505,7 +522,9 @@ fn composition_drafts_page_search_scope_and_invalid_edits_are_bounded() {
         json!({"status":"review"}),
         json!({"limit":101}),
         json!({"offset":-1}),
-        json!({"query":"from:ada"}),
+        json!({"query":"label:work"}),
+        json!({"query":"is:done"}),
+        json!({"query":"has:attachment"}),
         json!({"query":"x ".repeat(33)}),
     ] {
         assert_eq!(

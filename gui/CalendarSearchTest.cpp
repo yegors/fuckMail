@@ -95,7 +95,23 @@ class CalendarSearchTest {
                     else if (method == "accounts") result = {{"accounts", QJsonArray::fromVariantList(backend.m_allAccounts)}};
                     else if (method == "view_get") result = {{"revision", 0}, {"view", QJsonObject{}}};
                     else if (method == "view_save") result = {{"revision", 1}};
-                    else if (method == "conversations") result = {{"conversations", QJsonArray{}}, {"revision", 1}};
+                    else if (method == "conversations") {
+                        // Core's reading of the few queries this test types.
+                        const auto query = request["params"].toObject()["query"].toString().trimmed();
+                        if (query.contains("is:snoozed")) {
+                            peer->write(QJsonDocument(QJsonObject{{"version", 1}, {"id", request["id"]}, {"ok", false},
+                                {"error", QJsonObject{{"code", "invalid_request"}, {"message", "is: accepts review, delayed or done"}}}}).toJson(QJsonDocument::Compact) + '\n');
+                            return true;
+                        }
+                        QJsonObject terms{{"words", ""}, {"subject", QJsonArray{}}, {"body", QJsonArray{}}, {"from", QJsonArray{}},
+                            {"label", QJsonValue::Null}, {"has_attachment", false}, {"is", QJsonValue::Null}};
+                        if (query.startsWith("relay subject:board deck")) { terms["words"] = "relay"; terms["subject"] = QJsonArray{"board deck"}; }
+                        else if (!query.startsWith("from:")) terms["words"] = query.section(' ', 0, 0);
+                        result = {{"conversations", QJsonArray{}}, {"revision", 1}, {"filtered_conversation_count", query.isEmpty() ? 0 : 12},
+                            {"search_terms", query.isEmpty() ? QJsonValue() : QJsonValue(terms)}};
+                    }
+                    else if (method == "search_senders") result = {{"people", QJsonArray{QJsonObject{{"name", "Maya Chen"}, {"email", "maya@example.test"}},
+                        QJsonObject{{"name", "Mark Ode"}, {"email", "mark@example.test"}}}}};
                     else if (method == "categories") result = {{"categories", QJsonArray{}}};
                     else if (method == "label_catalog") result = {{"account", request["account"]}, {"labels", QJsonArray{}}};
                     else if (method == "google_sent") result = {{"account", request["account"]}, {"outgoing", QJsonArray{}}, {"next_offset", QJsonValue::Null}};
@@ -432,44 +448,76 @@ class CalendarSearchTest {
             require(QMetaObject::invokeMethod(button, "clicked"), "production search action handler");
             QCoreApplication::processEvents();
         };
-        pressSearch("searchQuickAttachment");
-        require(h.backend.filters().value("has_attachment").toBool(), "quick attachment chip applies a real filter");
-        pressSearch("searchQuickAttachment");
-        require(!h.backend.filters().contains("has_attachment"), "quick filter toggles off");
-        pressSearch("searchQuickDelayed");
-        require(h.backend.filters().value("status") == "held", "Delayed chip uses the existing review filter");
-        pressSearch("searchQuickBefore");
-        require(h.backend.filters().value("before").toString().endsWith("-01-01"), "before chip applies a real date bound");
-        require(h.backend.query().isEmpty(), "quick filters preserve the user's search words");
-        h.backend.applyFilters({});
-        pressSearch("searchScope_sent");
-        require(!named(window, "searchQuickAttachment")->property("visible").toBool(), "Sent hides Inbox quick filters");
-        pressSearch("searchSentToday");
-        const auto todayBound = h.backend.filters().value("after").toString();
-        const auto tomorrowBound = h.backend.filters().value("before").toString();
-        require(QDate::fromString(todayBound, Qt::ISODate).daysTo(QDate::fromString(tomorrowBound, Qt::ISODate)) == 1, "Today is one complete UTC day");
-        pressSearch("searchSentYesterday");
-        require(h.backend.filters().value("before").toString() == todayBound, "Yesterday ends at today's boundary");
-        pressSearch("searchSentEarlier");
-        require(!h.backend.filters().contains("after") && h.backend.filters().value("before").toString() < todayBound, "Earlier has only an exclusive upper bound");
-        pressSearch("searchSentEarlier");
-        require(!h.backend.filters().contains("before"), "selected Sent date toggles off");
-        pressSearch("searchScope_inbox");
+        auto shown = [&](const char *name) { auto *item = qobject_cast<QQuickItem *>(named(window, name)); return item && item->isVisible(); };
+        auto textOf = [&](const char *name) { auto *item = named(window, name); return item ? item->property("text").toString() : QString(); };
+        // Empty query: the three advertised operators, and no recent searches yet.
+        require(shown("mailSearchOperator_subject") && shown("mailSearchOperator_body") && shown("mailSearchOperator_from"), "Narrow it down offers subject:, body: and from:");
+        require(!shown("mailSearchOperator_label") && !shown("mailSearchOperator_is") && !shown("mailRecentSearch_0"), "label:, is: and recents are not offered on a new account");
+        pressSearch("mailSearchOperator_from");
+        require(h.backend.query() == "from:", "an operator is appended to the query");
+        await([&] { return searchField->hasActiveFocus() && searchField->property("cursorPosition").toInt() == 5; }, "typing continues at the end of the box");
+        // After from:, the account's people, picked by address.
+        await([&] { return h.methods.contains("search_senders") && shown("mailSearchPerson_0"); }, "people follow a trailing from:");
+        pressSearch("mailSearchPerson_0");
+        require(h.backend.query() == "from:maya@example.test ", "picking a person fills in the address");
+        // Core's reading appears as removable chips with the result count.
+        h.backend.setQuery("relay subject:board deck");
+        await([&] { return shown("mailSearchChip_1") && textOf("mailSearchCount") == "12 conversations"; }, "the reading and its count follow the search");
+        auto accessibleName = [&](const char *name) { auto *item = named(window, name); auto *face = item ? QAccessible::queryAccessibleInterface(item) : nullptr; return face ? face->text(QAccessible::Name) : QString(); };
+        require(accessibleName("mailSearchChip_0") == "Subject or body relay" && accessibleName("mailSearchChip_1") == "Subject board deck", "each chip names a part as Core read it");
+        pressSearch("removeMailSearchChip_1");
+        require(h.backend.query() == "relay", "removing a chip rebuilds the query without that part");
+        // A partial operator offers completion.
+        h.backend.setQuery("relay fr");
+        await([&] { return shown("mailSearchComplete_from") && !shown("mailSearchComplete_subject"); }, "a partial operator offers completion");
+        pressSearch("mailSearchComplete_from");
+        require(h.backend.query() == "relay from:", "completion replaces the partial operator");
+        // An unreadable query explains itself instead of a count.
+        h.backend.setQuery("relay is:snoozed");
+        await([&] { return shown("mailSearchError") && textOf("mailSearchError").contains("is: accepts") && !shown("mailSearchCount"); }, "an unreadable query shows Core's explanation");
+        require(h.backend.error().isEmpty(), "an unreadable query raises no app-wide error");
+        // Enter runs the search, remembers it and closes the dropdown.
+        h.backend.setQuery("relay");
+        searchField->forceActiveFocus(Qt::OtherFocusReason);
+        QKeyEvent enterPress(QEvent::KeyPress, Qt::Key_Return, Qt::NoModifier);
+        QCoreApplication::sendEvent(window, &enterPress);
+        QKeyEvent enterRelease(QEvent::KeyRelease, Qt::Key_Return, Qt::NoModifier);
+        QCoreApplication::sendEvent(window, &enterRelease);
+        await([&] { return !mailPopup->property("visible").toBool() && !searchField->hasActiveFocus(); }, "Enter closes the dropdown and leaves the box");
+        require(h.backend.recentSearches() == QStringList{"relay"} && h.backend.query() == "relay", "Enter saves the search to Recent");
+        // Recent searches run with one click and can be removed.
+        h.backend.setQuery("");
+        searchField->forceActiveFocus(Qt::TabFocusReason);
+        await([&] { return mailPopup->property("opened").toBool() && shown("mailRecentSearch_0"); }, "Recent lists the saved search");
+        pressSearch("mailRecentSearch_0");
+        require(h.backend.query() == "relay" && !mailPopup->property("opened").toBool(), "a recent search runs and closes the dropdown");
+        h.backend.setQuery("");
+        searchField->forceActiveFocus(Qt::TabFocusReason);
+        await([&] { return mailPopup->property("opened").toBool() && shown("removeMailRecentSearch_0"); }, "a recent search offers removal");
+        pressSearch("removeMailRecentSearch_0");
+        require(h.backend.recentSearches().isEmpty() && mailPopup->property("opened").toBool(), "removing a recent search keeps the dropdown open");
+        // The dropdown hangs from the box's right edge and never clips.
+        auto *box = qobject_cast<QQuickItem *>(named(window, "searchBox"));
+        auto popupEdge = [&](bool right) {
+            auto *content = mailPopup->property("contentItem").value<QQuickItem *>();
+            return content->mapToScene(QPointF(right ? content->width() : 0, 0)).x();
+        };
+        auto boxRight = [&] { return box->mapToScene(QPointF(box->width(), 0)).x(); };
+        require(box, "search box exists");
         bool widePainted=false; auto wideFrame=QObject::connect(window,&QQuickWindow::frameSwapped,[&]{widePainted=true;});
         window->resize(1400,700); window->requestUpdate();
         await([&]{return widePainted;},"wide search layout settles"); QObject::disconnect(wideFrame);
         require(QMetaObject::invokeMethod(window,"openSearch"),"search anchors to the wide window");
-        const auto widePopupX=mailPopup->property("x").toDouble();
-        require(widePopupX+mailPopup->property("width").toDouble()>1000,"wide search popup needs repositioning at the smaller width");
+        await([&] { return qAbs(popupEdge(true) - boxRight()) < 1 && qAbs(mailPopup->property("width").toDouble() - 440) < .5; }, "the 440px dropdown hangs from the search box's right edge");
         window->resize(1000,700);
-        await([&]{return mailPopup->property("x").toDouble()+mailPopup->property("width").toDouble()<=988;},"open search follows the smaller viewport");
+        await([&] { return qAbs(popupEdge(true) - boxRight()) < 1 && popupEdge(false) >= 15.5; }, "open search follows the smaller viewport without clipping");
         require(mailPopup->property("opened").toBool() && searchField->hasActiveFocus(),"resize preserves the open popup and typing focus");
         const auto mailCaptures = qEnvironmentVariable("FM_MAIL_SEARCH_CAPTURE_DIR");
         if (!mailCaptures.isEmpty()) {
             require(QDir().mkpath(mailCaptures), "mail search capture directory");
             h.backend.m_categories = {QVariantMap{{"id","planning"},{"name","Planning"},{"conversation_count",0}},QVariantMap{{"id","finance"},{"name","Finance"},{"conversation_count",0}},QVariantMap{{"id","infra"},{"name","Infrastructure"},{"conversation_count",0}}};
             emit h.backend.categoriesChanged();
-            mailPopup->setProperty("senderOptions", QVariantList{QVariantMap{{"name","Maya Chen"},{"email","maya@example.test"}},QVariantMap{{"name","North American infrastructure planning and operations team"},{"email","planning@example.test"}}});
+            h.backend.setQuery("relay subject:board deck from:"); await([&] { return shown("mailSearchPerson_0"); }, "capture shows a reading and people");
             for (const auto theme : {"graphite", "paper", "terminal"}) {
                 h.backend.m_preferences["theme"] = theme; emit h.backend.preferencesChanged();
                 bool painted = false; auto connection = QObject::connect(window, &QQuickWindow::frameSwapped, [&] { painted = true; });

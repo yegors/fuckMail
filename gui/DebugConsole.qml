@@ -13,6 +13,7 @@ Popup {
     property var previousFocus: null
     property string displayText: ""
     property string copyStatus: ""
+    property int viewRevision: 0
     readonly property bool blocksWorkspaceShortcuts: true
     parent: Overlay.overlay
     width: Math.min(1100, parent.width - 40)
@@ -35,18 +36,26 @@ Popup {
         if (opened) close()
         else { previousFocus = hostWindow.activeFocusItem; open() }
     }
-    function updateView() {
+    function updateView(resetScroll) {
         if (!diagnostics || !opened || paused) return
-        const atEnd = scroll.contentItem.contentY >= scroll.contentItem.contentHeight - scroll.height - 24
-        displayText = showState ? diagnostics.stateText : diagnostics.events(level.currentText, filter.text)
-        if (!showState && atEnd) Qt.callLater(function() {
-            scroll.contentItem.contentY = Math.max(0, scroll.contentItem.contentHeight - scroll.height)
+        const flick = scroll.contentItem
+        const oldY = flick.contentY
+        const oldMax = Math.max(0, flick.contentHeight - flick.height)
+        const follow = !resetScroll && oldY >= oldMax - 24
+        const next = showState ? diagnostics.stateText : diagnostics.events(level.currentText, filter.text, scope.currentText)
+        if (next === displayText) return
+        displayText = next
+        const revision = ++viewRevision
+        Qt.callLater(function() {
+            if (revision !== viewRevision || !opened) return
+            const maxY = Math.max(0, flick.contentHeight - flick.height)
+            flick.contentY = resetScroll ? 0 : follow ? maxY : Math.min(oldY, maxY)
         })
     }
     onOpened: { diagnostics.refresh(); updateView(); output.forceActiveFocus() }
     onClosed: if (previousFocus && previousFocus.visible) previousFocus.forceActiveFocus()
     onPausedChanged: if (!paused) updateView()
-    onShowStateChanged: { paused = false; updateView(); scroll.contentItem.contentY = 0 }
+    onShowStateChanged: { paused = false; updateView(true) }
     Connections { target: panel.diagnostics; function onChanged() { panel.updateView() } }
     Shortcut {
         sequences: ["`", "~", "Shift+~", "Shift+`"]
@@ -68,7 +77,7 @@ Popup {
         }
         Label {
             Layout.fillWidth: true
-            text: "This session · " + (panel.diagnostics ? panel.diagnostics.count : 0) + " / 1000 events · " + (panel.diagnostics ? panel.diagnostics.dropped : 0) + " older events evicted · account aliases, no request payloads"
+            text: "This view · " + (panel.diagnostics ? panel.diagnostics.count : 0) + " / 1000 events · " + (panel.diagnostics ? panel.diagnostics.dropped : 0) + " older events evicted · disk logs: " + (panel.diagnostics ? panel.diagnostics.logDirectory : "unavailable")
             color: Theme.muted; font.pointSize: Theme.fontPoints(12); wrapMode: Text.Wrap
         }
         RowLayout {
@@ -79,21 +88,29 @@ Popup {
                 id: level; objectName: "debugLevel"; visible: !panel.showState
                 model: ["All", "Warnings + errors", "ERROR", "WARN", "INFO", "DEBUG"]
                 Layout.preferredWidth: 175
-                onCurrentTextChanged: panel.updateView()
+                onCurrentTextChanged: panel.updateView(true)
                 Accessible.name: "Event severity"
+            }
+            FmComboBox {
+                id: scope; objectName: "debugScope"; visible: !panel.showState
+                model: ["All", "App", "IPC", "Sync", "Auth", "Model", "Mail", "Calendar", "Drafts", "Sending", "Accounts", "Settings", "Search", "Qt", "Other"]
+                Layout.preferredWidth: 150
+                onCurrentTextChanged: panel.updateView(true)
+                Accessible.name: "Subsystem scope"
             }
             FmTextField {
                 id: filter; objectName: "debugFilter"; visible: !panel.showState
                 Layout.fillWidth: true; placeholderText: "Filter events…"
-                onTextChanged: panel.updateView()
+                onTextChanged: panel.updateView(true)
                 Accessible.name: "Filter debug events"
             }
             Item { visible: panel.showState; Layout.fillWidth: true }
             FmButton { objectName: "debugPause"; text: panel.paused ? "Resume view" : "Pause view"; onClicked: panel.paused = !panel.paused }
-            FmButton { text: "Clear"; onClicked: { panel.paused = false; panel.diagnostics.clear(); panel.updateView() } }
+            FmButton { text: "Clear view"; onClicked: { panel.paused = false; panel.diagnostics.clear(); panel.updateView() } }
         }
         ScrollView {
             id: scroll
+            objectName: "debugScroll"
             Layout.fillWidth: true; Layout.fillHeight: true
             clip: true
             ScrollBar.vertical: FmScrollBar { x: scroll.width - width; height: scroll.height }

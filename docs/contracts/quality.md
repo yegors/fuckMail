@@ -1,5 +1,76 @@
 # Quality, performance and release acceptance
 
+## D105 — HTML reader checks (Quality75)
+
+**Sanitiser tests**
+- A hostile corpus is neutralised: scripts, handlers, script-bearing URLs, CSS `url()`/`@import`/`expression`, forms, SVG, `<base>`, meta refresh and MSO conditionals.
+- Attribute and CSS values are validated.
+- Nesting and size limits hold. Quoted history is removed except in forwards.
+- Plain-only mail has no HTML part.
+- Plain-text links trim trailing sentence punctuation.
+- Block patterns follow the export's rules.
+
+**Core tests**
+- The scoped view resolves `cid:` and `data:` images, and reports cached images on reopen.
+- The image decoder accepts PNG, JPEG, GIF and WebP within bounds and refuses other bytes, including SVG.
+- The image cache is kept per account under its limit.
+- Remote preferences are validated.
+- Link hosts are counted across accounts, outside the current conversation, and follow their message on delete.
+- A schema33 profile gains the link index once.
+
+**Fetch path, against a loopback HTTPS origin and an authenticating loopback HTTPS proxy**
+- Only public https targets are allowed.
+- Only the fixed headers are sent.
+- Oversize images and missing resources fail.
+- Redirects to http, redirect loops and redirects to a blocked host are refused without contacting the blocked host.
+- `http://` is never requested, and cancellation holds.
+- In proxy mode the origin, which has no DNS record, is reached only through the proxy's CONNECT.
+- A wrong password and an unreachable proxy both fail, and no request reaches the origin directly.
+
+**Engine session test on the demo fixture**
+- `message_html` is sanitised and carries no source URLs.
+- `cached_only` returns `not_cached`.
+- A blocked pattern returns `blocked` with `by`, and an unnormalised pattern is refused.
+- Link summaries and pattern counts match.
+- The cache limit is 256 MiB.
+
+**CLI:** the new commands need their scope before storage is touched.
+
+**Native `gui-html-view` (45 checks)**
+- Link rules, layout and placeholders.
+- Declared sizes never reflow; an undeclared image reflows once; blocked images are never drawn and their pixels are released.
+- Hover and click, selection and copy.
+- Restyling links keeps the height while the view lays out again, and keeps the text.
+- Scale-to-fit at 900 px and the 0.5 floor.
+- Content laid out before has its height on its first frame.
+- A long document keeps at most 4 tiles, and scrolling paints each new position.
+- Failure fallback, tile release, and no Qt warnings.
+
+**Native `gui-html-message-body` (43 checks)**
+- The full body flow: inline images only without asking; Load images after the bar has laid out; blocked links; hover; cancellation on leave.
+- The proxy-unavailable bar with Retry, and Always from.
+- A held message shown again uses the cached result and has its final height on its first frame, with no new image requests.
+- Text fallback, the settings panel, and no QML warnings.
+- Disabling the height memory makes the three first-frame checks fail.
+
+**Rules**
+- No automated test fetches from the real internet, uses a real mailbox or contacts a real proxy.
+- Plan budgets, fuzzing, the litehtml differential check, other hosts and the founder's fidelity review remain required before H1's go decision.
+
+Consumers: Core57, Mail UI74, CLI44 and Platform19. [Execution record](../research/html-mail.md#d105--html-reader-implementation-2026-09-24).
+
+## D104 — fifth-export and native suite checks (Quality74)
+
+The native suite must not fail routinely: a test that checks superseded behaviour is updated to the current contract, not left failing. The local-model test drives the header Summarize icon, the neutral progress box, a contained failure and a successful retry. The selection test covers the sender pill, avatar and recipient-name contact cards, the omitted To-self line, and the text reader when the HTML view is unavailable. The navigation-cache test checks the prepared text reader, recipients and saved summary on the first painted frame; the HTML view's own first paint belongs to the HTML reader's tests. The integration walkthrough saves a conflicting view from the CLI, confirms status polling continues, then closes and reads back both the GUI's pending list position and the CLI-only field. The send-undo test keeps a queued Send's draft check across navigation. Visual checks compare offscreen native frames with the served export for the reader, summary states, Month and Week. Consumers: Mail UI73. [Execution record](../research/prototype-september-23.md#d104--fifth-export-2026-09-24).
+
+## D103 — diagnostic log checks (Quality73)
+
+Verify per-profile private log placement after engine admission, redacted/allowlisted metadata, severity and subsystem filtering, model start/completion/failure fields, UTF-8/Unicode summary length, sync state and page/pass counters, 2.5 MiB current/previous segments for each process, engine-to-console import, 1,000-entry view eviction, and stable scroll position while new events arrive. GUI and engine together budget about 10 MiB of retained diagnostic files. Focused Windows checks are recorded in [the D103 execution record](../research/local-assistance-execution.md#d103--persistent-scoped-diagnostics-2026-09-24); current full GUI/package and other-host checks remain separate.
+
+## D101 — search grammar and fourth-export checks (Quality72)
+
+Core tests cover the grammar parser; bare words against subject and text but not the sender; `from:` on senders, a bare address, and Sent recipients; `label:`, `is:` and `has:` agreeing with the typed filters they stand for; conflicts, limits and malformed operators; `search_terms`; Done month counts in a client zone, including a month boundary that differs between UTC and that zone; independent month collapse; `search_senders` ranking and recipients; and the two new view keys. Draft search keeps its own cases. The native suite must add no failures. Its search test drives the real dropdown: operators, completion, people after `from:`, chip reading and removal, an unreadable query that raises no app-wide error, Enter with Recent, removing a recent search, and right-edge placement across a resize. The navigation self-test runs the combined grammar against the fixture engine with two refused queries that keep the last results. The Calendar controls test checks one band height in Day, Week and Month, Day's sidebar counts, the hover ghost over empty, busy and last slots, and a Month week number opening its week. Visual checks compare offscreen native frames with the served export. Consumers: Search7, Core56, Mail UI71 and CLI43. [Execution record](../research/prototype-september-23.md#d101--fourth-export-2026-09-24).
+
 ## D099 — GUI memory checks (Quality71)
 
 Memory is measured on the optimized build with three fresh demo profiles per view (Mail, Calendar, Settings), the fixture clock and a 20-second settle. Record working set, private bytes and resident Windows heap. A memory change must also show no visual change: compare icons and buttons with their former rendering at 1, 1.25, 1.5 and 2 device pixel ratio, and the 14 deterministic app captures. The Mail navigation and Calendar benchmarks must not regress against the previous build on the same host, and the native suite must add no failures. UI that is now built on first use is timed against the previous build: startup to first frame, the first Settings open and each page's first visit. These must stay within the existing 100 ms interaction budget. Consumers: Mail UI70. [Execution record](../research/prototype-september-23.md#d099--gui-memory-2026-09-24).

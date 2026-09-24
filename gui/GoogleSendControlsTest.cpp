@@ -412,6 +412,8 @@ ApplicationWindow { width: 900; height: 1200; visible: true
             else if(method=="google_sync_status") peer->write(reply(id,{{"accounts",QJsonArray{}},{"limits",QJsonObject{}}}));
             else if(method=="accounts") peer->write(reply(id,{{"accounts",QJsonArray::fromVariantList(backend.m_allAccounts)}}));
             else if(method=="view_save") peer->write(reply(id,{{"revision",1}}));
+            // The account refresh may also reload Sent's outgoing status.
+            else if(method=="google_sent") peer->write(reply(id,{{"account",request["account"]},{"outgoing",QJsonArray{}},{"next_offset",QJsonValue::Null}}));
             else return false;
             return true;
         };

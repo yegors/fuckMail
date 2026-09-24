@@ -1,6 +1,7 @@
 //! Bounded, session-owned inference jobs. No model networking on the writer.
 use crate::{
     core_tasks::CoreBridge,
+    diagnostics,
     ollama::{self, failure},
 };
 use fm_assist::ollama::Settings;
@@ -10,6 +11,7 @@ use serde_json::{json, Value};
 use std::{
     collections::BTreeMap,
     sync::{Arc, Mutex},
+    time::Instant,
 };
 use tokio::sync::Semaphore;
 mod backlog;
@@ -397,12 +399,27 @@ impl Runtime {
     if let Some(settings)=sample_settings{
      let categories:Vec<String>=sample_payload["labels"].as_array().unwrap().iter().map(|v|v["id"].as_str().unwrap().to_owned()).collect();let sources=vec!["sample-message".to_owned()];
      let payload=sample_payload;
-     let output=ollama::infer(&settings,&task,payload,&categories,&sources,&token).await?;outputs.push(json!({"task":task,"output":output,"sample":true}));
+     let started=Instant::now();
+     diagnostics::event("Model","started",json!({"job_ref":&job_id[..8],"target_ref":diagnostics::reference("message","sample-message"),"task":task,"origin":"sample","input_chars":payload.to_string().chars().count(),
+        "provider":settings.provider.as_str(),"model":settings.model(&task).map(|m|m.name.as_str()),
+        "model_digest":settings.model(&task).map(|m|m.digest.as_str())}));
+     let output=ollama::infer(&settings,&task,payload,&categories,&sources,&token).await?;
+     diagnostics::event("Model","completed",analysis_fields(&job_id,"","sample-message",&task,"sample",&output,false,started));
+     outputs.push(json!({"task":task,"output":output,"sample":true}));
     }else{for plan in plans{
      if token.is_cancelled(){return Err(failure("assistance_canceled","Canceled"));}
      let check=plan.clone();runtime.core.call(move|s|s.local_model_validate(&check)).await?;
+     let started=Instant::now();
+     let origin=if plan.arrival{"arrival"}else{"manual"};
+     diagnostics::event("Model","started",json!({"job_ref":&job_id[..8],"account_ref":diagnostics::reference("account",&plan.account),"target_ref":diagnostics::reference("message",&plan.target),"task":task,"origin":origin,"input_chars":plan.payload.to_string().chars().count(),"partial":plan.partial,"source_count":plan.sources.len(),"label_choices":plan.categories.len(),
+        "provider":plan.settings.provider.as_str(),"model":plan.settings.model(&task).map(|m|m.name.as_str()),
+        "model_digest":plan.settings.model(&task).map(|m|m.digest.as_str())}));
      let output=ollama::infer(&plan.settings,&task,plan.payload.clone(),&plan.categories,&plan.sources,&token).await?;
+     let mut facts=analysis_fields(&job_id,&plan.account,&plan.target,&task,origin,&output,plan.partial,started);
      let stop=token.clone();let result=runtime.core.call(move|s|{if stop.is_cancelled(){return Err(failure("assistance_canceled","Canceled"));}s.local_model_finish(&plan,output)}).await?;
+     facts["label_state"]=if task=="message" {result["items"].as_array().and_then(|items|items.iter().find(|item|item["task"]=="classification")).map(|item|item["label_state"].clone()).unwrap_or(Value::Null)}else{result["label_state"].clone()};
+     facts["prompt_sha256"]=if task=="message" {result["items"].as_array().and_then(|items|items.first()).map(|item|item["prompt_sha256"].clone()).unwrap_or(Value::Null)}else{result["prompt_sha256"].clone()};
+     diagnostics::event("Model","completed",facts);
      outputs.push(result);runtime.state(&job_id,json!({"job_id":job_id,"status":"running","completed":outputs.len(),"total":total}));
     }}Ok(())
    }.await;
@@ -416,8 +433,37 @@ impl Runtime {
             let error = result
                 .err()
                 .map(|e| json!({"code":e.code,"message":e.message}));
+            if let Some(error) = &error {
+                diagnostics::event("Model","failed",json!({"job_ref":&job_id[..8],"task":task,"code":error["code"],"completed":outputs.len(),"total":total}));
+            } else if status == "canceled" {
+                diagnostics::event("Model","canceled",json!({"job_ref":&job_id[..8],"task":task,"completed":outputs.len(),"total":total}));
+            }
             runtime.state(&job_id,json!({"job_id":job_id,"status":status,"completed":outputs.len(),"total":total,"items":outputs,"error":error}));
         });
         Ok(json!({"job_id":id,"status":"queued"}))
+    }
+}
+
+fn analysis_fields(job_id: &str, account: &str, target: &str, task: &str, origin: &str, output: &Value, partial: bool, started: Instant) -> Value {
+    json!({"job_ref":&job_id[..8],"account_ref":diagnostics::reference("account",account),"target_ref":diagnostics::reference("message",target),"task":task,"origin":origin,"elapsed_ms":started.elapsed().as_millis(),
+        "summary_chars":output["summary"].as_str().map(|s|s.chars().count()),
+        "sender_kind":output["sender_kind"],"category_ids":output["category_ids"],
+        "category_abstain":output["category_abstain"],"partial":partial})
+}
+
+#[cfg(test)]
+mod diagnostic_tests {
+    use super::*;
+    #[test]
+    fn records_classification_and_unicode_summary_length_without_mail_text() {
+        let output = json!({"summary":"Hi 🌍", "sender_kind":"human", "category_ids":["work"],
+            "category_abstain":false, "reason":"private explanation", "source_ids":["private-message"]});
+        let facts = analysis_fields("abcdefgh-more", "private-account", "private-message", "message", "arrival", &output, true, Instant::now());
+        assert_eq!(facts["summary_chars"], 4);
+        assert_eq!(facts["sender_kind"], "human");
+        assert_eq!(facts["category_ids"], json!(["work"]));
+        assert_eq!(facts["partial"], true);
+        assert!(!facts.to_string().contains("private explanation"));
+        assert!(!facts.to_string().contains("private-message"));
     }
 }

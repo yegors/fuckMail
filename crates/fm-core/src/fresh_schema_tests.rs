@@ -18,7 +18,7 @@ fn new_live_profile_has_direct_strict_schema_and_valid_references() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(strict_tables, 60);
+    assert_eq!(strict_tables, 63);
     let fts_content_tables: i64 = store
         .db
         .query_row(
@@ -166,8 +166,8 @@ fn baseline_profiles_upgrade_to_the_current_schema_once() {
     drop(Store::open_live(temp.path()).unwrap());
     let path = temp.path().join("store.sqlite3");
     let db = Connection::open(&path).unwrap();
-    // A schema32 profile predates the calendar mail count date index.
-    db.execute_batch("DROP INDEX google_mail_coverage_by_date; PRAGMA user_version=32;")
+    // A schema32 profile predates the calendar mail count date index and the link index.
+    db.execute_batch("DROP INDEX google_mail_coverage_by_date; DROP TABLE message_link_hosts; DROP TABLE link_hosts; DROP TABLE link_index_state; PRAGMA user_version=32;")
         .unwrap();
     drop(db);
     let store = Store::open(temp.path()).unwrap();
@@ -187,4 +187,33 @@ fn baseline_profiles_upgrade_to_the_current_schema_once() {
     assert!(plan.contains("google_mail_coverage_by_date") && plan.contains("internal_date_ms>?"));
     drop(store);
     Store::open(temp.path()).unwrap();
+}
+
+#[test]
+fn schema33_profiles_gain_the_link_index() {
+    let temp = tempfile::tempdir().unwrap();
+    drop(Store::open_live(temp.path()).unwrap());
+    let path = temp.path().join("store.sqlite3");
+    let db = Connection::open(&path).unwrap();
+    db.execute_batch("DROP TABLE message_link_hosts; DROP TABLE link_hosts; DROP TABLE link_index_state; PRAGMA user_version=33;")
+        .unwrap();
+    drop(db);
+    let store = Store::open(temp.path()).unwrap();
+    let version: u32 = store
+        .db
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, SCHEMA_VERSION);
+    let plan: String = store
+        .db
+        .query_row(
+            "EXPLAIN QUERY PLAN SELECT count(*) FROM message_link_hosts WHERE host=1",
+            [],
+            |row| row.get(3),
+        )
+        .unwrap();
+    assert!(
+        plan.contains("PRIMARY KEY") || plan.contains("COVERING INDEX"),
+        "{plan}"
+    );
 }

@@ -3,7 +3,15 @@
 #include <QJsonDocument>
 #include <utility>
 
-namespace { constexpr qsizetype maxFrame = 1024 * 1024; }
+namespace {
+constexpr qsizetype maxFrame = 1024 * 1024;
+// The HTML reader's calls. Local reads work in synthetic profiles too; image
+// fetches and the proxy test outlast the engine's 15-second fetch limit.
+bool remoteContent(const QString &method) {
+    return method == "message_html" || method == "message_image" || method == "link_host_summary" || method == "link_pattern_counts"
+        || method == "remote_proxy_test" || method == "remote_proxy_password" || method == "remote_image_cache";
+}
+}
 
 GoogleOperation::GoogleOperation(QString account, QString requestId, QObject *parent)
     : QObject(parent), m_account(std::move(account)), m_requestId(std::move(requestId)) {
@@ -47,7 +55,8 @@ void GoogleOperation::start(const QString &profile, qint64 enginePid, const QStr
         && method != "google_draft_authoring" && method != "google_draft_copy" && method != "google_draft_adopt"
         && method != "google_draft_delete" && method != "google_draft_delete_reconcile" && method != "google_draft_delete_abandon"
         && method != "draft_transfer" && method != "draft_attachment_import" && method != "google_draft_source" && method != "google_drafts_refresh"
-        && method != "conversation" && method != "message_source" && method != "assist_results" && method != "assist_settings_get") {
+        && method != "conversation" && method != "message_source" && method != "assist_results" && method != "assist_settings_get"
+        && !remoteContent(method)) {
         reject("invalid_request", "Unsupported Google operation."); return;
     }
     QString error;
@@ -68,7 +77,7 @@ void GoogleOperation::start(const QString &profile, qint64 enginePid, const QStr
 
 void GoogleOperation::write(const QString &id, const QString &method, const QJsonObject &params) {
     QJsonObject envelope{{"version", 1}, {"id", id}, {"method", method}, {"params", params}};
-    if (method != "hello") envelope["account"] = m_account;
+    if (method != "hello" && !m_account.isEmpty()) envelope["account"] = m_account;
     const auto wire = QJsonDocument(envelope).toJson(QJsonDocument::Compact) + '\n';
     if (wire.size() > maxFrame) { reject("invalid_request", "This Google request exceeds the local interface limit."); return; }
     if (m_socket.write(wire) != wire.size()) reject("engine_disconnected", "The local engine could not receive this request.");
@@ -97,14 +106,17 @@ void GoogleOperation::receive() {
     const auto mode = result["mode"].toString();
     const bool localImport = m_method == "draft_attachment_import" || m_method == "google_draft_source"
         || m_method == "google_draft_authoring" || m_method == "google_draft_copy" || m_method == "draft_transfer"
-        || m_method == "conversation" || m_method == "message_source" || m_method == "assist_results" || m_method == "assist_settings_get";
+        || m_method == "conversation" || m_method == "message_source" || m_method == "assist_results" || m_method == "assist_settings_get"
+        || remoteContent(m_method);
     if (mode != "live" && !(localImport && mode == "synthetic")) {
         reject("profile_mode_mismatch", "Google operations require a live profile."); return;
     }
     m_hello = true;
     // Quota cooldown can exceed the ordinary local query timeout. The user can
     // cancel at any time; no timeout automatically repeats a provider mutation.
-    m_timer.start(m_method == "conversation" || m_method == "message_source" || m_method == "assist_results" || m_method == "assist_settings_get" ? 15000 : localImport ? 60 * 1000 : 10 * 60 * 1000);
+    m_timer.start(m_method == "message_image" || m_method == "remote_proxy_test" ? 25000
+        : m_method == "conversation" || m_method == "message_source" || m_method == "assist_results" || m_method == "assist_settings_get" || remoteContent(m_method) ? 15000
+        : localImport ? 60 * 1000 : 10 * 60 * 1000);
     const auto params = std::exchange(m_params, QJsonObject{});
     write("operation", m_method, params);
 }

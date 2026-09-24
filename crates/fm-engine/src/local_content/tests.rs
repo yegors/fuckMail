@@ -272,6 +272,11 @@ async fn authenticated_import_sessions_drain_preparation_on_client_and_engine_cl
                 queue.clone(),
                 Arc::new(Semaphore::new(16)),
             ))),
+            remote: Arc::new(crate::remote_content::Runtime::new(
+                CoreBridge::new(queue.clone(), Arc::new(Semaphore::new(4))),
+                &std::env::temp_dir(),
+                None,
+            )),
         };
         let foreground = Arc::new(Semaphore::new(2));
         let engine = CancellationToken::new();

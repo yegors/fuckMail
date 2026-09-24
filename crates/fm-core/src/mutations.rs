@@ -531,8 +531,55 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
             "replyOpen",
             "selectedMember",
             "selectedDraft",
+            "recentSearches",
+            "collapsedSections",
         ],
     )?;
+    // Up to six committed searches, newest first, as typed.
+    if let Some(value) = view.get("recentSearches") {
+        let valid = value.as_array().is_some_and(|rows| {
+            rows.len() <= 6
+                && rows.iter().all(|row| {
+                    row.as_str().is_some_and(|s| {
+                        !s.trim().is_empty() && s.len() <= 512 && !s.contains(['\r', '\n'])
+                    })
+                })
+        });
+        if !valid {
+            return Err(err(
+                "invalid_request",
+                "recentSearches holds up to six one-line searches",
+            ));
+        }
+    }
+    // Collapsed Inbox sections: review, held or a Done month.
+    if let Some(value) = view.get("collapsedSections") {
+        let valid = value.as_array().is_some_and(|rows| {
+            rows.len() <= 258
+                && rows.iter().all(|row| {
+                    row.as_str().is_some_and(|s| {
+                        s == "review"
+                            || s == "held"
+                            || s == "done:undated"
+                            || s.strip_prefix("done:").is_some_and(|month| {
+                                month.len() == 7
+                                    && month.as_bytes()[4] == b'-'
+                                    && chrono::NaiveDate::parse_from_str(
+                                        &format!("{month}-01"),
+                                        "%Y-%m-%d",
+                                    )
+                                    .is_ok()
+                            })
+                    })
+                })
+        });
+        if !valid {
+            return Err(err(
+                "invalid_request",
+                "collapsedSections names review, held or done:YYYY-MM",
+            ));
+        }
+    }
     for key in [
         "selected",
         "conversation_id",

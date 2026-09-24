@@ -77,7 +77,7 @@ GuiSelfTest::GuiSelfTest(MailBackend &backend, QObject *window, QString profile,
     m_timer.setInterval(80);
     connect(&m_timer, &QTimer::timeout, this, [this] { step(); });
     connect(&m_backend, &MailBackend::shutdownReady, this, [this] {
-        if (m_stage >= 60 && m_stage != 66) { failed("Conflicting view save closed the GUI before recovery."); return; }
+        if (m_stage >= 60 && m_stage != 66) { failed("The GUI closed before the conflicting view save was merged."); return; }
         if (m_stage != 66) return;
         QProcess oracle;
         oracle.start(QDir(QFileInfo(m_engine).absolutePath()).filePath("fm"
@@ -89,10 +89,10 @@ GuiSelfTest::GuiSelfTest(MailBackend &backend, QObject *window, QString profile,
         const auto reply = QJsonDocument::fromJson(oracle.readAllStandardOutput()).object();
         const auto view = reply["result"].toObject()["view"].toObject();
         if (oracle.exitCode() != 0 || !reply["ok"].toBool() || view["listY"].toDouble() != 431 || view["calendarY"].toDouble() != 37) {
-            failed("Close retry did not preserve both the user's pending position and the CLI-only view field."); return;
+            failed(QString("Close did not merge the user's pending position with the CLI-only view field (listY %1, calendarY %2).").arg(view["listY"].toDouble()).arg(view["calendarY"].toDouble())); return;
         }
         m_backend.setProperty("selfTestCompleted", true);
-        qInfo().noquote() << "GUI self-test passed: native mail/reply/calendar controls, independent CLI readback, retained validation errors, and stale-close recovery with continued polling and merged view persistence.";
+        qInfo().noquote() << "GUI self-test passed: native mail/reply/calendar controls, independent CLI readback, retained validation errors, continued polling, and a quiet stale-close merge of both view fields.";
     });
     m_timer.start();
 }
@@ -552,7 +552,7 @@ void GuiSelfTest::step() {
         // Reach the retained operation through the actual Sent footer and
         // its secondary history popup; no backend inspect call drives this route.
         if (!QMetaObject::invokeMethod(list, "positionViewAtEnd")) { failed("Sent list could not expose its local capture footer."); return; }
-        m_backend.remember("listY", list->property("contentY")); m_stage = 92; break;
+        m_backend.remember("listY", list->property("contentY").toDouble() - list->property("originY").toDouble()); m_stage = 92; break;
     }
     case 92: {
         auto window = qobject_cast<QQuickWindow *>(m_window);
@@ -953,19 +953,17 @@ void GuiSelfTest::step() {
         cliWithParams("view_save", m_shutdownViewParams, [this](auto) {});
         break;
     case 61:
-        m_backend.setProperty("selfTestExpectedError", true);
-        m_backend.remember("listY", 431); m_stage = 62; m_backend.shutdown(); break;
-    case 62:
-        if (!m_backend.error().contains("current mail view was not saved")) return;
-        if (!m_backend.connected()) { failed("A failed close lost the live GUI connection."); return; }
-        if (m_backend.presentation()["calendarY"].toDouble() != 37 || m_backend.presentation()["listY"].toDouble() != 431) return;
-        m_backend.clearError(); m_backend.setProperty("selfTestExpectedError", false);
-        m_shutdownExpectedStar = !membersHave("starred", true); m_stage = 63;
+        // The CLI saved first: the GUI's next view save meets a stale revision.
+        m_shutdownExpectedStar = !membersHave("starred", true); m_stage = 62;
         cli({"mail", m_shutdownExpectedStar ? "delay" : "undelay", m_backend.selectedId()}, [this](auto) {});
         break;
-    case 63:
+    case 62:
         if (!membersHave("starred", m_shutdownExpectedStar)) return;
-        // No explicit refresh above: this observes the resumed GUI status poll.
+        // No explicit refresh above: this observes the GUI status poll.
+        m_stage = 63; break;
+    case 63:
+        // Close merges the pending position into the CLI's newer view.
+        m_backend.remember("listY", 431);
         m_stage = 66; m_timer.stop(); m_backend.shutdown(); break;
     }
 }

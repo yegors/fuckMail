@@ -80,13 +80,10 @@ pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
         addresses("Bcc", parsed.bcc()),
         addresses("Reply to", parsed.reply_to()),
     ];
-    // body_html() can synthesize HTML from plain text; expose only an actual HTML part.
-    let html = if parsed.html_body.is_empty() {
-        None
-    } else {
-        parsed.body_html(0)
-    };
-    let (body_html, html_truncated) = bounded(html.as_deref().unwrap_or(""));
+    // mail-parser lists a plain part in html_body for plain-only mail and
+    // body_html() then synthesizes HTML; expose only an actual HTML part.
+    let html = fm_mail::html_view::html_part(&parsed);
+    let (body_html, html_truncated) = bounded(html.unwrap_or(""));
     let (raw, raw_truncated) = bounded(&String::from_utf8_lossy(&bytes));
     if cancel.is_cancelled() {
         return Err(err("cancelled", "Message read cancelled"));

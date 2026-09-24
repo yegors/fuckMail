@@ -134,7 +134,9 @@ if(BUILD_TESTING)
     add_test(NAME gui-attachments COMMAND "$<TARGET_FILE:fuckmail-gui>" --self-test --self-test-attachments)
     set_tests_properties(gui-attachments PROPERTIES TIMEOUT 90
         ENVIRONMENT "${FM_GUI_TEST_ENV};FM_GUI_TEST_TRACE=1")
-    add_test(NAME gui-startup-recovery COMMAND "${FM_CARGO}" test -p fm-engine --test sessions
+    # --workspace keeps rust-test-build's feature set; `-p fm-engine` builds
+    # fm-ipc differently and recompiles the engine inside this timeout.
+    add_test(NAME gui-startup-recovery COMMAND "${FM_CARGO}" test --workspace --test sessions
         --locked ${FM_CARGO_PROFILE_ARGS} --target-dir "${CMAKE_SOURCE_DIR}/target"
         gui_startup_recovers_after_writer_closes -- --ignored --exact --nocapture)
     set_tests_properties(gui-startup-recovery PROPERTIES WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"

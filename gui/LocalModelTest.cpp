@@ -92,8 +92,8 @@ int main(int argc,char **argv){
  for(const auto file:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"})require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+file)>=0,"load shipped font");
  QGuiApplication::setFont(QFont("Geist",10));
  Backend backend;QFile promptFile(QString(FM_GUI_SOURCE_DIR)+"/../crates/fm-assist/src/message-request.json");require(promptFile.open(QIODevice::ReadOnly),"default prompt available");backend.settings["prompt"]=QString::fromUtf8(promptFile.readAll());QTemporaryDir temp;auto dir=temp.filePath("ModelTest");require(QDir().mkpath(dir),"module directory");
- for(const auto name:{"FmScrollBar.qml","Theme.qml","FmCheckBox.qml","FmButton.qml","FmToolTip.qml","FmIcon.qml","FmComboBox.qml","FmTextField.qml","LocalModelSettings.qml","MailAssistance.qml","SummaryCard.qml","MessageAssistance.qml"})require(QFile::copy(QString(FM_GUI_SOURCE_DIR)+"/"+name,dir+"/"+name),"copy production QML");
- QFile module(dir+"/qmldir");require(module.open(QIODevice::WriteOnly),"module metadata");module.write("module ModelTest\nsingleton Theme 1.0 Theme.qml\nLocalModelSettings 1.0 LocalModelSettings.qml\nMailAssistance 1.0 MailAssistance.qml\nSummaryCard 1.0 SummaryCard.qml\nMessageAssistance 1.0 MessageAssistance.qml\n");module.close();
+ for(const auto name:{"FmScrollBar.qml","Theme.qml","FmCheckBox.qml","FmButton.qml","FmToolTip.qml","FmIcon.qml","FmComboBox.qml","FmTextField.qml","LocalModelSettings.qml","MailAssistance.qml","SummaryCard.qml","MessageAssistance.qml","MessageHeaderButton.qml","SummarizeAction.qml"})require(QFile::copy(QString(FM_GUI_SOURCE_DIR)+"/"+name,dir+"/"+name),"copy production QML");
+ QFile module(dir+"/qmldir");require(module.open(QIODevice::WriteOnly),"module metadata");module.write("module ModelTest\nsingleton Theme 1.0 Theme.qml\nLocalModelSettings 1.0 LocalModelSettings.qml\nMailAssistance 1.0 MailAssistance.qml\nSummaryCard 1.0 SummaryCard.qml\nMessageAssistance 1.0 MessageAssistance.qml\nMessageHeaderButton 1.0 MessageHeaderButton.qml\nSummarizeAction 1.0 SummarizeAction.qml\n");module.close();
  QQmlApplicationEngine qml; FmIconItem::registerType();bool warnings=false;QObject::connect(&qml,&QQmlEngine::warnings,[&](auto errors){warnings=true;for(const auto &e:errors)qWarning()<<e;});qml.addImportPath(temp.path());qml.rootContext()->setContextProperty("backend",&backend);
  qml.loadData(R"(import QtQuick
 import QtQuick.Controls
@@ -110,8 +110,11 @@ ApplicationWindow {width:680;height:900;visible:true;color:Theme.canvas
   Text{text:"Design review";color:Theme.text;font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(28);font.weight:Font.Medium}
   Text{text:"Alex · 2 messages · 2 h ago · Personal";color:Theme.muted;font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(13)}
   SummaryCard{objectName:"summaryFixture";Layout.fillWidth:true;result:controller.resultFor("summary","");busy:controller.workingOn("summary","");error:controller.errorFor("summary","");canSummarize:controller.summariesEnabled && !controller.busy;members:[{id:"message",sender_name:"Alex",sent_at:"2026-09-14T22:00:00Z"}];onRegenerate:controller.start("summary","");onCancelRequested:controller.cancel();onOpenSource:id=>openedSource=id}
-  Text{text:"Alex";color:Theme.text;font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(13);font.weight:Font.Medium}
-  MessageAssistance{objectName:"receivedActions";showKindControl:false;Layout.fillWidth:true;controller:controller;message:({id:"message",sender_name:"Alex",kind:"unknown",sent:false,revision:1})}
+  RowLayout{Layout.fillWidth:true
+   Text{text:"Alex";Layout.fillWidth:true;color:Theme.text;font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(13);font.weight:Font.Medium}
+   SummarizeAction{objectName:"summarizeMessage_"+receivedActions.message.id;visible:receivedActions.showSummarize;enabled:receivedActions.canSummarize;modelName:receivedActions.modelName;onClicked:receivedActions.summarize()}
+  }
+  MessageAssistance{id:receivedActions;objectName:"receivedActions";showKindControl:false;Layout.fillWidth:true;controller:controller;message:({id:"message",sender_name:"Alex",kind:"unknown",sent:false,revision:1})}
   Text{objectName:"receivedBody";Layout.fillWidth:true;wrapMode:Text.Wrap;text:"Hi, I reviewed the draft. The revised design is approved. Can we meet on Friday at 10 to discuss implementation?";color:Theme.text;font.family:Theme.fontFamily;font.pixelSize:Theme.fontSize(15)}
   MessageAssistance{objectName:"sentActions";Layout.fillWidth:true;controller:controller;message:({id:"sent-message",sender_name:"Me",kind:"unknown",sent:true,revision:1})}
  }
@@ -231,7 +234,7 @@ ApplicationWindow {width:680;height:900;visible:true;color:Theme.canvas
  receivedActions->setProperty("message",QVariantMap{{"id","fresh-message"},{"sender_name","Alex"},{"kind","unknown"},{"sent",false},{"revision",1}});
  await([&]{return find(window->contentItem(),"messageSummary_fresh-message")!=nullptr;});
  auto fresh=find(window->contentItem(),"messageSummary_fresh-message");backend.failPoll=true;invokeStart("summary","fresh-message");await([&]{return !controller->property("busy").toBool();});settle();
- require(find(fresh,"summaryError")->isVisible() && !find(window->contentItem(),"classificationError_fresh-message")->isVisible(),"first failure is contained without duplicate external feedback");
+ require(find(fresh,"summaryError")->isVisible() && !find(window->contentItem(),"classificationError_fresh-message")->isVisible(),"first failure is contained without duplicate external feedback");if(!motionCapture.isEmpty())require(window->grabWindow().save(motionCapture+"-failed.png"),"summary failure capture");
  const auto errorHeight=fresh->height(),errorBodyY=receivedBody->y();backend.failPoll=false;backend.delayPoll=true;
  invokeStart("summary","fresh-message");await([&]{return !backend.polls.empty();});settle();
  qInfo()<<"Retry geometry"<<errorHeight<<fresh->height()<<errorBodyY<<receivedBody->y()<<fresh->property("displayedError");

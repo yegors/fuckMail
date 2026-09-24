@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Window
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Shapes
 
 Item {
     id: calendar
@@ -107,7 +108,38 @@ Item {
     Binding on monthNumber { value: new Date(backend.calendarDate + "T12:00:00").getMonth(); when: calendar.monthView; restoreMode: Binding.RestoreNone }
     Binding on monthCells { value: calendar.monthCount; when: calendar.monthView; restoreMode: Binding.RestoreNone }
     readonly property var emptyDay: ({date: new Date(NaN), iso: ""})
-    function weekNumber() { let date = dateAt(3); let utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())); utc.setUTCDate(utc.getUTCDate() + 4 - (utc.getUTCDay() || 7)); return Math.ceil((((utc - new Date(Date.UTC(utc.getUTCFullYear(), 0, 1))) / 86400000) + 1) / 7) }
+    // ISO week of a row's midweek day, as the Week title and Month axis show it.
+    function isoWeek(date) { let utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())); utc.setUTCDate(utc.getUTCDate() + 4 - (utc.getUTCDay() || 7)); return Math.ceil((((utc - new Date(Date.UTC(utc.getUTCFullYear(), 0, 1))) / 86400000) + 1) / 7) }
+    function weekNumber() { return isoWeek(dateAt(3)) }
+    function openWeek(date) {
+        if (backend.openCalendarWeek !== undefined) backend.openCalendarWeek(date)
+        else { backend.setCalendarDate(date); backend.setCalendarView("week") }
+    }
+    // The band above the grid is 36px plus 28px per all-day row of the anchor
+    // week's busiest day, in Day, Week and Month alike, so switching views
+    // never moves the hour axis. Four rows at most; more fold into "+N all day".
+    function previewAllDayAt(index) { return previewRows.filter(function(e) { return e.all_day && e.day_index <= index && e.day_index + e.span_days > index }) }
+    readonly property int shownAllDayRows: {
+        let most = 0
+        if (timeGrid) for (let index = 0; index < dayCount; ++index) most = Math.max(most, allDayAt(index).length + previewAllDayAt(index).length)
+        return most
+    }
+    readonly property int bandRows: Math.min(4, Math.max(backend.calendarBandRows || 0, shownAllDayRows))
+    readonly property real bandHeight: 36 + 28 * bandRows
+    function bandChips(events, reserved) { const rows = Math.max(1, 4 - reserved); return events.length > rows ? events.slice(0, rows - 1) : events }
+    // Hovering an empty slot previews the half hour a click would create.
+    property var hoverSlot: ({})
+    readonly property bool canCreate: backend.connected && backend.calendarSources.some(function(s) { return s.writable })
+    readonly property real ghostHeight: Math.max(hourHeight / 2, 20)
+    function hoverAt(index, y) {
+        const t = Math.max(0, Math.min(23.5, Math.floor(y / hourHeight * 2) / 2))
+        if (hoverSlot.index !== index || hoverSlot.t !== t) hoverSlot = {index: index, t: t}
+    }
+    function leaveSlot(index) { if (hoverSlot.index === index) hoverSlot = ({}) }
+    function slotFree(index, t) {
+        const end = t + ghostHeight / hourHeight
+        return !eventsAt(index).some(function(e) { return !e.all_day && !calendar.editingEvent(e) && e.start_hour < end && e.start_hour + e.duration_hours > t })
+    }
     function rangeTitle() { return Qt.formatDate(dateAt(0), dateAt(0).getMonth() === dateAt(6).getMonth() ? "d" : "d MMM") + " – " + Qt.formatDate(dateAt(6), "d MMMM") }
     // Events bucketed by grid day once per change, in presentation order.
     readonly property var eventsByDay: {
@@ -188,7 +220,7 @@ Item {
         target: backend
         function onAccountChanged() { calendar.cancelRange() }
         function onConnectedChanged() { if (!backend.connected) calendar.cancelRange() }
-        function onEventsChanged() { if (calendar.rangeDrag.index !== undefined && (calendar.rangeDrag.from !== backend.calendarFrom || calendar.rangeDrag.view !== backend.calendarView)) calendar.cancelRange(); calendar.updateMailActivityContext() }
+        function onEventsChanged() { if (calendar.rangeDrag.index !== undefined && (calendar.rangeDrag.from !== backend.calendarFrom || calendar.rangeDrag.view !== backend.calendarView)) calendar.cancelRange(); calendar.hoverSlot = ({}); calendar.updateMailActivityContext() }
     }
     onHourHeightChanged: Qt.callLater(preserveGridPosition)
     onVisibleChanged: { updateMailActivityContext(); if (!visible) { cancelRange(); details.close(); datePicker.close(); moreMenu.close(); allDayOverflow.close() } }
@@ -200,6 +232,29 @@ Item {
     Shortcut { sequence: ShortcutRegistry.sequence("back",backend.preferences); enabled: calendar.shortcutsEnabled; onActivated: backend.moveCalendar(-1) }
     Shortcut { sequence: ShortcutRegistry.sequence("fwd",backend.preferences); enabled: calendar.shortcutsEnabled; onActivated: backend.moveCalendar(1) }
     Shortcut { sequence: ShortcutRegistry.sequence("today",backend.preferences); enabled: calendar.shortcutsEnabled; onActivated: backend.showCalendarToday() }
+
+    // One header-band row: Week fills its column with the title; Day sizes the
+    // chip to "All day · Title".
+    component AllDayChip: Rectangle {
+        id: chip
+        required property var modelData
+        property bool labelled: false
+        property real maximumWidth: 0
+        objectName: "calendarAllDay-" + (modelData.event_id || modelData.id)
+        width: labelled ? Math.min(chipText.implicitWidth + 22, maximumWidth) : maximumWidth; height: 22; radius: 3
+        color: chipMouse.containsMouse ? Theme.hover : Theme.selected
+        activeFocusOnTab: visible && backend.calendarReady
+        Keys.onReturnPressed: calendar.showEvent(modelData, chip)
+        Keys.onSpacePressed: calendar.showEvent(modelData, chip)
+        border.width: activeFocus ? 1 : 0; border.color: Theme.accent
+        Accessible.role: Accessible.Button; Accessible.name: modelData.title + ", " + modelData.start_display
+        Accessible.onPressAction: calendar.showEvent(modelData, chip)
+        Rectangle { width: 3; height: parent.height; color: parent.color }
+        Rectangle { width: 2; height: parent.height; color: calendar.sourceRule(chip.modelData) }
+        Text { id: chipText; x: chip.labelled ? 12 : 10; width: parent.width - x - (chip.labelled ? 10 : 8); height: parent.height; text: (chip.labelled ? "All day · " : "") + chip.modelData.title; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; textFormat: Text.PlainText }
+        MouseArea { id: chipMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: calendar.showEvent(chip.modelData, chip) }
+        FmToolTip { shown: chipMouse.containsMouse && !chip.labelled; text: "All day · " + chip.modelData.title }
+    }
 
     ColumnLayout {
         id: calendarColumn
@@ -277,90 +332,71 @@ Item {
             }
         }
         Text { visible: !backend.calendarReady && (!calendar.calendarLoading || calendar.slowLoad); text: backend.calendarCoverage; Layout.fillWidth: true; Layout.bottomMargin: 8; font.pointSize: Theme.fontPoints(11); color: Theme.subtle; wrapMode: Text.Wrap }
+        // Header band. A Week column shows its date, mail count and all-day
+        // chips; Day view shows only its chips, resting on the rule, since the
+        // title already names the day.
         RowLayout {
-            id: dayHeaderRow
-            visible: backend.calendarView === "day" || backend.calendarView === "week"
-            Layout.fillHeight: false; Layout.maximumHeight: implicitHeight
-            Layout.fillWidth: true; Layout.leftMargin: 56; Layout.rightMargin: backend.calendarView === "day" && calendar.width > 850 ? 352 : 0; spacing: 0
+            id: dayHeaderRow; objectName: "calendarBand"
+            visible: calendar.timeGrid
+            Layout.fillWidth: true; Layout.fillHeight: false
+            Layout.preferredHeight: calendar.bandHeight; Layout.maximumHeight: calendar.bandHeight
+            Layout.leftMargin: 56; Layout.rightMargin: backend.calendarView === "day" && calendar.width > 850 ? 352 : 0; spacing: 0
             Repeater { model: calendar.timeGrid ? calendar.dayCount : 0
-                ColumnLayout {
-                    id: dayHeader; required property int index; property var allDay: calendar.allDayAt(index)
-                    Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredWidth: 1; spacing: 0
-                    RowLayout { Layout.fillWidth: true; spacing: 8
-                        FmButton {
-                            Layout.fillWidth: true; implicitHeight: Math.round(Theme.fontSize(20) * 1.4); leftPadding: 10; rightPadding: 0; topPadding: 0; bottomPadding: 0
-                            onClicked: calendar.openDay(dayHeader.index); tip: "Open day"
-                            background: Rectangle { color: "transparent"; radius: 4; border.width: parent.activeFocus ? 1 : 0; border.color: Theme.focusBorder }
-                            contentItem: Item {
-                                implicitHeight: dayNumber.implicitHeight
-                                Text { id: dayNumber; anchors.verticalCenter: parent.verticalCenter; text: Qt.formatDate(calendar.dateAt(dayHeader.index), "d"); color: calendar.isoAt(dayHeader.index) === backend.todayDate ? Theme.accent : Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(20); font.weight: Font.Medium; font.letterSpacing: -0.4 }
-                                // Week names centre on the date; the day view shares its baseline.
-                                Text {
-                                    x: dayNumber.width + 8; text: Qt.formatDate(calendar.dateAt(dayHeader.index), calendar.dayCount === 1 ? "dddd" : "ddd"); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
-                                    y: calendar.dayCount === 1 ? dayNumber.y + dayNumber.baselineOffset - baselineOffset : (parent.height - height) / 2
-                                }
-                            }
-                        }
-                        Text { visible: backend.calendarView === "day"; text: "Click an empty slot to add an event"; color: Theme.inkAlpha(.35); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; horizontalAlignment: Text.AlignRight; Layout.fillWidth: true }
+                Item {
+                    id: dayHeader
+                    required property int index
+                    readonly property string iso: calendar.isoAt(index)
+                    readonly property bool today: iso === backend.todayDate
+                    readonly property bool single: calendar.dayCount === 1
+                    readonly property var allDay: calendar.allDayAt(index)
+                    readonly property var previews: calendar.previewAllDayAt(index)
+                    readonly property var chips: calendar.bandChips(allDay, previews.length)
+                    objectName: "calendarDayHeader-" + index
+                    Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredWidth: 1
+                    clip: true
+                    MouseArea {
+                        id: headerOpen
+                        anchors.fill: parent; enabled: !dayHeader.single; hoverEnabled: true; cursorShape: Qt.PointingHandCursor
+                        onClicked: calendar.openDay(dayHeader.index)
+                    }
+                    FmToolTip { shown: headerOpen.containsMouse; text: "Open day" }
+                    Item {
+                        visible: !dayHeader.single
+                        x: 10; width: parent.width - 16; height: 26
+                        Text { id: dayNumber; anchors.verticalCenter: parent.verticalCenter; text: Qt.formatDate(calendar.dateAt(dayHeader.index), "d"); color: dayHeader.today ? Theme.accent : dayHeader.iso < backend.todayDate ? Theme.inkAlpha(.5) : Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(20); font.weight: Font.Medium; font.letterSpacing: -0.4 }
+                        Text { x: dayNumber.width + 8; anchors.verticalCenter: parent.verticalCenter; text: Qt.formatDate(calendar.dateAt(dayHeader.index), "ddd"); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
                         CalendarMailCount {
-                            objectName: "calendarMailCount-" + calendar.isoAt(dayHeader.index)
-                            Layout.rightMargin: 6
-                            date: calendar.isoAt(dayHeader.index); row: calendar.mailDays[date]
+                            objectName: "calendarMailCount-" + dayHeader.iso
+                            anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                            date: dayHeader.iso; row: calendar.mailDays[date]
                             accountName: calendar.accountName
-                            compact: width < 165
+                            compact: dayHeader.width < 165
                             onClicked: calendar.openMailRequested()
                         }
                     }
-                    Flow {
-                        visible: calendar.dayCount === 1; Layout.fillWidth: true; Layout.topMargin: 6; Layout.leftMargin: 10; spacing: 6
-                        Repeater { model: calendar.dayCount === 1 ? dayHeader.allDay : []
+                    Column {
+                        x: 10; width: parent.width - 16; spacing: 6
+                        y: dayHeader.single ? parent.height - 10 - height : 32
+                        Repeater { model: dayHeader.chips; AllDayChip { labelled: dayHeader.single; maximumWidth: parent.width } }
+                        Repeater {
+                            model: dayHeader.previews
                             Rectangle {
-                                id: allDayChip; required property var modelData
-                                objectName: "calendarAllDay-" + (modelData.event_id || modelData.id)
-                                width: Math.min(allDayChipText.implicitWidth + 22, parent.width); height: 22; radius: 3
-                                color: allDayChipMouse.containsMouse ? Theme.hover : Theme.selected
-                                activeFocusOnTab: visible && backend.calendarReady
-                                Keys.onReturnPressed: calendar.showEvent(modelData, allDayChip)
-                                Keys.onSpacePressed: calendar.showEvent(modelData, allDayChip)
-                                border.width: activeFocus ? 1 : 0; border.color: Theme.accent
-                                Accessible.role: Accessible.Button; Accessible.name: modelData.title + ", " + modelData.start_display
-                                Accessible.onPressAction: calendar.showEvent(modelData, allDayChip)
-                                Rectangle { width: 3; height: parent.height; color: parent.color }
-                                Rectangle { width: 2; height: parent.height; color: calendar.sourceRule(parent.modelData) }
-                                Text { id: allDayChipText; x: 12; width: parent.width - 22; height: parent.height; text: "All day · " + allDayChip.modelData.title; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; textFormat: Text.PlainText }
-                                MouseArea { id: allDayChipMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: calendar.showEvent(parent.modelData, parent) }
+                                required property var modelData; objectName: "calendarAllDayPreview-" + dayHeader.index
+                                width: dayHeader.single ? Math.min(previewText.implicitWidth + 22, parent.width) : parent.width; height: 22
+                                radius: 3; color: Theme.accentAlpha(0.125); border.color: Theme.accent
+                                Text { id: previewText; x: 10; width: parent.width - 18; height: parent.height; text: (dayHeader.single ? "All day · " : "") + parent.modelData.title; color: Theme.accent; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; textFormat: Text.PlainText }
                             }
                         }
-                    }
-                    Repeater { model: calendar.dayCount === 1 ? [] : dayHeader.allDay.slice(0, 2)
-                        Rectangle {
-                            id: allDayBox
-                            required property var modelData; Layout.fillWidth: true; implicitHeight: 22; Layout.topMargin: 6; Layout.leftMargin: 10; Layout.rightMargin: 6; color: allDayMouse.containsMouse ? Theme.hover : Theme.selected; radius: 3
-                            objectName: "calendarAllDay-" + (modelData.event_id || modelData.id)
-                            activeFocusOnTab: visible && backend.calendarReady
-                            Keys.onReturnPressed: calendar.showEvent(modelData, allDayBox)
-                            Keys.onSpacePressed: calendar.showEvent(modelData, allDayBox)
-                            border.width: activeFocus ? 1 : 0; border.color: Theme.accent
-                            Accessible.role: Accessible.Button; Accessible.name: modelData.title + ", " + modelData.start_display
-                            Accessible.onPressAction: calendar.showEvent(modelData, allDayBox)
-                            Rectangle { width: 3; height: parent.height; color: parent.color }
-                            Rectangle { width: 2; height: parent.height; color: calendar.sourceRule(parent.modelData) }
-                            Text { anchors.fill: parent; anchors.leftMargin: 10; anchors.rightMargin: 8; text: modelData.title; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; textFormat: Text.PlainText }
-                            MouseArea { id: allDayMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: calendar.showEvent(parent.modelData, parent) }
-                            FmToolTip { shown: allDayMouse.containsMouse; text: "All day · " + allDayBox.modelData.title }
+                        FmButton {
+                            objectName: "calendarAllDayMore-" + dayHeader.index
+                            visible: dayHeader.allDay.length > dayHeader.chips.length
+                            text: "+ " + (dayHeader.allDay.length - dayHeader.chips.length) + " all day"
+                            implicitHeight: 22; leftPadding: 4; rightPadding: 4; font.pointSize: Theme.fontPoints(11)
+                            onClicked: { allDayOverflow.eventRows = dayHeader.allDay; allDayOverflow.open() }
                         }
                     }
-                    Repeater {
-                        model: calendar.previewRows.filter(function(event) { return event.all_day && event.day_index <= dayHeader.index && event.day_index + event.span_days > dayHeader.index })
-                        Rectangle {
-                            required property var modelData; objectName: "calendarAllDayPreview-" + dayHeader.index
-                            Layout.fillWidth: true; implicitHeight: 22; Layout.topMargin: 6; Layout.leftMargin: 10; Layout.rightMargin: 6; radius: 3; color: Theme.accentAlpha(0.125); border.color: Theme.accent
-                            Text { anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 4; text: modelData.title; color: Theme.accent; font.pointSize: Theme.fontPoints(11); verticalAlignment: Text.AlignVCenter; elide: Text.ElideRight; textFormat: Text.PlainText }
-                        }
-                    }
-                    FmButton { visible: calendar.dayCount > 1 && dayHeader.allDay.length > 2; text: "+ " + (dayHeader.allDay.length - 2) + " all day"; implicitHeight: 20; Layout.topMargin: 6; Layout.leftMargin: 4; font.pointSize: Theme.fontPoints(11); onClicked: { allDayOverflow.eventRows = dayHeader.allDay; allDayOverflow.open() } }
-                    Item { Layout.fillHeight: true }
-                    Rectangle { Layout.fillWidth: true; Layout.topMargin: calendar.dayCount === 1 && dayHeader.allDay.length === 0 ? 16 : 10; implicitHeight: 1; color: calendar.isoAt(dayHeader.index) === backend.todayDate ? Theme.accent : Theme.line }
+                    // Only Week view underlines today, in accent.
+                    Rectangle { y: parent.height - height; width: parent.width; height: Theme.ruleWidth; color: dayHeader.today && !dayHeader.single ? Theme.accent : Theme.line }
                 }
             }
         }
@@ -397,8 +433,10 @@ Item {
                             MouseArea {
                                 objectName: "calendarSlot-" + parent.index
                                 anchors.fill: parent; cursorShape: Qt.CrossCursor; preventStealing: calendar.rangeDrag.index !== undefined
+                                hoverEnabled: true
                                 onPressed: function(mouse) { if (!calendar.beginRange(parent.index, mouse.y)) mouse.accepted = false }
-                                onPositionChanged: function(mouse) { if (pressed) calendar.moveRange(mouse.y) }
+                                onPositionChanged: function(mouse) { if (pressed) calendar.moveRange(mouse.y); else calendar.hoverAt(parent.index, mouse.y) }
+                                onExited: calendar.leaveSlot(parent.index)
                                 onReleased: calendar.finishRange()
                                 onCanceled: calendar.cancelRange()
                             }
@@ -412,6 +450,29 @@ Item {
                     }
                     Repeater { model: 24
                         Rectangle { required property int index; x: Theme.snapX(parent, 0); y: Theme.snapY(parent, (index + .5) * calendar.hourHeight); width: grid.width; height: Theme.ruleWidth; color: Theme.inkAlpha(.035) }
+                    }
+                    // Decoration only: clicks and drags on the column create events.
+                    Item {
+                        id: slotGhost; objectName: "calendarSlotGhost"
+                        readonly property var slot: calendar.hoverSlot
+                        visible: slot.index !== undefined && slot.index < calendar.dayCount && calendar.canCreate && calendar.rangeDrag.index === undefined
+                            && !editor.opened && calendar.slotFree(slot.index, slot.t)
+                        x: (slot.index || 0) * grid.dayWidth + 4; width: Math.max(0, grid.dayWidth - 10)
+                        height: calendar.ghostHeight; y: Math.min((slot.t || 0) * calendar.hourHeight, 24 * calendar.hourHeight - height)
+                        Rectangle { anchors.fill: parent; radius: 4; color: Theme.inkAlpha(.035) }
+                        Shape {
+                            anchors.fill: parent
+                            ShapePath {
+                                strokeColor: Theme.inkAlpha(.22); strokeWidth: 1; strokeStyle: ShapePath.DashLine; dashPattern: [3, 3]; fillColor: "transparent"
+                                PathSvg { path: "M 2 .5 H " + (slotGhost.width - 4) + " A 3.5 3.5 0 0 1 " + (slotGhost.width - .5) + " 4 V " + (slotGhost.height - 4) + " A 3.5 3.5 0 0 1 " + (slotGhost.width - 4) + " " + (slotGhost.height - .5) + " H 2" }
+                            }
+                        }
+                        Rectangle { width: 2; height: parent.height; color: Theme.inkAlpha(.35) }
+                        Row {
+                            x: 9; width: parent.width - 16; anchors.verticalCenter: parent.verticalCenter; spacing: 5; clip: true
+                            FmIcon { name: "plus"; size: 9; color: Theme.inkAlpha(.55); anchors.verticalCenter: parent.verticalCenter }
+                            Text { text: calendar.hourText(slotGhost.slot.t || 0) + " – " + calendar.hourText((slotGhost.slot.t || 0) + .5); color: Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.features: {"tnum": 1}; anchors.verticalCenter: parent.verticalCenter }
+                        }
                     }
                     Rectangle {
                         objectName: "calendarRangePreview"
@@ -480,65 +541,133 @@ Item {
             }
             Item { visible: backend.calendarView === "day" && calendar.width > 850; Layout.preferredWidth: 320; Layout.fillHeight: true }
         }
-        GridLayout {
-            visible: backend.calendarView === "month"; Layout.fillWidth: true; columns: 7; columnSpacing: 0
-            Repeater { model: 7; Text { required property int index; Layout.fillWidth: true; Layout.preferredWidth: 1; Layout.leftMargin: 10; Layout.bottomMargin: 8; text: Qt.formatDate(calendar.dateAt(index), "ddd"); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) } }
-        }
-        GridLayout {
-            id: monthGrid
-            visible: backend.calendarView === "month"; Layout.fillWidth: true; Layout.fillHeight: true; Layout.bottomMargin: 16; columns: 7; columnSpacing: 0; rowSpacing: 0
-            Repeater { model: 42
-                Rectangle {
-                    id: monthCell; objectName: "calendarMonthCell-" + day.iso; required property int index; visible: index < calendar.monthCells
-                    readonly property var day: calendar.monthDates[index] || calendar.emptyDay
-                    property var dayEvents: calendar.monthEvents[index] || []; property bool inMonth: day.date.getMonth() === calendar.monthNumber; property int shown: Math.min(3, Math.max(0, Math.floor((height - 50) / 18) - (dayEvents.length * 18 > height - 50 ? 1 : 0)))
-                    Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredWidth: 1; Layout.preferredHeight: 1; clip: true
-                    color: day.iso === backend.todayDate || monthHover.hovered ? Theme.bg1 : "transparent"
-                    Rectangle { visible: monthCell.index < 7; width: parent.width; height: Theme.ruleWidth; color: Theme.line }
-                    Rectangle { visible: monthCell.index % 7 === 0; width: Theme.ruleWidth; height: parent.height; color: Theme.line }
-                    Rectangle { x: parent.width - width; width: Theme.ruleWidth; height: parent.height; color: Theme.line }
+        // Month: the weekday header shares the band height and a 56px week
+        // axis stands where the hour axis does. Cells draw only right and
+        // bottom rules; the axis rule and header rule close the grid.
+        RowLayout {
+            objectName: "calendarMonthBand"
+            visible: calendar.monthView; Layout.fillWidth: true; Layout.fillHeight: false; spacing: 0
+            Item { Layout.preferredWidth: 56; implicitHeight: calendar.bandHeight }
+            Repeater { model: 7
+                Item {
+                    required property int index
+                    Layout.fillWidth: true; Layout.preferredWidth: 1; implicitHeight: calendar.bandHeight
+                    Text {
+                        objectName: "calendarMonthWeekday-" + parent.index
+                        x: 10; height: 26; verticalAlignment: Text.AlignVCenter
+                        text: Qt.formatDate(calendar.dateAt(parent.index), "ddd")
+                        color: calendar.dateAt(parent.index).getDay() === new Date(backend.todayDate + "T12:00:00").getDay() ? Theme.accent : Theme.inkAlpha(.5)
+                        font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
+                    }
                     Rectangle { y: parent.height - height; width: parent.width; height: Theme.ruleWidth; color: Theme.line }
-                    HoverHandler { id: monthHover }
-                    MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: calendar.openDay(monthCell.index) }
-                    FmToolTip { shown: monthHover.hovered && !monthDate.hovered; text: shown ? "Open " + Qt.formatDate(monthCell.day.date, "dddd d MMMM") : "" }
-                    Column { x: 8; y: 6; width: parent.width - 16; spacing: 3
-                        Item { width: parent.width; height: Math.round(Theme.fontSize(13) * 1.4) + 6
-                            FmButton { id: monthDate; objectName: "calendarMonthDate-" + monthCell.index; text: monthCell.day.iso ? monthCell.day.date.getDate() : ""; height: Math.round(Theme.fontSize(13) * 1.4) + 4; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; textAlignment: Text.AlignLeft; font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium; foreground: monthCell.day.iso === backend.todayDate ? Theme.accent : monthCell.inMonth ? Theme.text : Theme.inkAlpha(.3); background: Item {} onClicked: calendar.openDay(monthCell.index) }
-                        // Only past and current days with counts create a badge.
-                        Loader {
-                            active: !!calendar.mailDays[monthCell.day.iso] && monthCell.day.iso <= backend.todayDate
-                            anchors.right: parent.right; anchors.verticalCenter: monthDate.verticalCenter
-                            sourceComponent: CalendarMailCount {
-                                objectName: "calendarMonthMailCount-" + monthCell.day.iso
-                                date: monthCell.day.iso; row: calendar.mailDays[date]
-                                accountName: calendar.accountName; compact: true; textSize: 10.5
-                                opacity: monthCell.inMonth ? 1 : 0.6
-                                onClicked: calendar.openMailRequested()
-                            }
-                        }
-                        }
-                        // At most three rows fit. A count model keeps rows while the grid lays out and on navigation.
-                        Repeater { model: Math.min(3, monthCell.dayEvents.length)
-                            Rectangle {
-                                id: monthEvent; required property int index; readonly property var modelData: monthCell.dayEvents[index] || ({}); visible: index < monthCell.shown; width: monthCell.width - 16; height: Math.round(Theme.fontSize(11.5) * 1.3); color: "transparent"
-                                Rectangle { width: 2; height: parent.height; color: monthCell.inMonth ? calendar.sourceRule(parent.modelData) : Theme.line3 }
-                                FmButton {
-                                    objectName:"calendarMonthEvent-"+(parent.modelData.event_id||parent.modelData.id); anchors.fill: parent; leftPadding: 8; rightPadding: 0; topPadding: 0; bottomPadding: 0
-                                    tip: (monthEvent.modelData.all_day ? "All day" : monthEvent.modelData.time_display + " – " + monthEvent.modelData.end_display) + " · " + monthEvent.modelData.title
-                                    Accessible.name: monthEvent.modelData.title
-                                    background: Item {}
-                                    contentItem: Row {
-                                        spacing: 4
-                                        Text { id: monthEventTime; visible: !monthEvent.modelData.all_day; text: monthEvent.modelData.time_display; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.features: {"tnum": 1}; anchors.verticalCenter: parent.verticalCenter }
-                                        Text { text: monthEvent.modelData.title; width: Math.max(0, monthEvent.width - 8 - (monthEventTime.visible ? monthEventTime.width + 4 : 0)); color: monthCell.inMonth ? Theme.text : Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); elide: Text.ElideRight; textFormat: Text.PlainText; anchors.verticalCenter: parent.verticalCenter }
-                                    }
-                                    onClicked: calendar.showEvent(monthEvent.modelData, monthEvent)
+                }
+            }
+        }
+        RowLayout {
+            visible: calendar.monthView; Layout.fillWidth: true; Layout.fillHeight: true; Layout.bottomMargin: 16; spacing: 0
+            Item {
+                id: weekAxis
+                readonly property int rows: Math.max(1, Math.ceil(calendar.monthCells / 7))
+                Layout.preferredWidth: 56; Layout.fillHeight: true
+                Repeater { model: weekAxis.rows
+                    Item {
+                        id: weekRow
+                        required property int index
+                        readonly property var start: calendar.monthDates[index * 7] || calendar.emptyDay
+                        readonly property int number: start.iso ? calendar.isoWeek((calendar.monthDates[index * 7 + 3] || start).date) : 0
+                        readonly property bool current: !!start.iso && backend.todayDate >= start.iso && backend.todayDate <= (calendar.monthDates[index * 7 + 6] || start).iso
+                        // The current week opens on today; any other on its first day.
+                        function open() { if (start.iso) calendar.openWeek(current ? backend.todayDate : start.iso) }
+                        objectName: "calendarWeekNumber-" + index
+                        y: index * weekAxis.height / weekAxis.rows; width: weekAxis.width - 1; height: weekAxis.height / weekAxis.rows
+                        Accessible.role: Accessible.Button; Accessible.name: "Open week " + number
+                        Accessible.onPressAction: open()
+                        Text { y: 9; text: weekRow.number ? "W" + weekRow.number : ""; color: weekMouse.containsMouse ? Theme.text : weekRow.current ? Theme.accent : Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.features: {"tnum": 1} }
+                        MouseArea { id: weekMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: weekRow.open() }
+                        FmToolTip { shown: weekMouse.containsMouse; text: "Open week " + weekRow.number }
+                    }
+                }
+                Rectangle { x: parent.width - width; width: Theme.ruleWidth; height: parent.height; color: Theme.line }
+            }
+            GridLayout {
+                id: monthGrid
+                Layout.fillWidth: true; Layout.fillHeight: true; columns: 7; columnSpacing: 0; rowSpacing: 0
+                Repeater { model: 42
+                    Rectangle {
+                        id: monthCell; objectName: "calendarMonthCell-" + day.iso; required property int index; visible: index < calendar.monthCells
+                        readonly property var day: calendar.monthDates[index] || calendar.emptyDay
+                        property var dayEvents: calendar.monthEvents[index] || []; property bool inMonth: day.date.getMonth() === calendar.monthNumber
+                        readonly property bool isToday: day.iso === backend.todayDate
+                        readonly property bool past: !!day.iso && day.iso < backend.todayDate
+                        readonly property int fit: Math.min(3, Math.max(0, Math.floor((height - 50) / 18) - (dayEvents.length * 18 > height - 50 ? 1 : 0)))
+                        // Today shows a window around now: the last finished event, then the
+                        // upcoming ones; two rows when the now line is needed and more wait.
+                        readonly property int upcoming: isToday ? dayEvents.findIndex(function(e) { return !e.all_day && e.start_hour + e.duration_hours > backend.nowHour }) : -1
+                        readonly property bool needLine: isToday && dayEvents.length > 0 && upcoming !== 0
+                        readonly property int cap: Math.min(fit, needLine && dayEvents.length > 2 ? 2 : 3)
+                        readonly property int first: !isToday || upcoming === 0 ? 0 : upcoming > 0 ? Math.max(0, Math.min(upcoming - 1, dayEvents.length - cap)) : Math.max(0, dayEvents.length - cap)
+                        readonly property int shown: Math.max(0, Math.min(cap, dayEvents.length - first))
+                        readonly property int nowRow: needLine ? (upcoming >= first && upcoming < first + shown ? upcoming - first : -1) : -2
+                        function eventDone(e) { return isToday ? !e.all_day && e.start_hour + e.duration_hours <= backend.nowHour : past }
+                        Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredWidth: 1; Layout.preferredHeight: 1; clip: true
+                        color: monthHover.hovered ? Theme.bg1 : isToday ? Theme.accentAlpha(.06) : "transparent"
+                        Rectangle { x: parent.width - width; width: Theme.ruleWidth; height: parent.height; color: Theme.line }
+                        Rectangle { y: parent.height - height; width: parent.width; height: Theme.ruleWidth; color: Theme.line }
+                        Rectangle { objectName: "calendarMonthToday"; visible: monthCell.isToday; anchors.fill: parent; color: "transparent"; border.width: 1; border.color: Theme.accentAlpha(.45) }
+                        HoverHandler { id: monthHover }
+                        MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: calendar.openDay(monthCell.index) }
+                        FmToolTip { shown: monthHover.hovered && !monthDate.hovered; text: shown ? "Open " + Qt.formatDate(monthCell.day.date, "dddd d MMMM") : "" }
+                        Column { x: 8; y: 6; width: parent.width - 16; spacing: 3
+                            Item { width: parent.width; height: Math.round(Theme.fontSize(13) * 1.4) + 6
+                                FmButton { id: monthDate; objectName: "calendarMonthDate-" + monthCell.index; text: monthCell.day.iso ? monthCell.day.date.getDate() : ""; height: Math.round(Theme.fontSize(13) * 1.4) + 4; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; textAlignment: Text.AlignLeft; font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium; foreground: monthCell.isToday ? Theme.accent : !monthCell.inMonth ? Theme.inkAlpha(.3) : monthCell.past ? Theme.inkAlpha(.5) : Theme.text; background: Item {} onClicked: calendar.openDay(monthCell.index) }
+                            // Only past and current days with counts create a badge.
+                            Loader {
+                                active: !!calendar.mailDays[monthCell.day.iso] && monthCell.day.iso <= backend.todayDate
+                                anchors.right: parent.right; anchors.verticalCenter: monthDate.verticalCenter
+                                sourceComponent: CalendarMailCount {
+                                    objectName: "calendarMonthMailCount-" + monthCell.day.iso
+                                    date: monthCell.day.iso; row: calendar.mailDays[date]
+                                    accountName: calendar.accountName; compact: true; textSize: 10.5
+                                    opacity: monthCell.inMonth ? 1 : 0.6
+                                    onClicked: calendar.openMailRequested()
                                 }
                             }
-                        }
-                        Loader {
-                            active: monthCell.dayEvents.length > monthCell.shown; visible: active
-                            sourceComponent: FmButton { text: "+ " + (monthCell.dayEvents.length - monthCell.shown) + " more"; height: Math.round(Theme.fontSize(11) * 1.4); leftPadding: 8; rightPadding: 0; topPadding: 0; bottomPadding: 0; textAlignment: Text.AlignLeft; foreground: hovered ? Theme.text : Theme.inkAlpha(.45); font.pointSize: Theme.fontPoints(11); background: Item {} onClicked: calendar.openDay(monthCell.index) }
+                            }
+                            // At most three rows fit. A count model keeps rows while the grid lays out and on navigation.
+                            Repeater { model: Math.min(3, monthCell.dayEvents.length)
+                                Rectangle {
+                                    id: monthEvent; required property int index; readonly property var modelData: monthCell.dayEvents[monthCell.first + index] || ({}); visible: index < monthCell.shown; width: monthCell.width - 16; height: Math.round(Theme.fontSize(11.5) * 1.3); color: "transparent"
+                                    readonly property real doneOpacity: monthCell.eventDone(modelData) ? .5 : 1
+                                    Rectangle { width: 2; height: parent.height; opacity: monthEvent.doneOpacity; color: monthCell.inMonth ? calendar.sourceRule(parent.modelData) : Theme.line3 }
+                                    // The now line takes no height: drawn over the gap above this row, or
+                                    // below the last shown row when every shown event has finished.
+                                    Item {
+                                        objectName: "calendarNowLine-" + monthCell.day.iso
+                                        readonly property bool before: monthEvent.index === monthCell.nowRow && (monthEvent.index > 0 || monthCell.first > 0)
+                                        readonly property bool after: monthCell.nowRow === -1 && monthEvent.index === monthCell.shown - 1
+                                        visible: before || after; z: 3
+                                        x: 4; y: before ? -2 : monthEvent.height + 1; width: monthEvent.width - 4; height: 1
+                                        Rectangle { width: parent.width; height: 1; color: Theme.accent }
+                                        Rectangle { x: -4; y: -3; width: 7; height: 7; radius: 3.5; color: Theme.accent }
+                                    }
+                                    FmButton {
+                                        objectName:"calendarMonthEvent-"+(parent.modelData.event_id||parent.modelData.id); anchors.fill: parent; opacity: monthEvent.doneOpacity; leftPadding: 8; rightPadding: 0; topPadding: 0; bottomPadding: 0
+                                        tip: (monthEvent.modelData.all_day ? "All day" : monthEvent.modelData.time_display + " – " + monthEvent.modelData.end_display) + " · " + monthEvent.modelData.title
+                                        Accessible.name: monthEvent.modelData.title || ""
+                                        background: Item {}
+                                        contentItem: Row {
+                                            spacing: 4
+                                            Text { id: monthEventTime; visible: !monthEvent.modelData.all_day; text: monthEvent.modelData.time_display || ""; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.features: {"tnum": 1}; anchors.verticalCenter: parent.verticalCenter }
+                                            Text { text: monthEvent.modelData.title || ""; width: Math.max(0, monthEvent.width - 8 - (monthEventTime.visible ? monthEventTime.width + 4 : 0)); color: monthCell.inMonth ? Theme.text : Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); elide: Text.ElideRight; textFormat: Text.PlainText; anchors.verticalCenter: parent.verticalCenter }
+                                        }
+                                        onClicked: calendar.showEvent(monthEvent.modelData, monthEvent)
+                                    }
+                                }
+                            }
+                            Loader {
+                                active: monthCell.dayEvents.length > monthCell.shown; visible: active
+                                sourceComponent: FmButton { text: "+ " + (monthCell.dayEvents.length - monthCell.shown) + " more"; height: Math.round(Theme.fontSize(11) * 1.4); leftPadding: 8; rightPadding: 0; topPadding: 0; bottomPadding: 0; textAlignment: Text.AlignLeft; foreground: hovered ? Theme.text : Theme.inkAlpha(.45); font.pointSize: Theme.fontPoints(11); background: Item {} onClicked: calendar.openDay(monthCell.index) }
+                            }
                         }
                     }
                 }
@@ -560,30 +689,69 @@ Item {
             Text { anchors.centerIn: parent; visible: agenda.count === 0; text: backend.calendarReady ? "Nothing scheduled in this range." : backend.calendarCoverage; color: Theme.subtle; font.pointSize: Theme.fontPoints(13) }
         }
     }
-    ListView {
-        id: dayAgenda; objectName: "calendarDayAgenda"
+    // Day sidebar: the day's mail in a row as tall as the header band, then
+    // its agenda. Without mail an empty row keeps the agenda in place.
+    Item {
+        id: daySidebar
         visible: backend.calendarView === "day" && calendar.width > 850
-        x: calendar.width - 24 - width; y: calendarColumn.y + dayHeaderRow.y + 38; width: 320
-        height: Math.max(0, calendarColumn.y + gridRow.y + gridRow.height - y); clip: true; model: visible ? calendar.agendaEvents : []
-        boundsBehavior: Flickable.StopAtBounds
-        ScrollBar.vertical: FmScrollBar {}
-        delegate: ItemDelegate {
-            id: dayAgendaRow; required property var modelData
-            readonly property bool past: calendar.eventPast(modelData)
-            width: ListView.view.width; topPadding: 12; bottomPadding: 12; leftPadding: 0; rightPadding: 0
-            implicitHeight: dayAgendaText.implicitHeight + 25
-            onClicked: calendar.showEvent(modelData, this)
-            background: Rectangle { color: dayAgendaRow.hovered ? Theme.surface : "transparent"; border.width: dayAgendaRow.activeFocus ? 1 : 0; border.color: Theme.focusBorder; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, parent.height - 1); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
-            contentItem: Item {
-                Text { width: 92; text: dayAgendaRow.modelData.all_day ? "All day" : dayAgendaRow.modelData.time_display + " – " + dayAgendaRow.modelData.end_display; color: calendar.eventNow(dayAgendaRow.modelData) ? Theme.accent : Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.features: {"tnum": 1}; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12.5) * 1.4); elide: Text.ElideRight }
-                Column {
-                    id: dayAgendaText; x: 106; width: parent.width - x; spacing: 2
-                    Text { width: parent.width; text: dayAgendaRow.modelData.title; textFormat: Text.PlainText; color: dayAgendaRow.past ? Theme.inkAlpha(.45) : Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); font.weight: Font.Medium; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(13.5) * 1.4); elide: Text.ElideRight }
-                    Text { width: parent.width; visible: text.length > 0; text: calendar.agendaSub(dayAgendaRow.modelData); textFormat: Text.PlainText; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12) * 1.4); elide: Text.ElideRight }
+        x: calendar.width - 24 - width; y: calendarColumn.y + dayHeaderRow.y; width: 320
+        height: Math.max(0, calendarColumn.y + gridRow.y + gridRow.height - y)
+        readonly property var mail: calendar.mailDays[backend.calendarDate]
+        readonly property bool hasMail: !!mail && backend.calendarDate <= backend.todayDate
+        Item {
+            id: dayMail; objectName: "calendarDayMail"
+            width: parent.width; height: calendar.bandHeight
+            activeFocusOnTab: daySidebar.visible && daySidebar.hasMail
+            Accessible.role: Accessible.Button
+            Accessible.name: daySidebar.hasMail ? daySidebar.mail.received + " received, " + daySidebar.mail.sent + " sent, " + calendar.accountName + ". Open Mail" : ""
+            Accessible.onPressAction: if (daySidebar.hasMail) calendar.openMailRequested()
+            Keys.onReturnPressed: if (daySidebar.hasMail) calendar.openMailRequested()
+            Keys.onSpacePressed: if (daySidebar.hasMail) calendar.openMailRequested()
+            Row {
+                visible: daySidebar.hasMail
+                y: (parent.height - 10 - height) / 2; spacing: 16
+                Row {
+                    spacing: 6
+                    FmIcon { name: "arrowDown"; size: 11; color: Theme.inkAlpha(.5); anchors.verticalCenter: parent.verticalCenter }
+                    Text { id: receivedCount; objectName: "calendarDayMailReceived"; text: daySidebar.hasMail ? daySidebar.mail.received : 0; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(18); font.weight: Font.Medium; font.letterSpacing: -0.18; font.features: {"tnum": 1} }
+                    Text { y: receivedCount.baselineOffset - baselineOffset; text: "received"; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
+                }
+                Row {
+                    spacing: 6
+                    FmIcon { name: "arrowUp"; size: 11; color: Theme.inkAlpha(.5); anchors.verticalCenter: parent.verticalCenter }
+                    Text { id: sentCount; objectName: "calendarDayMailSent"; text: daySidebar.hasMail ? daySidebar.mail.sent : 0; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(18); font.weight: Font.Medium; font.letterSpacing: -0.18; font.features: {"tnum": 1} }
+                    Text { y: sentCount.baselineOffset - baselineOffset; text: "sent"; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
                 }
             }
+            FmIcon { visible: daySidebar.hasMail; x: parent.width - width; y: (parent.height - 10 - height) / 2; name: "next"; size: 12; color: dayMailMouse.containsMouse ? Theme.text : Theme.inkAlpha(.35) }
+            Rectangle { y: parent.height - height; width: parent.width; height: Theme.ruleWidth; color: dayMail.activeFocus ? Theme.focusBorder : Theme.line }
+            MouseArea { id: dayMailMouse; anchors.fill: parent; enabled: daySidebar.hasMail; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: calendar.openMailRequested() }
+            FmToolTip { shown: dayMailMouse.containsMouse; text: daySidebar.hasMail ? daySidebar.mail.received + " received · " + daySidebar.mail.sent + " sent · " + calendar.accountName : "" }
         }
-        Text { visible: dayAgenda.count === 0; y: 12; text: "Nothing scheduled."; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
+        ListView {
+            id: dayAgenda; objectName: "calendarDayAgenda"
+            y: dayMail.height; width: parent.width
+            height: Math.max(0, parent.height - y); clip: true; model: daySidebar.visible ? calendar.agendaEvents : []
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: FmScrollBar {}
+            delegate: ItemDelegate {
+                id: dayAgendaRow; required property var modelData
+                readonly property bool past: calendar.eventPast(modelData)
+                width: ListView.view.width; topPadding: 12; bottomPadding: 12; leftPadding: 0; rightPadding: 0
+                implicitHeight: dayAgendaText.implicitHeight + 25
+                onClicked: calendar.showEvent(modelData, this)
+                background: Rectangle { color: dayAgendaRow.hovered ? Theme.surface : "transparent"; border.width: dayAgendaRow.activeFocus ? 1 : 0; border.color: Theme.focusBorder; Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, parent.height - 1); width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
+                contentItem: Item {
+                    Text { width: 92; text: dayAgendaRow.modelData.all_day ? "All day" : dayAgendaRow.modelData.time_display + " – " + dayAgendaRow.modelData.end_display; color: calendar.eventNow(dayAgendaRow.modelData) ? Theme.accent : Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.features: {"tnum": 1}; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12.5) * 1.4); elide: Text.ElideRight }
+                    Column {
+                        id: dayAgendaText; x: 106; width: parent.width - x; spacing: 2
+                        Text { width: parent.width; text: dayAgendaRow.modelData.title; textFormat: Text.PlainText; color: dayAgendaRow.past ? Theme.inkAlpha(.45) : Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); font.weight: Font.Medium; lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(13.5) * 1.4); elide: Text.ElideRight }
+                        Text { width: parent.width; visible: text.length > 0; text: calendar.agendaSub(dayAgendaRow.modelData); textFormat: Text.PlainText; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12) * 1.4); elide: Text.ElideRight }
+                    }
+                }
+            }
+            Text { visible: dayAgenda.count === 0; y: 12; text: "Nothing scheduled."; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
+        }
     }
     Popup {
         id: datePicker; parent: dateButton; y: 36; x: parent.width - width + 31; width: 272; padding: 12

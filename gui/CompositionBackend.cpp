@@ -166,6 +166,10 @@ void MailBackend::loadDraftPage(const QString &account, int generation, int offs
     request("drafts", account, {{"query", m_query}, {"limit", 50}, {"offset", offset}},
         [this, account, generation, offset, rows = std::move(rows), desiredCount](auto result, bool ok) mutable {
             if (account != m_account || generation != m_listGeneration || m_folder != "drafts") return;
+            if (!ok && offset == 0 && result["code"].toString() == "invalid_request" && !m_query.trimmed().isEmpty()) {
+                readSearchResult(result, false); m_loading = false; emit loadingChanged(); return;
+            }
+            if (ok && offset == 0) readSearchResult(result, true);
             if (ok) {
                 for (const auto &value : result["drafts"].toArray()) {
                     auto row = value.toObject().toVariantMap();
@@ -204,7 +208,7 @@ bool MailBackend::addDraftRecipient(const QString &field, const QString &text) {
     const auto match = addressPattern.match(input);
     const bool control = std::any_of(input.begin(), input.end(), [](QChar ch) { return ch.category() == QChar::Other_Control; });
     if (!match.hasMatch() || control) {
-        fail("Enter an email address, optionally as Name <address@example.com>."); return false;
+        return rejectRecipient("Enter an email address, optionally as Name <address@example.com>.");
     }
     QString name = match.captured(1).trimmed(), email = match.captured(2);
     if (email.isEmpty()) email = match.captured(3);
@@ -216,20 +220,24 @@ bool MailBackend::addDraftAddress(const QString &field, const QString &email, co
     if (std::any_of(name.begin(), name.end(), [](QChar ch) { return ch.category() == QChar::Other_Control; })) return false;
     static const QRegularExpression mailboxPattern(R"(^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$)");
     if (email.toUtf8().size() > 320 || name.toUtf8().size() > 4096 || !mailboxPattern.match(email).hasMatch()) {
-        fail("Enter a valid mailbox address (up to 320 UTF-8 bytes) and a display name up to 4096 bytes."); return false;
+        return rejectRecipient("Enter a valid mailbox address (up to 320 UTF-8 bytes) and a display name up to 4096 bytes.");
     }
     auto entries = m_draft[field].toList();
-    for (const auto &entry : entries) if (entry.toMap()["email"].toString().compare(email, Qt::CaseInsensitive) == 0) { m_recipientInputs.remove(field); return true; }
+    for (const auto &entry : entries) if (entry.toMap()["email"].toString().compare(email, Qt::CaseInsensitive) == 0) { m_recipientInputs.remove(field); m_recipientError.clear(); emit draftChanged(); return true; }
     qsizetype count = 0;
     QVariantMap routing{{"subject", m_draft["subject"]}};
     for (const auto &key : {"to_recipients", "cc_recipients", "bcc_recipients"}) { count += m_draft[key].toList().size(); routing[key] = m_draft[key]; }
-    if (count >= 100) { fail("A draft supports at most 100 recipients in total."); return false; }
+    if (count >= 100) return rejectRecipient("A draft supports at most 100 recipients in total.");
     entries.append(QVariantMap{{"name", name}, {"email", email}});
     routing[field] = entries;
     // Leave room for the bounded frozen source references in Core's 64 KiB envelope.
-    if (QJsonDocument::fromVariant(routing).toJson(QJsonDocument::Compact).size() > 48 * 1024) { fail("Recipient names and addresses exceed this draft's local size limit."); return false; }
-    m_recipientInputs.remove(field); m_draft[field] = entries; m_draftDirty = true; m_draftStatus = "Saving…";
+    if (QJsonDocument::fromVariant(routing).toJson(QJsonDocument::Compact).size() > 48 * 1024) return rejectRecipient("Recipient names and addresses exceed this draft's local size limit.");
+    m_recipientInputs.remove(field); m_draft[field] = entries; m_draftDirty = true; m_draftStatus = "Saving…"; m_recipientError.clear();
     clearError(); emit draftChanged(); m_draftTimer.start(); return true;
+}
+// The composer shows this beside the recipient fields; the top error bar is gone.
+bool MailBackend::rejectRecipient(const QString &message) {
+    m_recipientError = message; emit draftChanged(); fail(message); return false;
 }
 QString MailBackend::recipientSuggestions(const QString &query, const QStringList &exclude) {
     const auto ticket = QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -245,10 +253,10 @@ void MailBackend::stageDraftRecipient(const QString &field, const QString &text)
     const auto value = text.trimmed().isEmpty() ? QString{} : text;
     if (m_recipientInputs.value(field) == value) return;
     if (value.isEmpty()) m_recipientInputs.remove(field); else m_recipientInputs[field] = value;
-    m_draftDirty = true; m_draftStatus = "Saving…"; emit draftChanged(); m_draftTimer.start();
+    m_recipientError.clear(); m_draftDirty = true; m_draftStatus = "Saving…"; emit draftChanged(); m_draftTimer.start();
 }
 void MailBackend::restoreRecipientInputs(const QVariantMap &draft) {
-    m_recipientInputs.clear();
+    m_recipientInputs.clear(); m_recipientError.clear();
     const auto inputs = draft.value("recipient_inputs").toMap();
     for (auto it = inputs.cbegin(); it != inputs.cend(); ++it) m_recipientInputs[it.key()] = it.value().toString();
 }

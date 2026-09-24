@@ -3,7 +3,7 @@ use rusqlite::params;
 use sha2::{Digest, Sha256};
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{BTreeMap, HashMap, HashSet, VecDeque},
     sync::{
         atomic::{AtomicU64, Ordering},
         Arc, Mutex,
@@ -698,6 +698,8 @@ impl Store {
                 "cursor",
                 "collapsed_groups",
                 "live_paging",
+                "month_zone",
+                "collapsed_months",
             ],
         )?;
         let limit = number(p, "limit", 50, 1, 100)?;
@@ -805,24 +807,6 @@ impl Store {
             }
         }
         let query = optional_string(p, "query", "")?;
-        if query.split_whitespace().any(|word| {
-            word.split_once(':').is_some_and(|(prefix, value)| {
-                !["http", "https"].contains(&prefix)
-                    && !prefix.is_empty()
-                    && prefix.chars().all(|c| c.is_ascii_alphabetic())
-                    && (!value.is_empty()
-                        || [
-                            "from", "to", "is", "has", "before", "after", "subject", "body",
-                            "category", "status",
-                        ]
-                        .contains(&prefix))
-            })
-        }) {
-            return Err(err(
-                "invalid_request",
-                "Text operators are unavailable; use typed search filters",
-            ));
-        }
         if query.len() > 512 {
             return Err(err("invalid_request", "Search is limited to 512 bytes"));
         }
@@ -833,6 +817,85 @@ impl Store {
         let folder = optional_string(p, "folder", "inbox")?;
         if !["all", "inbox", "received", "sent", "trash"].contains(&folder) {
             return Err(err("invalid_request", "Unknown folder"));
+        }
+        let text = search_query::parse(query)?;
+        // Typed filters and the text must agree; a contradiction is refused
+        // rather than silently preferring one of them.
+        let status = match (status, text.is) {
+            (typed, Some(read)) if typed == "all" || typed == read => read,
+            (_, Some(_)) => {
+                return Err(err(
+                    "invalid_request",
+                    "is: conflicts with the status filter",
+                ))
+            }
+            (typed, None) => typed,
+        };
+        let attachment = match (attachment, text.has_attachment) {
+            (Some(false), true) => {
+                return Err(err(
+                    "invalid_request",
+                    "has:attachment conflicts with the attachment filter",
+                ))
+            }
+            (_, true) => Some(true),
+            (typed, false) => typed,
+        };
+        let (label_id, label_name) = match &text.label {
+            Some(name) => {
+                let (id, name) = self.label_named(account, name)?;
+                (id, Some(name))
+            }
+            None => (String::new(), None),
+        };
+        let search_terms = if query.trim().is_empty() {
+            Value::Null
+        } else {
+            text.terms(label_name.as_deref())
+        };
+        // In Sent, from: names the people the mail went to.
+        let from_patterns: Vec<String> = text
+            .from
+            .iter()
+            .map(|value| search_query::like_pattern(value))
+            .collect();
+        let from_column = if folder == "sent" {
+            "recipient"
+        } else {
+            "sender"
+        };
+        let month_zone = match p.get("month_zone") {
+            None => None,
+            Some(value) => Some(
+                value
+                    .as_str()
+                    .filter(|zone| zone.len() <= 64)
+                    .and_then(|zone| zone.parse::<fm_calendar::Tz>().ok())
+                    .ok_or_else(|| {
+                        err("invalid_request", "month_zone must be an IANA time zone")
+                    })?,
+            ),
+        };
+        let mut collapsed_months = HashSet::new();
+        if let Some(months) = p.get("collapsed_months") {
+            let months = months
+                .as_array()
+                .filter(|months| months.len() <= 256 && month_zone.is_some())
+                .ok_or_else(|| {
+                    err(
+                        "invalid_request",
+                        "collapsed_months needs month_zone and at most 256 months",
+                    )
+                })?;
+            for month in months {
+                let month = month
+                    .as_str()
+                    .filter(|m| valid_month(m))
+                    .ok_or_else(|| err("invalid_request", "Collapsed months use YYYY-MM"))?;
+                if !collapsed_months.insert(month) {
+                    return Err(err("invalid_request", "Collapsed months must be unique"));
+                }
+            }
         }
         let category = optional_string(p, "category", "")?;
         if !category.is_empty() {
@@ -846,23 +909,42 @@ impl Store {
                 return Err(err("not_found", "Category does not exist in this account"));
             }
         }
-        let tokens: Vec<_> = query
-            .split(|c: char| !c.is_alphanumeric())
-            .filter(|s| !s.is_empty())
+        // Bare words match the subject or message text. The CLI's `field` can
+        // narrow them to one column, the sender column included.
+        let word_text = text.words.join(" ");
+        let tokens: Vec<&str> = search_query::tokens(&word_text)
+            .chain(text.subject.iter().flat_map(|v| search_query::tokens(v)))
+            .chain(text.body.iter().flat_map(|v| search_query::tokens(v)))
             .collect();
-        if tokens.len() > 32 || (!query.trim().is_empty() && tokens.is_empty()) {
+        let untokenized = text
+            .subject
+            .iter()
+            .chain(&text.body)
+            .any(|v| search_query::tokens(v).next().is_none());
+        let only_symbols = !text.words.is_empty()
+            && tokens.is_empty()
+            && from_patterns.is_empty()
+            && label_id.is_empty()
+            && !text.has_attachment
+            && text.is.is_none();
+        if tokens.len() > 32 || untokenized || only_symbols {
             return Err(err("invalid_request", "Search needs 1–32 words"));
         }
-        let expression = tokens
-            .iter()
-            .map(|s| format!("\"{s}\"*"))
+        let columns = if field == "all" {
+            "{subject body}"
+        } else {
+            field
+        };
+        let expression = std::iter::once(search_query::fts_group(columns, &word_text))
+            .chain(
+                text.subject
+                    .iter()
+                    .map(|v| search_query::fts_group("subject", v)),
+            )
+            .chain(text.body.iter().map(|v| search_query::fts_group("body", v)))
+            .flatten()
             .collect::<Vec<_>>()
             .join(" AND ");
-        let expression = if field == "all" || expression.is_empty() {
-            expression
-        } else {
-            format!("{field}:({expression})")
-        };
         // One first page per account bounds this cache independently of the
         // corpus and query history. Mail/source hooks and transaction snapshots
         // invalidate it through the existing search generation; presentation,
@@ -912,33 +994,49 @@ impl Store {
             "trash" => 8,
             _ => 16,
         };
-        let simple = grouped
-            && expression.is_empty()
-            && category.is_empty()
-            && sender.is_empty()
-            && exact_sender.is_empty()
-            && attachment.is_none()
-            && after.is_empty()
-            && before.is_empty();
-        let sql = search_matches_sql(!expression.is_empty(), p);
+        let source_filtered = !expression.is_empty()
+            || !category.is_empty()
+            || !sender.is_empty()
+            || !exact_sender.is_empty()
+            || attachment.is_some()
+            || !after.is_empty()
+            || !before.is_empty()
+            || !from_patterns.is_empty()
+            || !label_id.is_empty();
+        let simple = grouped && !source_filtered;
+        let sql = search_matches_sql_with(
+            !expression.is_empty(),
+            p,
+            &TextPredicates {
+                attachment,
+                from_column,
+                from_count: from_patterns.len(),
+                label: !label_id.is_empty(),
+            },
+        );
         let mut stmt = self.db.prepare_cached(&sql)?;
         let mut matches: Vec<Option<Matched>> =
             std::iter::repeat_with(|| None).take(states.len()).collect();
         let mut page = Vec::new();
-        let mut rows = stmt.query(params![
-            account,
-            folder,
-            category,
-            expression,
-            limit,
-            offset,
-            sender_pattern,
-            status,
-            attachment,
-            after,
-            before,
-            exact_sender
-        ])?;
+        let mut values: Vec<&dyn rusqlite::ToSql> = vec![
+            &account,
+            &folder,
+            &category,
+            &expression,
+            &limit,
+            &offset,
+            &sender_pattern,
+            &status,
+            &attachment,
+            &after,
+            &before,
+            &exact_sender,
+        ];
+        values.extend(from_patterns.iter().map(|v| v as &dyn rusqlite::ToSql));
+        if !label_id.is_empty() {
+            values.push(&label_id);
+        }
+        let mut rows = stmt.query(values.as_slice())?;
         if simple {
             page.extend(
                 states
@@ -1031,9 +1129,26 @@ impl Store {
                 2
             }
         };
-        if !collapsed.is_empty() {
+        // Done is presented by month in the client's zone. Counts cover the
+        // whole filtered set; a collapsed month's rows are left out of paging.
+        let mut done_months: BTreeMap<String, usize> = BTreeMap::new();
+        if let Some(zone) = month_zone {
+            for (_, state) in &page {
+                if group_rank(state) == 2 {
+                    *done_months
+                        .entry(month_key(zone, state.latest))
+                        .or_default() += 1;
+                }
+            }
+        }
+        if !collapsed.is_empty() || !collapsed_months.is_empty() {
             page.retain(|(_, state)| {
-                !collapsed.contains(["review", "held", "done"][group_rank(state)])
+                let rank = group_rank(state);
+                let month_collapsed = rank == 2
+                    && month_zone.is_some_and(|zone| {
+                        collapsed_months.contains(month_key(zone, state.latest).as_str())
+                    });
+                !(collapsed.contains(["review", "held", "done"][rank]) || month_collapsed)
             });
         }
         let expanded_count = page.len();
@@ -1178,9 +1293,19 @@ impl Store {
             };
             let attachment_count:i64=self.db.prepare_cached("SELECT COUNT(*) FROM messages m JOIN attachments a ON a.account=m.account AND a.message_id=m.id WHERE m.account=?1 AND m.conversation_id=?2")?.query_row(params![account,cid],|r|r.get(0))?;
             let summary = self.local_model_preview(account, cid, selected)?;
-            out.push(json!({"summary":summary,"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"recipient":recipient,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"attachment_count":attachment_count,"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if expression.is_empty() && category.is_empty() && sender.is_empty() && exact_sender.is_empty() && after.is_empty() && before.is_empty() && attachment.is_none(){Vec::<String>::new()}else{matching}}));
+            out.push(json!({"summary":summary,"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"recipient":recipient,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"attachment_count":attachment_count,"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if source_filtered{matching}else{Vec::<String>::new()}}));
         }
-        let result = json!({"conversations":out,"folder_conversation_count":self.account_counts(account)?["folder_conversation_counts"][folder],"expanded_conversation_count":expanded_count,"filtered_group_counts":{"review":group_counts[0],"held":group_counts[1],"done":group_counts[2]},"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(next_cursor(offset+limit, &next_anchor)?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?});
+        // Newest month first; conversations without a date sort last.
+        let done_months = month_zone.map(|_| {
+            let undated = done_months.remove(UNDATED);
+            done_months
+                .iter()
+                .rev()
+                .map(|(month, count)| json!({"month":month,"count":count}))
+                .chain(undated.map(|count| json!({"month":UNDATED,"count":count})))
+                .collect::<Vec<_>>()
+        });
+        let result = json!({"conversations":out,"folder_conversation_count":self.account_counts(account)?["folder_conversation_counts"][folder],"expanded_conversation_count":expanded_count,"filtered_group_counts":{"review":group_counts[0],"held":group_counts[1],"done":group_counts[2]},"done_months":done_months,"search_terms":search_terms,"filtered_conversation_count":filtered_count,"account_counts":self.account_counts(account)?,"revision":revision,"grouped":grouped,"date_filter_time_zone":"UTC","next_cursor":if more {Some(next_cursor(offset+limit, &next_anchor)?)} else {None},"next_offset":if more{Some(offset+limit)}else{None},"coverage":self.coverage(account)?});
         if cache_first_page {
             self.projection_cache.borrow_mut().insert(
                 first_page_key,
@@ -1263,6 +1388,33 @@ impl Store {
         Ok(
             json!({"kind":kind,"id":cid,"subject":subject,"revision":revision,"message_ids":ids,"categories":categories,"messages":messages}),
         )
+    }
+    /// The account label a search `label:` names: its exact name ignoring
+    /// case, or else the only label whose name begins with it.
+    fn label_named(&self, account: &str, name: &str) -> Result<(String, String)> {
+        let wanted = name.to_lowercase();
+        let mut stmt = self
+            .db
+            .prepare_cached("SELECT id,name FROM categories WHERE account=?1 ORDER BY name,id")?;
+        let labels = stmt
+            .query_map([account], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        if let Some(found) = labels.iter().find(|(_, n)| n.to_lowercase() == wanted) {
+            return Ok(found.clone());
+        }
+        let mut prefixed = labels
+            .into_iter()
+            .filter(|(_, n)| n.to_lowercase().starts_with(&wanted));
+        match (prefixed.next(), prefixed.next()) {
+            (Some(found), None) => Ok(found),
+            (None, _) => Err(err("invalid_request", &format!("No label named “{name}”"))),
+            _ => Err(err(
+                "invalid_request",
+                &format!("label:{name} matches more than one label"),
+            )),
+        }
     }
     pub(crate) fn categories(&self, account: &str) -> Result<Value> {
         let stamp = self.mail_changes.snapshot(&self.db).search;
@@ -1416,7 +1568,48 @@ fn canonical_email(email: &str) -> Result<String> {
     }
     Ok(trimmed.to_lowercase())
 }
+/// Done conversations whose latest message has no usable date.
+const UNDATED: &str = "undated";
+
+/// `YYYY-MM` of a Julian day in `zone`, or `undated`.
+fn month_key(zone: fm_calendar::Tz, julian_day: f64) -> String {
+    let seconds = ((julian_day - 2_440_587.5) * 86_400.0).round();
+    if julian_day <= 0.0 || !seconds.is_finite() {
+        return UNDATED.into();
+    }
+    chrono::DateTime::from_timestamp(seconds as i64, 0)
+        .map(|at| at.with_timezone(&zone).format("%Y-%m").to_string())
+        .unwrap_or_else(|| UNDATED.into())
+}
+
+fn valid_month(month: &str) -> bool {
+    month == UNDATED
+        || (month.len() == 7
+            && month.as_bytes()[4] == b'-'
+            && chrono::NaiveDate::parse_from_str(&format!("{month}-01"), "%Y-%m-%d").is_ok())
+}
+
+/// Predicates the search text adds beyond the typed filters in the request.
+#[derive(Default)]
+pub(crate) struct TextPredicates<'a> {
+    pub attachment: Option<bool>,
+    /// `sender` matches sender name/address; `recipient` the To address.
+    pub from_column: &'a str,
+    pub from_count: usize,
+    pub label: bool,
+}
+
+/// The benchmark's fixed twelve-slot form, without text predicates.
+#[cfg(test)]
 pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
+    let text = TextPredicates {
+        attachment: p["has_attachment"].as_bool(),
+        ..TextPredicates::default()
+    };
+    search_matches_sql_with(search, p, &text)
+}
+
+pub(crate) fn search_matches_sql_with(search: bool, p: &Value, text: &TextPredicates) -> String {
     // Only add predicates actually requested. Bound optional OR expressions kept
     // sender/body columns in the old query's scan even for unfiltered listings.
     let mut predicate = "m.account=?1".to_owned();
@@ -1446,7 +1639,7 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
             " AND (trim(m.sender_email)=?12 COLLATE NOCASE OR m.sender_email GLOB '*[^ -~]*')",
         );
     }
-    if let Some(has) = p["has_attachment"].as_bool() {
+    if let Some(has) = text.attachment {
         predicate.push_str(if has {
             " AND m.id IN (SELECT message_id FROM attachments WHERE account=?1 AND message_id IS NOT NULL)"
         } else {
@@ -1459,6 +1652,24 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
     if p["before"].as_str().is_some_and(|s| !s.is_empty()) {
         predicate.push_str(" AND julianday(m.sent_at)<julianday(?11)");
     }
+    // Text predicates take the slots after the twelve typed ones, in order.
+    let mut slots = 12;
+    for _ in 0..text.from_count {
+        slots += 1;
+        predicate.push_str(&if text.from_column == "recipient" {
+            format!(" AND m.recipient LIKE ?{slots} ESCAPE '\\'")
+        } else {
+            format!(" AND (m.sender_name LIKE ?{slots} ESCAPE '\\' OR m.sender_email LIKE ?{slots} ESCAPE '\\')")
+        });
+    }
+    if text.label {
+        slots += 1;
+        predicate.push_str(&format!(" AND m.id IN (SELECT message_id FROM message_categories WHERE account=?1 AND category_id=?{slots})"));
+    }
+    let bindings = (1..=slots)
+        .map(|slot| format!("?{slot}"))
+        .collect::<Vec<_>>()
+        .join(",");
     // Reserve stable numeric slots without forcing unrequested columns into scans.
     let source = if search {
         "message_fts JOIN messages m ON m.rowid=message_fts.rowid"
@@ -1470,7 +1681,7 @@ pub(crate) fn search_matches_sql(search: bool, p: &Value) -> String {
     } else {
         "''"
     };
-    format!("WITH bindings AS (SELECT ?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) SELECT m.conversation_id,m.rowid,m.sent_at,{exact_column} FROM {source} WHERE {predicate}")
+    format!("WITH bindings AS (SELECT {bindings}) SELECT m.conversation_id,m.rowid,m.sent_at,{exact_column} FROM {source} WHERE {predicate}")
 }
 
 #[cfg(test)]

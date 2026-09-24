@@ -68,6 +68,7 @@ impl MailWorker {
                 Ok(())
             })
             .await?;
+            crate::diagnostics::event("Sync", "mail_baseline_started", json!({"account_ref":crate::diagnostics::reference("account",ctx.account.as_str()),"connection_generation":ctx.connection_generation}));
             return Ok(Step::Progress);
         }
         let recent = lane(&lanes, MailLane::Recent)?;
@@ -124,6 +125,8 @@ impl MailWorker {
                         Ok(())
                     })
                     .await?;
+                    crate::diagnostics::event("Sync", "mail_history_expired", json!({"account_ref":crate::diagnostics::reference("account",ctx.account.as_str()),"lane":format!("{:?}",selected.lane),
+                        "generation":generation,"connection_generation":ctx.connection_generation}));
                     self.non_delta_parts = 0;
                     self.next_delta_ms = 0;
                     return Ok(Step::Progress);
@@ -240,6 +243,7 @@ impl MailWorker {
         ctx: &SyncContext,
         page: &GooglePageIdentity,
     ) -> Result<Option<Checkpoint>> {
+        let started = std::time::Instant::now();
         let owned_page = page.clone();
         let (blobs, pending, since) = ctx
             .core_call(move |store| {
@@ -320,7 +324,8 @@ impl MailWorker {
             prepared.push(item);
         }
         let owned_page = page.clone();
-        ctx.core_call(move |store| {
+        let item_count = prepared.len();
+        let completed = ctx.core_call(move |store| {
             if !prepared.is_empty() {
                 #[cfg(feature = "verification-google")]
                 let started = crate::verification_google::unix_ms();
@@ -336,7 +341,12 @@ impl MailWorker {
                 Ok(None)
             }
         })
-        .await
+        .await?;
+        crate::diagnostics::event("Sync", "mail_part_published", json!({"account_ref":crate::diagnostics::reference("account",&page.account),"lane":format!("{:?}",page.lane),
+            "generation":page.generation,"connection_generation":page.connection_generation,
+            "items":item_count,"normalized_bytes":bytes,"page_complete":completed.is_some(),
+            "elapsed_ms":started.elapsed().as_millis()}));
+        Ok(completed)
     }
 }
 

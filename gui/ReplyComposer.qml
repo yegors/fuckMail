@@ -281,6 +281,10 @@ Rectangle {
         RecipientField { id: toField; visible: !root.readOnly; Layout.fillWidth: true; label: "To"; fieldName: "to_recipients"; showLinks: true; onCcRequested: root.ccOpen=true; onBccRequested: root.bccOpen=true }
         RecipientField { id: ccField; Layout.fillWidth: true; label: "Cc"; fieldName: "cc_recipients"; visible: !root.readOnly && (root.ccOpen || (backend.draft.cc_recipients||[]).length>0 || (backend.recipientInputs.cc_recipients||"").length>0) }
         RecipientField { id: bccField; Layout.fillWidth: true; label: "Bcc"; fieldName: "bcc_recipients"; visible: !root.readOnly && (root.bccOpen || (backend.draft.bcc_recipients||[]).length>0 || (backend.recipientInputs.bcc_recipients||"").length>0) }
+        Text {
+            objectName: "draftRecipientError"; visible: !root.readOnly && backend.recipientError.length > 0; Layout.fillWidth: true
+            text: backend.recipientError; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.error; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
+        }
         RowLayout {
             Layout.fillWidth: true; Layout.preferredHeight: 38; spacing: 10
             Text { text: "Subject"; Layout.preferredWidth: 44; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5) }

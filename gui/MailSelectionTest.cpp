@@ -77,9 +77,14 @@ class MailSelectionTest {
         }
         ~Harness() { backend.m_shutdown=true; backend.m_connected=false; backend.m_socket.abort(); }
         Held take() { await([&]{return !writes.isEmpty();},"selected mutation delivered"); return writes.takeFirst(); }
+        // Like Core's conversation projection, every receipt carries the conversation's labels.
+        QJsonArray labels(const QString &id) const {
+            for (const auto &row : rows) if (row.toMap().value("id").toString()==id) return QJsonArray::fromVariantList(row.toMap().value("categories").toList());
+            return {};
+        }
         void finish(const Held &held, bool ok=true) {
             const auto params=held.request["params"].toObject();
-            if (ok) held.peer->write(reply(held.request["id"].toString(),{{"id",params["id"]},{"revision",4},{"message_ids",params["message_ids"]},{"messages",QJsonArray{}}}));
+            if (ok) held.peer->write(reply(held.request["id"].toString(),{{"id",params["id"]},{"revision",4},{"message_ids",params["message_ids"]},{"categories",labels(params["id"].toString())},{"messages",QJsonArray{}}}));
             else held.peer->write(QJsonDocument(QJsonObject{{"version",1},{"id",held.request["id"]},{"ok",false},{"error",QJsonObject{{"code","stale_revision"},{"message","Conversation changed"}}}}).toJson(QJsonDocument::Compact)+'\n');
         }
     };
@@ -154,6 +159,13 @@ class MailSelectionTest {
     static QQuickItem *find(QQuickItem *item,const QString &name) {
         if(item->objectName()==name) return item;
         for(auto *child:item->childItems()) if(auto *found=find(child,name)) return found;
+        return nullptr;
+    }
+    // The painted match: the HTML reader and its text fallback share a name.
+    static QQuickItem *shown(QQuickItem *item,const QString &name) {
+        if(!item->isVisible()) return nullptr;
+        if(item->objectName()==name) return item;
+        for(auto *child:item->childItems()) if(auto *found=shown(child,name)) return found;
         return nullptr;
     }
     static void click(QQuickWindow *window,QQuickItem *item,Qt::MouseButton button,Qt::KeyboardModifiers modifiers={}) {
@@ -284,9 +296,9 @@ class MailSelectionTest {
         h.backend.m_folder="inbox"; h.backend.m_selected="a"; emit h.backend.queryChanged();
         h.backend.m_conversation={{"id","a"},{"subject","Source inspection"},{"revision",3},{"message_ids",QVariantList{"a-original"}},{"messages",QVariantList{QVariantMap{{"id","a-original"},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"sent_at","2026-09-14T10:00:00Z"},{"text","Retained plain body"},{"source_available",true},{"source_version",QString(64, char(97))},{"sent",false}}}}};
         emit h.backend.conversationChanged();
-        await([&]{auto item=find(window->contentItem(),"messageBody_a-original");return item && item->property("text").toString().contains("Retained HTML");},"received HTML loads for the expanded message");
+        await([&]{auto item=shown(window->contentItem(),"messageBody_a-original");return item && item->property("text").toString().contains("Retained HTML");},"received HTML loads for the expanded message");
         require(h.writes.isEmpty(),"source inspection queues no mutations");
-        auto body=find(window->contentItem(),"messageBody_a-original")->property("text").toString();
+        auto body=shown(window->contentItem(),"messageBody_a-original")->property("text").toString();
         require(!body.contains("<img") && !body.contains("images.example.test"),"received body contains no image resources");
         QMetaObject::invokeMethod(mail,"scrollToMember",Q_ARG(QVariant,QString("a-original")));
         layout.restart(); while(layout.elapsed()<120)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
@@ -297,7 +309,7 @@ class MailSelectionTest {
         await([&]{auto item=find(window->contentItem(),"messageFormatPlain");return item && item->isVisible();},"format submenu");
         layout.restart(); while(layout.elapsed()<100)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
         click(window,find(window->contentItem(),"messageFormatPlain"),Qt::LeftButton);
-        await([&]{auto item=find(window->contentItem(),"messageBody_a-original");return item && item->property("text").toString().contains("Retained plain body");},"plain format uses retained extracted body");
+        await([&]{auto item=shown(window->contentItem(),"messageBody_a-original");return item && item->property("text").toString().contains("Retained plain body");},"plain format uses retained extracted body");
         QMetaObject::invokeMethod(mail,"scrollToMember",Q_ARG(QVariant,QString("a-original")));
         layout.restart(); while(layout.elapsed()<120)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
         click(window,find(window->contentItem(),"messageMore_a-original"),Qt::LeftButton);
@@ -530,10 +542,10 @@ class MailSelectionTest {
         require(mail->property("selectionRows").toList().size()<h.rows.size(),"Page Up returns toward the prior viewport");
         press(Qt::Key_Home,Qt::ShiftModifier);
         require(mail->property("selectionRows").toList().size()==1,"Shift Home returns to the first row");
-        QMetaObject::invokeMethod(mail,"toggleGroup",Q_ARG(QVariant,"held"));
+        QMetaObject::invokeMethod(mail,"toggleGroup",Q_ARG(QVariant,"held"),Q_ARG(QVariant,QVariant()));
         press(Qt::Key_End,Qt::ShiftModifier);
         require(mail->property("selectionCursor").toString()=="page-19","End skips collapsed groups");
-        QMetaObject::invokeMethod(mail,"toggleGroup",Q_ARG(QVariant,"held"));
+        QMetaObject::invokeMethod(mail,"toggleGroup",Q_ARG(QVariant,"held"),Q_ARG(QVariant,QVariant()));
         QMetaObject::invokeMethod(mail,"clearSelection");h.rows=originalRows;h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
         require(!warnings,"no QML errors in production selection/splash controls");
         const auto capture=qEnvironmentVariable("FM_SELECTION_CAPTURE");

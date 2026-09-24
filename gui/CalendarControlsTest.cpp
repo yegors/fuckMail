@@ -60,6 +60,7 @@ class CalendarBackendProbe : public QObject {
     Q_PROPERTY(QString calendarView MEMBER calendarView NOTIFY eventsChanged)
     Q_PROPERTY(QString calendarCoverage MEMBER calendarCoverage CONSTANT)
     Q_PROPERTY(QVariantMap calendarMailActivity READ calendarMailActivity NOTIFY eventsChanged)
+    Q_PROPERTY(int calendarBandRows MEMBER calendarBandRows NOTIFY eventsChanged)
     Q_PROPERTY(double nowHour MEMBER nowHour CONSTANT)
     Q_PROPERTY(QVariantList calendarOperations MEMBER calendarOperations NOTIFY calendarOperationsChanged)
     Q_PROPERTY(bool calendarOperationsLoading MEMBER calendarOperationsLoading NOTIFY calendarOperationsChanged)
@@ -82,6 +83,7 @@ public:
     double nowHour = 8;
     QString todayDate = "2026-09-13", calendarOperationStatus;
     QString calendarDate = "2026-09-13", calendarFrom = "2026-09-13", calendarView = "week", calendarCoverage;
+    int calendarBandRows = 0;
     QString account = "alpha";
     QVariantList accounts{QVariantMap{{"id", "alpha"}}, QVariantMap{{"id", "beta"}}};
     QVariantMap googleSync{{"alpha", QVariantMap{{"active", true}}}};
@@ -132,6 +134,7 @@ public:
     Q_INVOKABLE void remember(const QString &, const QVariant &) {}
     Q_INVOKABLE void setCalendarView(const QString &view) { calendarView = view; emit eventsChanged(); }
     Q_INVOKABLE void setCalendarDate(const QString &date) { calendarDate = calendarFrom = date; emit eventsChanged(); }
+    Q_INVOKABLE void openCalendarWeek(const QString &date) { calendarView = "week"; setCalendarDate(date); }
     Q_INVOKABLE void showCalendarToday() { setCalendarDate(todayDate); }
     Q_INVOKABLE void moveCalendar(int) {}
     Q_INVOKABLE void joinCalendarEvent(const QVariantMap &) {}
@@ -867,6 +870,17 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     };
     settle([&] { return slot->width() > 0 && slot->height() > 0; });
     const auto hh = calendar->property("hourHeight").toDouble();
+    // Hovering an empty half hour shows the slot a click would create; an
+    // event, or a slot running into one, shows none.
+    auto ghost = named(visualRoot, "calendarSlotGhost");
+    nativeMouse(QEvent::MouseMove, slot->mapToScene({slot->width() / 2, hh * 14.6}), Qt::NoButton, Qt::NoButton);
+    settle([&] { return ghost->property("visible").toBool(); });
+    require(qAbs(ghost->property("y").toDouble() - hh * 14.5) < .5 && ghost->property("height").toDouble() >= 20, "The ghost covers the hovered half hour, at least 20px tall");
+    nativeMouse(QEvent::MouseMove, slot->mapToScene({slot->width() / 4, hh * 9.4}), Qt::NoButton, Qt::NoButton);
+    settle([&] { return !ghost->property("visible").toBool(); });
+    nativeMouse(QEvent::MouseMove, slot->mapToScene({slot->width() / 2, hh * 23.9}), Qt::NoButton, Qt::NoButton);
+    settle([&] { return ghost->property("visible").toBool(); });
+    require(ghost->property("y").toDouble() + ghost->property("height").toDouble() <= hh * 24 + .5, "The ghost never runs past 24:00");
     const auto startPoint = slot->mapToScene({slot->width() / 2, hh * 12 + 2});
     const auto endPoint = slot->mapToScene({slot->width() / 2, hh * 13.5});
     nativeMouse(QEvent::MouseButtonPress, startPoint, Qt::LeftButton, Qt::LeftButton);
@@ -891,16 +905,30 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     require(named(visualRoot, "calendarEditorPreview-2"), "Last multi-day preview segment exists");
     if (!captureDir.isEmpty()) retainVisual("calendar-multiday-preview");
     call(gridEditor, "close");
+    backend.calendarBandRows = 2; emit backend.eventsChanged();
+    require(calendar->property("bandHeight").toDouble() == 92, "Two all-day rows make a 92px band");
     for (const auto view : {"day", "week", "month"}) {
         backend.setCalendarView(view);
         QCoreApplication::processEvents();
-        const auto labelName = (QString(view) == "month" ? "calendarMonthMailCount-" : "calendarMailCount-") + backend.calendarFrom;
-        const auto label = named(visualRoot, labelName.toUtf8().constData());
-        require(label && label->property("ready").toBool(), "Daily mail pill exists in day/week/month");
-        require(label->property("day").toMap().value("received") == 7 && label->property("day").toMap().value("sent") == 2, "Counts use the selected mail account");
-        backend.setPreferences({{"calendar_account_visibility","current"}});
-        require(!backend.mailCombined && label->property("day").toMap().value("received") == 7, "Event scope does not change mail count account");
-        backend.setPreferences({{"calendar_account_visibility","all"}});
+        auto band = qobject_cast<QQuickItem *>(named(visualRoot, QString(view) == "month" ? "calendarMonthBand" : "calendarBand"));
+        settle([&] { return qAbs(band->height() - 92) < .5; });
+        if (QString(view) == "day") {
+            // Day view shows the day's mail above its agenda, not in the band.
+            auto received = named(visualRoot, "calendarDayMailReceived"), sent = named(visualRoot, "calendarDayMailSent");
+            require(qobject_cast<QQuickItem *>(named(visualRoot, "calendarDayMail"))->height() == 92, "The Day mail row is as tall as the band");
+            require(received->property("text").toString() == "7" && sent->property("text").toString() == "2", "Day sidebar counts use the selected mail account");
+            backend.setPreferences({{"calendar_account_visibility","current"}});
+            require(!backend.mailCombined && received->property("text").toString() == "7", "Event scope does not change mail count account");
+            backend.setPreferences({{"calendar_account_visibility","all"}});
+        } else {
+            const auto labelName = (QString(view) == "month" ? "calendarMonthMailCount-" : "calendarMailCount-") + backend.calendarFrom;
+            const auto label = named(visualRoot, labelName.toUtf8().constData());
+            require(label && label->property("ready").toBool(), "Daily mail pill exists in week and month");
+            require(label->property("day").toMap().value("received") == 7 && label->property("day").toMap().value("sent") == 2, "Counts use the selected mail account");
+            backend.setPreferences({{"calendar_account_visibility","current"}});
+            require(!backend.mailCombined && label->property("day").toMap().value("received") == 7, "Event scope does not change mail count account");
+            backend.setPreferences({{"calendar_account_visibility","all"}});
+        }
         if (!captureDir.isEmpty()) {
             for (const auto theme : {"graphite", "paper", "harbour", "terminal"}) {
                 visualRoot->setProperty("testTheme", theme);
@@ -922,6 +950,16 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     nativeMouse(QEvent::MouseButtonPress,emptyPoint,Qt::LeftButton,Qt::LeftButton);
     nativeMouse(QEvent::MouseButtonRelease,emptyPoint,Qt::LeftButton,Qt::NoButton);
     require(backend.calendarView=="day"&&backend.calendarDate=="2026-09-13","Month empty cell opens the selected Day view");
+    // Month's week axis: ISO numbers, today's week in accent, each opening its week.
+    backend.setCalendarView("month"); QCoreApplication::processEvents();
+    auto thisWeek=qobject_cast<QQuickItem *>(named(visualRoot,"calendarWeekNumber-0")), nextWeek=qobject_cast<QQuickItem *>(named(visualRoot,"calendarWeekNumber-1"));
+    settle([&]{return nextWeek->isVisible()&&nextWeek->height()>0;});
+    require(thisWeek->property("number").toInt()==38&&thisWeek->property("current").toBool()&&nextWeek->property("number").toInt()==39&&!nextWeek->property("current").toBool(),"Week numbers follow ISO weeks and mark the current one");
+    const auto weekPoint=nextWeek->mapToScene({nextWeek->width()/2,12});
+    nativeMouse(QEvent::MouseButtonPress,weekPoint,Qt::LeftButton,Qt::LeftButton);
+    nativeMouse(QEvent::MouseButtonRelease,weekPoint,Qt::LeftButton,Qt::NoButton);
+    require(backend.calendarView=="week"&&backend.calendarDate=="2026-09-20","A week number opens that week in Week view");
+    backend.calendarBandRows=0; emit backend.eventsChanged();
     calendar->setProperty("visible", false); require(!backend.mailActive, "Hidden Calendar stops count queries");
     visualWindow->close();
     require(!qmlError, "Actual controls run without QML binding errors");

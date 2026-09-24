@@ -24,7 +24,8 @@ public:
     void setIconSize(int size);
     // `scale` maps the 16×16 grid onto the image in device pixels.
     static QImage render(const QString &name, const QColor &color, const QSize &pixels, const QSizeF &scale);
-    // Registers FmIconItem in FuckMail.Icons; call before loading FmIcon.qml.
+    // Registers FmIconItem in FuckMail.Icons, and FmHtmlView in FuckMail.Html;
+    // call before loading FmIcon.qml.
     static void registerType();
 signals:
     void nameChanged();

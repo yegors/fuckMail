@@ -42,6 +42,8 @@ pub mod google_live_mail;
 pub mod google_live_mutations;
 pub mod google_send;
 pub mod google_store;
+pub mod html_content;
+pub mod link_index;
 pub mod live_calendar;
 mod live_calendar_invitations;
 pub mod live_calendar_occurrences;
@@ -56,14 +58,20 @@ mod phase1_calendar;
 mod phase1_tests;
 mod preferences;
 mod queries;
+pub mod remote_prefs;
+mod search_query;
+mod search_senders;
 #[cfg(test)]
 mod sender_kind_tests;
+pub mod view_cache;
 const RESET_BASELINE_VERSION: u32 = 32;
 // Append one SQL step per version after the fresh baseline. Each step commits
 // with its own user_version update before normal recovery begins.
 const POST_RESET_MIGRATIONS: &[&str] = &[
     // 33: Calendar mail counts read one date range instead of the whole mailbox.
     "CREATE INDEX google_mail_coverage_by_date ON google_mail_coverage(account,internal_date_ms) WHERE deleted=0;",
+    // 34: link hosts per message, for link hover cards and blocked-domain counts.
+    link_index::SCHEMA,
 ];
 pub const SCHEMA_VERSION: u32 = RESET_BASELINE_VERSION + POST_RESET_MIGRATIONS.len() as u32;
 pub const FIXTURE_REVISION: u32 = 3;
@@ -326,6 +334,7 @@ impl Store {
                 return self.preferences();
             }
             "preferences_save" => return self.preferences_save(&params),
+            "link_pattern_counts" => return self.link_pattern_counts(&params),
             "calendar_sources" => {
                 fields(&params, &[])?;
                 return self.calendar_sources();
@@ -381,6 +390,8 @@ impl Store {
             "draft_create",
             "sender_summary",
             "recipient_suggestions",
+            "search_senders",
+            "link_host_summary",
             "draft_transfer_status",
             "draft_transfer_retry",
         ]
@@ -416,6 +427,8 @@ impl Store {
             "google_sent" => self.google_sent(account, &params),
             "sender_summary" => self.sender_summary(account, &params),
             "recipient_suggestions" => self.recipient_suggestions(account, &params),
+            "search_senders" => self.search_senders(account, &params),
+            "link_host_summary" => self.link_host_summary(account, &params),
             "draft_transfer_status" => {
                 fields(&params, &["request_id"])?;
                 self.draft_transfer_status(account, string(&params, "request_id")?)

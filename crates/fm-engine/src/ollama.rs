@@ -199,6 +199,7 @@ pub async fn infer(
                         && ["assistance_output_limit", "assistance_format"]
                             .contains(&error.code.as_str()) =>
                 {
+                    crate::diagnostics::event("Model", "format_retry", json!({"code":error.code,"attempt":1,"task":task}));
                     // Retry only format/completion failures once. The rejected
                     // output never enters the prompt, store or mail actions.
                     body["messages"].as_array_mut().unwrap().push(json!({"role":"user","content":"Return a complete JSON object with exactly sender_kind, category_ids, category_abstain, reason, summary, source_ids. Use a short factual prose summary, not a code block. Copy IDs from the supplied data only. With no matching label use category_ids:[]; if category_abstain is true the array must be empty. No reasoning or extra text."}));

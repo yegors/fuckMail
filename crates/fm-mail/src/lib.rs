@@ -1,5 +1,7 @@
 //! Shared incoming text extraction and human-authored MIME construction.
 //! No transport, AI, file reads or database.
+pub mod html_view;
+pub mod image_view;
 mod incoming;
 mod reply_text;
 use ammonia::{Builder as HtmlCleaner, UrlRelative};

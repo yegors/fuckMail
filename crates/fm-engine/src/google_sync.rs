@@ -1407,8 +1407,12 @@ fn progress_state(
     error: Option<&str>,
 ) {
     let mut value = progress.lock().unwrap();
+    let changed = value[service] != state || value[format!("{service}_error")] != json!(error);
     value[service] = json!(state);
     value[format!("{service}_error")] = json!(error);
+    if changed {
+        crate::diagnostics::event("Sync", "state_changed", json!({"service":service,"state":state,"code":error}));
+    }
 }
 async fn pause(cancel: &CancellationToken, delay: Duration) -> bool {
     let mut remaining = delay;

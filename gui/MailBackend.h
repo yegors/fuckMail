@@ -19,6 +19,7 @@
 #include <functional>
 
 class GoogleOperation;
+class HtmlContent;
 
 // Phase 1: shared Core/Mail/Calendar boundary, additive protocol 1.
 // Presentation and asynchronous IPC only. No direct database or provider access.
@@ -40,7 +41,10 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QVariantMap draft READ draft NOTIFY draftChanged)
     Q_PROPERTY(QString activeDraftId READ activeDraftId NOTIFY draftChanged)
     Q_PROPERTY(QVariantMap recipientInputs READ recipientInputs NOTIFY draftChanged)
+    // Why the last typed recipient was not added, shown beside the fields.
+    Q_PROPERTY(QString recipientError READ recipientError NOTIFY draftChanged)
     Q_PROPERTY(QVariantList events READ events NOTIFY eventsChanged)
+    Q_PROPERTY(int calendarBandRows READ calendarBandRows NOTIFY eventsChanged)
     Q_PROPERTY(QVariantList todayEvents READ todayEvents NOTIFY timelineChanged)
     Q_PROPERTY(QVariantList reminders READ reminders NOTIFY remindersChanged)
     Q_PROPERTY(QString account READ account NOTIFY accountChanged)
@@ -53,6 +57,8 @@ class MailBackend final : public QObject {
     Q_PROPERTY(QVariantMap debugRuntime READ debugRuntime)
     Q_PROPERTY(QString draftStatus READ draftStatus NOTIFY draftChanged)
     Q_PROPERTY(bool connected READ connected NOTIFY connectedChanged)
+    // The HTML reader: sanitised HTML, images, link cards, blocklist and proxy.
+    Q_PROPERTY(QObject *htmlContent READ htmlContent CONSTANT)
     Q_PROPERTY(bool syntheticProfile READ syntheticProfile NOTIFY connectedChanged)
     Q_PROPERTY(QVariantMap googleAuth READ googleAuth NOTIFY googleAuthChanged)
     Q_PROPERTY(QVariantMap googleAuthConfiguration READ googleAuthConfiguration NOTIFY googleAuthChanged)
@@ -73,7 +79,14 @@ class MailBackend final : public QObject {
     Q_PROPERTY(bool preferencesPending READ preferencesPending NOTIFY preferencesChanged)
     Q_PROPERTY(QVariantMap diagnostics READ diagnostics NOTIFY diagnosticsChanged)
     Q_PROPERTY(QVariantMap filters READ filters NOTIFY queryChanged)
+    // Collapsed Inbox sections, saved per account: review, held or done:YYYY-MM.
     Q_PROPERTY(QStringList collapsedGroups READ collapsedGroups NOTIFY queryChanged)
+    // How Core read the current search text, or why it could not.
+    Q_PROPERTY(QVariantMap searchTerms READ searchTerms NOTIFY searchTermsChanged)
+    Q_PROPERTY(QString searchError READ searchError NOTIFY searchTermsChanged)
+    Q_PROPERTY(QStringList recentSearches READ recentSearches NOTIFY recentSearchesChanged)
+    Q_PROPERTY(QVariantList searchPeople READ searchPeople NOTIFY searchPeopleChanged)
+    Q_PROPERTY(QString searchPeopleQuery READ searchPeopleQuery NOTIFY searchPeopleChanged)
     Q_PROPERTY(QVariantMap querySummary READ querySummary NOTIFY conversationsChanged)
     Q_PROPERTY(QVariantList captures READ captures NOTIFY capturesChanged)
     Q_PROPERTY(QString captureStatus READ captureStatus NOTIFY capturesChanged)
@@ -141,6 +154,7 @@ public:
     QString activeDraftId() const { return m_activeDraft; }
     QVariantMap recipientInputs() const { QVariantMap values; for (auto it = m_recipientInputs.cbegin(); it != m_recipientInputs.cend(); ++it) values[it.key()] = it.value(); return values; }
     QVariantList events() const { return visibleCalendarEvents(m_events, true); }
+    int calendarBandRows() const;
     QVariantList todayEvents() const { return visibleCalendarEvents(m_todayEvents, true); }
     QVariantList timelinePanels() const;
     QVariantList reminders() const { return visibleCalendarEvents(m_reminders, false, false); }
@@ -159,7 +173,9 @@ public:
     QString error() const { return m_error; }
     QVariantMap debugRuntime() const { return {{"pending", m_pending.size()}, {"queued", m_outgoing.size()}, {"in_flight", !m_inFlight.isEmpty()}, {"provider_operations", m_googleOperations.size()}, {"engine_pid", m_enginePid}, {"shutting_down", m_shutdown}}; }
     QString draftStatus() const { return m_draftStatus; }
+    QString recipientError() const { return m_recipientError; }
     bool connected() const { return m_connected; }
+    QObject *htmlContent() const;
     bool syntheticProfile() const { return m_syntheticProfile; }
     QVariantMap googleAuth() const { return m_googleAuth; }
     QVariantMap googleAuthConfiguration() const { return m_googleAuthConfiguration; }
@@ -186,6 +202,11 @@ public:
     QVariantMap diagnostics() const { return m_diagnostics; }
     QVariantMap filters() const { return m_filters; }
     QStringList collapsedGroups() const { return m_collapsedGroups; }
+    QVariantMap searchTerms() const { return m_searchTerms; }
+    QString searchError() const { return m_searchError; }
+    QStringList recentSearches() const { return presentation().value("recentSearches").toStringList(); }
+    QVariantList searchPeople() const { return m_searchPeople; }
+    QString searchPeopleQuery() const { return m_searchPeopleQuery; }
     QVariantMap querySummary() const { return m_querySummary; }
     QVariantList captures() const { return m_captures; }
     QString captureStatus() const { return m_captureStatus; }
@@ -351,6 +372,11 @@ public:
     Q_INVOKABLE bool validFilterSender(const QString &sender) const;
     Q_INVOKABLE void applyFilters(const QVariantMap &filters);
     Q_INVOKABLE void setCollapsedGroups(const QStringList &groups);
+    // Enter keeps the search and adds it to this account's recent searches.
+    Q_INVOKABLE void commitSearch(const QString &text);
+    Q_INVOKABLE void removeRecentSearch(const QString &text);
+    // People after from:; senders, or recipients in Sent and Drafts.
+    Q_INVOKABLE void requestSearchPeople(const QString &part);
     Q_INVOKABLE void setPreferences(const QVariantMap &patch);
     Q_INVOKABLE void updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention = {}, const QVariantMap &sync = {});
     Q_INVOKABLE void setCalendarSelected(const QString &account, const QString &calendar, bool selected);
@@ -359,6 +385,7 @@ public:
     Q_INVOKABLE void setCalendarDate(const QString &date);
     // One update for a month-day click instead of a date change then a view change.
     Q_INVOKABLE void openCalendarDay(const QString &date);
+    Q_INVOKABLE void openCalendarWeek(const QString &date);
     Q_INVOKABLE void showCalendarToday();
     Q_INVOKABLE void moveTimeline(int delta);
     Q_INVOKABLE void showTimelineToday();
@@ -437,6 +464,9 @@ signals:
     void calendarOperationsChanged();
     void accountChanged();
     void queryChanged();
+    void searchTermsChanged();
+    void recentSearchesChanged();
+    void searchPeopleChanged();
     void errorChanged();
     void connectedChanged();
     void presentationChanged();
@@ -466,6 +496,7 @@ private:
     friend class CalendarMailActivityTest;
     friend class AccountLifecycleControlsTest;
     friend class GuiAccountLifecycleSelfTest;
+    friend class HtmlContent;
     using Callback = std::function<void(const QJsonObject &, bool)>;
     struct Pending {
         Callback callback; qint64 started;
@@ -473,8 +504,13 @@ private:
         int generation, listGeneration, calendarGeneration, senderGeneration;
         bool automaticRead = false;
         int queryBypasses = 0;
+        // First page of a list search: the search dropdown explains a refusal.
+        bool searchText = false;
+        // A queued Send's draft check targets its own account and draft, not the
+        // visible mailbox, so navigation never cancels it before the engine.
+        bool retainOnNavigation = false;
     };
-    void request(const QString &method, const QString &account, const QJsonObject &params, Callback callback);
+    void request(const QString &method, const QString &account, const QJsonObject &params, Callback callback, bool retainOnNavigation = false);
     void requestReader(const QString &account, const QJsonObject &params, Callback callback,
                        const QString &method = "conversation", bool prefetch = false);
     GoogleOperation *m_readerOperation = nullptr;
@@ -553,6 +589,7 @@ private:
     CalendarWindow calendarBaseWindow(const QString &date) const;
     QString calendarRangeStart(const QString &view, const QString &date) const;
     void publishCalendarWindow(const QJsonObject &result, const QString &from, int days);
+    void presentCalendarWeek(const QJsonArray &events, const QTimeZone &zone);
     void requestCalendarWindow(const CalendarWindow &window);
     void storeCalendarWindow(const QString &key, const QJsonObject &result);
     bool publishCachedCalendar();
@@ -752,6 +789,7 @@ private:
     QCache<QPair<QString, QString>, ReaderSnapshot> m_readerCache{8 * 1024 * 1024};
     QCache<QString, ReaderSnapshot> m_sourceCache{8 * 1024 * 1024};
     mutable QCache<QByteArray, QVariantList> m_bodyCache{4 * 1024 * 1024};
+    mutable HtmlContent *m_htmlContent = nullptr;
     bool m_initialAccountsLoaded = false, m_initialPreferencesLoaded = false;
     QTimer m_notificationTimer;
     QVariantList m_reminders;
@@ -791,12 +829,16 @@ private:
     QString m_activeDraft;
     QMap<QString, QString> m_recipientInputs;
     void restoreRecipientInputs(const QVariantMap &draft);
+    bool rejectRecipient(const QString &message);
+    QString m_recipientError;
     QJsonObject m_draftCreation;
     QString m_draftCreationAccount;
     QString m_draftCreationEmail;
     QVariantMap m_senderCard;
     int m_senderCardGeneration = 0;
     QVariantList m_accounts, m_conversations, m_events, m_todayEvents, m_categories;
+    // All-day rows of the calendar anchor's week; they size the header band.
+    QVariantList m_calendarWeekAllDay;
     QVariantList m_allAccounts;
     QVariantMap m_accountLifecycleUi;
     QJsonObject m_accountRemovalConfirmation;
@@ -814,6 +856,13 @@ private:
     QVariantMap m_conversation, m_draft, m_views;
     QVariantMap m_preferences, m_preferencesPending, m_diagnostics, m_filters, m_querySummary;
     QStringList m_collapsedGroups;
+    QVariantMap m_searchTerms;
+    QString m_searchError, m_searchPeopleQuery;
+    QVariantList m_searchPeople;
+    int m_searchPeopleGeneration = 0;
+    void readSearchResult(const QJsonObject &result, bool ok);
+    QString mailMonthZone() const;
+    void convertLegacyFilters();
     QVariantMap m_pinnedRow;
     int m_pinnedIndex = -1;
     QVariantList m_calendarSources, m_captures;

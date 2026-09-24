@@ -720,20 +720,52 @@ impl Store {
                 ))
             }
         };
-        if query
-            .chars()
-            .any(|c| matches!(c, ':' | '"' | '*' | '(' | ')' | '^'))
-        {
-            return Err(err("invalid_request", "Use plain words for draft search"));
+        // The mail search grammar, where from: names a draft's recipients.
+        // Drafts have no labels, attachment filter or review state.
+        let text = crate::search_query::parse(query)?;
+        if text.label.is_some() || text.has_attachment || text.is.is_some() {
+            return Err(err(
+                "invalid_request",
+                "Draft search supports words, subject:, body: and from:",
+            ));
         }
-        let tokens = query
-            .split(|c: char| !c.is_alphanumeric())
-            .filter(|s| !s.is_empty())
-            .map(str::to_lowercase)
+        let lowered = |values: &[String]| {
+            values
+                .iter()
+                .flat_map(|v| crate::search_query::tokens(v))
+                .map(str::to_lowercase)
+                .collect::<Vec<_>>()
+        };
+        let (words, subject_words, body_words) = (
+            lowered(&text.words),
+            lowered(&text.subject),
+            lowered(&text.body),
+        );
+        let people_values = text
+            .from
+            .iter()
+            .map(|v| v.to_lowercase())
             .collect::<Vec<_>>();
-        if tokens.len() > 32 || (!query.trim().is_empty() && tokens.is_empty()) {
+        let untokenized = text
+            .subject
+            .iter()
+            .chain(&text.body)
+            .any(|v| crate::search_query::tokens(v).next().is_none());
+        if words.len() + subject_words.len() + body_words.len() > 32
+            || untokenized
+            || (!text.words.is_empty()
+                && words.is_empty()
+                && subject_words.is_empty()
+                && body_words.is_empty()
+                && people_values.is_empty())
+        {
             return Err(err("invalid_request", "Draft search needs 1–32 words"));
         }
+        let search_terms = if query.trim().is_empty() {
+            Value::Null
+        } else {
+            text.terms(None)
+        };
         let number = |key: &str, default: i64, min, max| -> Result<i64> {
             let n = p
                 .get(key)
@@ -747,8 +779,10 @@ impl Store {
         };
         let limit = number("limit", 30, 1, 100)?;
         let offset = number("offset", 0, 0, 10_000_000)?;
-        if tokens.is_empty() {
-            return self.drafts_unfiltered(account, limit, offset);
+        if text.is_empty() {
+            let mut result = self.drafts_unfiltered(account, limit, offset)?;
+            result["search_terms"] = search_terms;
+            return Ok(result);
         }
         let mut stmt=self.db.prepare("SELECT draft_id,conversation_id,mode,body,routing_json,updated_at,revision,origin FROM drafts d WHERE account=?1 AND discarded=0 AND COALESCE(json_extract(d.google_json,'$.submission.last_accepted_draft_revision'),0)<d.revision AND (origin='local' OR NOT EXISTS(SELECT 1 FROM google_draft_sources s WHERE s.account=d.account AND s.draft_id=d.draft_id AND s.is_current=1 AND s.linked_local_draft_id IS NOT NULL)) ORDER BY updated_at DESC,draft_id")?;
         let mut rows = stmt.query([account])?;
@@ -761,23 +795,32 @@ impl Store {
             count += 1;
             let body: String = row.get(3)?;
             let routing: Value = serde_json::from_str(&row.get::<_, String>(4)?)?;
-            let mut text = format!("{} {body}", routing["subject"].as_str().unwrap_or(""));
+            let words_of = |text: &str| {
+                crate::search_query::tokens(text)
+                    .map(str::to_lowercase)
+                    .collect::<Vec<_>>()
+            };
+            let in_subject = words_of(routing["subject"].as_str().unwrap_or(""));
+            let in_body = words_of(&body);
+            let has = |words: &[String], token: &String| {
+                words.iter().any(|w| w.starts_with(token.as_str()))
+            };
+            let mut people = String::new();
             for key in ["to_recipients", "cc_recipients", "bcc_recipients"] {
                 for address in routing[key].as_array().into_iter().flatten() {
-                    text.push(' ');
-                    text.push_str(address["email"].as_str().unwrap_or(""));
-                    text.push(' ');
-                    text.push_str(address["name"].as_str().unwrap_or(""));
+                    people.push(' ');
+                    people.push_str(address["email"].as_str().unwrap_or(""));
+                    people.push(' ');
+                    people.push_str(address["name"].as_str().unwrap_or(""));
                 }
             }
-            let words = text
-                .split(|c: char| !c.is_alphanumeric())
-                .filter(|s| !s.is_empty())
-                .map(str::to_lowercase)
-                .collect::<Vec<_>>();
-            if !tokens
+            let people = people.to_lowercase();
+            if !(words
                 .iter()
-                .all(|token| words.iter().any(|word| word.starts_with(token)))
+                .all(|t| has(&in_subject, t) || has(&in_body, t))
+                && subject_words.iter().all(|t| has(&in_subject, t))
+                && body_words.iter().all(|t| has(&in_body, t))
+                && people_values.iter().all(|v| people.contains(v.as_str())))
             {
                 continue;
             }
@@ -798,7 +841,7 @@ impl Store {
         self.enrich_draft_summaries(account, &mut out)?;
         let next = offset + out.len() as i64;
         Ok(
-            json!({"drafts":out,"total":total,"draft_count":count,"next_offset":if next<total {Some(next)} else {None}}),
+            json!({"drafts":out,"total":total,"draft_count":count,"next_offset":if next<total {Some(next)} else {None},"search_terms":search_terms}),
         )
     }
 }

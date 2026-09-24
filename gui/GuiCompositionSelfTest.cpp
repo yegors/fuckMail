@@ -249,7 +249,7 @@ bool GuiCompositionSelfTest::startRestart() {
     connect(&m_child,&QProcess::started,this,[this] { m_childPid=QString::number(m_child.processId()); });
     connect(&m_child,&QProcess::finished,this,[this](int code,QProcess::ExitStatus status) {
         m_processTimeout.stop();
-        if (code!=0 || status!=QProcess::NormalExit) { finish("Fresh GUI composition restart failed: "+QString::fromUtf8(m_child.readAllStandardError())); return; }
+        if (code!=0 || status!=QProcess::NormalExit) { finish("Fresh GUI composition restart failed: "+QString::fromUtf8(m_child.readAllStandardError()+m_child.readAllStandardOutput()).trimmed()); return; }
         QFile file(m_restartPath+".observed.json");
         if (!file.open(QIODevice::ReadOnly) || file.size()>65536) { finish("Fresh GUI returned no bounded composition observation."); return; }
         const auto observed=QJsonDocument::fromJson(file.readAll()).object();
@@ -372,10 +372,14 @@ void GuiCompositionSelfTest::step() {
     case 16:
         if (!saved() || m_backend.selectedId()!=sourceConversation || m_backend.conversation()["messages"].toList().isEmpty()) return;
         m_stage=20; m_mode=1; cli({"mail","read",sourceConversation},[this](auto result) { m_sourceBefore=result; }); break;
-    case 20:
+    case 20: {
         if (!saved()) return;
-        if (!click(m_mode==1 ? "replyAllButton" : m_mode==2 ? "forwardButton" : "replyButton")) return;
+        // The reader's actions hide while a reply is open; collapse it first.
+        const QString action=m_mode==1 ? "replyAllButton" : m_mode==2 ? "forwardButton" : "replyButton";
+        if (!item(action)) { click("collapseReply"); return; }
+        if (!click(action)) return;
         m_stage=21; break;
+    }
     case 21: {
         if (!saved() || m_backend.draft()["mode"].toString()!=modes[m_mode] || m_backend.activeDraftId()==m_draftId) return;
         m_draftId=m_backend.activeDraftId(); const auto draft=QJsonObject::fromVariantMap(m_backend.draft());
@@ -485,7 +489,7 @@ void GuiCompositionSelfTest::step() {
         m_stage=58; break;
     case 58:
         if (!withText(m_window->contentItem(),"Reload the saved draft?")
-            || !clickItem(buttonWithText(m_window->contentItem(),"OK"))) return;
+            || !clickItem(buttonWithText(m_window->contentItem(),"Reload"))) return;
         m_stage=59; break;
     case 59:
         if (!saved() || m_backend.draftConflict()) return;
@@ -685,7 +689,7 @@ void GuiCompositionSelfTest::step() {
         if (!clickItem(buttonWithText(m_window->contentItem(),"Reload saved draft…"))) return;
         m_stage=98; break;
     case 98:
-        if (!withText(m_window->contentItem(),"Reload the saved draft?") || !clickItem(buttonWithText(m_window->contentItem(),"OK"))) return;
+        if (!withText(m_window->contentItem(),"Reload the saved draft?") || !clickItem(buttonWithText(m_window->contentItem(),"Reload"))) return;
         m_stage=99; break;
     case 99:
         if (!saved() || m_backend.draftConflict()) return;
@@ -802,7 +806,12 @@ bool GuiCompositionSelfTest::verifyRestartProjection(MailBackend &backend,QQuick
     if (!editor || !subject || plain(editor)!=draft["body"].toString() || subject->property("text").toString()!=draft["subject"].toString()
         || !find(window->contentItem(),"draftRecipient_to_recipients")) { error="Fresh native composition controls did not hydrate the saved draft."; return false; }
     reveal(editor);
-    if (!visibleCenter(editor,window)) { error="Restored native editor has no visible viewport."; return false; }
+    // A restored editor can be taller than its scroll area, so require a real
+    // visible part of it rather than its centre.
+    auto shown=editor->mapRectToScene(QRectF(0,0,editor->width(),editor->height())).intersected(QRectF(0,0,window->width(),window->height()));
+    for (auto ancestor=editor->parentItem(); ancestor; ancestor=ancestor->parentItem())
+        if (ancestor->clip()) shown=shown.intersected(ancestor->mapRectToScene(QRectF(0,0,ancestor->width(),ancestor->height())));
+    if (!editor->isVisible() || shown.width()<20 || shown.height()<20) { error="Restored native editor has no visible viewport."; return false; }
     QSaveFile output(expectedPath+".observed.json");
     const auto bytes=QJsonDocument(QJsonObject{{"draft",actual},{"gui_process_id",QString::number(QCoreApplication::applicationPid())},{"native_editor_verified",true}}).toJson();
     if (!output.open(QIODevice::WriteOnly) || output.write(bytes)!=bytes.size() || !output.commit()) { error="Cannot retain the fresh GUI composition observation."; return false; }

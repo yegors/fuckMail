@@ -127,10 +127,16 @@ Popup {
         start: allDay.checked ? startDate.text : backend.calendarDateTime(startDate.text, startTime.text, zoneField.text),
         end: allDay.checked ? shiftDate(endDate.text, 1) : backend.calendarDateTime(endDate.text, endTime.text, zoneField.text)})
     width: Math.min(440, parent.width); height: Math.max(200, parent.height - 56 - timelineInset); padding: 0
-    x: parent.width - width; y: 56 + (timelineAtTop ? timelineInset : 0); modal: false; dim: false; focus: true
+    // The panel slides in by position; the overlay never scrolls, so focusing
+    // the title while it moves cannot shift the rest of the window.
+    property real slideOffset: 0
+    x: parent.width - width + slideOffset; y: 56 + (timelineAtTop ? timelineInset : 0); modal: false; dim: false; focus: true
     closePolicy: saving ? Popup.NoAutoClose : Popup.CloseOnEscape
     background: Rectangle { color: Theme.surface; layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software; layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.45); shadowBlur: .8; shadowHorizontalOffset: -12 } Rectangle { width: 1; height: parent.height; color: Theme.controlBorder } }
-    enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 160 } }
+    enter: Transition {
+        NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
+        NumberAnimation { property: "slideOffset"; from: 24; to: 0; duration: 200; easing.type: Easing.OutCubic }
+    }
     function clockHour(text) { let parts = text.split(":"); return parts.length === 2 ? Number(parts[0]) + Number(parts[1]) / 60 : NaN }
     function allGuests() {
         const addresses = guestAddresses.concat(attendeeField.text.split(",")).map(function(a) { return a.trim() }).filter(function(a) { return a.length > 0 })

@@ -150,6 +150,16 @@ enum Command {
         #[arg(long)]
         seconds: Option<u64>,
     },
+    /// Link hosts across accounts, and the blocklist that links and images honour.
+    Links {
+        #[command(subcommand)]
+        command: LinkCommand,
+    },
+    /// The optional HTTPS proxy every remote image request uses.
+    Proxy {
+        #[command(subcommand)]
+        command: ProxyCommand,
+    },
     /// Exercise a documented protocol method with JSON read from a file or '-'.
     Call {
         method: String,
@@ -447,6 +457,8 @@ enum Google {
     },
 }
 
+// Parsed once per invocation, so List's many flags cost nothing to keep inline.
+#[allow(clippy::large_enum_variant)]
 #[derive(Subcommand)]
 enum Mail {
     /// Restore the exact retained state before a mail action (fails after newer edits).
@@ -475,8 +487,12 @@ enum Mail {
         request_id: Option<String>,
     },
     List {
+        /// Search text: bare words match subject or message text; subject:,
+        /// body: and from: narrow one part (from: is the recipient in Sent);
+        /// label:, has:attachment and is:review|delayed|done also parse.
         #[arg(long)]
         query: Option<String>,
+        /// Column for bare words; `all` means subject or message text.
         #[arg(long,default_value="all",value_parser=["all","sender","subject","body"])]
         field: String,
         #[arg(long,default_value="inbox",value_parser=["inbox","received","sent","all","trash"])]
@@ -499,12 +515,28 @@ enum Mail {
         before: Option<String>,
         #[arg(long)]
         grouped: bool,
+        /// IANA zone for counting Done conversations by month (grouped lists).
+        #[arg(long)]
+        month_zone: Option<String>,
+        /// Leave a Done month (YYYY-MM) out of the page; needs --month-zone.
+        #[arg(long)]
+        collapsed_month: Vec<String>,
         #[arg(long)]
         cursor: Option<String>,
         #[arg(long,default_value_t=30,value_parser=clap::value_parser!(u32).range(1..=100))]
         limit: u32,
         #[arg(long, default_value_t = 0)]
         offset: u64,
+    },
+    /// People a search's from: can name: recent senders, or recipients with
+    /// --folder sent|drafts. Querying never marks mail reviewed.
+    Senders {
+        #[arg(default_value = "")]
+        query: String,
+        #[arg(long,default_value="inbox",value_parser=["inbox","all","sent","drafts","trash"])]
+        folder: String,
+        #[arg(long,default_value_t=5,value_parser=clap::value_parser!(u8).range(1..=10))]
+        limit: u8,
     },
     /// Query only; this does not mark mail reviewed.
     Read { id: String },
@@ -513,6 +545,22 @@ enum Mail {
         id: String,
         #[arg(long)]
         source_version: String,
+    },
+    /// The sanitised HTML the reader renders, with its image and link lists.
+    Html {
+        id: String,
+        #[arg(long)]
+        source_version: String,
+    },
+    /// A message's images: cached and inline ones by default. --load fetches
+    /// the remote ones through the engine, over https only, and through the
+    /// HTTPS proxy when one is set. Blocked hosts never load.
+    Images {
+        id: String,
+        #[arg(long)]
+        source_version: String,
+        #[arg(long)]
+        load: bool,
     },
     /// Exact sender history in this account; querying never marks mail reviewed.
     Sender { address: String },
@@ -684,6 +732,50 @@ enum Assist {
     },
     /// Classify new arrivals for enabled accounts until Ctrl-C; no backfill sweep.
     Watch,
+}
+
+#[derive(Subcommand)]
+enum LinkCommand {
+    /// Messages in every account that link to a host, outside one conversation.
+    Summary {
+        host: String,
+        #[arg(long)]
+        conversation: Option<String>,
+    },
+    /// Blocked patterns, with how many messages link to each.
+    Blocked,
+    /// Block a host (tracker.io) or a domain and its subdomains (*.tracker.io).
+    Block {
+        pattern: String,
+    },
+    Unblock {
+        pattern: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProxyCommand {
+    /// Proxy settings and whether a password is saved; it is never shown.
+    Show,
+    /// Send every remote image request through host[:port] (443 by default).
+    /// Nothing goes direct while the proxy is on, even when it is unavailable.
+    Set {
+        host: String,
+        #[arg(long, default_value = "")]
+        username: String,
+        /// Read the password from standard input into the system keychain.
+        #[arg(long)]
+        password_stdin: bool,
+    },
+    /// Stop using the proxy and forget its saved password.
+    Clear,
+    /// One request through the proxy to check that it works.
+    Test,
+    /// The image cache's size on disk; --clear empties it.
+    Cache {
+        #[arg(long)]
+        clear: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1470,6 +1562,12 @@ async fn run(args: &Args) -> Result<(), Failure> {
             | Command::Watch { .. }
             | Command::Call { .. }
             | Command::Preferences { .. }
+            | Command::Proxy { .. }
+            | Command::Links {
+                command: LinkCommand::Blocked
+                    | LinkCommand::Block { .. }
+                    | LinkCommand::Unblock { .. }
+            }
             | Command::Assist { .. }
             | Command::CalendarSources
             | Command::Calendar { combined: true, .. }
@@ -2268,12 +2366,20 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 after,
                 before,
                 grouped,
+                month_zone,
+                collapsed_month,
                 cursor,
                 limit,
                 offset,
             } => {
                 let mut params =
                     json!({"field":field,"folder":folder,"limit":limit,"offset":offset});
+                if let Some(zone) = month_zone {
+                    params["month_zone"] = json!(zone);
+                }
+                if !collapsed_month.is_empty() {
+                    params["collapsed_months"] = json!(collapsed_month);
+                }
                 if let Some(query) = query {
                     params["query"] = json!(query);
                 }
@@ -2309,6 +2415,27 @@ async fn run(args: &Args) -> Result<(), Failure> {
                         "message_source",
                         scope,
                         json!({"id":id,"source_version":source_version}),
+                    )
+                    .await?
+            }
+            Mail::Html { id, source_version } => {
+                client
+                    .call("message_html", scope, json!({"id":id,"source_version":source_version}))
+                    .await?
+            }
+            Mail::Images { id, source_version, load } => {
+                message_images(&mut client, scope, id, source_version, *load).await?
+            }
+            Mail::Senders {
+                query,
+                folder,
+                limit,
+            } => {
+                client
+                    .call(
+                        "search_senders",
+                        scope,
+                        json!({"query":query,"folder":folder,"limit":limit}),
                     )
                     .await?
             }
@@ -2610,6 +2737,8 @@ async fn run(args: &Args) -> Result<(), Failure> {
             }
             reply
         }
+        Command::Links { command } => links(&mut client, scope, command).await?,
+        Command::Proxy { command } => proxy(&mut client, command).await?,
         Command::Call {
             method,
             params_file,
@@ -2641,6 +2770,257 @@ async fn run(args: &Args) -> Result<(), Failure> {
     };
     result(reply.clone())?;
     emit(args, &reply)
+}
+
+fn ok(value: Value) -> Value {
+    json!({"ok":true,"result":value})
+}
+
+fn cli_request_id(kind: &str) -> String {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    format!("cli-{kind}-{}-{nanos}", std::process::id())
+}
+
+/// Saves one preferences key against the revision it was read at.
+async fn save_preference(
+    client: &mut Client,
+    key: &str,
+    value: Value,
+    kind: &str,
+) -> Result<Value, Failure> {
+    let current = result(client.call("preferences_get", None, json!({})).await?)?;
+    let mut patch = serde_json::Map::new();
+    patch.insert(key.to_owned(), value);
+    Ok(client
+        .call(
+            "preferences_save",
+            None,
+            json!({"preferences":patch,"expected_revision":current["revision"],"request_id":cli_request_id(kind)}),
+        )
+        .await?)
+}
+
+/// The form blocklist patterns are stored in: lowercase host without scheme,
+/// path or `www.`; the engine checks the rest.
+fn block_pattern(input: &str) -> String {
+    let mut value = input.trim().to_lowercase();
+    if let Some(index) = value.find("://") {
+        value = value[index + 3..].to_owned();
+    }
+    if let Some(index) = value.find(['/', '?', '#']) {
+        value.truncate(index);
+    }
+    let wildcard = value.starts_with("*.");
+    let mut name = value.trim_start_matches("*.");
+    while let Some(rest) = name.strip_prefix("www.") {
+        name = rest;
+    }
+    if wildcard {
+        format!("*.{name}")
+    } else {
+        name.to_owned()
+    }
+}
+
+async fn links(
+    client: &mut Client,
+    scope: Option<&str>,
+    command: &LinkCommand,
+) -> Result<Value, Failure> {
+    match command {
+        LinkCommand::Summary { host, conversation } => {
+            let mut params = json!({"host":host});
+            if let Some(conversation) = conversation {
+                params["conversation"] = json!(conversation);
+            }
+            Ok(client.call("link_host_summary", scope, params).await?)
+        }
+        LinkCommand::Blocked => {
+            let preferences = result(client.call("preferences_get", None, json!({})).await?)?;
+            let blocked = preferences["preferences"]["blocked_hosts"].clone();
+            let patterns: Vec<Value> = blocked
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|e| e["pattern"].clone())
+                .collect();
+            let counts = result(
+                client
+                    .call("link_pattern_counts", None, json!({"patterns":patterns}))
+                    .await?,
+            )?;
+            Ok(ok(
+                json!({"blocked_hosts":blocked,"counts":counts["counts"],"complete":counts["complete"]}),
+            ))
+        }
+        LinkCommand::Block { pattern } => {
+            let pattern = block_pattern(pattern);
+            let preferences = result(client.call("preferences_get", None, json!({})).await?)?;
+            let mut list = preferences["preferences"]["blocked_hosts"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            if list.iter().any(|e| e["pattern"] == pattern.as_str()) {
+                return Err(invalid("That domain is already blocked"));
+            }
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or_default();
+            list.insert(
+                0,
+                json!({"pattern":pattern,"source":"settings","added_at":now}),
+            );
+            save_preference(client, "blocked_hosts", Value::Array(list), "block").await
+        }
+        LinkCommand::Unblock { pattern } => {
+            let pattern = block_pattern(pattern);
+            let preferences = result(client.call("preferences_get", None, json!({})).await?)?;
+            let mut list = preferences["preferences"]["blocked_hosts"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            let before = list.len();
+            list.retain(|e| e["pattern"] != pattern.as_str());
+            if list.len() == before {
+                return Err(invalid("That domain is not blocked"));
+            }
+            save_preference(client, "blocked_hosts", Value::Array(list), "unblock").await
+        }
+    }
+}
+
+async fn proxy(client: &mut Client, command: &ProxyCommand) -> Result<Value, Failure> {
+    match command {
+        ProxyCommand::Show => {
+            let preferences = result(client.call("preferences_get", None, json!({})).await?)?;
+            let saved = result(
+                client
+                    .call("remote_proxy_password", None, json!({"op":"status"}))
+                    .await?,
+            )?;
+            let mut value = preferences["preferences"]["remote_proxy"].clone();
+            value["password_saved"] = saved["saved"].clone();
+            Ok(ok(value))
+        }
+        ProxyCommand::Set {
+            host,
+            username,
+            password_stdin,
+        } => {
+            let (name, port) = match host.rsplit_once(':') {
+                Some((name, port))
+                    if !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()) =>
+                {
+                    (
+                        name.to_owned(),
+                        port.parse::<u16>()
+                            .map_err(|_| invalid("Use a port from 1 to 65535"))?,
+                    )
+                }
+                _ => (host.clone(), 443),
+            };
+            let password = if *password_stdin {
+                let mut value = String::new();
+                io::stdin().take(4096).read_to_string(&mut value)?;
+                Some(value.trim_end_matches(['\r', '\n']).to_owned())
+            } else {
+                None
+            };
+            let reply = save_preference(
+                client,
+                "remote_proxy",
+                json!({"enabled":true,"host":name.trim().to_lowercase(),"port":port,"username":username}),
+                "proxy",
+            )
+            .await?;
+            result(reply.clone())?;
+            if let Some(password) = password.filter(|p| !p.is_empty()) {
+                result(
+                    client
+                        .call(
+                            "remote_proxy_password",
+                            None,
+                            json!({"op":"set","password":password}),
+                        )
+                        .await?,
+                )?;
+            }
+            Ok(reply)
+        }
+        ProxyCommand::Clear => {
+            let reply = save_preference(
+                client,
+                "remote_proxy",
+                json!({"enabled":false,"host":"","port":443,"username":""}),
+                "proxy",
+            )
+            .await?;
+            result(reply.clone())?;
+            result(
+                client
+                    .call("remote_proxy_password", None, json!({"op":"clear"}))
+                    .await?,
+            )?;
+            Ok(reply)
+        }
+        ProxyCommand::Test => Ok(client
+            .call_within(
+                "remote_proxy_test",
+                None,
+                json!({}),
+                Duration::from_secs(30),
+            )
+            .await?),
+        ProxyCommand::Cache { clear } => Ok(client
+            .call(
+                "remote_image_cache",
+                None,
+                json!({"op": if *clear { "clear" } else { "stats" }}),
+            )
+            .await?),
+    }
+}
+
+/// The reader's image states for one message. Remote images are fetched only
+/// with `load`; otherwise only the disk cache and the message's own parts are used.
+async fn message_images(
+    client: &mut Client,
+    scope: Option<&str>,
+    id: &str,
+    version: &str,
+    load: bool,
+) -> Result<Value, Failure> {
+    let view = result(
+        client
+            .call(
+                "message_html",
+                scope,
+                json!({"id":id,"source_version":version}),
+            )
+            .await?,
+    )?;
+    let mut images = Vec::new();
+    for resource in view["resources"].as_array().into_iter().flatten() {
+        let remote = resource["kind"] == "remote";
+        let state = if resource["kind"] == "insecure" {
+            json!({"state":"insecure"})
+        } else {
+            let params = json!({"id":id,"source_version":version,"resource":resource["id"],"cached_only":remote && !load});
+            result(
+                client
+                    .call_within("message_image", scope, params, Duration::from_secs(30))
+                    .await?,
+            )?
+        };
+        images.push(json!({"id":resource["id"],"kind":resource["kind"],"host":resource["host"],"alt":resource["alt"],"result":state}));
+    }
+    Ok(ok(
+        json!({"id":id,"source_version":version,"has_html":view["has_html"],"trackers":view["trackers"],"images":images}),
+    ))
 }
 
 fn emit(args: &Args, reply: &Value) -> Result<(), Failure> {

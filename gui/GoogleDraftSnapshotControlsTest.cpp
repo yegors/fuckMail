@@ -69,6 +69,10 @@ public:
                     {"sources",historySources},{"total",historySources.size()},{"next_offset",QJsonValue::Null}}));
                 return true;
             }
+            if (method == "google_sent") {
+                peer->write(reply(request["id"].toString(), {{"account",request["account"]},{"outgoing",QJsonArray{}},{"next_offset",QJsonValue::Null}}));
+                return true;
+            }
             return false;
         };
         QTemporaryDir copy; require(copy.isValid(), "private copied production QML");

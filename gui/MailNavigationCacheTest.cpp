@@ -295,13 +295,14 @@ class MailNavigationCacheTest {
             if (method == "conversation") {
                 ++reads; const auto id = params["id"].toString(); requested.append(id);
                 result = {{"id",id},{"account","one"},{"subject","Prepared " + id},{"revision",1},
-                    {"messages",QJsonArray{QJsonObject{{"id",id+"-message"},{"account","one"},{"text","Plain alternative"},
+                    {"messages",QJsonArray{QJsonObject{{"id",id+"-message"},{"account","one"},{"text","Final body " + id + "-message\n\nMultiple lines of ordinary content with a useful link."},
                         {"sent_at","2026-09-21T14:00:00Z"},{"sender_name","Example sender"},{"sender_email","sender@example.test"},
                         {"sent",false},{"kind","people"},{"unread",false},{"source_available",true},{"source_version","version"}}}}};
             } else if (method == "message_source") {
-                auto html = QString("<p><b>Final body %1</b></p><p>Multiple lines of ordinary content with a useful <a href='https://example.test'>link</a>.</p>").arg(params["id"].toString());
-                for (int i = 0; i < 24; ++i) html = "<table><tr><td>" + html + "</td></tr></table>";
-                result = {{"id",params["id"]},{"account","one"},{"source_version","version"},{"body_html",html},
+                // Text only: the HTML reader loads HTML asynchronously and owns its
+                // own first paint (HtmlMessageBodyTest); this covers the prepared
+                // text reader, recipients and saved summary.
+                result = {{"id",params["id"]},{"account","one"},{"source_version","version"},
                     {"metadata",QJsonArray{QJsonObject{{"label","To"},{"people",QJsonArray{QJsonObject{{"email","me@example.test"},{"name","Me"}}}}}}}};
                 delay = 25;
             } else if (method == "assist_settings_get") result = settings;
@@ -365,7 +366,7 @@ class MailNavigationCacheTest {
             auto *summary = find(find,window->contentItem(),"messageSummary_"+observed+"-message");
             auto *reader = find(find,window->contentItem(),"reader");
             if (body && body->isVisible() && summary && reader) {
-                require(body->property("text").toString().contains("Final body " + observed + "-message"), "first body frame uses the exact retained HTML source");
+                require(body->property("text").toString().contains("Final body " + observed + "-message"), "first body frame uses the exact prepared reader text");
                 require(summary->property("summaryText").toString().startsWith("A complete saved summary"), "first summary frame uses the prepared saved result");
                 geometry.append({body->mapToScene({}).y(), body->height(), summary->height(), reader->property("contentHeight"), reader->property("contentY")});
             }

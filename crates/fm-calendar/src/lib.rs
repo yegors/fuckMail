@@ -3,7 +3,6 @@
 //! Input source is retained separately from permission-filtered projections.
 
 use chrono::{DateTime, Duration, FixedOffset, NaiveDate, TimeZone, Utc};
-use chrono_tz::Tz;
 use rrule::{RRuleSet, Tz as RuleTz};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -13,6 +12,8 @@ pub mod edits;
 pub mod google_api;
 pub mod recurring;
 pub mod sync;
+/// Zone type shared with Core, which buckets mail by the client's local month.
+pub use chrono_tz::Tz;
 pub use edits::*;
 pub use sync::*;
 

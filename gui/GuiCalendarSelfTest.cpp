@@ -51,8 +51,8 @@ bool visibleTitle(QQuickItem *parent, const QString &title) {
     return false;
 }
 QQuickItem *headerTimeline(QQuickItem *parent) {
-    if (parent->isVisible() && parent->property("headerPosition").toBool()
-        && parent->property("blocks").isValid()) return parent;
+    // The strip's root carries the placement; its day pages hold the blocks.
+    if (parent->isVisible() && parent->property("headerPosition").toBool()) return parent;
     for (auto child:parent->childItems()) if (auto found=headerTimeline(child)) return found;
     return nullptr;
 }

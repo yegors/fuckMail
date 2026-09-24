@@ -1,6 +1,16 @@
+include(cmake/litehtml.cmake)
+# The HTML reader's litehtml item.
+add_library(fm-gui-html STATIC FmHtmlView.cpp FmHtmlView.h HtmlDocument.cpp HtmlDocument.h)
+target_link_libraries(fm-gui-html PUBLIC Qt6::Quick PRIVATE fm-litehtml)
+target_compile_features(fm-gui-html PUBLIC cxx_std_20)
+# Its engine calls. HtmlContent.cpp defines MailBackend::htmlContent, so only
+# programs that compile MailBackend use this library.
+add_library(fm-gui-html-content STATIC HtmlContent.cpp HtmlContent.h)
+target_link_libraries(fm-gui-html-content PUBLIC Qt6::Quick Qt6::Network)
+target_compile_features(fm-gui-html-content PUBLIC cxx_std_20)
 # FmIcon.qml wraps this item; every process that loads it registers the type first.
 add_library(fm-gui-icons STATIC FmIconItem.cpp FmIconItem.h)
-target_link_libraries(fm-gui-icons PUBLIC Qt6::Quick)
+target_link_libraries(fm-gui-icons PUBLIC Qt6::Quick fm-gui-html)
 target_compile_features(fm-gui-icons PUBLIC cxx_std_20)
 qt_add_executable(fuckmail-gui WIN32 MACOSX_BUNDLE
     main.cpp
@@ -65,11 +75,12 @@ qt_add_qml_module(fuckmail-gui
     URI FuckMail
     VERSION 1.0
     QML_FILES DebugConsole.qml AccountAnalysis.qml
+    QML_FILES HtmlMessageBody.qml RemoteContentSettings.qml
     QML_FILES CalendarMailCount.qml
-    QML_FILES FmScrollBar.qml Main.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml ShortcutRegistry.qml ShortcutSettings.qml ActionToast.qml FmButton.qml FmMenu.qml FmMenuItem.qml FmDialog.qml FmConfirmDialog.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmDateField.qml FmSwitch.qml FmCheckBox.qml FmComboBox.qml MailView.qml MailFilters.qml SearchPopup.qml CalendarSearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleConnectionDialog.qml LocalModelSettings.qml MailAssistance.qml MessageSource.qml AccountBadge.qml MessageHeaderButton.qml AccountAssistanceSettings.qml AccountEditor.qml AttachmentTile.qml AttachmentViewer.qml SummaryCard.qml MessageAssistance.qml GoogleLabelSetup.qml LabelSettings.qml TodayStrip.qml
+    QML_FILES FmScrollBar.qml Main.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml ShortcutRegistry.qml ShortcutSettings.qml ActionToast.qml FmButton.qml FmMenu.qml FmMenuItem.qml FmDialog.qml FmConfirmDialog.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmDateField.qml FmSwitch.qml FmCheckBox.qml FmComboBox.qml MailView.qml SearchPopup.qml CalendarSearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleConnectionDialog.qml LocalModelSettings.qml MailAssistance.qml MessageSource.qml AccountBadge.qml MessageHeaderButton.qml AccountAssistanceSettings.qml AccountEditor.qml AttachmentTile.qml AttachmentViewer.qml SummaryCard.qml SummarizeAction.qml MessageAssistance.qml BlockedDomainsSettings.qml LinkCard.qml GoogleLabelSetup.qml LabelSettings.qml TodayStrip.qml
     RESOURCES fonts/Geist-Regular.ttf fonts/Geist-Medium.ttf fonts/Geist-SemiBold.ttf fonts/LICENSE-Geist.txt
 )
-target_link_libraries(fuckmail-gui PRIVATE fm-gui-icons Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets Qt6::Multimedia)
+target_link_libraries(fuckmail-gui PRIVATE fm-gui-icons fm-gui-html-content Qt6::Quick Qt6::QuickControls2 Qt6::Network Qt6::Widgets Qt6::Multimedia)
 target_compile_features(fuckmail-gui PRIVATE cxx_std_20)
 if(WIN32)
     target_link_libraries(fuckmail-gui PRIVATE advapi32 winmm)
@@ -85,7 +96,7 @@ set_target_properties(fuckmail-gui PROPERTIES
 file(GENERATE OUTPUT "${CMAKE_BINARY_DIR}/gui-executable-path.txt"
     CONTENT "$<TARGET_FILE:fuckmail-gui>\n")
 if(BUILD_TESTING)
-    link_libraries(Qt6::Widgets fm-gui-icons)
+    link_libraries(Qt6::Widgets fm-gui-icons fm-gui-html-content)
     if(WIN32)
         link_libraries(winmm)
     endif()
@@ -344,4 +355,19 @@ if(BUILD_TESTING)
     target_compile_definitions(gui-label-controls-test PRIVATE FM_GUI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME gui-label-controls COMMAND gui-label-controls-test)
     set_tests_properties(gui-label-controls PROPERTIES TIMEOUT 20 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
+endif()
+
+if(BUILD_TESTING)
+    add_executable(gui-html-view-test HtmlViewTest.cpp HtmlLinks.h)
+    target_link_libraries(gui-html-view-test PRIVATE Qt6::Quick Qt6::Test)
+    add_test(NAME gui-html-view COMMAND gui-html-view-test)
+    set_tests_properties(gui-html-view PROPERTIES TIMEOUT 60 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
+endif()
+
+if(BUILD_TESTING)
+    add_executable(gui-html-message-body-test HtmlMessageBodyTest.cpp)
+    target_link_libraries(gui-html-message-body-test PRIVATE Qt6::Quick Qt6::QuickControls2 Qt6::Test)
+    target_compile_definitions(gui-html-message-body-test PRIVATE FM_GUI_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME gui-html-message-body COMMAND gui-html-message-body-test)
+    set_tests_properties(gui-html-message-body PROPERTIES TIMEOUT 60 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
 endif()

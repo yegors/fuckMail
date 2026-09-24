@@ -5,7 +5,8 @@ use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
     json!({"density":"comfortable","mail_date_grouping":"grouped","sync_every_minutes":1,"week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
-        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"default_reminder_minutes":15,"reminder_snooze_minutes":5,"calendar_display_time_zone":null,"calendar_account_visibility":"all","google_sync_limits":null,"google_sync_services":{},"notifications":"events","shortcuts":{}})
+        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"default_reminder_minutes":15,"reminder_snooze_minutes":5,"calendar_display_time_zone":null,"calendar_account_visibility":"all","google_sync_limits":null,"google_sync_services":{},"notifications":"events","shortcuts":{},
+        "blocked_hosts":[],"remote_images_from":[],"remote_proxy":{"enabled":false,"host":"","port":443,"username":""}})
 }
 impl Store {
     pub fn google_service_sync_enabled(&self, account: &str, service: &str) -> Result<bool> {
@@ -121,6 +122,9 @@ impl Store {
                 "default_reminder_minutes",
                 "reminder_snooze_minutes",
                 "calendar_display_time_zone",
+                "blocked_hosts",
+                "remote_images_from",
+                "remote_proxy",
             ],
         )?;
         let mut preferences = current["preferences"].clone();
@@ -128,6 +132,7 @@ impl Store {
             preferences[key] = value.clone();
         }
         validate_shortcuts(&preferences["shortcuts"])?;
+        crate::remote_prefs::validate(&preferences)?;
         let services = preferences["google_sync_services"]
             .as_object()
             .filter(|v| v.len() <= 200)

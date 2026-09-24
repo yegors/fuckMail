@@ -626,6 +626,9 @@ Item {
                                 }
                             }
                             Divider {}
+                            // Global, above the per-account settings.
+                            BlockedDomainsSettings { Layout.fillWidth: true; Layout.topMargin: 28 }
+                            RemoteContentSettings { Layout.fillWidth: true; Layout.topMargin: 28 }
                             RowLayout {
                                 Layout.fillWidth: true; Layout.topMargin: 28
                                 Text { text: "Per account"; color:Theme.text;font.pointSize:Theme.fontPoints(15);font.weight:Font.Medium;Layout.fillWidth: true }

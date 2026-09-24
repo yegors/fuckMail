@@ -11,6 +11,15 @@ ColumnLayout {
     readonly property bool canClassify: controller.classificationEnabled && !message.sent
     property bool showKindControl: true
     function correctSender() { correction.open() }
+    // The header's summarize icon shows only with no summary, none running and no failure.
+    readonly property bool canSummarize: controller.summariesEnabled && !controller.busy && backend.connected
+    readonly property bool showSummarize: !message.sent && controller.summariesEnabled && !summaryCard.showing
+    readonly property bool canResummarize: !message.sent && summaryCard.summaryText.length > 0 && !summaryCard.busy
+    readonly property string modelName: (controller.settings.model || {}).name || ""
+    readonly property bool summaryShowing: summaryCard.showing
+    readonly property bool summaryBusy: summaryCard.busy
+    readonly property bool summaryFailed: summaryCard.failed
+    function summarize() { controller.start("summary", message.id) }
     readonly property bool popupOpen: correction.opened || summaryCard.popupOpen
 
     spacing: 8
@@ -37,13 +46,12 @@ ColumnLayout {
     SummaryCard {
         id: summaryCard; objectName: "messageSummary_" + panel.message.id
         Layout.fillWidth: true; title: "Summary"
-        inlineAction: panel.controller.summariesEnabled
         messageId: panel.message.id
-        modelName: (panel.controller.settings.model || {}).name || ""
+        modelName: panel.modelName
         result: panel.summary; members: [panel.message]
         busy: panel.controller.workingOn("summary", panel.message.id)
         error: panel.controller.errorFor("summary", panel.message.id)
-        canSummarize: panel.controller.summariesEnabled && !panel.controller.busy && backend.connected
+        canSummarize: panel.canSummarize
         onRegenerate: panel.controller.start("summary", panel.message.id)
         onCancelRequested: panel.controller.cancel()
         onOpenSource: messageId => panel.controller.openSource(messageId)

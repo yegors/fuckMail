@@ -166,7 +166,7 @@ void MailBackend::dispatchQueuedSend(const QString &key) {
         refreshOutgoingPresentation();
         startGoogleSendForDraft("google_send", params, send.account, draftId);
         emit draftChanged();
-    });
+    }, true);
 }
 void MailBackend::finishQueuedSendNotice(const QString &key, const QJsonObject &result, bool valid) {
     if (!m_sendNoticeRecipients.contains(key)) return;

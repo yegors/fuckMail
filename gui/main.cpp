@@ -182,6 +182,7 @@ int main(int argc, char **argv) {
         || snapshotTest || actionsTest || calendarTest || lifecycleTest || (!selectedProfile && !demoProfile);
     MailBackend backend(profile, program, nullptr, parser.isSet("fixture-clock") || parser.isSet("self-test"), requireLive);
     debugConsole.attach(&backend);
+    debugConsole.setLogDirectory(profile);
     debugConsole.identifyRuntime(program);
     backend.setProperty("demoProfileRequested", demoProfile && !requireLive);
     NotificationPresenter notifications(&backend);

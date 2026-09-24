@@ -144,7 +144,7 @@ void GuiSettingsSelfTest::step() {
         // operation and selection layout before installing independent positions.
         m_listY=qMin(240.0,list->property("contentHeight").toDouble()-list->height());
         m_readerY=qMin(160.0,reader->property("contentHeight").toDouble()-reader->height());
-        list->setProperty("contentY",m_listY); reader->setProperty("contentY",m_readerY);
+        list->setProperty("contentY",list->property("originY").toDouble()+m_listY); reader->setProperty("contentY",m_readerY);
         if (!QMetaObject::invokeMethod(list,"movementEnded") || !QMetaObject::invokeMethod(reader,"movementEnded")) { finish("Cannot exercise the viewport persistence handlers."); return; }
         m_wait.restart(); ++m_stage; break;
     }
@@ -154,7 +154,7 @@ void GuiSettingsSelfTest::step() {
         if (qEnvironmentVariableIsSet("FM_GUI_TEST_TRACE")) qInfo() << "Settings programmatic viewport setup: list=" << list->property("contentY") << "reader=" << reader->property("contentY") << "editorFocus=" << editor->hasActiveFocus()
             << "active=" << (m_window->activeFocusItem()?m_window->activeFocusItem()->objectName():QString()) << "stored list/reader=" << m_backend.presentation()["listY"] << m_backend.presentation()["readerY"];
         if (m_listY <= 0 || m_readerY <= 0 || qAbs(m_listY-m_readerY)<1 || !editor->hasActiveFocus()
-            || qAbs(list->property("contentY").toDouble()-m_listY)>1 || qAbs(reader->property("contentY").toDouble()-m_readerY)>1
+            || qAbs(list->property("contentY").toDouble()-list->property("originY").toDouble()-m_listY)>1 || qAbs(reader->property("contentY").toDouble()-m_readerY)>1
             || qAbs(m_backend.presentation()["listY"].toDouble()-m_listY)>1 || qAbs(m_backend.presentation()["readerY"].toDouble()-m_readerY)>1) {
             finish(QString("Programmatic viewport setup failed: list=%1 (extent=%2, viewport=%3), reader=%4 (extent=%5, viewport=%6), editorFocus=%7, active=%8.")
                 .arg(list->property("contentY").toDouble()).arg(list->property("contentHeight").toDouble()).arg(list->height()).arg(reader->property("contentY").toDouble()).arg(reader->property("contentHeight").toDouble())
@@ -296,7 +296,7 @@ void GuiSettingsSelfTest::step() {
         if (m_wait.elapsed()<240) return;
         const auto list=item("conversationList"), reader=item("reader"), editor=item("replyComposer");
         if (!list || !reader || !editor || !draftIntact() || !editor->hasActiveFocus() || editor->property("selectionStart").toInt()!=6 || editor->property("selectionEnd").toInt()!=10
-            || qAbs(list->property("contentY").toDouble()-m_listY)>1 || qAbs(reader->property("contentY").toDouble()-m_readerY)>1) {
+            || qAbs(list->property("contentY").toDouble()-list->property("originY").toDouble()-m_listY)>1 || qAbs(reader->property("contentY").toDouble()-m_readerY)>1) {
             finish(QString("Settings did not restore independent Mail scroll and editor focus/selection (list %1/%2, reader %3/%4).")
                 .arg(list?list->property("contentY").toDouble():-1).arg(m_listY).arg(reader?reader->property("contentY").toDouble():-1).arg(m_readerY)); return;
         }

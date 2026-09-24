@@ -36,8 +36,8 @@ Rectangle {
         }
         Row {
             spacing: 3
-            FmIcon { name: "arrowUp"; size: 9; color: Theme.accent; anchors.verticalCenter: parent.verticalCenter }
-            Text { text: count.ready ? count.day.sent : 0; color: Theme.accent; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(count.textSize); font.features: { "tnum": 1 } }
+            FmIcon { name: "arrowUp"; size: 9; color: received.color; anchors.verticalCenter: parent.verticalCenter }
+            Text { text: count.ready ? count.day.sent : 0; color: received.color; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(count.textSize); font.features: { "tnum": 1 } }
         }
     }
     MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: count.clicked() }

@@ -3,174 +3,293 @@ import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Effects
 
+// Smart search dropdown (Search 7). The search box holds the whole query and
+// Core parses it. Empty, this offers recent searches and the advertised
+// operators. While typing it shows how Core read the text, the result count,
+// completion of a partial operator and people after a trailing from:.
+// label:, has: and is: still parse but are not advertised.
 Popup {
     id: popup
     objectName: "mailSearchPopup"
-    signal moreFiltersRequested()
-    property var senderOptions: []
+    // The search field this edits. It keeps focus while the dropdown is open.
+    property Item field: null
+    property real maxHeight: 560
+    signal committed()
     readonly property bool draftScope: backend.folder === "drafts"
-    readonly property bool sentScope: backend.folder === "sent"
-    readonly property bool inboxScope: !draftScope && !sentScope
-    readonly property string currentYear: new Date(backend.clockDay).getUTCFullYear().toString()
-    function dateBounds(offset, older) {
-        const date = new Date(backend.clockDay)
-        const end = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - offset + 1))
-        const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - offset))
-        return {after: older ? "" : start.toISOString().slice(0,10), before: (older ? start : end).toISOString().slice(0,10)}
+    readonly property bool outgoingScope: draftScope || backend.folder === "sent"
+    readonly property string query: backend.query
+    readonly property bool typing: query.trim().length > 0
+    // Core's reading of the current text; null until the search answers. The
+    // last reading stays on screen meanwhile, so chips do not blink per key,
+    // but only a current one can be edited.
+    readonly property var reading: backend.searchTerms.text === query ? backend.searchTerms : null
+    readonly property var shownReading: typing && backend.searchTerms.text !== undefined ? backend.searchTerms : null
+    readonly property string readingError: reading ? backend.searchError : ""
+    readonly property var operators: [
+        {op: "subject:", description: "Only in subjects", example: "subject:board deck"},
+        {op: "body:", description: "Only in message text", example: "body:invoice attached"},
+        {op: "from:", description: outgoingScope ? "Recipient name or address" : "Sender name or address", example: "from:maya@example.com"}
+    ]
+    readonly property string lastToken: { const match = query.match(/(\S*)$/); return match ? match[1].toLowerCase() : "" }
+    readonly property var completions: lastToken.length >= 2 && lastToken.indexOf(":") < 0 ? operators.filter(o => o.op.startsWith(lastToken)) : []
+    // The value after a trailing from:, or null when the text does not end in one.
+    readonly property var fromPart: { const match = query.match(/(?:^|\s)from:([^:]*)$/i); return match ? match[1].trim() : null }
+    readonly property var people: fromPart === null || backend.searchPeopleQuery !== fromPart ? []
+        : backend.searchPeople.filter(p => (p.email || "").toLowerCase() !== fromPart.toLowerCase()).slice(0, 5)
+    readonly property var chips: {
+        const t = shownReading, out = []
+        if (!t) return out
+        if (t.words) out.push({key: "Subject or body", value: t.words, part: "words"})
+        ;(t.subject || []).forEach((value, index) => out.push({key: "Subject", value: value, part: "subject", index: index}))
+        ;(t.body || []).forEach((value, index) => out.push({key: "Body", value: value, part: "body", index: index}))
+        ;(t.from || []).forEach((value, index) => out.push({key: outgoingScope ? "To" : "From", value: value, part: "from", index: index}))
+        if (t.label) out.push({key: "Label", value: t.label, part: "label"})
+        if (t.has_attachment) out.push({key: "Has", value: "attachment", part: "has_attachment"})
+        if (t.is) out.push({key: "Status", value: ({review: "To review", delayed: "Delayed", done: "Done"})[t.is] || t.is, part: "is"})
+        return out
     }
-    function dateSelected(offset, older) {
-        const range = dateBounds(offset, older)
-        return (backend.filters.after || "") === range.after && (backend.filters.before || "") === range.before
+    readonly property string liveCount: {
+        const count = backend.querySummary.filtered_conversation_count || 0
+        return count + (draftScope ? (count === 1 ? " draft" : " drafts") : (count === 1 ? " conversation" : " conversations"))
     }
-    function selectDate(offset, older) {
-        const filters = Object.assign({}, backend.filters), range = dateBounds(offset, older), selected = dateSelected(offset, older)
-        delete filters.after; delete filters.before
-        if (!selected) { if (range.after) filters.after = range.after; filters.before = range.before }
-        backend.applyFilters(filters)
+    property string settledCount: ""
+    Binding on settledCount { value: popup.liveCount; when: popup.reading !== null; restoreMode: Binding.RestoreNone }
+    readonly property string countText: reading ? liveCount : settledCount.length ? settledCount : "Searching…"
+    // Rebuilds the text from Core's reading without one of its parts.
+    function textWithout(chip) {
+        const t = JSON.parse(JSON.stringify(reading || {}))
+        if (chip.part === "words") t.words = ""
+        else if (chip.part === "subject" || chip.part === "body" || chip.part === "from") t[chip.part].splice(chip.index, 1)
+        else if (chip.part === "label") t.label = null
+        else if (chip.part === "has_attachment") t.has_attachment = false
+        else if (chip.part === "is") t.is = null
+        const parts = t.words ? [t.words] : []
+        for (const value of t.subject || []) parts.push("subject:" + value)
+        for (const value of t.body || []) parts.push("body:" + value)
+        for (const value of t.from || []) parts.push("from:" + value)
+        if (t.label) parts.push("label:" + (/\s/.test(t.label) ? "\"" + t.label + "\"" : t.label))
+        if (t.has_attachment) parts.push("has:attachment")
+        if (t.is) parts.push("is:" + t.is)
+        return parts.join(" ")
     }
-    width: Math.min(474, parent ? parent.width - 24 : 474)
-    height: Math.min(contents.implicitHeight + 32, parent ? parent.height - y - 12 : 560)
-    padding: 16
+    // Replaces the text and keeps typing at its end.
+    function edit(text) {
+        backend.query = text
+        if (!field) return
+        field.forceActiveFocus()
+        Qt.callLater(function() { if (popup.field) popup.field.cursorPosition = popup.field.length })
+    }
+    // Enter or a recent search: run it, remember it and close.
+    function commit(text) {
+        const value = (text === undefined ? query : text).trim()
+        backend.query = value
+        if (value.length) backend.commitSearch(value)
+        close()
+        committed()
+    }
+    width: Math.min(440, (Overlay.overlay ? Overlay.overlay.width : 472) - 32)
+    height: Math.min(contents.implicitHeight + topPadding + bottomPadding, maxHeight)
+    topPadding: 4; bottomPadding: 6; leftPadding: 0; rightPadding: 0
     focus: false
-    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-    function setFilter(key, value) {
-        const filters = Object.assign({}, backend.filters)
-        if (filters[key] === value) delete filters[key]
-        else filters[key] = value
-        backend.applyFilters(filters)
-    }
-    function removeFilter(key) {
-        const filters = Object.assign({}, backend.filters)
-        delete filters[key]
-        backend.applyFilters(filters)
-    }
-    onOpened: {
-        const counts = {}, senders = []
-        for (const row of backend.conversations) {
-            if (!row.sender_email) continue
-            if (!counts[row.sender_email]) { counts[row.sender_email] = 0; senders.push({name: row.sender_name || row.sender_email, email: row.sender_email}) }
-            counts[row.sender_email]++
-        }
-        senderOptions = senders.sort((a,b) => counts[b.email] - counts[a.email] || a.name.localeCompare(b.name)).slice(0,7)
-    }
+    // The parent is the search box: pressing it keeps the dropdown open.
+    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnPressOutsideParent
     Connections { target: backend; function onAccountChanged() { popup.close() } }
-    component Label: Text { color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(11) } Layout.fillWidth: true }
-    component Chip: FmButton {
-        id: chip
-        implicitHeight: Math.round(Theme.fontSize(12) * 1.4) + 10; implicitWidth: Math.min(popup.availableWidth, contentItem.implicitWidth + leftPadding + rightPadding)
-        font.pointSize: Theme.fontPoints(12)
-        leftPadding: 10; rightPadding: 10
-        foreground: selected ? Theme.canvas : Theme.inkAlpha(.7)
-        font.weight: Font.Normal
-        background: Rectangle { radius: height / 2; color: chip.selected ? Theme.text : chip.hovered ? Theme.hover : "transparent"; border.color: chip.activeFocus ? Theme.focusBorder : chip.selected ? Theme.text : Theme.controlBorder }
+    Timer { id: peopleTimer; interval: 120; onTriggered: if (popup.opened && popup.fromPart !== null) backend.requestSearchPeople(popup.fromPart) }
+    onFromPartChanged: if (fromPart !== null) peopleTimer.restart()
+    onOpened: if (fromPart !== null) peopleTimer.restart()
+
+    component SectionLabel: Text {
+        Layout.fillWidth: true; leftPadding: 14; rightPadding: 14; topPadding: 10; bottomPadding: 6
+        color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11)
+        font.letterSpacing: Theme.fontSize(11) * .05; font.capitalization: Font.AllUppercase
     }
-    component QuickFilter: Chip {
-        implicitHeight: Math.round(Theme.fontSize(12) * 1.4) + 8; leftPadding: 8; rightPadding: 8
-        foreground: selected ? Theme.canvas : Theme.inkAlpha(.75)
-        background: Rectangle { radius: 4; color: parent.selected ? Theme.text : parent.hovered ? Theme.hover : Theme.selected; border.width: parent.activeFocus ? 1 : 0; border.color: Theme.focusBorder }
+    component Rule: Rectangle { Layout.fillWidth: true; implicitHeight: Theme.ruleWidth; color: Theme.line }
+    component SearchRow: Rectangle {
+        id: searchRow
+        signal clicked()
+        default property alias content: rowContent.data
+        property string accessibleName
+        Layout.fillWidth: true
+        implicitHeight: Math.max(32, rowContent.implicitHeight)
+        color: rowArea.containsMouse ? Theme.bg4 : "transparent"
+        Accessible.role: Accessible.Button; Accessible.name: accessibleName
+        Accessible.onPressAction: clicked()
+        MouseArea { id: rowArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: searchRow.clicked() }
+        RowLayout { id: rowContent; anchors.fill: parent; anchors.leftMargin: 14; anchors.rightMargin: 14; spacing: 10 }
     }
+    component RemoveButton: Rectangle {
+        id: removeButton
+        signal clicked()
+        property string tip: "Remove"
+        property real idleOpacity: .35
+        implicitWidth: 20; implicitHeight: 20; radius: 4
+        color: removeArea.containsMouse ? Theme.bg6 : "transparent"
+        Accessible.role: Accessible.Button; Accessible.name: tip; Accessible.onPressAction: clicked()
+        FmIcon { anchors.centerIn: parent; name: "close"; size: 9; color: removeArea.containsMouse ? Theme.text : Theme.inkAlpha(removeButton.idleOpacity) }
+        MouseArea { id: removeArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: removeButton.clicked() }
+        FmToolTip { shown: removeArea.containsMouse; text: removeButton.tip }
+    }
+    component OperatorChip: Rectangle {
+        property alias text: operatorLabel.text
+        property real minimumWidth: 0
+        implicitWidth: Math.max(minimumWidth, operatorLabel.implicitWidth + 12); implicitHeight: operatorLabel.implicitHeight + 2
+        radius: 3; color: Theme.bg4
+        Text { id: operatorLabel; x: 6; anchors.verticalCenter: parent.verticalCenter; color: Theme.text; font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText }
+    }
+
     background: Rectangle {
         color: Theme.surface; border.color: Theme.controlBorder; radius: 8
         layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
         layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.6); shadowBlur: 1; shadowVerticalOffset: 24 }
     }
     contentItem: ScrollView {
-                ScrollBar.vertical: FmScrollBar {}
+        ScrollBar.vertical: FmScrollBar {}
+        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         clip: true
         contentWidth: availableWidth
-        ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
         ColumnLayout {
             id: contents
             width: popup.availableWidth
-            spacing: 14
+            spacing: 0
+            // While typing: the reading, then completion or people.
             RowLayout {
-                Layout.fillWidth: true
-                Text { text: "Search " + (backend.currentAccount.name || "mail") + " — " + (popup.draftScope ? "drafts" : "sender, words, or filters"); color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } elide: Text.ElideRight; Layout.fillWidth: true }
-                FmButton { text: "Esc"; implicitHeight: 21; implicitWidth: 31; leftPadding: 4; rightPadding: 4; font.pointSize: Theme.fontPoints(11); outlined: true; onClicked: popup.close() }
-            }
-            ColumnLayout {
-                Layout.fillWidth: true; spacing: 8
-                Label { text: "Looking in" }
+                visible: popup.typing
+                Layout.fillWidth: true; Layout.leftMargin: 14; Layout.rightMargin: 14; Layout.topMargin: 10; Layout.bottomMargin: 10
+                spacing: 6
                 Flow {
+                    id: readingFlow
+                    objectName: "mailSearchReading"
+                    visible: popup.chips.length > 0
                     Layout.fillWidth: true; spacing: 6
                     Repeater {
-                        model: [{name:"Inbox",value:"inbox"},{name:"Sent",value:"sent"},{name:"Drafts",value:"drafts"}]
-                        Chip { required property var modelData; objectName: "searchScope_" + modelData.value; text: modelData.name; selected: backend.folder === modelData.value; onClicked: backend.folder = modelData.value }
+                        model: popup.chips
+                        Rectangle {
+                            id: readChip
+                            required property var modelData
+                            required property int index
+                            objectName: "mailSearchChip_" + index
+                            implicitHeight: 24; implicitWidth: Math.min(readingFlow.width, chipLayout.implicitWidth + 12)
+                            width: implicitWidth; height: implicitHeight
+                            radius: 4; color: "transparent"; border.color: Theme.controlBorder
+                            Accessible.role: Accessible.StaticText; Accessible.name: modelData.key + " " + modelData.value
+                            RowLayout {
+                                id: chipLayout
+                                anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 4; spacing: 6
+                                Text { text: readChip.modelData.key; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText }
+                                Text { text: readChip.modelData.value; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.maximumWidth: implicitWidth; textFormat: Text.PlainText }
+                                RemoveButton {
+                                    objectName: "removeMailSearchChip_" + readChip.index
+                                    enabled: popup.reading !== null
+                                    implicitWidth: 16; implicitHeight: 16; radius: 3; idleOpacity: .45
+                                    tip: "Remove " + readChip.modelData.key.toLowerCase() + " " + readChip.modelData.value
+                                    onClicked: if (popup.reading) popup.edit(popup.textWithout(readChip.modelData))
+                                }
+                            }
+                        }
                     }
-                    Chip { visible: backend.folder === "all" || backend.folder === "trash"; text: backend.folder === "trash" ? "Trash" : "All mail"; selected: true }
                 }
-            }
-            Flow {
-                visible: popup.inboxScope; Layout.fillWidth: true; spacing: 6
-                QuickFilter { visible: popup.senderOptions.length > 0; text: "from:" + (popup.senderOptions.length ? popup.senderOptions[0].name : ""); selected: popup.senderOptions.length > 0 && backend.filters.sender === popup.senderOptions[0].email; tip: popup.senderOptions.length ? popup.senderOptions[0].email : ""; onClicked: popup.setFilter("sender",popup.senderOptions[0].email) }
-                QuickFilter { visible: backend.categories.length > 0; text: "label:" + (backend.categories.length ? backend.categories[0].name : ""); selected: backend.categories.length > 0 && backend.category === backend.categories[0].id; onClicked: backend.category = selected ? "" : backend.categories[0].id }
-                QuickFilter { objectName: "searchQuickAttachment"; text: "has:attachment"; selected: backend.filters.has_attachment === true; onClicked: popup.setFilter("has_attachment",true) }
-                QuickFilter { objectName: "searchQuickDelayed"; text: "is:delayed"; selected: backend.filters.status === "held"; onClicked: popup.setFilter("status","held") }
-                QuickFilter { objectName: "searchQuickBefore"; text: "before:" + popup.currentYear; selected: backend.filters.before === popup.currentYear + "-01-01"; tip: "Before January 1, " + popup.currentYear + " · UTC"; onClicked: { const filters=Object.assign({},backend.filters); delete filters.after; if (selected) delete filters.before; else filters.before=popup.currentYear+"-01-01"; backend.applyFilters(filters) } }
-            }
-            ColumnLayout {
-                visible: !popup.draftScope && (!!backend.filters.exact_sender || !!backend.filters.kind || !!backend.filters.after || !!backend.filters.before || (popup.sentScope && (!!backend.filters.sender || !!backend.category || !!backend.filters.status || backend.filters.has_attachment !== undefined)))
-                Layout.fillWidth: true; spacing: 8
-                Label { text: "Active filters" }
-                Flow {
-                    Layout.fillWidth: true; spacing: 6
-                    Chip { objectName: "activeExactSenderFilter"; visible: !!backend.filters.exact_sender; text: "From: " + (backend.filters.exact_sender || ""); iconName: "close"; iconSize: 10; selected: true; tip: "Remove exact sender filter: " + (backend.filters.exact_sender || ""); onClicked: popup.removeFilter("exact_sender") }
-                    Chip { objectName: "activeKindFilter"; visible: !!backend.filters.kind; text: ({people:"People",automated:"Automated",unknown:"Unclassified"})[backend.filters.kind] || "Sender kind"; iconName: "close"; iconSize: 10; selected: true; tip: "Remove sender kind filter"; onClicked: popup.removeFilter("kind") }
-                    Chip { visible: !!backend.filters.after; text: "After: " + (backend.filters.after || ""); iconName: "close"; iconSize: 10; selected: true; tip: "On or after this date · UTC"; onClicked: popup.removeFilter("after") }
-                    Chip { visible: !!backend.filters.before; text: "Before: " + (backend.filters.before || ""); iconName: "close"; iconSize: 10; selected: true; tip: "Before this date · UTC"; onClicked: popup.removeFilter("before") }
-                    Chip { visible: popup.sentScope && !!backend.filters.sender; text: "From: " + (backend.filters.sender || ""); iconName: "close"; iconSize: 10; selected: true; onClicked: popup.removeFilter("sender") }
-                    Chip { visible: popup.sentScope && !!backend.category; text: "Label: " + ((backend.categories.find(c => c.id === backend.category) || {}).name || backend.category); iconName: "close"; iconSize: 10; selected: true; onClicked: backend.category = "" }
-                    Chip { visible: popup.sentScope && !!backend.filters.status; text: ({review:"To review",held:"Delayed",done:"Done"})[backend.filters.status] || "Status"; iconName: "close"; iconSize: 10; selected: true; onClicked: popup.removeFilter("status") }
-                    Chip { visible: popup.sentScope && backend.filters.has_attachment !== undefined; text: backend.filters.has_attachment ? "Has attachment" : "No attachments"; iconName: "close"; iconSize: 10; selected: true; onClicked: popup.removeFilter("has_attachment") }
-                }
-            }
-            ColumnLayout {
-                visible: popup.inboxScope && popup.senderOptions.length > 0
-                Layout.fillWidth: true; spacing: 8
-                Label { text: "From" }
-                Flow {
-                    Layout.fillWidth: true; spacing: 6
-                    Repeater { model: popup.senderOptions; Chip { required property var modelData; text: modelData.name; tip: modelData.email; selected: backend.filters.sender === modelData.email; onClicked: popup.setFilter("sender",modelData.email) } }
-                }
-            }
-            ColumnLayout {
-                visible: popup.inboxScope && backend.categories.length > 0
-                Layout.fillWidth: true; spacing: 8
-                Label { text: "Category" }
-                Flow {
-                    Layout.fillWidth: true; spacing: 6
-                    Repeater { model: backend.categories; Chip { required property var modelData; text: modelData.name; selected: backend.category === modelData.id; onClicked: backend.category = selected ? "" : modelData.id } }
-                }
-            }
-            ColumnLayout {
-                visible: popup.inboxScope
-                Layout.fillWidth: true; spacing: 8
-                Label { text: "Status" }
-                Flow {
-                    Layout.fillWidth: true; spacing: 6
-                    Repeater { model: [{name:"To review",value:"review"},{name:"Delayed",value:"held"},{name:"Done",value:"done"}]; Chip { required property var modelData; text: modelData.name; selected: backend.filters.status === modelData.value; onClicked: popup.setFilter("status",modelData.value) } }
-                }
-            }
-            ColumnLayout {
-                visible: popup.sentScope; Layout.fillWidth: true; spacing: 8
-                Label { text: "Sent" }
-                Flow {
-                    Layout.fillWidth: true; spacing: 6
-                    Chip { objectName: "searchSentToday"; text: "Today"; selected: popup.dateSelected(0,false); tip: "Sent today · UTC"; onClicked: popup.selectDate(0,false) }
-                    Chip { objectName: "searchSentYesterday"; text: "Yesterday"; selected: popup.dateSelected(1,false); tip: "Sent yesterday · UTC"; onClicked: popup.selectDate(1,false) }
-                    Chip { objectName: "searchSentEarlier"; text: "Earlier"; selected: popup.dateSelected(1,true); tip: "Sent before yesterday · UTC"; onClicked: popup.selectDate(1,true) }
-                }
-            }
-            Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
-            RowLayout {
-                Layout.fillWidth: true
                 Text {
+                    objectName: "mailSearchError"
+                    visible: popup.readingError.length > 0
                     Layout.fillWidth: true; wrapMode: Text.Wrap
-                    text: popup.draftScope ? "Saved on this machine" : "Indexed " + ((backend.currentAccount.coverage || {}).indexed_messages || 0) + " of " + (backend.currentAccount.message_count || 0) + " messages"
-                    color: Theme.subtle; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
+                    text: popup.readingError; color: Theme.warn
+                    font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText
                 }
-                FmButton { objectName: "mailFiltersButton"; visible: !popup.draftScope; iconName: "filter"; iconSize: 13; implicitWidth: 26; implicitHeight: 25; leftPadding: 6; rightPadding: 6; tip: "More filters · sender, attachments and dates"; onClicked: popup.moreFiltersRequested() }
-                FmButton { text: "Clear filters"; foreground: Theme.text; font.pointSize: Theme.fontPoints(12); implicitHeight: 25; onClicked: { backend.applyFilters({}); backend.category = ""; backend.query = "" } }
+                Item { visible: popup.chips.length === 0 && popup.readingError.length === 0; Layout.fillWidth: true }
+                Text {
+                    objectName: "mailSearchCount"
+                    visible: popup.readingError.length === 0
+                    Layout.alignment: Qt.AlignRight | Qt.AlignTop; Layout.topMargin: popup.chips.length ? 4 : 0
+                    text: popup.countText; color: Theme.inkAlpha(.45)
+                    font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.features: {"tnum": 1}
+                }
+            }
+            ColumnLayout {
+                visible: popup.typing && popup.completions.length > 0
+                Layout.fillWidth: true; spacing: 0
+                Rule {}
+                Item { implicitHeight: 4 }
+                Repeater {
+                    model: popup.completions
+                    SearchRow {
+                        id: completion
+                        required property var modelData
+                        objectName: "mailSearchComplete_" + modelData.op.slice(0, -1)
+                        accessibleName: "Complete " + modelData.op
+                        onClicked: popup.edit(popup.query.slice(0, popup.query.length - popup.lastToken.length) + modelData.op)
+                        OperatorChip { text: completion.modelData.op }
+                        Text { text: completion.modelData.description; color: Theme.inkAlpha(.6); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); Layout.fillWidth: true; elide: Text.ElideRight }
+                    }
+                }
+            }
+            ColumnLayout {
+                visible: popup.typing && popup.people.length > 0
+                Layout.fillWidth: true; spacing: 0
+                Rule {}
+                SectionLabel { text: popup.outgoingScope ? "Recipients" : "Senders" }
+                Repeater {
+                    model: popup.people
+                    SearchRow {
+                        id: person
+                        required property var modelData
+                        required property int index
+                        readonly property string name: modelData.name || ""
+                        objectName: "mailSearchPerson_" + index
+                        accessibleName: (name || modelData.email) + ", " + modelData.email
+                        onClicked: popup.edit(popup.query.replace(/from:([^:]*)$/i, "from:" + modelData.email) + " ")
+                        Rectangle {
+                            implicitWidth: 20; implicitHeight: 20; radius: 10; color: Theme.bg4
+                            Text {
+                                anchors.centerIn: parent
+                                text: (person.name || person.modelData.email).split(/\s+/).filter(w => w.length).slice(0, 2).map(w => w[0]).join("").toUpperCase()
+                                color: Theme.inkAlpha(.8); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(9); font.weight: Font.Medium
+                            }
+                        }
+                        Text { text: person.name || person.modelData.email; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); Layout.maximumWidth: popup.availableWidth * .5; elide: Text.ElideRight; textFormat: Text.PlainText }
+                        Text { visible: person.name.length > 0; text: person.modelData.email; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
+                        Item { visible: person.name.length === 0; Layout.fillWidth: true }
+                    }
+                }
+            }
+            // Empty query: recent searches, then the operators.
+            ColumnLayout {
+                visible: !popup.typing && backend.recentSearches.length > 0
+                Layout.fillWidth: true; spacing: 0
+                SectionLabel { text: "Recent" }
+                Repeater {
+                    model: backend.recentSearches
+                    SearchRow {
+                        id: recent
+                        required property string modelData
+                        required property int index
+                        objectName: "mailRecentSearch_" + index
+                        accessibleName: "Search " + modelData
+                        onClicked: popup.commit(modelData)
+                        FmIcon { name: "clock"; size: 12; color: Theme.inkAlpha(.4) }
+                        Text { text: recent.modelData; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText }
+                        RemoveButton { objectName: "removeMailRecentSearch_" + recent.index; tip: "Remove from recent"; onClicked: backend.removeRecentSearch(recent.modelData) }
+                    }
+                }
+                Item { implicitHeight: 4 }
+                Rule {}
+            }
+            ColumnLayout {
+                visible: !popup.typing
+                Layout.fillWidth: true; spacing: 0
+                SectionLabel { text: "Narrow it down" }
+                Repeater {
+                    model: popup.operators
+                    SearchRow {
+                        id: operatorRow
+                        required property var modelData
+                        objectName: "mailSearchOperator_" + modelData.op.slice(0, -1)
+                        accessibleName: modelData.op + " " + modelData.description
+                        onClicked: popup.edit((popup.query.trim() ? popup.query.trim() + " " : "") + modelData.op)
+                        OperatorChip { text: operatorRow.modelData.op; minimumWidth: 64 }
+                        Text { text: operatorRow.modelData.description; color: Theme.inkAlpha(.75); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); elide: Text.ElideRight; Layout.fillWidth: true }
+                        Text { text: operatorRow.modelData.example; color: Theme.inkAlpha(.35); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideLeft; Layout.maximumWidth: popup.availableWidth * .42; textFormat: Text.PlainText }
+                    }
+                }
             }
         }
     }

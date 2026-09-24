@@ -20,6 +20,9 @@ QHash<int, QByteArray> ConversationListModel::roleNames() const {
 }
 
 QString ConversationListModel::group(const Row &row) {
+    // Inbox rows carry their section, which splits Done by month.
+    const auto section = row.value.value("section").toString();
+    if (!section.isEmpty()) return section;
     const auto display = row.value.value("display_group").toString();
     if (!display.isEmpty()) return display;
     const auto value = row.value.value("group").toString();

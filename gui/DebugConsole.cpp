@@ -3,12 +3,15 @@
 #include <QDateTime>
 #include <QGuiApplication>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QRegularExpression>
 #include <QSysInfo>
 #include <QUuid>
 #include <cstdio>
 #include <QCryptographicHash>
 #include <QFile>
+#include <QDir>
+#include <QFileInfo>
 
 namespace {
 QMutex handlerMutex;
@@ -28,6 +31,39 @@ void messageHandler(QtMsgType type, const QMessageLogContext &context, const QSt
 QString json(const QVariantMap &map, bool pretty = false) {
     return QString::fromUtf8(QJsonDocument::fromVariant(map).toJson(pretty ? QJsonDocument::Indented : QJsonDocument::Compact)).trimmed();
 }
+constexpr qint64 logSegmentBytes = 2560 * 1024; // GUI and engine, current and previous: 10 MiB total.
+QString scopeFor(const QString &source, const QVariantMap &fields) {
+    if (source.compare("IPC", Qt::CaseInsensitive) == 0) {
+        const auto method = fields.value("method").toString();
+        if (method.startsWith("assist_")) return "Model";
+        if (method.startsWith("calendar_")) return "Calendar";
+        if (method.startsWith("google_auth_") || method == "google_disconnect") return "Auth";
+        if (method.startsWith("google_sync_") || method == "google_labels" || method == "google_mail_mutation_status") return "Sync";
+        if (method.startsWith("google_draft") || method.startsWith("draft_") || method == "drafts" || method == "capture_history") return "Drafts";
+        if (method.startsWith("google_send") || method.startsWith("google_sent") || method.startsWith("send_") || method == "mail_undo") return "Sending";
+        if (method.startsWith("account_")) return "Accounts";
+        if (method.startsWith("preferences_") || method.startsWith("view_")) return "Settings";
+        if (method.startsWith("search_") || method == "search_senders") return "Search";
+        if (method == "conversations" || method == "conversation" || method == "message_source" || method == "attachment" || method == "sender_summary" || method == "categories") return "Mail";
+        return "IPC";
+    }
+    if (source.compare("local model", Qt::CaseInsensitive) == 0 || source.compare("model", Qt::CaseInsensitive) == 0) return "Model";
+    if (source.compare("sync", Qt::CaseInsensitive) == 0) return "Sync";
+    if (source.compare("auth", Qt::CaseInsensitive) == 0) return "Auth";
+    if (source.compare("Qt", Qt::CaseInsensitive) == 0) return "Qt";
+    if (source.compare("app", Qt::CaseInsensitive) == 0) return "App";
+    return "Other";
+}
+void writeBounded(const QString &directory, const QString &name, const QByteArray &line) {
+    if (directory.isEmpty()) return;
+    const auto path = QDir(directory).filePath(name);
+    QFile file(path);
+    if (file.size() + line.size() > logSegmentBytes) {
+        QFile::remove(path + ".1");
+        if (!QFile::rename(path, path + ".1")) file.resize(0);
+    }
+    if (file.open(QIODevice::WriteOnly | QIODevice::Append)) { file.write(line); file.close(); }
+}
 // Explicit projections keep future payload additions out of reports by default.
 QVariantMap pick(const QVariantMap &input, std::initializer_list<const char *> keys) {
     QVariantMap out;
@@ -45,8 +81,26 @@ DebugConsole::DebugConsole(QObject *parent) : QObject(parent), m_session(QUuid::
     m_timer.setInterval(500);
     connect(&m_timer, &QTimer::timeout, this, &DebugConsole::refresh);
     m_timer.start();
-    record("INFO", "app", "Debug capture started; bounded in-memory session history.");
+    record("INFO", "app", "Debug capture started.");
 }
+void DebugConsole::setLogDirectory(const QString &profile) {
+    m_profile = profile;
+    // A new profile must first be created and validated by fm-engine. On Unix,
+    // creating it here with QDir would give it shared default permissions.
+    if (!m_backend && QDir(profile).exists()) activateLogDirectory();
+    else if (m_backend && m_backend->property("connected").toBool()) activateLogDirectory();
+}
+void DebugConsole::activateLogDirectory() {
+    if (m_profile.isEmpty() || !m_logDirectory.isEmpty()) return;
+    const auto path = QDir(m_profile).filePath("diagnostics");
+    if (!QDir().mkpath(path)) return;
+    QMutexLocker lock(&m_mutex);
+    m_logDirectory = path;
+    // The first capture is also persisted if the profile became available later.
+    for (const auto &entry : m_entries) writeBounded(path, "gui.log", (entry.line + '\n').toUtf8());
+    m_dirty = true;
+}
+QString DebugConsole::logDirectory() const { QMutexLocker lock(&m_mutex); return m_logDirectory; }
 DebugConsole::~DebugConsole() {
     if (m_capturing) {
         QMutexLocker lock(&handlerMutex);
@@ -103,13 +157,60 @@ QString DebugConsole::scrub(QString text) {
     return text.size() > 1024 ? text.left(1024) + " [truncated]" : text;
 }
 void DebugConsole::record(const QString &level, const QString &source, const QString &message, const QVariantMap &fields) {
-    const auto safe = pick(fields, {"method", "phase", "code", "elapsed_ms", "retry_after_secs", "queued", "category"});
+    const auto safe = pick(fields, {"method", "request_ref", "phase", "code", "elapsed_ms", "retry_after_secs", "queued", "category", "status", "task", "completed", "total", "failed"});
     const auto severity = QStringList{"DEBUG", "INFO", "WARN", "ERROR"}.contains(level) ? level : "INFO";
+    const auto scope = scopeFor(source, safe);
     const auto line = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs) + "  " + severity + "  "
-        + scrub(source).left(40) + "  " + scrub(message) + (safe.isEmpty() ? QString{} : "  " + json(safe));
+        + scope + "  " + scrub(source).left(40) + "  " + scrub(message) + (safe.isEmpty() ? QString{} : "  " + json(safe));
+    append(severity, scope, line.left(2048), true);
+}
+void DebugConsole::append(const QString &level, const QString &scope, const QString &line, bool persist) {
     QMutexLocker lock(&m_mutex);
     if (m_entries.size() >= 1000) { m_entries.pop_front(); ++m_dropped; }
-    m_entries.push_back({severity, line.left(2048)}); m_dirty = true;
+    m_entries.push_back({level, scope, line.left(2048)}); m_dirty = true;
+    if (persist) writeBounded(m_logDirectory, "gui.log", (line.left(2048) + '\n').toUtf8());
+}
+void DebugConsole::readEngineLog() {
+    QString directory;
+    { QMutexLocker lock(&m_mutex); directory = m_logDirectory; }
+    if (directory.isEmpty()) return;
+    const auto path = QDir(directory).filePath("engine.log");
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) return;
+    const auto birth = QFileInfo(path).birthTime();
+    if (file.size() < m_engineOffset || (birth.isValid() && m_engineBirthTime.isValid() && birth != m_engineBirthTime)) {
+        m_engineOffset = 0; m_enginePartial.clear();
+    }
+    m_engineBirthTime = birth;
+    if (!file.seek(m_engineOffset)) return;
+    const auto bytes = file.read(256 * 1024);
+    m_engineOffset += bytes.size();
+    m_enginePartial += bytes;
+    while (true) {
+        const auto end = m_enginePartial.indexOf('\n');
+        if (end < 0) break;
+        const auto line = m_enginePartial.left(end);
+        m_enginePartial.remove(0, end + 1);
+        QJsonParseError error;
+        const auto event = QJsonDocument::fromJson(line, &error).object();
+        const auto scope = event.value("scope").toString();
+        if (error.error != QJsonParseError::NoError || !QStringList{"App", "IPC", "Sync", "Auth", "Model", "Calendar", "Mail", "Drafts", "Sending", "Accounts", "Settings", "Search", "Other"}.contains(scope)) continue;
+        const auto rawLevel = event.value("level").toString();
+        const auto level = QStringList{"DEBUG", "INFO", "WARN", "ERROR"}.contains(rawLevel) ? rawLevel : "INFO";
+        const auto rawFields = event.value("fields").toObject().toVariantMap();
+        auto fields = pick(rawFields, {"job_ref", "account_ref", "target_ref", "task", "origin", "provider", "model", "model_digest", "prompt_sha256", "label_state", "input_chars", "summary_chars", "sender_kind",
+            "category_abstain", "partial", "source_count", "label_choices", "elapsed_ms", "code", "attempt",
+            "completed", "total", "service", "state", "connection_generation", "generation", "lane", "items",
+            "normalized_bytes", "page_complete", "catalog_refresh", "calendars", "pages", "failures", "more",
+            "first_error_code", "pid"});
+        QVariantList categoryIds;
+        for (const auto &id : rawFields.value("category_ids").toList().mid(0, 3)) categoryIds.append(scrub(id.toString()).left(80));
+        if (!categoryIds.isEmpty()) fields["category_ids"] = categoryIds;
+        const auto display = scrub(event.value("at").toString()) + "  " + level + "  " + scope + "  engine  "
+            + scrub(event.value("event").toString()) + (fields.isEmpty() ? QString{} : "  " + json(fields));
+        append(level, scope, display, false);
+    }
+    if (m_enginePartial.size() > 4096) m_enginePartial.clear();
 }
 QString DebugConsole::accountAlias(const QString &account) {
     if (account.isEmpty()) return "none";
@@ -158,6 +259,8 @@ QVariantMap DebugConsole::snapshot() {
     return state;
 }
 void DebugConsole::refresh() {
+    if (m_backend && m_backend->property("connected").toBool()) activateLogDirectory();
+    readEngineLog();
     auto next = snapshot();
     const auto sync = next.value("sync").toMap();
     for (auto it = sync.cbegin(); it != sync.cend(); ++it) if (m_lastSync.value(it.key()) != it.value()) {
@@ -193,24 +296,26 @@ void DebugConsole::refresh() {
 QString DebugConsole::stateText() const { return json(m_state, true); }
 int DebugConsole::count() const { QMutexLocker lock(&m_mutex); return int(m_entries.size()); }
 qulonglong DebugConsole::dropped() const { QMutexLocker lock(&m_mutex); return m_dropped; }
-QString DebugConsole::events(const QString &level, const QString &filter) const {
+QString DebugConsole::events(const QString &level, const QString &filter, const QString &scope) const {
     QMutexLocker lock(&m_mutex);
     QStringList lines;
     for (const auto &entry : m_entries)
-        if ((level.isEmpty() || level == "All" || entry.level == level || (level == "Warnings + errors" && (entry.level == "WARN" || entry.level == "ERROR")))
+        if ((scope.isEmpty() || scope == "All" || entry.scope == scope)
+            && (level.isEmpty() || level == "All" || entry.level == level || (level == "Warnings + errors" && (entry.level == "WARN" || entry.level == "ERROR")))
             && (filter.isEmpty() || entry.line.contains(filter, Qt::CaseInsensitive))) lines.append(entry.line);
     return lines.join('\n');
 }
 QString DebugConsole::report() const {
     return "fuckMail debug report v1\nCaptured: " + QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)
         + "\nSession uptime: " + QString::number(m_uptime.elapsed() / 1000) + " seconds\n"
-        + "Session only; latest 1000 events; " + QString::number(dropped()) + " older events evicted.\n"
+        + "Latest 1000 in-memory events; " + QString::number(dropped()) + " older events evicted.\n"
+        + "Bounded disk logs in the active profile (gui.log and engine.log, each with one previous segment).\n"
         + "Account aliases; payloads omitted; diagnostic strings redacted.\n\nRUNTIME STATE\n" + stateText()
         + "\n\nEVENTS (all levels, oldest first)\n" + events() + '\n';
 }
 void DebugConsole::copyReport() const { if (auto clipboard = QGuiApplication::clipboard()) clipboard->setText(report()); }
 void DebugConsole::clear() {
     { QMutexLocker lock(&m_mutex); m_entries.clear(); m_dropped = 0; }
-    record("INFO", "app", "Event history cleared by user.");
+    record("INFO", "app", "Event view cleared by user; disk logs retained.");
     refresh();
 }

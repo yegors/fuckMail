@@ -286,6 +286,12 @@ impl Runtime {
                     .await;
                 let result = match plan {
                     Ok(Some(plan)) => {
+                        let started = std::time::Instant::now();
+                        crate::diagnostics::event("Model", "started", json!({"job_ref":&id[..8],"account_ref":crate::diagnostics::reference("account",&plan.account),"target_ref":crate::diagnostics::reference("message",&plan.target),"task":plan.task,
+                            "origin":"backlog","input_chars":plan.payload.to_string().chars().count(),
+                            "partial":plan.partial,"source_count":plan.sources.len(),"label_choices":plan.categories.len(),
+                            "provider":plan.settings.provider.as_str(),"model":plan.settings.model(&plan.task).map(|m|m.name.as_str()),
+                            "model_digest":plan.settings.model(&plan.task).map(|m|m.digest.as_str())}));
                         match ollama::infer(
                             &plan.settings,
                             &plan.task,
@@ -297,6 +303,10 @@ impl Runtime {
                         .await
                         {
                             Ok(output) => {
+                                let facts = json!({"job_ref":&id[..8],"account_ref":crate::diagnostics::reference("account",&plan.account),"target_ref":crate::diagnostics::reference("message",&plan.target),"task":plan.task,"origin":"backlog",
+                                    "elapsed_ms":started.elapsed().as_millis(),"summary_chars":output["summary"].as_str().map(|s|s.chars().count()),
+                                    "sender_kind":output["sender_kind"],"category_ids":output["category_ids"],
+                                    "category_abstain":output["category_abstain"],"partial":plan.partial});
                                 let stop = token.clone();
                                 let capture = context.clone();
                                 self.core
@@ -325,9 +335,10 @@ impl Runtime {
                                         s.local_model_finish(&plan, output)?;
                                         Ok(true)
                                     })
-                                    .await
+                                    .await.map(|saved| {if saved {crate::diagnostics::event("Model","completed",facts);} saved})
                             }
-                            Err(e) => Err(e),
+                            Err(e) => {crate::diagnostics::event("Model","failed",json!({"job_ref":&id[..8],"account_ref":crate::diagnostics::reference("account",&plan.account),"target_ref":crate::diagnostics::reference("message",&plan.target),"task":plan.task,
+                                "origin":"backlog","elapsed_ms":started.elapsed().as_millis(),"code":e.code})); Err(e)},
                         }
                     }
                     Ok(None) => Ok(false),

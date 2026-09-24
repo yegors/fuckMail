@@ -69,6 +69,7 @@ static void run() {
     int actions=0,assessments=0;bool holdAssessment=false;QString statusMode="unknown";
     fixture.customRequest=[&](QLocalSocket *peer,const QJsonObject &request) {
         const auto method=request["method"].toString(),id=request["id"].toString();const auto params=request["params"].toObject();
+        if(method=="google_sent"){peer->write(reply(id,{{"account",request["account"]},{"outgoing",QJsonArray{}},{"next_offset",QJsonValue::Null}}));return true;}
         if(method=="google_draft_authoring") {
             ++assessments;if(!holdAssessment){peer->write(reply(id,assessment(params["source_revision"].toInt())));return true;}
         } else if(method=="google_draft_delete_status") {

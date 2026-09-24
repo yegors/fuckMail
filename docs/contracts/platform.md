@@ -1,6 +1,16 @@
 # Platform, lifecycle and release
 
-State: Draft · Revision: 18 · Updated: 2026-09-14 · Implementation: D040/P2-01C email-first Google setup is implemented; Mac native/package and generated account checks pass. D042 supplies the app registration; actual-account acceptance remains open. Core 27/Calendar 20/Search 5/schema 20, fixtures 0/3 and protocol 1 stay unchanged. Whole readiness remains 0/9; historical evidence retains its original source scope.
+State: Draft · Revision: 19 · Updated: 2026-09-24 · Implementation: D105 remote-content runtime and vendored HTML renderer pass Windows checks; Mac and Linux builds, packages and a real proxy remain open. Revision 18's D040/P2-01C setup evidence is unchanged. Whole readiness remains 0/9; historical evidence retains its original source scope.
+
+Revision 19 (D105) adds the engine's remote-content runtime. It is the only code that fetches anything a rendered message refers to; Google API and local-model traffic are outside it.
+- **Requests:** GET only, https origins on port 443. `http://` sources, and redirects to http, are never requested. At most 3 redirects, each rechecked against scheme, destination and blocklist before connecting.
+- **Headers and limits:** a fixed `User-Agent: Mozilla/5.0` and an image-only `Accept`; no cookies, Referer, Accept-Language or conditional headers. 5 s connect, 15 s total, 5 MiB per image, 8 fetches at once.
+- **Direct mode:** the engine resolves names itself and connects only to public addresses. Loopback, private, link-local, CGNAT, multicast, unspecified, broadcast, ULA and IPv4-mapped forms are refused.
+- **Proxy mode:** every request is tunnelled through `https://host:port` with basic authentication. The proxy's certificate is checked against the OS roots. The origin is never resolved locally, and nothing falls back to a direct connection: an unreachable proxy, a rejected login, or a missing or unreadable password each fail as `proxy_unavailable`. Private-network protection behind the proxy depends on the proxy.
+- **Password:** stored in the OS vault under service `fuckmail.proxy.v1.<sha256(profile namespace)>`, user `remote-content`. It is never returned over IPC. The engine reads it when it builds the proxy client, and again after the settings or password change. Unlike Google credentials there is no denial latch, so a Mac Keychain refusal may be asked again on the next fetch; that remains to be checked on Mac.
+- **Cancellation:** closing the requesting connection cancels its fetch, and nothing is cached for it. Removing an account stops that account's work.
+
+The GUI vendors litehtml (`b58fd10`, BSD-3) and its bundled gumbo (Apache-2.0) under `gui/third_party/litehtml`, built by `gui/cmake/litehtml.cmake` as two static libraries with no new Qt module. See `VENDORED.md` for updates. HTML requests are allowed on per-operation connections in synthetic and live profiles alike. Consumers: Core57, Mail UI74, CLI44 and Quality75; fixtures0/3 and protocol1 unchanged.
 
 D054 respects native credential denial: serialize native access, latch failures across account workers, and retry only after explicit Sync/reconnect. Preserve OS access controls, secrets and existing credential references; no trust changes or plaintext fallback. Updated unsigned development binaries can still require one OS approval.
 

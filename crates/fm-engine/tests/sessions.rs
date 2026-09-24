@@ -523,3 +523,145 @@ async fn shared_profile_is_rejected_and_stale_owned_endpoint_recovers() {
     drop(live);
     wait_stopped(&profile).await;
 }
+
+#[tokio::test]
+async fn html_reader_serves_sanitised_html_and_fetches_nothing_unasked() {
+    let root = tempfile::tempdir().unwrap();
+    let profile = root.path().join("demo");
+    let mut c = client(&profile).await;
+    let accounts = ok(c.call("accounts", None, json!({})).await.unwrap());
+    let account = accounts["accounts"][0]["id"].as_str().unwrap().to_owned();
+    let list = ok(c
+        .call(
+            "conversations",
+            Some(&account),
+            json!({"limit":100,"folder":"all"}),
+        )
+        .await
+        .unwrap());
+    let row = list["conversations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["subject"] == "Weekly service availability")
+        .expect("the fixture HTML conversation")
+        .clone();
+    let conversation = ok(c
+        .call("conversation", Some(&account), json!({"id":row["id"]}))
+        .await
+        .unwrap());
+    let message = &conversation["messages"][0];
+    let request = json!({"id":message["id"],"source_version":message["source_version"]});
+    let view = ok(c
+        .call("message_html", Some(&account), request.clone())
+        .await
+        .unwrap());
+    assert_eq!(view["has_html"], true);
+    let html = view["html"].as_str().unwrap();
+    assert!(
+        html.contains("Weekly availability")
+            && !html.contains("SCRIPT_MUST_NOT_APPEAR")
+            && !html.contains("invalid.example")
+    );
+    let remote: Vec<Value> = view["resources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|r| r["kind"] == "remote")
+        .cloned()
+        .collect();
+    assert!(
+        !remote.is_empty()
+            && remote
+                .iter()
+                .all(|r| r["host"] == "invalid.example" && r.get("source").is_none())
+    );
+    assert!(view["links"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|l| l["host"] == "status.example"));
+    // Opening shows cached images only; nothing is fetched.
+    let mut image = request.clone();
+    image["resource"] = remote[0]["id"].clone();
+    image["cached_only"] = json!(true);
+    assert_eq!(
+        ok(c.call("message_image", Some(&account), image.clone())
+            .await
+            .unwrap())["state"],
+        "not_cached"
+    );
+    // A blocked host is refused before any connection, even after Load images.
+    let prefs = ok(c.call("preferences_get", None, json!({})).await.unwrap());
+    ok(c.call(
+        "preferences_save",
+        None,
+        json!({"preferences":{"blocked_hosts":[{"pattern":"*.invalid.example","source":"settings","added_at":1}]},
+               "expected_revision":prefs["revision"],"request_id":"block-invalid"}),
+    )
+    .await
+    .unwrap());
+    image["cached_only"] = json!(false);
+    let blocked = ok(c
+        .call("message_image", Some(&account), image)
+        .await
+        .unwrap());
+    assert_eq!(
+        (blocked["state"].as_str(), blocked["by"].as_str()),
+        (Some("blocked"), Some("*.invalid.example"))
+    );
+    let prefs = ok(c.call("preferences_get", None, json!({})).await.unwrap());
+    let bad = c
+        .call(
+            "preferences_save",
+            None,
+            json!({"preferences":{"blocked_hosts":[{"pattern":"Not A Domain","source":"settings","added_at":1}]},
+                   "expected_revision":prefs["revision"],"request_id":"block-bad"}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(bad["ok"], false, "unnormalised patterns are refused");
+    // The background index counts links across every account.
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    let summary = loop {
+        let summary = ok(c
+            .call(
+                "link_host_summary",
+                Some(&account),
+                json!({"host":"www.status.example","conversation":row["id"]}),
+            )
+            .await
+            .unwrap());
+        if summary["complete"] == true || tokio::time::Instant::now() > deadline {
+            break summary;
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    };
+    assert_eq!(
+        summary["complete"], true,
+        "the link index finishes: {summary}"
+    );
+    assert_eq!(summary["host"], "status.example");
+    let counts = ok(c
+        .call(
+            "link_pattern_counts",
+            None,
+            json!({"patterns":["*.status.example","status.example"]}),
+        )
+        .await
+        .unwrap());
+    // The pattern counts include this conversation's message; the summary does not.
+    assert!(
+        counts["counts"]["status.example"].as_i64().unwrap()
+            > summary["messages"].as_i64().unwrap()
+    );
+    assert_eq!(
+        counts["counts"]["*.status.example"],
+        counts["counts"]["status.example"]
+    );
+    let cache = ok(c
+        .call("remote_image_cache", None, json!({"op":"stats"}))
+        .await
+        .unwrap());
+    assert_eq!(cache["limit"], 256 * 1024 * 1024);
+}

@@ -1,5 +1,33 @@
 # CLI and external agent interface
 
+## D105 — HTML reader, links and proxy (CLI44)
+
+Every command below uses the same engine methods as the GUI. None marks mail reviewed.
+
+**Mail**
+- `mail html ID --source-version V` prints `message_html`: the sanitised HTML or its file path, with the resource and link lists.
+- `mail images ID --source-version V [--load]` reports each image's state. Without `--load` it reads only the message's own parts and the image cache. With `--load` it fetches remote images through the engine: over https only, through the proxy when one is on, and never from a blocked host. `insecure` images are reported without a request. Each image call allows 30 s.
+
+**Links**
+- `links summary HOST [--conversation C]` prints `link_host_summary`.
+- `links blocked` lists `blocked_hosts` with the `link_pattern_counts` for each pattern.
+- `links block PATTERN` and `links unblock PATTERN` save the list through `preferences_save` against the revision just read, with a generated request ID. Input is reduced to its host: lowercase, with no scheme, path or `www.`, and `*.` kept. Blocking an existing pattern, or unblocking an absent one, is an input error.
+
+**Proxy**
+- `proxy show` prints `remote_proxy` and whether a password is saved. The password is never shown.
+- `proxy set HOST[:PORT] [--username U] [--password-stdin]` turns the proxy on, with port 443 by default. `--password-stdin` reads up to 4 KiB from standard input into the system keychain.
+- `proxy clear` turns it off and forgets the password.
+- `proxy test` makes one request through the proxy, allowing 30 s.
+- `proxy cache [--clear]` reports or clears the image cache.
+
+`links blocked|block|unblock` and every `proxy` command need no account scope. `mail html|images` and `links summary` need one, and scope is checked before storage is touched.
+
+Consumers: Core57, Mail UI74 and Quality75; Search7, schema34, fixtures0/3 and protocol1. [Execution record](../research/html-mail.md#d105--html-reader-implementation-2026-09-24).
+
+## D101 — search grammar and people (CLI43)
+
+`mail list --query TEXT` takes the same [Search 7](search.md#query-grammar-revision-7) text as the GUI search box, and JSON results carry Core's `search_terms`. `--field all` now means subject or message text; `sender`, `subject` and `body` still narrow bare words to one column. `--month-zone ZONE` and repeatable `--collapsed-month YYYY-MM` return and fold the Inbox's Done months. `mail senders [QUERY] --folder inbox|all|sent|drafts|trash --limit 1-10` lists the people a `from:` would offer, reading only metadata; it never marks mail reviewed. Existing typed filter flags keep working and conflict explicitly with the same operator in the text. Consumers: Core56, Search7, Mail UI71 and Quality72; schema33, fixtures0/3 and protocol1 unchanged.
+
 ## D092 — shared Undo and account controls (CLI42)
 
 `mail undo` accepts the original Undo request ID and expected conversation revision, using the same durable `mail_undo` boundary as GUI toasts. `account-update` accepts the extended retention choices plus paired `--mail-access` and `--calendar-access` values (`none`, `read`, `write`). Both cannot be `none`. Preferences expose the same typed editable shortcut map as the GUI; conflicts and fixed-key reservations are validated in Core. Consumers: Core50/Mail UI67/Calendar29/Quality67; schema31, fixtures0/3/protocol1.

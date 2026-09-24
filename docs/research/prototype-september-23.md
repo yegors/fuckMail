@@ -1,5 +1,66 @@
 # September 23 prototype implementation
 
+## D104 — fifth export (2026-09-24)
+
+The founder supplied the fifth export, `fuckMail (5).html` (713,629 bytes, SHA-256 `b5cfd8b3…c0722b2ef`), which includes the fourth, with designer notes. Its bundled component and markup were unpacked and diffed against the fourth export. The export was served on `127.0.0.1` and inspected in the in-app browser at 1400×860 for the reader, summary states and Calendar Month. Sizes, colours and rules come from the export's markup and the notes. The changes are in the [decision](../decisions.md) and [Mail UI73](../contracts/mail-ui.md).
+
+### Choices beyond the notes
+
+- **HTML reader boundary.** The founder asked for the link card, image blocking and Blocked domains UI without their logic, which another session is building. The card, the Settings list and the reader hook-up call that session's content service (`backend.htmlContent`) for matching, blocking, counts and hosts; nothing here fetches, blocks or proxies. Without the service, the card offers only Copy link and the Settings field is disabled.
+- **Real failures only.** The prototype fails every third summary to demonstrate the red state. Here the red state appears only when the engine reports a failure; a timeout reads "{model} stopped responding", other errors show the engine's message.
+- **Done needs a watched run.** "✓ Done" shows only when a summary arrives while the card was showing progress, not when a saved summary loads on open.
+- **First frame of HTML messages.** The HTML view loads asynchronously. The HTML session now answers held results synchronously and remembers laid-out heights, so a revisited message has its final height on the first frame; a first visit appears a frame or more later. The navigation-cache test now checks the first frame on the text reader; the HTML reader's first paint is that session's to test.
+
+### Test repairs
+
+The founder asked that tests stop failing routinely. Each failure was traced to either a real bug or an outdated check:
+
+- **Real bugs fixed.** A queued Send's draft check was pruned by navigation and never answered (send-undo). A view save meeting a newer CLI save raised an error and stopped closing; it now merges quietly (integration). Recipient errors had no visible place after the top error bar's removal. Collapsing a list section could scroll its header out of view, and saved list offsets drifted with the list's origin.
+- **Checks updated to current behaviour.** The attachments dialog's "OK" is now "Reload". The Forward button is hidden while a reply is open, so the composition test collapses the reply first. A restored editor taller than its scroll area is checked by its visible area. The Calendar header timeline no longer needs blocks. Google draft and Send harnesses answer the new `google_sent` read. Selection receipts carry categories, and its section toggle passes the header. The sender card opens All mail. An unreadable search raises no app-wide error. The local-model harness includes the header Summarize icon. The integration walkthrough checks polling before a merged close instead of expecting a failed close. The selection test reads the visible body when the HTML view and its text fallback share a name.
+
+### Verification
+
+- Windows 11, Release build (`build/d100`), on the shared working tree that also holds the HTML reader and diagnostics sessions' in-progress changes. The full native suite passes **36/36** in 432.65 s, including `rust-test-build`, `rust-workspace` and `gui-startup-recovery`.
+- The previous full run failed 2/36. `gui-startup-recovery` built with `-p fm-engine`, whose feature set differs from the `--workspace` prebuild, so it recompiled fm-ipc and fm-engine inside its 90 s limit on every run; its command now uses `--workspace --test sessions` and passes in about 10 s. The other failure was the HTML session's own `gui-html-message-body`, which passes on the current tree.
+- The Send-controls harness change, made after that run on the HTML session's report of a Debug-only failure, was rerun alone and passes.
+- Visual checks compared offscreen fixture frames with the served export: Month's today tint and ring, dimmed past days and events, the now line with a two-event window and "+21 more"; the reader's sender pill, avatar, attachments caption and text-reader links; Settings → Blocked domains; and the local-model harness's progress, "✓ Done" and failure frames. The comparison led to four fixes: text-reader links were blue and are now ink with an underline; `*.example.com` uses the export's smaller monospace size; green now appears at once and only the return fades; and the failure line no longer repeats the engine's "Try again".
+- Repository hygiene passes. Strict Clippy (`--workspace --all-targets -D warnings`) found three D101 issues, now fixed: a non-minimal boolean in Done-month collapsing, a literal-bool assert, and the CLI's `mail list` variant size, allowed because the command is parsed once. It then passes for fm-core and fm-cli, but still fails in fm-engine's local-model files, which another session is changing (too many arguments; `map` over `inspect`). This packet's Rust files are formatted; other sessions' files show formatting differences.
+
+### Limits
+
+- Windows only. macOS and Linux were not run.
+- The link card, image placeholders and Blocked domains depend on the HTML reader's service and have no end-to-end test here.
+- A message's first HTML visit appears a frame or more after the reader; prefetching it during reader preparation is not done here.
+- The Month now line and event window are checked visually, not by a native test.
+
+## D101 — fourth export (2026-09-24)
+
+The founder supplied the fourth export, `fuckMail (4).html` (682,446 bytes, SHA-256 `9b2d25be…76d59cf`), with designer notes. Its bundled component and markup were unpacked and diffed against the third export; `support.js` is unchanged. The optional Claude Design import was not needed. The export was served on `127.0.0.1` and inspected in the in-app browser at 1400×860 for the search dropdown, Inbox sections and Calendar Day/Week/Month. Exact sizes, colours and rules come from the export's markup. The changes are listed in the [decision](../decisions.md) and in [Search 7](../contracts/search.md), [Core56](../contracts/core-storage.md), [Mail UI71](../contracts/mail-ui.md) and [CLI43](../contracts/cli.md).
+
+### Choices beyond the notes
+
+- **Core reads the query.** The prototype parses search text in the page. Here Core parses it once for GUI and CLI and returns its reading, so chips always show what actually ran. A removed chip rebuilds the text from that reading. While the next result is pending, the last reading and count stay on screen so chips do not blink with each key, and chips cannot be removed until the new reading arrives.
+- **Sent matches one recipient.** For received Gmail messages Core stores only the first `To` address, so `from:` in Sent matches that address, not names or other recipients. Drafts match every recipient name and address.
+- **Old filters.** A saved view's sender, status and attachment filters become query text on restore, so nothing filters the list unseen. Date filters stay for Sent's day chips and are dropped elsewhere.
+- **Bare words no longer match senders.** The notes define bare words as subject or body. The native navigation test's sender-name search now uses `from:`.
+- **Band cap.** The prototype grows the header band for every all-day event. Here it stops at four rows; a busier day shows three chips and "+N all day", which opens the existing list.
+- **Day view's week.** Day view presents one day, so the backend lays out the anchor week's all-day events from the same cached six-week read to size the band. If only the day's own read is available, the band follows that day.
+- **Ghost without a writable calendar.** The ghost is hidden when no calendar accepts new events, since a click would do nothing.
+- **Months in the local zone.** Done months use this computer's zone, the same zone as row times; Core counts them with the zone the GUI sends.
+- **Unreadable queries stay local.** A query Core refuses, such as `is:snoozed` or a fifth `from:`, shows Core's message in the dropdown and keeps the current rows. It no longer raises the app-wide error banner.
+- **Sender card.** The prototype has no sender card. Its filter action now puts `from:<address>` in the search box and opens All mail, the scope the card's count covers, replacing the query instead of narrowing it.
+
+### Verification
+
+Checked together with D104 on the same tree: see [its verification](#verification). The Search, Core and CLI changes pass in `rust-workspace`; the native search, navigation, Calendar controls and selection tests pass in the 36/36 suite. During implementation, offscreen native frames were compared with the served export for the search dropdown, Inbox sections, the top bar and Calendar Day/Week/Month.
+
+### Limits
+
+- Windows only. macOS and Linux were not run.
+- `from:` in Sent matches only the first `To` address.
+- The old date and status filter popover is gone; dates remain only as Sent's day chips and Calendar's mail counts.
+- At most four all-day rows show in the header band.
+
 ## D099 — GUI memory (2026-09-24)
 
 The founder asked for lower GUI memory without making the app slower. The audit ran the optimized Windows build on disposable demo profiles and broke memory down by region. Most private memory was the Windows heap holding QML objects, not textures or images. Per-object probes found the largest avoidable costs:

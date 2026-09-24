@@ -227,7 +227,7 @@ fn blob_directory(profile: &Path, create: bool) -> Result<PathBuf> {
     private_directory(profile, "blobs", create)
 }
 
-fn private_directory(parent: &Path, child: &str, create: bool) -> Result<PathBuf> {
+pub(crate) fn private_directory(parent: &Path, child: &str, create: bool) -> Result<PathBuf> {
     reject_non_directory(&fs::symlink_metadata(parent)?)?;
     let directory = parent.join(child);
     if create {
@@ -365,7 +365,7 @@ pub(crate) fn open_regular(path: &Path) -> Result<File> {
     Ok(file)
 }
 
-fn create_stage(directory: &Path) -> Result<(PathBuf, File)> {
+pub(crate) fn create_stage(directory: &Path) -> Result<(PathBuf, File)> {
     let epoch = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| {

@@ -13,6 +13,7 @@
 #include <QTemporaryDir>
 #include <QtTest>
 #include <thread>
+#include <cmath>
 
 class DebugBackendFixture : public QObject {
     Q_OBJECT
@@ -38,13 +39,14 @@ private slots:
         backend.setProperty("googleSync", QVariantMap{{"private-account@example.test", QVariantMap{{"active", true}, {"owned", true},
             {"progress", QVariantMap{{"mail", "retrying"}, {"mail_error", "google_rate_limited"}, {"mail_steps", 12}, {"body", "private message text"}}}}}});
         log.attach(&backend);
-        emit backend.debugEvent("ERROR", "IPC", "Rate limited; retry later", {{"method", "google_send"}, {"code", "google_rate_limited"}, {"retry_after_secs", 23}, {"body", "private body"}, {"token", "private-credential"}});
+        emit backend.debugEvent("ERROR", "IPC", "Rate limited; retry later", {{"method", "google_send"}, {"request_ref", "42"}, {"code", "google_rate_limited"}, {"retry_after_secs", 23}, {"body", "private body"}, {"token", "private-credential"}});
         log.record("WARN", "Qt", "access_token=secret-value Bearer another-secret person@example.test https://example.test/?code=secret 'mail subject' C:\\Users\\Private\\store");
         const auto report = log.report();
         for (const auto secret : {"private-account", "Private Name", "private search", "private-credential", "private message", "private body", "secret-value", "another-secret", "person@example", "code=secret", "mail subject", "Users\\Private"})
             QVERIFY2(!report.contains(secret), secret);
         QVERIFY(report.contains("account-1")); QVERIFY(report.contains("schema_version"));
         QVERIFY(report.contains("google_rate_limited")); QVERIFY(report.contains("retry_after_secs\":23"));
+        QVERIFY(report.contains("request_ref\":\"42\""));
         QVERIFY(report.contains("mail_steps = 12"));
         emit backend.assistanceReply("private-ticket", "assist_job", {{"job_id", "private-job"}, {"status", "failed"},
             {"error", QVariantMap{{"code", "invalid_response"}, {"message", "Model returned invalid JSON"}}}, {"body", "private body"}}, true);
@@ -69,6 +71,38 @@ private slots:
         QVERIFY(!log.events().contains("event 0 "));
         QVERIFY(log.events().contains("event 1099 "));
         log.clear(); QCOMPARE(log.count(), 1); QCOMPARE(log.dropped(), qulonglong(0));
+    }
+    void diskRotationAndEngineScopes() {
+        QTemporaryDir dir; QVERIFY(dir.isValid());
+        DebugConsole log; log.setLogDirectory(dir.path());
+        for (int i = 0; i < 3000; ++i) log.record("INFO", "sync", QString("step %1 ").arg(i) + QString("word ").repeated(300));
+        const auto directory = QDir(log.logDirectory());
+        QVERIFY(QFile::exists(directory.filePath("gui.log.1")));
+        QVERIFY(QFile(directory.filePath("gui.log")).size() <= 2560 * 1024);
+        QVERIFY(QFile(directory.filePath("gui.log.1")).size() <= 2560 * 1024);
+        QFile engine(directory.filePath("engine.log")); QVERIFY(engine.open(QIODevice::WriteOnly));
+        engine.write("{\"at\":\"2026-09-24T00:00:00.000Z\",\"level\":\"INFO\",\"scope\":\"Model\",\"event\":\"completed\",\"fields\":{\"summary_chars\":53,\"sender_kind\":\"human\",\"category_ids\":[\"work\"]}}\n");
+        engine.close(); log.refresh();
+        QVERIFY(log.events("All", "summary_chars", "Model").contains("\"summary_chars\":53"));
+        QVERIFY(!log.events("All", "summary_chars", "Sync").contains("summary_chars"));
+        QTest::qWait(15);
+        QVERIFY(QFile::rename(directory.filePath("engine.log"), directory.filePath("engine.log.1")));
+        QVERIFY(engine.open(QIODevice::WriteOnly));
+        engine.write("{\"at\":\"2026-09-24T00:00:01.000Z\",\"level\":\"WARN\",\"scope\":\"Sync\",\"event\":\"mail_history_expired\",\"fields\":{\"generation\":2}}\n");
+        engine.close(); log.refresh();
+        QVERIFY(log.events("WARN", "mail_history_expired", "Sync").contains("\"generation\":2"));
+    }
+    void newProfileWaitsForEngineAdmission() {
+        QTemporaryDir dir; QVERIFY(dir.isValid());
+        const auto profile = dir.filePath("new-profile");
+        DebugConsole log;
+        DebugBackendFixture backend;
+        log.attach(&backend);
+        log.setLogDirectory(profile);
+        QVERIFY(!QFile::exists(profile));
+        backend.setProperty("connected", true);
+        emit backend.connectedChanged();
+        QVERIFY(QFile::exists(QDir(profile).filePath("diagnostics/gui.log")));
     }
     void keyboardAndProductionPanel() {
         DebugConsole log;
@@ -111,6 +145,12 @@ ApplicationWindow {
         window->setProperty("searching", false);
         QTest::keyClick(window, Qt::Key_QuoteLeft); QTRY_VERIFY(console->property("opened").toBool());
         QVERIFY(console->property("displayText").toString().contains("google_rate_limited"));
+        auto scope = window->findChild<QQuickItem *>("debugScope"); QVERIFY(scope);
+        scope->setProperty("currentIndex", 3); // Sync
+        QVERIFY(console->property("displayText").toString().contains("google_rate_limited"));
+        scope->setProperty("currentIndex", 5); // Model
+        QVERIFY(!console->property("displayText").toString().contains("google_rate_limited"));
+        scope->setProperty("currentIndex", 0);
         auto filter = window->findChild<QQuickItem *>("debugFilter"); QVERIFY(filter);
         filter->setProperty("text", "absent-filter"); QVERIFY(console->property("displayText").toString().isEmpty());
         filter->forceActiveFocus(); QTest::keyClick(window, Qt::Key_QuoteLeft);
@@ -127,6 +167,16 @@ ApplicationWindow {
         QCOMPARE(console->property("displayText"), frozen);
         log.copyReport(); QVERIFY(QGuiApplication::clipboard()->text().contains("new error while view paused"));
         console->setProperty("paused", false); QVERIFY(console->property("displayText").toString().contains("new error while view paused"));
+        for (int i = 0; i < 100; ++i) log.record("INFO", "sync", QString("scroll event %1").arg(i));
+        log.refresh(); QTest::qWait(30);
+        auto scroll = window->findChild<QQuickItem *>("debugScroll"); QVERIFY(scroll);
+        auto flick = scroll->property("contentItem").value<QObject *>(); QVERIFY(flick);
+        QVERIFY(flick->property("contentHeight").toDouble() > flick->property("height").toDouble() + 200);
+        flick->setProperty("contentY", 120.0);
+        log.record("INFO", "sync", "new event without scroll jump"); log.refresh();
+        QTRY_VERIFY(std::abs(flick->property("contentY").toDouble() - 120.0) < 3.0);
+        QTest::qWait(100);
+        QVERIFY(std::abs(flick->property("contentY").toDouble() - 120.0) < 3.0);
         QTest::keyClick(window, Qt::Key_Escape); QTRY_VERIFY(!console->property("opened").toBool());
         QTRY_VERIFY(idle->hasActiveFocus());
         QTest::keyClick(window, Qt::Key_AsciiTilde, Qt::ShiftModifier); QTRY_VERIFY(console->property("opened").toBool());

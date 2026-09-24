@@ -453,11 +453,22 @@ impl Client {
         account: Option<&str>,
         params: Value,
     ) -> io::Result<Value> {
+        self.call_within(method, account, params, IO_TIMEOUT).await
+    }
+
+    /// `call` for work with its own longer engine limit, such as image fetches.
+    pub async fn call_within(
+        &mut self,
+        method: &str,
+        account: Option<&str>,
+        params: Value,
+        timeout: Duration,
+    ) -> io::Result<Value> {
         self.next_id += 1;
         let id = self.next_id.to_string();
         let req = json!({"version":PROTOCOL_VERSION,"id":id,"method":method,"account":account,"params":params});
         tokio::time::timeout(IO_TIMEOUT, write_frame(self.stream.get_mut(), &req)).await??;
-        let bytes = tokio::time::timeout(IO_TIMEOUT, read_frame(&mut self.stream))
+        let bytes = tokio::time::timeout(timeout, read_frame(&mut self.stream))
             .await??
             .ok_or_else(|| io::Error::new(io::ErrorKind::UnexpectedEof, "engine disconnected"))?;
         let response: Value = serde_json::from_slice(&bytes)?;

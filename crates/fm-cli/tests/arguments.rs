@@ -1234,3 +1234,37 @@ fn sender_commands_and_kinds_are_headless_and_reject_invalid_kinds() {
     assert_eq!(output.status.code(), Some(2));
     assert!(!absent.exists());
 }
+
+#[test]
+fn html_reader_commands_need_their_scope_before_storage() {
+    let root = tempfile::tempdir().unwrap();
+    let profile = root.path().join("not-created");
+    for args in [
+        vec!["mail", "html", "m1", "--source-version", "v1"],
+        vec!["mail", "images", "m1", "--source-version", "v1", "--load"],
+        vec!["links", "summary", "tracker.io"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args(["--profile", profile.to_str().unwrap(), "--json"])
+            .args(&args)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{args:?} needs --account");
+        let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(result["error"]["code"], "invalid_request");
+        assert!(!profile.exists());
+    }
+    for args in [
+        vec!["proxy", "set"],
+        vec!["links", "block"],
+        vec!["mail", "html", "m1"],
+    ] {
+        let output = Command::new(env!("CARGO_BIN_EXE_fm"))
+            .args(["--profile", profile.to_str().unwrap()])
+            .args(&args)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{args:?} is incomplete");
+        assert!(!profile.exists());
+    }
+}
