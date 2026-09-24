@@ -189,8 +189,13 @@ namespace litehtml
         return false;
     }
 
+    void element::keep_base_styles() {}
+
     void element::add_render(const std::shared_ptr<render_item>& ri)
     {
+        // fuckMail: drop items of a released render tree, so get_render_item()
+        // returns the current one after a rebuild.
+        m_renders.remove_if([](const std::weak_ptr<render_item>& weak) { return weak.expired(); });
         m_renders.push_back(ri);
     }
 

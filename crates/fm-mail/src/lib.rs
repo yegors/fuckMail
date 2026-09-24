@@ -3,11 +3,12 @@
 pub mod html_view;
 pub mod image_view;
 mod incoming;
+pub mod preview;
 mod reply_text;
 use ammonia::{Builder as HtmlCleaner, UrlRelative};
 pub use incoming::{
     extract_incoming_text, extract_parsed_incoming_contribution, extract_parsed_incoming_text,
-    IncomingError,
+    html_source_text, IncomingError,
 };
 use lettre::message::{
     header::{self as mime_header, ContentTransferEncoding, ContentType},

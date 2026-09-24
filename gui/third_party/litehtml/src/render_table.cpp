@@ -55,8 +55,8 @@ litehtml::rendered_width litehtml::render_item_table::_render(pixel_t x, pixel_t
             table_cell* cell = m_grid->cell(0, row);
             if(cell && cell->el)
             {
-                auto rw = cell->el->render(
-                    0_px, 0_px, self_size.new_width(self_size.render_width.value - table_width_spacing), fmt_ctx);
+                auto rw = cell->el->measure(self_size.new_width(self_size.render_width.value - table_width_spacing),
+                                            fmt_ctx);
                 cell->min_width = rw.min_width;
                 cell->max_width = rw.natural_width;
             }
@@ -74,22 +74,27 @@ litehtml::rendered_width litehtml::render_item_table::_render(pixel_t x, pixel_t
                        m_grid->column(col).css_width.units() != css_units_percentage)
                     {
                         pixel_t css_w = m_grid->column(col).css_width.calc_percent(self_size.width);
-                        pixel_t el_w  = cell->el->render(0_px, 0_px, self_size.new_width(css_w), fmt_ctx).natural_width;
-                        cell->min_width = cell->max_width = std::max(css_w, el_w);
+                        pixel_t el_w  = cell->el->measure(self_size.new_width(css_w), fmt_ctx).natural_width;
+                        cell->max_width = std::max(css_w, el_w);
+                        // fuckMail: like browsers, a fixed width gives way down to
+                        // the content's minimum when the table has less room.
+                        cell->min_width = std::min(
+                            cell->max_width,
+                            cell->el->measure(self_size.new_width(cell->el->content_offset_width()), fmt_ctx)
+                                .natural_width);
                         cell->el->pos().width =
-                            cell->min_width - cell->el->content_offset_left() - cell->el->content_offset_right();
+                            cell->max_width - cell->el->content_offset_left() - cell->el->content_offset_right();
                     } else
                     {
                         // calculate minimum content width
                         cell->min_width =
-                            cell->el->render(0_px, 0_px, self_size.new_width(cell->el->content_offset_width()), fmt_ctx)
+                            cell->el->measure(self_size.new_width(cell->el->content_offset_width()), fmt_ctx)
                                 .natural_width;
                         // calculate maximum content width
                         cell->max_width =
                             cell->el
-                                ->render(0_px, 0_px,
-                                         self_size.new_width(self_size.render_width.value - table_width_spacing),
-                                         fmt_ctx)
+                                ->measure(self_size.new_width(self_size.render_width.value - table_width_spacing),
+                                          fmt_ctx)
                                 .natural_width;
                     }
                 }

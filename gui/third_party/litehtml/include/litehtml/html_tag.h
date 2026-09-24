@@ -28,6 +28,10 @@ namespace litehtml
         string_vector          m_str_classes;
         std::vector<string_id> m_classes;
         style                  m_style;
+        // fuckMail: master CSS plus attribute hints, and how many used selectors
+        // (all from the master stylesheet) they include.
+        style                  m_base_style;
+        size_t                 m_base_used = 0;
         string_map             m_attrs;
         std::vector<string_id> m_pseudo_classes;
 
@@ -59,6 +63,7 @@ namespace litehtml
         const char* get_attr(const char* name, const char* def = nullptr) const override;
         void        apply_stylesheet(const litehtml::css& stylesheet) override;
         void        refresh_styles() override;
+        void        keep_base_styles() override;
 
         bool is_white_space() const override;
         bool is_body() const override;

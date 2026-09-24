@@ -400,6 +400,38 @@ public:
         else if (transform == litehtml::text_transform_capitalize && !value.isEmpty()) value[0] = value[0].toUpper();
         text = value.toStdString();
     }
+    // litehtml ends lines only at spaces. Like browsers, also allow a break
+    // after "/", "-" and similar inside long runs, at zero-width spaces, and
+    // in 30-character pieces of any run over 60, so logs, URLs and hashes wrap
+    // instead of widening the message. Pieces are words with no space between.
+    void split_text(const char *text, const std::function<void(const char *)> &on_word,
+                    const std::function<void(const char *)> &on_space) override {
+        const std::u32string input = static_cast<const char32_t *>(litehtml::utf8_to_utf32(text));
+        const auto space = [](char32_t c) { return c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f'; };
+        std::u32string word;
+        bool longRun = false;
+        const auto flush = [&] { if (!word.empty()) { on_word(litehtml::utf32_to_utf8(word)); word.clear(); } };
+        for (size_t i = 0; i < input.size(); ++i) {
+            const char32_t c = input[i];
+            if (space(c)) {
+                flush();
+                on_space(litehtml::utf32_to_utf8(std::u32string(1, c)));
+                continue;
+            }
+            if (i == 0 || space(input[i - 1])) {
+                size_t end = i;
+                while (end < input.size() && !space(input[end])) ++end;
+                longRun = end - i > 60;
+            }
+            if (c == 0x200B) { flush(); continue; }
+            if (c >= 0x4E00 && c <= 0x9FCC) { flush(); word += c; flush(); continue; }
+            word += c;
+            const bool more = i + 1 < input.size() && !space(input[i + 1]);
+            const bool punctuation = c == '/' || c == '-' || c == '?' || c == '&' || c == '=' || c == '|' || c == '\\';
+            if (more && ((punctuation && word.size() > 1) || (longRun && word.size() >= 30))) flush();
+        }
+        flush();
+    }
     // Sanitised mail has no stylesheet links; nothing is ever imported.
     void import_css(std::string &text, const std::string &, std::string &) override { text.clear(); }
     void set_clip(const litehtml::position &pos, const litehtml::border_radiuses &radius) override { clips.emplace_back(pos, radius); }
@@ -447,7 +479,10 @@ HtmlDocument::HtmlDocument(const QByteArray &html, qreal defaultFontPixels, cons
         const auto selector = "a[href=\"fm-link:" + std::to_string(id) + "\"]";
         user += selector + "," + selector + " *{color:#9aa0a6 !important;text-decoration:line-through !important}";
     }
-    m_document = litehtml::document::createFromString(html.toStdString(), m_container.get(), litehtml::master_css, user);
+    // Preformatted text wraps rather than widening the whole message; the
+    // sender's own white-space rules still win.
+    static const std::string master = std::string(litehtml::master_css) + "pre,xmp,plaintext,listing{white-space:pre-wrap}";
+    m_document = litehtml::document::createFromString(html.toStdString(), m_container.get(), master, user);
     if (!m_document) return;
     walk(m_document->root(), [this](const litehtml::element::ptr &element) {
         if (isTag(element, "img"))

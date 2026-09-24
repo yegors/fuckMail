@@ -18,7 +18,7 @@ fn new_live_profile_has_direct_strict_schema_and_valid_references() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(strict_tables, 63);
+    assert_eq!(strict_tables, 65);
     let fts_content_tables: i64 = store
         .db
         .query_row(
@@ -167,7 +167,7 @@ fn baseline_profiles_upgrade_to_the_current_schema_once() {
     let path = temp.path().join("store.sqlite3");
     let db = Connection::open(&path).unwrap();
     // A schema32 profile predates the calendar mail count date index and the link index.
-    db.execute_batch("DROP INDEX google_mail_coverage_by_date; DROP TABLE message_link_hosts; DROP TABLE link_hosts; DROP TABLE link_index_state; PRAGMA user_version=32;")
+    db.execute_batch("DROP INDEX google_mail_coverage_by_date; DROP TABLE message_people; DROP TABLE people; DROP TABLE message_link_hosts; DROP TABLE link_hosts; DROP TABLE link_index_state; PRAGMA user_version=32;")
         .unwrap();
     drop(db);
     let store = Store::open(temp.path()).unwrap();
@@ -195,7 +195,7 @@ fn schema33_profiles_gain_the_link_index() {
     drop(Store::open_live(temp.path()).unwrap());
     let path = temp.path().join("store.sqlite3");
     let db = Connection::open(&path).unwrap();
-    db.execute_batch("DROP TABLE message_link_hosts; DROP TABLE link_hosts; DROP TABLE link_index_state; PRAGMA user_version=33;")
+    db.execute_batch("DROP TABLE message_people; DROP TABLE people; DROP TABLE message_link_hosts; DROP TABLE link_hosts; DROP TABLE link_index_state; PRAGMA user_version=33;")
         .unwrap();
     drop(db);
     let store = Store::open(temp.path()).unwrap();
@@ -208,6 +208,45 @@ fn schema33_profiles_gain_the_link_index() {
         .db
         .query_row(
             "EXPLAIN QUERY PLAN SELECT count(*) FROM message_link_hosts WHERE host=1",
+            [],
+            |row| row.get(3),
+        )
+        .unwrap();
+    assert!(
+        plan.contains("PRIMARY KEY") || plan.contains("COVERING INDEX"),
+        "{plan}"
+    );
+}
+
+#[test]
+fn schema34_profiles_gain_people_and_index_again() {
+    let temp = tempfile::tempdir().unwrap();
+    drop(Store::open_live(temp.path()).unwrap());
+    let path = temp.path().join("store.sqlite3");
+    let db = Connection::open(&path).unwrap();
+    db.execute_batch("DROP TABLE message_people; DROP TABLE people; INSERT INTO link_index_state VALUES(1,42); PRAGMA user_version=34;")
+        .unwrap();
+    drop(db);
+    let store = Store::open(temp.path()).unwrap();
+    let version: u32 = store
+        .db
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(version, SCHEMA_VERSION);
+    let indexed: i64 = store
+        .db
+        .query_row("SELECT indexed_rowid FROM link_index_state", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    assert_eq!(
+        indexed, 0,
+        "existing messages are indexed again for their people"
+    );
+    let plan: String = store
+        .db
+        .query_row(
+            "EXPLAIN QUERY PLAN SELECT person FROM message_people WHERE message_rowid=1",
             [],
             |row| row.get(3),
         )

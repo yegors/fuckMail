@@ -276,6 +276,8 @@ CREATE TABLE link_hosts(id INTEGER PRIMARY KEY,rhost TEXT NOT NULL UNIQUE) STRIC
 CREATE TABLE message_link_hosts(host INTEGER NOT NULL REFERENCES link_hosts(id),message_rowid INTEGER NOT NULL REFERENCES messages(rowid) ON DELETE CASCADE,PRIMARY KEY(host,message_rowid)) STRICT, WITHOUT ROWID;
 CREATE INDEX message_link_hosts_message ON message_link_hosts(message_rowid);
 CREATE TABLE link_index_state(singleton INTEGER PRIMARY KEY CHECK(singleton=1),indexed_rowid INTEGER NOT NULL) STRICT;
+CREATE TABLE people(id INTEGER PRIMARY KEY,email TEXT NOT NULL UNIQUE,name TEXT NOT NULL) STRICT;
+CREATE TABLE message_people(message_rowid INTEGER NOT NULL REFERENCES messages(rowid) ON DELETE CASCADE,person INTEGER NOT NULL REFERENCES people(id),PRIMARY KEY(message_rowid,person)) STRICT, WITHOUT ROWID;
 CREATE INDEX google_send_known_target ON capture_operations(account,json_extract(json,'$.provider_draft_id')) WHERE execution_kind='google';
 CREATE INDEX google_send_recovery ON capture_operations(account,id)
 WHERE execution_kind='google' AND json_extract(json,'$.kind')='send' AND json_extract(json,'$.state')='in_flight';

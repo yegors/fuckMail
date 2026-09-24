@@ -131,6 +131,7 @@ namespace litehtml
 
             // parse elements attributes
             m_root->parse_attributes();
+            m_root->keep_base_styles();
 
             // parse style sheets linked in document
             for(const auto& css : m_css)
@@ -541,7 +542,9 @@ namespace litehtml
             cb_context.width       = max_width;
             cb_context.width.type  = containing_block_context::cbc_value_type_absolute;
             cb_context.height      = viewport.height;
-            cb_context.height.type = containing_block_context::cbc_value_type_absolute;
+            // fuckMail: a message grows with its content, so its height is not
+            // definite and percentage heights of the root compute to auto.
+            cb_context.height.type = containing_block_context::cbc_value_type_auto;
 
             if(rt == render_fixed_only)
             {
@@ -549,6 +552,7 @@ namespace litehtml
                 m_root_render->render_positioned(rt);
             } else
             {
+                ++m_render_generation;
                 ret = m_root_render->render(0_px, 0_px, cb_context, nullptr).natural_width;
                 if(m_root_render->fetch_positioned())
                 {
@@ -890,7 +894,13 @@ namespace litehtml
             // so rebuild it here to add/remove render items for elements whose display
             // just changed; otherwise a newly-shown element keeps no render item and
             // never lays out (it collapses to zero).
+            // fuckMail: rebuild the anonymous table boxes too, as createFromString()
+            // does; without them CSS tables (display:table without rows or cells)
+            // lose their content after a breakpoint changes.
+            m_tabular_elements.clear();
+            m_root_render = nullptr;
             m_root_render = m_root->create_render_item(nullptr);
+            fix_tables_layout();
             if(m_root_render)
             {
                 m_root_render = m_root_render->init();
@@ -1172,6 +1182,7 @@ namespace litehtml
 
             // parse elements attributes
             child->parse_attributes();
+            child->keep_base_styles();
 
             // Apply parsed styles.
             child->apply_stylesheet(m_styles);

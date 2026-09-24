@@ -1,5 +1,9 @@
 # Local mail analysis
 
+## D107 — partial summaries reach the list (Local assistance22)
+
+A current summary of the message that supplies a conversation row's preview replaces the source snippet, whether complete or partial. This supersedes the partial exclusion in the row-preview rule below. Long messages are shortened to fit the model, so their summaries are always partial and otherwise never reached the list. The reader still labels a partial summary Partial. Stale summaries and other messages' summaries still cannot replace the preview. Partial results still cannot auto-apply a label or Auto-read. Consumers: Core59, Mail UI76.
+
 ## D103 — model diagnostic metadata (Local assistance21)
 
 Every admitted sample, interactive, arrival and backlog inference records a start and a committed completion or failure in the private engine diagnostics log. Entries contain a short non-authorizing job reference, per-process keyed account/message references, task/origin, provider, selected model and its available digest, input character count, source and label-choice counts when available, partial state, elapsed time, Unicode summary character count, sender kind, chosen category IDs, abstention, label application state and saved prompt SHA-256 when available, and failure code. A malformed Ollama response that is eligible for its one correction records a format-retry event. No prompts, message bodies, summary text, model response, raw account/message ID, credential or complete job token is logged. The engine writes these records for GUI and CLI sessions; the GUI imports them into the Model scope. This is diagnostic coverage, not a model-quality or live-mail acceptance claim. Consumers: engine, Mail UI72 and Quality73; schema33/fixtures0,3/protocol1 unchanged.

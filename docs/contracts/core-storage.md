@@ -1,5 +1,46 @@
 # Core and storage
 
+## D107 — conversation people, readable previews and one message format (Core59, schema35)
+
+**People.** Schema35 adds `people(email, name)` and `message_people`.
+- The link-index pass records each message's From, To and Cc mailboxes, up to 100 per message, beside its link hosts.
+- The upgrade restarts that pass from the first message, once. A message's people count once the pass reaches it.
+
+`mail_list` rows gain two fields:
+- `others`: how many distinct other people are on the conversation.
+- `other_names`: up to 12 of their display names, or their addresses, in order of first appearance.
+
+Others leave out:
+- the account's address;
+- addresses the account sent from in that conversation;
+- the row's shown sender;
+- no-reply mailboxes (`noreply`, `no-reply`, `donotreply`, `do-not-reply`, `mailer-daemon`).
+
+Mailboxes compare lowercased and without a `+tag`. At gmail.com and googlemail.com they also compare without dots.
+
+**Previews.** A row's `snippet` comes from readable text:
+- A stored body that is HTML source (a doctype or a common element start) is converted to its text when read.
+- New imports read HTML sent as a text/plain part as HTML, never indexing its markup.
+- Web addresses are removed with their lead-ins, such as "(also on https://…)", their angle brackets, including an empty `<>` left behind, and leftover punctuation.
+
+Search matching is unchanged.
+
+**Summaries.** A row's `summary` is the current summary of the preview's message, now including a partial one (Local assistance22).
+
+**Message format.** Preferences gain `message_format`: `html` (default) or `text`. It is validated and saved like the other enum preferences.
+
+**HTML view.** The sanitiser is version 4. Its part choice:
+1. The first non-empty `text/html` part in the HTML body.
+2. Otherwise, any other part labelled `text/html`, such as a digest part or one with an unknown transfer encoding.
+
+`message_html`, `message_source`, the link index and new imports all use this part. When removing quoted history leaves nothing visible, the quote stays. Cached views are named with the version, so they are rebuilt.
+
+Consumers: engine, Mail UI76, CLI45 and Quality77. Fixtures0/3 and protocol1 unchanged.
+
+## D106 — reminder identity bounds (Core58)
+
+`calendar_reminders` and `calendar_reminder_ack` accept projected calendar IDs up to 1,024 UTF-8 bytes and serialized occurrence IDs up to 8,192 UTF-8 bytes. Validate these directly rather than first using the generic 256-byte local identifier helper. Empty, oversized and control-containing identifiers still fail. Exact account/calendar/occurrence/start receipt matching, permission checks, due windows, snoozing and dismissal remain unchanged. Consumers: Calendar31, GUI reminder polling, CLI reminder commands and Quality76. No schema, fixture or protocol change.
+
 ## D105 — HTML view, message images, link index and remote preferences (Core57, schema34)
 
 **HTML view.** `message_html(account, {id, source_version})` is read-only and allowed for archived accounts. It reads the retained MIME directly, under the existing raw limit, and chooses the first real `text/html` part by content type. Plain-only mail returns `has_html: false`, and `message_source` uses the same choice.

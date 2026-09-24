@@ -175,7 +175,6 @@ Flickable {
     check(await(ready) && std::abs(view->contentScale() - 480.0 / 900.0) < 0.02, "a 900 px layout scales to the column");
     view->setContent(content("<table width=\"1400\" style=\"width:1400px\"><tr><td>Wider still</td></tr></table>"));
     check(await(ready) && std::abs(view->contentScale() - 0.5) < 0.001, "scaling stops at half size");
-
     // Content laid out before has its final height on its first frame.
     const qreal wideHeight = view->implicitHeight();
     view->setContent(content("<p>Short</p><p>Two</p><p>Three</p><p>Four</p>"));
@@ -186,6 +185,48 @@ Flickable {
     check(await([&] { return firstFrame >= 0; }) && firstFrame == wideHeight, "content laid out before has its height on its first frame");
     QObject::disconnect(frames);
     check(await(ready) && view->implicitHeight() == wideHeight, "its layout keeps that height");
+
+    // Declared cell widths are preferences: in a full-width table they shrink
+    // to the column as browsers do, so the message is not scaled down.
+    view->setContent(content("<table width=\"100%\"><tr><td width=\"600\">Left column text</td><td width=\"600\">Right column text</td></tr></table>"));
+    check(await(ready) && view->contentScale() == 1, "fixed-width cells shrink to a full-width table");
+
+    // Newsletter-style nesting: each level measures its content several times,
+    // which grew exponentially before measurements were reused.
+    QString nested = "<p>Innermost</p>";
+    for (int i = 0; i < 12; ++i)
+        nested = "<table width=\"100%\"><tr><td><div style=\"display:inline-block;width:100%\">" + nested + "</div></td></tr></table>";
+    QElapsedTimer nestedTimer; nestedTimer.start();
+    view->setContent(content(nested));
+    check(await(ready) && view->text().contains("Innermost") && nestedTimer.elapsed() < 3000, "deeply nested tables lay out quickly");
+    // A relatively positioned inline keeps its small offset however many times
+    // its cell is laid out.
+    QString price = "<span style=\"font-size:20px\"><sup style=\"font-size:20px;position:relative;top:2px;color:#ff0000\">$</sup>46</span>";
+    for (int i = 0; i < 4; ++i) price = "<table><tr><td>" + price + "</td></tr></table>";
+    view->setContent(content(price + "<div style=\"height:400px\"></div>"));
+    check(await(ready), "the price lays out");
+    const auto priceFrame = grab(&window);
+    check(countNear(priceFrame, QRect(0, 0, 480, 60), Qt::red, 60) > 10 && countNear(priceFrame, QRect(0, 60, 480, 400), Qt::red, 60) == 0,
+          "a relative superscript in a table stays on its line");
+    // Crossing a media breakpoint on first layout keeps attribute styles and
+    // the anonymous boxes of CSS tables.
+    view->setContent(content("<style>@media (max-width:550px){.m{color:#111111}}</style>"
+                             "<table width=\"200\" bgcolor=\"#ff0000\"><tr><td class=\"m\" height=\"60\">Cell</td></tr></table>"
+                             "<div style=\"display:table\"><div style=\"display:table-cell\">CSS table text</div></div>"));
+    check(await(ready) && view->text().contains("CSS table text"), "a CSS table keeps its content across a breakpoint");
+    check(countNear(grab(&window), QRect(0, 0, 480, 120), Qt::red, 10) > 3000, "attribute styles survive a breakpoint");
+    // A percentage height of a content-sized message computes to auto.
+    view->setContent(content("<table width=\"100%\" height=\"100%\"><tr><td>Short notice</td></tr></table>"));
+    check(await(ready) && view->implicitHeight() < 120, "a 100% tall table keeps its content height");
+    // Long runs without spaces wrap after "/" and similar, or in pieces, as
+    // browsers wrap logs and URLs; preformatted text wraps too.
+    QString path = "https://example.com";
+    for (int i = 0; i < 40; ++i) path += QStringLiteral("/segment%1").arg(i);
+    view->setContent(content("<p>" + path + "</p><p>" + QString(300, 'x') + "</p><pre>" + QString("word ").repeated(200) + "</pre>"));
+    check(await(ready) && view->contentScale() == 1, "long runs and preformatted lines wrap without scaling");
+    // Copied text marks each wrapped line; the characters themselves are unchanged.
+    const auto unwrapped = QString(view->text()).remove(QChar('\n'));
+    check(unwrapped.contains(path) && unwrapped.contains(QString(300, 'x')), "wrapping pieces keep the text");
 
     // Long documents keep only tiles near the viewport.
     QString paragraphs;

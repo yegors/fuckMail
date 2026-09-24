@@ -133,6 +133,50 @@ fn ack(store: &Store, row: &Value, state: &str, now: &str) -> Result<Value> {
 }
 
 #[test]
+fn long_provider_and_occurrence_ids_survive_poll_show_snooze_and_dismiss() {
+    let (_dir, mut store, account) = setup();
+    // Google calendar identifiers and the serialized occurrence key are not
+    // generic 256-byte local IDs. Exercise the projection and receipt together.
+    let calendar = format!("{}@group.calendar.google.com", "a".repeat(280));
+    catalog(&mut store, &account, vec![entry(&calendar, "owner")]);
+    publish(
+        &mut store,
+        &account,
+        &calendar,
+        vec![event(&"e".repeat(200), "2026-09-14T13:00:00Z")],
+        CalendarSyncMode::Full,
+    );
+    let due = reminders(&store, "2026-09-14T12:55:00Z");
+    assert_eq!(due["reminders"].as_array().unwrap().len(), 1);
+    let row = &due["reminders"][0];
+    assert!(row["id"].as_str().unwrap().len() > 256);
+    ack(&store, row, "shown", "2026-09-14T12:55:00Z").unwrap();
+    ack(&store, row, "snoozed", "2026-09-14T12:55:00Z").unwrap();
+    assert!(reminders(&store, "2026-09-14T12:56:00Z")["reminders"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let resumed = reminders(&store, "2026-09-14T13:00:00Z");
+    assert_eq!(resumed["reminders"][0]["id"], row["id"]);
+    ack(&store, row, "shown", "2026-09-14T13:00:00Z").unwrap();
+    ack(&store, row, "dismissed", "2026-09-14T13:00:00Z").unwrap();
+    assert!(reminders(&store, "2026-09-14T13:00:00Z")["reminders"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    let mut invalid = row.clone();
+    for identity in ["x".repeat(8193), "invalid\nidentity".into(), String::new()] {
+        invalid["id"] = identity.into();
+        assert_eq!(
+            ack(&store, &invalid, "shown", "2026-09-14T13:00:00Z")
+                .unwrap_err()
+                .code,
+            "invalid_request"
+        );
+    }
+}
+
+#[test]
 fn exact_due_window_all_day_display_zone_and_no_historical_burst() {
     let (_dir, mut store, account) = setup();
     let all_day = json!({"id":"all-day","etag":"all-day-v1","summary":"All day","start":{"date":"2026-09-14"},"end":{"date":"2026-09-15"}});

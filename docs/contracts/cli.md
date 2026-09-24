@@ -1,5 +1,12 @@
 # CLI and external agent interface
 
+## D107 — list people and message format (CLI45)
+
+- `mail list --json` rows include Core's `others` and `other_names` (Core59).
+- `preferences show` includes `message_format`. `preferences save` accepts `html` or `text` for it and changes the GUI's HTML/Text choice for every message.
+
+Neither marks mail reviewed.
+
 ## D105 — HTML reader, links and proxy (CLI44)
 
 Every command below uses the same engine methods as the GUI. None marks mail reviewed.

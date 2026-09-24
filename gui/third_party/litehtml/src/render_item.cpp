@@ -56,6 +56,52 @@ litehtml::rendered_width litehtml::render_item::render(pixel_t x, pixel_t y,
     return ret;
 }
 
+namespace
+{
+    bool same_pixel(const litehtml::containing_block_context::typed_pixel& a,
+                    const litehtml::containing_block_context::typed_pixel& b)
+    {
+        return a.type == b.type && a.value == b.value;
+    }
+
+    bool same_context(const litehtml::containing_block_context& a, const litehtml::containing_block_context& b)
+    {
+        return same_pixel(a.width, b.width) && same_pixel(a.render_width, b.render_width) &&
+               same_pixel(a.min_width, b.min_width) && same_pixel(a.max_width, b.max_width) &&
+               same_pixel(a.height, b.height) && same_pixel(a.min_height, b.min_height) &&
+               same_pixel(a.max_height, b.max_height) && a.context_idx == b.context_idx &&
+               a.size_mode == b.size_mode;
+    }
+} // namespace
+
+// fuckMail: nested tables measure each cell for its minimum and preferred
+// widths before laying it out, so every nesting level multiplied the work.
+// Within one document render a cell's widths depend only on its context.
+litehtml::rendered_width litehtml::render_item::measure(const containing_block_context& containing_block_size,
+                                                        formatting_context* fmt_ctx)
+{
+    const auto generation = src_el()->get_document()->render_generation();
+    if(generation != m_measured_generation)
+    {
+        m_measured.clear();
+        m_measured_generation = generation;
+    }
+    for(const auto& entry : m_measured)
+    {
+        if(same_context(entry.context, containing_block_size))
+        {
+            return entry.width;
+        }
+    }
+    auto width = render(0_px, 0_px, containing_block_size, fmt_ctx);
+    if(m_measured.size() >= 4)
+    {
+        m_measured.erase(m_measured.begin());
+    }
+    m_measured.push_back({containing_block_size, width});
+    return width;
+}
+
 void litehtml::render_item::calc_outlines(pixel_t parent_width)
 {
     m_padding.left  = m_element->css().get_padding().left.calc_percent(parent_width);
@@ -117,6 +163,14 @@ void litehtml::render_item::apply_relative_shift(const containing_block_context&
     if(src_el()->css().get_position() == element_position_relative)
     {
         css_offsets offsets = src_el()->css().get_offsets();
+        // fuckMail: an inline box has no layout position of its own; its shift
+        // moves its children. Every line layout applies the shift again, so it
+        // starts from zero instead of adding up across table measurement passes.
+        if(src_el()->css().get_display() == display_inline)
+        {
+            m_pos.x = 0;
+            m_pos.y = 0;
+        }
         if(!offsets.left.is_predefined())
         {
             m_pos.x += offsets.left.calc_percent(containing_block_size.width);
@@ -1507,7 +1561,9 @@ litehtml::containing_block_context litehtml::render_item::calculate_containing_b
                     }
                 }
             }
-            if(height != nullptr)
+            // fuckMail: a percentage of an auto height computes to auto (CSS 2.1 10.5).
+            if(height != nullptr && !(height->units() == css_units_percentage &&
+                                      cb_context.height.type == containing_block_context::cbc_value_type_auto))
             {
                 calc_cb_length(*height, cb_context.height, ret.height);
             }
@@ -1528,8 +1584,16 @@ litehtml::containing_block_context litehtml::render_item::calculate_containing_b
     calc_cb_length(src_el()->css().get_min_width(), cb_context.width, ret.min_width);
     calc_cb_length(src_el()->css().get_max_width(), cb_context.width, ret.max_width);
 
-    calc_cb_length(src_el()->css().get_min_height(), cb_context.height, ret.min_height);
-    calc_cb_length(src_el()->css().get_max_height(), cb_context.height, ret.max_height);
+    // fuckMail: percentage limits of an auto height do not apply.
+    const bool definite_height = cb_context.height.type != containing_block_context::cbc_value_type_auto;
+    if(definite_height || src_el()->css().get_min_height().units() != css_units_percentage)
+    {
+        calc_cb_length(src_el()->css().get_min_height(), cb_context.height, ret.min_height);
+    }
+    if(definite_height || src_el()->css().get_max_height().units() != css_units_percentage)
+    {
+        calc_cb_length(src_el()->css().get_max_height(), cb_context.height, ret.max_height);
+    }
 
     // Fix box sizing
     if(ret.width.type != containing_block_context::cbc_value_type_auto)

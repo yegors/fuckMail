@@ -1,5 +1,36 @@
 # Quality, performance and release acceptance
 
+## D107 — list details and HTML fidelity checks (Quality77)
+
+**Rust tests**
+- The schema34 upgrade gains the people tables and restarts the link pass.
+- "+N" leaves out own, plus-tagged, dotted-Gmail, shown-sender and no-reply mailboxes.
+- `message_format` is one validated preference.
+- Previews drop bare, bracketed and angled links, and read HTML source as text.
+- The sanitiser keeps a quote when it is the only content, and finds a digest part and a text/html part outside the HTML body.
+
+**Native tests**
+- `gui-html-view`:
+  - fixed-width cells shrink into a full-width table;
+  - 12 levels of nested tables lay out in under 3 s;
+  - a relative superscript stays on its line;
+  - CSS tables and attribute styles survive a breakpoint;
+  - a 100% tall table keeps its content height;
+  - long runs and preformatted lines wrap without scaling, keeping their text.
+- `gui-mail-selection`: "+N", count order and hiding.
+
+**Real-mailbox acceptance (founder-authorized, read-only)**
+- Probe every cached HTML message with `fm-html-probe` at 720 px. Each must render with painted text, and scaling is recorded.
+- Record parse, layout and paint times.
+- Compare widths and heights against Chromium at the same width. Differences must be explained.
+- Scan `mail list --json` for markup or web addresses in previews and for "+N" noise.
+- Capture the real list offscreen without opening an unread conversation.
+- Real content stays out of Git and is deleted after the run.
+
+## D106 — console tail and reminder regression checks (Quality76)
+
+Verify default tailing, actual wheel input stopping follow mode, the same visible event/pixel offset across repeated appends and 1,000-row front eviction, explicit resume, resize, keyboard navigation, filter composition, pause/copy, focus restoration and warning-free QML. Inspect native renders in Graphite, Paper, Harbour and Terminal. Preserve D103 disk rotation, engine import, redaction and profile admission checks. Exercise a Google-shaped long calendar/occurrence identity through poll/show/snooze/resume/dismiss and reject malformed/oversized identities. Consumers: Core58/Calendar31/Mail UI75. Record host-specific results and failed attempts in [the execution record](../research/local-assistance-execution.md#d106--console-viewer-and-reminder-identity-2026-09-24).
+
 ## D105 — HTML reader checks (Quality75)
 
 **Sanitiser tests**

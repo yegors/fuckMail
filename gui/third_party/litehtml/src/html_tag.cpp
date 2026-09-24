@@ -1442,6 +1442,16 @@ namespace litehtml
         handle_counter_properties();
     }
 
+    void litehtml::html_tag::keep_base_styles()
+    {
+        m_base_style = m_style;
+        m_base_used  = m_used_styles.size();
+        for(auto& el : m_children)
+        {
+            el->keep_base_styles();
+        }
+    }
+
     void litehtml::html_tag::refresh_styles()
     {
         for(auto& el : m_children)
@@ -1452,10 +1462,13 @@ namespace litehtml
             }
         }
 
-        m_style.clear();
+        // fuckMail: attribute hints (width, align, bgcolor...) are not
+        // selectors; restart from the recorded base instead of clearing them.
+        m_style = m_base_style;
 
-        for(auto& usel : m_used_styles)
+        for(size_t index = m_base_used; index < m_used_styles.size(); index++)
         {
+            auto& usel = m_used_styles[index];
             usel->m_used = false;
 
             if(usel->m_selector->is_media_valid())

@@ -27,6 +27,7 @@ public:
     int count() const;
     qulonglong dropped() const;
     Q_INVOKABLE QString events(const QString &level = {}, const QString &filter = {}, const QString &scope = {}) const;
+    Q_INVOKABLE QVariantList eventRows(const QString &level = {}, const QString &filter = {}, const QString &scope = {}) const;
     Q_INVOKABLE QString report() const;
     Q_INVOKABLE void copyReport() const;
     Q_INVOKABLE void clear();
@@ -48,13 +49,15 @@ private:
     QVariantMap m_identity, m_assistance;
     QMap<QString, QVariantMap> m_jobs;
     QMap<QString, QString> m_aliases;
-    void append(const QString &level, const QString &scope, const QString &line, bool persist);
+    void append(const QString &level, const QString &scope, const QString &at, const QString &source,
+        const QString &message, const QVariantMap &fields, bool persist);
     void activateLogDirectory();
     void readEngineLog();
-    struct Entry { QString level, scope, line; };
+    struct Entry { QString level, scope, line; QVariantMap row; };
     mutable QMutex m_mutex;
     std::deque<Entry> m_entries;
     qulonglong m_dropped = 0;
+    qulonglong m_sequence = 0;
     QString m_logDirectory;
     QString m_profile;
     qint64 m_engineOffset = 0;

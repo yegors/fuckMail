@@ -29,6 +29,14 @@ namespace litehtml
         bool                                      m_skip = false;
         std::vector<std::shared_ptr<render_item>> m_positioned;
         std::shared_ptr<scroll_view>              m_scroll_view;
+        // fuckMail: widths measured during the current document render.
+        struct measured_width
+        {
+            containing_block_context context;
+            rendered_width           width;
+        };
+        std::vector<measured_width> m_measured;
+        uint64_t                    m_measured_generation = 0;
 
         containing_block_context calculate_containing_block_context(const containing_block_context& cb_context);
         void                     calc_cb_length(const css_length& len, pixel_t percent_base,
@@ -425,6 +433,11 @@ namespace litehtml
 
         rendered_width render(pixel_t x, pixel_t y, const containing_block_context& containing_block_size,
                               formatting_context* fmt_ctx, bool second_pass = false);
+        // fuckMail: the widths render() would return, reusing a measurement made
+        // with the same context during this document render. Only for callers
+        // that use the widths and render the item again before placing it; the
+        // item's layout may be left from another measurement.
+        rendered_width measure(const containing_block_context& containing_block_size, formatting_context* fmt_ctx);
         void           apply_relative_shift(const containing_block_context& containing_block_size);
         void           calc_outlines(pixel_t parent_width);
         pixel_t        calc_auto_margins(pixel_t parent_width); // returns left margin

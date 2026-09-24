@@ -204,9 +204,16 @@ class MailSelectionTest {
         await([&]{return splash->property("dismissed").toBool();},"splash eventually releases input");
         require(elapsed.elapsed()>=1700,"minimum splash hold respected");
         auto *mail=find(window->contentItem(),"mailWorkspace"); require(mail,"actual mail workspace");
-        auto summaryRow=h.rows[0].toMap(); summaryRow["summary"]="Review the design by Friday."; summaryRow["snippet"]="Original body preview"; h.rows[0]=summaryRow;
+        auto summaryRow=h.rows[0].toMap(); summaryRow["summary"]="Review the design by Friday."; summaryRow["snippet"]="Original body preview";
+        summaryRow["others"]=2; summaryRow["other_names"]=QVariantList{"Ann","Bob"}; summaryRow["message_count"]=3; summaryRow["attachment_count"]=1; h.rows[0]=summaryRow;
         h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
         await([&]{auto *preview=find(window->contentItem(),"mailPreview_a");return preview && preview->property("text")=="Review the design by Friday.";},"summary replaces source preview");
+        {
+            auto *others=shown(window->contentItem(),"mailOthers_a"), *thread=shown(window->contentItem(),"mailThreadCount_a"), *attachments=shown(window->contentItem(),"mailAttachmentCount_a");
+            require(others && others->property("text")=="+2","other people on the thread follow the sender");
+            require(thread && attachments && attachments->x()>thread->x()+thread->width(),"thread and attachment counts follow the subject in order");
+            require(!find(window->contentItem(),"mailOthers_b")->isVisible() && !find(window->contentItem(),"mailThreadCount_b")->isVisible(),"single-person, single-message rows show neither");
+        }
         require(find(window->contentItem(),"summaryPreviewIcon_a")->isVisible(),"summary preview has assistance icon");
         auto *senderColumn=find(window->contentItem(),"mailSenderColumn_a");
         auto *senderAddress=find(window->contentItem(),"mailSenderAddress_a");

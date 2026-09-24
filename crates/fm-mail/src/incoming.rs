@@ -41,14 +41,16 @@ fn extract(
     message: &mail_parser::Message<'_>,
     contribution: bool,
 ) -> Result<String, IncomingError> {
-    let plain: Vec<&str> = message
+    // Some senders put their HTML source in the text/plain part; that is read
+    // as HTML, never shown or indexed as markup.
+    let (plain, disguised): (Vec<&str>, Vec<&str>) = message
         .text_body
         .iter()
         .filter_map(|id| match &message.part(*id)?.body {
             PartType::Text(text) => Some(text.as_ref()),
             _ => None,
         })
-        .collect();
+        .partition(|text| !crate::preview::looks_like_html(text));
     if !plain.is_empty() {
         let text = plain.join("\n");
         return Ok(if contribution {
@@ -57,6 +59,62 @@ fn extract(
             text
         });
     }
+    let mut html: Vec<&str> = message
+        .html_body
+        .iter()
+        .filter_map(|id| match &message.part(*id)?.body {
+            PartType::Html(html) => Some(html.as_ref()),
+            _ => None,
+        })
+        .collect();
+    if html.iter().all(|html| html.trim().is_empty()) {
+        html = crate::html_view::html_part(message)
+            .filter(|html| !html.trim().is_empty())
+            .into_iter()
+            .collect();
+    }
+    if html.is_empty() {
+        html = disguised;
+    }
+    let mut cleaner = cleaner();
+    let text = html
+        .into_iter()
+        .map(|html| {
+            // Drop quote bodies before conversion, so HTML-only quotations
+            // do not become indistinguishable from new unquoted prose.
+            let omit_quotes =
+                contribution && !html.to_ascii_lowercase().contains("forwarded message");
+            if omit_quotes {
+                cleaner
+                    .rm_tags(&["blockquote"])
+                    .add_clean_content_tags(&["blockquote"]);
+            } else {
+                cleaner
+                    .rm_clean_content_tags(&["blockquote"])
+                    .add_tags(&["blockquote"]);
+            }
+            let text = html_to_text(&cleaner.clean(html).to_string());
+            if contribution {
+                crate::reply_text::project(
+                    &text,
+                    omit_quotes && html.to_ascii_lowercase().contains("<blockquote"),
+                )
+            } else {
+                text
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Ok(text)
+}
+
+/// Readable text from HTML source, as HTML-only mail is read: scripts, styles
+/// and other active content dropped, markup removed. Performs no I/O.
+pub fn html_source_text(html: &str) -> String {
+    html_to_text(&cleaner().clean(html).to_string())
+}
+
+fn cleaner() -> Builder<'static> {
     let mut cleaner = Builder::default();
     cleaner
         .tags(HashSet::from([
@@ -97,39 +155,7 @@ fn extract(
         .tag_attributes(HashMap::from([("a", HashSet::from(["href"]))]))
         .url_schemes(HashSet::from(["http", "https", "mailto"]))
         .url_relative(UrlRelative::Deny);
-    let text = message
-        .html_body
-        .iter()
-        .filter_map(|id| match &message.part(*id)?.body {
-            PartType::Html(html) => {
-                // Drop quote bodies before conversion, so HTML-only quotations
-                // do not become indistinguishable from new unquoted prose.
-                let omit_quotes =
-                    contribution && !html.to_ascii_lowercase().contains("forwarded message");
-                if omit_quotes {
-                    cleaner
-                        .rm_tags(&["blockquote"])
-                        .add_clean_content_tags(&["blockquote"]);
-                } else {
-                    cleaner
-                        .rm_clean_content_tags(&["blockquote"])
-                        .add_tags(&["blockquote"]);
-                }
-                let text = html_to_text(&cleaner.clean(html).to_string());
-                Some(if contribution {
-                    crate::reply_text::project(
-                        &text,
-                        omit_quotes && html.to_ascii_lowercase().contains("<blockquote"),
-                    )
-                } else {
-                    text
-                })
-            }
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    Ok(text)
+    cleaner
 }
 
 #[cfg(test)]
@@ -160,5 +186,23 @@ mod tests {
             "Answer\r\n\r\nOn Tuesday, Alex wrote:\r\n> History"
         )
         .contains("Answer"));
+    }
+
+    #[test]
+    fn html_source_in_a_plain_part_is_read_as_html() {
+        let html = "<!DOCTYPE html PUBLIC '-//W3C//DTD XHTML 1.0 Strict//EN'><html><head><style>h1{font-size:28px}</style></head><body><h1>Your hub is ready</h1><script>x()</script></body></html>";
+        let raw =
+            format!("MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{html}");
+        let text = extract_incoming_text(raw.as_bytes()).unwrap();
+        assert!(text.contains("Your hub is ready"), "{text}");
+        assert!(
+            !text.contains('<') && !text.contains("font-size") && !text.contains("x()"),
+            "{text}"
+        );
+        let raw = format!("MIME-Version: 1.0\r\nContent-Type: multipart/alternative; boundary=b\r\n\r\n--b\r\nContent-Type: text/plain\r\n\r\n{html}\r\n--b\r\nContent-Type: text/html\r\n\r\n<p>Real HTML part</p>\r\n--b--\r\n");
+        assert_eq!(
+            extract_incoming_text(raw.as_bytes()).unwrap().trim(),
+            "Real HTML part"
+        );
     }
 }

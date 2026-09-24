@@ -939,6 +939,7 @@ dependencies = [
  "lettre",
  "mail-parser",
  "markup5ever_rcdom",
+ "regex",
  "serde_json",
  "sha2",
  "url",

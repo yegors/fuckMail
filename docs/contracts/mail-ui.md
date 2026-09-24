@@ -1,5 +1,39 @@
 # Mail UI, reader and human composer
 
+## D107 — sixth export list details and one HTML/Text choice (Mail UI76)
+
+**List rows**
+- After the sender name, a muted "+N" (Medium, tabular numbers) shows Core's `others`. It hides at zero. Hovering shows "Also on this thread:" with `other_names`, plus "and N more" beyond them.
+- After the subject, the thread and attachment counts share one style: 11 px, muted, tabular numbers and no border.
+  - The speech-bubble `thread` icon with the message count shows only above one message. Hover text: "N messages in this thread".
+  - The paperclip with the attachment count. Hover text: "1 attachment" or "N attachments in this thread".
+- A row's summary, complete or partial, replaces its preview line.
+- Previews come from Core as readable text without web addresses (Core59).
+
+**Reader**
+- Plain text fills the message column, without a line-length limit.
+- The HTML/Text header toggle and the … menu save `message_format`, so the choice applies to every message, including after a restart. Their tips say "in every message". Moving between messages keeps the choice.
+
+**HTML drawing.** The vendored litehtml carries the local changes listed in `gui/third_party/litehtml/VENDORED.md`:
+- measurement reuse;
+- shrinking fixed-width columns;
+- relative inline shift;
+- percentage heights;
+- media breakpoint restyling;
+- height-only images.
+
+The container adds two behaviours of its own:
+- **Break points in long runs:** after `/ - ? & = | \`, and every 30 characters in a run over 60, without changing the text. Zero-width spaces are dropped.
+- **Wrapping preformatted text:** `pre` wraps by default.
+
+Consumers: Core59, Local assistance22, Quality77.
+
+## D106 — developer console layout and tailing (Mail UI75)
+
+The modal console fills the app window inside a centered 32 px margin. Five subsystem groups replace D103's separate low-level scopes: Mail (mail, drafts, sending and search), Calendar, Sync (sync, auth and accounts), Model, and App (settings, remaining IPC infrastructure and Qt). All shows every group. Severity and text filters compose with the scope. Aligned monospace time/level/event columns use the current theme, with warning/error markers and a quiet Model tint. Selecting a row opens its full timestamp, source, message and formatted, selectable metadata. Full unfiltered report copying and runtime state remain available.
+
+Opening and changing filters start at the latest matching event. Wheel, scrollbar, touch and keyboard navigation stop following when reading older events. Reaching the end, End or Jump to latest resumes following. New events append to stable rows; front eviction preserves the first visible event identity and its pixel offset. If that event expires from the 1,000-entry history, the view stays at the oldest retained entry. Capture and bounded disk logging continue while the view is paused. Consumers: GUI DebugConsole, Core58/Calendar31 reminder queries and Quality76. Schema/fixtures/protocol unchanged by this packet.
+
 ## D105 — HTML reader, remote images and blocked domains (Mail UI74)
 
 **HTML view.** In HTML mode a received message renders through `HtmlMessageBody`, which draws Core's sanitised HTML with `FmHtmlView` (`FuckMail.Html`, litehtml) on a light paper card with radius 6 in every theme.

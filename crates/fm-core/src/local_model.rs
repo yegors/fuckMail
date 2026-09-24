@@ -608,8 +608,9 @@ impl Store {
         };
         let result: Value = serde_json::from_str(&result)?;
         let text = result["output"]["summary"].as_str().unwrap_or_default();
+        // A partial summary (long input was shortened) still replaces the
+        // preview; the reader labels it Partial.
         if !ollama::valid_summary(text)
-            || result["partial"] == true
             || !self
                 .local_model_snapshot(account, conversation, "summary", target)
                 .and_then(|v| encode(&v))

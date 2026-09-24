@@ -74,10 +74,13 @@ namespace litehtml
         std::string                             m_text;
         document_mode                           m_mode      = no_quirks_mode;
         bool                                    m_finalized = false;
+        // fuckMail: counts full renders; render_item::measure caches last only one render.
+        uint64_t                                m_render_generation = 0;
 
       public:
         document(document_container* objContainer);
         virtual ~document();
+        uint64_t render_generation() const { return m_render_generation; }
 
         document_container* container() const
         {

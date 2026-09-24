@@ -1011,6 +1011,15 @@ Item {
                                     RowLayout {
                                         Layout.fillWidth: true; spacing: 6
                                         Text { objectName: "mailSender_" + groupedRow.modelData.id; text: groupedRow.modelData.sender_name || groupedRow.modelData.sender_email || "Unknown sender"; color: row.primaryTone; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); font.weight: row.reviewTier ? Font.DemiBold : Font.Normal; Layout.fillWidth: true; Layout.maximumWidth: implicitWidth; elide: Text.ElideRight; textFormat: Text.PlainText }
+                                        Text {
+                                            objectName: "mailOthers_" + groupedRow.modelData.id
+                                            readonly property int others: groupedRow.modelData.others || 0
+                                            readonly property var names: groupedRow.modelData.other_names || []
+                                            visible: others > 0
+                                            text: "+" + others; color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.weight: Font.Medium; font.features: {"tnum":1}; textFormat: Text.PlainText
+                                            HoverHandler { id: othersHover }
+                                            FmToolTip { shown: othersHover.hovered; text: "Also on this thread: " + parent.names.join(", ") + (parent.others > parent.names.length ? " and " + (parent.others - parent.names.length) + " more" : "") }
+                                        }
                                         FmIcon { objectName: "mailSenderKind_" + groupedRow.modelData.id; name: groupedRow.modelData.is_outgoing ? "send" : mail.kindIcon(groupedRow.modelData.kind); size: 11; color: Theme.inkAlpha(.45) }
                                         Item { Layout.fillWidth: true }
                                     }
@@ -1022,24 +1031,29 @@ Item {
                                         Layout.fillWidth: true; implicitHeight: Math.max(subjectText.implicitHeight,17)
                                         Text {
                                             id: subjectText; anchors.verticalCenter: parent.verticalCenter
-                                            width: Math.max(0,Math.min(implicitWidth,parent.width-(countBadge.visible ? countBadge.width+8 : 0)-(attachmentCount.visible ? attachmentCount.width+8 : 0)))
+                                            width: Math.max(0,Math.min(implicitWidth,parent.width-(threadCount.visible ? threadCount.width+8 : 0)-(attachmentCount.visible ? attachmentCount.width+(threadCount.visible ? 10 : 8) : 0)))
                                             text: groupedRow.modelData.subject; color: row.primaryTone
                                             font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(14); font.weight: row.outgoingScope ? Font.Medium : row.reviewTier ? Font.DemiBold : Font.Normal
                                             elide: Text.ElideRight; textFormat: Text.PlainText
                                         }
-                                        Rectangle {
-                                            id: countBadge; x: subjectText.width+8; anchors.verticalCenter: parent.verticalCenter
-                                            visible: groupedRow.modelData.message_count>1; width: memberCount.implicitWidth+12; height: Theme.fontSize(16)+2; radius: 3; color: "transparent"; border.color: Theme.controlBorder
-                                            Text { id: memberCount; anchors.centerIn: parent; text: groupedRow.modelData.message_count; color: Theme.inkAlpha(.6); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11) }
+                                        // Thread and attachment counts share one style, told apart by icon.
+                                        Row {
+                                            id: threadCount; objectName: "mailThreadCount_"+groupedRow.modelData.id
+                                            x: subjectText.width+8; anchors.verticalCenter: parent.verticalCenter; spacing: 3
+                                            visible: groupedRow.modelData.message_count>1
+                                            FmIcon {name:"thread";size:11;color:Theme.inkAlpha(.5);anchors.verticalCenter:parent.verticalCenter}
+                                            Text {text:groupedRow.modelData.message_count;color:Theme.inkAlpha(.5);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11);font.features:{"tnum":1};anchors.verticalCenter:parent.verticalCenter}
+                                            HoverHandler {id:threadCountHover}
+                                            FmToolTip {shown:threadCountHover.hovered;text:groupedRow.modelData.message_count+" messages in this thread"}
                                         }
                                         Row {
                                             id: attachmentCount; objectName: "mailAttachmentCount_"+groupedRow.modelData.id
-                                            x:subjectText.width+(countBadge.visible ? countBadge.width+16 : 8);anchors.verticalCenter:parent.verticalCenter;spacing:3
+                                            x:subjectText.width+(threadCount.visible ? threadCount.width+18 : 8);anchors.verticalCenter:parent.verticalCenter;spacing:3
                                             visible:(groupedRow.modelData.attachment_count || 0)>0
                                             FmIcon {name:"attachment";size:11;color:Theme.inkAlpha(.5);anchors.verticalCenter:parent.verticalCenter}
                                             Text {text:groupedRow.modelData.attachment_count || 0;color:Theme.inkAlpha(.5);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11);font.features:{"tnum":1};anchors.verticalCenter:parent.verticalCenter}
                                             HoverHandler {id:attachmentCountHover}
-                                            FmToolTip {shown:attachmentCountHover.hovered;text:(groupedRow.modelData.attachment_count || 0)+" attachments in this thread"}
+                                            FmToolTip {shown:attachmentCountHover.hovered;text:(groupedRow.modelData.attachment_count === 1 ? "1 attachment" : (groupedRow.modelData.attachment_count || 0)+" attachments")+" in this thread"}
                                         }
                                     }
                                     RowLayout {
@@ -1303,8 +1317,8 @@ Item {
                                                 objectName: "messageFormatToggle_" + member.modelData.id
                                                 visible: member.isExpanded && messageSource.hasHtml
                                                 text: messageSource.plain ? "TEXT" : "HTML"
-                                                tip: messageSource.plain ? "Showing plain text — click for HTML" : "Showing HTML — click for plain text"
-                                                onClicked: messageSource.plain = !messageSource.plain
+                                                tip: messageSource.plain ? "Showing plain text — click to show HTML in every message" : "Showing HTML — click to show plain text in every message"
+                                                onClicked: messageSource.setPlain(!messageSource.plain)
                                             }
                                             SummarizeAction {
                                                 objectName: "summarizeMessage_" + member.modelData.id
@@ -1668,8 +1682,8 @@ Item {
         minimumWidth: 154; x: -width - 9; y: formatMenuButton.y - 5
         contentItem: ColumnLayout {
             spacing: 0
-            FmMenuItem { objectName: "messageFormatHtml"; text: "HTML"; markable: true; marked: !!mail.messageMenuSource && !mail.messageMenuSource.plain; onClicked: { if (mail.messageMenuSource) mail.messageMenuSource.plain = false; morePopup.close() } }
-            FmMenuItem { objectName: "messageFormatPlain"; text: "Plain text"; markable: true; marked: !!mail.messageMenuSource && mail.messageMenuSource.plain; onClicked: { if (mail.messageMenuSource) mail.messageMenuSource.plain = true; morePopup.close() } }
+            FmMenuItem { objectName: "messageFormatHtml"; text: "HTML"; markable: true; marked: !!mail.messageMenuSource && !mail.messageMenuSource.plain; onClicked: { if (mail.messageMenuSource) mail.messageMenuSource.setPlain(false); morePopup.close() } }
+            FmMenuItem { objectName: "messageFormatPlain"; text: "Plain text"; markable: true; marked: !!mail.messageMenuSource && mail.messageMenuSource.plain; onClicked: { if (mail.messageMenuSource) mail.messageMenuSource.setPlain(true); morePopup.close() } }
         }
     }
     FmMenu {

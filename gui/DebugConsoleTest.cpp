@@ -10,6 +10,7 @@
 #include <QQuickItem>
 #include <QQuickWindow>
 #include <QQuickStyle>
+#include <QWheelEvent>
 #include <QTemporaryDir>
 #include <QtTest>
 #include <thread>
@@ -47,6 +48,14 @@ private slots:
         QVERIFY(report.contains("account-1")); QVERIFY(report.contains("schema_version"));
         QVERIFY(report.contains("google_rate_limited")); QVERIFY(report.contains("retry_after_secs\":23"));
         QVERIFY(report.contains("request_ref\":\"42\""));
+        QVERIFY(log.events("ERROR", "google_send", "Mail").contains("request_ref"));
+        log.record("INFO", "IPC", "Reconnect", {{"method", "google_auth_start"}});
+        QVERIFY(log.events("All", "Reconnect", "Sync").contains("google_auth_start"));
+        log.record("INFO", "IPC", "Calendar write", {{"method", "google_calendar_write"}});
+        QVERIFY(log.events("All", "google_calendar_write", "Calendar").contains("Calendar write"));
+        log.record("INFO", "IPC", "HTML projection", {{"method", "message_html"}});
+        QVERIFY(log.events("All", "message_html", "Mail").contains("HTML projection"));
+        QVERIFY(log.events("WARN", "[email]", "App").contains("[secret]"));
         QVERIFY(report.contains("mail_steps = 12"));
         emit backend.assistanceReply("private-ticket", "assist_job", {{"job_id", "private-job"}, {"status", "failed"},
             {"error", QVariantMap{{"code", "invalid_response"}, {"message", "Model returned invalid JSON"}}}, {"body", "private body"}}, true);
@@ -122,7 +131,7 @@ private slots:
 import QtQuick.Controls
 import ConsoleTest
 ApplicationWindow {
-    id: window; width: 1000; height: 650; visible: true
+    id: window; width: 1280; height: 820; visible: true
     property bool searching: false
     property string testTheme: "graphite"
     Binding { target: Theme; property: "themeId"; value: window.testTheme }
@@ -145,12 +154,14 @@ ApplicationWindow {
         window->setProperty("searching", false);
         QTest::keyClick(window, Qt::Key_QuoteLeft); QTRY_VERIFY(console->property("opened").toBool());
         QVERIFY(console->property("displayText").toString().contains("google_rate_limited"));
-        auto scope = window->findChild<QQuickItem *>("debugScope"); QVERIFY(scope);
-        scope->setProperty("currentIndex", 3); // Sync
+        QCOMPARE(console->property("x").toDouble(), 32.0);
+        QCOMPARE(console->property("y").toDouble(), 32.0);
+        QCOMPARE(console->property("width").toDouble(), 1216.0);
+        console->setProperty("selectedScope", "Sync");
         QVERIFY(console->property("displayText").toString().contains("google_rate_limited"));
-        scope->setProperty("currentIndex", 5); // Model
+        console->setProperty("selectedScope", "Model");
         QVERIFY(!console->property("displayText").toString().contains("google_rate_limited"));
-        scope->setProperty("currentIndex", 0);
+        console->setProperty("selectedScope", "All");
         auto filter = window->findChild<QQuickItem *>("debugFilter"); QVERIFY(filter);
         filter->setProperty("text", "absent-filter"); QVERIFY(console->property("displayText").toString().isEmpty());
         filter->forceActiveFocus(); QTest::keyClick(window, Qt::Key_QuoteLeft);
@@ -161,25 +172,78 @@ ApplicationWindow {
         QVERIFY(QGuiApplication::clipboard()->text().contains("google_rate_limited"));
         console->setProperty("showState", true); QVERIFY(console->property("displayText").toString().contains("architecture"));
         console->setProperty("showState", false);
-        auto output = window->findChild<QQuickItem *>("debugOutput"); QVERIFY(output); output->forceActiveFocus();
+        auto events = window->findChild<QQuickItem *>("debugEvents"); QVERIFY(events); events->forceActiveFocus();
         console->setProperty("paused", true); const auto frozen = console->property("displayText");
         log.record("ERROR", "test", "new error while view paused"); log.refresh();
         QCOMPARE(console->property("displayText"), frozen);
         log.copyReport(); QVERIFY(QGuiApplication::clipboard()->text().contains("new error while view paused"));
         console->setProperty("paused", false); QVERIFY(console->property("displayText").toString().contains("new error while view paused"));
-        for (int i = 0; i < 100; ++i) log.record("INFO", "sync", QString("scroll event %1").arg(i));
-        log.refresh(); QTest::qWait(30);
-        auto scroll = window->findChild<QQuickItem *>("debugScroll"); QVERIFY(scroll);
-        auto flick = scroll->property("contentItem").value<QObject *>(); QVERIFY(flick);
-        QVERIFY(flick->property("contentHeight").toDouble() > flick->property("height").toDouble() + 200);
-        flick->setProperty("contentY", 120.0);
-        log.record("INFO", "sync", "new event without scroll jump"); log.refresh();
-        QTRY_VERIFY(std::abs(flick->property("contentY").toDouble() - 120.0) < 3.0);
-        QTest::qWait(100);
-        QVERIFY(std::abs(flick->property("contentY").toDouble() - 120.0) < 3.0);
+        for (int i = 0; i < 1200; ++i) log.record("INFO", "sync", QString("scroll event %1").arg(i));
+        log.refresh();
+        QTRY_VERIFY(events->property("atYEnd").toBool());
+        // Native wheel input stops following before the next diagnostics refresh.
+        const auto point = events->mapToScene(QPointF(400, 200));
+        QWheelEvent wheel(point, window->mapToGlobal(point.toPoint()), {}, QPoint(0, 120), Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
+        QCoreApplication::sendEvent(window, &wheel);
+        QTRY_VERIFY(!console->property("followTail").toBool());
+        QTest::qWait(200);
+        QVERIFY(!events->property("atYEnd").toBool());
+        auto anchor = [&]() -> QPair<QString, qreal> {
+            const auto y = events->property("contentY").toDouble();
+            auto content = events->property("contentItem").value<QQuickItem *>();
+            if (content) for (auto child : content->childItems())
+                if (child->property("sequence").isValid() && child->y() <= y + 1 && child->y() + child->height() > y + 1)
+                    return {child->property("sequence").toString(), y - child->y()};
+            return {};
+        };
+        const auto reading = anchor(); QVERIFY(!reading.first.isEmpty());
+        for (int batch = 0; batch < 8; ++batch) {
+            for (int i = 0; i < 7; ++i) log.record("INFO", "sync", QString("new batch %1 event %2").arg(batch).arg(i));
+            log.refresh(); QTest::qWait(30);
+            QCOMPARE(anchor().first, reading.first);
+            QVERIFY(std::abs(anchor().second - reading.second) < 1.0);
+            QVERIFY(!console->property("followTail").toBool());
+        }
+        // Selecting a row exposes complete, selectable metadata without resuming.
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, point.toPoint());
+        QVERIFY(!console->property("selectedText").toString().isEmpty());
+        QVERIFY(!console->property("followTail").toBool());
+        console->setProperty("selectedText", "");
+        auto tail = window->findChild<QQuickItem *>("debugTail"); QVERIFY(tail);
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, tail->mapToScene(QPointF(tail->width()/2, tail->height()/2)).toPoint());
+        QTRY_VERIFY(events->property("atYEnd").toBool());
+        QVERIFY(console->property("followTail").toBool());
+        for (int batch = 0; batch < 8; ++batch) {
+            log.record("INFO", "local model", "Summary completed", {{"elapsed_ms", batch * 100}});
+            log.refresh(); QTest::qWait(30);
+            QVERIFY(events->property("atYEnd").toBool());
+            QVERIFY(console->property("followTail").toBool());
+        }
+        window->resize(1000, 650); QTest::qWait(100);
+        QVERIFY(events->property("atYEnd").toBool());
+        window->resize(1280, 820); QTest::qWait(100);
+        QVERIFY(events->property("atYEnd").toBool());
+        events->forceActiveFocus(); QTest::keyClick(window, Qt::Key_PageUp);
+        QVERIFY(!console->property("followTail").toBool());
+        QTest::keyClick(window, Qt::Key_End); QTRY_VERIFY(events->property("atYEnd").toBool());
+        auto bar = events->findChild<QQuickItem *>("persistentScrollBar"); QVERIFY(bar);
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, bar->mapToScene(QPointF(bar->width()/2, bar->height()/2)).toPoint());
+        QTRY_VERIFY(!console->property("followTail").toBool());
+        const auto dragged = anchor(); QVERIFY(!dragged.first.isEmpty());
+        log.record("WARN", "sync", "Retain scrollbar position"); log.refresh(); QTest::qWait(100);
+        QCOMPARE(anchor().first, dragged.first);
+        QVERIFY(std::abs(anchor().second - dragged.second) < 1.0);
+        events->forceActiveFocus(); QTest::keyClick(window, Qt::Key_Home);
+        QTRY_VERIFY(events->property("atYBeginning").toBool());
+        for (int i = 0; i < 1100; ++i) log.record("INFO", "sync", QString("replacement event %1").arg(i));
+        log.refresh(); QTest::qWait(100);
+        QVERIFY(events->property("atYBeginning").toBool());
+        QVERIFY(!console->property("followTail").toBool());
+        QTest::keyClick(window, Qt::Key_End); QTRY_VERIFY(events->property("atYEnd").toBool());
         QTest::keyClick(window, Qt::Key_Escape); QTRY_VERIFY(!console->property("opened").toBool());
         QTRY_VERIFY(idle->hasActiveFocus());
         QTest::keyClick(window, Qt::Key_AsciiTilde, Qt::ShiftModifier); QTRY_VERIFY(console->property("opened").toBool());
+        QTRY_VERIFY(events->property("atYEnd").toBool());
         for (const auto theme : {"graphite", "paper", "harbour", "terminal"}) {
             window->setProperty("testTheme", theme); QTest::qWait(30);
             if (qEnvironmentVariableIsSet("FM_DEBUG_CAPTURE_DIR")) {

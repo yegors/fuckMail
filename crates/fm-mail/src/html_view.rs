@@ -10,11 +10,11 @@ use cssparser::{
 };
 use html5ever::tendril::TendrilSink;
 use markup5ever_rcdom::{Handle, NodeData, RcDom};
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::fmt::Write as _;
 
 /// Bump when output or manifest meaning changes, so cached copies are rebuilt.
-pub const SANITIZER_VERSION: u32 = 1;
+pub const SANITIZER_VERSION: u32 = 4;
 pub const MAX_HTML_BYTES: usize = 4 * 1024 * 1024;
 const MAX_NODES: usize = 50_000;
 const MAX_DEPTH: usize = 256;
@@ -86,13 +86,31 @@ pub struct HtmlView {
 /// The first actual `text/html` part. mail-parser also lists a plain part in
 /// `html_body` for plain-only mail, which must not count as HTML.
 pub fn html_part<'a>(message: &'a mail_parser::Message<'a>) -> Option<&'a str> {
-    message
+    use mail_parser::{MimeHeaders, PartType};
+    let body = message
         .html_body
         .iter()
-        .find_map(|id| match &message.part(*id)?.body {
-            mail_parser::PartType::Html(html) => Some(html.as_ref()),
+        .filter_map(|id| match &message.part(*id)?.body {
+            PartType::Html(html) => Some(html.as_ref()),
             _ => None,
-        })
+        });
+    // Then any other part labelled text/html: a digest's parts, or one with an
+    // unknown transfer encoding, are read as text outside the HTML body.
+    let labelled = message
+        .parts
+        .iter()
+        .filter(|part| part.is_content_type("text", "html"))
+        .filter_map(|part| match &part.body {
+            PartType::Html(html) | PartType::Text(html) => Some(html.as_ref()),
+            _ => None,
+        });
+    let mut parts = body.chain(labelled);
+    let first = parts.next()?;
+    // Skip an empty leading part; some senders put the real one second.
+    if !first.trim().is_empty() {
+        return Some(first);
+    }
+    Some(parts.find(|html| !html.trim().is_empty()).unwrap_or(first))
 }
 
 /// Rebuild `html` for display. Returns `None` when the input exceeds the size limit.
@@ -101,20 +119,13 @@ pub fn sanitize(html: &str) -> Option<HtmlView> {
         return None;
     }
     let dom = html5ever::parse_document(RcDom::default(), Default::default()).one(html);
-    let keep_quotes = html.to_ascii_lowercase().contains("forwarded message");
-    let mut walk = Walk {
-        view: HtmlView::default(),
-        body: String::new(),
-        css: String::new(),
-        css_rules: 0,
-        nodes: 0,
-        table_depth: 0,
-        flat_tables: 0,
-        stopped: false,
-        keep_quotes,
-        body_attrs: String::new(),
-    };
-    walk.document(&dom.document);
+    let forwarded = html.to_ascii_lowercase().contains("forwarded message");
+    let mut walk = walk_document(&dom, forwarded);
+    if walk.view.quote_removed && !shows_anything(&walk.body) {
+        // Nothing but quoted history, as in a reply without new text: showing
+        // the quote beats an empty message.
+        walk = walk_document(&dom, true);
+    }
     let mut out = String::with_capacity(walk.body.len() + walk.css.len() + 128);
     out.push_str("<!DOCTYPE html><html><head>");
     if !walk.css.is_empty() {
@@ -129,6 +140,51 @@ pub fn sanitize(html: &str) -> Option<HtmlView> {
     out.push_str("</body></html>");
     walk.view.html = out;
     Some(walk.view)
+}
+
+fn walk_document(dom: &RcDom, keep_quotes: bool) -> Walk {
+    let mut walk = Walk {
+        view: HtmlView::default(),
+        body: String::new(),
+        css: String::new(),
+        css_rules: 0,
+        nodes: 0,
+        table_depth: 0,
+        flat_tables: 0,
+        stopped: false,
+        keep_quotes,
+        body_attrs: String::new(),
+        align: BlockAlign::Start,
+        extra_style: HashMap::new(),
+    };
+    walk.document(&dom.document);
+    walk
+}
+
+/// Whether sanitised body markup shows any text or image.
+fn shows_anything(body: &str) -> bool {
+    if body.contains("<img") {
+        return true;
+    }
+    let mut in_tag = false;
+    body.chars().any(|c| match c {
+        '<' => {
+            in_tag = true;
+            false
+        }
+        '>' => {
+            in_tag = false;
+            false
+        }
+        c => {
+            !in_tag
+                && !c.is_whitespace()
+                && !matches!(
+                    c,
+                    '\u{200b}'..='\u{200d}' | '\u{2060}' | '\u{feff}' | '\u{34f}' | '\u{ad}'
+                )
+        }
+    })
 }
 
 /// Link hosts for the link index: every http(s) link host in the displayed
@@ -281,6 +337,18 @@ struct Walk {
     stopped: bool,
     keep_quotes: bool,
     body_attrs: String,
+    /// Legacy `align` inherited from ancestors, which browsers also apply to
+    /// nested blocks such as tables (`text-align: -webkit-center`).
+    align: BlockAlign,
+    /// Declarations added to particular elements, keyed by node address.
+    extra_style: HashMap<usize, String>,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum BlockAlign {
+    Start,
+    Center,
+    End,
 }
 
 const DROP_WITH_CONTENT: &[&str] = &[
@@ -473,6 +541,12 @@ impl Walk {
                     }
                     return;
                 }
+                if matches!(tag.as_str(), "table" | "div") {
+                    self.align_block(node);
+                }
+                if table {
+                    self.fixed_layout(node);
+                }
                 let attrs = self.attributes(&tag, node);
                 let _ = write!(self.body, "<{tag}{attrs}>");
                 if VOID.contains(&tag.as_str()) {
@@ -481,7 +555,10 @@ impl Walk {
                 if table {
                     self.table_depth += 1;
                 }
+                let outer = self.align;
+                self.align = inherited_align(&tag, node, outer);
                 self.children(node, depth + 1);
+                self.align = outer;
                 if table {
                     self.table_depth -= 1;
                 }
@@ -489,6 +566,77 @@ impl Walk {
             }
             _ => {}
         }
+    }
+
+    /// A table or block inside a legacy `align="center"` or `"right"` ancestor
+    /// gets the auto margins browsers give it, unless it places itself.
+    fn align_block(&mut self, node: &Handle) {
+        let margins = match self.align {
+            BlockAlign::Start => return,
+            BlockAlign::Center => "margin-left:auto;margin-right:auto",
+            BlockAlign::End => "margin-left:auto",
+        };
+        let style = attr(node, "style").unwrap_or_default();
+        if attr(node, "align").is_some()
+            || has_declaration(&style, &["margin", "margin-left", "margin-right"])
+        {
+            return;
+        }
+        self.add_style(node, margins);
+    }
+
+    /// Browsers give the columns of a `table-layout: fixed` table with a width
+    /// equal shares when its first row declares none; litehtml sizes them by
+    /// content, so the first row's cells get those shares as percentages.
+    fn fixed_layout(&mut self, node: &Handle) {
+        let style = attr(node, "style").unwrap_or_default().to_ascii_lowercase();
+        let fixed = declaration(&style, "table-layout").is_some_and(|v| v == "fixed");
+        let sized = attr(node, "width").is_some()
+            || declaration(&style, "width").is_some_and(|v| v != "auto");
+        if !fixed || !sized {
+            return;
+        }
+        let Some(row) = first_row(node) else { return };
+        let cells: Vec<Handle> = row
+            .children
+            .borrow()
+            .iter()
+            .filter(|c| matches!(&c.data, NodeData::Element { name, .. } if matches!(&*name.local, "td" | "th")))
+            .cloned()
+            .collect();
+        let span = |cell: &Handle| {
+            attr(cell, "colspan")
+                .and_then(|v| v.trim().parse::<u32>().ok())
+                .unwrap_or(1)
+                .clamp(1, 1000)
+        };
+        let columns: u32 = cells.iter().map(span).sum();
+        let widthless = cells.iter().all(|cell| {
+            let style = attr(cell, "style").unwrap_or_default().to_ascii_lowercase();
+            attr(cell, "width").is_none()
+                && declaration(&style, "width").is_none_or(|v| v == "auto")
+        });
+        if cells.is_empty() || columns > 100 || !widthless {
+            return;
+        }
+        for cell in &cells {
+            let share = f64::from(span(cell)) * 100.0 / f64::from(columns);
+            self.add_style(
+                cell,
+                &format!("width:{}%", (share * 1000.0).round() / 1000.0),
+            );
+        }
+    }
+
+    fn add_style(&mut self, node: &Handle, css: &str) {
+        let entry = self
+            .extra_style
+            .entry(std::rc::Rc::as_ptr(node) as usize)
+            .or_default();
+        if !entry.is_empty() {
+            entry.push(';');
+        }
+        entry.push_str(css);
     }
 
     /// Text only, iteratively, for content nested past the depth limit.
@@ -673,6 +821,15 @@ impl Walk {
             }
             let _ = write!(style, "background-image:url(fm-res:{id})");
         }
+        if let Some(extra) = self
+            .extra_style
+            .remove(&(std::rc::Rc::as_ptr(node) as usize))
+        {
+            if !style.is_empty() && !style.ends_with(';') {
+                style.push(';');
+            }
+            style.push_str(&extra);
+        }
         if !style.is_empty() {
             out.push_str(" style=\"");
             escape_attr(&style, &mut out);
@@ -772,6 +929,85 @@ impl Walk {
         for _ in StyleSheetParser::new(&mut parser, &mut rules) {}
         self.css.push_str(&out);
     }
+}
+
+/// The alignment an element passes to its descendants: its own legacy `align`,
+/// reset by an explicit `text-align`, which overrides it in browsers.
+fn inherited_align(tag: &str, node: &Handle, outer: BlockAlign) -> BlockAlign {
+    let style = attr(node, "style").unwrap_or_default();
+    if has_declaration(&style, &["text-align"]) {
+        return BlockAlign::Start;
+    }
+    if tag == "center" {
+        return BlockAlign::Center;
+    }
+    if !matches!(
+        tag,
+        "div"
+            | "p"
+            | "td"
+            | "th"
+            | "tr"
+            | "tbody"
+            | "thead"
+            | "tfoot"
+            | "h1"
+            | "h2"
+            | "h3"
+            | "h4"
+            | "h5"
+            | "h6"
+    ) {
+        return outer;
+    }
+    match attr(node, "align")
+        .map(|v| v.trim().to_ascii_lowercase())
+        .as_deref()
+    {
+        Some("center" | "middle") => BlockAlign::Center,
+        Some("right") => BlockAlign::End,
+        Some("left" | "justify") => BlockAlign::Start,
+        _ => outer,
+    }
+}
+
+/// The last value of one property in an inline style, lowercase and trimmed.
+fn declaration(style: &str, property: &str) -> Option<String> {
+    style
+        .split(';')
+        .filter_map(|d| d.split_once(':'))
+        .filter(|(name, _)| name.trim().eq_ignore_ascii_case(property))
+        .map(|(_, value)| {
+            value
+                .trim()
+                .trim_end_matches("!important")
+                .trim()
+                .to_ascii_lowercase()
+        })
+        .next_back()
+}
+
+fn has_declaration(style: &str, properties: &[&str]) -> bool {
+    properties.iter().any(|p| declaration(style, p).is_some())
+}
+
+/// A table's first row, looking through its row groups in document order.
+fn first_row(table: &Handle) -> Option<Handle> {
+    for child in table.children.borrow().iter() {
+        let NodeData::Element { name, .. } = &child.data else {
+            continue;
+        };
+        match &*name.local {
+            "tr" => return Some(child.clone()),
+            "thead" | "tbody" | "tfoot" => {
+                if let Some(row) = child_element(child, "tr") {
+                    return Some(row);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn child_element(node: &Handle, tag: &str) -> Option<Handle> {

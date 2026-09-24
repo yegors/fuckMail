@@ -85,6 +85,13 @@ litehtml::rendered_width litehtml::render_item_image::_render(pixel_t x, pixel_t
         {
             m_pos.width = sz.width;
         }
+        // fuckMail: an image sized by its height alone stays within its column,
+        // keeping its shape, instead of widening the whole message.
+        if(src_el()->css().get_max_width().is_predefined() && parent_width > 0_px && m_pos.width > parent_width)
+        {
+            m_pos.height = m_pos.height * parent_width / m_pos.width;
+            m_pos.width  = parent_width;
+        }
     } else if(src_el()->css().get_height().is_predefined() && !src_el()->css().get_width().is_predefined())
     {
         m_pos.width = src_el()->css().get_width().calc_percent(parent_width);

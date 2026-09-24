@@ -13,7 +13,9 @@ Item {
     // Raw text is read for the dialog only and released when it closes.
     property string raw: ""
     property string rawTicket: ""
-    property bool plain: false
+    // HTML or plain text is one choice for every message, shared with the CLI.
+    readonly property bool plain: backend.preferences.message_format === "text"
+    function setPlain(value) { if (value !== plain) backend.setPreferences({message_format: value ? "text" : "html"}) }
     readonly property string identity: account + "/" + (message.id || "") + "/" + (message.source_version || "")
     readonly property bool hasHtml: !!result.body_html && !result.html_truncated
     readonly property var metadata: (result.metadata || []).filter(function(row) { return row.people.length > 0 })
@@ -26,7 +28,7 @@ Item {
         if (message.reader_error) { error = message.reader_error; return true }
         return false
     }
-    onIdentityChanged: { ticket = ""; result = ({}); error = ""; raw = ""; rawTicket = ""; plain = false; original.close(); adopt(); deferredLoad.restart() }
+    onIdentityChanged: { ticket = ""; result = ({}); error = ""; raw = ""; rawTicket = ""; original.close(); adopt(); deferredLoad.restart() }
     onMessageChanged: adopt()
     onActiveChanged: if (active) load()
     Component.onCompleted: { adopt(); load() }

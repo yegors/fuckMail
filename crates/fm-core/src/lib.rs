@@ -72,6 +72,12 @@ const POST_RESET_MIGRATIONS: &[&str] = &[
     "CREATE INDEX google_mail_coverage_by_date ON google_mail_coverage(account,internal_date_ms) WHERE deleted=0;",
     // 34: link hosts per message, for link hover cards and blocked-domain counts.
     link_index::SCHEMA,
+    // 35: people per message, for the list's "+N"; the link pass runs again to fill them.
+    concat!(
+        "CREATE TABLE people(id INTEGER PRIMARY KEY,email TEXT NOT NULL UNIQUE,name TEXT NOT NULL) STRICT;",
+        "CREATE TABLE message_people(message_rowid INTEGER NOT NULL REFERENCES messages(rowid) ON DELETE CASCADE,person INTEGER NOT NULL REFERENCES people(id),PRIMARY KEY(message_rowid,person)) STRICT, WITHOUT ROWID;",
+        "UPDATE link_index_state SET indexed_rowid=0;"
+    ),
 ];
 pub const SCHEMA_VERSION: u32 = RESET_BASELINE_VERSION + POST_RESET_MIGRATIONS.len() as u32;
 pub const FIXTURE_REVISION: u32 = 3;

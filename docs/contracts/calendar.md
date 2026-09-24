@@ -1,5 +1,9 @@
 # Calendar, feeds and reminders
 
+## D106 — valid long reminder identities (Calendar31)
+
+Reminder queries and acknowledgements use Core58's dedicated 1,024-byte calendar and 8,192-byte occurrence limits, including serialized recurrence identities longer than 256 bytes. A valid long identity must survive poll, shown acknowledgement, snooze, resumed poll and dismissal without generating an IPC error. Existing exact receipt identity and permission/due-time validation remain. Consumers: Core58, native running-client reminders, CLI and Quality76; schema, fixtures and protocol unchanged.
+
 ## D093 — published staging payload release (Calendar30)
 
 Publication clears successful `calendar_sync_items.json` in its transaction after durable source/catalog projection. Failed items retain their raw JSON; item fingerprints and run/page headers remain for replay, coverage and diagnosis. No published source or observation semantics change. Core51 owns schema32 and Quality68 owns interrupted-publication/reopen evidence; Mail UI67 and CLI42 consume the same responses. Fixture0/3 and protocol1 remain unchanged.

@@ -4,7 +4,7 @@ use rusqlite::params;
 use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
-    json!({"density":"comfortable","mail_date_grouping":"grouped","sync_every_minutes":1,"week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
+    json!({"density":"comfortable","mail_date_grouping":"grouped","message_format":"html","sync_every_minutes":1,"week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
         "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"default_reminder_minutes":15,"reminder_snooze_minutes":5,"calendar_display_time_zone":null,"calendar_account_visibility":"all","google_sync_limits":null,"google_sync_services":{},"notifications":"events","shortcuts":{},
         "blocked_hosts":[],"remote_images_from":[],"remote_proxy":{"enabled":false,"host":"","port":443,"username":""}})
 }
@@ -98,6 +98,7 @@ impl Store {
             &[
                 "density",
                 "mail_date_grouping",
+                "message_format",
                 "sync_every_minutes",
                 "week_start",
                 "calendar_start_hour",
@@ -203,6 +204,7 @@ impl Store {
         }
         for (key, allowed) in [
             ("mail_date_grouping", &["grouped", "plain"][..]),
+            ("message_format", &["html", "text"][..]),
             ("calendar_account_visibility", &["all", "current"][..]),
             ("theme", &["graphite", "paper", "terminal", "harbour"][..]),
             ("text_size", &["small", "default", "large"][..]),
@@ -805,6 +807,21 @@ mod appearance_tests {
         let saved = reopened.preferences().unwrap();
         assert_eq!(saved["preferences"]["mail_date_grouping"], "plain");
         assert!(reopened.handle("preferences_save", None, json!({"request_id":"bad-date-group","expected_revision":saved["revision"],"preferences":{"mail_date_grouping":true}})).is_err());
+    }
+
+    #[test]
+    fn message_format_is_one_shared_choice() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        let before = store.preferences().unwrap();
+        assert_eq!(before["preferences"]["message_format"], "html");
+        let request = json!({"request_id":"format","expected_revision":before["revision"],"preferences":{"message_format":"text"}});
+        let saved = store.handle("preferences_save", None, request).unwrap();
+        assert_eq!(
+            store.preferences().unwrap()["preferences"]["message_format"],
+            "text"
+        );
+        assert!(store.handle("preferences_save", None, json!({"request_id":"bad-format","expected_revision":saved["revision"],"preferences":{"message_format":"rich"}})).is_err());
     }
 
     #[test]

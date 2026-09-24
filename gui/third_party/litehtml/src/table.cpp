@@ -414,6 +414,34 @@ litehtml::pixel_t litehtml::table_grid::calc_table_width(pixel_t block_width, bo
                 }
             }
         }
+        // fuckMail: then shrink fixed-width columns toward their minimum, as
+        // browsers do, sharing the cut by how much each can give.
+        if(cur_width > block_width)
+        {
+            pixel_t room = 0_px;
+            for(int col = 0; col < m_cols_count; col++)
+            {
+                if(!m_columns[col].css_width.is_predefined() &&
+                   m_columns[col].css_width.units() != css_units_percentage)
+                {
+                    room += std::max(0_px, m_columns[col].width - m_columns[col].min_width);
+                }
+            }
+            if(room > 0_px)
+            {
+                const pixel_t cut = std::min(cur_width - block_width, room);
+                for(int col = 0; col < m_cols_count; col++)
+                {
+                    if(!m_columns[col].css_width.is_predefined() &&
+                       m_columns[col].css_width.units() != css_units_percentage)
+                    {
+                        const pixel_t give = std::max(0_px, m_columns[col].width - m_columns[col].min_width) * cut / room;
+                        m_columns[col].width -= give;
+                        cur_width            -= give;
+                    }
+                }
+            }
+        }
     }
     return cur_width;
 }

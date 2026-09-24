@@ -2,6 +2,9 @@
 //! blocked-domain list. Hosts are stored as reversed labels (`com.example.news`)
 //! so a `*.example.com` pattern is one index range. Counts cover every account.
 //!
+//! The same pass records each message's people (From, To and Cc), so a
+//! conversation row can say who else is on the thread.
+//!
 //! An engine background task indexes messages in rowid order, reading retained
 //! sources off the Store writer. Rows follow their message: deleting a message
 //! cascades to its link rows, and a re-inserted message gets a new rowid.
@@ -17,6 +20,9 @@ CREATE INDEX message_link_hosts_message ON message_link_hosts(message_rowid);
 CREATE TABLE link_index_state(singleton INTEGER PRIMARY KEY CHECK(singleton=1),indexed_rowid INTEGER NOT NULL) STRICT;";
 
 const MAX_HOSTS_PER_MESSAGE: usize = 200;
+const MAX_PEOPLE_PER_MESSAGE: usize = 100;
+/// Names listed for a conversation's other people.
+const MAX_OTHER_NAMES: usize = 12;
 const MAX_BATCH: i64 = 500;
 
 /// `news.example.com` → `com.example.news`.
@@ -26,12 +32,27 @@ pub fn reversed(host: &str) -> String {
 
 pub struct IndexPlan {
     blobs: BlobStore,
-    items: Vec<(i64, String, String)>,
+    items: Vec<IndexItem>,
+}
+
+struct IndexItem {
+    rowid: i64,
+    source_hash: String,
+    body: String,
+    /// From the message row, for a message whose source cannot be read.
+    stored_people: Vec<(String, String)>,
 }
 
 pub struct IndexedBatch {
-    rows: Vec<(i64, Vec<String>)>,
+    rows: Vec<IndexedMessage>,
     through: i64,
+}
+
+struct IndexedMessage {
+    rowid: i64,
+    hosts: Vec<String>,
+    /// Lowercase address and display name.
+    people: Vec<(String, String)>,
 }
 
 impl Store {
@@ -52,13 +73,21 @@ impl Store {
         let limit = limit.clamp(1, MAX_BATCH);
         let after = self.indexed_rowid()?;
         let mut statement = self.db.prepare(
-            "SELECT rowid,source_hash,body FROM messages WHERE rowid>?1 ORDER BY rowid LIMIT ?2",
+            "SELECT rowid,source_hash,body,sender_email,sender_name,recipient FROM messages WHERE rowid>?1 ORDER BY rowid LIMIT ?2",
         )?;
         let items = statement
             .query_map(params![after, limit], |r| {
-                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                Ok(IndexItem {
+                    rowid: r.get(0)?,
+                    source_hash: r.get(1)?,
+                    body: r.get(2)?,
+                    stored_people: vec![
+                        (r.get::<_, String>(3)?, r.get::<_, String>(4)?),
+                        (r.get::<_, String>(5)?, String::new()),
+                    ],
+                })
             })?
-            .collect::<rusqlite::Result<Vec<(i64, String, String)>>>()?;
+            .collect::<rusqlite::Result<Vec<_>>>()?;
         if items.is_empty() {
             return Ok(None);
         }
@@ -71,7 +100,12 @@ impl Store {
     pub fn link_index_finish(&self, batch: IndexedBatch) -> Result<usize> {
         let tx = self.db.unchecked_transaction()?;
         let mut indexed = 0;
-        for (rowid, hosts) in &batch.rows {
+        for IndexedMessage {
+            rowid,
+            hosts,
+            people,
+        } in &batch.rows
+        {
             let exists: bool = tx.query_row(
                 "SELECT EXISTS(SELECT 1 FROM messages WHERE rowid=?1)",
                 [rowid],
@@ -79,6 +113,16 @@ impl Store {
             )?;
             if !exists {
                 continue;
+            }
+            for (email, name) in people {
+                tx.execute(
+                    "INSERT INTO people(email,name) VALUES(?1,?2) ON CONFLICT(email) DO UPDATE SET name=excluded.name WHERE people.name='' AND excluded.name<>''",
+                    params![email, name],
+                )?;
+                tx.execute(
+                    "INSERT OR IGNORE INTO message_people(message_rowid,person) SELECT ?2,id FROM people WHERE email=?1",
+                    params![email, rowid],
+                )?;
             }
             for host in hosts {
                 let rhost = reversed(host);
@@ -132,6 +176,52 @@ impl Store {
         Ok(json!({"host":host,"messages":count,"complete":self.link_index_complete()?}))
     }
 
+    /// People on a conversation other than the account's own addresses,
+    /// `shown` (the row's sender) and no-reply mailboxes: how many, and up to
+    /// 12 names or addresses.
+    pub(crate) fn conversation_others(
+        &self,
+        account: &str,
+        conversation: &str,
+        shown: &str,
+    ) -> Result<(usize, Vec<String>)> {
+        let mut own = self
+            .db
+            .prepare_cached("SELECT email FROM accounts WHERE id=?1 UNION SELECT sender_email FROM messages WHERE account=?1 AND conversation_id=?2 AND sent=1")?
+            .query_map(params![account, conversation], |r| r.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        own.push(shown.to_owned());
+        let own: std::collections::HashSet<String> =
+            own.iter().map(|e| mailbox_identity(e)).collect();
+        let people = self
+            .db
+            .prepare_cached("SELECT p.email,p.name FROM messages m JOIN message_people mp ON mp.message_rowid=m.rowid JOIN people p ON p.id=mp.person WHERE m.account=?1 AND m.conversation_id=?2 GROUP BY p.id ORDER BY min(m.rowid),p.id")?
+            .query_map(params![account, conversation], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        let mut seen = std::collections::HashSet::new();
+        let others: Vec<(String, String)> = people
+            .into_iter()
+            .filter(|(email, _)| {
+                let identity = mailbox_identity(email);
+                !own.contains(&identity) && !automated(&identity) && seen.insert(identity)
+            })
+            .collect();
+        let names = others
+            .iter()
+            .take(MAX_OTHER_NAMES)
+            .map(|(email, name)| {
+                if name.trim().is_empty() {
+                    email.clone()
+                } else {
+                    name.trim().to_owned()
+                }
+            })
+            .collect();
+        Ok((others.len(), names))
+    }
+
     /// Messages linking to each blocked pattern, for the Settings list.
     pub(crate) fn link_pattern_counts(&self, request: &Value) -> Result<Value> {
         fields(request, &["patterns"])?;
@@ -175,28 +265,80 @@ impl Store {
 pub fn link_index_prepare(plan: IndexPlan, cancel: &CancellationToken) -> Result<IndexedBatch> {
     let mut rows = Vec::with_capacity(plan.items.len());
     let mut through = 0;
-    for (rowid, hash, body) in plan.items {
+    for item in plan.items {
         if cancel.is_cancelled() {
             break;
         }
-        let html = crate::local_content::read_source(&plan.blobs, &hash)
-            .ok()
-            .and_then(|bytes| {
-                let parsed = mail_parser::MessageParser::default().parse(&bytes)?;
-                fm_mail::html_view::html_part(&parsed).map(str::to_owned)
-            });
-        let hosts: Vec<String> = fm_mail::html_view::link_hosts(html.as_deref(), &body)
+        let source = crate::local_content::read_source(&plan.blobs, &item.source_hash).ok();
+        let parsed = source
+            .as_deref()
+            .and_then(|bytes| mail_parser::MessageParser::default().parse(bytes));
+        let html = parsed
+            .as_ref()
+            .and_then(|parsed| fm_mail::html_view::html_part(parsed).map(str::to_owned));
+        let hosts: Vec<String> = fm_mail::html_view::link_hosts(html.as_deref(), &item.body)
             .into_iter()
             .filter(|h| h.len() <= 253 && !h.is_empty())
             .take(MAX_HOSTS_PER_MESSAGE)
             .collect();
-        rows.push((rowid, hosts));
-        through = rowid;
+        let people = match &parsed {
+            Some(parsed) => [parsed.from(), parsed.to(), parsed.cc()]
+                .into_iter()
+                .flatten()
+                .flat_map(|list| list.iter())
+                .filter_map(|a| Some((a.address()?.to_owned(), a.name().unwrap_or("").to_owned())))
+                .collect(),
+            None => item.stored_people,
+        };
+        let mut seen = std::collections::HashSet::new();
+        let people = people
+            .into_iter()
+            .filter_map(|(email, name)| {
+                let email = email.trim().to_ascii_lowercase();
+                let valid = !email.is_empty() && email.len() <= 320 && email.contains('@');
+                let name: String = name.trim().chars().take(200).collect();
+                (valid && seen.insert(email.clone())).then_some((email, name))
+            })
+            .take(MAX_PEOPLE_PER_MESSAGE)
+            .collect();
+        rows.push(IndexedMessage {
+            rowid: item.rowid,
+            hosts,
+            people,
+        });
+        through = item.rowid;
     }
     if rows.is_empty() {
         return Err(err("cancelled", "Link indexing stopped"));
     }
     Ok(IndexedBatch { rows, through })
+}
+
+/// One mailbox however it is written: lowercase, without a `+tag`, and for
+/// Gmail without dots, so `Me+shop@gmail.com` and `m.e@googlemail.com` are `me@gmail.com`.
+fn mailbox_identity(address: &str) -> String {
+    let address = address.trim().to_ascii_lowercase();
+    let Some((local, domain)) = address.rsplit_once('@') else {
+        return address;
+    };
+    let local = local.split('+').next().unwrap_or(local);
+    if matches!(domain, "gmail.com" | "googlemail.com") {
+        return format!("{}@gmail.com", local.replace('.', ""));
+    }
+    format!("{local}@{domain}")
+}
+
+/// A mailbox that is no one's inbox, such as GitHub's `subscribed@noreply.github.com`.
+fn automated(identity: &str) -> bool {
+    [
+        "noreply",
+        "no-reply",
+        "donotreply",
+        "do-not-reply",
+        "mailer-daemon",
+    ]
+    .iter()
+    .any(|marker| identity.contains(marker))
 }
 
 #[cfg(test)]
@@ -320,5 +462,63 @@ mod tests {
                 .unwrap()["messages"],
             2
         );
+    }
+
+    #[test]
+    fn conversation_others_leave_out_the_account_and_the_shown_sender() {
+        assert_eq!(mailbox_identity(" M.E+shop@GoogleMail.com"), "me@gmail.com");
+        assert_eq!(mailbox_identity("a.b+x@example.com"), "a.b@example.com");
+        let temp = tempfile::tempdir().unwrap();
+        let store = Store::open(temp.path()).unwrap();
+        let (account, conversation, own): (String, String, String) = store
+            .db
+            .query_row(
+                "SELECT m.account,m.conversation_id,a.email FROM messages m JOIN accounts a ON a.id=m.account ORDER BY m.rowid LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        let ids: Vec<String> = store
+            .db
+            .prepare(
+                "SELECT id FROM messages WHERE account=?1 AND conversation_id=?2 ORDER BY rowid",
+            )
+            .unwrap()
+            .query_map(params![account, conversation], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let (local, domain) = own.split_once('@').unwrap();
+        let first = format!("From: Ann <ann@example.com>\r\nTo: {own}, {local}+alias@{domain}, Bob <BOB@example.com>\r\nCc: carol@example.com, bob+list@example.com, Subscribed <subscribed@noreply.github.com>\r\n\r\nhi");
+        let hash = store.stage_blob(first.as_bytes()).unwrap();
+        store
+            .db
+            .execute(
+                "UPDATE messages SET source_hash=?1,sent=0 WHERE account=?2 AND conversation_id=?3",
+                params![hash, account, conversation],
+            )
+            .unwrap();
+        if let Some(last) = ids.get(1) {
+            let reply = b"From: bob@example.com\r\nTo: ann@example.com, dan@example.com\r\n\r\nre";
+            let hash = store.stage_blob(reply).unwrap();
+            store
+                .db
+                .execute(
+                    "UPDATE messages SET source_hash=?1 WHERE account=?2 AND id=?3",
+                    params![hash, account, last],
+                )
+                .unwrap();
+        }
+        index_all(&store);
+        let (count, names) = store
+            .conversation_others(&account, &conversation, "Ann@Example.com")
+            .unwrap();
+        let expected: &[&str] = if ids.len() > 1 {
+            &["Bob", "carol@example.com", "dan@example.com"]
+        } else {
+            &["Bob", "carol@example.com"]
+        };
+        assert_eq!(count, expected.len());
+        assert_eq!(names, expected);
     }
 }

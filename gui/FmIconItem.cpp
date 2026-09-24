@@ -145,6 +145,7 @@ bool draw(const QString &name, Sketch &c) {
         c.cubicTo(5.2,5.5,6.5,4.5,8,4.5); c.path.closeSubpath();
         return false;
     }
+    else if (n == "thread") { c.moveTo(2.5,4.5); c.svgArc(1.5,false,true,4,3); c.lineTo(12,3); c.svgArc(1.5,false,true,13.5,4.5); c.lineTo(13.5,9.5); c.svgArc(1.5,false,true,12,11); c.lineTo(7,11); c.lineTo(4,13.5); c.lineTo(4,11); c.svgArc(1.5,false,true,2.5,9.5); c.path.closeSubpath(); }
     else if (n == "attachment") { c.moveTo(5,10); c.lineTo(10,5); c.cubicTo(13,2,16,5,13,8); c.lineTo(7,14); c.cubicTo(3,18,-1,12,3,8); c.lineTo(9,2); }
     return true;
 }

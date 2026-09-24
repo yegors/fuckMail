@@ -362,6 +362,9 @@ if(BUILD_TESTING)
     target_link_libraries(gui-html-view-test PRIVATE Qt6::Quick Qt6::Test)
     add_test(NAME gui-html-view COMMAND gui-html-view-test)
     set_tests_properties(gui-html-view PROPERTIES TIMEOUT 60 ENVIRONMENT "${FM_CONTROLS_TEST_ENV}")
+    # Developer tool for rendering a local corpus of sanitised messages; not a test.
+    add_executable(fm-html-probe HtmlProbe.cpp)
+    target_link_libraries(fm-html-probe PRIVATE fm-gui-html Qt6::Gui)
 endif()
 
 if(BUILD_TESTING)

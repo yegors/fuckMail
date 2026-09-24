@@ -23,13 +23,16 @@ fn permitted(event: &Value) -> bool {
         })
 }
 fn bounded<'a>(p: &'a Value, key: &str, max: usize) -> Result<&'a str> {
-    string(p, key).and_then(|v| {
-        if v.is_empty() || v.len() > max || v.chars().any(char::is_control) {
-            Err(err("invalid_request", "Invalid reminder identity"))
-        } else {
-            Ok(v)
-        }
-    })
+    p[key]
+        .as_str()
+        .ok_or_else(|| err("invalid_request", "Missing string parameter"))
+        .and_then(|v| {
+            if v.is_empty() || v.len() > max || v.chars().any(char::is_control) {
+                Err(err("invalid_request", "Invalid reminder identity"))
+            } else {
+                Ok(v)
+            }
+        })
 }
 fn start_instant(event: &Value, window: &fm_calendar::Window) -> Result<Option<DateTime<Utc>>> {
     let start = string(event, "start")?;
@@ -120,7 +123,7 @@ impl Store {
             let start = string(event, "start")?;
             let receipt: Option<(String,i64)> = self.db.query_row(
                 "SELECT state,recorded_at FROM calendar_reminder_receipts WHERE account=?1 AND calendar_id=?2 AND occurrence_id=?3 AND start=?4",
-                params![string(event,"account")?,string(event,"calendar_id")?,string(event,"id")?,start], |r|Ok((r.get(0)?,r.get(1)?))).optional()?;
+                params![string(event,"account")?,bounded(event,"calendar_id",1024)?,bounded(event,"id",8192)?,start], |r|Ok((r.get(0)?,r.get(1)?))).optional()?;
             if receipt
                 .as_ref()
                 .is_some_and(|(state, _)| state == "dismissed")

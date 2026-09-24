@@ -961,3 +961,64 @@ The founder asked for the [HTML reader plan](plans/html-reader.md) to be impleme
 - Checks with real newsletters and a real proxy.
 
 No test used a real mailbox, the real internet or a real proxy. Core57/Mail UI74/CLI44/Platform19/Quality75 with schema34; Search7, Calendar30, fixtures0/3, protocol1 and readiness0/9 unchanged. [Execution record](research/html-mail.md#d105--html-reader-implementation-2026-09-24).
+
+## D106 — developer console and reminder identity fix (2026-09-24T06:25:00Z)
+
+The founder requested a large centered, minimalist console, fewer logical scopes, reliable default tailing that stops while reading history, and a fix for repeated `calendar_reminders` invalid-identifier errors. The console uses five groups: Mail (including drafts, sending and search), Calendar, Sync (including authentication and account connections), Model and App (including settings, IPC infrastructure and Qt). It occupies the window with a 32 px margin, uses aligned event rows and exposes complete selectable metadata on row selection. New rows append with stable sequence identities; scrolling up stops following, reaching the end or Jump to latest resumes it. Retained event identity and viewport offset survive front eviction. Reopening and filter changes start at the latest matching event. The existing redaction, explicit field projections and approximately 10 MiB disk-log budget remain.
+
+Reminder polling and acknowledgements now apply the existing 1,024-byte calendar and 8,192-byte occurrence identity bounds directly. The generic 256-byte string helper was incorrectly rejecting valid provider/serialized occurrence identities every poll. No errors are hidden or rate-limited by this fix. Core58/Calendar31/Mail UI75/Quality76; no schema, fixture or protocol changes from this packet. Readiness remains 0/9. [Execution record](research/local-assistance-execution.md#d106--console-viewer-and-reminder-identity-2026-09-24).
+
+## D107 — sixth export list details, HTML fixes and one HTML/Text choice (2026-09-24T08:02:34Z)
+
+The founder supplied a sixth prototype export and asked for its list changes. They also reported HTML messages that render badly (RDSC) or not at all (Amazon), summaries that do not replace the list preview, and HTML markup in that preview. They asked that the HTML or Text choice apply to every message, and allowed reading their actual mailbox to check that every message renders, renders quickly and keeps the UI responsive.
+
+**List rows**
+- A muted "+N" after the sender name counts the other people on the conversation. It counts senders and To/Cc recipients of every message. It leaves out the account's own addresses, the sender shown and no-reply mailboxes, and hides at zero. Hovering lists the names. Plus-tags, and dots in Gmail addresses, count as the same mailbox.
+- Thread and attachment counts share one style, told apart by icon:
+  - a speech bubble with the message count, only above one;
+  - a paperclip with the attachment count;
+  - 11 px, muted, tabular numbers, no border;
+  - hover text "N messages in this thread" and "N attachments in this thread".
+- Previews are readable text. HTML source becomes its text, including HTML sent as a text/plain part. Web addresses go with their lead-ins, brackets and leftover punctuation.
+- A current summary replaces the preview even when it is partial, that is, when its input was shortened to fit the model. The reader still labels it Partial. Long messages are always partial, so their summaries never reached the list. This supersedes Local assistance's rule that a partial summary cannot replace the preview. Stale summaries and other messages' summaries still cannot.
+
+**Reader**
+- Plain text fills the message column, without the earlier line-length limit.
+- HTML or Text is one saved preference, `message_format` (`html` by default), shared by the GUI and CLI. Switching it in any message switches every message and survives restarts. This supersedes D105's per-message choice.
+
+**HTML rendering**
+- **Amazon:** its nested tables took 11–13 s to lay out, so the message never appeared. litehtml now reuses width measurements within one render, so layout takes 5 ms. Price superscripts no longer drift down with each re-layout.
+- **RDSC:**
+  - Fixed-width table columns shrink to fit, as in Chromium, instead of widening the table and scaling the message down.
+  - Images sized only by height stay inside their column.
+  - Layout falls from 43 ms to 2 ms. Height is 2,897 px against Chromium's 2,742.
+- **Other layout fixes:**
+  - Media-query breakpoints keep attribute styles (`width`, `align`, `bgcolor`) and CSS tables.
+  - A percentage height inside an auto height computes to auto.
+  - Long unbroken runs and preformatted text wrap instead of scaling the message.
+- **Sanitiser version 4:**
+  - A message that is only quoted history shows the quote rather than nothing.
+  - The first non-empty HTML part is used. This includes a text/html part outside the parser's HTML body, such as a digest part or one with an unknown transfer encoding.
+  - Cached views are rebuilt.
+
+**Storage.** Schema35 adds `people` and `message_people`, filled by the existing link-index pass, which starts over once after the upgrade. The founder's real profile is now at schema35; its schema34 copy remains beside it as `store-schema34-backup.sqlite3`.
+
+**Real-mailbox check.** The check was read-only:
+- It used `mail list`, `mail html` and offscreen captures, and opened no unread conversation.
+- Copies stayed in the session scratchpad and were deleted afterwards.
+
+It covered 515 HTML messages from two accounts:
+- All render with text.
+- One, a row of three 323 px images, scales to 0.85.
+- Sanitising takes a median 0.9 ms (maximum 5 ms).
+- Parse plus layout takes a median 5 ms, p95 58 ms and p99 93 ms, all on the worker thread. The maximum is 771 ms, for a 924 KB message.
+- First-screen paint p95 is 11 ms.
+- All 515 were compared with Chromium layout. The remaining differences are image placeholders, the intentional `pre` wrapping and font metrics.
+
+**Still open**
+- Existing messages whose stored text came from an empty part keep an empty preview until they are imported again.
+- Bulk remote images were not compared.
+- Mac and Linux builds.
+- The founder's fidelity review.
+
+Core59/Local assistance22/Mail UI76/CLI45/Quality77 with schema35; Search7, Calendar31, fixtures0/3, protocol1 and readiness0/9 unchanged. [Execution record](research/html-mail.md#d107--sixth-export-list-and-html-fixes-2026-09-24).

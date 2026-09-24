@@ -160,6 +160,11 @@ fn quoted_history_is_removed_unless_forwarded() {
     let forward = r##"<p>FYI</p>---------- Forwarded message ---------<blockquote type="cite">Original</blockquote>"##;
     let view = sanitize(forward).unwrap();
     assert!(!view.quote_removed && view.html.contains("Original"));
+    // A message that is all quote shows the quote rather than nothing.
+    let only_quote =
+        "<div>\u{a0}\u{200b}<br></div><div class=\"gmail_quote\"><p>Dear A, the details</p></div>";
+    let view = sanitize(only_quote).unwrap();
+    assert!(!view.quote_removed && view.html.contains("Dear A, the details"));
 }
 
 #[test]
@@ -241,6 +246,21 @@ fn text_links_trim_sentence_punctuation() {
 }
 
 #[test]
+fn html_outside_the_html_body_is_still_found() {
+    // The real part has an unknown transfer encoding, so the parser reads it
+    // as text; only the empty part is in the HTML body.
+    let raw = "MIME-Version: 1.0\r\nContent-Type: multipart/digest; boundary=b\r\n\r\n--b\r\nContent-Type: text/html\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n--b\r\nContent-Type: text/html;charset=utf-8\r\nContent-Transfer-Encoding: amazonses\r\n\r\n<center><p>Billing notice</p></center>\r\n--b--\r\n";
+    let message = mail_parser::MessageParser::default()
+        .parse(raw.as_bytes())
+        .unwrap();
+    assert!(html_part(&message).unwrap().contains("Billing notice"));
+    assert_eq!(
+        crate::extract_incoming_text(raw.as_bytes()).unwrap().trim(),
+        "Billing notice"
+    );
+}
+
+#[test]
 fn plain_only_mail_has_no_html_part() {
     let plain = b"Content-Type: text/plain\r\n\r\nhello";
     let parsed = mail_parser::MessageParser::default()
@@ -256,6 +276,11 @@ fn plain_only_mail_has_no_html_part() {
         .parse(&html[..])
         .unwrap();
     assert_eq!(html_part(&parsed), Some("<p>hello</p>"));
+    let empty_first = b"Content-Type: multipart/digest; boundary=\"b\"\r\n\r\n--b\r\nContent-Type: text/html\r\n\r\n\r\n--b\r\nContent-Type: text/html\r\n\r\n<p>real</p>\r\n--b--\r\n";
+    let parsed = mail_parser::MessageParser::default()
+        .parse(&empty_first[..])
+        .unwrap();
+    assert_eq!(html_part(&parsed).map(str::trim), Some("<p>real</p>"));
 }
 
 #[test]
@@ -301,4 +326,62 @@ fn block_patterns_follow_the_prototype_rules() {
         Some("*.doubleclick.net")
     );
     assert_eq!(blocked_by(patterns, "notdoubleclick.net"), None);
+}
+
+#[test]
+fn legacy_align_centers_nested_tables_like_browsers() {
+    let html = sanitize(
+        r#"<table><tr><td align="center"><table id="a"><tr><td><table id="b"><tr><td>x</td></tr></table></td></tr></table>
+        <div id="c" style="width:200px">y</div><table id="d" style="margin:0">z</table>
+        <table id="e" align="left"><tr><td>e</td></tr></table></td>
+        <td align="center" style="text-align:center"><table id="f"><tr><td>f</td></tr></table></td>
+        <td align="right"><table id="g"><tr><td>g</td></tr></table></td></tr></table>
+        <center><table id="h"><tr><td>h</td></tr></table></center>"#,
+    )
+    .unwrap()
+    .html;
+    let tag = |id: &str| {
+        let start = html.find(&format!("id=\"{id}\"")).unwrap();
+        let open = html[..start].rfind('<').unwrap();
+        html[open..open + html[open..].find('>').unwrap()].to_owned()
+    };
+    for id in ["a", "b", "c", "h"] {
+        assert!(
+            tag(id).contains("margin-left:auto;margin-right:auto"),
+            "{id}: {}",
+            tag(id)
+        );
+    }
+    // Own margins or align win; an explicit text-align stops the inherited centering.
+    for id in ["d", "e", "f"] {
+        assert!(!tag(id).contains("margin-left:auto"), "{id}: {}", tag(id));
+    }
+    assert!(tag("g").contains("margin-left:auto") && !tag("g").contains("margin-right:auto"));
+}
+
+#[test]
+fn fixed_layout_tables_share_widthless_columns() {
+    let html = sanitize(
+        r#"<table style="table-layout:fixed;width:100%"><tr><td class="x">a</td><td class="y" colspan="2">b</td></tr></table>
+        <table style="table-layout:fixed;width:100%"><tr><td class="z" width="100">c</td><td class="w">d</td></tr></table>
+        <table style="width:100%"><tr><td class="v">e</td></tr></table>"#,
+    )
+    .unwrap()
+    .html;
+    assert!(
+        html.contains(r#"class="x" style="width:33.333%""#),
+        "{html}"
+    );
+    assert!(
+        html.contains(r#"class="y" colspan="2" style="width:66.667%""#),
+        "{html}"
+    );
+    // A first row that sizes itself, or an automatic layout, is left alone.
+    for class in ["z", "w", "v"] {
+        let start = html.find(&format!("class=\"{class}\"")).unwrap();
+        assert!(
+            !html[start..start + 40].contains("style"),
+            "{class}: {html}"
+        );
+    }
 }

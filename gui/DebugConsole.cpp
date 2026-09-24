@@ -32,27 +32,30 @@ QString json(const QVariantMap &map, bool pretty = false) {
     return QString::fromUtf8(QJsonDocument::fromVariant(map).toJson(pretty ? QJsonDocument::Indented : QJsonDocument::Compact)).trimmed();
 }
 constexpr qint64 logSegmentBytes = 2560 * 1024; // GUI and engine, current and previous: 10 MiB total.
+QString groupedScope(const QString &scope) {
+    if (QStringList{"Mail", "Drafts", "Sending", "Search"}.contains(scope)) return "Mail";
+    if (QStringList{"Sync", "Auth", "Accounts"}.contains(scope)) return "Sync";
+    if (scope == "Calendar" || scope == "Model") return scope;
+    return "App";
+}
 QString scopeFor(const QString &source, const QVariantMap &fields) {
     if (source.compare("IPC", Qt::CaseInsensitive) == 0) {
         const auto method = fields.value("method").toString();
         if (method.startsWith("assist_")) return "Model";
-        if (method.startsWith("calendar_")) return "Calendar";
-        if (method.startsWith("google_auth_") || method == "google_disconnect") return "Auth";
-        if (method.startsWith("google_sync_") || method == "google_labels" || method == "google_mail_mutation_status") return "Sync";
-        if (method.startsWith("google_draft") || method.startsWith("draft_") || method == "drafts" || method == "capture_history") return "Drafts";
-        if (method.startsWith("google_send") || method.startsWith("google_sent") || method.startsWith("send_") || method == "mail_undo") return "Sending";
-        if (method.startsWith("account_")) return "Accounts";
-        if (method.startsWith("preferences_") || method.startsWith("view_")) return "Settings";
-        if (method.startsWith("search_") || method == "search_senders") return "Search";
-        if (method == "conversations" || method == "conversation" || method == "message_source" || method == "attachment" || method == "sender_summary" || method == "categories") return "Mail";
-        return "IPC";
+        if (method.startsWith("calendar_") || method.startsWith("google_calendar_")) return "Calendar";
+        if (method.startsWith("google_auth_") || method == "google_disconnect" || method.startsWith("account_") || method == "accounts") return "Sync";
+        if (method.startsWith("google_sync_") || method.startsWith("google_labels") || method == "google_mail_mutation_status") return "Sync";
+        if (method.startsWith("google_draft") || method.startsWith("draft_") || method == "drafts" || method == "capture_history") return "Mail";
+        if (method.startsWith("google_send") || method.startsWith("google_sent") || method.startsWith("send_") || method.startsWith("mail_")) return "Mail";
+        if (method.startsWith("search_")) return "Mail";
+        if (method.startsWith("conversation") || method.startsWith("message_") || method.startsWith("attachment")
+            || method.startsWith("recipient_") || method.startsWith("sender_") || method.startsWith("category_")
+            || method.startsWith("google_category_") || method.startsWith("link_") || method == "remote_image_cache" || method == "categories") return "Mail";
+        return "App";
     }
     if (source.compare("local model", Qt::CaseInsensitive) == 0 || source.compare("model", Qt::CaseInsensitive) == 0) return "Model";
-    if (source.compare("sync", Qt::CaseInsensitive) == 0) return "Sync";
-    if (source.compare("auth", Qt::CaseInsensitive) == 0) return "Auth";
-    if (source.compare("Qt", Qt::CaseInsensitive) == 0) return "Qt";
-    if (source.compare("app", Qt::CaseInsensitive) == 0) return "App";
-    return "Other";
+    if (source.compare("sync", Qt::CaseInsensitive) == 0 || source.compare("auth", Qt::CaseInsensitive) == 0) return "Sync";
+    return groupedScope(source);
 }
 void writeBounded(const QString &directory, const QString &name, const QByteArray &line) {
     if (directory.isEmpty()) return;
@@ -160,15 +163,19 @@ void DebugConsole::record(const QString &level, const QString &source, const QSt
     const auto safe = pick(fields, {"method", "request_ref", "phase", "code", "elapsed_ms", "retry_after_secs", "queued", "category", "status", "task", "completed", "total", "failed"});
     const auto severity = QStringList{"DEBUG", "INFO", "WARN", "ERROR"}.contains(level) ? level : "INFO";
     const auto scope = scopeFor(source, safe);
-    const auto line = QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs) + "  " + severity + "  "
-        + scope + "  " + scrub(source).left(40) + "  " + scrub(message) + (safe.isEmpty() ? QString{} : "  " + json(safe));
-    append(severity, scope, line.left(2048), true);
+    append(severity, scope, QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs), scrub(source).left(40), scrub(message), safe, true);
 }
-void DebugConsole::append(const QString &level, const QString &scope, const QString &line, bool persist) {
+void DebugConsole::append(const QString &level, const QString &scope, const QString &at, const QString &source,
+    const QString &message, const QVariantMap &fields, bool persist) {
+    const auto detail = fields.isEmpty() ? QString{} : json(fields);
+    const auto line = (at + "  " + level + "  " + scope + "  " + source + "  " + message
+        + (detail.isEmpty() ? QString{} : "  " + detail)).left(2048);
     QMutexLocker lock(&m_mutex);
     if (m_entries.size() >= 1000) { m_entries.pop_front(); ++m_dropped; }
-    m_entries.push_back({level, scope, line.left(2048)}); m_dirty = true;
-    if (persist) writeBounded(m_logDirectory, "gui.log", (line.left(2048) + '\n').toUtf8());
+    m_entries.push_back({level, scope, line, {{"sequence", QString::number(++m_sequence)}, {"at", at},
+        {"level", level}, {"scope", scope}, {"source", source}, {"message", message}, {"details", detail}, {"line", line}}});
+    m_dirty = true;
+    if (persist) writeBounded(m_logDirectory, "gui.log", (line + '\n').toUtf8());
 }
 void DebugConsole::readEngineLog() {
     QString directory;
@@ -193,8 +200,9 @@ void DebugConsole::readEngineLog() {
         m_enginePartial.remove(0, end + 1);
         QJsonParseError error;
         const auto event = QJsonDocument::fromJson(line, &error).object();
-        const auto scope = event.value("scope").toString();
-        if (error.error != QJsonParseError::NoError || !QStringList{"App", "IPC", "Sync", "Auth", "Model", "Calendar", "Mail", "Drafts", "Sending", "Accounts", "Settings", "Search", "Other"}.contains(scope)) continue;
+        const auto rawScope = event.value("scope").toString();
+        if (error.error != QJsonParseError::NoError || !QStringList{"App", "IPC", "Sync", "Auth", "Model", "Calendar", "Mail", "Drafts", "Sending", "Accounts", "Settings", "Search", "Other"}.contains(rawScope)) continue;
+        const auto scope = groupedScope(rawScope);
         const auto rawLevel = event.value("level").toString();
         const auto level = QStringList{"DEBUG", "INFO", "WARN", "ERROR"}.contains(rawLevel) ? rawLevel : "INFO";
         const auto rawFields = event.value("fields").toObject().toVariantMap();
@@ -206,9 +214,7 @@ void DebugConsole::readEngineLog() {
         QVariantList categoryIds;
         for (const auto &id : rawFields.value("category_ids").toList().mid(0, 3)) categoryIds.append(scrub(id.toString()).left(80));
         if (!categoryIds.isEmpty()) fields["category_ids"] = categoryIds;
-        const auto display = scrub(event.value("at").toString()) + "  " + level + "  " + scope + "  engine  "
-            + scrub(event.value("event").toString()) + (fields.isEmpty() ? QString{} : "  " + json(fields));
-        append(level, scope, display, false);
+        append(level, scope, scrub(event.value("at").toString()), "engine", scrub(event.value("event").toString()), fields, false);
     }
     if (m_enginePartial.size() > 4096) m_enginePartial.clear();
 }
@@ -297,13 +303,18 @@ QString DebugConsole::stateText() const { return json(m_state, true); }
 int DebugConsole::count() const { QMutexLocker lock(&m_mutex); return int(m_entries.size()); }
 qulonglong DebugConsole::dropped() const { QMutexLocker lock(&m_mutex); return m_dropped; }
 QString DebugConsole::events(const QString &level, const QString &filter, const QString &scope) const {
-    QMutexLocker lock(&m_mutex);
     QStringList lines;
+    for (const auto &row : eventRows(level, filter, scope)) lines.append(row.toMap().value("line").toString());
+    return lines.join('\n');
+}
+QVariantList DebugConsole::eventRows(const QString &level, const QString &filter, const QString &scope) const {
+    QMutexLocker lock(&m_mutex);
+    QVariantList rows;
     for (const auto &entry : m_entries)
         if ((scope.isEmpty() || scope == "All" || entry.scope == scope)
             && (level.isEmpty() || level == "All" || entry.level == level || (level == "Warnings + errors" && (entry.level == "WARN" || entry.level == "ERROR")))
-            && (filter.isEmpty() || entry.line.contains(filter, Qt::CaseInsensitive))) lines.append(entry.line);
-    return lines.join('\n');
+            && (filter.isEmpty() || entry.line.contains(filter, Qt::CaseInsensitive))) rows.append(entry.row);
+    return rows;
 }
 QString DebugConsole::report() const {
     return "fuckMail debug report v1\nCaptured: " + QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)

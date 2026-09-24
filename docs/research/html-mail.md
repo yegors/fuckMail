@@ -85,3 +85,73 @@ This records [D105](../decisions.md): H0–H5 of the [HTML reader plan](../plans
 - **H1 checks:** cargo-fuzz and libFuzzer/ASan runs, the litehtml differential tree check, the founder's fidelity review of real newsletters, and Mac and Linux builds.
 - **Real services:** a real HTTPS proxy, and a Mac Keychain refusal of the proxy password.
 - **First visit:** a message's first HTML visit still appears after the IPC round trip and the worker layout.
+
+## D107 — sixth export list and HTML fixes (2026-09-24)
+
+This records [D107](../decisions.md). It ran on one Windows 11 host with Qt 6.11.2 (MSVC) and the Rust workspace.
+
+The founder authorized reading their actual mailbox. Only these touched it:
+- read-only CLI calls: `mail list --json` and `mail html`;
+- offscreen captures of the real profile that opened no unread conversation.
+
+Message copies lived in the session's temporary scratchpad and were deleted afterwards. None are in Git, and this record gives no message content.
+
+**Method**
+- **Corpus:** every cached message with an HTML part, 515 in all: 111 from one account and 404 from the other. The original HTML was used where it was exported, and otherwise the engine's `mail html` output. All of it went through the current sanitiser.
+- **Probe:** `fm-html-probe` (`gui/HtmlProbe.cpp`, built with the GUI) runs the reader's `HtmlDocument` on each message. It parses, lays out at 720 px and paints the first 2,400 px, reporting times, size, scale and painted text.
+- **Chromium:** the same files were measured in Chromium, in a 720 px iframe tall enough to avoid scrollbars.
+- **Reduction:** automatic reducers shrank each fault's message while the fault persisted. Every fix has a synthetic regression test shaped like the reduced case, not the mail.
+
+**Faults found and fixed**
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| Amazon order mail never appears | Nested tables re-measured exponentially: 11.3 s layout in Release, 13 s in the app | Width measurements are reused within one render: 5 ms |
+| Amazon prices paint about 245 px low | `position:relative` on an inline box added 2 px per re-layout, about 150 times | The shift is applied from zero |
+| RDSC scaled down, images off-centre | Declared cell widths forced the table wider than the column | Cells shrink to their content minimum, as in Chromium. Layout 43 → 2 ms; height 2,897 px against Chromium's 2,742 |
+| GitHub notifications scaled to about 60% | Long unbroken runs (URLs, hashes) and unwrapped `pre` log lines set the minimum width | Break points after `/`, `-`, `?`, `&`, `=`, `\|` and `\`, and every 30 characters in runs over 60. `pre` wraps unless the sender's CSS says otherwise |
+| Amex laid out at about 1,440 px and scaled | Attribute styles were lost when a media query flipped between the 600 px first pass and 720 px; a blocked image sized only by height was drawn four times as wide | Restyling starts from the recorded base styles; height-only images stay inside their column, keeping their shape |
+| Two store messages nearly blank; another took 448 ms to lay out | The same media-query flip rebuilt CSS tables without their content and kept stale render items | The render tree is rebuilt with the base styles: content returns, 448 → 12 ms |
+| Very tall blank areas | Percentage heights resolved against the viewport | They compute to auto inside an auto height |
+| Replies with only quoted history render empty | The sanitiser removed the quote, leaving nothing | The quote stays when nothing else is visible |
+| Digest mail empty | The first HTML part is empty | The first non-empty part is used |
+| Five phishing messages empty | The real part declared the transfer encoding `amazonses`; mail-parser read it as text, outside the HTML body | Any part labelled `text/html` is considered (sanitiser version 4) |
+
+**List fixes, found by scanning `mail list --json`:**
+
+| Check | Before | After |
+| --- | --- | --- |
+| Markup or web addresses in previews | 3 of 66 and 16 of 600 previews | 0 |
+| Other remaining finds | — | One preview quotes a sender's `<address>`, which is text, not markup |
+| "+N" noise from own and no-reply mailboxes | Plus-tagged own address; GitHub `noreply` | Plus-tags and Gmail dots fold into one mailbox; no-reply mailboxes are excluded |
+| Spam recipient `me@aol.com` on 163 spam threads | — | Kept: a real listed recipient |
+
+**Final results, Release build**
+
+| Measure | Result |
+| --- | --- |
+| Messages rendered with painted text | 515 of 515; none invalid |
+| Scaled below 1.0 | 1: a row of three 323 px images, at 0.85 |
+| Sanitising | Median 0.8 and 0.9 ms by account, maximum 5.1 ms |
+| Parse plus layout | Median 5 ms, p95 58 ms, p99 93 ms. Maximum 771 ms (616 + 155) for a 924 KB message. All on the worker thread. |
+| First-screen paint | Median 2 ms, p95 11 ms, maximum 29 ms |
+| Chromium comparison | Remaining width and height differences are blocked-image placeholders (Chromium draws large broken-image boxes), intentional `pre` wrapping and font metrics |
+| Real list capture | "+N" only where another person is on the thread; summaries in place of previews; thread and attachment counts beside the subject |
+
+**Tests**
+
+| Check | Result |
+| --- | --- |
+| `cargo test -p fm-core -p fm-mail -p fm-engine -p fm-cli` | 618 passed, 4 ignored, 0 failed |
+| `cargo clippy -p fm-core -p fm-mail --all-targets -- -D warnings` | Clean |
+| `cargo fmt --check` | This packet's files are formatted. Earlier packets' hunks in `fm-engine` (`google_sync`, `local_model`, `ollama`) still differ. |
+| Release GUI suite | 29/29 in 18.8 s. `gui-html-view` passes 54 checks, 9 of them new; `gui-html-message-body` passes 43. |
+| Debug GUI suite | 29/29 after the last GUI change |
+
+**Profile.** The engine upgraded the founder's real profile to schema35. The schema34 store remains beside it as `store-schema34-backup.sqlite3`.
+
+**Not done and still open**
+- Messages already imported with an empty text part keep an empty preview until they are imported again. This affects only the five phishing messages found.
+- Bulk remote images were not loaded or compared.
+- The founder's visual review, and Mac and Linux builds.
+- The full workspace `cargo test` and clippy runs.
