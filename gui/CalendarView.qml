@@ -198,7 +198,8 @@ Item {
     property var dayEventRequest: null
     function showEventInDay(event) {
         if (!event || !event.id) return
-        const date = event.date || backend.todayDate
+        // Core rows (an invitation email's event) carry no layout date.
+        const date = event.date || (backend.calendarDayOf !== undefined ? backend.calendarDayOf(event.start || "") : "") || backend.todayDate
         cancelRange(); details.close(); allDayOverflow.close()
         dayEventRequest = {event: event, date: date, at: Date.now()}
         if (backend.openCalendarDay !== undefined) backend.openCalendarDay(date)

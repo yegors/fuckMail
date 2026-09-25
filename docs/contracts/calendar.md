@@ -2,6 +2,22 @@
 
 
 
+## D127 — guest answers, meeting URL, answers from the email (Calendar37)
+
+- **`AttendeeList`**, shared by the event editor and the full event view:
+  - Order: the organiser (`organizer` email, or the attendee with `organizer: true`), then the other attendees in provider order, then you, for an invitation (`Theme.rsvpOf` defined). On your own event you come first as "Organizer · you". Resources are left out.
+  - Each row: a `SenderAvatar` (yours is the account letter on its 22% tint), the name (`displayName` or email), a role tag at 11.5 px, 40% ink ("Organizer", "You", "Organizer · you"), and the status on the right.
+  - Statuses from `responseStatus`: Accepted (75% ink), Maybe (55%), Declined (red, name struck through), No reply (40%), and "Invite on save" (gold) for editor addresses the saved event does not have. An organiser without a status counts as Accepted. Your own status follows `Theme.rsvpOf`, including a decline waiting out its Undo.
+- **Event editor:** a Going? row below Guests and above Notes, with the 64 px label column: 20 px avatars, 13 px names, 12 px status, 30 px rows. It shows only when the list has more than one person, and uses `guestAddresses` while guests are editable.
+- **Full event view:**
+  - Rows in order: Meeting URL, Where, Guests, Notes, with 112 px labels.
+  - Meeting URL shows `conference_url` without `https://`: 15.5 px ink, a 1 px underline at 25% ink that turns ink on hover. It wraps anywhere instead of eliding and opens through `openLink`.
+  - Guests: 24 px avatars, 15 px names, 13.5 px status, 34 px rows. The "With" and "Join" rows are gone.
+  - The Join button shows only with a meeting URL, as "Join Google Meet", "Join Teams", "Join Zoom", "Join Webex" or "Join meeting".
+- **Answers from an invitation email** (Mail UI93) change the same event state as the card. No goes through the same 6 s decline hold.
+
+Consumers: Mail UI93, Core71.
+
 ## D126 — invitation answers, Show declined, Going?, meeting links (Calendar36)
 
 - **Answers.** `Theme.rsvpOf(event)` gives:

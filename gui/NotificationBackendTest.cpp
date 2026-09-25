@@ -194,7 +194,7 @@ class NotificationBackendTest {
     static void popup() {
         Harness h("off"); QTemporaryDir copy;
         require(copy.isValid(), "popup QML directory");
-        for (const auto name : {"FmScrollBar.qml","Theme.qml","FmButton.qml","FmToolTip.qml","FmIcon.qml","ReminderPopup.qml"})
+        for (const auto name : {"FmScrollBar.qml","Theme.qml","FmButton.qml","FmToolTip.qml","FmIcon.qml","ReminderPopup.qml","AttendeeList.qml","SenderAvatar.qml"})
             require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/" + name,copy.filePath(name)), "actual popup QML copied");
         QFile module(copy.filePath("qmldir")); require(module.open(QIODevice::WriteOnly), "popup singleton module");
         module.write("singleton Theme 1.0 Theme.qml\n"); module.close();

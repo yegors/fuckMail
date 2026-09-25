@@ -1,5 +1,30 @@
 # Current status
 
+**D129 / search matches as written (2026-09-25):**
+- **Search:** what you type is matched as written. `c-22` finds only mail containing "c-22" (any case), not "Sep 22" or other words starting with c. Several words must appear together, in that order. The last word can be incomplete, and accents and line breaks don't matter. `subject:` and `body:` work the same way, and so does Drafts search.
+- **Checks (Windows Release, build/p9):** `cargo test --workspace` passes (808 tests; new phrase tests in fm-core, and two older tests updated for the new rule); clippy `-D warnings` clean. All 31 GUI tests pass (`gui-startup-recovery` excluded, as before).
+- **Not verified:** the live mailbox (the c-22 search itself); other hosts. Remote Gmail search still sends the words as typed.
+
+[Decision](decisions.md) · [Search 10](contracts/search.md) · [Record](research/prototype-september-23.md#d129--search-matches-as-written-2026-09-25).
+
+**D128 / To review transitions, invitation day (2026-09-25):**
+- **To review:** the item you opened stays inside To review, counted there, while you read it. The section no longer splits in two, and "All reviewed" no longer shows beside it. Done, Delay or filing moves it at once, and Up/Down continue from where it was.
+- **Invitation emails:** clicking the time now opens the event's own day, not today.
+- **Checks (Windows Release, build/p9):** all 31 GUI tests pass (`gui-startup-recovery` excluded, as before). New checks cover: two items to review, open, Down, Down again, then Delay the last one, with counts, headers and the empty state checked at each step; Down after Delay; an invitation's event opening its own day. Rust is unchanged.
+- **Not verified:** on the live mailbox and a real invitation after this fix; other hosts.
+
+[Decision](decisions.md) · [Mail UI94](contracts/mail-ui.md) · [Record](research/prototype-september-23.md#d128--to-review-transitions-and-invitation-day-2026-09-25).
+
+**D127 / thirteenth export, To review, proxy (2026-09-25):**
+- **Invitation emails:** a row at the top of the email shows the event's time (and, for an update, the time it moved from), your answer, and Yes / Maybe / No. Answers change the same event as the card; No hides it with Undo. Clicking the time opens it in Calendar's Day view.
+- **Guests:** the full event view has a Meeting URL row (Join only when there is a link) and a Guests list with each person's answer; the editor shows the same list under Going?, with "Invite on save" for new guests.
+- **To review:** an opened item is marked read but stays in To review until you open another.
+- **Sender pictures** show at 75% and go through the HTTPS proxy when one is set; a proxy without a password now works (it failed before).
+- **Checks (Windows Release, build/p9):** `cargo test --workspace` passes (fm-core 391 with the new invitation and parser tests, fm-engine 191 with the proxy and picture tests); clippy `-D warnings` clean. All 31 GUI tests pass (`gui-startup-recovery` excluded, as before), with new checks for the invite row, the guest lists, the meeting URL and To review. Capture of the full event view.
+- **Not verified:** invitations against real Gmail invites (Google and Outlook ones), answering one for real, the proxy against a real proxy server, other hosts.
+
+[Decision](decisions.md) · [Mail UI93](contracts/mail-ui.md) · [Calendar37](contracts/calendar.md) · [Core71](contracts/core-storage.md) · [Record](research/prototype-september-23.md#d127--thirteenth-export-2026-09-25).
+
 **D126 / twelfth export and acceptance fixes (2026-09-25):**
 - **Drafts:** earlier read-only copies become editable in place (the D124 removal failed on the live store); clicking between them no longer crashes. Gmail gets a draft after 30 s without typing, or when you leave or send, so Send stays enabled while you type.
 - **Replies:** Reply-To is used (a no-reply From bounced before); the sent copy no longer shows twice; the reply form closes on send instead of later.

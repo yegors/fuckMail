@@ -457,6 +457,10 @@ fn composition_drafts_page_search_scope_and_invalid_edits_are_bounded() {
         call(&mut store, "drafts", json!({"query":"paged uni"}))["total"],
         0
     );
+    // Drafts match phrases as mail does (Search 10).
+    for (query, total) in [("safe café", 3), ("punctuation-safe cafe", 3), ("punctuation safe", 0), ("draft 1", 1), ("afe", 0)] {
+        assert_eq!(call(&mut store, "drafts", json!({"query":query}))["total"], total, "{query}");
+    }
     let first = call(
         &mut store,
         "drafts",

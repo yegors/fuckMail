@@ -37,12 +37,17 @@ fn punctuation_partial_sender_and_source_fields_are_scoped() {
         search(&mut store, "windscribe", "may linq", "sender")["conversations"],
         json!([])
     );
+    // Words typed together are one phrase; only its last word may be partial (Search 10).
     assert_eq!(
-        search(&mut store, "windscribe", "may lind", "sender")["conversations"]
+        search(&mut store, "windscribe", "maya lind", "sender")["conversations"]
             .as_array()
             .unwrap()
             .len(),
         2
+    );
+    assert_eq!(
+        search(&mut store, "windscribe", "may lind", "sender")["conversations"],
+        json!([])
     );
     assert_eq!(
         search(&mut store, "windscribe", "Frankfurt", "subject")["conversations"],

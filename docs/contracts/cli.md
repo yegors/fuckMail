@@ -2,6 +2,10 @@
 
 
 
+## D127 — invitation details (CLI54)
+
+`fm --account ID mail invite MESSAGE --source-version V` prints `message_invite` (Core71) read-only: the invitation's UID, method, times, the time it moved from and the linked Calendar event.
+
 ## D123 — label Read and Spam (CLI53)
 
 `fm --account ID labels auto-read LABEL on|off --expected on|off --request-id R` (`label_auto_read`) and `labels spam LABEL on|off --expected on|off --request-id R` (`label_auto_spam`, Core68). Gmail drafts appear in `drafts` as ordinary local drafts (Gmail31); the draft source commands remain.

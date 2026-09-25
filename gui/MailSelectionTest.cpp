@@ -29,6 +29,7 @@ class MailSelectionTest {
         QHash<QString,QJsonObject> attachments;
         QList<QJsonObject> remoteSearches;
         QVariantList rows;
+        QJsonObject summary; // Core's section counts, merged into list replies
         Harness() {
             backend.m_account = "personal";
             backend.m_syntheticProfile = false;
@@ -50,7 +51,7 @@ class MailSelectionTest {
                 else {
                     QJsonObject result;
                     if (method == "accounts") result["accounts"] = QJsonArray::fromVariantList(backend.m_allAccounts);
-                    else if (method == "conversations") { lastQuery = request["params"].toObject(); result = {{"conversations",QJsonArray::fromVariantList(rows)},{"revision",3},{"filtered_conversation_count",3},{"folder_conversation_count",3},{"next_offset",QJsonValue::Null}}; }
+                    else if (method == "conversations") { lastQuery = request["params"].toObject(); result = {{"conversations",QJsonArray::fromVariantList(rows)},{"revision",3},{"filtered_conversation_count",3},{"folder_conversation_count",3},{"next_offset",QJsonValue::Null}}; for (auto it=summary.begin(); it!=summary.end(); ++it) result[it.key()]=it.value(); }
                     else if (method == "assist_results") result={{"items",QJsonArray{QJsonObject{{"task","summary"},{"target","a-original"},{"stale",false},{"partial",false},{"source_ids",QJsonArray{"a-original"}},{"schema",2},{"output",QJsonObject{{"summary","You granted Example Mail access to your account data. Review access if you did not authorize it."},{"source_ids",QJsonArray{"a-original"}}}},{"model",QJsonObject{{"name","gemma4:e4b"}}}}}}};
                     else if (method == "assist_settings_get") result={{"revision",0},{"settings",QJsonObject{{"accounts",QJsonObject{}},{"model",QJsonObject{{"name","example.registry/team/a-very-long-qualified-model-name:large"},{"digest","synthetic"}}}}}};
                     else if (method == "message_source") {
@@ -148,22 +149,113 @@ class MailSelectionTest {
         await([&]{return !filing.backend.m_mutatingConversation && !filing.backend.m_loading;},"filing refreshes Inbox");
         require(filing.backend.m_pinnedRow.isEmpty() && filing.backend.conversations().size()==2,"archived selected row cannot remain pinned in Inbox");
         Harness reading;
-        // Opened and read: the refreshed Inbox returns it as Done, so it moves there
-        // at once instead of staying in To review at its old place.
+        // Opened and read: the refreshed Inbox returns it as Done, but it stays in
+        // To review at its place, already read, while it is open.
         reading.backend.m_folder="inbox"; reading.backend.m_selected="a";
         reading.backend.m_pinnedRow=reading.rows[0].toMap(); reading.backend.m_pinnedIndex=0;
         auto read=reading.rows[0].toMap(); read["group"]="done"; read["unread"]=false; reading.rows.removeFirst(); reading.rows.append(read);
         reading.backend.loadConversations(false,true);
-        await([&]{return !reading.backend.m_loading && reading.backend.conversations().size()==3 && reading.backend.conversations().last().toMap()["id"]=="a";},"read conversation refreshes into Done");
+        await([&]{return !reading.backend.m_loading && reading.backend.conversations().size()==3 && reading.backend.conversations().first().toMap()["id"]=="a";},"read open conversation stays first");
+        {
+            const auto first=reading.backend.conversations().first().toMap();
+            require(first["pinned"].toBool() && first["section"]=="review" && !first["unread"].toBool(),"a read open conversation stays in To review, marked read");
+        }
+        // Opening the next one moves it to Done.
+        reading.backend.selectConversation("b");
+        await([&]{return !reading.backend.m_loading && reading.backend.conversations().size()==3 && reading.backend.conversations().last().toMap()["id"]=="a";},"leaving it moves the read conversation to Done");
         {
             QStringList sections; for (const auto &row:reading.backend.conversations()) sections.append(row.toMap()["section"].toString());
             require(!reading.backend.conversations().last().toMap()["pinned"].toBool() && sections.count("review")==2 && sections.indexOf("review")==0 && sections.lastIndexOf("review")==1,
-                "a read conversation leaves To review at once and sections are not split");
+                "a read conversation leaves To review once another is opened and sections are not split");
         }
         // Still open but no longer in this view's results: it stays where it was.
-        reading.rows.removeLast(); reading.backend.loadConversations(false,true);
+        reading.rows.removeLast(); reading.backend.m_selected="a"; reading.backend.m_pinnedRow=read; reading.backend.m_pinnedIndex=0;
+        reading.backend.loadConversations(false,true);
         await([&]{return !reading.backend.m_loading && reading.backend.conversations().size()==3;},"filtered-out open conversation is kept");
-        require(reading.backend.conversations().first().toMap()["pinned"].toBool(),"an open conversation the view no longer returns stays in place");
+        require(reading.backend.conversations().last().toMap()["id"]=="a" && reading.backend.conversations().last().toMap()["pinned"].toBool(),"an open conversation the view no longer returns stays in place, inside its section");
+    }
+    // To review keeps the open conversation after it is read, inside its own
+    // section and counted there, until another is opened; Delay moves it at once
+    // and Down goes on from where it was.
+    static void reviewTransitions() {
+        Harness h;
+        const auto make=[](const QString &id,const QString &group,bool unread,bool starred,const QString &at){
+            return QVariant(QVariantMap{{"id",id},{"subject","Review "+id},{"sender_name","Sender"},{"sender_email","sender@example.test"},{"latest_at",at},
+                {"message_ids",QVariantList{id+"-original"}},{"revision",3},{"message_count",1},{"categories",QVariantList{}},
+                {"group",group},{"kind","people"},{"unread",unread},{"starred",starred}}); };
+        const auto set=[&](const QString &id,const QString &group,bool unread,bool starred){
+            for (auto &row:h.rows) if (row.toMap()["id"]==id) { auto m=row.toMap(); m["group"]=group; m["unread"]=unread; m["starred"]=starred; row=m; } };
+        // Core's order: sections, then newest first.
+        const auto order=[&](const QStringList &ids){ QVariantList sorted; for (const auto &id:ids) for (const auto &row:h.rows) if (row.toMap()["id"]==id) sorted.append(row); h.rows=sorted; };
+        const auto counts=[&](int review,int held,int done){ h.summary={{"filtered_group_counts",QJsonObject{{"review",review},{"held",held}}},{"done_months",QJsonArray{QJsonObject{{"month","2026-09"},{"count",done}}}}}; };
+        h.rows={make("r1","review",true,false,"2026-09-14T12:00:00Z"),make("r2","review",true,false,"2026-09-14T11:00:00Z"),make("h1","held",false,true,"2026-09-14T09:00:00Z"),
+            make("r3","review",true,false,"2026-09-14T08:00:00Z"),make("d1","done",false,false,"2026-09-10T10:00:00Z")};
+        order({"r1","r2","r3","h1","d1"}); counts(3,1,1);
+        QTemporaryDir copy; const auto modulePath=copy.filePath("SelectionTest"); require(QDir().mkpath(modulePath),"review QML module");
+        QByteArray module("module SelectionTest\nsingleton Theme 1.0 Theme.qml\n");
+        for(const auto &name:QDir(QString::fromUtf8(FM_GUI_SOURCE_DIR)).entryList({"*.qml"},QDir::Files)) {
+            require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR)+'/'+name,modulePath+'/'+name),"unchanged production QML");
+            if(name=="ShortcutRegistry.qml") module+="singleton ";
+            if(name!="Theme.qml") module+=name.chopped(4).toUtf8()+" 1.0 "+name.toUtf8()+'\n';
+        }
+        QFile registration(modulePath+"/qmldir"); require(registration.open(QIODevice::WriteOnly),"review registration"); registration.write(module); registration.close();
+        QQmlApplicationEngine qml; FmIconItem::registerType();
+        QObject::connect(&qml,&QQmlEngine::warnings,[&](const auto &errors){for(const auto &error:errors) qWarning()<<error.toString();});
+        qml.addImportPath(copy.path()); qml.rootContext()->setContextProperty("backend",&h.backend);
+        qml.loadData("import QtQuick\nimport QtQuick.Controls\nimport SelectionTest 1.0\nApplicationWindow { visible:true; color:Theme.canvas; width:1280; height:800; property bool singleKeysAllowed:true; property bool searchPopupOpen:false; MailView { anchors.fill:parent } }",QUrl::fromLocalFile(copy.filePath("Review.qml")));
+        require(!qml.rootObjects().isEmpty(),"review MailView loads");
+        auto *window=qobject_cast<QQuickWindow *>(qml.rootObjects().first());
+        await([&]{return window->isExposed();},"review window exposed");
+        auto *mail=find(window->contentItem(),"mailWorkspace"); require(mail,"review mail workspace");
+        h.backend.m_folder="inbox"; h.backend.m_selected.clear(); h.backend.loadConversations();
+        await([&]{return !h.backend.m_loading && h.backend.conversations().size()==5;},"review Inbox loads");
+        const auto ids=[&]{ QStringList out; for (const auto &row:h.backend.conversations()) out.append(row.toMap()["id"].toString()); return out; };
+        const auto sections=[&]{ QStringList out; for (const auto &row:h.backend.conversations()) out.append(row.toMap()["section"].toString()); return out; };
+        const auto unsplit=[&]{ const auto s=sections(); for (int i=1;i<s.size();++i) if (s[i]!=s[i-1] && s.mid(0,i).contains(s[i])) return false; return true; };
+        const auto count=[&](const QString &key){ QVariant value; QMetaObject::invokeMethod(mail,"sectionCount",Q_RETURN_ARG(QVariant,value),Q_ARG(QVariant,key)); return value.toInt(); };
+        const auto shownCount=[&](const QString &name){ int n=0; std::function<void(QQuickItem*)> walk=[&](QQuickItem *item){ if(item->objectName()==name && item->isVisible() && item->height()>0) ++n; for(auto *c:item->childItems()) walk(c); }; walk(window->contentItem()); return n; };
+        const auto settle=[&]{ QElapsedTimer t; t.start(); while(t.elapsed()<150) QCoreApplication::processEvents(QEventLoop::AllEvents,10); };
+        auto *list=find(window->contentItem(),"conversationList"); require(list,"review list");
+        const auto press=[&](int code){ list->forceActiveFocus(); QKeyEvent key(QEvent::KeyPress,code,Qt::NoModifier); QCoreApplication::sendEvent(window,&key); QCoreApplication::processEvents(); };
+        settle();
+        // Open the first: read at once, kept first in To review and counted there.
+        click(window,find(window->contentItem(),"conversationRow_r1"),Qt::LeftButton);
+        auto read=h.take(); require(read.request["params"].toObject()["read"]==true,"opening To review reads it");
+        set("r1","done",false,false); order({"r2","r3","h1","r1","d1"}); counts(2,1,2); h.finish(read);
+        await([&]{return !h.backend.m_mutatingConversation && !h.backend.m_loading && ids().first()=="r1" && h.backend.conversations().first().toMap()["pinned"].toBool();},"read first stays in place");
+        settle();
+        require(ids()==QStringList{"r1","r2","r3","h1","d1"} && unsplit(),"the kept row stays first in To review");
+        require(count("review")==3 && count("done:2026-09")==1,"To review counts the kept row; Done does not count it twice");
+        // Down: the next one opens and is read; the first moves to Done, the second is kept.
+        press(Qt::Key_Down);
+        read=h.take(); require(read.request["params"].toObject()["id"]=="r2","Down opens the next To review item");
+        set("r2","done",false,false); order({"r3","h1","r1","r2","d1"}); counts(1,1,3); h.finish(read);
+        await([&]{return !h.backend.m_mutatingConversation && !h.backend.m_loading && ids().first()=="r2";},"second kept after Down");
+        settle();
+        require(ids()==QStringList{"r2","r3","h1","r1","d1"} && unsplit(),("after Down the kept row stays inside To review and no section repeats: "+ids().join(',')).toUtf8().constData());
+        require(count("review")==2 && count("held")==1 && count("done:2026-09")==2,"section counts follow what is shown after Down");
+        require(shownCount("mailGroup_review")==1 && shownCount("mailGroup_held")==1 && shownCount("mailSectionEmpty_review")==0,"one To review header, no empty state beside the kept row");
+        // The last one: kept while Core's To review is 0, never 'All reviewed' beside it.
+        press(Qt::Key_Down);
+        read=h.take(); require(read.request["params"].toObject()["id"]=="r3","Down opens the last To review item");
+        set("r3","done",false,false); order({"h1","r1","r2","r3","d1"}); counts(0,1,4); h.finish(read);
+        await([&]{return !h.backend.m_mutatingConversation && !h.backend.m_loading && ids().first()=="r3";},"last kept after Down");
+        settle();
+        require(ids()==QStringList{"r3","h1","r1","r2","d1"} && unsplit(),("the last kept row stays above Delayed: "+ids().join(',')).toUtf8().constData());
+        require(count("review")==1 && shownCount("mailGroup_review")==1 && shownCount("mailSectionEmpty_review")==0,"the last kept row shows To review 1, not 'All reviewed'");
+        // Delay it: it moves to Delayed at once and the view says all reviewed.
+        h.backend.applyMailSelection(h.backend.snapshotMailRows({"r3"}),"delay");
+        auto delay=h.take(); require(delay.request["params"].toObject()["starred"]==true,"Delay sends the hold");
+        set("r3","held",false,true); order({"h1","r3","r1","r2","d1"}); counts(0,2,3); h.finish(delay);
+        await([&]{return !h.backend.m_mutatingConversation && !h.backend.m_loading && ids().indexOf("r3")==1;},"Delay moves the open conversation to Delayed");
+        settle();
+        require(!h.backend.conversations()[1].toMap()["pinned"].toBool() && h.backend.conversations()[1].toMap()["section"]=="held" && unsplit(),"a delayed conversation is not kept in To review");
+        require(count("review")==0 && count("held")==2 && shownCount("mailSectionEmpty_review")==1 && shownCount("mailGroup_review")==1,"after Delay To review shows its empty state once");
+        require(h.backend.selectedId()=="r3","Delay keeps the conversation open");
+        // Down goes on from where it was (h1), not from its new place (r1).
+        press(Qt::Key_Down);
+        await([&]{return h.backend.selectedId()=="h1";},"Down after Delay continues from the conversation's old place");
+        settle();
     }
     static void undoActions() {
         Harness h;
@@ -823,6 +915,6 @@ public:
         await([&]{return replied;},"mailto unsubscribe answers");
         require(h.methods.contains("google_unsubscribe_mail"),"a mailto list is unsubscribed by email through Google");
     }
-    static void run(){mutations();undoActions();remoteMail();controls();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
+    static void run(){mutations();undoActions();remoteMail();controls();reviewTransitions();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
 int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));MailSelectionTest::run();return 0;}

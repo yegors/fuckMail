@@ -90,12 +90,14 @@ pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
         .unwrap_or_default();
     let unsubscribe =
         crate::unsubscribe::describe(fm_mail::unsubscribe::unsubscribe(&parsed, &plain).as_ref());
+    // Readers ask message_invite only for mail with a usable calendar part.
+    let has_invite = crate::message_invite::message_calendar(&parsed).is_some();
     let (raw, raw_truncated) = bounded(&String::from_utf8_lossy(&bytes));
     if cancel.is_cancelled() {
         return Err(err("cancelled", "Message read cancelled"));
     }
     let mut result = json!({"account":plan.account,"id":plan.message,"source_version":plan.version,
-        "metadata":metadata,"unsubscribe":unsubscribe,"body_html":body_html,"html_truncated":html_truncated,
+        "metadata":metadata,"unsubscribe":unsubscribe,"has_invite":has_invite,"body_html":body_html,"html_truncated":html_truncated,
         "raw":raw,"raw_truncated":raw_truncated,"size":bytes.len()});
     fit_reply(&mut result)?;
     Ok(result)
@@ -174,6 +176,7 @@ mod tests {
             "copy@example.test"
         );
         assert_eq!(result["raw_truncated"], false);
+        assert_eq!(result["has_invite"], false);
         let after: (bool, bool, i64) = store
             .db
             .query_row(

@@ -795,6 +795,19 @@ impl Store {
             lowered(&text.subject),
             lowered(&text.body),
         );
+        // Each phrase must appear as written, as in mail search (Search 10).
+        let phrases = |values: &[String]| {
+            values
+                .iter()
+                .filter(|v| crate::search_query::tokens(v).next().is_some())
+                .map(|v| crate::search_query::fold(v))
+                .collect::<Vec<_>>()
+        };
+        let (word_phrases, subject_phrases, body_phrases) = (
+            phrases(&text.phrases),
+            phrases(&text.subject),
+            phrases(&text.body),
+        );
         let people_values = text
             .from
             .iter()
@@ -851,16 +864,9 @@ impl Store {
             count += 1;
             let body: String = row.get(3)?;
             let routing: Value = serde_json::from_str(&row.get::<_, String>(4)?)?;
-            let words_of = |text: &str| {
-                crate::search_query::tokens(text)
-                    .map(str::to_lowercase)
-                    .collect::<Vec<_>>()
-            };
-            let in_subject = words_of(routing["subject"].as_str().unwrap_or(""));
-            let in_body = words_of(&body);
-            let has = |words: &[String], token: &String| {
-                words.iter().any(|w| w.starts_with(token.as_str()))
-            };
+            let in_subject = crate::search_query::fold(routing["subject"].as_str().unwrap_or(""));
+            let in_body = crate::search_query::fold(&body);
+            let has = |text: &str, phrase: &String| crate::search_query::contains_phrase(text, phrase);
             let mut people = String::new();
             for key in ["to_recipients", "cc_recipients", "bcc_recipients"] {
                 for address in routing[key].as_array().into_iter().flatten() {
@@ -871,11 +877,11 @@ impl Store {
                 }
             }
             let people = people.to_lowercase();
-            if !(words
+            if !(word_phrases
                 .iter()
                 .all(|t| has(&in_subject, t) || has(&in_body, t))
-                && subject_words.iter().all(|t| has(&in_subject, t))
-                && body_words.iter().all(|t| has(&in_body, t))
+                && subject_phrases.iter().all(|t| has(&in_subject, t))
+                && body_phrases.iter().all(|t| has(&in_body, t))
                 && people_values.iter().all(|v| people.contains(v.as_str())))
             {
                 continue;

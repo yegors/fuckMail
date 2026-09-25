@@ -132,6 +132,8 @@ class Backend : public QObject {
     Q_PROPERTY(QString account READ account CONSTANT)
     Q_PROPERTY(QString preferencesStatus READ preferencesStatus CONSTANT)
     Q_PROPERTY(QObject *htmlContent READ htmlContent CONSTANT)
+    Q_PROPERTY(QVariantList events READ events NOTIFY eventsChanged)
+    Q_PROPERTY(bool syntheticProfile READ syntheticProfile CONSTANT)
 public:
     Service service;
     QStringList opened;
@@ -142,9 +144,23 @@ public:
     QVariantList unsubscribes;
     Q_INVOKABLE void openLink(const QString &url) { opened.append(url); }
     Q_INVOKABLE QString unsubscribe(const QVariantMap &message) { unsubscribes.append(message); return "u" + QString::number(unsubscribes.size()); }
+    // The invitation row's calendar calls.
+    QVariantList events() const { return {}; }
+    bool syntheticProfile() const { return false; }
+    QStringList invites;
+    QVariantList writes, declines;
+    bool declining = false;
+    Q_INVOKABLE QString requestMessageInvite(const QString &id, const QString &) { invites.append(id); return "i" + QString::number(invites.size()); }
+    Q_INVOKABLE QString inviteWhen(const QString &start, const QString &end, bool withEnd = true) const { return withEnd ? start + " to " + end : start; }
+    Q_INVOKABLE bool calendarEventDeclining(const QVariantMap &) const { return declining; }
+    Q_INVOKABLE void calendarWrite(const QVariantMap &values) { writes.append(values); }
+    Q_INVOKABLE QString queueCalendarDecline(const QVariantMap &values, const QVariantMap &) { declines.append(values); declining = true; emit eventsChanged(); return {}; }
 signals:
     void connectedChanged();
     void unsubscribeReady(const QString &ticket, const QVariantMap &result, bool ok);
+    void messageInviteReady(const QString &ticket, const QVariantMap &result, bool ok);
+    void calendarWriteFinished(bool ok, const QVariantMap &result, const QString &error);
+    void eventsChanged();
 };
 
 int main(int argc, char **argv) {
@@ -185,12 +201,14 @@ ApplicationWindow {
     property var mailingList: null
     property var unsubscribe: null
     property real noticesWidth: 560
+    property string openedInvite: ""
     function show(next) { shown = false; message = next; shown = true }
     ColumnLayout {
         x: 20; y: 20; width: root.noticesWidth; spacing: 0
         MessageNotices {
             objectName: "notices"; Layout.fillWidth: true; Layout.bottomMargin: visible ? 9 : 0
             message: root.message; mailingList: root.mailingList; unsubscribe: root.unsubscribe
+            onOpenInvite: function(event, declined) { root.openedInvite = event.event_id + (declined ? " declined" : "") }
             htmlBody: loader.item && !loader.item.failed ? loader.item : null
         }
         Loader {
@@ -288,6 +306,46 @@ ApplicationWindow {
     check(unsubscribeText->property("text") == QString::fromUtf8("Unsubscribed from News \u00b7 it can take a few days to stop"), "the row confirms the unsubscribe");
     window->setProperty("mailingList", QVariantMap{{"month", 3}, {"year", 12}, {"unsubscribed", QVariantMap{{"method", "link"}}}});
     check(unsubscribeText->property("text") == "Unsubscribe page opened in your browser", "a link reads as opened in the browser");
+    // The invitation row comes first: its time, the time it moved from, your
+    // answer once given, and Yes / Maybe / No updating the same event.
+    window->setProperty("mailingList", QVariantMap{{"month", 3}, {"year", 12}, {"unsubscribed", QVariant()}});
+    auto *notices = find(window->contentItem(), "notices");
+    notices->setProperty("hasInvite", true);
+    check(await([&] { return backend.invites == QStringList{"m1"}; }), "an invitation asks for its event");
+    const QVariantList people{QVariantMap{{"email", "me@x.test"}, {"self", true}, {"responseStatus", "needsAction"}},
+        QVariantMap{{"email", "rebecca@x.test"}, {"organizer", true}, {"responseStatus", "accepted"}}};
+    QVariantMap event{{"id", "acct:primary:ev"}, {"account", "acct"}, {"calendar_id", "primary"}, {"event_id", "ev"}, {"etag", "e1"},
+        {"start", "2026-09-29T19:00:00Z"}, {"end", "2026-09-29T20:00:00Z"}, {"date", "2026-09-29"}, {"can_rsvp", true},
+        {"organizer", "rebecca@x.test"}, {"attendees", people}};
+    const auto answerWith = [&](const QVariantMap &value) {
+        return QVariantMap{{"invite", QVariantMap{{"method", "REQUEST"}, {"start", value["start"]}, {"end", value["end"]},
+            {"was_start", "2026-09-25T19:30:00Z"}, {"was_end", "2026-09-25T20:30:00Z"}, {"event", value}}}};
+    };
+    emit backend.messageInviteReady("i1", answerWith(event), true);
+    auto *inviteRow = find(window->contentItem(), "inviteRow_m1");
+    check(await([&] { return inviteRow->isVisible(); }), "the invitation row shows");
+    check(await([&] { auto *list = find(window->contentItem(), "unsubscribeRow_m1"); return list->isVisible() && inviteRow->mapToScene({0, 0}).y() + inviteRow->height() <= list->mapToScene({0, 0}).y(); }), "the invitation comes before the mailing list");
+    check(find(window->contentItem(), "inviteWas_m1")->property("text") == "was 2026-09-25T19:30:00Z", "an update names the time it moved from");
+    auto *state = find(window->contentItem(), "inviteState_m1");
+    auto *yes = find(window->contentItem(), "inviteAnswer-yes"), *no = find(window->contentItem(), "inviteAnswer-no");
+    check(!state->isVisible() && !yes->property("chosen").toBool() && !no->property("chosen").toBool(), "unanswered shows no status and nothing chosen");
+    QMetaObject::invokeMethod(yes, "clicked");
+    check(backend.writes.size() == 1 && backend.writes[0].toMap()["response"] == "accepted" && backend.writes[0].toMap()["event_id"] == "ev"
+        && backend.writes[0].toMap()["expected_etag"] == "e1", "Yes answers the linked event");
+    check(state->property("text") == "Going" && yes->property("chosen").toBool(), "the answer shows at once");
+    emit backend.calendarWriteFinished(true, {{"account", "acct"}, {"request_id", backend.writes[0].toMap()["request_id"]}}, QString());
+    check(await([&] { return backend.invites.size() == 2; }), "a finished answer reads the event again");
+    auto accepted = event; accepted["self_response"] = "accepted";
+    emit backend.messageInviteReady("i2", answerWith(accepted), true);
+    check(state->property("text") == "Going" && yes->property("chosen").toBool(), "the calendar's answer keeps it");
+    QMetaObject::invokeMethod(no, "clicked");
+    check(backend.declines.size() == 1 && backend.declines[0].toMap()["response"] == "declined", "No declines through the Undo hold");
+    check(await([&] { return state->property("text") == "Declined" && no->property("chosen").toBool(); }), "a decline shows at once");
+    const auto when = find(window->contentItem(), "inviteWhen_m1");
+    QTest::mouseClick(window, Qt::LeftButton, {}, when->mapToScene(QPointF(10, when->height() / 2)).toPoint());
+    check(window->property("openedInvite") == "ev declined", "the time opens the event, asking for declined events to show");
+    notices->setProperty("hasInvite", false);
+    backend.declining = false;
     window->setProperty("mailingList", QVariant());
     window->setProperty("unsubscribe", QVariant());
 

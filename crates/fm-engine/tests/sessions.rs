@@ -556,6 +556,52 @@ async fn shared_profile_is_rejected_and_stale_owned_endpoint_recovers() {
 }
 
 #[tokio::test]
+async fn message_invite_is_a_scoped_read_in_demo_profiles() {
+    let root = tempfile::tempdir().unwrap();
+    let profile = root.path().join("demo");
+    let mut c = client(&profile).await;
+    let accounts = ok(c.call("accounts", None, json!({})).await.unwrap());
+    let account = accounts["accounts"][0]["id"].as_str().unwrap().to_owned();
+    let conversation = first(&mut c, &account).await;
+    let message = &conversation["messages"][0];
+    let request = json!({"id":message["id"],"source_version":message["source_version"]});
+    let source = ok(c
+        .call("message_source", Some(&account), request.clone())
+        .await
+        .unwrap());
+    assert_eq!(source["has_invite"], false);
+    assert_eq!(
+        ok(c.call("message_invite", Some(&account), request.clone())
+            .await
+            .unwrap()),
+        json!({"invite":null})
+    );
+    let stale = c
+        .call(
+            "message_invite",
+            Some(&account),
+            json!({"id":message["id"],"source_version":"changed"}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(stale["error"]["code"], "stale_source", "{stale}");
+    let unscoped = c
+        .call("message_invite", None, request.clone())
+        .await
+        .unwrap();
+    assert_eq!(unscoped["error"]["code"], "account_required", "{unscoped}");
+    let mut extra = request;
+    extra["write"] = json!(true);
+    let refused = c
+        .call("message_invite", Some(&account), extra)
+        .await
+        .unwrap();
+    assert_eq!(refused["error"]["code"], "invalid_request", "{refused}");
+    drop(c);
+    wait_stopped(&profile).await;
+}
+
+#[tokio::test]
 async fn html_reader_serves_sanitised_html_and_fetches_nothing_unasked() {
     let root = tempfile::tempdir().unwrap();
     let profile = root.path().join("demo");

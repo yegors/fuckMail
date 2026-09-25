@@ -32,9 +32,12 @@ Item {
     readonly property string sourceLabel: picture.label || "No photo · initials"
     implicitWidth: diameter; implicitHeight: diameter
     width: implicitWidth; height: implicitHeight
+    // A found picture shows at 75% so it is not too bright on the dark themes.
+    readonly property real pictureOpacity: .75
     Rectangle {
         anchors.fill: parent; radius: width / 2
-        color: avatar.imageShown && avatar.brand ? "#ffffff" : avatar.discColor
+        color: !avatar.imageShown ? avatar.discColor : avatar.brand ? "#ffffff" : "transparent"
+        opacity: avatar.imageShown ? avatar.pictureOpacity : 1
     }
     Text {
         visible: !avatar.imageShown
@@ -53,9 +56,11 @@ Item {
         // Brand icons sit inside the disc; photos are cut to the circle below,
         // except in the software renderer, which cannot fill a shape with one.
         visible: avatar.imageShown && (avatar.brand || GraphicsInfo.api === GraphicsInfo.Software)
+        opacity: avatar.pictureOpacity
     }
     Shape {
         visible: avatar.imageShown && !avatar.brand && GraphicsInfo.api !== GraphicsInfo.Software
+        opacity: avatar.pictureOpacity
         anchors.fill: parent
         preferredRendererType: Shape.CurveRenderer
         ShapePath {

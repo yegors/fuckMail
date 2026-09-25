@@ -128,15 +128,24 @@ struct Proxy {
 /// maps every CONNECT target to the test origin.
 async fn proxy(pki: &Pki, origin_port: u16, user: &str, password: &str) -> Proxy {
     use base64::Engine as _;
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let port = listener.local_addr().unwrap().port();
-    let connects = Arc::new(Mutex::new(Vec::new()));
-    let acceptor = tokio_rustls::TlsAcceptor::from(pki.server.clone());
     let expected = format!(
         "proxy-authorization: basic {}",
         base64::engine::general_purpose::STANDARD.encode(format!("{user}:{password}"))
     )
     .to_ascii_lowercase();
+    forward_proxy(pki, origin_port, Some(expected)).await
+}
+
+/// The same proxy without credentials; one that sends any is refused.
+async fn open_proxy(pki: &Pki, origin_port: u16) -> Proxy {
+    forward_proxy(pki, origin_port, None).await
+}
+
+async fn forward_proxy(pki: &Pki, origin_port: u16, expected: Option<String>) -> Proxy {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let connects = Arc::new(Mutex::new(Vec::new()));
+    let acceptor = tokio_rustls::TlsAcceptor::from(pki.server.clone());
     let seen = connects.clone();
     tokio::spawn(async move {
         loop {
@@ -153,7 +162,12 @@ async fn proxy(pki: &Pki, origin_port: u16, user: &str, password: &str) -> Proxy
                 let request = head(&mut tls).await;
                 let target = request.split_whitespace().nth(1).unwrap_or("").to_owned();
                 seen.lock().unwrap().push(target);
-                if !request.to_ascii_lowercase().contains(&expected) {
+                let lower = request.to_ascii_lowercase();
+                let allowed = match &expected {
+                    Some(expected) => lower.contains(expected),
+                    None => !lower.contains("proxy-authorization:"),
+                };
+                if !allowed {
                     let _ = tls
                         .write_all(b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic\r\nContent-Length: 0\r\n\r\n")
                         .await;
@@ -362,7 +376,7 @@ async fn proxy_mode_tunnels_every_request_and_never_goes_direct() {
     let cancel = CancellationToken::new();
     // `origin.test` has no DNS record: success proves it was resolved only at the proxy.
     let client = build_client(
-        Some((&settings, "secret pass")),
+        Some((&settings, Some("secret pass"))),
         runtime.blocked.clone(),
         &runtime.policy,
     )
@@ -380,7 +394,7 @@ async fn proxy_mode_tunnels_every_request_and_never_goes_direct() {
     assert_eq!(origin.requests.lock().unwrap().len(), 1);
 
     let wrong = build_client(
-        Some((&settings, "wrong")),
+        Some((&settings, Some("wrong"))),
         runtime.blocked.clone(),
         &runtime.policy,
     )
@@ -400,7 +414,7 @@ async fn proxy_mode_tunnels_every_request_and_never_goes_direct() {
     };
     drop(closed);
     let unreachable = build_client(
-        Some((&down, "secret pass")),
+        Some((&down, Some("secret pass"))),
         runtime.blocked.clone(),
         &runtime.policy,
     )
@@ -418,6 +432,23 @@ async fn proxy_mode_tunnels_every_request_and_never_goes_direct() {
         1,
         "no request reached the origin without the proxy"
     );
+    // A proxy with no username or password is asked without credentials.
+    let open = open_proxy(&pki, origin.port).await;
+    let anonymous = ProxySettings {
+        host: "localhost".into(),
+        port: open.port,
+        username: String::new(),
+    };
+    let client = build_client(Some((&anonymous, None)), runtime.blocked.clone(), &runtime.policy).unwrap();
+    assert_eq!(
+        runtime
+            .fetch(&client, "https://origin.test/img.png", &cancel, true)
+            .await
+            .ok()
+            .unwrap(),
+        png()
+    );
+    assert_eq!(open.connects.lock().unwrap().as_slice(), ["origin.test:443"]);
 }
 
 /// A grey PNG of any size, written by hand with stored deflate blocks.
@@ -912,6 +943,36 @@ async fn unknown_senders_fall_back_from_a_missing_photo_to_the_brand() {
         found
     );
     assert_eq!(senders.requests().len(), 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sender_pictures_go_through_the_proxy_and_never_direct() {
+    let senders = Senders::new().await;
+    let open = open_proxy(&senders.pki, senders.origin.port).await;
+    senders
+        .save(json!({"remote_proxy":{"enabled":true,"host":"localhost","port":open.port,"username":""}}))
+        .await;
+    let found = avatar(&senders.runtime, "a@deel.com", "automated")
+        .await
+        .unwrap();
+    assert_eq!(found["state"], "ready");
+    assert_eq!(
+        open.connects.lock().unwrap().as_slice(),
+        [format!("localhost:{}", senders.origin.port)]
+    );
+    assert_eq!(senders.requests().len(), 1);
+    // A proxy that is down reports so; nothing goes direct.
+    let closed = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = closed.local_addr().unwrap().port();
+    drop(closed);
+    senders
+        .save(json!({"remote_proxy":{"enabled":true,"host":"localhost","port":port,"username":""}}))
+        .await;
+    let down = avatar(&senders.restarted(None), "b@osler.co.uk", "automated")
+        .await
+        .unwrap();
+    assert_eq!(down["state"], "proxy_unavailable", "{down}");
+    assert_eq!(senders.requests().len(), 1);
 }
 
 #[tokio::test(flavor = "multi_thread")]

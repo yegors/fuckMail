@@ -216,6 +216,29 @@ QString MailBackend::calendarReminderWhen(const QVariantMap &event) const {
     const auto duration=minutes>=60 ? QString::number(minutes/60)+" h"+(minutes%60 ? " "+QString::number(minutes%60)+" min" : "") : QString::number(minutes)+" min";
     return start.toString("dddd d MMM · HH:mm") + " – " + end.toString(start.date()==end.date() ? "HH:mm" : "ddd d MMM HH:mm") + " · " + duration;
 }
+QString MailBackend::inviteWhen(const QString &start, const QString &end, bool withEnd) const {
+    if (start.size() == 10) {
+        const auto first = QDate::fromString(start, Qt::ISODate), after = QDate::fromString(end, Qt::ISODate);
+        if (!first.isValid()) return {};
+        const auto last = after.isValid() && after > first.addDays(1) ? after.addDays(-1) : first;
+        return first.toString("ddd d MMM") + (withEnd && last != first ? " – " + last.toString("ddd d MMM") : QString{}) + (withEnd ? " · all day" : QString{});
+    }
+    auto from = QDateTime::fromString(start, Qt::ISODate), to = QDateTime::fromString(end, Qt::ISODate);
+    if (!from.isValid()) return {};
+    const QTimeZone zone(m_preferences.value("calendar_display_time_zone").toString().toUtf8());
+    if (zone.isValid()) { from = from.toTimeZone(zone); to = to.toTimeZone(zone); } else { from = from.toLocalTime(); to = to.toLocalTime(); }
+    if (!withEnd || !to.isValid()) return from.toString("ddd d MMM HH:mm");
+    return from.toString("ddd d MMM · HH:mm") + " – " + to.toString(from.date() == to.date() ? "HH:mm" : "ddd d MMM HH:mm");
+}
+// The display-zone day of a Core event row, for rows the Calendar layout has
+// not dated, such as an invitation email's linked event.
+QString MailBackend::calendarDayOf(const QString &start) const {
+    if (start.size() == 10) return QDate::fromString(start, Qt::ISODate).isValid() ? start : QString();
+    const auto at = QDateTime::fromString(start, Qt::ISODate);
+    if (!at.isValid()) return {};
+    const QTimeZone zone(m_preferences.value("calendar_display_time_zone").toString().toUtf8());
+    return (zone.isValid() ? at.toTimeZone(zone) : at.toLocalTime()).date().toString(Qt::ISODate);
+}
 void MailBackend::acknowledgeCalendarReminder(const QVariantMap &event, bool join, bool snooze) {
     if (!m_connected || m_shutdown) return;
     const auto account = event.value("account").toString();

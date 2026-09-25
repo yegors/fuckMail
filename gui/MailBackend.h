@@ -174,6 +174,10 @@ public:
     Q_INVOKABLE void playReminderSound(int level);
     Q_INVOKABLE void stopReminderSound();
     Q_INVOKABLE QString calendarReminderWhen(const QVariantMap &event) const;
+    // An invitation's time in the calendar's display zone: "Tue 29 Sep · 15:00 – 16:00",
+    // or without its end "Fri 25 Sep 15:30". Dates alone are all-day.
+    Q_INVOKABLE QString inviteWhen(const QString &start, const QString &end, bool withEnd = true) const;
+    Q_INVOKABLE QString calendarDayOf(const QString &start) const;
     QVariantMap currentAccount() const;
     QString account() const { return m_account; }
     QString query() const { return m_query; }
@@ -278,6 +282,12 @@ public:
     Q_INVOKABLE QUrl attachmentSaveLocation(const QString &name) const;
     // withRaw adds the raw text for the source dialog; it is never cached.
     Q_INVOKABLE QString requestMessageSource(const QString &id, const QString &version, bool withRaw = false);
+    // A calendar invitation's event and times; never cached, so answers show.
+    // Returns a ticket; `messageInviteReady(ticket, result, ok)` follows.
+    Q_INVOKABLE QString requestMessageInvite(const QString &id, const QString &version);
+    Q_INVOKABLE QVariantMap navigationAnchor() const { return m_navigationAnchor; }
+    // Whether a decline of this event is waiting out its Undo or its write.
+    Q_INVOKABLE bool calendarEventDeclining(const QVariantMap &event) const;
     Q_INVOKABLE QString receivedHtml(const QString &html) const;
     Q_INVOKABLE QVariantList receivedBody(const QString &html, const QString &plain) const;
     Q_INVOKABLE QString fixedFontFamily() const;
@@ -444,6 +454,7 @@ signals:
     void attachmentSaved(const QString &ticket, const QString &error);
     void mailSelectionRestored(const QVariantList &rows);
     void messageSourceReady(const QString &ticket, const QVariantMap &result, bool ok);
+    void messageInviteReady(const QString &ticket, const QVariantMap &result, bool ok);
     void calendarSearchChanged();
     void calendarSearchResultReady(const QVariantMap &event);
     void remindersChanged();
@@ -576,7 +587,6 @@ private:
     QVariantMap currentCalendarSource(const QVariantMap &event) const;
     QVariantList visibleCalendarEvents(const QVariantList &rows, bool reflow = false, bool filterByAccount = true, DeclinedRows declined = DeclinedRows::Keep) const;
     bool calendarEventHidden(const QVariantMap &event) const;
-    bool calendarEventDeclining(const QVariantMap &event) const;
     QString queueCalendarHold(const QVariantMap &values, const QVariantMap &event, bool decline);
     void advanceCalendarDeletions();
     void undoCalendarDeletion(const QString &key);
@@ -901,6 +911,11 @@ private:
     void convertLegacyFilters();
     QVariantMap m_pinnedRow;
     int m_pinnedIndex = -1;
+    // Where the open conversation was when Done, Delay or filing moved it:
+    // {id, before, after}. Up and Down go on from there.
+    QVariantMap m_navigationAnchor;
+    void releasePin();
+    int keptRowIndex(const QVariantList &rows, const QVariantList &shownRows, const QString &group) const;
     QVariantList m_calendarSources, m_captures;
     QString m_calendarSearchQuery, m_calendarSearchContext, m_calendarSearchStatus;
     QVariantMap m_calendarSearchResult;

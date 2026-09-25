@@ -9,6 +9,7 @@
 #include <QDir>
 #include <QDate>
 #include <QDateTime>
+#include <QTimeZone>
 #include <QGuiApplication>
 #include <QMouseEvent>
 #include <QFont>
@@ -140,6 +141,7 @@ public:
     Q_INVOKABLE void setCalendarDate(const QString &date) { calendarDate = calendarFrom = date; emit eventsChanged(); }
     Q_INVOKABLE void openCalendarWeek(const QString &date) { calendarView = "week"; setCalendarDate(date); }
     Q_INVOKABLE void showCalendarToday() { setCalendarDate(todayDate); }
+    Q_INVOKABLE QString calendarDayOf(const QString &start) const { return start.size() == 10 ? start : QDateTime::fromString(start, Qt::ISODate).toTimeZone(QTimeZone("America/Toronto")).date().toString(Qt::ISODate); }
     Q_INVOKABLE void moveCalendar(int) {}
     Q_INVOKABLE void joinCalendarEvent(const QVariantMap &) { ++reminderActions; }
     // The full event view shares the reminder screen; viewing must not touch reminders.
@@ -213,7 +215,7 @@ int main(int argc, char **argv) {
     app.setFont(QFont("Geist", 10));
     QTemporaryDir copy; require(copy.isValid(), "Temporary QML directory");
     require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/CalendarMailCount.qml", copy.filePath("CalendarMailCount.qml")), "Copy mail count component");
-    for (const auto name : {"AccountBadge.qml","ShortcutRegistry.qml","FmScrollBar.qml","Theme.qml", "FmDialog.qml", "FmConfirmDialog.qml", "FmDateField.qml", "FmSwitch.qml", "FmSegmented.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "FmTextField.qml", "CalendarOccurrenceRead.qml", "EventEditor.qml", "EventDetails.qml", "ReminderPopup.qml", "CalendarOperations.qml", "GoogleLabelSetup.qml", "CalendarView.qml", "CalendarEventList.qml", "StartupOverlay.qml"})
+    for (const auto name : {"AccountBadge.qml","ShortcutRegistry.qml","FmScrollBar.qml","Theme.qml", "FmDialog.qml", "FmConfirmDialog.qml", "FmDateField.qml", "FmSwitch.qml", "FmSegmented.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "FmTextField.qml", "CalendarOccurrenceRead.qml", "EventEditor.qml", "EventDetails.qml", "ReminderPopup.qml", "AttendeeList.qml", "SenderAvatar.qml", "CalendarOperations.qml", "GoogleLabelSetup.qml", "CalendarView.qml", "CalendarEventList.qml", "StartupOverlay.qml"})
         require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/" + name, copy.filePath(name)), "Copy actual QML control");
     QFile module(copy.filePath("qmldir")); require(module.open(QIODevice::WriteOnly), "QML singleton directory");
     module.write("singleton Theme 1.0 Theme.qml\nsingleton ShortcutRegistry 1.0 ShortcutRegistry.qml\n"); module.close();
@@ -257,6 +259,15 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     settle([&] { return save->property("enabled").toBool(); });
     require(editor->property("targetAccount") == "alpha" && target->property("currentIndex").toInt() == 0
         && title->property("text") == "Typed while first sync discovers calendars", "Late catalog enables the open form without losing typing");
+    // Guests: once there is a second person the Going? list shows everyone,
+    // you first as organizer, and a guest added here reads "Invite on save".
+    auto going = qobject_cast<QQuickItem *>(named(root, "eventGoingList"));
+    require(going && !going->isVisible(), "A new event alone has no Going? list");
+    editor->setProperty("guestAddresses", QVariantList{"new@example.test"});
+    require(going->isVisible() && named(root, "editorAttendeeStatus_0")->property("text") == "Accepted"
+        && named(root, "editorAttendeeStatus_1")->property("text") == "Invite on save", "Going? lists you as organizer and the unsaved guest");
+    editor->setProperty("guestAddresses", QVariantList{});
+    require(!going->isVisible(), "Removing the only guest hides Going?");
     backend.calendarSources = {catalog[1], catalog[0]}; emit backend.eventsChanged();
     settle([&] { return target->property("currentIndex").toInt() == 1; });
     require(editor->property("targetAccount") == "alpha", "Catalog reordering preserves the exact chosen target");
@@ -377,6 +388,13 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     // start, its full notes and Join, but no Snooze, no acknowledgment and no
     // sound on opening. It sounds only when a point passes while it is open.
     auto viewed = original; viewed["description"] = "Agenda first\nDial-in second\nThird line\nFourth line";
+    viewed["organizer"] = "rebecca@example.test";
+    viewed["attendees"] = QVariantList{
+        QVariantMap{{"email", "igor@example.test"}, {"displayName", "Igor"}, {"responseStatus", "tentative"}},
+        QVariantMap{{"email", "rebecca@example.test"}, {"displayName", "Rebecca"}, {"organizer", true}, {"responseStatus", "accepted"}},
+        QVariantMap{{"email", "room@resource.example.test"}, {"resource", true}, {"responseStatus", "accepted"}},
+        QVariantMap{{"email", "me@example.test"}, {"self", true}, {"responseStatus", "needsAction"}},
+        QVariantMap{{"email", "aly@example.test"}, {"displayName", "Aly"}, {"responseStatus", "declined"}}};
     const auto viewedStart = QDateTime::currentDateTimeUtc().addSecs(2 * 86400 + 3723);
     viewed["start"] = viewedStart.toString(Qt::ISODate); viewed["end"] = viewedStart.addSecs(3600).toString(Qt::ISODate);
     call(details, "openAt", viewed, QVariant{}); settle([&] { return details->property("opened").toBool(); });
@@ -394,6 +412,16 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     require(viewClose->property("text") == "Close" && !qobject_cast<QQuickItem *>(named(root, "reminderSnooze"))->isVisible()
         && named(root, "reminderPrimary")->property("text") == "Join meeting" && named(root, "reminderNotesText")->property("notes") == viewed["description"],
         "View offers Join and Close with the full notes, never Snooze");
+    require(named(root, "reminderMeetingUrl")->property("text") == "example.test/retained", "The meeting URL row shows the link without https://");
+    {
+        QStringList statuses;
+        for (int i = 0; i < 5; ++i) if (auto status = findNamed(root, QByteArray("reminderAttendeeStatus_" + QByteArray::number(i)).constData())) statuses << status->property("text").toString();
+        require(statuses == QStringList{"Accepted", "Maybe", "Declined", "No reply"}, qPrintable("Guests: organizer, guests, then you, without rooms: " + statuses.join(",")));
+        if (const auto dir = qEnvironmentVariable("FM_CALENDAR_CAPTURE_DIR"); !dir.isEmpty() && QDir().mkpath(dir)) {
+            QElapsedTimer paint; paint.start(); while (paint.elapsed() < 300) QCoreApplication::processEvents(QEventLoop::AllEvents, 10);
+            qobject_cast<QQuickWindow *>(root)->grabWindow().save(QDir(dir).filePath("event-view.png"));
+        }
+    }
     require(backend.sounds == 0 && viewPanel->property("chimes").toInt() == 0 && backend.reminderActions == 0, "Opening View is silent and acknowledges nothing");
     const auto viewedStartMs = viewPanel->property("startMs").toDouble();
     viewPanel->setProperty("nowMs", viewedStartMs - 59000);
@@ -1023,6 +1051,11 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     require(backend.calendarView=="day"&&backend.calendarDate=="2026-09-13"&&plain(dayDetails->property("eventData")).toMap()["id"]==visualA["id"]
         &&dayBlock&&dayBlock->isVisible()&&qAbs(dayDetails->property("originY").toDouble()-dayBlock->mapToScene({0,dayBlock->height()}).y())<1,"showEventInDay opens the event's Day view card at its block");
     call(dayDetails,"close");settle([&]{return !dayDetails->property("visible").toBool();});
+    // An invitation email's event is Core's row, with no layout date: its own day, not today.
+    auto undated=visualA; undated.remove("date"); undated["start"]="2026-09-17T02:00:00Z"; undated["end"]="2026-09-17T03:00:00Z";
+    backend.setCalendarView("week"); call(calendar,"showEventInDay",undated);
+    require(backend.calendarView=="day"&&backend.calendarDate=="2026-09-16","showEventInDay without a layout date opens the event's display-zone day");
+    backend.setCalendarDate("2026-09-13");
     backend.setCalendarView("week");
     backend.calendarBandRows=0; emit backend.eventsChanged();
     calendar->setProperty("visible", false); require(!backend.mailActive, "Hidden Calendar stops count queries");

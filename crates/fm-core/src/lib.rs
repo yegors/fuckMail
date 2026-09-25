@@ -51,6 +51,7 @@ pub mod live_calendar_recurring;
 pub mod live_calendar_writes;
 pub mod live_profile;
 pub mod local_content;
+pub mod message_invite;
 pub mod message_source;
 mod mutations;
 mod phase1_calendar;

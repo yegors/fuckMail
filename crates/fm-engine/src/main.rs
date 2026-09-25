@@ -1159,6 +1159,7 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
         "flag",
         "draft_get",
         "message_source",
+        "message_invite",
         "google_sent",
         "google_sent_message",
         "draft_save",
@@ -1360,6 +1361,8 @@ mod session_tests {
             let methods = hello["result"]["methods"].as_array().unwrap();
             for method in [
                 "conversations",
+                "message_source",
+                "message_invite",
                 "flag",
                 "preferences_save",
                 "draft_discard",

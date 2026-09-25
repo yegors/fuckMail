@@ -454,6 +454,79 @@ fn phase1_status_filters_use_entire_conversation_and_source_filters_share_one_me
         .any(|row| row["id"] == THREAD && row["group"] == "done"));
 }
 
+// Search 10: words typed together are one phrase that must appear as written,
+// from the start of a word; the last word may be partial.
+#[test]
+fn search_phrases_match_as_written() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut store = Store::open(dir.path()).unwrap();
+    let picked: Vec<(i64, String)> = store
+        .db
+        .prepare("SELECT rowid,conversation_id FROM messages WHERE account=?1 AND inbox=1 AND sent=0 AND trashed=0 AND conversation_id IN (SELECT conversation_id FROM messages WHERE account=?1 GROUP BY conversation_id HAVING COUNT(*)=1) ORDER BY id LIMIT 4")
+        .unwrap()
+        .query_map([ACCOUNT], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<std::result::Result<_, _>>()
+        .unwrap();
+    assert_eq!(picked.len(), 4);
+    for ((rowid, _), (subject, body)) in picked.iter().zip([
+        ("Bill C-22 Option Illustrations", "Draft attached"),
+        ("Invitation: Standup @ Tue Sep 22, 2026", "Calendar call details"),
+        ("Weekly", "Thanks for the Bill\r\nC-22 update, Café Élan"),
+        ("Re: c22", "Nothing here"),
+    ]) {
+        store.db.execute("UPDATE messages SET subject=?2,body=?3,sender_name='Sender',sender_email='sender@fixture.example' WHERE rowid=?1", params![rowid, subject, body]).unwrap();
+        store.db.execute("DELETE FROM message_fts WHERE rowid=?1", [rowid]).unwrap();
+        store
+            .db
+            .execute(
+                "INSERT INTO message_fts(rowid,sender,subject,body) VALUES(?1,'Sender sender@fixture.example',?2,?3)",
+                params![rowid, subject, body],
+            )
+            .unwrap();
+    }
+    let [a, b, c, d] = [&picked[0].1, &picked[1].1, &picked[2].1, &picked[3].1].map(String::clone);
+    let ids = |store: &mut Store, query: &str| -> Vec<String> {
+        let result = store
+            .handle("conversations", Some(ACCOUNT), json!({"query":query,"folder":"inbox","limit":100}))
+            .unwrap();
+        let mut ids: Vec<String> = result["conversations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r["id"].as_str().unwrap().to_owned())
+            .collect();
+        ids.sort();
+        assert_eq!(result["filtered_conversation_count"], ids.len(), "{query}");
+        ids
+    };
+    let sorted = |mut v: Vec<String>| {
+        v.sort();
+        v
+    };
+    // "c-22" is not "c…" and "22" anywhere: Sep 22 and c22 stay out.
+    assert_eq!(ids(&mut store, "c-22"), sorted(vec![a.clone(), c.clone()]));
+    assert_eq!(ids(&mut store, "C-2"), sorted(vec![a.clone(), c.clone()]));
+    assert_eq!(ids(&mut store, "subject:c-22"), vec![a.clone()]);
+    assert_eq!(ids(&mut store, "body:c-22"), vec![c.clone()]);
+    // Case, accents and line breaks do not matter; order and punctuation do.
+    assert_eq!(ids(&mut store, "bill c-22"), sorted(vec![a.clone(), c.clone()]));
+    assert_eq!(ids(&mut store, "\"BILL C-22\""), sorted(vec![a.clone(), c.clone()]));
+    assert_eq!(ids(&mut store, "cafe elan"), vec![c.clone()]);
+    assert!(ids(&mut store, "c-22 bill").is_empty());
+    assert!(ids(&mut store, "c 22").is_empty());
+    assert!(ids(&mut store, "ill c-22").is_empty());
+    assert_eq!(ids(&mut store, "c22"), vec![d.clone()]);
+    assert_eq!(ids(&mut store, "sep 22"), vec![b.clone()]);
+    // One word needs only its own start; the fixture's "Member 22 of 32" also matches.
+    let twenty_two = ids(&mut store, "22");
+    assert!([&a, &b, &c].iter().all(|id| twenty_two.contains(id)) && !twenty_two.contains(&d));
+    // Separate phrases each need to appear.
+    assert_eq!(ids(&mut store, "c-22 from:sender@fixture.example"), sorted(vec![a.clone(), c.clone()]));
+    assert_eq!(ids(&mut store, "c-22 subject:weekly"), vec![c.clone()]);
+    assert!(ids(&mut store, "bill option subject:weekly").is_empty());
+}
+
 // Search 7: the search box grammar GUI and CLI share.
 #[test]
 fn search_grammar_scopes_fields_labels_state_and_recipients() {
@@ -535,10 +608,9 @@ fn search_grammar_scopes_fields_labels_state_and_recipients() {
         vec![a.clone()]
     );
     assert_eq!(ids(&mut store, "body:zeppelin", "inbox"), vec![c.clone()]);
-    assert_eq!(
-        ids(&mut store, "zeppelin orchid", "inbox"),
-        sorted(vec![a.clone(), c.clone()])
-    );
+    // Words typed together are one phrase (Search 10).
+    assert_eq!(ids(&mut store, "zeppelin orchid", "inbox"), vec![c.clone()]);
+    assert!(ids(&mut store, "orchid zeppelin", "inbox").is_empty());
     assert_eq!(
         ids(&mut store, "QUENTIN@fixture.example", "inbox"),
         vec![a.clone()]

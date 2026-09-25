@@ -2,6 +2,26 @@
 
 
 
+## D127 — invitation emails, optional proxy credentials (Core71)
+
+- **`message_invite {id, source_version}`**: account-scoped and read-only in synthetic and live profiles. It makes no provider calls and no writes. Errors are the same as `message_source` (`not_found`, `stale_source`), plus `invalid_request` for unknown fields.
+  - The writer picks bounded inputs, a worker parses the retained blobs, and the store links the event.
+  - It returns `{invite: null}` without a usable calendar part. The first text/calendar part is used; failing that, an application/ics or `.ics` attachment.
+  - Otherwise it returns `{invite: {uid, method, sequence, recurrence_id, summary, start, end, all_day, was_start, was_end, was_all_day, event}}`.
+    - `start`/`end` come from the linked event when there is one, else from the invitation. They are RFC3339 UTC or `YYYY-MM-DD`, and null when neither has a usable time.
+    - `event` is the combined Calendar's own projection row for the same account's `calendar_sources` with that iCalUID, not cancelled. A calendar where the account is a guest beats a shared copy.
+    - A RECURRENCE-ID selects that occurrence. A series invitation without one gives the next occurrence (up to four tries), else the first.
+    - `event` is null without a display zone, for busy-only rows, and for a RECURRENCE-ID that is not an occurrence.
+  - `was_*` comes from the most recent earlier invitation for the same UID and RECURRENCE-ID whose DTSTART differs, for a REQUEST only. Earlier candidates are up to 30 from the conversation and 30 from the sender, each with a calendar attachment row.
+  - The parser (`message_invite::ics`) handles:
+    - folding, escapes, VALUE=DATE and DURATION;
+    - TZID through `fm_calendar::Tz`, with VTIMEZONE definitions and common Windows zone names;
+    - hostile input, which gives null rather than an error.
+- **`message_source`** adds `has_invite` (the same detection).
+- **Proxy credentials are optional.** Image and sender-picture fetches send basic auth only when the proxy has a username or a saved password. With no vault password the proxy is asked without credentials instead of failing `no_password`.
+
+Consumers: Mail UI93, Calendar37, CLI54.
+
 ## D126 — draft copies kept in place, upload quiet time, Reply-To, sender pictures (Core70)
 
 - **Earlier read-only draft copies** (`origin google_snapshot`):

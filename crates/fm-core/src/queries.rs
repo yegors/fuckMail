@@ -970,16 +970,38 @@ impl Store {
         } else {
             field
         };
-        let expression = std::iter::once(search_query::fts_group(columns, &word_text))
+        // Each phrase must appear as written (Search 10). The index finds its
+        // words in order, the last as a prefix; the message text then decides
+        // the punctuation and spacing between them.
+        let expression = text
+            .phrases
+            .iter()
+            .map(|v| search_query::fts_phrase(columns, v))
             .chain(
                 text.subject
                     .iter()
-                    .map(|v| search_query::fts_group("subject", v)),
+                    .map(|v| search_query::fts_phrase("subject", v)),
             )
-            .chain(text.body.iter().map(|v| search_query::fts_group("body", v)))
+            .chain(text.body.iter().map(|v| search_query::fts_phrase("body", v)))
             .flatten()
             .collect::<Vec<_>>()
             .join(" AND ");
+        let phrase_column = match field {
+            "subject" => TextColumn::Subject,
+            "body" => TextColumn::Body,
+            "sender" => TextColumn::Sender,
+            _ => TextColumn::SubjectOrBody,
+        };
+        let phrase_checks: Vec<(TextColumn, String)> = text
+            .phrases
+            .iter()
+            .map(|v| (phrase_column, v))
+            .chain(text.subject.iter().map(|v| (TextColumn::Subject, v)))
+            .chain(text.body.iter().map(|v| (TextColumn::Body, v)))
+            .filter(|(_, v)| search_query::tokens(v).next().is_some())
+            .map(|(column, v)| (column, search_query::fold(v)))
+            .filter(|(_, v)| search_query::phrase_needs_check(v))
+            .collect();
         // One first page per account bounds this cache independently of the
         // corpus and query history. Mail/source hooks and transaction snapshots
         // invalidate it through the existing search generation; presentation,
@@ -1046,6 +1068,7 @@ impl Store {
                 attachment,
                 people: &person_roles,
                 label: !label_id.is_empty(),
+                texts: !phrase_checks.is_empty(),
             },
         );
         let mut stmt = self.db.prepare_cached(&sql)?;
@@ -1090,6 +1113,36 @@ impl Store {
         }
         if !simple {
             while let Some(row) = rows.next()? {
+                if !phrase_checks.is_empty() {
+                    let mut folded: [Option<String>; 3] = [None, None, None];
+                    let mut found = true;
+                    for (column, phrase) in &phrase_checks {
+                        let mut has = |index: usize| -> Result<bool> {
+                            if folded[index].is_none() {
+                                let text = row.get_ref(4 + index)?.as_str_or_null().map_err(|_| {
+                                    err("storage_error", "Invalid message text")
+                                })?;
+                                folded[index] = Some(search_query::fold(text.unwrap_or("")));
+                            }
+                            Ok(search_query::contains_phrase(
+                                folded[index].as_deref().unwrap_or(""),
+                                phrase,
+                            ))
+                        };
+                        found = match column {
+                            TextColumn::Subject => has(0)?,
+                            TextColumn::Body => has(1)?,
+                            TextColumn::Sender => has(2)?,
+                            TextColumn::SubjectOrBody => has(0)? || has(1)?,
+                        };
+                        if !found {
+                            break;
+                        }
+                    }
+                    if !found {
+                        continue;
+                    }
+                }
                 if !exact_sender.is_empty() {
                     let candidate = row
                         .get_ref(3)?
@@ -1653,6 +1706,17 @@ pub(crate) struct TextPredicates<'a> {
     /// One LIKE pattern slot per name or address, in order.
     pub people: &'a [PersonRole],
     pub label: bool,
+    /// Also return subject, body and sender text (columns 4–6) for phrase checks.
+    pub texts: bool,
+}
+
+/// Where a search phrase must appear.
+#[derive(Clone, Copy)]
+enum TextColumn {
+    Subject,
+    Body,
+    Sender,
+    SubjectOrBody,
 }
 
 /// The benchmark's fixed twelve-slot form, without text predicates.
@@ -1742,7 +1806,12 @@ pub(crate) fn search_matches_sql_with(search: bool, p: &Value, text: &TextPredic
     } else {
         "''"
     };
-    format!("WITH bindings AS (SELECT {bindings}) SELECT m.conversation_id,m.rowid,m.sent_at,{exact_column} FROM {source} WHERE {predicate}")
+    let text_columns = if text.texts {
+        ",m.subject,m.body,m.sender_name||' '||m.sender_email"
+    } else {
+        ""
+    };
+    format!("WITH bindings AS (SELECT {bindings}) SELECT m.conversation_id,m.rowid,m.sent_at,{exact_column}{text_columns} FROM {source} WHERE {predicate}")
 }
 
 #[cfg(test)]

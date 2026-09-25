@@ -36,6 +36,7 @@ impl Runtime {
                 | "google_draft_authoring"
                 | "google_draft_copy"
                 | "message_source"
+                | "message_invite"
                 | "google_sent_message"
                 | "draft_transfer"
         )
@@ -118,6 +119,28 @@ impl Runtime {
             return self
                 .prepare(cancel, move |cancel| {
                     fm_core::message_source::read(plan, &cancel)
+                })
+                .await;
+        }
+        if method == "message_invite" {
+            // Read-only: blobs are parsed on a worker, then the short linking
+            // query and Calendar projection run on the store.
+            let plan = self
+                .core
+                .call(move |store| store.message_invite_begin(&account, &params))
+                .await?;
+            let prepared = self
+                .prepare(cancel.clone(), move |cancel| {
+                    fm_core::message_invite::prepare(plan, &cancel)
+                })
+                .await?;
+            return self
+                .core
+                .call(move |store| {
+                    if cancel.is_cancelled() {
+                        return Err(stopped());
+                    }
+                    store.message_invite_finish(prepared)
                 })
                 .await;
         }

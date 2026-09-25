@@ -599,6 +599,12 @@ enum Mail {
         #[arg(long)]
         source_version: String,
     },
+    /// Show a received invitation's calendar details and its cached event, read-only.
+    Invite {
+        id: String,
+        #[arg(long)]
+        source_version: String,
+    },
     /// Unsubscribe from a received message's mailing list: one-click in the
     /// background, the list's unsubscribe email through Google, or print the
     /// unsubscribe page to open.
@@ -2606,6 +2612,15 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 client
                     .call(
                         "message_source",
+                        scope,
+                        json!({"id":id,"source_version":source_version}),
+                    )
+                    .await?
+            }
+            Mail::Invite { id, source_version } => {
+                client
+                    .call(
+                        "message_invite",
                         scope,
                         json!({"id":id,"source_version":source_version}),
                     )

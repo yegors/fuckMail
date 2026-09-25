@@ -1375,3 +1375,70 @@ From the export:
   - Link cards open after 200 ms and stay open when their link is hovered again.
 
 Core70, Gmail33, Calendar36, Mail UI92; schema37 (no change), fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+
+## D127 — thirteenth export: answer invitations from the email, guest answers, meeting link; To review holds the open item; proxy for pictures (2026-09-25T21:00:00Z)
+
+The founder supplied `Flight Progress v2 (offline) (6).html` with 14 designer notes. They also answered D126's questions and asked for one change.
+
+Answers:
+- **Sender pictures** load by default. When the HTTPS proxy is set, pictures go through it like mail images. A found picture shows at 75% opacity so it is not too bright on the dark themes.
+- **Google Contacts photos:** no new Google permission for now.
+- **Participant stack:** export 6 keeps it at 22 px.
+- **Proxy fix:** pictures already used the image client, but a proxy saved without a password failed ("no_password"), although username and password are optional. Credentials are now sent only when one is set. Tests now cover a proxy with no credentials, pictures through the proxy, and a down proxy never falling back to a direct fetch.
+
+Change requested: **an opened To review item stays in To review.** It is marked read at once but keeps its place until another conversation is opened, by click or Up/Down. Filing it (Done, Delay, Archive…) still moves it at once.
+
+From the export:
+- **Invitation emails.** An invite or update email is linked to its calendar event through the calendar part's UID (Google's iCalUID), read-only (`message_invite`, Core71). The CLI reads the same data with `mail invite`. The first row of the notice group holds:
+  - the event's time;
+  - for an update, the earlier time from the previous invite email for the same event, crossed out;
+  - "Going", "Maybe" or "Declined" once answered;
+  - Yes / Maybe / No, which answer the same event as the event card. No hides the event with Undo.
+
+  Clicking the time opens Calendar's Day view with the card next to the block, first turning on Show declined for a declined event. Google adds invitations to the calendar itself and the app creates no events. Until the event has synced, the row shows the email's own time with the answers dimmed. The mockup's sample email and event are not added.
+- **Guest answers.** The event editor gets a Going? row once there is more than one person. The full event view replaces "With" with a Guests row. Both list:
+  - the organiser first, then guests, then you on an invitation; on your own event you come first as "Organizer · you";
+  - each person's Google answer: Accepted, Maybe, Declined (struck through) or No reply, and "Invite on save" for guests just added in the editor;
+  - rooms are left out.
+- **Meeting URL.** The full event view shows the meeting link without https://. It is underlined, wraps rather than being cut off, and opens in the browser. The Join button shows only with a link. Labels are 112 px wide.
+
+Core71, Calendar37, Mail UI93, CLI54; schema37 (no change), fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D128 — To review transitions; invitation time opens its own day (2026-09-25T23:00:00Z)
+
+The founder reported two problems in the D127 build:
+- **To review split in two.** With two items to review, opening the first and pressing Down showed "To review 0 · All reviewed", then Delayed, then a second To review holding the kept item, then Delayed again. Delaying the last item to review also behaved oddly.
+- **Invitation time opened today.** Clicking the time in an invitation email's row opened Calendar on today, not on the event's day. Yes worked and Google Calendar showed the answer.
+
+Causes:
+- The kept item went back in at its old row number, which fell inside or after Delayed once the rest of the list moved.
+- Section counts came from Core, which already counted the read item in Done. The header said 0 and showed "All reviewed" next to the kept item.
+- Delay, Done and Undelay did not release the kept item, so a delayed item stayed in To review.
+- The event linked from an email is Core's own row, which has no layout date. The Day view then fell back to today.
+
+Decided:
+- **The open item stays in To review.** It keeps its place among the To review rows that were above it, so no section is ever split. The section headers count it there and not in Done. The top "N to review" figure stays the true unread count.
+- **Explicit actions move it at once.** Done, Delay, Undelay, Archive and the other filing actions move the open item to its real section immediately, and it stays open. Up and Down then go on from where it was, not from where it went.
+- **No automatic advance.** Opening the next item stays a deliberate click or Up/Down, because opening marks it read.
+- **An invitation email's time opens the event's own day** in the display time zone.
+
+Mail UI94; Core71, Calendar37, CLI54, schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D129 — search text matches as written (2026-09-25T23:30:00Z)
+
+The founder searched for "c-22". Their current mail client listed only threads containing that string. Ours also listed unrelated mail, and `subject:c-22` returned invitations from 22 September.
+
+Cause: the index splits "c-22" into the words "c" and "22". Each word was searched separately, as the start of any word, so any message with a word starting with "c" and one starting with "22" matched (for example "Calendar … Sep 22").
+
+The founder asked that a search string be an exact match, for one word or several; partial word matches are fine.
+
+Decided (Search 10):
+- **Words typed together are one phrase.** A `subject:` or `body:` value is also one phrase. The phrase must appear in that order, starting at the beginning of a word, and its last word may be incomplete: `c-2` finds "C-22", `bill c-22` finds "Bill C-22", but `c-22 bill`, `c 22` and `ill c-22` find nothing.
+- **Case, Latin accents and line breaks don't matter.** Punctuation does.
+- **Separate phrases each need to appear.** A phrase ends at an operator or an address; `c-22 subject:weekly` needs both.
+- The index still finds candidates quickly. Core then checks the stored text whenever a phrase has more than one word or any punctuation, so single-word searches cost the same as before.
+- **Drafts search matches the same way.**
+- **Remote search (Gmail) is unchanged.** It still sends the text as typed, which Gmail reads word by word.
+
+Search 10; Core, Mail UI and CLI interfaces unchanged; schema37 (no change), fixtures0/3, protocol1 and readiness0/9 unchanged.

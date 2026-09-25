@@ -1,6 +1,45 @@
 # September 23 prototype implementation
 
 
+## D127 — thirteenth export (2026-09-25)
+
+The founder supplied `Flight Progress v2 (offline) (6).html` (870,338 bytes, SHA-256 `765f20ee286aaa8827700807311ba751c2d7e3cd03a2a9a9ddca996ea3e225a3`) with 14 designer notes. Note 6 (the sample email and event) applies to the mockup only. The template was unpacked and compared with export 5. From the markup:
+- **Invite row:** 40 px minimum, a 13 px gold calendar icon, tabular ink time, a struck "was" at 35%, the status word at 11.5 px and 45%, then 22 px Yes/Maybe/No segments in a 1 px `line2` box (chosen Yes in ink, Maybe/No `bg6`). Rules sit between the rows of the notice group.
+- **`attendees()`:** organiser, then guests, then "You" on an invitation, or "Organizer · you" first on your own event. The status colours are 75%, 55%, red, 40% and gold. Editor rows are 20 px at 13/12 px; full view rows are 24 px at 15/13.5 px.
+- **Full view:** a 112 px label grid; Meeting URL as 15.5 px ink with a 25% underline, `overflow-wrap: anywhere`; Join only when `meetUrl` gives a link.
+- **Participant stack:** still 22 px.
+
+Verification on Windows, Release build in `build/p9` (the running app was left alone):
+- **Rust:** `cargo test --workspace` passes: fm-core 391, fm-engine 191 and the session tests. Clippy `-D warnings` is clean. New Core tests cover:
+  - a Google invite linked by iCalUID, preferring the guest calendar, with the projection matching `calendar_search`;
+  - the earlier time, found through the conversation and through the sender;
+  - non-invite and malformed parts, and an `invite.ics` fallback;
+  - Outlook Windows zones in winter and summer, and an unknown custom zone;
+  - series, moved, plain, cancelled and outside-series recurrences;
+  - a live case where Google's time beats the email;
+  - a stale source and cancellation.
+
+  Parser tests cover folding, escapes, durations, zones and hostile input. The session test checks `message_invite` is advertised and bounded.
+- **Native:** all 31 GUI tests pass (`gui-startup-recovery` excluded, as before).
+  - `gui-calendar-controls` checks:
+    - the editor's Going? list (you as organizer, "Invite on save");
+    - the full view's guest order and statuses, with the room left out;
+    - the Meeting URL text.
+  - `gui-html-message-body` checks:
+    - the invite row coming before the mailing list and the "was" time;
+    - unanswered state, Yes answering the linked event with its etag and staying chosen through the calendar's answer;
+    - No going through the decline hold;
+    - the time opening the event with Show declined.
+  - `gui-mail-selection` checks that a read open conversation stays in To review, marked read, and moves once another is opened.
+- **Proxy:** engine tests cover sender pictures through an HTTPS proxy with no credentials, a down proxy reporting `proxy_unavailable` with no direct request, and an image fetch through an open proxy.
+- **Capture:** the full event view with Meeting URL and Guests (`FM_CALENDAR_CAPTURE_DIR`).
+
+Not verified:
+- Invitation emails from real Gmail (Google and Outlook organisers).
+- Answering one for real, and the Undo on a real decline.
+- A real HTTPS proxy.
+- Mac/Linux.
+
 ## D126 — twelfth export (2026-09-25)
 
 The founder supplied `Flight Progress v2 (offline) (5).html` (856,596 bytes, SHA-256 `c46b90b1ecd4e14d9f5195815484caf58c660d2611f864563f6d9a5a72d421ba`) with 21 designer notes, alongside four live-mailbox bug reports (D126). Note 16 (sample brand domains) applies to the mockup only.
@@ -412,3 +451,51 @@ The configured Release package at `dist/prototype-september-23-windows-amd64` pa
 The whole engine test run reports 164 passed and two failed assertions in Gmail inventory continuation/recent-first coverage fixtures (`google_sync::mail::tests`). D089/D090 changes in that module are confined to Calendar refresh and arrival-classification admission, but the broader engine gate remains failed. The 13 focused Calendar worker tests pass. Preserve these failures when integrating; neither a passing scoped packet nor a package smoke closes whole Phase 2 acceptance.
 
 Two actual packaged offscreen frames were inspected from a disposable synthetic profile: `build/d090-release/calendar-month.png` shows the count pills in the top-right of past month cells, no future pills, and the labelled All calendars switch; `calendar-settings.png` shows the revised intro plus default 15-minute reminder and 5-minute snooze segments without the duplicate account row. These PNGs remain ignored local evidence. The sound patterns and fullscreen reminder have native logic/QML checks but no other-host or actual-account visual playback evidence.
+
+## D128 — To review transitions and invitation day (2026-09-25)
+
+The founder reported, with two screenshots:
+- a To review section split in two after opening the first of two items and pressing Down;
+- odd behaviour when delaying the last item to review;
+- an invitation email's time opening Calendar on today.
+
+Findings are in D128. Verification on Windows, Release build in `build/p9` (the running app was left alone):
+- `gui-mail-selection` `reviewTransitions` uses the real MailView with Core-style replies that move each read row to Done.
+  - It opens the first of three items to review, presses Down twice, delays the last one, then presses Down again.
+  - At each step it checks row order and that no section repeats. It also checks the To review / Delayed / Done counts, one To review header, and "All reviewed" only after the Delay.
+  - Down after the Delay goes to the row below the old place (Delayed's first row), not below the new one.
+- An existing check now expects a filtered-out open row to stay at its old place inside its section.
+- `gui-calendar-controls`: an undated row starting 2026-09-17 02:00 UTC opens Day view on 2026-09-16 (Toronto).
+- `gui-integration`: `calendarDayOf` matches the real layout's day, and an undated row opens its Day view with its card.
+- All 31 GUI tests pass. Rust unchanged.
+
+Not verified:
+- the live mailbox;
+- a real invitation email after the fix.
+
+## D129 — search matches as written (2026-09-25)
+
+The founder compared searching "c-22" in their current client with ours; ours listed unrelated threads, and `subject:c-22` returned 22 September invitations. The cause and the decision are in D129.
+
+Verification on Windows, Release build in `build/p9`:
+- `search_phrases_match_as_written` (fm-core) uses four fixture messages:
+  - "Bill C-22 Option Illustrations";
+  - "Invitation: Standup @ Tue Sep 22, 2026" with "Calendar call details";
+  - "Bill" and "C-22" split across a line break, plus "Café Élan";
+  - "Re: c22".
+- It checks:
+  - `c-22` and `C-2` find the first and third only;
+  - `subject:` and `body:` each find their own column;
+  - `bill c-22` still finds them across the line break, and `"BILL C-22"` in quotes too;
+  - `cafe elan` finds "Café Élan";
+  - `c-22 bill`, `c 22` and `ill c-22` find nothing;
+  - `c22` and `sep 22` find their own message only;
+  - the filtered count equals the rows returned.
+- Parser tests cover how phrases are split (at operators and addresses), accent folding (Latin-1 and Latin Extended-A, checked against Unicode decomposition), and matching from the start of a word.
+- Drafts: `safe café` and `punctuation-safe cafe` match, `punctuation safe` and `afe` do not.
+- Two older tests assumed words could match anywhere and were updated: `zeppelin orchid` now needs the phrase, and the sender-field `may lind` no longer matches "Maya Lindqvist" (`maya lind` does).
+- `cargo test --workspace` (808) and clippy pass. All 31 GUI tests pass.
+
+Not verified:
+- the live mailbox;
+- matching speed on a large real mailbox for common multi-word phrases, where the stored text of each candidate is checked.

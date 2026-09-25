@@ -470,18 +470,17 @@ impl Runtime {
                 return Ok(client.clone());
             }
         }
-        let password = match &settings.proxy {
-            None => None,
-            Some(_) => {
-                let secret = self.secret.as_ref().ok_or("no_password")?;
-                Some(secret.load().map_err(|_| "vault")?.ok_or("no_password")?)
-            }
+        // Username and password are both optional: a proxy without them is
+        // asked with no credentials.
+        let password = match (&settings.proxy, &self.secret) {
+            (Some(_), Some(secret)) => secret.load().map_err(|_| "vault")?,
+            _ => None,
         };
         let client = build_client(
             settings
                 .proxy
                 .as_ref()
-                .zip(password.as_deref().map(String::as_str)),
+                .map(|proxy| (proxy, password.as_deref().map(String::as_str))),
             self.blocked.clone(),
             &self.policy,
         )
@@ -675,7 +674,7 @@ fn ready(path: impl AsRef<std::path::Path>, width: u32, height: u32) -> Value {
 }
 
 fn build_client(
-    proxy: Option<(&ProxySettings, &str)>,
+    proxy: Option<(&ProxySettings, Option<&str>)>,
     blocked: Arc<RwLock<Vec<String>>>,
     policy: &Policy,
 ) -> reqwest::Result<reqwest::Client> {
@@ -710,10 +709,13 @@ fn build_client(
         builder = builder.add_root_certificate(root.clone());
     }
     builder = match proxy {
-        Some((proxy, password)) => builder.proxy(
-            reqwest::Proxy::all(format!("https://{}:{}", proxy.host, proxy.port))?
-                .basic_auth(&proxy.username, password),
-        ),
+        Some((proxy, password)) => {
+            let mut route = reqwest::Proxy::all(format!("https://{}:{}", proxy.host, proxy.port))?;
+            if !proxy.username.is_empty() || password.is_some() {
+                route = route.basic_auth(&proxy.username, password.unwrap_or(""));
+            }
+            builder.proxy(route)
+        }
         None => builder
             .no_proxy()
             .dns_resolver(Arc::new(PublicResolver { allow_loopback })),

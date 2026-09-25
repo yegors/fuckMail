@@ -302,7 +302,7 @@ void MailBackend::request(const QString &method, const QString &account, const Q
     if (blockArchivedRequest(method, account)) {
         callback({{"code", "account_removed"}, {"message", "This account is a read-only archive. Restore it explicitly before making changes."}}, false); return;
     }
-    const bool automaticRead = method == "status" || method == "message_source" || method == "assist_progress" || (m_automaticReadScope && (method == "accounts" || method == "preferences_get"
+    const bool automaticRead = method == "status" || method == "message_source" || method == "message_invite" || method == "assist_progress" || (m_automaticReadScope && (method == "accounts" || method == "preferences_get"
         || method == "categories" || method == "conversation" || method == "draft_get" || method == "capture_history"
         || method == "google_sync_status" || method == "google_mail_mutation_status" || method == "conversations" || method == "google_sent" || method == "google_sent_message"));
     // Synchronous cancellation/error callbacks can issue user work. The caller's
@@ -670,6 +670,15 @@ bool MailBackend::publishConversations(QVariantList rows) {
                 section = at.isValid() ? u"done:" + at.toTimeZone(zone).toString(u"yyyy-MM") : QStringLiteral("done:undated");
             }
             if (row.value("section").toString() != section) { row["section"] = section; value = row; }
+            // A kept row still counts in Core's totals for its real section.
+            if (const auto from = row.value("pinned_from").toString(); !from.isEmpty()) {
+                auto counted = from;
+                if (from == u"done") {
+                    const auto at = QDateTime::fromString(row.value("latest_at").toString(), Qt::ISODate);
+                    counted = at.isValid() ? u"done:" + at.toTimeZone(zone).toString(u"yyyy-MM") : QStringLiteral("done:undated");
+                }
+                if (row.value("counted_section").toString() != counted) { row["counted_section"] = counted; value = row; }
+            }
         }
     }
     // The protocol-facing list remains authoritative. Only the native view uses
@@ -826,15 +835,25 @@ void MailBackend::loadConversationPage(const QString &account, int generation, Q
                 }
                 const auto previous = m_conversations;
                 const auto previousNext = m_nextOffset;
-                // A conversation read or filed while open moves to its new section
-                // at once. It is kept in place only when this view no longer
-                // returns it (such as an unread filter), so the open row stays.
-                const bool returned = std::any_of(collected.cbegin(), collected.cend(),
+                // The open conversation keeps its place while it stays open: read
+                // on open leaves it in To review, and a view that no longer returns
+                // it (such as an unread filter) keeps it where it was. It moves when
+                // another conversation is opened; filing it clears the pin at once.
+                const auto returned = std::find_if(collected.begin(), collected.end(),
                     [this](const QVariant &row) { return row.toMap().value("id").toString() == m_selected; });
-                if (m_pinnedIndex >= 0 && !m_pinnedRow.isEmpty() && !returned) {
-                    auto pinned = m_pinnedRow;
-                    pinned["display_group"] = m_pinnedRow.value("display_group", m_pinnedRow["group"]); pinned["pinned"] = true;
-                    collected.insert(qMin(m_pinnedIndex, int(collected.size())), pinned);
+                if (m_pinnedIndex >= 0 && !m_pinnedRow.isEmpty()) {
+                    const auto shown = m_pinnedRow.value("display_group", m_pinnedRow["group"]).toString();
+                    if (returned == collected.end()) {
+                        auto pinned = m_pinnedRow;
+                        pinned["display_group"] = shown; pinned["pinned"] = true;
+                        collected.insert(keptRowIndex(collected, previous, shown), pinned);
+                    } else if (shown == u"review" && returned->toMap().value("group").toString() != u"review") {
+                        auto fresh = returned->toMap();
+                        collected.erase(returned);
+                        // Core counts it in its real section; the view counts it here.
+                        fresh["pinned_from"] = fresh.value("group"); fresh["display_group"] = shown; fresh["pinned"] = true;
+                        collected.insert(keptRowIndex(collected, previous, shown), fresh);
+                    }
                 }
                 if (!publishConversations(std::move(collected))) {
                     m_querySummary = previousSummary; m_loading = false; emit loadingChanged(); return;
@@ -847,6 +866,36 @@ void MailBackend::loadConversationPage(const QString &account, int generation, Q
             if (!ok) m_listError = result["message"].toString("Could not load older mail. Retry.");
             m_loading = false; emit loadingChanged();
         });
+}
+// Where the open conversation goes back into a reloaded Inbox: inside its
+// section, after the rows of that section that were above it, so a section
+// is never split. Other folders keep its old position.
+int MailBackend::keptRowIndex(const QVariantList &rows, const QVariantList &shownRows, const QString &group) const {
+    const auto groupOf = [](const QVariantMap &row) { const auto shown = row.value("display_group").toString(); return shown.isEmpty() ? row.value("group").toString() : shown; };
+    const auto rank = [](const QString &name) { return name == u"review" ? 0 : name == u"held" ? 1 : 2; };
+    if (m_folder != u"inbox") return qMin(m_pinnedIndex, int(rows.size()));
+    int was = -1;
+    for (int i = 0; i < shownRows.size() && was < 0; ++i) if (shownRows[i].toMap().value("id").toString() == m_selected) was = i;
+    if (was < 0) was = qMin(m_pinnedIndex, int(shownRows.size()));
+    QSet<QString> above;
+    for (int i = 0; i < was; ++i) { const auto row = shownRows[i].toMap(); if (groupOf(row) == group) above.insert(row.value("id").toString()); }
+    int at = 0;
+    for (; at < rows.size(); ++at) {
+        const auto row = rows[at].toMap(); const auto order = rank(groupOf(row));
+        if (order > rank(group) || (order == rank(group) && !above.contains(row.value("id").toString()))) break;
+    }
+    return at;
+}
+// An explicit Done, Delay or filing moves the open conversation at once.
+void MailBackend::releasePin() {
+    m_navigationAnchor.clear();
+    for (qsizetype i = 0; i < m_conversations.size(); ++i) if (m_conversations[i].toMap().value("id").toString() == m_selected) {
+        m_navigationAnchor = {{"id", m_selected},
+            {"before", i > 0 ? m_conversations[i - 1].toMap().value("id") : QVariant(QString())},
+            {"after", i + 1 < m_conversations.size() ? m_conversations[i + 1].toMap().value("id") : QVariant(QString())}};
+        break;
+    }
+    m_pinnedRow.clear(); m_pinnedIndex = -1;
 }
 void MailBackend::loadMore() {
     if (m_loading) return;
@@ -1014,9 +1063,19 @@ void MailBackend::selectConversationInternal(const QString &id, bool review, QVa
     if (m_draftDirty || draftBusy()) {
         m_afterDraftSave = [this, id, review, clickedRow, clickedIndex] { selectConversationInternal(id, review, clickedRow, clickedIndex); }; saveDraft(); return;
     }
+    if (id != m_selected) m_navigationAnchor.clear();
     if (id != m_selected || (review && m_pinnedIndex < 0)) {
+        // The row left in To review after being read moves to Done now: with
+        // the refresh that follows reading the next one, or at once when the
+        // next one is not being read.
+        const auto rowOf = [this](const QString &target) { return std::find_if(m_conversations.cbegin(), m_conversations.cend(),
+            [&target](const QVariant &row) { return row.toMap().value("id").toString() == target; }); };
+        const auto previous = rowOf(m_selected), next = rowOf(id);
+        const bool held = id != m_selected && previous != m_conversations.cend() && previous->toMap().value("pinned").toBool();
+        const bool reads = review && next != m_conversations.cend() && next->toMap().value("unread").toBool();
         m_pinnedRow.clear(); m_pinnedIndex = -1;
         if (review) { m_pinnedRow = std::move(clickedRow); m_pinnedIndex = clickedIndex; }
+        if (held && !reads) QMetaObject::invokeMethod(this, [this] { loadConversations(false, true); }, Qt::QueuedConnection);
     }
     if (id == m_selected && m_activeDraft.isEmpty()) { if (review) loadConversation(false, true); return; }
     if (!m_attachmentQueues.value(attachmentImportKey()).isEmpty()) m_attachmentQueuePaused.insert(attachmentImportKey());
@@ -1123,7 +1182,7 @@ void MailBackend::mutateConversation(const QString &method, QJsonObject params, 
             if (id == m_selected && account == m_account) emit mailDeliveryChanged();
         }
         if (ok && id == m_selected && account == m_account) {
-            if (method == "mail_filing") { m_pinnedRow.clear(); m_pinnedIndex = -1; }
+            if (method == "mail_filing" || params.contains("starred")) releasePin();
             m_conversation = retainReaderPresentation(result.toVariantMap());
             cacheConversation(account, id, m_conversation, lifecycleAccount(account).value("lifecycle").toMap().value("revision").toLongLong());
             if (!m_pinnedRow.isEmpty()) {
@@ -1289,7 +1348,7 @@ void MailBackend::runMailSelection() {
                 if (key == qMakePair(m_account, m_selected)) emit mailDeliveryChanged();
             }
             if (currentLifecycle && account == m_account && id == m_selected) {
-                if (command["method"] == "mail_filing") { m_pinnedRow.clear(); m_pinnedIndex = -1; }
+                if (command["method"] == "mail_filing" || params.contains("starred")) releasePin();
                 m_conversation = result.toVariantMap();
                 if (m_pinnedRow.value("id").toString() == id) {
                     m_pinnedRow["revision"] = result["revision"].toVariant();
@@ -1818,6 +1877,17 @@ QString MailBackend::requestMessageSource(const QString &id, const QString &vers
                 m_sourceCache.insert(key, new ReaderSnapshot{prepared.toVariantMap(), lifecycle}, int(bytes + 128));
             }
             if (account == m_account && generation == m_generation) emit messageSourceReady(ticket, (withRaw ? result : prepared).toVariantMap(), ok);
+        });
+    });
+    return ticket;
+}
+QString MailBackend::requestMessageInvite(const QString &id, const QString &version) {
+    if (id.isEmpty() || version.isEmpty() || !m_connected) return {};
+    const auto ticket = QUuid::createUuid().toString(QUuid::WithoutBraces), account = m_account;
+    QTimer::singleShot(0, this, [this, ticket, account, id, version] {
+        if (account != m_account) return;
+        request("message_invite", account, {{"id", id}, {"source_version", version}}, [this, ticket, account](auto result, bool ok) {
+            if (account == m_account) emit messageInviteReady(ticket, result.toVariantMap(), ok);
         });
     });
     return ticket;

@@ -346,7 +346,10 @@ void GuiCalendarSelfTest::step() {
         // Mail's Next row: from any view, Day view on the event's day with its card open.
         const auto calendar = item("calendarWorkspace"); const auto event = occurrence();
         if (!m_backend.calendarReady() || m_backend.calendarView() != "week" || !calendar || event.isEmpty()) return;
-        if (!QMetaObject::invokeMethod(calendar, "showEventInDay", Q_ARG(QVariant, QVariant(event)))) { finish("Calendar has no showEventInDay entry point."); return; }
+        // An invitation email passes Core's row, which has no layout date.
+        auto undated = event; undated.remove("date");
+        if (m_backend.calendarDayOf(event["start"].toString()) != event["date"].toString()) { finish("calendarDayOf does not match the Calendar layout's day."); return; }
+        if (!QMetaObject::invokeMethod(calendar, "showEventInDay", Q_ARG(QVariant, QVariant(undated)))) { finish("Calendar has no showEventInDay entry point."); return; }
         m_stage = 83; break;
     }
     case 83: {

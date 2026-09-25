@@ -510,6 +510,19 @@ Popup {
                     }
                 }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+                // Everyone's answer, once there is more than one person; guests
+                // added here read "Invite on save".
+                RowLayout {
+                    objectName: "eventGoingList"; visible: goingList.rows.length > 1
+                    Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.topMargin: 8; Layout.bottomMargin: 8; spacing: 12
+                    Text { text: "Going?"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64; Layout.alignment: Qt.AlignTop; lineHeightMode: Text.FixedHeight; lineHeight: 30 }
+                    AttendeeList {
+                        id: goingList; Layout.fillWidth: true; prefix: "editorAttendee"
+                        event: Object.assign({}, editor.editEvent, {account: editor.targetAccount})
+                        guests: editor.guestsEditable || !editor.live ? editor.guestAddresses : null
+                    }
+                }
+                Rectangle { visible: goingList.rows.length > 1; Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {
                     Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.topMargin: 12; Layout.bottomMargin: 12; spacing: 12
                     Text { text: "Notes"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64; Layout.alignment: Qt.AlignTop; Layout.topMargin: 2 }

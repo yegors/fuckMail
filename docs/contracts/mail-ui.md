@@ -2,6 +2,34 @@
 
 
 
+## D128 — To review transitions, invitation day (Mail UI94)
+
+- **Kept row placement.** `MailBackend::keptRowIndex` puts the open conversation back into a reloaded Inbox inside its shown section: after the rows of that section that were above it, before the rest. Sections rank To review, Delayed, then Done. Other folders keep its old index. A row moved there from another section carries `pinned_from` (Core's group), and `publishConversations` adds `counted_section` (`held`, or `done:YYYY-MM` in the mail month zone).
+- **Section counts.** MailView's `inboxSections` adds each `pinned` row to its `section` and removes it from its `counted_section`. The header count, the empty state ("All reviewed. Nice work.") and filtering all use these counts. The top "N to review" figure is unchanged.
+- **Explicit actions release the row.** A completed `mail_filing`, or a `flag` carrying `starred` (Delay, Undelay, Done), for the open conversation calls `releasePin()`. The row moves at the reload that follows and stays open. Read-on-open (`flag` with `read` only) does not release it.
+- **Navigation anchor.** `releasePin()` records `navigationAnchor() {id, before, after}`: the neighbours of the open row before it moved. In `moveSelection`, a single Up or Down from that row goes to `before` or `after` when it is still in the list. Opening another conversation clears the anchor. Nothing opens automatically.
+- **Invitation day.** `CalendarView.showEventInDay` dates a row without a layout `date` using `MailBackend.calendarDayOf(start)`: the day in `calendar_display_time_zone`, or the `YYYY-MM-DD` itself for an all-day row. It falls back to today only when neither gives a day.
+
+Consumers: Calendar37 (unchanged).
+
+## D127 — invitation row, To review holds the open item, dimmer pictures (Mail UI93)
+
+- **Invitation row** (`MessageNotices`), first in the notice group, above the mailing-list and images rows. Rules sit between the rows.
+  - It shows for a received message whose `message_source` result has `has_invite`. `MailBackend.requestMessageInvite(id, source_version)` asks Core71's `message_invite` every time (no cache) and answers with `messageInviteReady(ticket, result, ok)`. It asks again 500 ms after `eventsChanged` and after the row's own answer finishes.
+  - Contents:
+    - a 13 px calendar icon in gold;
+    - `inviteWhen(start, end)` in the display zone, "Tue 29 Sep · 15:00 – 16:00", ink, tabular numbers;
+    - for an update, "was Fri 25 Sep 15:30", crossed out at 35% ink;
+    - the status word at 11.5 px, 45% ink: "Going", "Maybe" or "Declined" once answered, nothing before;
+    - Yes / Maybe / No: 22 px segments in a 1 px `line2` box; chosen Yes is solid ink with dark text, chosen Maybe/No `bg6`.
+  - A REPLY hides the row. A CANCEL shows "Cancelled" and no answers. Answers show for an invitation to you, and while its event has not synced. Until the event has `can_rsvp` they are dimmed, and hovering them says why.
+  - Yes/Maybe send `calendarWrite` with `kind: rsvp` for the linked event (its etag and recurring context). The answer shows at once and stays until the calendar has it; a failed write shows "Not sent" with the reason. In live profiles, No calls `queueCalendarDecline`, and `calendarEventDeclining` (now invokable) shows "Declined" during the Undo.
+  - Clicking the time emits `openInvite(event, declined)`. MailView turns on `calendar_show_declined` for a declined event, then calls `showEventInCalendar`.
+- **To review holds the open item.** When a list reload returns the open conversation outside To review and it was pinned from To review, it is shown at its pinned index with `display_group: review` and `pinned: true`, with fresh fields (read). Opening a different conversation reloads the list, so it moves then. A row the view no longer returns stays pinned as before. Filing clears the pin at once.
+- **Sender pictures.** A found picture draws at 75% opacity. A photo has no disc behind it; a brand icon's white disc dims too.
+
+Consumers: Core71, Calendar37.
+
 ## D126 — sender pictures, hover timing, Send while saving, replies (Mail UI92)
 
 - **Sender pictures** (`SenderAvatar`):

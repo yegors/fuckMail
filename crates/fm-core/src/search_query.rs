@@ -13,8 +13,11 @@ const OPERATORS: [&str; 7] = ["subject", "body", "from", "to", "label", "has", "
 /// is case-insensitive.
 #[derive(Debug, Default, Clone, PartialEq)]
 pub(crate) struct SearchText {
-    /// Bare words. Each must appear in the subject or the message text.
+    /// Bare words, as typed.
     pub words: Vec<String>,
+    /// Bare words typed together, without surrounding quotes. Each phrase must
+    /// appear as written in the subject or the message text (Search 10).
+    pub phrases: Vec<String>,
     pub subject: Vec<String>,
     pub body: Vec<String>,
     /// Sender name or address.
@@ -118,14 +121,27 @@ fn segments(text: &str) -> Vec<(Option<&'static str>, &str)> {
 /// adds nothing. Unsupported values fail clearly instead of becoming words.
 pub(crate) fn parse(text: &str) -> Result<SearchText> {
     let mut query = SearchText::default();
+    // Words typed together form one phrase; an address or an operator ends it.
     let bare = |query: &mut SearchText, text: &str| {
+        let mut phrase: Vec<&str> = Vec::new();
+        let close = |query: &mut SearchText, phrase: &mut Vec<&str>| {
+            let text = phrase.join(" ");
+            let text = text.trim_matches('"').trim();
+            if !text.is_empty() {
+                query.phrases.push(text.to_owned());
+            }
+            phrase.clear();
+        };
         for word in text.split_whitespace() {
             if looks_like_email(word) {
+                close(query, &mut phrase);
                 query.people.push(word.to_owned());
             } else {
                 query.words.push(word.to_owned());
+                phrase.push(word);
             }
         }
+        close(query, &mut phrase);
     };
     for (key, value) in segments(text) {
         let value = value.trim();
@@ -190,13 +206,64 @@ pub(crate) fn parse(text: &str) -> Result<SearchText> {
     Ok(query)
 }
 
-/// One FTS5 group requiring every token as a prefix within `columns`.
-pub(crate) fn fts_group(columns: &str, text: &str) -> Option<String> {
-    let group = tokens(text)
-        .map(|token| format!("\"{token}\"*"))
-        .collect::<Vec<_>>()
-        .join(" AND ");
-    (!group.is_empty()).then(|| format!("{columns} : ({group})"))
+/// One FTS5 phrase within `columns`: the text's tokens in order, the last as
+/// a prefix. It finds candidates; `contains_phrase` then checks the text.
+pub(crate) fn fts_phrase(columns: &str, text: &str) -> Option<String> {
+    let phrase = tokens(text).collect::<Vec<_>>().join(" ");
+    (!phrase.is_empty()).then(|| format!("{columns} : \"{phrase}\"*"))
+}
+
+/// Text for phrase matching: lower case, Latin accents removed as the index
+/// does, and each run of whitespace (line breaks included) as one space.
+pub(crate) fn fold(text: &str) -> String {
+    // Base letters for U+0100..U+017F; '.' keeps the character.
+    const EXTENDED_A: &[u8; 128] = b"aaaaaaccccccccddddeeeeeeeeeegggggggghhhhiiiiiiiiii..jjkk.llllllllllnnnnnn...oooooo..rrrrrrssssssssttttttuuuuuuuuuuuuwwyyyzzzzzzs";
+    let mut out = String::with_capacity(text.len());
+    let mut space = false;
+    for c in text.chars() {
+        if c.is_whitespace() {
+            space = true;
+            continue;
+        }
+        if space && !out.is_empty() {
+            out.push(' ');
+        }
+        space = false;
+        for c in c.to_lowercase() {
+            let base = match c {
+                '\u{300}'..='\u{36f}' => continue,
+                'à'..='å' => 'a',
+                'ç' => 'c',
+                'è'..='ë' => 'e',
+                'ì'..='ï' => 'i',
+                'ñ' => 'n',
+                'ò'..='ö' | 'ø' => 'o',
+                'ù'..='ü' => 'u',
+                'ý' | 'ÿ' => 'y',
+                '\u{100}'..='\u{17f}' => match EXTENDED_A[c as usize - 0x100] {
+                    b'.' => c,
+                    base => base as char,
+                },
+                _ => c,
+            };
+            out.push(base);
+        }
+    }
+    out
+}
+
+/// Whether folded `text` holds folded `phrase` starting at the beginning of a
+/// word. The phrase may end inside a word, so its last word can be partial.
+pub(crate) fn contains_phrase(text: &str, phrase: &str) -> bool {
+    let word_start = phrase.starts_with(char::is_alphanumeric);
+    text.match_indices(phrase).any(|(at, _)| {
+        !word_start || !text[..at].ends_with(char::is_alphanumeric)
+    })
+}
+
+/// Whether the index's phrase match alone decides: one word, nothing else.
+pub(crate) fn phrase_needs_check(folded: &str) -> bool {
+    !folded.chars().all(char::is_alphanumeric)
 }
 
 /// `%value%` for LIKE with its wildcards escaped.
@@ -308,12 +375,46 @@ mod tests {
     }
 
     #[test]
-    fn fts_groups_prefix_every_token_within_columns() {
+    fn fts_phrases_keep_token_order_with_a_prefix_last_token() {
         assert_eq!(
-            fts_group("{subject body}", "re-launch plan").as_deref(),
-            Some("{subject body} : (\"re\"* AND \"launch\"* AND \"plan\"*)")
+            fts_phrase("{subject body}", "re-launch plan").as_deref(),
+            Some("{subject body} : \"re launch plan\"*")
         );
-        assert_eq!(fts_group("subject", "&&").as_deref(), None);
+        assert_eq!(fts_phrase("subject", "&&").as_deref(), None);
         assert_eq!(like_pattern("50%_a\\b"), "%50\\%\\_a\\\\b%");
+    }
+
+    #[test]
+    fn words_typed_together_form_one_phrase() {
+        assert_eq!(read("Bill C-22").phrases, ["Bill C-22"]);
+        assert_eq!(read("\"open  letter\"").phrases, ["open letter"]);
+        assert_eq!(read("c-22 from:josh").phrases, ["c-22"]);
+        assert_eq!(read("invoice maya@windscribe.com march").phrases, ["invoice", "march"]);
+        assert_eq!(read("label:work bill c-22").phrases, ["bill c-22"]);
+        assert_eq!(read("bill label:work c-22").phrases, ["bill", "c-22"]);
+        assert!(read("\"\"").phrases.is_empty());
+    }
+
+    #[test]
+    fn phrases_match_as_written_from_a_word_start() {
+        let text = fold("Re[2]: Bill C-22\r\n  Option Illustrations for Café Élan");
+        assert_eq!(fold("Élodie  ŁÓDŹ\tİstanbul"), "elodie lodz istanbul");
+        for (phrase, found) in [
+            ("c-22", true),
+            ("C-2", true),
+            ("bill c-22 option", true),
+            ("-22", true),
+            ("22", true),
+            ("cafe elan", true),
+            ("c 22", false),
+            ("c22", false),
+            ("ill c-22", false),
+            ("option bill", false),
+        ] {
+            assert_eq!(contains_phrase(&text, &fold(phrase)), found, "{phrase}");
+        }
+        assert!(!contains_phrase(&fold("Sep 22 call"), &fold("c-22")));
+        assert!(!phrase_needs_check(&fold("Invoice")));
+        assert!(phrase_needs_check(&fold("c-22")) && phrase_needs_check(&fold("open letter")));
     }
 }

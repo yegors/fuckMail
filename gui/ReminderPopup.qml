@@ -61,8 +61,9 @@ Item {
         const value = Math.abs(secondsLeft)
         return ended || value < 86400 ? 96 : value < 31536000 ? 80 : 64
     }
-    readonly property var rows: [{label: "Where", value: event.location}, {label: "Join", value: event.conference_url},
-        {label: "With", value: (event.attendees || []).map(person => person.name || person.displayName || person.email || "").filter(Boolean).join(", ")}].filter(row => !!row.value)
+    readonly property var rows: [{label: "Where", value: event.location}].filter(row => !!row.value)
+    readonly property string meetingUrl: event.conference_url || ""
+    readonly property bool hasGuests: (event.attendees || []).some(person => !person.resource)
     readonly property string notes: Theme.plainNotes(event.description)
     function primary() {
         if (!hasPrimary) return
@@ -146,7 +147,30 @@ Item {
             Text {font.family:Theme.fontFamily; Layout.topMargin: 10; Layout.fillWidth: true; text: backend.calendarReminderWhen(panel.event); textFormat: Text.PlainText; color: Theme.muted; font.pointSize: Theme.fontPoints(16); wrapMode: Text.Wrap }
             ColumnLayout {
                 Layout.fillWidth:true;Layout.topMargin:28;spacing:0
-                Rectangle {visible:panel.rows.length>0 || panel.notes.length>0;Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
+                Rectangle {visible:panel.meetingUrl.length>0 || panel.rows.length>0 || panel.hasGuests || panel.notes.length>0;Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
+                // The meeting's own link, without https://, wrapping rather than cut off.
+                ColumnLayout {
+                    visible: panel.meetingUrl.length > 0
+                    Layout.fillWidth:true;spacing:0
+                    RowLayout {
+                        Layout.fillWidth:true;Layout.topMargin:14;Layout.bottomMargin:14;spacing:0
+                        Text {font.family:Theme.fontFamily;text:"Meeting URL";color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:112;Layout.alignment:Qt.AlignTop}
+                        Item {
+                            Layout.fillWidth:true; implicitHeight: meetingLink.implicitHeight + 2
+                            Text {
+                                id: meetingLink; objectName: "reminderMeetingUrl"
+                                width: Math.min(implicitWidth, parent.width)
+                                text: panel.meetingUrl.replace(/^https:\/\//i, ""); textFormat: Text.PlainText; wrapMode: Text.WrapAnywhere
+                                color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15.5)
+                                HoverHandler { id: meetingHover; cursorShape: Qt.PointingHandCursor }
+                                TapHandler { onTapped: backend.openLink(panel.meetingUrl) }
+                                FmToolTip { shown: meetingHover.hovered; text: "Open meeting" }
+                            }
+                            Rectangle { y: meetingLink.height + 1; width: meetingLink.width; height: 1; color: meetingHover.hovered ? Theme.text : Theme.inkAlpha(.25) }
+                        }
+                    }
+                    Rectangle {Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
+                }
                 Repeater {
                     model:panel.rows
                     ColumnLayout {
@@ -154,17 +178,28 @@ Item {
                         Layout.fillWidth:true;spacing:0
                         RowLayout {
                             Layout.fillWidth:true;Layout.topMargin:14;Layout.bottomMargin:14;spacing:0
-                            Text {font.family:Theme.fontFamily;text:modelData.label;color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:84}
+                            Text {font.family:Theme.fontFamily;text:modelData.label;color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:112}
                             Text {font.family:Theme.fontFamily;text:modelData.value;textFormat:Text.PlainText;color:Theme.text;font.pointSize:Theme.fontPoints(15.5);elide:Text.ElideRight;Layout.fillWidth:true}
                         }
                         Rectangle {Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
                     }
                 }
+                // Who is coming: organiser, guests and you, with each answer.
+                ColumnLayout {
+                    objectName: "reminderGuests"; visible: panel.hasGuests
+                    Layout.fillWidth:true;spacing:0
+                    RowLayout {
+                        Layout.fillWidth:true;Layout.topMargin:8;Layout.bottomMargin:8;spacing:0
+                        Text {font.family:Theme.fontFamily;text:"Guests";color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:112;Layout.alignment:Qt.AlignTop;topPadding:4}
+                        AttendeeList { Layout.fillWidth: true; prefix: "reminderAttendee"; event: panel.event; avatarSize: 24; nameSize: 15; statusSize: 13.5; rowHeight: 34 }
+                    }
+                    Rectangle {Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
+                }
                 // The full description, with its own line breaks, scrolling when long.
                 RowLayout {
                     objectName: "reminderNotes"; visible: panel.notes.length > 0
                     Layout.fillWidth:true;Layout.topMargin:14;Layout.bottomMargin:14;spacing:0
-                    Text {font.family:Theme.fontFamily;text:"Notes";color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:84;Layout.alignment:Qt.AlignTop}
+                    Text {font.family:Theme.fontFamily;text:"Notes";color:Theme.inkAlpha(.45);font.pointSize:Theme.fontPoints(14);Layout.preferredWidth:112;Layout.alignment:Qt.AlignTop}
                     ScrollView {
                         id: notesScroll
                         ScrollBar.vertical: FmScrollBar {}

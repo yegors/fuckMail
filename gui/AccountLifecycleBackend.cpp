@@ -21,7 +21,7 @@ bool MailBackend::archivedRequestAllowed(const QString &method) const {
     // Only cached queries/verified exports and the explicit lifecycle workflow.
     // In particular, provider reconciliation and local abandon are mutations.
     static const QSet<QString> cached{
-        "accounts", "view_get", "categories", "conversations", "conversation", "message_source", "drafts", "draft_get",
+        "accounts", "view_get", "categories", "conversations", "conversation", "message_source", "message_invite", "drafts", "draft_get",
         "sender_summary", "attachment", "capture_history", "draft_capture", "google_drafts_status",
         "google_draft_sources", "google_draft_source", "google_draft_status", "google_send_status", "google_sent", "google_sent_message",
         "google_draft_delete_status", "google_mail_mutation_status", "calendar_operations", "google_calendar_operation",

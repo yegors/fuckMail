@@ -1,6 +1,8 @@
 # Local mail search
 
-State: Draft · Revision: 9 · Updated: 2026-09-25 · Implementation: D101 query grammar and people lookup; D093 fresh-profile FTS and planner maintenance; earlier measurements retain their source scope. Whole area remains Draft.
+State: Draft · Revision: 10 · Updated: 2026-09-25 · Implementation: D129 phrase matching; D101 query grammar and people lookup; D093 fresh-profile FTS and planner maintenance; earlier measurements retain their source scope. Whole area remains Draft.
+
+Revision 10 (D129) makes search text match as written. Bare words typed together form one phrase, and a `subject:` or `body:` value is one phrase. Each phrase must appear in order, starting at the beginning of a word; its last word may be incomplete. Case, Latin accents and line breaks or repeated spaces are ignored, but punctuation must match. So `c-22` finds "Bill C-22" and "C-22's", but not "Sep 22" or "c22". The index still finds candidates (an FTS5 phrase, last token as a prefix), and Core then checks the message's stored subject, body or sender text whenever the phrase has more than one word or any punctuation. An address or an operator ends a bare phrase. Drafts search uses the same matching. Remote search (Revision 8) still sends the text to Gmail unchanged. Consumers: Core, Mail UI and CLI (no interface change); schema37, fixtures0/3 and protocol1 unchanged.
 
 Revision 9 (D121) adds `to:`, a recipient (To or Cc) name or address. `from:` now always means the sender, in Sent too, and a bare address matches the sender or a recipient. `search_terms` gains `to[]` and `people[]` (bare addresses), and `search_senders` takes an optional `role`. Drafts, which are all from the user, read `from:`, `to:` and bare addresses as recipients. Remote search already passes the same text to Gmail, which reads these the same way. Consumers: Core, Mail UI88 and CLI52; schema37 unchanged, because recipients come from the existing link-index `message_people` rows.
 
@@ -53,13 +55,13 @@ Core tests and the live CLI smoke verify combined filters, sender/address variat
 
 Operators are case-insensitive and recognised at the start of the text or after whitespace. An operator's value runs until the next operator or the end, so `subject:board deck from:maya` reads subject "board deck" and from "maya". Surrounding quotes are optional and removed. An operator without a value is still being typed and adds nothing.
 
-- `subject:` and `body:` match their own column, each word as a prefix, all words required.
+- `subject:` and `body:` match their own column. The value is one phrase (Revision 10): it must appear as written from the start of a word, and its last word may be incomplete.
 - `from:` matches a substring of the sender's name or address, in every folder (Revision 9).
 - `to:` matches a substring of a recipient's name or address: the stored first `To` address, or any To/Cc person the link index has recorded for the message (the sender excluded). Mail not yet indexed matches only its first `To` address.
 - A bare word shaped like an address (`local@host.tld`) matches the sender or a recipient.
 - At most four names or addresses across `from:`, `to:` and bare addresses, each up to 320 bytes.
 - In Drafts, `from:`, `to:` and bare addresses all match every To/Cc/Bcc name and address.
-- Other bare words must each appear, as a prefix, in the subject or message text.
+- Other bare words typed together form one phrase (Revision 10), which must appear as written in the subject or message text. An address or an operator between words starts a new phrase, and each phrase must appear. Surrounding quotes are removed. Case, Latin accents and whitespace runs are ignored; punctuation is not. `field` narrows where phrases must appear.
 - `label:`, `has:attachment` and `is:review|delayed|done` still parse but are not advertised. Each takes its first word and returns the rest to bare words; a quoted label keeps its spaces. `label:` accepts an exact label name, ignoring case, or a unique prefix. `is:held` is accepted for `is:delayed`. Drafts reject these three.
 - Every value's words count toward the existing 32-word limit; a `subject:` or `body:` value with no searchable word, or a query of symbols only, is rejected.
 

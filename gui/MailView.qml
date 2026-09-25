@@ -284,14 +284,21 @@ Item {
     // Inbox sections in order. To review and Delayed stay while browsing, even
     // when empty; searching or filtering shows only sections with matches.
     // Done is one section per month, newest first, with Core's full counts.
+    // The open conversation kept in To review counts there, not in the
+    // section Core counts it in.
     readonly property var inboxSections: {
         const summary = backend.querySummary
         if (backend.folder !== "inbox" || !summary.filtered_group_counts) return []
-        const counts = summary.filtered_group_counts, sections = []
+        const counts = summary.filtered_group_counts, sections = [], kept = {}
+        for (const row of backend.conversations) if (row.pinned) {
+            kept[row.section] = (kept[row.section] || 0) + 1
+            if (row.counted_section) kept[row.counted_section] = (kept[row.counted_section] || 0) - 1
+        }
+        const count = function(key, value) { return Math.max(0, (value || 0) + (kept[key] || 0)) }
         for (const key of ["review", "held"])
-            if (!filtering || (counts[key] || 0) > 0) sections.push({key: key, count: counts[key] || 0})
+            if (!filtering || count(key, counts[key]) > 0) sections.push({key: key, count: count(key, counts[key])})
         for (const month of summary.done_months || [])
-            if (month.count > 0) sections.push({key: "done:" + month.month, count: month.count})
+            if (count("done:" + month.month, month.count) > 0) sections.push({key: "done:" + month.month, count: count("done:" + month.month, month.count)})
         return sections
     }
     // Sorts review, held, then Done months newest first and undated last.
@@ -758,7 +765,16 @@ Item {
         const selected = selectionCursor || (draftsMode ? backend.activeDraftId : backend.selectedId)
         const rows = navigationRows
         const current = rows.findIndex(function(row) { return row.id === selected })
-        const next = Math.max(0, Math.min(rows.length - 1, current < 0 ? 0 : current + delta))
+        let next = Math.max(0, Math.min(rows.length - 1, current < 0 ? 0 : current + delta))
+        // After Done, Delay or filing moved the open conversation, Up and Down
+        // go on from the place it left, not from where it went.
+        if (!extend && Math.abs(delta) === 1) {
+            const anchor = backend.navigationAnchor()
+            if (anchor.id && anchor.id === selected) {
+                const target = rows.findIndex(function(row) { return row.id === (delta > 0 ? anchor.after : anchor.before) })
+                if (target >= 0) next = target
+            }
+        }
         if (!rows.length) return
         if (next === current) { if (delta > 0 && backend.hasMore && !backend.loading) backend.loadMore(); return }
         if (extend) selectRange(rows[next].id)
@@ -1641,6 +1657,11 @@ Item {
                                     MessageNotices {
                                         Layout.fillWidth: true; Layout.bottomMargin: visible ? 9 : 0
                                         message: member.modelData
+                                        hasInvite: !member.modelData.sent && !!messageSource.result.has_invite
+                                        onOpenInvite: function(event, declined) {
+                                            if (declined && backend.preferences.calendar_show_declined !== true) backend.setPreferences({calendar_show_declined: true})
+                                            mail.showEventInCalendar(event)
+                                        }
                                         mailingList: member.isLast && !member.modelData.sent ? mail.thread.mailing_list || null : null
                                         unsubscribe: member.isLast && !member.modelData.sent ? messageSource.result.unsubscribe || null : null
                                         htmlBody: messageBody.htmlShown ? htmlBody.item : null
