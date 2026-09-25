@@ -97,6 +97,20 @@ impl Store {
 }
 
 /// How this message can be unsubscribed from, read from its retained MIME.
+/// The list's unsubscribe address, when it also has one besides one-click.
+pub fn resolve_mailto(plan: &UnsubscribePlan) -> Result<Option<Unsubscribe>> {
+    let bytes = crate::local_content::read_source(&plan.blobs, &plan.version)?;
+    let parsed = mail_parser::MessageParser::default()
+        .parse(&bytes)
+        .ok_or_else(|| {
+            err(
+                "content_unavailable",
+                "The retained message cannot be parsed",
+            )
+        })?;
+    Ok(fm_mail::unsubscribe::mailto_alternative(&parsed))
+}
+
 pub fn resolve(plan: &UnsubscribePlan) -> Result<Unsubscribe> {
     let bytes = crate::local_content::read_source(&plan.blobs, &plan.version)?;
     let parsed = mail_parser::MessageParser::default()

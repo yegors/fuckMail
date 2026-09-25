@@ -23,6 +23,26 @@ fn times(items: &[Occurrence]) -> Vec<String> {
 }
 
 #[test]
+fn a_timed_event_may_end_when_it_starts_but_an_all_day_one_may_not() {
+    let point = event(
+        json!({"id":"point","etag":"v1","status":"confirmed","start":{"dateTime":"2023-03-30T14:00:00-04:00","timeZone":"America/New_York"},"end":{"dateTime":"2023-03-30T14:00:00-04:00","timeZone":"America/New_York"}}),
+    );
+    assert_eq!(
+        expand(
+            &point,
+            &[],
+            window("2023-03-30T00:00:00Z", "2023-03-31T00:00:00Z"),
+            Access::Owner
+        )
+        .unwrap()
+        .len(),
+        1
+    );
+    assert!(normalize("work","primary","America/Toronto",&json!({"id":"back","start":{"dateTime":"2023-03-30T14:00:00-04:00"},"end":{"dateTime":"2023-03-30T13:59:00-04:00"}})).is_err());
+    assert!(normalize("work","primary","America/Toronto",&json!({"id":"day","start":{"date":"2023-03-30"},"end":{"date":"2023-03-30"}})).is_err());
+}
+
+#[test]
 fn weekly_wall_clock_keeps_nine_across_spring_dst() {
     let series = weekly("2026-03-01T09:00:00-05:00", "2026-03-01T10:00:00-05:00");
     let items = expand(
@@ -453,4 +473,24 @@ fn sync_pages_commit_cursor_only_at_end_and_410_restarts_full_snapshot() {
     assert!(reset
         .apply_page(&scope, None, vec![], None, Some("again".into()))
         .is_err());
+}
+
+#[test]
+fn meeting_links_come_from_the_location_or_notes() {
+    let teams = "________________\nMicrosoft Teams meeting\nJoin: https://teams.microsoft.com/meet/341468704584292?p=ifEabn9\nMeeting ID: 341\nNeed help?<https://aka.ms/JoinTeamsMeeting?omkt=en-US> | System reference<https://teams.microsoft.com/l/meetup-join/19%3ameeting_X%40thread.v2/0>";
+    assert_eq!(
+        fm_calendar::meeting_link(teams).as_deref(),
+        Some("https://teams.microsoft.com/meet/341468704584292?p=ifEabn9")
+    );
+    assert_eq!(
+        fm_calendar::meeting_link("Room 4 / https://acme.zoom.us/j/123456789?pwd=x.").as_deref(),
+        Some("https://acme.zoom.us/j/123456789?pwd=x")
+    );
+    assert_eq!(
+        fm_calendar::meeting_link(r#"<a href="https://meet.google.com/abc-defg-hij?authuser=0&amp;hs=1">Join</a>"#).as_deref(),
+        Some("https://meet.google.com/abc-defg-hij?authuser=0&hs=1")
+    );
+    for none in ["Need help? https://aka.ms/JoinTeamsMeeting", "http://teams.microsoft.com/meet/1", "https://zoom.us/pricing", "Microsoft Teams Meeting", ""] {
+        assert_eq!(fm_calendar::meeting_link(none), None, "{none}");
+    }
 }

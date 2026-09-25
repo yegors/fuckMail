@@ -2,6 +2,38 @@
 
 
 
+## D126 — invitation answers, Show declined, Going?, meeting links (Calendar36)
+
+- **Answers.** `Theme.rsvpOf(event)` gives:
+  - No value for an event without guests, a busy-only event, or one the account organises.
+  - Otherwise "yes", "maybe", "" (not answered) or "no", from `self_response` or your attendee row. Guests with no answer of yours on record count as yes.
+- **Day, Week and the mail day strip:**
+  - Maybe: 5 px ink bands at 4.5% every 10 px at 135°, over the normal fill; account edge at 60%; title ink 85%.
+  - Not answered: transparent, with a 1 px dashed outline at the account colour 45%; edge at 45%; title ink 70%.
+  - Declined: transparent; edge ink 18%; title ink 35%, struck through.
+- **Month:** the 2 px edge is solid, dashed (4/6) or dotted (2/4). Declined has a grey solid edge, a struck-through title and 40% opacity.
+- **Tooltips** add "· Maybe", "· Not answered" or "· Declined".
+- **Show declined.** Declined events are left out of Day, Week, Month, the agenda, the day strip and the week all-day row unless `calendar_show_declined` (Core70) is true. Reminders never show them. The header switch follows All calendars and closes the event card.
+- **Going?** row: Yes/Maybe/No. Yes is solid ink when chosen; Maybe and No are raised. Nothing is chosen before you answer.
+  - No, on a live event, calls `queueCalendarDecline(request, event)`. The event hides at once with "Declined “title”" and 6 s of Undo; then the RSVP write runs.
+  - After Google accepts, the event stays hidden until its source changes or it disappears, or 60 s pass. A failed write shows "Decline needs attention. …".
+  - Undo shows "Decline undone". A changed event or calendar cancels, with "Decline cancelled because the event or calendar changed."
+- **Card buttons.** Edit (pencil) and View on the left. Delete (bin, red on hover), or Delete this / Delete series, on the right. The right group wraps below when both do not fit.
+- **Meeting links.** `fm_calendar::meeting_link(text)` finds https links for Teams, Zoom, Meet, Webex, GoTo, Whereby, Jitsi and Chime. `conference_url` falls back to the location, then the description.
+- **Full event view.** Notes are selectable rich text; links open through `openLink`.
+
+Consumers: Mail UI92, Core70.
+
+## D124 — every relevant series, answers you have not committed to (Calendar35)
+
+- Finished series (UNTIL before the shown dates) and series starting after them no longer count against the 128-series view budget (Core69); a calendar with hundreds of past series shows its current ones.
+- A calendar with retained failed events gets one full re-read per engine run; timed events that end when they start import (Core69). Until a calendar's full import completes, its events offer no Edit, Delete or RSVP.
+- Commitment: `self_response` tentative or needsAction draws the block hatched inside a hairline with a lighter title (Day/Week, strip), italic lighter text in Month, and "Maybe" / "Not answered" in Day view's subline, the agenda and tooltips. Declined events are at half opacity with a struck-through title and are never the strip's "next".
+- Event card: View uses the shared button icon layout (`calendar` icon). Notes stored as HTML read as text (line breaks, bullets, link targets) in the card and the full event view.
+- Reminders: the notification context leaves out source revisions; a busy or unsent poll keeps the overlay; a reminder and level already sounded stays silent when shown again; Snooze and Dismiss forget it.
+
+Consumers: Mail UI90, Core69.
+
 ## D123 — event card, full event view, weekends (Calendar34)
 
 - **Card.** Notes preview up to three lines with a notes icon, full text on hover. Actions Edit · View · Delete, outline (View with an icon). `showEventInDay(event)` opens Day view on the event's day with its card beside the block (Inbox clear's NEXT link).

@@ -19,6 +19,10 @@ Item {
     property string presentedIdentity: ""
     property int soundedLevel: -1
     property int revealedLevel: -1
+    // identity -> highest level already sounded. Showing the same reminder
+    // again at that level (after a refresh hid it) stays silent; only Snooze
+    // or Dismiss forgets it.
+    property var heard: ({})
     // Sounds played since this event was shown.
     property int chimes: 0
     property double nowMs: Date.now()
@@ -43,7 +47,7 @@ Item {
     readonly property color alertColor: alerting ? Theme.error : ended ? Theme.inkAlpha(.45) : Theme.accent
     readonly property bool hasPrimary: !ended && !!event.conference_url
     readonly property bool canSnooze: !viewing && !ended
-    readonly property string provider: /meet\.google\.com/i.test(event.conference_url || "") ? "Google Meet" : /zoom\.us/i.test(event.conference_url || "") ? "Zoom" : /teams\.microsoft\.com/i.test(event.conference_url || "") ? "Teams" : "meeting"
+    readonly property string provider: /meet\.google\.com/i.test(event.conference_url || "") ? "Google Meet" : /zoom(gov)?\.(us|com)/i.test(event.conference_url || "") ? "Zoom" : /teams\.(microsoft|live)\.com/i.test(event.conference_url || "") ? "Teams" : /webex\.com/i.test(event.conference_url || "") ? "Webex" : "meeting"
     readonly property string kicker: ended ? "ENDED" : viewing && secondsLeft <= 0 ? "IN PROGRESS" : level === 1 ? "STARTING NOW" : level === 2 ? "STARTED" : viewing ? "UPCOMING" : "REMINDER"
     // m:ss, h:mm:ss, Nd h:mm:ss, Ny Nd h:mm:ss; a year is 365 days.
     function clock(seconds) {
@@ -59,19 +63,24 @@ Item {
     }
     readonly property var rows: [{label: "Where", value: event.location}, {label: "Join", value: event.conference_url},
         {label: "With", value: (event.attendees || []).map(person => person.name || person.displayName || person.email || "").filter(Boolean).join(", ")}].filter(row => !!row.value)
-    readonly property string notes: String(event.description || "").trim()
+    readonly property string notes: Theme.plainNotes(event.description)
     function primary() {
         if (!hasPrimary) return
         backend.joinCalendarEvent(event)
         if (viewing) closeRequested()
     }
-    function snooze() { if (canSnooze) backend.snoozeCalendarReminder(event) }
-    function dismiss() { if (viewing) closeRequested(); else backend.dismissCalendarReminder(event) }
+    function forget() { const next = Object.assign({}, heard); delete next[eventIdentity]; heard = next }
+    function remember(value) { const next = Object.assign({}, heard); next[eventIdentity] = value; heard = next }
+    function snooze() { if (canSnooze) { forget(); backend.snoozeCalendarReminder(event) } }
+    function dismiss() { if (viewing) closeRequested(); else { forget(); backend.dismissCalendarReminder(event) } }
     function play() { if (!muted && backend.playReminderSound) { backend.playReminderSound(level); ++chimes } }
     function reveal() {
         if (!visible || !event.account || presentedIdentity === eventIdentity) return
-        nowMs = Date.now(); presentedIdentity = eventIdentity; muted = false; chimes = 0; forceActiveFocus()
-        soundedLevel = level; revealedLevel = level
+        nowMs = Date.now(); presentedIdentity = eventIdentity; forceActiveFocus()
+        revealedLevel = level
+        const seen = heard[eventIdentity]
+        if (seen !== undefined && level <= seen) { soundedLevel = seen; return }
+        muted = false; chimes = 0; soundedLevel = level; remember(level)
         if (!viewing && !ended) play()
     }
     onVisibleChanged: { if (visible) reveal(); else { backend.stopReminderSound(); presentedIdentity = ""; soundedLevel = -1 } }
@@ -81,7 +90,7 @@ Item {
     // and never once the event is more than a minute old.
     onLevelChanged: {
         if (!visible || presentedIdentity !== eventIdentity || level <= soundedLevel) return
-        soundedLevel = level
+        soundedLevel = level; remember(level)
         if (!ended && (!viewing || secondsLeft > -60)) play()
     }
     onEndedChanged: if (ended) backend.stopReminderSound()
@@ -161,7 +170,18 @@ Item {
                         ScrollBar.vertical: FmScrollBar {}
                         Layout.fillWidth: true; Layout.preferredHeight: Math.min(notesText.implicitHeight, Math.max(360, panel.height * .36))
                         clip: true; contentWidth: availableWidth; ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-                        Text { id: notesText; objectName: "reminderNotesText"; width: notesScroll.availableWidth; text: panel.notes; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: Theme.inkAlpha(.82); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15.5); lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(15.5) * 1.65) }
+                        // Selectable, with its links opening in the browser: meeting
+                        // details and dial-in numbers get copied from here.
+                        TextEdit {
+                            id: notesText; objectName: "reminderNotesText"; width: notesScroll.availableWidth
+                            readonly property string notes: panel.notes
+                            text: "<div style=\"line-height:165%\">" + Theme.linkedNotes(panel.notes, Theme.text) + "</div>"
+                            textFormat: TextEdit.RichText; readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap
+                            color: Theme.inkAlpha(.82); selectionColor: Theme.selection; selectedTextColor: Theme.selectedText
+                            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15.5)
+                            onLinkActivated: function(link) { backend.openLink(link) }
+                            HoverHandler { cursorShape: notesText.hoveredLink ? Qt.PointingHandCursor : Qt.IBeamCursor }
+                        }
                     }
                 }
             }

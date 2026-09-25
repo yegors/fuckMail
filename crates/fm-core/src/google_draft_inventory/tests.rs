@@ -1028,3 +1028,94 @@ fn cached_page_reads_only_requested_routing_and_caps_enriched_payload() {
     assert!(page["next_offset"].is_i64());
     assert_eq!(page["total"], 22);
 }
+
+#[test]
+fn an_earlier_versions_read_only_copies_become_ordinary_drafts() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, a, _) = setup(dir.path());
+    import_many(&mut store, &a, &["remote", "gone"], RAW);
+    let kept = draft_id(&store, &a, "remote");
+    let gone = draft_id(&store, &a, "gone");
+    // What an earlier version stored: read-only copies without sync state.
+    store
+        .db
+        .execute(
+            "UPDATE drafts SET origin='google_snapshot',google_json=NULL WHERE account=?1",
+            [&a.account],
+        )
+        .unwrap();
+    assert_eq!(draft(&mut store, &a, &kept)["read_only"], true);
+    // The listing still matches what was read, yet the copy is read again.
+    store.google_draft_inventory_begin(&a).unwrap();
+    let GoogleDraftInventoryStep::List(plan) = store.google_draft_inventory_next(&a).unwrap() else {
+        panic!("list expected")
+    };
+    store
+        .google_draft_inventory_list_finish(
+            plan,
+            GoogleDraftInventoryPage {
+                drafts: vec![GoogleDraftListedId {
+                    draft_id: "remote".into(),
+                    message_id: "member-remote".into(),
+                }],
+                next_page_token: None,
+                result_size_estimate: Some(1),
+            },
+        )
+        .unwrap();
+    let proof = available(fetch(&store, &a), RAW, "member-remote");
+    store.google_draft_import_finish(proof).unwrap();
+    assert!(matches!(
+        store.google_draft_inventory_next(&a).unwrap(),
+        GoogleDraftInventoryStep::Complete(_)
+    ));
+    let converted = draft(&mut store, &a, &kept);
+    assert_eq!(converted["read_only"], false);
+    assert_eq!(converted["origin"], "local");
+    assert_eq!(converted["google"]["state"], "adopted");
+    assert_eq!(converted["subject"], "Original subject");
+    // The copy whose Gmail draft is no longer listed leaves Drafts; its row
+    // stays because its source history refers to it.
+    let left: (i64, String) = store
+        .db
+        .query_row(
+            "SELECT discarded,origin FROM drafts WHERE account=?1 AND draft_id=?2",
+            params![a.account, gone],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(left, (1, "google_snapshot".into()));
+    let listed = store
+        .handle("drafts", Some(&a.account), json!({"limit": 50}))
+        .unwrap();
+    assert_eq!(listed["total"], 1);
+    // Nothing refers to a row that is no longer there.
+    let dangling: i64 = store
+        .db
+        .query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(dangling, 0);
+    // A later scan leaves the converted draft and the retired copy alone.
+    store.google_draft_inventory_begin(&a).unwrap();
+    let GoogleDraftInventoryStep::List(plan) = store.google_draft_inventory_next(&a).unwrap() else {
+        panic!("list expected")
+    };
+    store
+        .google_draft_inventory_list_finish(
+            plan,
+            GoogleDraftInventoryPage {
+                drafts: vec![GoogleDraftListedId {
+                    draft_id: "remote".into(),
+                    message_id: "member-remote".into(),
+                }],
+                next_page_token: None,
+                result_size_estimate: Some(1),
+            },
+        )
+        .unwrap();
+    assert!(matches!(
+        store.google_draft_inventory_next(&a).unwrap(),
+        GoogleDraftInventoryStep::Complete(_)
+    ));
+    assert_eq!(draft(&mut store, &a, &kept)["revision"], converted["revision"]);
+}

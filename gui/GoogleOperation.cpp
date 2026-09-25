@@ -10,7 +10,7 @@ constexpr qsizetype maxFrame = 1024 * 1024;
 bool remoteContent(const QString &method) {
     return method == "message_html" || method == "message_image" || method == "link_host_summary" || method == "link_pattern_counts"
         || method == "remote_proxy_test" || method == "remote_proxy_password" || method == "remote_image_cache"
-        || method == "message_unsubscribe";
+        || method == "message_unsubscribe" || method == "sender_avatar";
 }
 }
 
@@ -119,7 +119,7 @@ void GoogleOperation::receive() {
     m_hello = true;
     // Quota cooldown can exceed the ordinary local query timeout. The user can
     // cancel at any time; no timeout automatically repeats a provider mutation.
-    m_timer.start(m_method == "message_image" || m_method == "remote_proxy_test" || m_method == "message_unsubscribe" ? 25000
+    m_timer.start(m_method == "message_image" || m_method == "remote_proxy_test" || m_method == "message_unsubscribe" || m_method == "sender_avatar" ? 25000
         : m_method == "google_spam_list" || m_method == "google_spam_message" || m_method == "google_remote_search"
             || m_method == "google_unsubscribe_mail" || m_method == "google_bin_counts" || m_method == "google_not_spam"
             || m_method == "google_delete_forever" ? 60000

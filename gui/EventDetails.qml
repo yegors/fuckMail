@@ -23,7 +23,7 @@ Popup {
         }
     }
     property var eventData: ({})
-    readonly property string notes: String(eventData.description || "").trim()
+    readonly property string notes: Theme.plainNotes(eventData.description)
     readonly property bool viewOpen: eventView.visible
     property bool saving: false
     property string feedback: ""
@@ -124,6 +124,16 @@ Popup {
     }
     function submitResponse(response, event) {
         if (saving || !accountReady || !event.can_rsvp || (live && hasPendingResponse)) return
+        // No takes the event off the calendars at once, with Undo; the answer
+        // goes to Google when the Undo interval ends.
+        if (live && response === "declined") {
+            let decline = {account: event.account, kind: "rsvp", calendar_id: event.calendar_id, event_id: event.event_id, expected_etag: event.etag,
+                response: response, request_id: "gui-rsvp-" + Date.now() + "-" + Math.floor(Math.random() * 1000000000)}
+            if (event.recurring_context) decline.recurring = event.recurring_context
+            const error = backend.queueCalendarDecline(decline, event)
+            if (error.length) feedback = error; else close()
+            return
+        }
         saving = true; feedback = live ? "Saving your response to Google Calendar…" : "Saving your response locally…"
         if (pendingResponse.response !== response || pendingResponse.expected_etag !== event.etag) {
             let request = {account: event.account, kind: "rsvp", calendar_id: event.calendar_id,
@@ -284,17 +294,38 @@ Popup {
             }
             Text { visible: !!details.eventData.occurrence_selector && !details.recurringScopes.length; text: "Changes apply to this occurrence only."; color: Theme.subtle; font.pointSize: Theme.fontPoints(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
             Text { visible: !!details.eventData.read_only && !details.eventData.busy_only; text: "Read-only event"; color: Theme.subtle; font.pointSize: Theme.fontPoints(11) }
-            ColumnLayout {
-                visible: !!details.eventData.can_rsvp || details.scopedAllowed("rsvp"); spacing: 5; Layout.fillWidth: true
-                Text { text: "Your response"; color: Theme.subtle; font.pointSize: Theme.fontPoints(11) }
-                RowLayout {
-                    spacing: 4
-                    Repeater { model: [{label: "Accept", value: "accepted"}, {label: "Maybe", value: "tentative"}, {label: "Decline", value: "declined"}]
-                        FmButton { required property var modelData; objectName: "eventRsvp-" + modelData.value; text: modelData.label; outlined: true; selected: details.eventData.self_response === modelData.value; implicitHeight: 26; font.pointSize: Theme.fontPoints(11); enabled: !details.saving && !occurrenceRead.busy && !details.awaitedEtag.length && details.accountReady && (!details.live || !details.hasPendingResponse); onClicked: details.respond(modelData.value) }
+            // Going? on every invitation: Yes / Maybe / No. Nothing is selected
+            // until you have answered.
+            Rectangle { visible: going.visible; Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+            RowLayout {
+                id: going; objectName: "eventGoing"
+                visible: !!details.eventData.can_rsvp || details.scopedAllowed("rsvp"); Layout.fillWidth: true; spacing: 10
+                Text {
+                    text: "Going?"; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
+                    HoverHandler { id: goingHover }
+                    FmToolTip { shown: goingHover.hovered && details.live; text: "Your answer goes to Google, which may tell the organizer." }
+                }
+                Item { Layout.fillWidth: true }
+                Rectangle {
+                    implicitWidth: goingOptions.implicitWidth + 6; implicitHeight: goingOptions.implicitHeight + 6; radius: 6
+                    color: "transparent"; border.width: 1; border.color: Theme.line2
+                    Row {
+                        id: goingOptions; x: 3; y: 3; spacing: 2
+                        Repeater { model: [{label: "Yes", value: "accepted", tip: "Accept"}, {label: "Maybe", value: "tentative", tip: "Tentative"}, {label: "No", value: "declined", tip: "Decline — removes it from your calendar"}]
+                            FmButton {
+                                required property var modelData; objectName: "eventRsvp-" + modelData.value; text: modelData.label; tip: modelData.tip
+                                readonly property bool chosen: details.eventData.self_response === modelData.value
+                                selected: chosen; implicitHeight: 22; leftPadding: 10; rightPadding: 10; topPadding: 0; bottomPadding: 0
+                                font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium
+                                foreground: chosen ? (modelData.value === "accepted" ? Theme.bg : Theme.text) : hovered && modelData.value === "declined" ? Theme.error : hovered ? Theme.text : Theme.inkAlpha(.6)
+                                background: Rectangle { radius: 4; color: parent.chosen ? (parent.modelData.value === "accepted" ? Theme.text : Theme.bg6) : "transparent" }
+                                enabled: !details.saving && !occurrenceRead.busy && !details.awaitedEtag.length && details.accountReady && (!details.live || !details.hasPendingResponse)
+                                onClicked: details.respond(modelData.value)
+                            }
+                        }
                     }
                 }
             }
-            Text { visible: details.live && (!!details.eventData.can_rsvp || details.scopedAllowed("rsvp")); text: "Your response is sent to Google. Google may notify the organizer; notification delivery is unverified."; color: Theme.subtle; font.pointSize: Theme.fontPoints(10); wrapMode: Text.Wrap; Layout.fillWidth: true }
             RowLayout {
                 visible: details.live && details.hasPendingResponse; Layout.fillWidth: true; spacing: 6
                 FmButton {
@@ -306,21 +337,30 @@ Popup {
             }
             Text { visible: details.feedback.length > 0; text: details.feedback; color: Theme.accent; font.pointSize: Theme.fontPoints(11); wrapMode: Text.Wrap; Layout.fillWidth: true; textFormat: Text.PlainText }
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
-            Flow {
-                Layout.fillWidth: true; Layout.minimumWidth:0; Layout.preferredWidth:1; spacing: 6
-                FmButton { objectName: "eventEditButton"; visible: !!details.eventData.can_edit || details.scopedAllowed("edit") || (!details.recurringScopes.length && details.eventData.can_resolve_occurrence === true); text: occurrenceRead.busy ? "Checking…" : !details.recurringScopes.length && details.eventData.can_resolve_occurrence === true ? "Edit this occurrence" : "Edit"; outlined: true; implicitHeight: 28; leftPadding: 12; rightPadding: 12; font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium; enabled: !details.saving && !occurrenceRead.busy && !details.awaitedEtag.length && details.accountReady && !details.hasPendingResponse; onClicked: { if (details.scopedAllowed("edit") || details.eventData.can_resolve_occurrence === true) details.readScoped("edit"); else { details.editRequested(details.eventData); details.close() } } }
+            // Edit and View on the left, Delete (or Delete this / Delete series)
+            // on the right; the right group takes its own line when both do not fit.
+            Item {
+                id: cardActions
+                Layout.fillWidth: true; Layout.minimumWidth: 0; Layout.preferredWidth: 1
+                readonly property bool together: leftActions.width + rightActions.width + 6 <= width
+                implicitHeight: together ? Math.max(leftActions.height, rightActions.height) : leftActions.height + (rightActions.width > 0 ? rightActions.height + 6 : 0)
+                Row {
+                id: leftActions; spacing: 6
+                FmButton { objectName: "eventEditButton"; iconName: "edit"; iconSize: 12; iconSpacing: 6; visible: !!details.eventData.can_edit || details.scopedAllowed("edit") || (!details.recurringScopes.length && details.eventData.can_resolve_occurrence === true); text: occurrenceRead.busy ? "Checking…" : !details.recurringScopes.length && details.eventData.can_resolve_occurrence === true ? "Edit this occurrence" : "Edit"; outlined: true; implicitHeight: 28; leftPadding: 12; rightPadding: 12; font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium; enabled: !details.saving && !occurrenceRead.busy && !details.awaitedEtag.length && details.accountReady && !details.hasPendingResponse; onClicked: { if (details.scopedAllowed("edit") || details.eventData.can_resolve_occurrence === true) details.readScoped("edit"); else { details.editRequested(details.eventData); details.close() } } }
                 FmButton {
                     id: viewButton; objectName: "eventViewButton"; text: "View"; outlined: true; implicitHeight: 28; leftPadding: 12; rightPadding: 12; font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium
+                    iconName: "calendar"; iconSize: 12; iconSpacing: 6
                     tip: "Open the full event view"; enabled: !details.saving && !!details.eventData.id; onClicked: details.openView()
-                    contentItem: Row {
-                        spacing: 6
-                        LineIcon { path: "M2.5 3.5h11v9h-11zM2.5 6h11"; size: 12; color: viewButton.foreground; anchors.verticalCenter: parent.verticalCenter }
-                        Text { text: viewButton.text; font: viewButton.font; color: viewButton.foreground; textFormat: Text.PlainText; anchors.verticalCenter: parent.verticalCenter }
-                    }
                 }
-                FmButton { objectName: "eventScopedCancel"; visible: details.live && (((details.eventData.recurring_scopes||{}).delete||[]).indexOf("occurrence")>=0 || details.scopedAllowed("delete") || (details.eventData.can_delete===true&&!details.recurringScopes.length)); text: details.recurringScope==="following"?"Delete following":details.recurringScopes.length?"Delete this":"Delete"; outlined:true;implicitHeight:28;leftPadding:12;rightPadding:12;font.pointSize:Theme.fontPoints(12);font.weight:Font.Medium;foreground:hovered?Theme.error:Theme.inkAlpha(.75);enabled:!details.saving&&!occurrenceRead.busy&&details.accountReady&&!details.hasPendingResponse;onClicked:details.deleteEvent(details.recurringScopes.length?(details.recurringScope==="following"?"following":"occurrence"):"") }
-                FmButton { objectName:"eventDeleteSeries";visible:details.live&&((details.eventData.recurring_scopes||{}).delete||[]).indexOf("series")>=0;text:"Delete series";outlined:true;implicitHeight:28;leftPadding:12;rightPadding:12;font.pointSize:Theme.fontPoints(12);font.weight:Font.Medium;foreground:hovered?Theme.error:Theme.inkAlpha(.75);enabled:!details.saving&&!occurrenceRead.busy&&details.accountReady&&!details.hasPendingResponse;onClicked:details.deleteEvent("series") }
-                FmButton { objectName: "eventDetailsClose"; visible:details.saving||(!details.eventData.can_edit&&!details.scopedAllowed("edit"));text: details.live && details.saving ? "Cancel request" : "Close"; implicitHeight: 28; font.pointSize: Theme.fontPoints(11); enabled: !details.saving || details.live; onClicked: { if (details.live && details.saving) backend.cancelGoogleOperation(details.pendingResponse.account, details.pendingResponse.request_id); else details.close() } }
+                }
+                Row {
+                id: rightActions; spacing: 6
+                x: cardActions.together ? cardActions.width - width : Math.max(0, cardActions.width - width)
+                y: cardActions.together ? 0 : leftActions.height + 6
+                FmButton { objectName: "eventScopedCancel"; visible: details.live && (((details.eventData.recurring_scopes||{}).delete||[]).indexOf("occurrence")>=0 || details.scopedAllowed("delete") || (details.eventData.can_delete===true&&!details.recurringScopes.length)); text: details.recurringScope==="following"?"Delete following":details.recurringScopes.length?"Delete this":"Delete"; iconName: "bin"; iconSize: 12; iconSpacing: 6; tip: details.recurringScopes.length ? "Remove only this occurrence" : ""; outlined:true;implicitHeight:28;leftPadding:12;rightPadding:12;font.pointSize:Theme.fontPoints(12);font.weight:Font.Medium;foreground:hovered?Theme.error:Theme.inkAlpha(.75);enabled:!details.saving&&!occurrenceRead.busy&&details.accountReady&&!details.hasPendingResponse;onClicked:details.deleteEvent(details.recurringScopes.length?(details.recurringScope==="following"?"following":"occurrence"):"") }
+                FmButton { objectName:"eventDeleteSeries";visible:details.live&&((details.eventData.recurring_scopes||{}).delete||[]).indexOf("series")>=0;text:"Delete series";tip:"Remove every occurrence";outlined:true;implicitHeight:28;leftPadding:12;rightPadding:12;font.pointSize:Theme.fontPoints(12);font.weight:Font.Medium;foreground:hovered?Theme.error:Theme.inkAlpha(.75);enabled:!details.saving&&!occurrenceRead.busy&&details.accountReady&&!details.hasPendingResponse;onClicked:details.deleteEvent("series") }
+                FmButton { objectName: "eventDetailsClose"; visible:details.saving||(!details.eventData.can_edit&&!details.scopedAllowed("edit"));text: details.live && details.saving ? "Cancel request" : "Close"; implicitHeight: 28; leftPadding: 10; rightPadding: 10; font.pointSize: Theme.fontPoints(12); enabled: !details.saving || details.live; onClicked: { if (details.live && details.saving) backend.cancelGoogleOperation(details.pendingResponse.account, details.pendingResponse.request_id); else details.close() } }
+                }
             }
         }
     }

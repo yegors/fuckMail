@@ -4,6 +4,7 @@
 #include <QList>
 #include <QObject>
 #include <QQueue>
+#include <QTimer>
 #include <QVariantMap>
 #include <functional>
 
@@ -25,6 +26,8 @@ class HtmlContent final : public QObject {
     Q_PROPERTY(QVariantMap imageCache READ imageCache NOTIFY imageCacheChanged)
     // Changes whenever link summaries or the blocklist change.
     Q_PROPERTY(int revision READ revision NOTIFY revisionChanged)
+    // Changes when sender pictures arrive.
+    Q_PROPERTY(int pictureRevision READ pictureRevision NOTIFY pictureRevisionChanged)
 public:
     explicit HtmlContent(MailBackend *backend);
     ~HtmlContent() override;
@@ -33,6 +36,7 @@ public:
     QVariantMap proxy() const;
     QVariantMap imageCache() const { return m_imageCache; }
     int revision() const { return m_revision; }
+    int pictureRevision() const { return m_pictureRevision; }
 
     // Returns a ticket; `htmlReady(ticket, result, ok)` follows.
     Q_INVOKABLE QString load(const QString &account, const QString &id, const QString &sourceVersion);
@@ -57,6 +61,10 @@ public:
     // Cached count for the card; starts a request when missing.
     Q_INVOKABLE QVariantMap linkSummary(const QString &host, const QString &conversation);
     Q_INVOKABLE void refreshBlockCounts();
+    // A sender's picture, {state, url, source, label}; asks the engine when
+    // it is not known yet. Nothing is asked in synthetic profiles or while
+    // sender pictures are off. `kind` is people, automated or unknown.
+    Q_INVOKABLE QVariantMap senderPicture(const QString &email, const QString &kind);
     // The prototype's plain-text label: no scheme or `www.`.
     Q_INVOKABLE QString linkLabel(const QString &url) const;
     Q_INVOKABLE QString hostOf(const QString &url) const;
@@ -79,17 +87,25 @@ signals:
     void proxyChanged();
     void imageCacheChanged();
     void revisionChanged();
+    void pictureRevisionChanged();
 private:
     struct ImageJob { QString ticket, account, id, version; int resource = 0; bool cachedOnly = false; };
     using Callback = std::function<void(const QJsonObject &, bool)>;
     void call(const QString &account, const QString &method, const QJsonObject &params, Callback callback);
     void pumpImages();
+    void pumpPictures();
+    QByteArray pictureSettings() const;
     void bump();
     QVariantMap preference(const QString &key) const;
     QList<QVariantMap> blockedList() const;
     MailBackend *m_backend;
     quint64 m_serial = 0;
-    int m_revision = 0;
+    int m_revision = 0, m_pictureRevision = 0, m_picturesRunning = 0;
+    quint64 m_pictureGeneration = 0;
+    QByteArray m_pictureSettings;
+    QHash<QString, QVariantMap> m_pictures;
+    QQueue<QString> m_pictureQueue;
+    QTimer m_pictureBump;
     QQueue<ImageJob> m_images;
     QHash<QString, QPair<GoogleOperation *, ImageJob>> m_running;
     QList<GoogleOperation *> m_operations;

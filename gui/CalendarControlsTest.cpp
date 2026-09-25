@@ -118,6 +118,7 @@ public:
     Q_INVOKABLE QVariantList calendarPreview(const QVariantMap &event) const { return calendarPresentation({QJsonObject::fromVariantMap(event)}, QDate::fromString(calendarFrom, Qt::ISODate), calendarView == "day" ? 1 : 7, QTimeZone("America/Toronto")); }
     Q_INVOKABLE void calendarWrite(const QVariantMap &value) { lastWrite = value; ++writes; }
     Q_INVOKABLE QString queueCalendarDeletion(const QVariantMap &value, const QVariantMap &) { lastWrite = value; ++writes; return {}; }
+    Q_INVOKABLE QString queueCalendarDecline(const QVariantMap &value, const QVariantMap &) { lastWrite = value; ++writes; return {}; }
     Q_INVOKABLE QVariantMap calendarOccurrenceContext(const QString &account, const QString &calendar) const {
         return capability && active && connected && account == "alpha" && calendar == "primary"
             ? QVariantMap{{"account", account}, {"calendar_id", calendar}, {"epoch", occurrenceEpoch}} : QVariantMap{};
@@ -391,7 +392,7 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     require(viewKicker->property("text") == "UPCOMING" && viewCountdown->property("text").toString().startsWith("2d 1:02:")
         && viewCountdown->property("font").value<QFont>().pixelSize() == 80, "Days-away countdown reads Nd h:mm:ss at 80px");
     require(viewClose->property("text") == "Close" && !qobject_cast<QQuickItem *>(named(root, "reminderSnooze"))->isVisible()
-        && named(root, "reminderPrimary")->property("text") == "Join meeting" && named(root, "reminderNotesText")->property("text") == viewed["description"],
+        && named(root, "reminderPrimary")->property("text") == "Join meeting" && named(root, "reminderNotesText")->property("notes") == viewed["description"],
         "View offers Join and Close with the full notes, never Snooze");
     require(backend.sounds == 0 && viewPanel->property("chimes").toInt() == 0 && backend.reminderActions == 0, "Opening View is silent and acknowledges nothing");
     const auto viewedStartMs = viewPanel->property("startMs").toDouble();

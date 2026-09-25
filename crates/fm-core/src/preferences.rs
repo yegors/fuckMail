@@ -5,8 +5,8 @@ use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
     json!({"density":"comfortable","mail_date_grouping":"grouped","message_format":"html","sync_every_minutes":1,"week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":0,"timeline_end_hour":24,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
-        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"default_reminder_minutes":15,"reminder_snooze_minutes":5,"calendar_display_time_zone":null,"calendar_account_visibility":"all","google_sync_limits":null,"google_sync_services":{},"notifications":"events","shortcuts":{},
-        "blocked_hosts":[],"remote_images_from":[],"remote_proxy":{"enabled":false,"host":"","port":443,"username":""}})
+        "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"default_reminder_minutes":15,"reminder_snooze_minutes":5,"calendar_display_time_zone":null,"calendar_account_visibility":"all","calendar_show_declined":false,"google_sync_limits":null,"google_sync_services":{},"notifications":"events","shortcuts":{},
+        "blocked_hosts":[],"remote_images_from":[],"remote_proxy":{"enabled":false,"host":"","port":443,"username":""},"sender_pictures":true})
 }
 /// The account colour palette: muted swatches shown 8×2 in the picker. A new
 /// account takes the first one no other account uses, cycling when all are.
@@ -113,6 +113,7 @@ impl Store {
                 "timeline_end_hour",
                 "selected_calendars",
                 "calendar_account_visibility",
+                "calendar_show_declined",
                 "calendar_view",
                 "calendar_date",
                 "timeline_date",
@@ -132,6 +133,7 @@ impl Store {
                 "blocked_hosts",
                 "remote_images_from",
                 "remote_proxy",
+                "sender_pictures",
             ],
         )?;
         let mut preferences = current["preferences"].clone();
@@ -240,6 +242,12 @@ impl Store {
             {
                 return Err(err("invalid_request", &format!("Unknown {key} preference")));
             }
+        }
+        if !preferences["calendar_show_declined"].is_boolean() {
+            return Err(err(
+                "invalid_request",
+                "Show declined events must be true or false",
+            ));
         }
         if !matches!(
             preferences["default_event_duration_minutes"].as_i64(),
@@ -856,6 +864,52 @@ mod appearance_tests {
             changed["preferences"]["notifications"],
             original["preferences"]["notifications"]
         );
+    }
+    #[test]
+    fn boolean_display_preferences_default_validate_and_persist() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(dir.path()).unwrap();
+        let original = store.preferences().unwrap();
+        assert_eq!(original["preferences"]["calendar_show_declined"], false);
+        assert_eq!(original["preferences"]["sender_pictures"], true);
+        assert!(store.remote_content_settings().unwrap().sender_pictures);
+        let request = json!({"preferences":{"calendar_show_declined":true,"sender_pictures":false},"expected_revision":0,"request_id":"display-booleans"});
+        let saved = store
+            .handle("preferences_save", None, request.clone())
+            .unwrap();
+        let mut expected = original["preferences"].clone();
+        expected["calendar_show_declined"] = json!(true);
+        expected["sender_pictures"] = json!(false);
+        assert_eq!(saved["preferences"], expected);
+        assert!(!store.remote_content_settings().unwrap().sender_pictures);
+        for key in ["calendar_show_declined", "sender_pictures"] {
+            for invalid in [json!("true"), json!(null), json!(1)] {
+                let mut patch = json!({});
+                patch[key] = invalid;
+                assert_eq!(store.handle("preferences_save",None,json!({"preferences":patch,"expected_revision":1,"request_id":"bad-display-boolean"})).unwrap_err().code,"invalid_request");
+                assert_eq!(store.preferences().unwrap(), saved);
+            }
+        }
+        drop(store);
+        let mut store = Store::open(dir.path()).unwrap();
+        assert_eq!(store.preferences().unwrap(), saved);
+        assert_eq!(
+            store.handle("preferences_save", None, request).unwrap(),
+            saved
+        );
+        // A profile saved before these keys existed reads their defaults.
+        let old = tempfile::tempdir().unwrap();
+        let store = Store::open(old.path()).unwrap();
+        store
+            .db
+            .execute(
+                "INSERT INTO preferences VALUES(1,1,?1)",
+                [r#"{"theme":"paper"}"#],
+            )
+            .unwrap();
+        let read = store.preferences().unwrap();
+        assert_eq!(read["preferences"]["calendar_show_declined"], false);
+        assert_eq!(read["preferences"]["sender_pictures"], true);
     }
     #[test]
     fn account_service_switches_are_independent_durable_and_validated() {

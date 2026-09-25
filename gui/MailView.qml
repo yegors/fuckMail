@@ -54,7 +54,12 @@ Item {
     readonly property bool readerKeyActionsAllowed: singleKeyActionsAllowed && readerMatchesCursor
     readonly property bool dateGroups: (backend.folder === "sent" || backend.folder === "drafts") && backend.preferences.mail_date_grouping !== "plain"
     readonly property bool draftsMode: backend.folder === "drafts"
-    readonly property bool collapsedDraftVisible: !replyOpen && !backend.sendQueued && !backend.googleSend.sent_current && backend.draftStatus !== "Draft discarded"
+    // A reply that has gone out, with no follow-up written in it since.
+    readonly property bool sentReplyDone: {
+        const accepted = (backend.draft.google_send || {}).last_accepted_draft_revision || 0
+        return accepted > 0 && !((backend.draft.revision || 0) > accepted && String(backend.draft.body || "").trim().length > 0)
+    }
+    readonly property bool collapsedDraftVisible: !replyOpen && !backend.sendQueued && !backend.googleSend.sent_current && !sentReplyDone && backend.draftStatus !== "Draft discarded"
         && (backend.activeDraftId.length > 0 || draftAuthored(backend.draft))
     // A draft starts with the account signature; only text beyond it, or a
     // file, makes it one worth opening or showing.
@@ -526,6 +531,7 @@ Item {
         id: pill
         property string email: ""
         property string personName: ""
+        property string kind: "unknown"
         property bool own: false
         property bool open: true
         property string avatarName: ""
@@ -542,16 +548,15 @@ Item {
         }
         contentItem: Item {
             implicitHeight: 18
-            Rectangle {
+            SenderAvatar {
                 objectName: pill.avatarName
-                width: 18; height: 18; radius: 9; anchors.verticalCenter: parent.verticalCenter
-                color: pill.own ? Theme.accentAlpha(0.18) : Theme.bg4
-                Text {
-                    anchors.centerIn: parent
-                    text: mail.initials(pill.own && backend.currentAccount.name ? backend.currentAccount.name : pill.personName)
-                    color: pill.own ? Theme.accent : Theme.inkAlpha(.8)
-                    font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(8.5); font.weight: Font.DemiBold; font.letterSpacing: -.17
-                }
+                anchors.verticalCenter: parent.verticalCenter
+                diameter: 18; brandSize: 12
+                own: pill.own; name: pill.personName; email: pill.email; kind: pill.kind
+                discColor: pill.own ? Theme.accentAlpha(0.18) : Theme.bg4
+                initialsColor: pill.own ? Theme.accent : Theme.inkAlpha(.8)
+                initials: mail.initials(pill.own && backend.currentAccount.name ? backend.currentAccount.name : pill.personName)
+                fontPoints: Theme.fontPoints(8.5); letterSpacing: -.17
             }
             Text {
                 id: pillName; x: 25; width: Math.max(0, parent.width - 25); anchors.verticalCenter: parent.verticalCenter
@@ -565,6 +570,7 @@ Item {
         id: avatar
         property string email: ""
         property string personName: ""
+        property string kind: "unknown"
         property bool own: false
         property int diameter: 34
         property bool ring: false
@@ -573,10 +579,19 @@ Item {
         Accessible.name: "Contact: " + personName
         onHoveredChanged: hovered ? senderCard.hoverSender(email, personName, avatar) : senderCard.leaveSender(avatar)
         onClicked: senderCard.showSender(email, personName, avatar)
-        contentItem: Text { text: mail.initials(avatar.own && backend.currentAccount.name ? backend.currentAccount.name : avatar.personName); color: avatar.own ? Theme.accent : Theme.inkAlpha(.8); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(avatar.diameter > 26 ? 12 : avatar.diameter > 22 ? 10 : 9); font.letterSpacing: avatar.diameter > 22 ? 0 : -0.18; font.weight: Font.Medium; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
+        contentItem: Item {
+            SenderAvatar {
+                diameter: avatar.diameter; brandSize: avatar.diameter - 6
+                own: avatar.own; name: avatar.personName; email: avatar.email; kind: avatar.kind
+                discColor: avatar.own ? Theme.accentAlpha(0.18) : Theme.bg4
+                initialsColor: avatar.own ? Theme.accent : Theme.inkAlpha(.8)
+                initials: mail.initials(avatar.own && backend.currentAccount.name ? backend.currentAccount.name : avatar.personName)
+                fontPoints: Theme.fontPoints(avatar.diameter > 26 ? 12 : avatar.diameter > 22 ? 10 : 9); fontWeight: Font.Medium; letterSpacing: avatar.diameter > 22 ? 0 : -0.18
+            }
+            Rectangle { visible: avatar.activeFocus; anchors.fill: parent; radius: avatar.diameter / 2; color: "transparent"; border.width: 1; border.color: Theme.accent }
+        }
         background: Item {
             Rectangle { visible: avatar.ring; anchors.centerIn: parent; width: avatar.diameter + 4; height: width; radius: width / 2; color: Theme.bg3 }
-            Rectangle { anchors.fill: parent; radius: avatar.diameter / 2; color: avatar.own ? Theme.accentAlpha(0.18) : Theme.bg4; border.width: avatar.activeFocus ? 1 : 0; border.color: Theme.accent }
         }
     }
     function visibleMetadata(message, source) {
@@ -789,7 +804,9 @@ Item {
     }
     function openReply() {
         if (backend.accountArchived || backend.unsavedAccountBuffer) return
-        if (backend.draft.mode && backend.draft.mode !== "reply") { backend.beginDraft("reply"); return }
+        // Once a reply has gone out, Reply writes a new one. The sent draft
+        // reopens only if a follow-up was being written in it.
+        if ((backend.draft.mode && backend.draft.mode !== "reply") || mail.sentReplyDone) { backend.beginDraft("reply"); return }
         resumeDraft()
     }
     function resumeDraft() {
@@ -863,7 +880,7 @@ Item {
             }
         }
         function onDraftChanged() {
-            if (backend.googleSend.sent_current) { mail.setReplyOpen(false); return }
+            if (backend.googleSend.sent_current || mail.sentReplyDone) { mail.setReplyOpen(false); return }
             if (backend.activeDraftId.length && Object.keys(backend.draft).length) {
                 if (backend.draftStatus === "Draft discarded") mail.replyOpen = false
                 else if (mail.hydratedDraftIdentity !== backend.account+"/draft/"+backend.activeDraftId) {
@@ -1168,6 +1185,18 @@ Item {
                                     implicitWidth: 6; implicitHeight: 12; Layout.rightMargin: -2
                                     FmIcon { anchors.centerIn: parent; name: mail.draftsMode ? "edit" : "arrowRight"; size: 12; color: Theme.inkAlpha(.4) }
                                 }
+                                SenderAvatar {
+                                    objectName: "mailAvatar_" + groupedRow.modelData.id
+                                    visible: !row.outgoingScope
+                                    Layout.rightMargin: -4; Layout.alignment: Qt.AlignVCenter
+                                    diameter: 28; brandSize: 18; tipEnabled: true; letterSpacing: .22
+                                    own: !!groupedRow.modelData.is_outgoing
+                                    name: groupedRow.modelData.sender_name || groupedRow.modelData.sender_email || ""
+                                    email: groupedRow.modelData.sender_email || ""; kind: groupedRow.modelData.kind || "unknown"
+                                    discColor: own ? Theme.accentAlpha(0.18) : Theme.oklch(.36, .06, hue)
+                                    initialsColor: own ? Theme.accent : Theme.oklch(.9, .05, hue)
+                                    initials: own ? mail.initials(backend.currentAccount.name || "") : Theme.initialsOf(name)
+                                }
                                 ColumnLayout {
                                     objectName: "mailSenderColumn_" + groupedRow.modelData.id
                                     visible: !mail.draftsMode && backend.folder !== "sent" && leftPane.width >= 520
@@ -1336,7 +1365,7 @@ Item {
                                     required property var modelData
                                     objectName: "participantAvatar_" + modelData.message.id
                                     diameter: 22; ring: true; own: !!modelData.message.sent
-                                    email: modelData.message.sender_email || ""; personName: modelData.name
+                                    email: modelData.message.sender_email || ""; personName: modelData.name; kind: modelData.message.kind || "unknown"
                                 }
                             }
                         }
@@ -1471,7 +1500,7 @@ Item {
                                                 avatarName: "senderAvatar_" + member.modelData.id
                                                 own: !!member.modelData.sent; open: member.isExpanded
                                                 personName: member.modelData.sent ? "You" : member.modelData.sender_name || member.modelData.sender_email
-                                                email: member.modelData.sender_email || ""
+                                                email: member.modelData.sender_email || ""; kind: member.modelData.kind || "unknown"
                                                 Layout.fillWidth: true; Layout.minimumWidth: 0
                                             }
                                             FmButton {
@@ -1623,7 +1652,7 @@ Item {
                                         sourceComponent: HtmlMessageBody {
                                             message: member.modelData; account: backend.account; conversation: backend.selectedId
                                             active: member.isExpanded && member.visible
-                                            onLinkHovered: function(href, box) { const p = mapToItem(Overlay.overlay, box.x, box.y); linkCard.show(href, Qt.rect(p.x, p.y, box.width, box.height), backend.selectedId) }
+                                            onLinkHovered: function(href, box) { const p = mapToItem(Overlay.overlay, box.x, box.y); linkCard.hover(href, Qt.rect(p.x, p.y, box.width, box.height), backend.selectedId) }
                                             onLinkExited: linkCard.scheduleHide()
                                         }
                                     }
@@ -1651,7 +1680,7 @@ Item {
                                                 if (!hoveredLink) { linkCard.scheduleHide(); return }
                                                 const r = positionToRectangle(positionAt(bodyHover.point.position.x, bodyHover.point.position.y))
                                                 const p = mapToItem(Overlay.overlay, r.x, r.y)
-                                                linkCard.show(hoveredLink, Qt.rect(p.x, p.y, Math.max(1, r.width), r.height), backend.selectedId)
+                                                linkCard.hover(hoveredLink, Qt.rect(p.x, p.y, Math.max(1, r.width), r.height), backend.selectedId)
                                             }
                                         }
                                     }
@@ -1902,6 +1931,7 @@ Item {
         if(index>=0)mediaViewer.show(backend.account,media,index)
     }
     Connections { target: backend; function onMailSelectionRestored(rows) { mail.selectionRows=rows; if(rows.length) { mail.selectionAnchor=rows[0].id; mail.selectionCursor=rows[rows.length-1].id } } }
+    HoverHandler { enabled: senderCard.opened; onPointChanged: senderCard.trackPointer(point.scenePosition) }
     SenderCard { id: senderCard; formatAge: mail.relativeTime; onConversationOpened: function(id) { backend.openConversation(id) } }
     LinkCard { id: linkCard }
     // Plain-text links read without "https://www." in ink with an underline,

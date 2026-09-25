@@ -1,6 +1,43 @@
 # September 23 prototype implementation
 
 
+## D126 — twelfth export (2026-09-25)
+
+The founder supplied `Flight Progress v2 (offline) (5).html` (856,596 bytes, SHA-256 `c46b90b1ecd4e14d9f5195815484caf58c660d2611f864563f6d9a5a72d421ba`) with 21 designer notes, alongside four live-mailbox bug reports (D126). Note 16 (sample brand domains) applies to the mockup only.
+
+What the bundle's code settled:
+- `avatarOf`: the initials rule, the 31-multiplier name hash, `oklch(0.36 0.06 H)` / `oklch(0.9 0.05 H)`, the white 5 px (list) or 3 px (thread) inset for brand icons, and hiding icons narrower than 32 px.
+- List rows: 28 px, 11 px weight 600, 14 px gap minus 2.
+- Thread avatars keep the neutral `bg4` disc with ink initials and your account's amber; the participant stack is 22 px in the markup. The note's "18 px … participant stack" was read as the header size, and the markup was followed.
+- `rsvpOf`: invitations with guests you do not organise default to yes.
+
+Root causes of the bugs:
+- **Drafts:** confirmed from live-store metadata, read-only with counts and structure only, and from a private copy of the store that was deleted afterwards. The D124 delete of the old copy hit a foreign-key reference.
+- **Crash:** a minidump symbolised against a relinked map showed `openDraft` and `saveDraft` recursing. A regression test crashes without the guard and passes with it.
+- **Send flicker:** from the log's method sequence (names only). An autosave upload started after each pause in typing.
+- **Reply-To:** the legacy routing fallback replaced an empty-looking To with the sender before Reply-To was considered.
+- **Teams:** Google carries no conference data for Teams meetings; the link is only in the location and notes.
+
+Verification on Windows, Release build in `build/p9` (the running app was left alone):
+- **Rust:** `cargo test --workspace` passes, including fm-core 380 and fm-engine 190 plus its process tests. Clippy `-D warnings` is clean. New or changed tests:
+  - Core `a_draft_uploads_once_its_text_has_rested`; the legacy-copy test now expects an in-place conversion, a retired copy, no foreign-key violations and an unchanged second scan; composition routing expects the Reply-To address.
+  - fm-calendar meeting links.
+  - Engine `sender_avatar` request validation, the off switch and miss memory; session preferences for the two new booleans.
+- **Native:** all 31 GUI tests pass (`gui-startup-recovery` excluded, as before).
+  - `gui-draft-discard` covers the read-only navigation crash.
+  - `gui-google-send-controls` checks that Send stays enabled during autosave and upload, then waits and sends.
+  - `gui-mail-selection` checks the 28 px list avatar 12 px before the sender column, and that a synthetic profile shows initials and asks for no picture.
+  - `gui-calendar-controls` reads the selectable notes.
+  - An offscreen probe confirmed that Shape `fillItem` clips a hidden Image to the circle.
+- **Captures** of the fixture: list avatars in hue colours, day-strip account avatars, Week/Day not-answered outlines, the Show declined switch, Month.
+
+Not verified:
+- Against the live accounts: the draft conversion on the next scan, a reply to the NowSecure message, Join on a Teams event, a real decline and its Undo.
+- Sender pictures from real senders: tests make no network fetch.
+- Mac/Linux.
+
+People API photos are not fetched; they would need a contacts permission.
+
 ## D123 — eleventh export (2026-09-25)
 
 The founder supplied `Flight Progress v2 (offline) (4).html` (843,762 bytes, SHA-256 `e10b10cf05c0f03da3112ed213b2612f09dc24923c3390c0320d434dd6401aa6`) with the designer's 31 notes, screenshots of the draft source panels and the strip card, and a session log. Note 26 (the mockup's jump bar) belongs to the prototype only and was skipped. The draft rework is D122; the rest is D123.

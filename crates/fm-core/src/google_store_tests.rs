@@ -568,11 +568,16 @@ fn mime_corpus_import_preserves_bytes_visible_search_and_attachment_checksums() 
             std::fs::read(root.join(entry["path"].as_str().unwrap())).unwrap()
         );
         if let Some(attachments) = entry["attachments"].as_array() {
+            // Parts the HTML shows by Content-ID are body, not attachments.
+            let listed: Vec<&Value> = attachments
+                .iter()
+                .filter(|a| a["content_id"].is_null())
+                .collect();
             assert_eq!(
                 message["attachments"].as_array().unwrap().len(),
-                attachments.len()
+                listed.len()
             );
-            for expected in attachments {
+            for expected in listed {
                 let found = message["attachments"]
                     .as_array()
                     .unwrap()
@@ -732,4 +737,37 @@ fn category_mappings_reject_all_system_ids_and_existing_invalid_mapping_blocks_i
         ).unwrap(),
         1,
     );
+}
+
+#[test]
+fn images_the_html_shows_are_not_attachments_and_old_rows_are_tidied() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut store = Store::open(tmp.path()).unwrap();
+    let cp = store.google_begin_full("windscribe", "100").unwrap();
+    let mut message = raw("notion", "ordinary", &["INBOX"]);
+    let source = String::from("From: Notion <notify@example.test>\r\nTo: Sam <sam@example.test>\r\nSubject: Updates\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=outer\r\n\r\n--outer\r\nContent-Type: multipart/related; boundary=rel\r\n\r\n--rel\r\nContent-Type: text/html; charset=utf-8\r\n\r\n<p>Server Centipede <img src=\"CID:Snake@Example\"></p>\r\n--rel\r\nContent-Type: image/png; name=userPageIcon1.png\r\nContent-ID: <snake@example>\r\nContent-Disposition: inline; filename=userPageIcon1.png\r\nContent-Transfer-Encoding: base64\r\n\r\nAAEC/w==\r\n--rel\r\nContent-Type: image/png; name=unused.png\r\nContent-ID: <unused@example>\r\nContent-Transfer-Encoding: base64\r\n\r\nAAECAw==\r\n--rel--\r\n--outer\r\nContent-Type: application/pdf; name=report.pdf\r\nContent-Disposition: attachment; filename=report.pdf\r\nContent-Transfer-Encoding: base64\r\n\r\nJVBERg==\r\n--outer--\r\n").into_bytes();
+    message.raw = URL_SAFE_NO_PAD.encode(&source);
+    GooglePageStore::new(&mut store)
+        .stage_message(&cp, content(message))
+        .unwrap();
+    GooglePageStore::new(&mut store)
+        .commit_page(&prepare_full_page(&cp, list(&["notion"], None)).unwrap())
+        .unwrap();
+    let names = |store: &Store| -> Vec<String> {
+        let mut stmt = store.db.prepare("SELECT a.name FROM attachments a JOIN messages m ON m.account=a.account AND m.id=a.message_id WHERE m.remote_id='notion' ORDER BY a.name").unwrap();
+        stmt.query_map([], |r| r.get(0)).unwrap().map(|r| r.unwrap()).collect()
+    };
+    // An unreferenced Content-ID image still shows, as it does in Gmail.
+    assert_eq!(names(&store), ["report.pdf", "unused.png"]);
+    // A profile from an earlier version listed the shown image too.
+    let (mid, hash): (String, String) = store.db.query_row("SELECT id,source_hash FROM messages WHERE remote_id='notion'", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    let snake = format!("{:x}", Sha256::digest([0u8, 1, 2, 255]));
+    store.db.execute("INSERT INTO attachments(account,id,message_id,name,mime_type,size,state,blob_hash) VALUES('windscribe','old-snake',?1,'userPageIcon1.png','image/png',4,'available',?2)", params![mid, snake]).unwrap();
+    assert!(!hash.is_empty());
+    assert!(!store.repair_inline_attachments(50).unwrap());
+    assert_eq!(names(&store), ["report.pdf", "unused.png"]);
+    // Checked once: a later call does nothing.
+    store.db.execute("INSERT INTO attachments(account,id,message_id,name,mime_type,size,state,blob_hash) VALUES('windscribe','old-snake',?1,'userPageIcon1.png','image/png',4,'available',?2)", params![mid, snake]).unwrap();
+    assert!(!store.repair_inline_attachments(50).unwrap());
+    assert_eq!(names(&store).len(), 3);
 }

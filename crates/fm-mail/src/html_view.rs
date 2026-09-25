@@ -113,6 +113,45 @@ pub fn html_part<'a>(message: &'a mail_parser::Message<'a>) -> Option<&'a str> {
     Some(parts.find(|html| !html.trim().is_empty()).unwrap_or(first))
 }
 
+/// Content-IDs (lowercase, without angle brackets) that the message's HTML
+/// shows through `cid:` links. Like Gmail, those parts belong to the body and
+/// are not listed as attachments.
+pub fn inline_content_ids(message: &mail_parser::Message<'_>) -> BTreeSet<String> {
+    use mail_parser::{MimeHeaders, PartType};
+    let mut ids = BTreeSet::new();
+    for part in message
+        .parts
+        .iter()
+        .filter(|part| part.is_content_type("text", "html"))
+    {
+        let (PartType::Html(html) | PartType::Text(html)) = &part.body else {
+            continue;
+        };
+        let lower = html.to_ascii_lowercase();
+        let mut rest = lower.as_str();
+        while let Some(at) = rest.find("cid:") {
+            rest = &rest[at + 4..];
+            let end = rest
+                .find(|c: char| matches!(c, '"' | '\'' | ')' | '>' | '<') || c.is_whitespace())
+                .unwrap_or(rest.len());
+            let id = rest[..end].trim();
+            if !id.is_empty() && id.len() <= 998 {
+                ids.insert(id.to_owned());
+            }
+            rest = &rest[end..];
+        }
+    }
+    ids
+}
+
+/// A part's Content-ID in the form `inline_content_ids` returns.
+pub fn part_content_id(part: &mail_parser::MessagePart<'_>) -> Option<String> {
+    use mail_parser::MimeHeaders;
+    part.content_id()
+        .map(|id| id.trim().trim_start_matches('<').trim_end_matches('>').to_ascii_lowercase())
+        .filter(|id| !id.is_empty())
+}
+
 /// Rebuild `html` for display. Returns `None` when the input exceeds the size limit.
 pub fn sanitize(html: &str) -> Option<HtmlView> {
     if html.len() > MAX_HTML_BYTES {

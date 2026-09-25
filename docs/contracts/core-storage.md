@@ -2,6 +2,42 @@
 
 
 
+## D126 — draft copies kept in place, upload quiet time, Reply-To, sender pictures (Core70)
+
+- **Earlier read-only draft copies** (`origin google_snapshot`):
+  - Publishing the mirror updates the copy's row in place: `origin local`, `discarded 0`, revision +1, and the Gmail twin adopted. Rows that point at it stay valid.
+  - `retire_legacy_snapshot` marks a copy whose Gmail draft is gone as `discarded 1`, rather than deleting it. Later scans leave it alone.
+- **Upload quiet time.** `google_draft_due_after(account, generation, limit, quiet_ms)` returns a draft only when:
+  - its Gmail state is prepared or acknowledged (resuming an operation), or
+  - its text was last saved `quiet_ms` or more ago.
+
+  `google_draft_due` is the zero-quiet form.
+- **Reply routing.** Imported-message replies (`legacy_routing_at`, `prepare_after_import_metadata`) fall back to the sender, or to the original To for your own message, only when the source routing names no recipient. Reply-To wins.
+- **Preferences.**
+  - `calendar_show_declined`: boolean, false by default.
+  - `sender_pictures`: boolean, true by default; it lives in the remote content settings.
+- **Sender pictures.** Engine method `sender_avatar {address, kind}`, where kind is people, automated or unknown. It needs no account and returns one of:
+  - `{state:"ready", path, width, height, source:"brand"|"photo", label}`;
+  - `{state:"none", label, transient?, off?}`;
+  - `{state:"blocked", by}` or `{state:"proxy_unavailable", reason}`.
+
+  How pictures are found:
+  - Automated senders get Google's favicon for the root domain (two labels, three under a country code's common second level). It must be 32 px or wider, and personal-mail domains never get one.
+  - People get Gravatar by SHA-256 of the address, with `d=404`. Unknown senders try the photo, then the brand icon.
+  - Fetches use the image client, proxy and blocklist.
+  - PNGs are shared by every account under `cache/images/senders/` and cleared with the image cache. A miss is remembered for a week, in memory and as an empty `.none` marker; network failures are not remembered.
+
+Consumers: Mail UI92, Calendar36, Gmail33.
+
+## D124 — stored-mail tidy, calendar series budget, zero-length events (Core69)
+
+- `repair_inline_attachments(batch)`: removes attachment rows for images the stored source's HTML shows (`cid:`), 50 messages at a time from `messages.rowid` order, keeping rows a draft's `attachments_json` names; progress in `meta.inline_attachment_repair` (−1 when done). The engine runs it once per profile in the background.
+- Calendar projection: the series query drops masters whose single RRULE has an UNTIL more than two days before the window start (no RDATE, first occurrence at most a day long) and masters starting after the window, before the 128-series budget.
+- `fm_calendar::normalize` accepts a timed event whose end equals its start; all-day events still need a later end date.
+- `unsubscribe::resolve_mailto(plan)`: the `mailto:` entry of `List-Unsubscribe`, if any.
+
+Consumers: Gmail32, Calendar35, Mail UI90.
+
 ## D122/D123 — Gmail draft mirror, label toggles, Spam labels (Core68)
 
 - **Drafts.** Core publishes each inventoried Gmail draft as an editable local draft (Gmail31) and keeps its saved source history for the CLI. Schema37's baseline drops the draft-source foreign key to `drafts` so a retired mirror can keep its sources; no migration (profiles below 37 are still refused).

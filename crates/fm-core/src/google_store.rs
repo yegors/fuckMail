@@ -144,6 +144,10 @@ pub(crate) struct StagedAttachment {
     pub(crate) mime_type: String,
     pub(crate) hash: String,
     pub(crate) size: u64,
+    /// Position among the message's parts, so skipping inline images does not
+    /// change the ids of the attachments after them.
+    #[serde(default)]
+    pub(crate) index: Option<usize>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -396,7 +400,8 @@ pub(crate) fn publish_message(
             storage_error(error)
         }
     })?;
-    for (index, part) in staged.attachments.iter().enumerate() {
+    for (position, part) in staged.attachments.iter().enumerate() {
+        let index = part.index.unwrap_or(position);
         let aid = local_id(
             "attachment",
             account,
@@ -431,7 +436,12 @@ pub(crate) fn prepare_message(
         body.truncate(end);
     }
     let mut attachments = Vec::new();
-    for part in parsed.attachments() {
+    let inline = fm_mail::html_view::inline_content_ids(&parsed);
+    for (index, part) in parsed.attachments().enumerate() {
+        // Images the HTML shows (cid:) are part of the body, not attachments.
+        if fm_mail::html_view::part_content_id(part).is_some_and(|id| inline.contains(&id)) {
+            continue;
+        }
         if attachments.len() >= 50 {
             return Err(GoogleError::InvalidResponse("Too many staged attachments"));
         }
@@ -451,6 +461,7 @@ pub(crate) fn prepare_message(
             mime_type,
             hash: stage(bytes)?,
             size: bytes.len() as u64,
+            index: Some(index),
         });
     }
     let staged = StagedMessage {
@@ -478,4 +489,70 @@ pub(crate) fn prepare_message(
         attachments,
     };
     Ok(staged)
+}
+
+impl Store {
+    /// Earlier versions listed images the HTML shows (cid:) as attachments.
+    /// Removes those rows from stored mail a batch at a time and says whether
+    /// more remain. Progress is kept in meta, so each profile is checked once.
+    /// Rows a draft uses are kept.
+    pub fn repair_inline_attachments(&mut self, batch: usize) -> Result<bool> {
+        let after: i64 = self
+            .db
+            .query_row(
+                "SELECT value FROM meta WHERE key='inline_attachment_repair'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?
+            .unwrap_or(0);
+        if after < 0 {
+            return Ok(false);
+        }
+        let rows: Vec<(i64, String, String, String, String)> = {
+            let mut stmt = self.db.prepare("SELECT m.rowid,m.account,m.id,m.conversation_id,m.source_hash FROM messages m WHERE m.rowid>?1 AND EXISTS(SELECT 1 FROM attachments a WHERE a.account=m.account AND a.message_id=m.id AND a.mime_type LIKE 'image/%') ORDER BY m.rowid LIMIT ?2")?;
+            let rows = stmt
+                .query_map(params![after, batch as i64], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+                })?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            rows
+        };
+        let blobs = self.google_blob_store();
+        let tx = self.db.unchecked_transaction()?;
+        let mut last = after;
+        let mut removed = 0;
+        for (rowid, account, id, conversation, hash) in &rows {
+            last = *rowid;
+            let Ok(bytes) = crate::local_content::read_source(&blobs, hash) else {
+                continue;
+            };
+            let Some(parsed) = mail_parser::MessageParser::default().parse(&bytes) else {
+                continue;
+            };
+            let inline = fm_mail::html_view::inline_content_ids(&parsed);
+            let mut here = 0;
+            for part in parsed.attachments() {
+                if !fm_mail::html_view::part_content_id(part).is_some_and(|id| inline.contains(&id)) {
+                    continue;
+                }
+                let blob = format!("{:x}", Sha256::digest(part.contents()));
+                here += tx.execute("DELETE FROM attachments WHERE account=?1 AND message_id=?2 AND blob_hash=?3 AND NOT EXISTS(SELECT 1 FROM drafts d,json_each(d.attachments_json) j WHERE d.account=?1 AND j.value=attachments.id)",params![account,id,blob])?;
+            }
+            if here > 0 {
+                tx.execute(
+                    "UPDATE conversations SET revision=revision+1 WHERE account=?1 AND id=?2",
+                    params![account, conversation],
+                )?;
+                removed += here;
+            }
+        }
+        let more = rows.len() >= batch;
+        tx.execute("INSERT INTO meta(key,value) VALUES('inline_attachment_repair',?1) ON CONFLICT(key) DO UPDATE SET value=excluded.value",[if more { last } else { -1 }])?;
+        if removed > 0 {
+            tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
+        }
+        tx.commit()?;
+        Ok(more)
+    }
 }

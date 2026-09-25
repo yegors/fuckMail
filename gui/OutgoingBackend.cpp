@@ -134,6 +134,12 @@ void MailBackend::loadOutgoingThread() {
         m_outgoingThread=result["outgoing"].toArray().toVariantList();
         refreshOutgoingPresentation();
         for (const auto &row : m_outgoingThread) loadOutgoingMessage(row.toMap());
+        // The thread reloads when new mail lands in it, Gmail's copy of a
+        // send included: previews of accepted sends check whether it arrived.
+        for (const auto &value : outgoingMessages()) {
+            const auto row = value.toMap();
+            if (row.value("conversation_id") == selected && row.value("state") == "accepted") loadOutgoingMessage(row);
+        }
     });
 }
 
@@ -182,8 +188,12 @@ void MailBackend::loadOutgoingPage(const QString &account, const QVariant &lifec
 
 void MailBackend::loadOutgoingMessage(const QVariantMap &value) {
     const auto account=value.value("account").toString(), requestId=value.value("request_id").toString(), key=account+'\n'+requestId;
+    // A sent message Gmail has not delivered back yet is read again: its
+    // arrival is what retires this preview, so a cached body must not hide it.
+    const auto cached = m_outgoingBodies.value(key);
+    const bool awaitingCopy = value.value("state") == "accepted" && cached.value("observed_conversation_id").toString().isEmpty();
     if (!m_connected || value.value("state") == "queued" || value.value("state") == "preparing" || m_outgoingReads.contains(key)
-        || (m_outgoingBodies.contains(key) && m_outgoingBodies.value(key).value("source_version") == value.value("source_version"))) return;
+        || (!awaitingCopy && m_outgoingBodies.contains(key) && cached.value("source_version") == value.value("source_version"))) return;
     m_outgoingReads.insert(key);
     const auto lifecycle=lifecycleAccount(account).value("lifecycle").toMap().value("revision");
     const auto version=value.value("source_version");

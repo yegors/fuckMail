@@ -1,6 +1,6 @@
 //! Preferences for remote message content: blocked link hosts, senders whose
-//! images load automatically, and the optional HTTPS proxy. The proxy password
-//! lives in the OS vault, never here.
+//! images load automatically, sender pictures in the mail list, and the
+//! optional HTTPS proxy. The proxy password lives in the OS vault, never here.
 use crate::{err, Result};
 use fm_mail::html_view::normalize_block_pattern;
 use serde_json::Value;
@@ -95,6 +95,12 @@ pub(crate) fn validate(preferences: &Value) -> Result<()> {
     if proxy["enabled"] == true && host.is_empty() {
         return Err(err("invalid_request", "Enter the proxy's host name"));
     }
+    if !preferences["sender_pictures"].is_boolean() {
+        return Err(err(
+            "invalid_request",
+            "Sender pictures must be true or false",
+        ));
+    }
     Ok(())
 }
 
@@ -104,6 +110,8 @@ pub struct RemoteSettings {
     pub blocked: Vec<String>,
     /// Enabled proxy only.
     pub proxy: Option<ProxySettings>,
+    /// Brand icons and profile photos for mail list senders.
+    pub sender_pictures: bool,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -137,6 +145,7 @@ impl crate::Store {
             revision: current["revision"].as_i64().unwrap_or(0),
             blocked,
             proxy,
+            sender_pictures: p["sender_pictures"].as_bool().unwrap_or(true),
         })
     }
 }
@@ -160,7 +169,7 @@ mod tests {
     use serde_json::json;
 
     fn base() -> Value {
-        json!({"blocked_hosts":[],"remote_images_from":[],"remote_proxy":{"enabled":false,"host":"","port":443,"username":""}})
+        json!({"blocked_hosts":[],"remote_images_from":[],"remote_proxy":{"enabled":false,"host":"","port":443,"username":""},"sender_pictures":true})
     }
 
     #[test]
@@ -185,6 +194,13 @@ mod tests {
         p["remote_proxy"]["host"] = "proxy.example.net".into();
         assert!(validate(&p).is_ok());
         p["remote_proxy"]["port"] = 0.into();
+        assert!(validate(&p).is_err());
+        let mut p = base();
+        p["sender_pictures"] = false.into();
+        assert!(validate(&p).is_ok());
+        p["sender_pictures"] = "off".into();
+        assert!(validate(&p).is_err());
+        p.as_object_mut().unwrap().remove("sender_pictures");
         assert!(validate(&p).is_err());
     }
 }

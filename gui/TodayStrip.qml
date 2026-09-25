@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Shapes
 
 Rectangle {
     id: timeline
@@ -59,7 +60,8 @@ Rectangle {
                 property var blocks: {
                     let nowDate = panel.snapshot.date === backend.todayDate, nextId = ""
                     let rows = timedEvents.filter(function(e) { return e.start_hour + e.duration_hours > firstHour && e.start_hour < lastHour })
-                    for (let e of rows) if (nowDate && e.start_hour > backend.nowHour) { nextId = e.id; break }
+                    // Declined events are never "next".
+                    for (let e of rows) if (nowDate && e.start_hour > backend.nowHour && !Theme.eventDeclined(e)) { nextId = e.id; break }
                     return rows.map(function(e) {
                         let row = Object.assign({}, e)
                         row.current = nowDate && e.start_hour <= backend.nowHour && e.start_hour + e.duration_hours > backend.nowHour
@@ -77,7 +79,8 @@ Rectangle {
                     let ends = []
                     return blocks.map(function(row) {
                         const left = row.fraction * trackWidth
-                        const right = Math.max(left + row.fractionWidth * trackWidth, left + 16 + row.label.length * 6.6)
+                        // The label starts with the 14px account avatar: about 20px more.
+                        const right = Math.max(left + row.fractionWidth * trackWidth, left + 36 + row.label.length * 6.6)
                         let lane = ends.findIndex(function(end) { return left >= end + 6 })
                         if (lane < 0) { lane = ends.length; ends.push(right) } else ends[lane] = right
                         return lane
@@ -156,19 +159,45 @@ Rectangle {
                         readonly property int lane: panel.laneAssignments[index] === undefined ? 0 : panel.laneAssignments[index]
                         visible: lane < panel.shownLanes
                         x: 24 + modelData.fraction * timeline.trackWidth; y: 28 + lane * 28
-                        width: Math.min(panel.width - x - 24, Math.max(modelData.fractionWidth * timeline.trackWidth, blockLabel.implicitWidth + 16)); height: 22
+                        width: Math.min(panel.width - x - 24, Math.max(modelData.fractionWidth * timeline.trackWidth, blockLabel.x + blockLabel.implicitWidth + 8)); height: 22
                         activeFocusOnTab: panel.index === 1 && visible && backend.timelineReady
-                        property color eventColor: modelData.current ? Theme.error : modelData.next ? Theme.accent : modelData.past ? Theme.inkAlpha(.4) : Theme.text
+                        // Invitations as in Day and Week: Maybe striped, not answered
+                        // outlined, declined (shown on request) faint and struck through.
+                        readonly property var rsvp: Theme.rsvpOf(modelData)
+                        readonly property bool marked: !modelData.current && !modelData.next && !modelData.past
+                        readonly property bool maybe: marked && rsvp === "maybe"
+                        readonly property bool unanswered: marked && rsvp === ""
+                        readonly property bool declined: rsvp === "no"
+                        property color eventColor: modelData.current ? Theme.error : modelData.next ? Theme.accent : modelData.past ? Theme.inkAlpha(.4) : declined ? Theme.inkAlpha(.35) : unanswered ? Theme.inkAlpha(.7) : maybe ? Theme.inkAlpha(.85) : Theme.text
                         Keys.onReturnPressed: timeline.showEvent(modelData, eventBlock)
                         Keys.onSpacePressed: timeline.showEvent(modelData, eventBlock)
                         Rectangle {
                             width: Math.max(6, eventBlock.modelData.fractionWidth * timeline.trackWidth); height: 22; radius: 3
                             Rectangle { width: 3; height: parent.height; color: parent.color; visible: parent.color.a > 0 }
-                            color: eventBlock.modelData.current ? Theme.errorAlpha(eventMouse.containsMouse ? .3 : .2) : eventBlock.modelData.next ? Theme.accentAlpha(eventMouse.containsMouse ? .32 : .22) : eventBlock.modelData.past ? (eventMouse.containsMouse ? Theme.surface : "transparent") : eventMouse.containsMouse ? Theme.hover : Theme.selected
+                            color: eventBlock.modelData.current ? Theme.errorAlpha(eventMouse.containsMouse ? .3 : .2) : eventBlock.modelData.next ? Theme.accentAlpha(eventMouse.containsMouse ? .32 : .22) : eventBlock.modelData.past ? (eventMouse.containsMouse ? Theme.surface : "transparent") : eventBlock.unanswered || eventBlock.declined ? (eventMouse.containsMouse ? Theme.inkAlpha(.04) : "transparent") : eventMouse.containsMouse ? Theme.hover : Theme.selected
                             border.width: eventBlock.modelData.past || eventBlock.activeFocus ? 1 : 0; border.color: eventBlock.activeFocus ? Theme.accent : Theme.line
+                            clip: true
+                            Canvas {
+                                anchors.fill: parent; visible: eventBlock.maybe
+                                onPaint: { const c = getContext("2d"); c.reset(); c.fillStyle = Theme.inkAlpha(.045); c.rotate(Math.PI / 4); const d = width + height; for (let s = -d; s < d; s += 10) c.fillRect(s + 5, -d, 5, 2 * d) }
+                                onWidthChanged: requestPaint(); onHeightChanged: requestPaint(); onVisibleChanged: if (visible) requestPaint()
+                            }
+                            Shape {
+                                anchors.fill: parent; visible: eventBlock.unanswered && !eventBlock.activeFocus; preferredRendererType: Shape.CurveRenderer
+                                ShapePath {
+                                    strokeColor: Theme.accountTint(eventBlock.modelData.account, .45); strokeWidth: 1; fillColor: "transparent"; strokeStyle: ShapePath.DashLine; dashPattern: [3, 3]
+                                    PathRectangle { x: .5; y: .5; width: Math.max(0, eventBlock.width - 1); height: 21; radius: 3 }
+                                }
+                            }
                             Rectangle { width: 2; height: parent.height; color: eventBlock.modelData.busy_only ? Theme.subtle : eventBlock.eventColor }
                         }
-                        Text { id: blockLabel; x: 8; anchors.verticalCenter: parent.verticalCenter; width: Math.max(0, parent.width - 8); text: eventBlock.modelData.label; color: eventBlock.eventColor; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.weight: eventBlock.modelData.current || eventBlock.modelData.next ? Font.Medium : Font.Normal; elide: Text.ElideRight; textFormat: Text.PlainText }
+                        // Whose event: the account's letter in its colour, dimmed once past.
+                        AccountBadge {
+                            x: 7; anchors.verticalCenter: parent.verticalCenter; diameter: 14; selected: true; tipEnabled: false
+                            account: eventBlock.modelData.account || ""; accountName: eventBlock.modelData.account_name || ""
+                            opacity: eventBlock.modelData.past ? .55 : 1
+                        }
+                        Text { id: blockLabel; x: 26; anchors.verticalCenter: parent.verticalCenter; width: Math.max(0, parent.width - x); text: eventBlock.modelData.label; color: eventBlock.eventColor; font.strikeout: eventBlock.declined; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.weight: eventBlock.modelData.current || eventBlock.modelData.next ? Font.Medium : Font.Normal; elide: Text.ElideRight; textFormat: Text.PlainText }
                         MouseArea {
                             id: eventMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: timeline.dragging ? Qt.ClosedHandCursor : Qt.PointingHandCursor
                             onPressed: function(mouse) { timeline.beginDrag(mapToItem(timeline, mouse.x, mouse.y).x) }
@@ -176,7 +205,7 @@ Rectangle {
                             onReleased: if (!timeline.endDrag()) timeline.showEvent(eventBlock.modelData, eventBlock)
                             onCanceled: timeline.cancelDrag()
                         }
-                        FmToolTip { shown: eventMouse.containsMouse && !timeline.dragging; text: modelData.title + "\n" + modelData.time_display + " – " + modelData.end_display + "\n" + modelData.account_name + " / " + modelData.calendar_name }
+                        FmToolTip { shown: eventMouse.containsMouse && !timeline.dragging; text: modelData.title + (Theme.responseLabel(modelData) ? " · " + Theme.responseLabel(modelData) : "") + "\n" + modelData.time_display + " – " + modelData.end_display + "\n" + modelData.account_name + " / " + modelData.calendar_name }
                         Accessible.ignored: panel.index !== 1
                         Accessible.role: Accessible.Button; Accessible.name: modelData.title + ", " + modelData.start_display
                         Accessible.onPressAction: timeline.showEvent(modelData, eventBlock)

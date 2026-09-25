@@ -129,6 +129,32 @@ impl Store {
         } else {
             None
         };
+        // An earlier version's read-only copy of this Gmail draft becomes the
+        // mirror in place: its source history refers to the row.
+        let legacy: Option<i64> = self
+            .db
+            .query_row(
+                "SELECT revision FROM drafts WHERE account=?1 AND draft_id=?2 AND origin='google_snapshot'",
+                params![account, new_id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(revision) = legacy {
+            let next = revision + 1;
+            let twin = Twin {
+                state: "adopted".into(),
+                revision: 1,
+                adoption: Some(remote.adoption(next)),
+                ..Twin::default()
+            };
+            self.db.execute(
+                "UPDATE drafts SET conversation_id=?3,legacy_reply=0,mode=?4,source_message_id=?5,source_hash=?6,routing_json=?7,body=?8,body_html=?9,revision=?10,attachments_json=?11,discarded=0,signature_text='',from_name=?12,identity_revision=?13,google_json=?14,origin='local',recipient_inputs_json='{}',updated_at=?15 WHERE account=?1 AND draft_id=?2 AND origin='google_snapshot'",
+                params![account, new_id, source.as_ref().map(|s| &s.0), if source.is_some() { "reply" } else { "new" },
+                    source.as_ref().map(|s| &s.1), source.as_ref().map(|s| &s.2), serde_json::to_string(remote.routing)?,
+                    remote.body, remote.html, next, serde_json::to_string(remote.attachment_ids)?, from_name, identity, encode(&twin)?, now],
+            )?;
+            return Ok(Some(new_id.to_owned()));
+        }
         let twin = Twin {
             state: "adopted".into(),
             revision: 1,
@@ -165,6 +191,21 @@ impl Store {
             rows
         };
         let mut changed = 0;
+        // Read-only copies from an earlier version whose Gmail draft is gone.
+        let legacy: Vec<String> = {
+            let mut stmt = self.db.prepare(
+                "SELECT d.draft_id FROM drafts d WHERE d.account=?1 AND d.origin='google_snapshot' AND d.discarded=0 AND NOT EXISTS(SELECT 1 FROM google_draft_sources s WHERE s.account=d.account AND s.draft_id=d.draft_id AND s.is_current=1 AND s.seen_generation>=?2)",
+            )?;
+            let rows = stmt
+                .query_map(params![account, generation], |r| r.get(0))?
+                .collect::<std::result::Result<Vec<_>, _>>()?;
+            rows
+        };
+        for draft in legacy {
+            if self.retire_legacy_snapshot(account, &draft)? {
+                changed += 1;
+            }
+        }
         for (draft, revision, raw, updated_at, provider) in rows {
             if updated_at * 1000 < started_ms
                 && self.retire_remote_draft(account, &draft, revision, raw, &provider)?

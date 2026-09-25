@@ -36,8 +36,18 @@ Popup {
         y = below ? box.y + box.height + 6 : Math.max(12, box.y - 6 - implicitHeight)
         open()
     }
+    // Hover opens the card after 200 ms, cancelled if the pointer leaves first;
+    // coming back to the link whose card is open keeps it open.
+    property var pendingLink: null
+    function hover(link, box, thread) {
+        lingerTimer.stop()
+        if (opened && url === link) { openTimer.stop(); pendingLink = null; return }
+        pendingLink = {link: link, box: box, thread: thread}
+        openTimer.restart()
+    }
+    Timer { id: openTimer; interval: 200; onTriggered: { const next = card.pendingLink; card.pendingLink = null; if (next) card.show(next.link, next.box, next.thread) } }
     // A 200 ms linger lets the pointer travel onto the card.
-    function scheduleHide() { lingerTimer.restart() }
+    function scheduleHide() { openTimer.stop(); pendingLink = null; lingerTimer.restart() }
     Timer { id: lingerTimer; interval: 200; onTriggered: if (!cardHover.hovered) card.close() }
     enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 120; easing.type: Easing.OutCubic } }
     background: Rectangle { color: Theme.bg2; radius: 8; border.color: Theme.line2 }

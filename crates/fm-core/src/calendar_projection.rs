@@ -58,14 +58,20 @@ impl Store {
             .to_string();
         let mut ids = BTreeSet::new();
         let mut incomplete = false;
+        // A series whose single RRULE ended (UNTIL) before the window cannot
+        // reach it, so it does not spend the series budget. Two days' margin
+        // covers UNTIL's zone; series longer than a day are always kept.
+        let ended_before = (window.from - chrono::Duration::days(2))
+            .format("%Y%m%d")
+            .to_string();
         for sql in [
             "SELECT i.event_id FROM calendar_event_index i INDEXED BY calendar_index_timed_end JOIN calendar_visible_sources v ON v.account=i.account AND v.calendar_id=i.calendar_id AND v.event_id=i.event_id AND v.slot=i.slot WHERE i.account=?1 AND i.calendar_id=?2 AND i.end_ms>?3 AND i.start_ms<?4 ORDER BY i.end_ms,i.event_id LIMIT 2049",
             "SELECT i.event_id FROM calendar_event_index i INDEXED BY calendar_index_dates_end JOIN calendar_visible_sources v ON v.account=i.account AND v.calendar_id=i.calendar_id AND v.event_id=i.event_id AND v.slot=i.slot WHERE i.account=?1 AND i.calendar_id=?2 AND i.end_date>?3 AND i.start_date<?4 ORDER BY i.end_date,i.event_id LIMIT 2049",
-            "SELECT i.event_id FROM calendar_event_index i INDEXED BY calendar_index_masters JOIN calendar_visible_sources v ON v.account=i.account AND v.calendar_id=i.calendar_id AND v.event_id=i.event_id AND v.slot=i.slot WHERE i.account=?1 AND i.calendar_id=?2 AND i.recurring=1 AND i.series_id IS NULL ORDER BY i.event_id LIMIT 129",
+            "SELECT i.event_id FROM calendar_event_index i INDEXED BY calendar_index_masters JOIN calendar_visible_sources v ON v.account=i.account AND v.calendar_id=i.calendar_id AND v.event_id=i.event_id AND v.slot=i.slot WHERE i.account=?1 AND i.calendar_id=?2 AND i.recurring=1 AND i.series_id IS NULL AND COALESCE(i.start_ms<?3,i.start_date<?4,1) AND NOT (instr(json_extract(v.json,'$.recurrence'),'UNTIL=')>0 AND instr(json_extract(v.json,'$.recurrence'),'RDATE')=0 AND length(json_extract(v.json,'$.recurrence'))-length(replace(json_extract(v.json,'$.recurrence'),'RRULE:',''))=6 AND COALESCE(i.end_ms-i.start_ms,(julianday(i.end_date)-julianday(i.start_date))*86400000,86400001)<=86400000 AND substr(json_extract(v.json,'$.recurrence'),instr(json_extract(v.json,'$.recurrence'),'UNTIL=')+6,8)<?5) ORDER BY i.event_id LIMIT 129",
         ] {
             let mut statement=self.db.prepare(sql)?;
             let (third,fourth):(rusqlite::types::Value,rusqlite::types::Value)=if sql.contains("end_date") {(from_date.clone().into(),to_date.clone().into())}else{(from.into(),to.into())};
-            let mut rows=if sql.contains("i.recurring=1") {statement.query(params![account,calendar])?}else{statement.query(params![account,calendar,third,fourth])?};
+            let mut rows=if sql.contains("i.recurring=1") {statement.query(params![account,calendar,to,to_date,ended_before])?}else{statement.query(params![account,calendar,third,fourth])?};
             let mut count=0;while let Some(row)=rows.next()?{count+=1;if ids.len()<SOURCE_BUDGET {ids.insert(row.get::<_,String>(0)?);}else{incomplete=true;}}
             if count>if sql.contains("i.recurring=1"){SERIES_BUDGET}else{SOURCE_BUDGET}{incomplete=true;}
         }

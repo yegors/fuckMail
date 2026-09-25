@@ -164,9 +164,11 @@ ApplicationWindow { width: 900; height: 1200; visible: true
             require(QMetaObject::invokeMethod(control, "clicked"), "actual native QML handler invokes");
         };
         const auto localEdit = [&](const QString &text) { backend.editFormattedDraft(text, "<p>" + text + "</p>"); backend.m_draftTimer.stop(); };
+        QJsonObject googleOverride;
         const auto finishSave = [&](bool ok = true) {
             require(savePeer && !saveId.isEmpty(), "held actual save exists");
             auto saved = projection(saveParams["expected_revision"].toInteger() + 1);
+            if (!googleOverride.isEmpty()) saved["google"] = googleOverride;
             for (const auto key : {"subject", "body", "body_html", "signature_text", "attachment_ids", "to_recipients", "cc_recipients", "bcc_recipients"})
                 if (saveParams.contains(key)) saved[key] = saveParams[key];
             const auto id = std::exchange(saveId, {});
@@ -196,14 +198,29 @@ ApplicationWindow { width: 900; height: 1200; visible: true
         localEdit("Failure must clear Send"); click("captureReply"); await([&] { return saves == 2; }, "second explicit save held");
         finishSave(false); backend.clearError();
         require(backend.m_googleSendPending.isEmpty() && fixture.operations == 0, "failed save clears Send continuation");
-        backend.saveDraft(); await([&] { return saves == 3; }, "ordinary save retry starts"); finishSave();
+        backend.saveDraft(); await([&] { return saves == 3; }, "ordinary save retry starts");
+        // Autosave and the background Gmail copy come and go while typing; Send stays enabled.
+        require(backend.googleSend()["can_send"].toBool() && !backend.googleSend()["send_now"].toBool()
+            && named(root, "captureReply")->property("enabled").toBool(), "an autosave on its way leaves Send enabled");
+        finishSave();
         require(fixture.operations == 0, "later ordinary save cannot send implicitly");
+        auto uploading = backend.m_draft["google"].toMap(); uploading["state"] = "in_flight"; backend.m_draft["google"] = uploading; emit backend.draftChanged();
+        require(backend.googleSend()["can_send"].toBool() && !backend.googleSend()["send_now"].toBool()
+            && named(root, "captureReply")->property("enabled").toBool(), "the background Gmail copy leaves Send enabled");
+        uploading["state"] = "local"; backend.m_draft["google"] = uploading; emit backend.draftChanged();
 
         // Commit staged Bcc before the saved-version snapshot is armed.
         backend.stageDraftRecipient("bcc_recipients", "Private <private@example.test>");
         click("captureReply"); await([&] { return saves == 4; }, "recipient commit is saved first");
         require(saveParams["bcc_recipients"].toArray().size() == 1, "staged Bcc is part of saved routing");
-        finishSave(); await([&] { return fixture.operations == 1; }, "one explicit Send reaches authenticated auxiliary IPC");
+        // Gmail is still taking the background copy when the save lands: Send waits for it, then sends.
+        googleOverride = QJsonObject::fromVariantMap(uploading); googleOverride["state"] = "in_flight";
+        googleOverride["local_revision"] = saveParams["expected_revision"].toInteger() + 1;
+        finishSave(); googleOverride = {};
+        require(fixture.operations == 0 && backend.m_googleSendPending.contains("waiting_since") && backend.m_googleSendWaitTimer.isActive()
+            && backend.googleSend()["busy"].toBool(), "Send pressed during the Gmail upload waits for it");
+        auto settled = backend.m_draft["google"].toMap(); settled["state"] = "local"; backend.m_draft["google"] = settled; emit backend.draftChanged();
+        await([&] { return fixture.operations == 1; }, "one explicit Send reaches authenticated auxiliary IPC");
         const auto first = operationParams;
         require(operationMethod == "google_send" && first.size() == 4 && first["draft_id"] == "draft-fixture"
             && first["expected_revision"].toInteger() == backend.m_draft["revision"].toLongLong()

@@ -2,6 +2,59 @@
 
 
 
+## D126 — sender pictures, hover timing, Send while saving, replies (Mail UI92)
+
+- **Sender pictures** (`SenderAvatar`):
+  - Initials: both first letters when the second word is capitalised, otherwise the first; punctuation counts as a space.
+  - Colours: `oklch(0.36 0.06 H)` disc and `oklch(0.9 0.05 H)` text, where H is the name's 31-multiplier hash mod 360.
+  - `HtmlContent.senderPicture(email, kind)` returns `{state, url, source, label}` from Core70's `sender_avatar`.
+    - At most four requests run at once, and arrivals repaint at most every 40 ms.
+    - Answers are dropped when the engine connection, `sender_pictures`, `blocked_hosts` or `remote_proxy` change, or the image cache is cleared.
+    - Failures are asked again after 60 s.
+    - Nothing is asked in synthetic profiles or while `sender_pictures` is false.
+  - A brand icon sits on a white disc: 18, 12, 16 and 24 px inside 28, 18, 22 and 36 px. A photo fills the circle (Shape `fillItem`; square in the software renderer).
+  - Placement:
+    - List rows other than Sent and Drafts: 28 px, 12 px before the sender column, with a tooltip of "Brand icon · domain", "Profile photo · address" or "No photo · initials".
+    - Thread headers and folded rows: 18 px. Participant stack: 22 px. Both keep the neutral disc and your account's initials.
+    - Contact card: 36 px on the name's hue.
+  - Settings → Image loading → Sender pictures switches `sender_pictures`.
+- **Hover timing.**
+  - Contact card:
+    - Opens 200 ms after the pointer enters a name.
+    - While open, switches after 350 ms; entering the card cancels the switch.
+    - Closes 220 ms after the pointer leaves.
+    - A 12 px strip above the card counts as the card.
+  - Link card: `hover(link, box, thread)` opens after 200 ms. Hovering the open link again keeps it; leaving cancels a pending open.
+- **Send.** Autosave stays local.
+  - `can_send` no longer drops while saving or uploading.
+  - `send_now` is false only while a save runs, or while an upload runs with no accepted Gmail draft yet.
+  - Send pressed during an upload re-checks every second for Gmail's acceptance, for up to 60 s. It then sends, or says "Gmail is still saving this draft. Press Send again in a moment."
+- **Replies.**
+  - A sent reply closes the form at once (`sentReplyDone`), and Reply begins a new reply draft.
+  - The thread of an accepted send re-reads Gmail's copy, so the local preview goes once that copy arrives.
+- **Drafts.**
+  - Open and save do not re-enter while a draft operation runs.
+  - A read-only draft clears its unsaved flag before continuing.
+  - Dropping empty drafts skips read-only and adopted ones.
+- **Day strip.** Each label starts with a 14 px account avatar at x 7 (no tooltip; 55% when past), and the label moves to x 26. Lanes allow 20 px more per label.
+
+Consumers: Core70, Calendar36, Gmail33.
+
+## D125 — console copy, text selection and inline details (Mail UI91)
+
+- **Copy.** A `copy` button after export, and a `copy` command, put the filtered lines on the clipboard in the export format. The console notes "copied N lines to the clipboard".
+- **Scrolling and selection.** No drag scrolling: the wheel, the scrollbar and Page Up/Down/Home/End scroll. Pressing and dragging selects text across lines, scrolling when dragged past an edge. Ctrl/⌘+C copies the selected text, one line per row. A press without a drag is a click. Typing while the lines have focus goes to the command line.
+- **Rows.** Each row is one monospace line: time, level and facility in fixed columns, then the message and its `key=value` details inline in a muted colour. Wrapped text hangs under the message column. A line that fits shows everything and does not expand. A line cut off at the edge ends in "…", and a click shows all of it wrapped. A line with JSON keeps its `{…} N lines` hint and expands to the JSON block. The separate `└` details line is gone. `DebugConsole.plainLine` defines the row text that selection positions and `plainRange` use.
+
+## D124 — acceptance fixes (Mail UI90)
+
+- **Drafts count** counts every draft in Drafts (Core's draft total). Chips still show only drafts with something written.
+- **Contact card**: the mail view's hover handler reports the pointer to the open card (`trackPointer`); nothing hovers on the popup overlay, so the name under the pointer keeps its hover and the card no longer closes and reopens.
+- **Attachments** exclude images the message's HTML shows (Gmail32).
+- **Unsubscribe**: when `message_unsubscribe` answers `unsubscribe_by_email`, the reader calls `google_unsubscribe_mail` with `fallback: true` as part of the same action and reports that result.
+
+Consumers: Gmail32, Core69, Calendar35.
+
 ## D122/D123 — first-class drafts, header, label toggles, inline compose (Mail UI89)
 
 - **Header.** Inbox and Drafts carry raised counts (Inbox: to review, 11.5 px DemiBold `inkAlpha(.7)`; Drafts: unsent written drafts, accent), hidden at zero. Spam and Trash sit behind `binMenuButton` (▾) after Drafts; its popup lists `spamScopeButton`/`trashScopeButton` with icon and Gmail count (`google_bin_counts`, read when it opens); in Spam or Trash the name shows beside ▾. `newMessageButton` (solid, 28 px, mail icon) follows the stats; `n` still opens it. The top-right New is removed in Mail and Calendar. Narrow panes wrap stats and New below the tabs.

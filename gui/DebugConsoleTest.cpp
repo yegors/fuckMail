@@ -334,6 +334,33 @@ ApplicationWindow {
         QTRY_COMPARE_WITH_TIMEOUT(console->property("copiedSequence").toString(), QString(), 3000);
         QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, jsonRow->mapToScene(QPointF(400, 8)).toPoint());
         QCOMPARE(console->property("selectedSequence").toString(), QString());
+        // A line that fits shows its details inline and does not expand.
+        QQuickItem *warnRow = nullptr;
+        for (auto child : events->property("contentItem").value<QQuickItem *>()->childItems())
+            if (child->property("plain").toString().contains("retry_after_secs=23")) warnRow = child;
+        QVERIFY(warnRow);
+        QVERIFY(warnRow->property("plain").toString().contains(" warning  sync   account-1 mail = retrying; google_rate_limited  retry_after_secs=23"));
+        QVERIFY(!warnRow->property("expandable").toBool());
+        QTest::qWait(QGuiApplication::styleHints()->mouseDoubleClickInterval() + 50);
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, warnRow->mapToScene(QPointF(300, 8)).toPoint());
+        QCOMPARE(console->property("selectedSequence").toString(), QString());
+        // Pressing and dragging selects text across lines; Ctrl+C copies it.
+        QTest::qWait(QGuiApplication::styleHints()->mouseDoubleClickInterval() + 50);
+        const auto from = warnRow->mapToScene(QPointF(18, 8)).toPoint(), to = jsonRow->mapToScene(QPointF(jsonRow->width() - 40, 8)).toPoint();
+        QGuiApplication::clipboard()->clear();
+        QTest::mousePress(window, Qt::LeftButton, Qt::NoModifier, from);
+        QTest::mouseMove(window, (from + to) / 2); QTest::mouseMove(window, to);
+        QTest::mouseRelease(window, Qt::LeftButton, Qt::NoModifier, to);
+        QCOMPARE(console->property("selectedSequence").toString(), QString());
+        QTest::keySequence(window, QKeySequence::Copy);
+        QTRY_VERIFY2(QGuiApplication::clipboard()->text().contains("google_rate_limited") && QGuiApplication::clipboard()->text().contains("messages.get completed"),
+            qPrintable(QGuiApplication::clipboard()->text()));
+        QVERIFY(QGuiApplication::clipboard()->text().contains('\n'));
+        // Copy puts the filtered log on the clipboard.
+        auto copyAll = window->findChild<QQuickItem *>("debugCopy"); QVERIFY(copyAll);
+        QTest::mouseClick(window, Qt::LeftButton, Qt::NoModifier, center(copyAll));
+        QTRY_VERIFY(QGuiApplication::clipboard()->text().contains("<4> warning sync    account-1 mail = retrying"));
+        QTRY_VERIFY(rows(log).contains("to the clipboard"));
         // Tail: pinned while following; scrolling up stops it and counts new lines.
         for (int i = 0; i < 1200; ++i) log.record("info", "sync", QString("scroll event %1").arg(i));
         settle();

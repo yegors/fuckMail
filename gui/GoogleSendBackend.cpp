@@ -96,14 +96,17 @@ QVariantMap MailBackend::googleSend() const {
     const bool authorized = !m_syntheticProfile && m_connected && !m_shutdown && accountCapability(m_account, "send");
     const auto sync = googleSyncState(m_account);
     const bool ready = authorized && sync.value("active").toBool();
+    // Autosave and the background Gmail copy come and go while the person
+    // types. They leave Send enabled; pressing it waits for them (sendNow).
+    const bool otherBusy = m_capturing || m_discarding || m_undoingDiscards || draftDiscardActive() || m_resolvingDraft || !m_draftTransferActive.isEmpty();
     const bool cleanTarget = !draftLocked() && !m_draft.isEmpty() && !m_draft.value("discarded").toBool() && !m_draftConflict
-        && !draftBusy() && !attachmentImportPending() && m_googleDraftOperationId.isEmpty();
+        && !otherBusy && !attachmentImportPending() && m_googleDraftOperationId.isEmpty();
     const auto accepted = current["last_accepted_draft_revision"].toInteger();
     const bool newer = m_draftDirty || !m_recipientInputs.isEmpty() || m_draft.value("revision").toLongLong() > accepted;
     const auto google = m_draft.value("google").toMap();
     const auto googleState = google.value("state").toString();
-    const bool draftBlocked = googleState == "in_flight" || googleState == "prepared" || googleState == "acknowledged"
-        || googleState == "acceptance_unknown" || googleState == "conflict";
+    const bool draftUploading = googleState == "in_flight" || googleState == "prepared" || googleState == "acknowledged";
+    const bool draftBlocked = googleState == "acceptance_unknown" || googleState == "conflict";
     const bool deletionBlocked = google.value("deletion").toMap().value("blocks_target").toBool();
     const bool selectedCurrent = validSend(selected, m_account, id) && selected["operation_is_current"].toBool()
         && (current.isEmpty() || (selected["request_id"] == current["request_id"] && !earlierSend(selected, current)));
@@ -117,12 +120,14 @@ QVariantMap MailBackend::googleSend() const {
         text += " This is an earlier request. Current submission: " + sendSummary(current);
     if (accepted > 0 && newer) text += " Your earlier message was sent. Sending these newer edits creates another email.";
     if (sendQueued()) text = m_sendUndoMs > 0 ? "Sending shortly. Undo keeps this saved draft." : "Sending…";
-    else if (saving) text = "Saving your draft…";
+    else if (saving) text = "Sending…";
     else if (ui.active) {
         if (ui.method == "google_send") text = "Sending…";
         else text += " Checking send status…";
     }
     if (!ui.feedback.isEmpty()) text += " " + ui.feedback;
+    const bool canSend = ready && hasRecipients && cleanTarget && !saving && !ui.active && !ui.uncertain && !deletionBlocked && (accepted > 0 || !draftBlocked)
+        && !pendingSend(current["state"].toString()) && (accepted == 0 || newer);
     return {{"visible", !m_syntheticProfile && (!text.isEmpty() || !current.isEmpty())}, {"status", text.trimmed()},
         {"sent_current", sentCurrent}, {"can_resume_sync", authorized && !ready && !sync.value("changing").toBool()},
         {"warning", ui.uncertain || state == "acceptance_unknown" || state == "rejected" || (accepted > 0 && newer)},
@@ -130,8 +135,8 @@ QVariantMap MailBackend::googleSend() const {
         {"can_cancel", sendQueued() || saving || (ui.active && ui.method != "google_send_status")},
         {"can_select_current", !ui.active && !saving && !ui.uncertain && validSend(current, m_account, id) && !selected.isEmpty() && current["request_id"] != selected["request_id"]},
         {"check_label", !ui.uncertain && state == "acceptance_unknown" && ready ? "Check Google" : "Check status"},
-        {"state", state}, {"can_send", ready && hasRecipients && cleanTarget && !saving && !ui.active && !ui.uncertain && !deletionBlocked && (accepted > 0 || !draftBlocked)
-            && !pendingSend(current["state"].toString()) && (accepted == 0 || newer)},
+        {"state", state}, {"can_send", canSend},
+        {"send_now", canSend && !m_savingDraft && (accepted > 0 || !draftUploading)},
         {"can_check", !sentCurrent && m_connected && !m_shutdown && !ui.active && !saving && (!selected.isEmpty() || !ui.request.isEmpty())},
         {"resume_label", ui.uncertain ? "Resume original request" : "Send prepared version"},
         {"can_resume", ready && !ui.active && !saving && ((!ui.uncertain && selectedCurrent && state == "prepared")
@@ -181,17 +186,33 @@ void MailBackend::finishGoogleSendSave(bool ok) {
     const auto pending = m_googleSendPending;
     const bool same = pending["account"] == m_account && pending["context"] == draftContext()
         && pending["generation"].toInt(-1) == m_generation && pending["authored"].toObject() == googleSendAuthorSnapshot();
+    // Send was pressed while an earlier autosave was on its way: the save that
+    // follows carries the version Send was pressed on.
+    if (ok && same && m_draftDirty && !m_shutdown) return;
     m_googleSendPending = {};
     if (!ok || !same || m_draftDirty || m_shutdown) {
         m_googleSendUi[googleSendKey()].feedback = ok ? "The draft changed before sending. Review it and press Send again."
             : "Send was cancelled because the draft was not saved. Review it and press Send again.";
         emit draftChanged(); return;
     }
-    if (!googleSend().value("can_send").toBool() || m_draft.value("revision").toLongLong() <= 0
+    const auto send = googleSend();
+    if (!send.value("can_send").toBool() || m_draft.value("revision").toLongLong() <= 0
         || m_draft.value("draft_id").toString().isEmpty()) {
         m_googleSendUi[googleSendKey()].feedback = "Send is no longer available for this saved version. Check its current status.";
         emit draftChanged(); return;
     }
+    // The background Gmail copy of this draft is finishing; Core sends once it
+    // settles. Wait for it (a minute at most) instead of refusing.
+    if (!send.value("send_now").toBool()) {
+        m_googleSendPending = pending;
+        if (!m_googleSendPending.contains("waiting_since")) m_googleSendPending["waiting_since"] = m_actionClock.elapsed();
+        if (m_actionClock.elapsed() - m_googleSendPending["waiting_since"].toInteger() > 60000) {
+            m_googleSendPending = {};
+            m_googleSendUi[googleSendKey()].feedback = "Gmail is still saving this draft. Press Send again in a moment.";
+        } else m_googleSendWaitTimer.start();
+        emit draftChanged(); return;
+    }
+    m_googleSendWaitTimer.stop();
     const auto params = QJsonObject{{"draft_id", m_draft.value("draft_id").toString()},
         {"expected_revision", m_draft.value("revision").toLongLong()},
         {"expected_google_revision", std::max(m_draft.value("google").toMap().value("revision").toLongLong(),

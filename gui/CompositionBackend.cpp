@@ -304,8 +304,10 @@ bool MailBackend::authoredDraftRow(const QVariantMap &row) const {
 }
 void MailBackend::dropEmptyNewDraft() {
     // A new message with nothing written is not kept in Drafts. No Undo: there
-    // is nothing to bring back.
+    // is nothing to bring back. Drafts that came from Gmail stay until the
+    // person discards them.
     if (m_draft.value("mode").toString() != "new" || m_activeDraft.isEmpty() || m_draft.value("discarded").toBool()
+        || draftReadOnly() || m_draft.value("google").toMap().value("state").toString() == "adopted"
         || draftHasContent() || draftBusy() || accountArchived() || m_unsavedAccountBuffer || !m_connected) return;
     const auto revision = m_draft.value("revision").toLongLong();
     if (revision <= 0) return;
@@ -337,8 +339,9 @@ void MailBackend::refreshDraftChips() {
             const auto row = value.toObject().toVariantMap();
             if (!row.value("read_only").toBool() && authoredDraftRow(row)) rows.append(row);
         }
-        // Beyond the first page, count every draft as written.
-        const auto total = rows.size() + std::max<qsizetype>(0, result["total"].toInteger() - page.size());
+        // The count is every draft in Drafts, as the folder lists them; chips
+        // show only the ones with something written.
+        const auto total = result["total"].toInteger(page.size());
         const QVariantMap next{{"account", account}, {"rows", rows}, {"total", total}};
         if (next != m_draftChips) { m_draftChips = next; emit draftChipsChanged(); }
     });

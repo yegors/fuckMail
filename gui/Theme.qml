@@ -92,6 +92,75 @@ QtObject {
     // first unused one. Accounts without a saved colour use palette order.
     readonly property var accountPalette: ["#C9A36B", "#E0B85A", "#CF8F6A", "#E07F7F", "#D58E9A", "#C98BC9", "#AE97D4", "#8C8FE0",
         "#8AA9D6", "#6FA3C7", "#6FB5B2", "#7FC4A4", "#8FB39A", "#B9C77A", "#C9A58F", "#A3AAB3"]
+    // Your answer to an invitation. Maybe and not-yet-answered events show as
+    // uncommitted (hatched); declined ones are dimmed and struck through.
+    // Google Calendar keeps notes written in its editor as HTML; show them as
+    // text with line breaks, bullets and link targets kept.
+    function plainNotes(text) {
+        let s = String(text || "").trim()
+        if (!/<\s*\/?\s*(br|p|div|a|b|i|u|ul|ol|li|span|strong|em|font|h[1-6]|hr|blockquote|table|tr|td)\b[^>]*>/i.test(s)) return s
+        s = s.replace(/<a\b[^>]*href\s*=\s*"([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, function(m, href, label) {
+            const t = label.replace(/<[^>]*>/g, "").trim()
+            return !t || t === href || href.indexOf("mailto:") === 0 ? (t || href) : t + " (" + href + ")"
+        })
+        s = s.replace(/<\s*br\s*\/?>/gi, "\n").replace(/<\s*li\b[^>]*>/gi, "\n• ").replace(/<\s*\/\s*(p|div|li|h[1-6]|tr|blockquote|ul|ol)\s*>/gi, "\n").replace(/<[^>]*>/g, "")
+        s = s.replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, "\"").replace(/&#39;|&apos;/g, "'")
+            .replace(/&#(\d+);/g, function(m, n) { return String.fromCharCode(Number(n)) }).replace(/&amp;/g, "&")
+        return s.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim()
+    }
+    // Notes as rich text: escaped, line breaks kept, web links clickable.
+    function linkedNotes(text, linkColor) {
+        const escape = function(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;") }
+        const parts = String(text || "").split(/(https?:\/\/[^\s<>"'()\[\]]*[^\s<>"'()\[\].,;:!?])/)
+        return parts.map(function(part, i) {
+            return i % 2 ? "<a href=\"" + escape(part) + "\" style=\"color:" + linkColor + "\">" + escape(part) + "</a>" : escape(part)
+        }).join("").replace(/\n/g, "<br>")
+    }
+    // Your answer to an invitation: "yes", "maybe", "" (not answered) or "no".
+    // Undefined when the event is not an invitation: one you organise, or one
+    // without guests. Guests but no answer of yours on record counts as yes.
+    function rsvpOf(event) {
+        if (!event || event.busy_only) return undefined
+        const people = event.attendees || []
+        if (!people.length) return undefined
+        const me = people.find(function(p) { return p.self === true })
+        if (me ? me.organizer === true : organizedByAccount(event)) return undefined
+        const answer = event.self_response || (me ? me.responseStatus : "")
+        return answer === "tentative" ? "maybe" : answer === "needsAction" ? "" : answer === "declined" ? "no" : "yes"
+    }
+    function organizedByAccount(event) {
+        const rows = typeof backend === "undefined" || !backend.allAccounts ? [] : backend.allAccounts
+        const row = rows.find(function(a) { return a.id === event.account }) || {}
+        return !!row.email && String(event.organizer || "").toLowerCase() === String(row.email).toLowerCase()
+    }
+    function eventOpen(event) { const answer = rsvpOf(event); return answer === "maybe" || answer === "" }
+    function eventDeclined(event) { return rsvpOf(event) === "no" }
+    // Sender initials: both first letters when the second word is capitalised,
+    // otherwise the first letter. Punctuation and symbols count as spaces.
+    function initialsOf(name) {
+        const words = String(name || "?").replace(/[!-\/:-@\[-`{-~\u00a0-\u00bf\u2000-\u206f]/g, " ").trim().split(/\s+/).filter(function(w) { return w.length })
+        const second = words.length > 1 ? words[1].charAt(0) : ""
+        const capital = second.length && second !== second.toLowerCase() && second === second.toUpperCase()
+        return (capital ? words[0].charAt(0) + second : (words[0] || "?").charAt(0)).toUpperCase()
+    }
+    // A stable hue for a name: 31-multiplier string hash modulo 360.
+    function nameHue(name) {
+        let x = 0
+        for (const ch of String(name || "?")) x = (x * 31 + ch.charCodeAt(0)) >>> 0
+        return x % 360
+    }
+    // CSS oklch(L C H) in sRGB, clamped to the gamut.
+    function oklch(l, c, h) {
+        const a = c * Math.cos(h * Math.PI / 180), b = c * Math.sin(h * Math.PI / 180)
+        const lc = Math.pow(l + .3963377774 * a + .2158037573 * b, 3)
+        const mc = Math.pow(l - .1055613458 * a - .0638541728 * b, 3)
+        const sc = Math.pow(l - .0894841775 * a - 1.291485548 * b, 3)
+        function gamma(v) { v = Math.max(0, Math.min(1, v)); return v <= .0031308 ? 12.92 * v : 1.055 * Math.pow(v, 1 / 2.4) - .055 }
+        return Qt.rgba(gamma(4.0767416621 * lc - 3.3077115913 * mc + .2309699292 * sc),
+                       gamma(-1.2684380046 * lc + 2.6097574011 * mc - .3413193965 * sc),
+                       gamma(-.0041960863 * lc - .7034186147 * mc + 1.707614701 * sc), 1)
+    }
+    function responseLabel(event) { const answer = rsvpOf(event); return answer === "maybe" ? "Maybe" : answer === "" ? "Not answered" : answer === "no" ? "Declined" : "" }
     function accountColor(account) {
         const rows = typeof backend === "undefined" || !backend.allAccounts ? [] : backend.allAccounts
         const index = rows.findIndex(function(row) { return row.id === account })

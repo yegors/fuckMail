@@ -45,6 +45,21 @@ pub fn unsubscribe(message: &mail_parser::Message<'_>, plain: &str) -> Option<Un
     })
 }
 
+/// The `mailto:` entry of `List-Unsubscribe`, even when one-click is offered:
+/// the way out when a list refuses its own one-click POST.
+pub fn mailto_alternative(message: &mail_parser::Message<'_>) -> Option<Unsubscribe> {
+    message
+        .header_raw("List-Unsubscribe")
+        .unwrap_or("")
+        .split('<')
+        .skip(1)
+        .filter_map(|rest| rest.split('>').next())
+        .map(|uri| uri.split_whitespace().collect::<String>())
+        .filter(|uri| !uri.is_empty() && uri.len() <= MAX_URL)
+        .filter_map(|uri| url::Url::parse(&uri).ok())
+        .find_map(|uri| mailto(&uri))
+}
+
 /// Parse the header pair. URIs are the `<…>` entries of `List-Unsubscribe`.
 pub fn from_headers(list_unsubscribe: &str, list_unsubscribe_post: &str) -> Option<Unsubscribe> {
     let uris: Vec<url::Url> = list_unsubscribe
@@ -241,6 +256,36 @@ mod tests {
             .map(|t| t.into_owned())
             .unwrap_or_default();
         unsubscribe(&message, &plain)
+    }
+
+    #[test]
+    fn a_one_click_list_can_still_name_its_unsubscribe_address() {
+        let raw = "From: News <news@list.test>
+List-Unsubscribe:
+ <mailto:unsubscribe+abc@bounces.list.test?subject=unsubscribe>,
+ <https://tracking.list.test/unsubscribe?msgid=abc&c=1>
+List-Unsubscribe-Post: List-Unsubscribe=One-Click
+Content-Type: text/plain
+
+Hello
+";
+        assert_eq!(
+            parse(raw),
+            Some(Unsubscribe::OneClick {
+                url: "https://tracking.list.test/unsubscribe?msgid=abc&c=1".into()
+            })
+        );
+        let message = mail_parser::MessageParser::default()
+            .parse(raw.as_bytes())
+            .unwrap();
+        assert_eq!(
+            mailto_alternative(&message),
+            Some(Unsubscribe::Mailto {
+                address: "unsubscribe+abc@bounces.list.test".into(),
+                subject: "unsubscribe".into(),
+                body: String::new(),
+            })
+        );
     }
 
     #[test]

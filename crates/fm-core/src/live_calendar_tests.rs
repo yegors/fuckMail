@@ -1256,3 +1256,43 @@ fn prepared_large_page_writer_timing() {
         json!({"rounds":7,"events_per_page":250,"serialized_page_bytes":source_bytes,"maximum_chunk_input_bytes":max_bytes,"maximum_chunk_items":max_items,"page_preparation":metric(&page_prepare),"chunk_preparation":metric(&chunk_prepare),"writer_input_read":metric(&input_reads),"writer_stage_sql":metric(&writer),"writer_seal":metric(&seals),"writer_publication":metric(&publications),"writer_consolidation":metric(&consolidation),"native_ui_latency_verified":false})
     );
 }
+
+#[test]
+fn many_ended_series_do_not_crowd_out_a_current_one() {
+    let (_dir, mut store, account) = setup();
+    // Years of finished meetings: ids that sort before the current series.
+    let mut items: Vec<Value> = (0..200)
+        .map(|n| {
+            let mut ended = event(&format!("a-ended-{n:03}"), "Finished weekly");
+            ended["start"] = json!({"dateTime":"2025-03-03T15:00:00Z"});
+            ended["end"] = json!({"dateTime":"2025-03-03T15:30:00Z"});
+            ended["recurrence"] = json!(["RRULE:FREQ=WEEKLY;UNTIL=20250601T035959Z;BYDAY=MO"]);
+            ended
+        })
+        .collect();
+    let mut standup = event("z-standup", "Design standup");
+    standup["start"] = json!({"dateTime":"2026-07-23T15:30:00Z"});
+    standup["end"] = json!({"dateTime":"2026-07-23T15:45:00Z"});
+    standup["recurrence"] = json!(["RRULE:FREQ=WEEKLY;WKST=SU;BYDAY=FR,MO,TH,WE,SA"]);
+    standup["attendees"] = json!([{"email":CAL,"self":true,"responseStatus":"tentative"}]);
+    let mut moved = standup.clone();
+    moved.as_object_mut().unwrap().remove("recurrence");
+    moved["id"] = "z-standup_20260912".into();
+    moved["recurringEventId"] = "z-standup".into();
+    moved["originalStartTime"] = json!({"dateTime":"2026-09-12T15:30:00Z"});
+    moved["start"] = json!({"dateTime":"2026-09-12T16:00:00Z"});
+    moved["end"] = json!({"dateTime":"2026-09-12T16:15:00Z"});
+    items.push(standup);
+    items.push(moved);
+    publish_events(&mut store, &account, items, CalendarSyncMode::Full, "t1");
+    let v = view(&store);
+    let titles: Vec<&str> = v["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|e| e["title"].as_str())
+        .collect();
+    assert_eq!(titles, ["Design standup"], "{v}");
+    assert_eq!(v["events"][0]["self_response"], "tentative");
+    assert_eq!(v["coverage"]["complete"], true);
+}

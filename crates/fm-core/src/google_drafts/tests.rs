@@ -318,6 +318,11 @@ fn deterministic_failure_is_revision_bound_and_does_not_starve_later_drafts() {
             json!({"mode":"new","request_id":"second"}),
         )
         .unwrap();
+    // Only drafts with something written are uploaded.
+    store
+        .db
+        .execute("UPDATE drafts SET body='Written text'", [])
+        .unwrap();
     store
         .db
         .execute("UPDATE drafts SET updated_at=0 WHERE draft_id=?1", [&id])
@@ -391,6 +396,33 @@ fn deterministic_failure_is_revision_bound_and_does_not_starve_later_drafts() {
 }
 
 #[test]
+fn a_draft_uploads_once_its_text_has_rested() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, scope, id) = setup(dir.path());
+    save(&mut store, &scope, &id, 1, "Still typing");
+    let saved: i64 = store
+        .db
+        .query_row("SELECT updated_at FROM drafts WHERE draft_id=?1", [&id], |r| r.get(0))
+        .unwrap();
+    let due = |store: &Store, now_ms: i64| {
+        store
+            .google_draft_due_at(&scope.account, scope.connection_generation, 10, now_ms, 30_000)
+            .unwrap()
+            .iter()
+            .any(|row| row.draft_id == id)
+    };
+    // Typing keeps the draft local; it uploads after 30 s without an edit.
+    assert!(!due(&store, saved * 1000 + 29_999));
+    assert!(due(&store, saved * 1000 + 30_000));
+    // Without a quiet period (as tests and resumed work use) it is due now.
+    assert!(store
+        .google_draft_due(&scope.account, scope.connection_generation, 10)
+        .unwrap()
+        .iter()
+        .any(|row| row.draft_id == id));
+}
+
+#[test]
 fn transient_deferral_is_bounded_retryable_and_skips_only_the_same_authored_revision() {
     let dir = tempfile::tempdir().unwrap();
     let (mut store, scope, id) = setup(dir.path());
@@ -400,6 +432,11 @@ fn transient_deferral_is_bounded_retryable_and_skips_only_the_same_authored_revi
             Some(&scope.account),
             json!({"mode":"new","request_id":"other"}),
         )
+        .unwrap();
+    // Only drafts with something written are uploaded.
+    store
+        .db
+        .execute("UPDATE drafts SET body='Written text'", [])
         .unwrap();
     store
         .db
@@ -420,14 +457,14 @@ fn transient_deferral_is_bounded_retryable_and_skips_only_the_same_authored_revi
     let until = deferred["retry"]["until_ms"].as_i64().unwrap();
     assert_eq!(
         store
-            .google_draft_due_at(&scope.account, scope.connection_generation, 1, until - 1)
+            .google_draft_due_at(&scope.account, scope.connection_generation, 1, until - 1, 0)
             .unwrap()[0]
             .draft_id,
         other["draft_id"]
     );
     assert_eq!(
         store
-            .google_draft_due_at(&scope.account, scope.connection_generation, 1, until)
+            .google_draft_due_at(&scope.account, scope.connection_generation, 1, until, 0)
             .unwrap()[0]
             .draft_id,
         id
@@ -443,7 +480,7 @@ fn transient_deferral_is_bounded_retryable_and_skips_only_the_same_authored_revi
         "Edited while prior bytes await retry",
     );
     assert!(store
-        .google_draft_due_at(&scope.account, scope.connection_generation, 10, until - 1)
+        .google_draft_due_at(&scope.account, scope.connection_generation, 10, until - 1, 0)
         .unwrap()
         .iter()
         .any(|row| row.draft_id == id && row.revision == 2));
@@ -955,7 +992,7 @@ fn prepared_due_partial_index_skips_synced_inventory_and_keeps_exact_resume_revi
         .db
         .prepare(&format!("EXPLAIN QUERY PLAN {DUE_SQL}"))
         .unwrap()
-        .query_map(params![scope.account, 10, unix_ms().unwrap()], |r| r.get(3))
+        .query_map(params![scope.account, 10, unix_ms().unwrap(), 0], |r| r.get(3))
         .unwrap()
         .collect::<rusqlite::Result<_>>()
         .unwrap();

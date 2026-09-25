@@ -333,8 +333,11 @@ impl Store {
         }
         if let Some((mid, hash, sender, to)) = message {
             if let Ok((mut routing, body)) = self.source_routing(account, cid, &mid, "reply") {
-                // Preserve legacy reply address/subject derivation when freezing.
-                routing["to_recipients"] = json!([{"email":if sender==from {to} else {sender}}]);
+                // A reply goes where the source says (Reply-To, else From);
+                // the stored sender stands in only when it names nobody.
+                if routing["to_recipients"].as_array().is_none_or(|rows| rows.is_empty()) {
+                    routing["to_recipients"] = json!([{"email":if sender==from {to} else {sender}}]);
+                }
                 routing["subject"] = json!(format!("Re: {title}"));
                 return Ok((Some(mid), Some(hash), routing, body));
             }

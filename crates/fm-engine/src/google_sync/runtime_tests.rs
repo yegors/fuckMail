@@ -67,6 +67,54 @@ impl HttpTransport for DeleteHttp {
     }
 }
 
+#[derive(Default)]
+struct BatchDeleteHttp(AtomicUsize);
+impl HttpTransport for BatchDeleteHttp {
+    fn execute<'a>(&'a self, request: HttpRequest, _: &'a CancellationToken) -> HttpFuture<'a> {
+        Box::pin(async move {
+            assert_eq!(request.method(), HttpMethod::Post);
+            assert_eq!(
+                request.url(),
+                "https://gmail.googleapis.com/gmail/v1/users/me/messages/batchDelete"
+            );
+            assert_eq!(request.body_bytes(), br#"{"ids":["m1","m2"]}"#);
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(HttpResponse {
+                status: 204,
+                body: vec![],
+                retry_after_secs: None,
+                etag: None,
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn deleting_for_good_reaches_gmail_through_the_mutation_lane() {
+    let mut h = Contexts::new(1000, 1000, 4);
+    let http = Arc::new(BatchDeleteHttp::default());
+    h.first.http = http.clone();
+    let ids = ["m1".to_owned(), "m2".to_owned()];
+    let call = GmailCall::batch_delete(&h.first.account, &ids).unwrap();
+    assert!(matches!(
+        h.first.gmail_mutation(call).await.unwrap(),
+        GmailReply::Deleted
+    ));
+    assert_eq!(http.0.load(Ordering::SeqCst), 1);
+    let work = Work {
+        account: h.first.account.clone(),
+        service: Service::Gmail,
+        class: WorkClass::StateMutation,
+        units: 50,
+    };
+    let url = "https://gmail.googleapis.com/gmail/v1/users/me/messages/batchDelete";
+    assert!(mutation_request_matches(&work, &HttpRequest::new(HttpMethod::Post, url).unwrap()));
+    assert!(!mutation_request_matches(&work, &HttpRequest::new(HttpMethod::Delete, url).unwrap()));
+    let mut wrong = work;
+    wrong.units = 5;
+    assert!(!mutation_request_matches(&wrong, &HttpRequest::new(HttpMethod::Post, url).unwrap()));
+}
+
 #[tokio::test]
 async fn deletion_admission_is_exact_one_shot_and_cannot_become_create_update_or_send() {
     let mut h = Contexts::new(1000, 1000, 4);

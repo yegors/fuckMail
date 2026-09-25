@@ -123,7 +123,7 @@ QString MailBackend::unsubscribe(const QVariantMap &message) {
     const QJsonObject params{{"id", message.value("id").toString()}, {"source_version", message.value("source_version").toString()}};
     const QString method = how == u"mailto" ? "google_unsubscribe_mail" : "message_unsubscribe";
     QTimer::singleShot(0, this, [this, ticket, account, conversation, params, method] {
-        googleOperation(method, account, params, [this, ticket, account, conversation](auto result, bool ok) {
+        const auto finish = [this, ticket, account, conversation](const QJsonObject &result, bool ok) {
             if (ok && result["method"].toString() == u"link") openLink(result["url"].toString());
             if (ok && account == m_account && conversation == m_conversation.value("id").toString()) {
                 auto list = m_conversation.value("mailing_list").toMap();
@@ -132,6 +132,16 @@ QString MailBackend::unsubscribe(const QVariantMap &message) {
                 emit conversationChanged();
             }
             emit unsubscribeReady(ticket, result.toVariantMap(), ok);
+        };
+        googleOperation(method, account, params, [this, account, params, finish](auto result, bool ok) {
+            // The list refused its one-click POST but takes an unsubscribe
+            // email: send that instead, as part of the same Unsubscribe.
+            if (!ok && result["code"].toString() == u"unsubscribe_by_email") {
+                auto fallback = params; fallback["fallback"] = true;
+                googleOperation("google_unsubscribe_mail", account, fallback, [finish](auto mailed, bool sent) { finish(mailed, sent); });
+                return;
+            }
+            finish(result, ok);
         });
     });
     return ticket;

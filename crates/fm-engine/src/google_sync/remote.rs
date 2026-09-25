@@ -240,14 +240,27 @@ pub(crate) async fn attachment(ctx: &SyncContext, params: Value) -> Result<Value
 
 /// `{id, source_version}` of a stored message whose list unsubscribes by
 /// email: send that email from this account, once, and remember it.
-pub(crate) async fn unsubscribe_mail(ctx: &SyncContext, params: Value) -> Result<Value> {
+pub(crate) async fn unsubscribe_mail(ctx: &SyncContext, mut params: Value) -> Result<Value> {
     require_mail_write(ctx).await?;
+    // `fallback`: the list refused its one-click POST; use its address instead.
+    let fallback = params
+        .as_object_mut()
+        .and_then(|fields| fields.remove("fallback"))
+        .is_some_and(|value| value == true);
     let account = ctx.account.as_str().to_owned();
     let plan = ctx
         .core_call(move |store| store.unsubscribe_begin(&account, &params))
         .await?;
     let (plan, found) = tokio::task::spawn_blocking(move || {
-        let found = fm_core::unsubscribe::resolve(&plan);
+        let found = if fallback {
+            fm_core::unsubscribe::resolve_mailto(&plan).and_then(|found| {
+                found.ok_or_else(|| {
+                    failure("invalid_request", "This list does not unsubscribe by email")
+                })
+            })
+        } else {
+            fm_core::unsubscribe::resolve(&plan)
+        };
         (plan, found)
     })
     .await
@@ -387,10 +400,15 @@ fn project(content: &fm_google::sync::MessageContent, newest: bool) -> Option<Va
         .unwrap_or_default();
     let text = fm_mail::extract_parsed_incoming_contribution(&parsed).unwrap_or_default();
     use mail_parser::MimeHeaders;
+    // Images the HTML shows (cid:) are part of the body, not attachments.
+    let inline = fm_mail::html_view::inline_content_ids(&parsed);
     let attachments: Vec<Value> = parsed
         .attachments()
         .take(50)
         .enumerate()
+        .filter(|(_, part)| {
+            !fm_mail::html_view::part_content_id(part).is_some_and(|id| inline.contains(&id))
+        })
         .map(|(index, part)| {
             json!({
                 "id": format!("{ATTACHMENT_PREFIX}{}:{index}", content.id),

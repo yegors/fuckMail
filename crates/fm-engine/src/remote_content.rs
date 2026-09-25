@@ -1,7 +1,7 @@
 //! Remote message content. This is the only code that fetches anything a
-//! rendered message refers to. It also serves the reader's sanitised HTML view,
-//! decodes every image in memory-safe code, and indexes link hosts in the
-//! background.
+//! rendered message refers to, and the mail list's sender pictures. It also
+//! serves the reader's sanitised HTML view, decodes every image in memory-safe
+//! code, and indexes link hosts in the background.
 //!
 //! Fetch policy: GET over https to port 443 only, never `http://`. No cookies,
 //! referrer, language or conditional headers. At most three redirects, each
@@ -17,10 +17,13 @@ use fm_google::transport::CancellationToken;
 use fm_google::vault::NativeSecret;
 use fm_mail::unsubscribe::Unsubscribe;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, Mutex, RwLock, Weak};
 use std::time::{Duration, Instant};
 use tokio::sync::Semaphore;
+
+mod senders;
 
 const MAX_IMAGE_BYTES: usize = 5 * 1024 * 1024;
 const USER_AGENT: &str = "Mozilla/5.0";
@@ -44,16 +47,25 @@ pub(crate) struct Runtime {
     fetches: Arc<Semaphore>,
     client: Mutex<Option<(ClientKey, reqwest::Client)>>,
     blocked: Arc<RwLock<Vec<String>>>,
+    /// Sender picture keys found missing, and when, for the engine's life.
+    sender_misses: Mutex<HashMap<String, Instant>>,
+    /// One fetch per sender picture at a time.
+    sender_locks: Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>,
     policy: Policy,
 }
 
-/// Test builds may reach a loopback origin that presents a test certificate.
+/// Test builds may reach a loopback origin that presents a test certificate,
+/// and may name it in place of the sender picture services.
 #[derive(Clone, Default)]
 pub(crate) struct Policy {
     #[cfg(test)]
     pub(crate) allow_loopback: bool,
     #[cfg(test)]
     pub(crate) roots: Vec<reqwest::Certificate>,
+    #[cfg(test)]
+    pub(crate) brand_base: Option<String>,
+    #[cfg(test)]
+    pub(crate) photo_base: Option<String>,
 }
 
 impl Policy {
@@ -62,6 +74,22 @@ impl Policy {
         return self.allow_loopback;
         #[cfg(not(test))]
         false
+    }
+
+    fn brand_base(&self) -> &str {
+        #[cfg(test)]
+        if let Some(base) = &self.brand_base {
+            return base;
+        }
+        senders::BRAND_BASE
+    }
+
+    fn photo_base(&self) -> &str {
+        #[cfg(test)]
+        if let Some(base) = &self.photo_base {
+            return base;
+        }
+        senders::PHOTO_BASE
     }
 }
 
@@ -97,6 +125,8 @@ impl Runtime {
             fetches: Arc::new(Semaphore::new(8)),
             client: Mutex::new(None),
             blocked: Arc::new(RwLock::new(Vec::new())),
+            sender_misses: Mutex::new(HashMap::new()),
+            sender_locks: Mutex::new(HashMap::new()),
             policy,
         }
     }
@@ -110,6 +140,7 @@ impl Runtime {
                 | "remote_proxy_password"
                 | "remote_image_cache"
                 | "message_unsubscribe"
+                | "sender_avatar"
         )
     }
 
@@ -159,7 +190,8 @@ impl Runtime {
                 only(&params, &["op"])?;
                 let cache = self.cache.clone();
                 let op = params["op"].as_str().unwrap_or("stats").to_owned();
-                self.blocking(&cancel, move |_| {
+                let clear = op == "clear";
+                let stats = self.blocking(&cancel, move |_| {
                     if op == "clear" {
                         cache.clear_images()?;
                     } else if op != "stats" {
@@ -167,7 +199,15 @@ impl Runtime {
                     }
                     Ok(json!({"bytes":cache.image_bytes(),"limit":fm_core::view_cache::IMAGE_CACHE_LIMIT}))
                 })
-                .await
+                .await?;
+                if clear {
+                    self.forget_sender_misses();
+                }
+                Ok(stats)
+            }
+            "sender_avatar" => {
+                only(&params, &["address", "kind"])?;
+                self.sender_avatar(cancel, &params).await
             }
             _ => Err(failure(
                 "unsupported_method",
@@ -315,10 +355,11 @@ impl Runtime {
             .core
             .call(move |store| store.unsubscribe_begin(&account, &params))
             .await?;
-        let (plan, found) = self
+        let (plan, found, by_email) = self
             .blocking(&cancel, move |_| {
                 let found = fm_core::unsubscribe::resolve(&plan)?;
-                Ok((plan, found))
+                let by_email = fm_core::unsubscribe::resolve_mailto(&plan)?.is_some();
+                Ok((plan, found, by_email))
             })
             .await?;
         let settings = self
@@ -364,6 +405,7 @@ impl Runtime {
             )
         })?;
         let proxied = settings.proxy.is_some();
+        let posted = target.clone();
         // RFC 8058: an https POST of exactly this form body, without cookies.
         let response = tokio::select! {
             biased;
@@ -375,8 +417,10 @@ impl Runtime {
                 .body("List-Unsubscribe=One-Click")
                 .send() => response,
         };
+        // A redirect answers the POST; the page it leads to does not matter.
         let accepted = match response {
-            Ok(response) => response.status().is_success(),
+            Ok(response) => response.status().is_success() || response.url() != &posted,
+            Err(e) if e.is_redirect() => true,
             Err(e) => match classify(&e, proxied) {
                 Failure::Proxy(_) => {
                     return Err(failure(
@@ -388,10 +432,18 @@ impl Runtime {
             },
         };
         if !accepted {
-            return Err(failure(
-                "unsubscribe_failed",
-                "The list did not accept the unsubscribe. Try again later.",
-            ));
+            // The list also takes an unsubscribe email: the reader sends it.
+            return Err(if by_email {
+                failure(
+                    "unsubscribe_by_email",
+                    "The list did not accept the one-click unsubscribe",
+                )
+            } else {
+                failure(
+                    "unsubscribe_failed",
+                    "The list did not accept the unsubscribe. Try again later.",
+                )
+            });
         }
         let recorded = self
             .core
@@ -445,6 +497,20 @@ impl Runtime {
         cancel: &CancellationToken,
         proxied: bool,
     ) -> std::result::Result<Vec<u8>, Failure> {
+        self.fetch_found(client, url, cancel, proxied)
+            .await?
+            .ok_or(Failure::Failed("unavailable"))
+    }
+
+    /// Like `fetch`, but an answer that the resource does not exist (404 or
+    /// 410) is `None`, so it can be remembered as missing.
+    async fn fetch_found(
+        &self,
+        client: &reqwest::Client,
+        url: &str,
+        cancel: &CancellationToken,
+        proxied: bool,
+    ) -> std::result::Result<Option<Vec<u8>>, Failure> {
         let url = reqwest::Url::parse(url).map_err(|_| Failure::Failed("refused"))?;
         let blocked = self.blocked.read().map(|b| b.clone()).unwrap_or_default();
         check_url(&url, &blocked, self.policy.allow_loopback()).map_err(Failure::Failed)?;
@@ -458,8 +524,10 @@ impl Runtime {
             _ = cancel.cancelled() => return Err(Failure::Cancelled),
             response = client.get(url).send() => response.map_err(|e| classify(&e, proxied))?,
         };
-        if response.status() != reqwest::StatusCode::OK {
-            return Err(Failure::Failed("unavailable"));
+        match response.status() {
+            reqwest::StatusCode::OK => {}
+            reqwest::StatusCode::NOT_FOUND | reqwest::StatusCode::GONE => return Ok(None),
+            _ => return Err(Failure::Failed("unavailable")),
         }
         if response
             .content_length()
@@ -480,7 +548,7 @@ impl Runtime {
             }
             bytes.extend_from_slice(&chunk);
         }
-        Ok(bytes)
+        Ok(Some(bytes))
     }
 
     async fn proxy_test(&self, cancel: CancellationToken) -> Result<Value> {

@@ -163,11 +163,11 @@ public:
     QVariantMap draft() const { return m_draft; }
     QString activeDraftId() const { return m_activeDraft; }
     QVariantMap recipientInputs() const { QVariantMap values; for (auto it = m_recipientInputs.cbegin(); it != m_recipientInputs.cend(); ++it) values[it.key()] = it.value(); return values; }
-    QVariantList events() const { return visibleCalendarEvents(m_events, true); }
+    QVariantList events() const { return visibleCalendarEvents(m_events, true, true, DeclinedRows::Preference); }
     int calendarBandRows() const;
-    QVariantList todayEvents() const { return visibleCalendarEvents(m_todayEvents, true); }
+    QVariantList todayEvents() const { return visibleCalendarEvents(m_todayEvents, true, true, DeclinedRows::Preference); }
     QVariantList timelinePanels() const;
-    QVariantList reminders() const { return visibleCalendarEvents(m_reminders, false, false); }
+    QVariantList reminders() const { return visibleCalendarEvents(m_reminders, false, false, DeclinedRows::Hide); }
     Q_INVOKABLE void dismissCalendarReminder(const QVariantMap &event);
     Q_INVOKABLE void joinCalendarEvent(const QVariantMap &event);
     Q_INVOKABLE void snoozeCalendarReminder(const QVariantMap &event);
@@ -412,6 +412,7 @@ public:
     Q_INVOKABLE void showTimelineToday();
     Q_INVOKABLE void calendarWrite(const QVariantMap &values);
     Q_INVOKABLE QString queueCalendarDeletion(const QVariantMap &values, const QVariantMap &event);
+    Q_INVOKABLE QString queueCalendarDecline(const QVariantMap &values, const QVariantMap &event);
     Q_INVOKABLE QVariantMap calendarOccurrenceContext(const QString &account, const QString &calendar) const;
     Q_INVOKABLE void readCalendarOccurrence(const QVariantMap &selector, const QString &correlation);
     Q_INVOKABLE void loadCalendarOperations();
@@ -559,16 +560,24 @@ private:
     void pollMailDelivery();
     void submitGoogleLabelBinding(const QString &account);
     void finishCalendarOperation(const QString &account, const QString &requestId, QJsonObject result, bool ok);
+    // A deletion, or a decline (an RSVP write), held for its Undo interval.
+    // A confirmed decline stays until the refreshed event shows it.
     struct CalendarDeletion {
         QVariantMap request, source, authority;
         qint64 deadline = 0;
         bool dispatched = false;
+        bool confirmed = false;
+        bool decline() const { return request.value("kind") == "rsvp"; }
     };
+    // Declined events: kept, hidden unless "Show declined" is on, or hidden.
+    enum class DeclinedRows { Keep, Preference, Hide };
     QHash<QString, CalendarDeletion> m_calendarDeletions;
     int m_calendarUndoMs = 6000;
     QVariantMap currentCalendarSource(const QVariantMap &event) const;
-    QVariantList visibleCalendarEvents(const QVariantList &rows, bool reflow = false, bool filterByAccount = true) const;
+    QVariantList visibleCalendarEvents(const QVariantList &rows, bool reflow = false, bool filterByAccount = true, DeclinedRows declined = DeclinedRows::Keep) const;
     bool calendarEventHidden(const QVariantMap &event) const;
+    bool calendarEventDeclining(const QVariantMap &event) const;
+    QString queueCalendarHold(const QVariantMap &values, const QVariantMap &event, bool decline);
     void advanceCalendarDeletions();
     void undoCalendarDeletion(const QString &key);
     void cancelQueuedCalendarDeletions();
@@ -689,6 +698,8 @@ private:
     };
     QHash<QString, SendUi> m_googleSendUi;
     QJsonObject m_googleSendPending;
+    // While Send waits for the background Gmail copy: refresh and retry.
+    QTimer m_googleSendWaitTimer;
     struct QueuedSend {
         QJsonObject params;
         QVariantMap preview;

@@ -58,12 +58,14 @@ QVariantList notificationAccounts(const QVariantList &accounts) {
 }
 }
 
+// What reminder authority depends on. A source's revision is left out: sync
+// bumps it every pass, and each change would hide and re-show an open reminder.
 QString MailBackend::notificationContext() const {
     QVariantList sources;
     for (const auto &value : m_calendarSources) {
         const auto source = value.toMap();
         sources.append(QVariantMap{{"account",source.value("account")}, {"calendar_id",source.value("calendar_id")},
-            {"revision",source.value("revision")}, {"permission",source.value("permission")}, {"time_zone",source.value("time_zone")}});
+            {"permission",source.value("permission")}, {"time_zone",source.value("time_zone")}});
     }
     return QString::fromUtf8(QJsonDocument::fromVariant(QVariantList{notificationAccounts(m_allAccounts), sources,
         m_preferences.value("selected_calendars"), m_preferences.value("calendar_display_time_zone")}).toJson(QJsonDocument::Compact));
@@ -125,7 +127,11 @@ void MailBackend::pollNotifications() {
         if (generation != m_notificationGeneration) return;
         m_notificationPolling = false;
         if (!ok || m_shutdown) {
-            if (!m_reminders.isEmpty()) { m_reminders.clear(); emit remindersChanged(); }
+            // A busy engine or a request that never went out says nothing
+            // about the reminder; keep it on screen until a real answer.
+            const auto code = result["code"].toString();
+            const bool transient = code.isEmpty() || code == "busy" || code == "timeout" || code == "cancelled";
+            if ((m_shutdown || !transient) && !m_reminders.isEmpty()) { m_reminders.clear(); emit remindersChanged(); }
             return;
         }
         QVariantList retained;
@@ -363,7 +369,9 @@ void MailBackend::loadPreferences() {
         for (auto it = m_navigationPending.cbegin(); it != m_navigationPending.cend(); ++it) preferences[it.key()] = it.value();
         if (preferences != m_preferences) {
             const bool reloadCalendar = changesCalendarQuery(m_preferences, preferences);
+            const bool declinedChanged = m_preferences.value("calendar_show_declined") != preferences.value("calendar_show_declined");
             m_preferences = preferences;
+            if (declinedChanged && !reloadCalendar) { emit eventsChanged(); emit timelineChanged(); }
             m_calendarView = preferences.value("calendar_view", "week").toString();
             m_calendarDate = preferences.value("calendar_date").isNull() ? todayDate() : preferences.value("calendar_date").toString();
             m_timelineDate = preferences.value("timeline_date").isNull() ? todayDate() : preferences.value("timeline_date").toString();
@@ -380,9 +388,9 @@ void MailBackend::loadPreferences() {
 }
 void MailBackend::setPreferences(const QVariantMap &patch) {
     if (patch.isEmpty() && m_preferencesPending.isEmpty()) return;
-    const auto previousVisibility = m_preferences.value("calendar_account_visibility");
+    const auto previousVisibility = m_preferences.value("calendar_account_visibility"), previousDeclined = m_preferences.value("calendar_show_declined");
     for (auto it = patch.cbegin(); it != patch.cend(); ++it) { m_preferences[it.key()] = it.value(); m_preferencesPending[it.key()] = it.value(); }
-    if (previousVisibility != m_preferences.value("calendar_account_visibility")) { emit eventsChanged(); emit timelineChanged(); }
+    if (previousVisibility != m_preferences.value("calendar_account_visibility") || previousDeclined != m_preferences.value("calendar_show_declined")) { emit eventsChanged(); emit timelineChanged(); }
     m_preferencesStatus = "Saving…"; emit preferencesChanged(); savePreferences();
 }
 void MailBackend::savePreferences() {

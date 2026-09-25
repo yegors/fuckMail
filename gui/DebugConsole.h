@@ -27,7 +27,7 @@ class DebugLogModel final : public QAbstractListModel {
     Q_OBJECT
 public:
     enum Role { SequenceRole = Qt::UserRole + 1, TimeRole, LevelRole, FacilityRole, MessageRole, ContextRole,
-        JsonRole, JsonLinesRole, ConsoleRole };
+        JsonRole, JsonLinesRole, ConsoleRole, PlainRole };
     using QAbstractListModel::QAbstractListModel;
     int rowCount(const QModelIndex &parent = {}) const override { return parent.isValid() ? 0 : int(m_rows.size()); }
     QVariant data(const QModelIndex &index, int role) const override;
@@ -83,6 +83,15 @@ public:
     QString logDirectory() const;
     // Filtered lines in the export format, oldest first.
     Q_INVOKABLE QStringList exportLines() const;
+    // Copies exportLines() to the clipboard; returns how many lines matched.
+    Q_INVOKABLE int copyLog();
+    // The shown lines' plain text from one (sequence, position) to another, in
+    // order, one line per row: what a selection across rows copies.
+    Q_INVOKABLE QString plainRange(const QString &fromSequence, int fromPosition, const QString &toSequence, int toPosition) const;
+    // One row as the console draws it: time, level, facility, message, details.
+    static QString plainLine(const DebugLogEntry &entry);
+    // Characters before the message in plainLine(): the three padded columns.
+    static constexpr int messageColumn = 12 + 2 + 7 + 2 + 5 + 2;
     // Writes exportLines() to the Downloads folder; returns the path, or "".
     Q_INVOKABLE QString exportLog(const QString &directory = {});
     // Runs one command line. Returns what the view must do: {tab}, {close}, {tail} or {}.

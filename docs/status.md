@@ -1,5 +1,29 @@
 # Current status
 
+**D126 / twelfth export and acceptance fixes (2026-09-25):**
+- **Drafts:** earlier read-only copies become editable in place (the D124 removal failed on the live store); clicking between them no longer crashes. Gmail gets a draft after 30 s without typing, or when you leave or send, so Send stays enabled while you type.
+- **Replies:** Reply-To is used (a no-reply From bounced before); the sent copy no longer shows twice; the reply form closes on send instead of later.
+- **Calendar:** Teams/Zoom/Webex and other meeting links in location or notes give Join; notes in the event view can be selected and copied. Invitations are styled by answer (Maybe striped, not answered dashed, declined struck through and hidden unless "Show declined"). The card has Going? Yes/Maybe/No (No declines with Undo) and Edit · View … Delete buttons.
+- **Mail:** sender pictures (brand icon or Gravatar photo, else coloured initials) in the list, thread and contact card, switchable in Settings → Image loading. The day strip shows the account avatar. Contact and link cards follow the export's hover timing.
+- **Checks (Windows Release, build/p9):** `cargo test --workspace` passes (fm-core 380, fm-engine 190, fm-calendar with meeting links); clippy `-D warnings` clean. All 31 GUI tests pass (`gui-startup-recovery` excluded, as before), with new checks for the draft crash, Send during autosave/upload and the list avatar. Captures of the list, strip, Week, Day and Month on the fixture.
+- **Not verified:** each fix against the live accounts (draft conversion on the next scan, a reply to the NowSecure message, a Teams Join, a real decline), sender pictures against real senders (no network fetch in tests), other hosts. People API photos are not fetched: they need a contacts permission.
+
+[Decision](decisions.md) · [Mail UI92](contracts/mail-ui.md) · [Calendar36](contracts/calendar.md) · [Core70](contracts/core-storage.md) · [Gmail33](contracts/gmail.md) · [Record](research/prototype-september-23.md#d126--twelfth-export-2026-09-25).
+
+**D124 / live-mailbox acceptance fixes (2026-09-25):**
+- **Reminders** no longer hide and reappear (or chime again) while shown; sync's per-minute calendar revision was resetting them.
+- **Drafts:** the previous build's read-only copies turn into normal editable drafts on the next scan (copies of deleted Gmail drafts go); the Drafts count covers every draft; empty new messages never reach Gmail.
+- **Spam/Trash delete** reaches Gmail (the engine's request check refused `batchDelete`).
+- **Calendar:** current repeating series show even in calendars with hundreds of finished ones (the Design standup case); Maybe/unanswered invitations are hatched and labelled, declined ones struck through. A zero-length 2023 event no longer blocks the calendar's first import, which had switched off Edit and RSVP for all its events.
+- **Event card:** View button fixed; HTML notes read as text. Edit shows for events you organise (Google doesn't let guests edit).
+- **Contact card** stays open while the pointer rests on the name.
+- **Embedded images** (cid:) are no longer attachments; stored mail is tidied once in the background.
+- **Unsubscribe:** a redirect after one-click counts as success; if the list refuses and has an unsubscribe address, the email is sent through Gmail instead.
+- **Checks (Windows Release, build/p9):** Rust workspace tests pass (fm-core 377 including new draft-conversion, series-budget, inline-image/tidy tests; fm-engine 183 including batchDelete admission; fm-calendar zero-length events; fm-mail unsubscribe alternative); clippy `-D warnings` clean. Native: 31 GUI tests pass (`gui-startup-recovery` excluded, as before). Captures of Week and Day on the fixture show unanswered invitations hatched. The hover-loop cause was reproduced and the fix confirmed with a qmltestrunner scene.
+- **Not verified:** each fix against the live accounts: reminder across sync passes, draft conversion on the next scan, Spam/Trash delete and empty in Gmail, the Windscribe calendar's full re-read and the Design standup block, the HackerNoon unsubscribe (not re-sent here).
+
+[Decision](decisions.md) · [Calendar35](contracts/calendar.md) · [Gmail32](contracts/gmail.md).
+
 **D122–D123 / drafts are Gmail drafts; eleventh export (2026-09-25):**
 - **Drafts:** every Gmail draft is an ordinary editable draft here. Gmail-side edits, deletions and sends show up within a minute; discarding deletes it in Gmail after Undo's 10 s. Conflicts resolve on their own (your edit wins). The composer only speaks up for real problems, in plain words; the source/actions panels and Refresh are gone.
 - **Composing:** New opens inline in the reader with a sticky Send/Attach/Discard footer. Leaving keeps it in Drafts; empty ones are dropped; Esc asks "Keep this message?". "Recent with {name}" sits under a new message. Unsent drafts show as chips bottom right.

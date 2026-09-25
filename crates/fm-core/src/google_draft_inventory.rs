@@ -504,17 +504,18 @@ impl Store {
         id: &GoogleDraftListedId,
         state: &mut Inventory,
     ) -> Result<bool> {
-        let current: Option<(String, i64)> = self.db.query_row(
-            "SELECT metadata_json,seen_generation FROM google_draft_sources WHERE account=?1 AND provider_draft_id=?2 AND is_current=1",
+        let current: Option<(String, i64, String)> = self.db.query_row(
+            "SELECT metadata_json,seen_generation,draft_id FROM google_draft_sources WHERE account=?1 AND provider_draft_id=?2 AND is_current=1",
             params![account, id.draft_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         ).optional()?;
-        let Some((raw, seen)) = current else {
+        let Some((raw, seen, draft)) = current else {
             return Ok(false);
         };
         let source: Source = serde_json::from_str(&raw)?;
         if source.message_id.as_deref() != Some(id.message_id.as_str())
             || source.source_state != "available"
+            || self.legacy_snapshot(account, &draft)?
         {
             return Ok(false);
         }
@@ -636,7 +637,9 @@ impl Store {
             .cloned()
             .or_else(|| old.as_ref().and_then(|r| r.1.clone()));
         let raw = encode(&source)?;
-        let changed = old.as_ref().is_none_or(|r| r.2 != raw || r.1 != linked);
+        // A read-only copy kept by an earlier version becomes an ordinary draft.
+        let legacy = self.legacy_snapshot(account, &draft_id)?;
+        let changed = legacy || old.as_ref().is_none_or(|r| r.2 != raw || r.1 != linked);
         // A draft of ours whose create was acknowledged late may already have
         // a mirror; the mirror goes, and the Gmail draft stays ours.
         if let (Some(owner), Some((mirrored, ..))) = (&owner, &old) {
@@ -683,6 +686,18 @@ impl Store {
             // not mirrored as a second draft.
             let pending: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM capture_operations WHERE account=?1 AND execution_kind='google' AND COALESCE(json_extract(json,'$.kind'),'draft')='draft' AND json_extract(json,'$.state') IN ('prepared','in_flight','acceptance_unknown') AND json_extract(json,'$.target') IS NULL AND json_extract(json,'$.ack') IS NULL AND blob_hash=?2)",params![account,source.sha256],|r|r.get(0))?;
             let mirror = mirror && !pending;
+            let ready = mirror
+                && preview.is_some()
+                && source.message_id.is_some()
+                && source.sha256.is_some()
+                && source.size.is_some()
+                && source.source_state == "available";
+            // The copy's row stays (its source history refers to it): the
+            // mirror below rewrites it in place, or a copy whose Gmail message
+            // is gone leaves Drafts.
+            if mirror && legacy && !ready && source.source_state == "missing" {
+                self.retire_legacy_snapshot(account, &draft_id)?;
+            }
             if let (true, Some(preview), Some(message), Some(sha), Some(size), "available") = (
                 mirror,
                 preview,
@@ -730,6 +745,22 @@ impl Store {
             tx.execute("UPDATE google_draft_sources SET seen_generation=?3,last_observed_at=?4 WHERE account=?1 AND provider_draft_id=?2 AND is_current=1",params![account,remote,state.generation,now()?])?;
         }
         Ok(())
+    }
+
+    fn legacy_snapshot(&self, account: &str, draft: &str) -> Result<bool> {
+        Ok(self.db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM drafts WHERE account=?1 AND draft_id=?2 AND origin='google_snapshot' AND discarded=0)",
+            params![account, draft],
+            |r| r.get(0),
+        )?)
+    }
+    /// An earlier version's read-only copy whose Gmail draft is gone leaves
+    /// Drafts. The row stays: source history and discards refer to it.
+    pub(crate) fn retire_legacy_snapshot(&self, account: &str, draft: &str) -> Result<bool> {
+        Ok(self.db.execute(
+            "UPDATE drafts SET discarded=1 WHERE account=?1 AND draft_id=?2 AND origin='google_snapshot' AND discarded=0",
+            params![account, draft],
+        )? > 0)
     }
 
     pub(crate) fn remote_draft_sources(

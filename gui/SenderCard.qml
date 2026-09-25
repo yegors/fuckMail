@@ -28,6 +28,9 @@ Popup {
         color: Theme.surface; radius: 8; border.color: Theme.controlBorder
         layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
         layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.6); shadowBlur: 0.8; shadowVerticalOffset: 12 }
+        // An invisible 12px strip above the card counts as the card, so the
+        // gap under the name never closes it on the way in.
+        Item { objectName: "senderCardBridge"; y: -12; width: parent.width; height: 12; HoverHandler { onHoveredChanged: hovered ? card.stayOpen() : card.scheduleClose() } }
     }
     enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 } }
     // Opens at once for a click. Hover goes through hoverSender/leaveSender:
@@ -52,7 +55,7 @@ Popup {
         if (!address || !backend.connected) return
         if (opened && email === address.trim().toLowerCase() && account === backend.account) { hideDelay.stop(); switchDelay.stop(); pending = null; return }
         pending = {address: address, name: name, anchor: anchor}
-        switchDelay.interval = opened ? 450 : 280
+        switchDelay.interval = opened ? 350 : 200
         switchDelay.restart()
     }
     function leaveSender(anchor) {
@@ -82,31 +85,28 @@ Popup {
     }
     onClosed: { hideDelay.stop(); switchDelay.stop(); pending = null; lastPointer = Qt.point(-1, -1); backend.clearSenderCard() }
     Connections { target: backend; function onAccountChanged() { card.close() } }
-    Timer { id: hideDelay; interval: 400; onTriggered: card.close() }
+    Timer { id: hideDelay; interval: 220; onTriggered: card.close() }
     Timer {
         id: switchDelay
         onTriggered: {
             const next = card.pending
             if (!next || !next.anchor || !next.anchor.visible) return
             // Still travelling into the card: look again shortly.
-            if (card.opened && pointerTracker.moving) { restart(); return }
+            if (card.opened && card.pointerMoving) { restart(); return }
             card.showSender(next.address, next.name, next.anchor)
         }
     }
-    // Watches the pointer over the window while the card is open.
-    HoverHandler {
-        id: pointerTracker
-        parent: card.parent
-        enabled: card.opened
-        property bool moving: false
-        onPointChanged: {
-            const p = point.scenePosition
-            moving = card.headingToCard(p)
-            card.lastPointer = p
-            settle.restart()
-        }
+    // The pointer over the workspace while the card is open, reported by the
+    // view that holds the card. Not a hover handler on the overlay: that takes
+    // hover from the name under the pointer, which closed and reopened the
+    // card in a loop.
+    property bool pointerMoving: false
+    function trackPointer(p) {
+        pointerMoving = headingToCard(p)
+        lastPointer = p
+        settle.restart()
     }
-    Timer { id: settle; interval: 120; onTriggered: pointerTracker.moving = false }
+    Timer { id: settle; interval: 120; onTriggered: card.pointerMoving = false }
     contentItem: ScrollView {
                 ScrollBar.vertical: FmScrollBar {}
         property bool blocksWorkspaceShortcuts: true
@@ -116,9 +116,17 @@ Popup {
             id: content; width: card.availableWidth; spacing: 12
             RowLayout {
                 Layout.fillWidth: true; spacing: 12
-                Rectangle {
-                    implicitWidth: 36; implicitHeight: 36; radius: 18; color: Theme.hover
-                    Text { anchors.centerIn: parent; text: card.displayName.split(/\s+/).slice(0, 2).map(function(part) { return part.charAt(0) }).join(""); color: Theme.text; font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium }
+                // A photo fills the circle, a brand icon sits at 66% on white;
+                // otherwise initials on the name's hue.
+                SenderAvatar {
+                    objectName: "senderCardAvatar"
+                    readonly property bool mine: card.email.toLowerCase() === (backend.currentAccount.email || "").toLowerCase()
+                    diameter: 36; brandSize: 24; own: mine
+                    name: card.displayName; email: card.email
+                    discColor: mine ? Theme.accentAlpha(0.18) : Theme.oklch(.36, .06, hue)
+                    initialsColor: mine ? Theme.accent : Theme.oklch(.9, .05, hue)
+                    initials: Theme.initialsOf(mine && backend.currentAccount.name ? backend.currentAccount.name : card.displayName || card.email)
+                    fontPoints: Theme.fontPoints(12.5); fontWeight: Font.Medium
                 }
                 ColumnLayout {
                     Layout.fillWidth: true; spacing: 2

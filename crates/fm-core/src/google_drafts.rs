@@ -13,7 +13,10 @@ pub mod mirror;
 
 pub const MAX_GOOGLE_DRAFT_BYTES: u64 = 35_000_000;
 const MAX_METADATA: usize = 32 * 1024;
-const DUE_SQL: &str = "SELECT draft_id,revision FROM drafts WHERE account=?1 AND discarded=0 AND origin='local' AND COALESCE(json_extract(google_json,'$.submission.blocks_drafts'),0)=0 AND COALESCE(json_extract(google_json,'$.deletion.blocks_target'),0)=0 AND (google_json IS NULL OR (json_extract(google_json,'$.state') IN ('local','synced','adopted','prepared','acknowledged') AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR revision>COALESCE(json_extract(google_json,'$.baseline.draft_revision'),json_extract(google_json,'$.adoption.draft_revision'),0))) OR (json_extract(google_json,'$.state')='failed' AND revision>COALESCE(json_extract(google_json,'$.preparation_failure.draft_revision'),json_extract(google_json,'$.failed_draft_revision')))) AND (revision!=COALESCE(json_extract(google_json,'$.retry.draft_revision'),0) OR COALESCE(json_extract(google_json,'$.retry.until_ms'),0)<=?3) ORDER BY updated_at,draft_id LIMIT ?2";
+// A draft with nothing written (no subject, recipients, attachments or text
+// beyond the signature) is not sent to Gmail until something is, unless it
+// already has a Gmail draft to update.
+const DUE_SQL: &str = "SELECT draft_id,revision FROM drafts WHERE account=?1 AND discarded=0 AND origin='local' AND COALESCE(json_extract(google_json,'$.submission.blocks_drafts'),0)=0 AND COALESCE(json_extract(google_json,'$.deletion.blocks_target'),0)=0 AND (google_json IS NULL OR (json_extract(google_json,'$.state') IN ('local','synced','adopted','prepared','acknowledged') AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR revision>COALESCE(json_extract(google_json,'$.baseline.draft_revision'),json_extract(google_json,'$.adoption.draft_revision'),0))) OR (json_extract(google_json,'$.state')='failed' AND revision>COALESCE(json_extract(google_json,'$.preparation_failure.draft_revision'),json_extract(google_json,'$.failed_draft_revision')))) AND (revision!=COALESCE(json_extract(google_json,'$.retry.draft_revision'),0) OR COALESCE(json_extract(google_json,'$.retry.until_ms'),0)<=?3) AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR json_extract(google_json,'$.baseline.draft_id') IS NOT NULL OR json_extract(google_json,'$.adoption.target.provider_draft_id') IS NOT NULL OR trim(COALESCE(json_extract(routing_json,'$.subject'),''))<>'' OR COALESCE(json_array_length(json_extract(routing_json,'$.to_recipients')),0)+COALESCE(json_array_length(json_extract(routing_json,'$.cc_recipients')),0)+COALESCE(json_array_length(json_extract(routing_json,'$.bcc_recipients')),0)>0 OR COALESCE(json_array_length(attachments_json),0)>0 OR trim(replace(body,COALESCE(signature_text,''),''),' '||char(9,10,13))<>'') AND (json_extract(google_json,'$.state') IN ('prepared','acknowledged') OR updated_at*1000<=?3-?4) ORDER BY updated_at,draft_id LIMIT ?2";
 
 #[derive(Clone)]
 pub struct GoogleDraftScope {
@@ -1028,13 +1031,26 @@ impl Store {
         generation: i64,
         limit: usize,
     ) -> Result<Vec<GoogleDraftDue>> {
+        self.google_draft_due_after(account, generation, limit, 0)
+    }
+
+    /// Drafts due for upload once their text has rested `quiet_ms` since the
+    /// last local save, so typing never uploads every few keystrokes. Work
+    /// already under way (prepared, acknowledged) resumes at once.
+    pub fn google_draft_due_after(
+        &self,
+        account: &str,
+        generation: i64,
+        limit: usize,
+        quiet_ms: i64,
+    ) -> Result<Vec<GoogleDraftDue>> {
         if !(1..=100).contains(&limit) {
             return Err(err(
                 "invalid_request",
                 "Draft due limit must be between 1 and 100",
             ));
         }
-        self.google_draft_due_at(account, generation, limit, unix_ms()?)
+        self.google_draft_due_at(account, generation, limit, unix_ms()?, quiet_ms.max(0))
     }
 
     fn google_draft_due_at(
@@ -1043,11 +1059,12 @@ impl Store {
         generation: i64,
         limit: usize,
         now_ms: i64,
+        quiet_ms: i64,
     ) -> Result<Vec<GoogleDraftDue>> {
         self.draft_connection(account, generation)?;
         let mut stmt = self.db.prepare(DUE_SQL)?;
         let rows = stmt
-            .query_map(params![account, limit as i64, now_ms], |r| {
+            .query_map(params![account, limit as i64, now_ms, quiet_ms], |r| {
                 Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
             })?
             .collect::<std::result::Result<Vec<_>, _>>()?;

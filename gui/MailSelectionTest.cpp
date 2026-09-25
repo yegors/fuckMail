@@ -251,10 +251,15 @@ class MailSelectionTest {
         auto *sourcePreview=find(window->contentItem(),"mailPreview_a");
         require(senderColumn && senderColumn->isVisible() && senderAddress->property("text")=="sender@example.test","dedicated sender name/address column");
         require(senderColumn->mapToScene(QPointF(senderColumn->width(),0)).x() < sourcePreview->mapToScene(QPointF()).x(),"sender column precedes subject/preview without overlap");
+        {
+            auto *avatar=shown(window->contentItem(),"mailAvatar_a");
+            require(avatar && qFuzzyCompare(avatar->width(),28.) && qAbs(senderColumn->mapToScene(QPointF()).x()-avatar->mapToScene(QPointF(avatar->width(),0)).x()-12)<.5,"a 28px sender avatar sits 12px before the sender column");
+            require(avatar->property("initials").toString()=="S" && !avatar->property("imageShown").toBool() && avatar->property("sourceLabel").toString()==QString::fromUtf8("No photo · initials"),"a synthetic profile shows initials and asks for no picture");
+        }
         summaryRow["recipient"]="teammate@example.test";h.rows[0]=summaryRow;h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
         h.backend.m_folder="sent";emit h.backend.queryChanged();
         await([&]{auto recipient=find(window->contentItem(),"mailRecipient_a"), item=find(window->contentItem(),"mailPreview_a");return recipient && recipient->isVisible() && recipient->property("text").toString()=="To teammate@example.test" && item && item->property("text").toString().startsWith("· ");},"Sent preview identifies its recipient");
-        require(!find(window->contentItem(),"mailSenderColumn_a")->isVisible(),"Sent retains the prototype subject/recipient arrangement");
+        require(!find(window->contentItem(),"mailSenderColumn_a")->isVisible() && !find(window->contentItem(),"mailAvatar_a")->isVisible(),"Sent retains the prototype subject/recipient arrangement");
         h.backend.m_folder="inbox";emit h.backend.queryChanged();
         require(!find(window->contentItem(),"threadSummary") && !find(window->contentItem(),"summarizeConversation"),"no redundant thread summary surface");
         summaryRow.remove("summary");h.rows[0]=summaryRow;h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();

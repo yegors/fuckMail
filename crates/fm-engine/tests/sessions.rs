@@ -695,4 +695,34 @@ async fn html_reader_serves_sanitised_html_and_fetches_nothing_unasked() {
         .await
         .unwrap());
     assert_eq!(cache["limit"], 256 * 1024 * 1024);
+    // Sender pictures need no account; turned off, nothing is fetched.
+    let bad = c
+        .call(
+            "sender_avatar",
+            None,
+            json!({"address":"nobody","kind":"people"}),
+        )
+        .await
+        .unwrap();
+    assert_eq!(bad["error"]["code"], "invalid_request", "{bad}");
+    let prefs = ok(c.call("preferences_get", None, json!({})).await.unwrap());
+    assert_eq!(prefs["preferences"]["sender_pictures"], true);
+    ok(c.call(
+        "preferences_save",
+        None,
+        json!({"preferences":{"sender_pictures":false},
+               "expected_revision":prefs["revision"],"request_id":"pictures-off"}),
+    )
+    .await
+    .unwrap());
+    assert_eq!(
+        ok(c.call(
+            "sender_avatar",
+            None,
+            json!({"address":"billing@e.deel.com","kind":"automated"}),
+        )
+        .await
+        .unwrap()),
+        json!({"state":"none","label":"No photo \u{b7} initials","off":true})
+    );
 }

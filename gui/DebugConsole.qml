@@ -35,6 +35,18 @@ Popup {
     readonly property color green: Theme.light ? "#2F7A55" : "#7FC4A4"
     readonly property color stringColor: Theme.light ? "#4A7443" : "#9FC79F"
     readonly property color numberColor: Theme.ai
+    // Rows are one monospace line: time, level and facility padded to fixed
+    // columns (DebugConsole::plainLine), then the message and its details.
+    readonly property int messageColumn: 30
+    readonly property real messageIndent: messageColumn * monoMetrics.advanceWidth("0")
+    // A text selection across rows: {seq, pos} at each end, in either order.
+    property var selA: null
+    property var selB: null
+    property bool selecting: false
+    property bool dragged: false
+    property point pressPoint
+    property point dragPoint
+    signal selectionMoved()
 
     parent: Overlay.overlay
     x: 0; y: 0
@@ -65,9 +77,13 @@ Popup {
     function tail() { followTail = true; settleTries = 0; settleTail() }
     // Rows have varying heights, so the end can move once they lay out; try again briefly.
     property int settleTries: 0
+    property bool settling: false
     function settleTail() {
-        if (!opened || !followTail || tab !== "logs") return
+        // Positioning changes the content height, which asks to settle again.
+        if (settling || !opened || !followTail || tab !== "logs") return
+        settling = true
         events.forceLayout(); events.positionViewAtEnd()
+        settling = false
         // positionViewAtEnd can stop short of bottomMargin once rows leave the top.
         if (!events.atYEnd) events.contentY = Math.max(events.originY - events.topMargin, events.originY + events.contentHeight + events.bottomMargin - events.height)
         if (!events.atYEnd && settleTries++ < 10) settleTimer.restart()
@@ -118,6 +134,88 @@ Popup {
         emit(null, value, 0, true)
         return lines.join("<br>")
     }
+    // One row as rich text over exactly the characters of `plain`, so selection
+    // positions match the text a copy takes.
+    function lineHtml(plain, message, level, typed, open, json, jsonLines) {
+        const span = (color, text) => text.length ? '<span style="color:' + color + '">' + escapeHtml(text) + '</span>' : ""
+        const level7 = plain.slice(14, 21), word = level7.replace(/ +$/, "")
+        const badge = !typed && level <= 2
+        const messageColor = typed ? String(Theme.amber) : level <= 3 ? String(Theme.error) : level <= 5 ? String(Theme.text) : level === 6 ? solid(Theme.inkAlpha(.78)) : solid(Theme.inkAlpha(.45))
+        const levelHtml = badge ? '<span style="background-color:' + Theme.error + ';color:' + Theme.canvas + ';font-weight:600">' + escapeHtml(word) + '</span>'
+            : '<span style="color:' + levelColorText(level) + (level <= 4 ? ';font-weight:500' : '') + '">' + escapeHtml(word) + '</span>'
+        const messageEnd = messageColumn + message.length
+        const html = span(solid(Theme.inkAlpha(.3)), plain.slice(0, 14)) + levelHtml + escapeHtml(level7.slice(word.length) + plain.slice(21, 23))
+            + span(solid(Theme.inkAlpha(.45)), plain.slice(23, messageColumn)) + span(messageColor, plain.slice(messageColumn, messageEnd))
+            + span(solid(Theme.inkAlpha(.45)), plain.slice(messageEnd))
+            + (json && !open ? span(solid(Theme.inkAlpha(.35)), "  {…} " + jsonLines + (jsonLines === 1 ? " line" : " lines")) : "")
+        return '<div style="white-space:pre-wrap;margin-left:' + messageIndent + 'px;text-indent:-' + messageIndent + 'px">' + html + '</div>'
+    }
+    function levelColorText(level) { const c = levelColor(level); return c.a < 1 ? solid(c) : String(c) }
+    function orderedSelection() {
+        if (!selA || !selB) return null
+        const a = Number(selA.seq), b = Number(selB.seq)
+        return a < b || (a === b && selA.pos <= selB.pos) ? [selA, selB] : [selB, selA]
+    }
+    function selectionFor(sequence, length) {
+        const o = orderedSelection()
+        if (!o) return null
+        const s = Number(sequence), first = Number(o[0].seq), last = Number(o[1].seq)
+        if (s < first || s > last) return null
+        const start = s === first ? o[0].pos : 0, end = s === last ? o[1].pos : length
+        return end > start ? [start, end] : null
+    }
+    function clearSelection() { if (!selA && !selB) return; selA = null; selB = null; selectionMoved() }
+    function rowAt(point) {
+        const y = Math.max(events.topMargin, Math.min(events.height - events.bottomMargin - 1, point.y))
+        const item = events.itemAt(Math.max(0, Math.min(events.width - 1, point.x)), y + events.contentY)
+        if (!item || !item.lineItem) return null
+        const q = item.lineItem.mapFromItem(events, point.x, y)
+        return {seq: item.sequence, pos: item.lineItem.positionAt(Math.max(0, q.x), Math.max(0, Math.min(item.lineItem.height - 1, q.y)))}
+    }
+    function beginSelect(sequence, position, point) {
+        // Not the list itself: as a focus scope it would hand focus back to a JSON block.
+        logKeys.forceActiveFocus()
+        selA = {seq: sequence, pos: position}; selB = {seq: sequence, pos: position}
+        selecting = true; dragged = false; pressPoint = point; dragPoint = point
+        selectionMoved()
+    }
+    function extendSelect(point) {
+        if (!selecting) return
+        dragPoint = point
+        if (!dragged && Math.abs(point.x - pressPoint.x) + Math.abs(point.y - pressPoint.y) < 4) return
+        dragged = true
+        const hit = rowAt(point)
+        if (hit) { selB = hit; selectionMoved() }
+        if (point.y < 0 || point.y > events.height) dragScroll.start(); else dragScroll.stop()
+    }
+    // A press without a drag is a click: it expands or collapses the line.
+    function endSelect(row) {
+        selecting = false; dragScroll.stop()
+        if (!dragged) { clearSelection(); row.toggle() }
+    }
+    // Keys while the lines have focus: copy, scrolling, and typing that goes to the command line.
+    function logKey(event) {
+        if (event.matches(StandardKey.Copy)) { copySelection(); event.accepted = true }
+        else if (event.key === Qt.Key_End) { tail(); event.accepted = true }
+        else if ([Qt.Key_Home, Qt.Key_PageUp, Qt.Key_PageDown].indexOf(event.key) >= 0) {
+            stopFollowing()
+            if (event.key === Qt.Key_Home) events.contentY = events.firstY
+            else events.scrollBy(event.key === Qt.Key_PageUp ? -events.height : events.height)
+            if (events.atYEnd) tail()
+            event.accepted = true
+        } else if (event.text.length && !(event.modifiers & (Qt.ControlModifier | Qt.MetaModifier | Qt.AltModifier)) && event.text.charCodeAt(0) >= 32
+                   && event.text !== "`" && event.text !== "~") {
+            commandField.forceActiveFocus(); commandField.insert(commandField.cursorPosition, event.text); event.accepted = true
+        }
+    }
+    function copySelection() {
+        const o = orderedSelection()
+        if (!o || !diagnostics) return false
+        const text = diagnostics.plainRange(o[0].seq, o[0].pos, o[1].seq, o[1].pos)
+        if (!text.length) return false
+        diagnostics.copyText(text)
+        return true
+    }
     function copyJson(sequence, json) {
         try { diagnostics.copyText(JSON.stringify(JSON.parse(json), null, 2)) } catch (e) { diagnostics.copyText(json) }
         copiedSequence = sequence; copiedTimer.restart()
@@ -129,6 +227,7 @@ Popup {
     Connections {
         target: panel.diagnostics
         function onFilterChanged() {
+            panel.clearSelection()
             if (grepField.text !== panel.diagnostics.grep) grepField.text = panel.diagnostics.grep
             panel.tail()
         }
@@ -139,6 +238,18 @@ Popup {
         enabled: panel.diagnostics !== null && !panel.searchActive && (panel.opened || !panel.typing(panel.hostWindow.activeFocusItem))
         onActivated: panel.toggle()
     }
+    // Dragging a selection past the top or bottom scrolls the lines.
+    Timer {
+        id: dragScroll; interval: 30; repeat: true
+        onTriggered: {
+            if (!panel.selecting) { stop(); return }
+            const up = panel.dragPoint.y < 0
+            if (up) panel.stopFollowing()
+            events.scrollBy(up ? -panel.line : panel.line)
+            panel.extendSelect(panel.dragPoint)
+        }
+    }
+    Item { id: logKeys; objectName: "debugLogKeys"; Keys.onPressed: event => panel.logKey(event) }
     Timer { id: settleTimer; interval: 16; onTriggered: panel.settleTail() }
     Timer { id: copiedTimer; interval: 1200; onTriggered: panel.copiedSequence = "" }
     Timer { interval: 1000; repeat: true; running: panel.opened && panel.tab === "state"; onTriggered: panel.refreshState() }
@@ -241,8 +352,9 @@ Popup {
                     tip: panel.paused ? "Resume capturing" : "Stop capturing new lines · the log file keeps recording"
                     onClicked: panel.diagnostics.paused = !panel.paused
                 }
-                Chip { objectName: "debugClear"; text: "clear"; tip: "Clear the view · the log file is kept"; onClicked: { panel.selectedSequence = ""; panel.diagnostics.clear(); panel.tail() } }
+                Chip { objectName: "debugClear"; text: "clear"; tip: "Clear the view · the log file is kept"; onClicked: { panel.selectedSequence = ""; panel.clearSelection(); panel.diagnostics.clear(); panel.tail() } }
                 Chip { objectName: "debugExport"; text: "export"; tip: "Save the filtered lines as a .log file in Downloads"; onClicked: panel.exportLog() }
+                Chip { objectName: "debugCopy"; text: "copy"; tip: "Copy the filtered lines to the clipboard"; onClicked: { panel.diagnostics.copyLog(); panel.tail() } }
                 Item { width: 13; height: 24; Rectangle { anchors.centerIn: parent; width: 1; height: 16; color: Theme.line2 } }
                 Rectangle {
                     objectName: "debugClose"
@@ -322,24 +434,26 @@ Popup {
                 model: panel.diagnostics ? panel.diagnostics.lines : null
                 boundsBehavior: Flickable.StopAtBounds
                 keyNavigationEnabled: false
-                // Only deliberate navigation changes follow mode.
-                onMovementStarted: panel.stopFollowing()
-                onMovementEnded: if (atYEnd) panel.tail()
+                // A terminal: no drag scrolling. The wheel and the scrollbar scroll;
+                // pressing and dragging selects text.
+                interactive: false
+                readonly property real firstY: originY - topMargin
+                readonly property real lastY: Math.max(firstY, originY + contentHeight + bottomMargin - height)
+                function scrollBy(dy) { contentY = Math.max(firstY, Math.min(lastY, contentY + dy)) }
                 onContentHeightChanged: panel.settleTail()
                 onCountChanged: panel.settleTail()
                 onHeightChanged: panel.settleTail()
-                // Any deliberate scroll away from the end stops following; wheel scrolls move the view too.
-                onContentYChanged: if (moving && !atYEnd) panel.stopFollowing()
-                Keys.onPressed: event => {
-                    if (event.key === Qt.Key_End) { panel.tail(); event.accepted = true }
-                    else if ([Qt.Key_Home, Qt.Key_PageUp, Qt.Key_PageDown].indexOf(event.key) >= 0) {
-                        panel.stopFollowing()
-                        const top = originY - topMargin, bottom = originY + contentHeight + bottomMargin - height
-                        contentY = event.key === Qt.Key_Home ? top : Math.max(top, Math.min(bottom, contentY + (event.key === Qt.Key_PageUp ? -height : height)))
-                        if (atYEnd) panel.tail()
-                        event.accepted = true
+                WheelHandler {
+                    target: null
+                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                    onWheel: event => {
+                        const dy = event.pixelDelta.y !== 0 ? event.pixelDelta.y : event.angleDelta.y / 120 * panel.line * 3
+                        if (dy > 0) panel.stopFollowing()
+                        events.scrollBy(-dy)
+                        if (dy < 0 && events.atYEnd) panel.tail()
                     }
                 }
+                Keys.onPressed: event => panel.logKey(event)
                 ScrollBar.vertical: FmScrollBar {
                     id: bar
                     onPressedChanged: {
@@ -358,56 +472,64 @@ Popup {
                     required property string json
                     required property int jsonLines
                     required property bool typed
+                    required property string plain
+                    readonly property alias lineItem: line
                     readonly property bool open: panel.selectedSequence === sequence
-                    readonly property bool badge: !typed && level <= 2
-                    readonly property real detailIndent: 92 + 62 + 56 + 36
+                    // Lines that fit show everything; only a cut-off line or a JSON payload expands.
+                    readonly property bool overflows: !open && line.contentWidth > line.width + 1
+                    readonly property bool expandable: overflows || json.length > 0 || open
                     width: events.width; height: lineColumn.implicitHeight
-                    color: open ? Theme.inkAlpha(.06) : hover.hovered ? Theme.inkAlpha(.035)
+                    color: open ? Theme.inkAlpha(.06) : lineArea.containsMouse ? Theme.inkAlpha(.035)
                         : !typed && level <= 3 ? Theme.errorAlpha(.07) : !typed && level === 4 ? Theme.withAlpha(Theme.amber, .04) : "transparent"
-                    function toggle() { panel.selectedSequence = open ? "" : sequence }
-                    function inJson(position) { return jsonBlock.visible && jsonBlock.contains(jsonBlock.mapFromItem(row, position)) }
-                    HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
-                    // A press the JSON text takes for selection leaves the line open.
-                    TapHandler { onTapped: (point) => { if (!row.inJson(point.position)) row.toggle() } }
+                    function toggle() { if (expandable) panel.selectedSequence = open ? "" : sequence }
+                    function applySelection() {
+                        const range = panel.selectionFor(sequence, line.length)
+                        // select() on rich text reports a text change; only move a selection that differs.
+                        if (range) { if (line.selectionStart !== range[0] || line.selectionEnd !== range[1]) line.select(range[0], range[1]) }
+                        else if (line.selectionStart !== line.selectionEnd) line.deselect()
+                    }
+                    Connections { target: panel; function onSelectionMoved() { row.applySelection() } }
+                    Component.onCompleted: applySelection()
+                    onOpenChanged: Qt.callLater(row.applySelection)
                     Accessible.role: Accessible.ListItem
-                    Accessible.name: time + " " + (typed ? "" : (panel.levelNames[level] || "") + " " + facility + " ") + message
+                    Accessible.name: plain
                     Accessible.onPressAction: row.toggle()
-                    ColumnLayout {
+                    Column {
                         id: lineColumn
                         x: 16; width: parent.width - 32; spacing: 0
-                        RowLayout {
-                            Layout.fillWidth: true; spacing: 12
-                            Mono { Layout.preferredWidth: 92; Layout.alignment: Qt.AlignTop; text: row.time; color: Theme.inkAlpha(.3) }
-                            Item {
-                                Layout.preferredWidth: 62; Layout.alignment: Qt.AlignTop; implicitHeight: panel.line
-                                Rectangle { visible: row.badge; x: -4; y: 1; width: levelText.implicitWidth + 8; height: panel.line - 2; radius: 2; color: Theme.error }
-                                Mono {
-                                    id: levelText
-                                    text: row.typed ? "" : panel.levelNames[row.level] || ""
-                                    color: row.badge ? Theme.canvas : panel.levelColor(row.level)
-                                    font.weight: row.badge ? Font.DemiBold : row.level <= 4 ? Font.Medium : Font.Normal
-                                }
+                        Item {
+                            width: parent.width; height: line.height
+                            TextEdit {
+                                id: line
+                                objectName: "debugLine_" + row.sequence
+                                width: parent.width; clip: true
+                                readOnly: true; selectByMouse: false; activeFocusOnPress: false; persistentSelection: true
+                                textFormat: TextEdit.RichText; wrapMode: row.open ? TextEdit.WrapAnywhere : TextEdit.NoWrap
+                                font: panel.monoFont; color: Theme.text; selectionColor: Theme.selection; selectedTextColor: Theme.text
+                                text: panel.lineHtml(row.plain, row.message, row.level, row.typed, row.open, row.json, row.jsonLines)
                             }
-                            Mono { Layout.preferredWidth: 56; Layout.alignment: Qt.AlignTop; text: row.facility; color: Theme.inkAlpha(.45); elide: Text.ElideRight }
-                            Mono {
-                                Layout.fillWidth: true; Layout.alignment: Qt.AlignTop
-                                wrapMode: Text.WrapAtWordBoundaryOrAnywhere; textFormat: Text.StyledText
-                                color: row.typed ? Theme.amber : row.level <= 3 ? Theme.error : row.level <= 5 ? Theme.text : row.level === 6 ? Theme.inkAlpha(.78) : Theme.inkAlpha(.45)
-                                text: panel.escapeHtml(row.message)
-                                    + (row.json && !row.open ? '<font color="' + panel.solid(Theme.inkAlpha(.35)) + '">&nbsp;&nbsp;{…} ' + row.jsonLines + (row.jsonLines === 1 ? " line" : " lines") + '</font>' : "")
+                            // A cut-off line ends in an ellipsis; click shows all of it.
+                            Rectangle {
+                                visible: row.overflows
+                                anchors.right: parent.right; width: more.implicitWidth + 8; height: panel.line
+                                color: Theme.canvas
+                                Rectangle { anchors.fill: parent; color: row.color }
+                                Mono { id: more; anchors.right: parent.right; text: "…"; color: Theme.inkAlpha(.5) }
                             }
-                        }
-                        Mono {
-                            visible: row.open
-                            Layout.fillWidth: true; Layout.leftMargin: row.detailIndent; Layout.bottomMargin: 4; topPadding: panel.lineGap + 1
-                            wrapMode: Text.WrapAnywhere; color: Theme.inkAlpha(.45)
-                            text: row.open ? "└ " + (row.context ? row.context.split(" ").join("  ") : "(no context)") : ""
+                            MouseArea {
+                                id: lineArea
+                                anchors.fill: parent; hoverEnabled: true
+                                cursorShape: Qt.IBeamCursor
+                                onPressed: mouse => panel.beginSelect(row.sequence, line.positionAt(mouse.x, mouse.y), mapToItem(events, mouse.x, mouse.y))
+                                onPositionChanged: mouse => { if (pressed) panel.extendSelect(mapToItem(events, mouse.x, mouse.y)) }
+                                onReleased: panel.endSelect(row)
+                            }
                         }
                         Rectangle {
                             id: jsonBlock
                             visible: row.open && row.json.length > 0
-                            Layout.fillWidth: true; Layout.leftMargin: row.detailIndent; Layout.topMargin: 2; Layout.bottomMargin: 8
-                            implicitHeight: visible ? jsonText.implicitHeight + 16 : 0
+                            x: panel.messageIndent; width: parent.width - x
+                            height: visible ? jsonText.implicitHeight + 16 : 0
                             color: Theme.inkAlpha(.025)
                             Rectangle { width: Theme.ruleWidth; height: parent.height; color: Theme.line2 }
                             TextEdit {
@@ -434,6 +556,7 @@ Popup {
                                 Accessible.role: Accessible.Button; Accessible.name: "Copy JSON"; Accessible.onPressAction: panel.copyJson(row.sequence, row.json)
                             }
                         }
+                        Item { width: 1; height: jsonBlock.visible ? 8 : 0 }
                     }
                 }
             }

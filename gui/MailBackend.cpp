@@ -78,6 +78,12 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
         if (!m_googleSendPending.isEmpty() && m_googleSendPending["authored"].toObject() != googleSendAuthorSnapshot())
             cancelPendingGoogleSend("The draft changed before sending. Review it and press Send again.");
     });
+    m_googleSendWaitTimer.setInterval(1000);
+    connect(&m_googleSendWaitTimer, &QTimer::timeout, this, [this] {
+        if (m_googleSendPending.isEmpty() || !m_googleSendPending.contains("waiting_since")) { m_googleSendWaitTimer.stop(); return; }
+        if (!m_savingDraft && !m_draftDirty) finishGoogleSendSave(true);
+        if (!m_googleSendPending.isEmpty()) loadActiveDraft();
+    });
     connect(this, &MailBackend::accountChanged, this, [this] {
         resetDraftSourcesContext();
         resetDraftAuthoringContext();
@@ -223,7 +229,7 @@ MailBackend::~MailBackend() {
     // A fatal GUI exit may destroy a still-connected backend. Detach callbacks
     // before member destruction: QLocalSocket::~QLocalSocket can emit signals
     // after the pending-request maps and buffers have already been destroyed.
-    for (auto timer : {&m_clockTimer, &m_connectTimer, &m_pollTimer, &m_searchTimer, &m_draftTimer, &m_viewTimer, &m_notificationTimer, &m_actionTimer, &m_calendarMailActivityTimer, &m_calendarPrefetchTimer, &m_navigationSaveTimer, &m_remoteSearchTimer}) {
+    for (auto timer : {&m_clockTimer, &m_connectTimer, &m_pollTimer, &m_searchTimer, &m_draftTimer, &m_viewTimer, &m_notificationTimer, &m_actionTimer, &m_calendarMailActivityTimer, &m_calendarPrefetchTimer, &m_navigationSaveTimer, &m_remoteSearchTimer, &m_googleSendWaitTimer}) {
         timer->stop(); QObject::disconnect(timer, nullptr, this, nullptr);
     }
     QObject::disconnect(&m_socket, nullptr, this, nullptr);
@@ -1310,6 +1316,9 @@ void MailBackend::saveDraft() {
     if (accountArchived()) {
         finishGoogleSendSave(false);
         if (m_draftDirty) { freezeRemovedAccountBuffer(); return; }
+        // The continuation waits for the busy draft operation, whose finish
+        // saves again; running it now re-enters openDraft without end.
+        if (draftBusy()) return;
         if (m_afterDraftSave) { auto callback = std::move(m_afterDraftSave); m_afterDraftSave = {}; callback(); }
         if (m_shutdown) finishShutdown();
         return;
@@ -1318,6 +1327,8 @@ void MailBackend::saveDraft() {
         // Preview/open/close may share this continuation with local editors.
         // Imported source is never turned into an authored save implicitly.
         finishGoogleSendSave(false);
+        m_draftDirty = false;
+        if (draftBusy()) return;
         if (m_afterDraftSave) { auto callback = std::move(m_afterDraftSave); m_afterDraftSave = {}; callback(); }
         if (m_shutdown) finishShutdown();
         return;
@@ -1441,7 +1452,7 @@ QVariantList MailBackend::timelinePanels() const {
     for (int offset = -1; offset <= 1; ++offset) {
         const auto date = center.addDays(offset).toString(Qt::ISODate);
         panels.append(QVariantMap{{"date", date},
-            {"events", offset == 0 ? todayEvents() : visibleCalendarEvents(m_timelineDayEvents.value(date).toList(), true)},
+            {"events", offset == 0 ? todayEvents() : visibleCalendarEvents(m_timelineDayEvents.value(date).toList(), true, true, DeclinedRows::Preference)},
             {"ready", offset == 0 ? m_timelineReady : m_timelineDayEvents.contains(date)}});
     }
     return panels;
@@ -1456,7 +1467,7 @@ void MailBackend::presentCalendarWeek(const QJsonArray &events, const QTimeZone 
 }
 int MailBackend::calendarBandRows() const {
     int counts[7] = {};
-    for (const auto &value : visibleCalendarEvents(m_calendarWeekAllDay)) {
+    for (const auto &value : visibleCalendarEvents(m_calendarWeekAllDay, false, true, DeclinedRows::Preference)) {
         const auto row = value.toMap();
         const int first = row.value("day_index").toInt(), span = std::max(1, row.value("span_days").toInt());
         for (int day = std::max(0, first); day < std::min(7, first + span); ++day) ++counts[day];

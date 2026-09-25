@@ -161,12 +161,14 @@ QVariant DebugLogModel::data(const QModelIndex &index, int role) const {
     case JsonRole: return e.json;
     case JsonLinesRole: return e.jsonLines;
     case ConsoleRole: return e.console;
+    case PlainRole: return DebugConsole::plainLine(e);
     default: return {};
     }
 }
 QHash<int, QByteArray> DebugLogModel::roleNames() const {
     return {{SequenceRole, "sequence"}, {TimeRole, "time"}, {LevelRole, "level"}, {FacilityRole, "facility"},
-        {MessageRole, "message"}, {ContextRole, "context"}, {JsonRole, "json"}, {JsonLinesRole, "jsonLines"}, {ConsoleRole, "typed"}};
+        {MessageRole, "message"}, {ContextRole, "context"}, {JsonRole, "json"}, {JsonLinesRole, "jsonLines"}, {ConsoleRole, "typed"},
+        {PlainRole, "plain"}};
 }
 
 DebugConsole::DebugConsole(QObject *parent) : QObject(parent), m_model(this) {
@@ -449,6 +451,35 @@ QStringList DebugConsole::exportLines() const {
     }
     return lines;
 }
+QString DebugConsole::plainLine(const DebugLogEntry &e) {
+    const auto level = e.console ? QString{} : levelNames.value(e.level);
+    const auto facility = e.console ? QString{} : e.facility;
+    return QDateTime::fromMSecsSinceEpoch(e.at).toString("HH:mm:ss.zzz") + "  " + pad(level, 7) + "  " + pad(facility, 5) + "  "
+        + e.message + (e.context.isEmpty() ? QString{} : "  " + e.context);
+}
+int DebugConsole::copyLog() {
+    const auto lines = exportLines();
+    int count = 0;
+    {
+        QMutexLocker lock(&m_mutex);
+        for (const auto &entry : m_entries) if (passes(entry)) ++count;
+    }
+    copyText(lines.isEmpty() ? QString{} : lines.join('\n') + '\n');
+    say(5, "copied " + QString::number(count) + (count == 1 ? " line" : " lines") + " to the clipboard");
+    return count;
+}
+QString DebugConsole::plainRange(const QString &fromSequence, int fromPosition, const QString &toSequence, int toPosition) const {
+    const auto from = fromSequence.toULongLong(), to = toSequence.toULongLong();
+    QStringList out;
+    for (const auto &row : m_model.m_rows) {
+        if (row.sequence < from || row.sequence > to) continue;
+        const auto text = plainLine(row);
+        const int start = row.sequence == from ? qBound(0, fromPosition, int(text.size())) : 0;
+        const int end = row.sequence == to ? qBound(0, toPosition, int(text.size())) : int(text.size());
+        if (end > start || (row.sequence != from && row.sequence != to)) out.append(text.mid(start, end - start));
+    }
+    return out.join('\n');
+}
 QString DebugConsole::exportLog(const QString &directory) {
     const auto folder = directory.isEmpty() ? QStandardPaths::writableLocation(QStandardPaths::DownloadLocation) : directory;
     if (folder.isEmpty() || !QDir().mkpath(folder)) { say(3, "export failed · no Downloads folder"); return {}; }
@@ -486,7 +517,8 @@ QVariantMap DebugConsole::run(const QString &raw) {
                  "fac <name|all>       one facility · " + facilityNames.join(' '),
                  QString("grep <text>          filter lines · grep alone clears"), QString("tail · pause · resume"),
                  QString("state · logs         switch tab"), QString("sync <account>       sync one account now"),
-                 QString("export               save filtered lines to ~/Downloads"), QString("exit                 close the console")})
+                 QString("export               save filtered lines to ~/Downloads"), QString("copy                 copy filtered lines to the clipboard"),
+                 QString("exit                 close the console")})
             say(6, text);
         return tail;
     }
@@ -508,6 +540,7 @@ QVariantMap DebugConsole::run(const QString &raw) {
     if (command == "pause" || command == "resume") { setPaused(command == "pause"); return tail; }
     if (command == "state" || command == "logs") return {{"tab", command}, {"tail", true}};
     if (command == "export") { exportLog(); return tail; }
+    if (command == "copy") { copyLog(); return tail; }
     if (command == "exit" || command == "quit") return {{"close", true}};
     if (command == "sync") {
         if (argument.isEmpty()) { say(3, "usage: sync <account> · an address prefix or display name"); return tail; }

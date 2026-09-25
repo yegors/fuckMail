@@ -503,6 +503,10 @@ fn mutation_request_matches(work: &Work, request: &HttpRequest) -> bool {
             if request.url() == "https://gmail.googleapis.com/gmail/v1/users/me/labels" {
                 return request.method() == HttpMethod::Post && work.units == 5;
             }
+            // Deleting Spam or Trash for good (bin.rs).
+            if request.url() == "https://gmail.googleapis.com/gmail/v1/users/me/messages/batchDelete" {
+                return request.method() == HttpMethod::Post && work.units == 50;
+            }
             let Some(tail) =
                 path.strip_prefix("https://gmail.googleapis.com/gmail/v1/users/me/messages/")
             else {

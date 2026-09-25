@@ -2,6 +2,24 @@
 
 
 
+## D126 — uploads wait for the text to rest (Gmail33)
+
+- The drafts worker uploads a draft only after its text has been unchanged for 30 s (`google_draft_due_after`, Core70), or when it resumes an operation already under way. Leaving the composer and Send still save at once, and Send waits for the upload.
+- A newer local revision arriving while an upload runs (`stale_revision`) counts as progress; the next pass uploads the newer text.
+- An earlier build's read-only copy is converted in place, and one whose Gmail draft is gone is marked discarded (Core70). The D124 removal is replaced; it failed where other rows referred to the copy.
+
+Consumers: Core70, Mail UI92.
+
+## D124 — batch delete admission, legacy draft copies, unsubscribe fallback (Gmail32)
+
+- The engine's request-level mutation check admits `POST …/users/me/messages/batchDelete` at exactly 50 units (StateMutation); Spam/Trash deleting reaches Gmail.
+- Inventory: a listed draft whose local row is an earlier build's read-only copy (`origin google_snapshot`) is read again even when its message id is unchanged, and published as an ordinary mirror under the same id (the copy is removed first; a copy something refers to stays). A complete listing removes such copies whose Gmail draft was not seen.
+- Drafts due for upload skip rows with nothing written (no subject, recipients, attachments or text beyond the signature) unless they are resuming an operation or already target a Gmail draft.
+- `google_unsubscribe_mail {id, source_version, fallback?}`: with `fallback: true` it sends to the `mailto:` entry of `List-Unsubscribe` even when the message offers one-click.
+- Stored and remote-thread attachments exclude parts whose Content-ID the HTML shows through `cid:`; attachment ids keep the part's position.
+
+Consumers: Core69, Mail UI90.
+
 ## D122 — Gmail drafts are local drafts (Gmail31)
 
 - **Mirror.** The draft inventory scan mirrors every readable Gmail draft as a local draft (`origin local`, sync state `adopted`, target = the Gmail draft). Read-only `google_snapshot` drafts are no longer created. A pending own create (prepared, in flight or unknown, no target, same RAW blob) is not mirrored. When a draft's real owner appears later, a `google-draft-` mirror of the same target is retired (`discarded`, `remote_deleted`). Late acknowledgements prefer a non-mirror owner and ignore retired rows.

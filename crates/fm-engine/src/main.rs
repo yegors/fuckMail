@@ -929,6 +929,23 @@ async fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         )),
     };
     services.remote.start_link_indexer(engine_cancel.clone());
+    // Earlier versions listed inline images as attachments; stored mail is
+    // tidied once, in small batches behind other work.
+    {
+        let core = core_tasks::CoreBridge::new(queue.clone(), background_slots.clone());
+        let stop = engine_cancel.clone();
+        tokio::spawn(async move {
+            while let Ok(true) = core
+                .call(|store| store.repair_inline_attachments(50))
+                .await
+            {
+                tokio::select! {
+                    _ = stop.cancelled() => return,
+                    _ = tokio::time::sleep(Duration::from_millis(50)) => {}
+                }
+            }
+        });
+    }
     let owners = Arc::new(AtomicUsize::new(0));
     let authenticated_work = Arc::new(AtomicBool::new(false));
     let schedule = Arc::new(verification_fixture::Schedule::default());
@@ -1185,6 +1202,7 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
         "remote_proxy_test",
         "remote_proxy_password",
         "remote_image_cache",
+        "sender_avatar",
         "draft_transfer",
         "draft_transfer_status",
         "draft_transfer_retry",

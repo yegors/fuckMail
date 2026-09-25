@@ -76,6 +76,18 @@ ColumnLayout {
     }
     Rectangle { Layout.fillWidth: true; Layout.topMargin: 10; implicitHeight: 1; color: Theme.line }
     Row2 {
+        title: "Sender pictures"
+        detail: "Brand icons for automated senders and public profile photos for people, from Google and Gravatar. Initials otherwise."
+        FmSwitch {
+            objectName: "senderPicturesEnabled"
+            checked: (backend.preferences || {}).sender_pictures !== false
+            enabled: backend.connected
+            onToggled: { backend.setPreferences({sender_pictures: checked}); checked = Qt.binding(function() { return (backend.preferences || {}).sender_pictures !== false }) }
+            Accessible.name: "Show sender pictures"
+        }
+    }
+    Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
+    Row2 {
         title: "Load through a proxy"
         detail: "Image sites see the proxy, not you. If it’s down, images wait — nothing goes direct."
         FmSwitch {

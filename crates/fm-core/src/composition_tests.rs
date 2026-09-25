@@ -368,6 +368,8 @@ fn composition_legacy_first_save_binds_loaded_member_across_actual_arrival() {
     let loaded = call(&mut store, "draft_get", json!({"conversation_id":cid}));
     assert_eq!(loaded["revision"], 0);
     assert_eq!(loaded["source_message_id"], mid);
+    // The source's Reply-To, not its From (a no-reply sender bounces).
+    assert_eq!(emails(&loaded["to_recipients"]), vec!["reply@fixture.example"]);
     let (_, arrived) = ingest(&mut store, "after-load", source("after-load", 1));
     assert_eq!(
         call(&mut store, "draft_get", json!({"conversation_id":cid}))["source_message_id"],

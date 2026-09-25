@@ -4,6 +4,7 @@
 #include "MailBackend.h"
 #include <QDateTime>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QRegularExpression>
 #include <QUrl>
 #include <algorithm>
@@ -13,6 +14,9 @@ constexpr int maxImageOperations = 6;
 constexpr int htmlCacheSize = 8;
 constexpr int maxBlockedHosts = 1000;
 constexpr qint64 summaryRetryMs = 5000;
+constexpr int maxPictureOperations = 4;
+// A picture that failed to arrive (not one found missing) is asked again later.
+constexpr qint64 pictureRetryMs = 60 * 1000;
 }
 
 // MailBackend owns one instance, created when QML first asks for it.
@@ -22,15 +26,26 @@ QObject *MailBackend::htmlContent() const {
 }
 
 HtmlContent::HtmlContent(MailBackend *backend) : QObject(backend), m_backend(backend) {
+    m_pictureSettings = pictureSettings();
+    // Pictures arriving together repaint the list once.
+    m_pictureBump.setSingleShot(true); m_pictureBump.setInterval(40);
+    connect(&m_pictureBump, &QTimer::timeout, this, [this] { ++m_pictureRevision; emit pictureRevisionChanged(); });
     connect(backend, &MailBackend::preferencesChanged, this, [this] {
         emit blockedHostsChanged(); emit proxyChanged(); bump();
+        // Turning pictures on or off, blocking a host or changing the proxy
+        // can change what is found.
+        if (auto settings = pictureSettings(); settings != m_pictureSettings) {
+            m_pictureSettings = settings;
+            m_pictures.clear(); m_pictureQueue.clear(); ++m_pictureGeneration; m_pictureBump.start();
+        }
     });
     connect(backend, &MailBackend::accountChanged, this, [this] { bump(); });
     connect(backend, &MailBackend::connectedChanged, this, [this] {
         if (m_backend->connected()) return;
         // A new engine may have a different store; ask again after reconnecting.
         m_summaries.clear(); m_htmlCache.clear(); m_htmlOrder.clear();
-        bump();
+        m_pictures.clear(); m_pictureQueue.clear(); ++m_pictureGeneration;
+        bump(); m_pictureBump.start();
     });
 }
 
@@ -248,6 +263,50 @@ QVariantMap HtmlContent::linkSummary(const QString &input, const QString &conver
     return pending;
 }
 
+QByteArray HtmlContent::pictureSettings() const {
+    const auto preferences = m_backend->preferences();
+    return QJsonDocument(QJsonObject{{"on", preferences.value("sender_pictures", true).toBool()},
+        {"blocked", QJsonValue::fromVariant(preferences.value("blocked_hosts"))},
+        {"proxy", QJsonValue::fromVariant(preferences.value("remote_proxy"))}}).toJson(QJsonDocument::Compact);
+}
+
+QVariantMap HtmlContent::senderPicture(const QString &email, const QString &kind) {
+    static const QVariantMap none{{"state", "none"}};
+    const auto address = email.trimmed().toLower();
+    if (!m_backend->preferences().value("sender_pictures", true).toBool() || m_backend->syntheticProfile() || !address.contains('@')) return none;
+    const auto key = kind + '|' + address;
+    const auto found = m_pictures.constFind(key);
+    if (found != m_pictures.cend()) {
+        const bool retry = (found->value("state") == "error" || found->value("transient").toBool())
+            && QDateTime::currentMSecsSinceEpoch() - found->value("at").toLongLong() > pictureRetryMs;
+        if (!retry) return *found;
+    }
+    m_pictures.insert(key, {{"state", "loading"}});
+    m_pictureQueue.enqueue(key);
+    QMetaObject::invokeMethod(this, &HtmlContent::pumpPictures, Qt::QueuedConnection);
+    return m_pictures.value(key);
+}
+
+void HtmlContent::pumpPictures() {
+    while (m_picturesRunning < maxPictureOperations && !m_pictureQueue.isEmpty()) {
+        const auto key = m_pictureQueue.dequeue();
+        const auto split = key.indexOf('|');
+        ++m_picturesRunning;
+        call({}, "sender_avatar", {{"address", key.mid(split + 1)}, {"kind", key.left(split)}}, [this, key, generation = m_pictureGeneration](const QJsonObject &result, bool ok) {
+            --m_picturesRunning;
+            // Settings or the engine changed while this was asked; its answer is stale.
+            if (generation == m_pictureGeneration) {
+                auto value = ok ? result.toVariantMap() : QVariantMap{{"state", "error"}};
+                if (value.value("state") == "ready") value["url"] = QUrl::fromLocalFile(value.value("path").toString()).toString();
+                value["at"] = QDateTime::currentMSecsSinceEpoch();
+                m_pictures.insert(key, value);
+                m_pictureBump.start();
+            }
+            pumpPictures();
+        });
+    }
+}
+
 void HtmlContent::refreshBlockCounts() {
     QJsonArray patterns;
     for (const auto &entry : blockedList()) patterns.append(entry.value("pattern").toString());
@@ -344,5 +403,7 @@ void HtmlContent::clearImageCache() {
     call({}, "remote_image_cache", {{"op", "clear"}}, [this](const QJsonObject &result, bool ok) {
         if (ok) { m_imageCache = result.toVariantMap(); emit imageCacheChanged(); }
         m_htmlCache.clear(); m_htmlOrder.clear();
+        // Sender pictures are cleared with the images; their files are gone.
+        m_pictures.clear(); m_pictureQueue.clear(); ++m_pictureGeneration; m_pictureBump.start();
     });
 }

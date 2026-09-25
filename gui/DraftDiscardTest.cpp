@@ -139,6 +139,14 @@ ApplicationWindow {width:1280;height:800;visible:true;color:Theme.bg
     const auto deadline=backend.m_actionToastDeadline;const auto undoCount=undos.size();QElapsedTimer elapsed;elapsed.start();
     while(backend.actionToast()["visible"].toBool()&&elapsed.elapsed()<6500)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
     require(backend.m_actionClock.elapsed()>=deadline&&!backend.actionToast()["visible"].toBool(),"real six-second discard Undo expires");backend.activateActionToast();require(undos.size()==undoCount,"expired toast cannot restore");
+    // Moving on from a read-only Gmail copy while a draft is still opening
+    // waits for it, instead of re-entering openDraft until the stack runs out.
+    drafts["snapshot"]=draft("fixture-account","snapshot");drafts["snapshot"]["origin"]="google_snapshot";drafts["snapshot"]["read_only"]=true;
+    backend.acceptDraft(drafts["snapshot"]);require(backend.draftReadOnly(),"read-only copy open");
+    backend.m_resolvingDraft=true;backend.openDraft("draft-b");require(static_cast<bool>(backend.m_afterDraftSave),"navigation waits for the opening draft");
+    backend.m_resolvingDraft=false;backend.saveDraft();
+    await([&]{return backend.m_activeDraft=="draft-b"&&!backend.m_resolvingDraft;},"navigation continues once the draft has opened");
+    require(!discards.isEmpty()&&discards.last()["draft_id"]!="snapshot","a read-only copy is never discarded as an empty new message");
     drafts["close-a"]=draft("fixture-account","close-a");drafts["close-b"]=draft("fixture-account","close-b");
     backend.acceptDraft(drafts["close-a"]);backend.loadDraftRows(false);await([&]{return backend.snapshotMailRows({"close-a","close-b"}).size()==2;},"close group loaded");
     backend.applyMailSelection(backend.snapshotMailRows({"close-a","close-b"}),"discard");

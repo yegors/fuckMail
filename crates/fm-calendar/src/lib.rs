@@ -333,9 +333,16 @@ pub fn normalize(
         return Err(error("invalid_event", "Active events need start and end"));
     }
     if let (Some(start), Some(end)) = (&start, &end) {
+        // Google allows a timed event to end when it starts (a reminder-like
+        // point in time); an all-day end date is exclusive and must follow.
+        let (from, to) = (
+            start.utc(calendar_zone.parse().unwrap())?,
+            end.utc(calendar_zone.parse().unwrap())?,
+        );
+        let point = !matches!(start, EventTime::Date { .. });
         if std::mem::discriminant(start) != std::mem::discriminant(end)
-            || end.utc(calendar_zone.parse().unwrap())?
-                <= start.utc(calendar_zone.parse().unwrap())?
+            || to < from
+            || (to == from && !point)
         {
             return Err(error(
                 "invalid_event",
@@ -379,7 +386,10 @@ pub fn normalize(
                 .find(|item| item["entryPointType"] == "video")
                 .and_then(|item| item["uri"].as_str())
         })
-        .map(str::to_owned);
+        .map(str::to_owned)
+        // Teams, Zoom and others put their link in the location or notes.
+        .or_else(|| meeting_link(source["location"].as_str().unwrap_or("")))
+        .or_else(|| meeting_link(source["description"].as_str().unwrap_or("")));
     Ok(Event {
         key: EventKey {
             account: account.into(),
@@ -886,6 +896,36 @@ pub fn project_event_in_window(
     }
     sort_projected_events(&mut output, window)?;
     Ok(output)
+}
+
+/// The first video-meeting link in free text (a location or the notes,
+/// plain or HTML): Teams, Zoom, Meet, Webex and similar services. Only https
+/// links to those services; help pages and dial-in links are skipped.
+pub fn meeting_link(text: &str) -> Option<String> {
+    let text = text.replace("&amp;", "&");
+    text.match_indices("https://").find_map(|(at, _)| {
+        let rest = &text[at..];
+        let end = rest
+            .find(|c: char| c.is_whitespace() || matches!(c, '<' | '>' | '"' | '\'' | '(' | ')' | '[' | ']'))
+            .unwrap_or(rest.len());
+        let candidate = rest[..end].trim_end_matches(['.', ',', ';', ':', '!', '?']);
+        if candidate.len() > 2048 {
+            return None;
+        }
+        let url = url::Url::parse(candidate).ok()?;
+        let host = url.host_str()?.to_ascii_lowercase();
+        let path = url.path().to_ascii_lowercase();
+        let on = |domain: &str| host == domain || host.ends_with(&format!(".{domain}"));
+        let meeting = (on("teams.microsoft.com") && (path.starts_with("/l/meetup-join/") || path.starts_with("/meet/")))
+            || (on("teams.live.com") && path.starts_with("/meet/"))
+            || ((on("zoom.us") || on("zoomgov.com")) && ["/j/", "/my/", "/w/", "/s/"].iter().any(|p| path.starts_with(p)))
+            || (host == "meet.google.com" && path.len() > 1)
+            || (on("webex.com") && path.len() > 1)
+            || ((on("gotomeeting.com") || host == "meet.goto.com") && path.len() > 1)
+            || ((host == "whereby.com" || host == "meet.jit.si") && path.len() > 1)
+            || (host == "chime.aws" && path.len() > 1);
+        meeting.then(|| url.to_string())
+    })
 }
 
 /// Stable shared ordering: displayed date, all-day before timed on that date,

@@ -2,8 +2,11 @@
 //!
 //! Images are PNGs produced by `fm_mail::image_view`, stored per account under
 //! `<profile>/cache/images/<account-key>/<key>.png` so account removal can drop
-//! them. The whole image cache stays under [`IMAGE_CACHE_LIMIT`]; the oldest
-//! files go first. Only pixels are kept, never response headers.
+//! them. Sender pictures are shared by every account and live in
+//! `<profile>/cache/images/senders/`, with an empty `<key>.none` marker for a
+//! picture recently found missing. The whole image cache stays under
+//! [`IMAGE_CACHE_LIMIT`]; the oldest files go first. Only pixels are kept,
+//! never response headers.
 use crate::content::{create_stage, private_directory, sync_directory};
 use crate::{err, Result};
 use sha2::{Digest, Sha256};
@@ -12,10 +15,12 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 pub const IMAGE_CACHE_LIMIT: u64 = 256 * 1024 * 1024;
 const HTML_FILES_KEPT: usize = 16;
+/// Account directories are 32 hex digits, so this name never collides.
+const SENDERS: &str = "senders";
 
 /// One per profile; clones share the running size and the eviction lock.
 #[derive(Clone)]
@@ -33,6 +38,11 @@ pub fn key(parts: &[&str]) -> String {
         digest.update([0]);
     }
     format!("{:x}", digest.finalize())
+}
+
+/// Lowercase hex SHA-256 of `text`, which is how Gravatar names a photo.
+pub fn sha256_hex(text: &str) -> String {
+    format!("{:x}", Sha256::digest(text.as_bytes()))
 }
 
 impl ViewCache {
@@ -53,28 +63,67 @@ impl ViewCache {
         private_directory(&self.images(create)?, &key(&[account])[..32], create)
     }
 
+    fn senders_dir(&self, create: bool) -> Result<PathBuf> {
+        private_directory(&self.images(create)?, SENDERS, create)
+    }
+
     /// A cached PNG and its size, touched so eviction keeps recently shown images.
     pub fn cached_image(&self, account: &str, key: &str) -> Option<(PathBuf, u32, u32)> {
-        let path = self
-            .account_dir(account, false)
-            .ok()?
-            .join(format!("{key}.png"));
-        let (width, height) = png_size(&path)?;
-        if let Ok(file) = fs::File::options().write(true).open(&path) {
-            let _ = file.set_modified(SystemTime::now());
-        }
-        Some((path, width, height))
+        cached_in(&self.account_dir(account, false).ok()?, key)
     }
 
     pub fn store_image(&self, account: &str, key: &str, png: &[u8]) -> Result<PathBuf> {
-        let directory = self.account_dir(account, true)?;
+        self.store_in(&self.account_dir(account, true)?, key, png)
+    }
+
+    /// A cached sender picture, shared by every account.
+    pub fn cached_sender(&self, key: &str) -> Option<(PathBuf, u32, u32)> {
+        cached_in(&self.senders_dir(false).ok()?, key)
+    }
+
+    pub fn store_sender(&self, key: &str, png: &[u8]) -> Result<PathBuf> {
+        let directory = self.senders_dir(true)?;
+        let stored = self.store_in(&directory, key, png)?;
+        let _ = fs::remove_file(directory.join(format!("{key}.none")));
+        Ok(stored)
+    }
+
+    /// Whether this sender picture was found missing less than `max_age` ago.
+    /// An expired marker is removed.
+    pub fn sender_missing(&self, key: &str, max_age: Duration) -> bool {
+        let Ok(directory) = self.senders_dir(false) else {
+            return false;
+        };
+        let marker = directory.join(format!("{key}.none"));
+        let Ok(modified) = fs::metadata(&marker).and_then(|m| m.modified()) else {
+            return false;
+        };
+        let fresh = SystemTime::now()
+            .duration_since(modified)
+            .is_ok_and(|age| age < max_age);
+        if !fresh {
+            let _ = fs::remove_file(marker);
+        }
+        fresh
+    }
+
+    /// Remember that a sender picture is missing, so it is not fetched again soon.
+    pub fn mark_sender_missing(&self, key: &str) -> Result<()> {
+        let directory = self.senders_dir(true)?;
+        let (temporary, file) = create_stage(&directory)?;
+        drop(file);
+        fs::rename(&temporary, directory.join(format!("{key}.none")))?;
+        Ok(())
+    }
+
+    fn store_in(&self, directory: &Path, key: &str, png: &[u8]) -> Result<PathBuf> {
         let destination = directory.join(format!("{key}.png"));
-        let (temporary, mut file) = create_stage(&directory)?;
+        let (temporary, mut file) = create_stage(directory)?;
         file.write_all(png)?;
         file.sync_all()?;
         drop(file);
         fs::rename(&temporary, &destination)?;
-        sync_directory(&directory)?;
+        sync_directory(directory)?;
         self.account_bytes(png.len() as u64);
         Ok(destination)
     }
@@ -151,8 +200,17 @@ impl ViewCache {
         Ok(())
     }
 
+    /// Every image, including sender pictures and their missing markers.
     pub fn clear_images(&self) -> Result<()> {
-        self.evict(0)
+        self.evict(0)?;
+        if let Ok(directory) = self.senders_dir(false) {
+            let _guard = self
+                .eviction
+                .lock()
+                .map_err(|_| err("storage_error", "Image cache is busy"))?;
+            fs::remove_dir_all(directory)?;
+        }
+        Ok(())
     }
 
     /// Account removal drops that account's images.
@@ -195,6 +253,16 @@ impl ViewCache {
         prune(&directory, &destination);
         Ok(destination)
     }
+}
+
+/// A cached PNG and its size, touched so eviction keeps recently shown images.
+fn cached_in(directory: &Path, key: &str) -> Option<(PathBuf, u32, u32)> {
+    let path = directory.join(format!("{key}.png"));
+    let (width, height) = png_size(&path)?;
+    if let Ok(file) = fs::File::options().write(true).open(&path) {
+        let _ = file.set_modified(SystemTime::now());
+    }
+    Some((path, width, height))
 }
 
 /// Keep the newest few files of a directory, and always `keep`.
@@ -259,5 +327,44 @@ mod tests {
         assert!(cache.files().is_empty());
         let html = cache.html_file("v1", "<p>x</p>").unwrap();
         assert_eq!(fs::read_to_string(html).unwrap(), "<p>x</p>");
+    }
+
+    #[test]
+    fn sender_pictures_are_shared_expire_misses_and_clear_with_images() {
+        let temp = tempfile::tempdir().unwrap();
+        let cache = ViewCache::new(temp.path());
+        let week = Duration::from_secs(7 * 24 * 3600);
+        assert!(cache.cached_sender("brand").is_none());
+        assert!(!cache.sender_missing("gone", week));
+        cache.mark_sender_missing("gone").unwrap();
+        assert!(cache.sender_missing("gone", week));
+        assert!(ViewCache::new(temp.path()).sender_missing("gone", week));
+        assert!(!cache.sender_missing("gone", Duration::ZERO), "expired");
+        assert!(
+            !cache.sender_missing("gone", week),
+            "expired markers are removed"
+        );
+        cache.mark_sender_missing("brand").unwrap();
+        cache.store_sender("brand", &png(64, 64)).unwrap();
+        assert!(
+            !cache.sender_missing("brand", week),
+            "a stored picture replaces a miss"
+        );
+        let (path, w, h) = cache.cached_sender("brand").unwrap();
+        assert_eq!((w, h), (64, 64));
+        assert!(path.starts_with(fs::canonicalize(temp.path()).unwrap()));
+        cache.store_image("a", "k1", &png(30, 20)).unwrap();
+        cache.remove_account("a");
+        cache.remove_account("senders");
+        assert!(
+            cache.cached_sender("brand").is_some(),
+            "no account owns them"
+        );
+        assert_eq!(cache.image_bytes(), 4096);
+        cache.mark_sender_missing("gone").unwrap();
+        cache.clear_images().unwrap();
+        assert!(cache.cached_sender("brand").is_none());
+        assert!(!cache.sender_missing("gone", week));
+        assert_eq!(cache.image_bytes(), 0);
     }
 }

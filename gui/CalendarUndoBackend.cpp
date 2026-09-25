@@ -50,55 +50,84 @@ QVariantMap MailBackend::currentCalendarSource(const QVariantMap &event) const {
     return {};
 }
 bool MailBackend::calendarEventHidden(const QVariantMap &event) const {
-    for (const auto &pending : m_calendarDeletions) if (matchesDeletion(pending.request, event)) return true;
+    for (const auto &pending : m_calendarDeletions) if (!pending.decline() && matchesDeletion(pending.request, event)) return true;
     return false;
 }
-QVariantList MailBackend::visibleCalendarEvents(const QVariantList &rows, bool reflow, bool filterByAccount) const {
+bool MailBackend::calendarEventDeclining(const QVariantMap &event) const {
+    for (const auto &pending : m_calendarDeletions) if (pending.decline() && matchesDeletion(pending.request, event)) return true;
+    return false;
+}
+QVariantList MailBackend::visibleCalendarEvents(const QVariantList &rows, bool reflow, bool filterByAccount, DeclinedRows declined) const {
     const bool currentOnly = filterByAccount && m_preferences.value("calendar_account_visibility").toString() == "current";
-    if (m_calendarDeletions.isEmpty() && !currentOnly) return rows;
-    QVariantList result;
-    for (const auto &row : rows) if ((!currentOnly || row.toMap().value("account").toString() == m_account) && !calendarEventHidden(row.toMap())) result.append(row);
+    const bool hideDeclined = declined == DeclinedRows::Hide || (declined == DeclinedRows::Preference && !m_preferences.value("calendar_show_declined").toBool());
+    if (m_calendarDeletions.isEmpty() && !currentOnly && !hideDeclined) return rows;
+    QVariantList result; bool changed = false;
+    for (const auto &value : rows) {
+        auto row = value.toMap();
+        if ((currentOnly && row.value("account").toString() != m_account) || calendarEventHidden(row)) { changed = true; continue; }
+        // A decline waiting out its Undo shows as declined already.
+        if (calendarEventDeclining(row)) { row["self_response"] = "declined"; changed = true; }
+        if (hideDeclined && row.value("self_response").toString() == "declined") { changed = true; continue; }
+        result.append(row);
+    }
+    if (!changed) return rows;
     return reflow && result.size() != rows.size() ? reflowCalendarPresentation(result) : result;
 }
 void MailBackend::calendarDeletionVisibilityChanged() { emit eventsChanged(); emit timelineChanged(); emit calendarSearchChanged(); emit remindersChanged(); }
 
 QString MailBackend::queueCalendarDeletion(const QVariantMap &values, const QVariantMap &event) {
+    return queueCalendarHold(values, event, false);
+}
+// Declining an invitation takes it off the calendars at once; the RSVP is
+// sent after the Undo interval, so Undo leaves the earlier answer untouched.
+QString MailBackend::queueCalendarDecline(const QVariantMap &values, const QVariantMap &event) {
+    return queueCalendarHold(values, event, true);
+}
+QString MailBackend::queueCalendarHold(const QVariantMap &values, const QVariantMap &event, bool decline) {
     const auto account = values.value("account").toString(), calendar = values.value("calendar_id").toString();
     const auto authority = calendarOccurrenceContext(account, calendar), source = currentCalendarSource(event);
-    if (authority.isEmpty() || source.isEmpty() || values.value("kind") != "delete" || event.value("can_delete") != true
+    const QString verb = decline ? "declining" : "deleting";
+    const bool allowed = decline ? values.value("kind") == "rsvp" && values.value("response") == "declined" : values.value("kind") == "delete" && event.value("can_delete") == true;
+    if (authority.isEmpty() || source.isEmpty() || !allowed
         || event.value("account") != account || event.value("calendar_id") != calendar || event.value("id").toString().isEmpty()
         || event.value("event_id").toString().isEmpty() || values.value("event_id") != event.value("event_id")
         || event.value("etag").toString().isEmpty() || values.value("expected_etag") != event.value("etag")
-        || values.value("request_id").toString().isEmpty()) return "The event or its calendar changed. Reopen it before deleting.";
+        || values.value("request_id").toString().isEmpty()) return "The event or its calendar changed. Reopen it before " + verb + ".";
+    const QStringList fields = decline ? QStringList{"account", "calendar_id", "event_id", "expected_etag", "kind", "request_id", "response", "recurring"}
+                                       : QStringList{"account", "calendar_id", "event_id", "expected_etag", "kind", "request_id", "recurring", "occurrence"};
     for (auto it = values.cbegin(); it != values.cend(); ++it)
-        if (!QStringList{"account", "calendar_id", "event_id", "expected_etag", "kind", "request_id", "recurring", "occurrence"}.contains(it.key())) return "This deletion contains an unexpected field. Reopen the event.";
+        if (!fields.contains(it.key())) return QString(decline ? "This response" : "This deletion") + " contains an unexpected field. Reopen the event.";
     const bool recurring = !values.value("recurring").toMap().isEmpty() || !values.value("occurrence").toMap().isEmpty();
     if (recurring) {
         const auto context = event.value("occurrence_ui_context").toMap();
         const auto captured = QJsonDocument::fromJson(context.value("source").toString().toUtf8()).object();
         if (captured != QJsonObject::fromVariantMap(source)
-            || QJsonDocument::fromJson(context.value("authority").toString().toUtf8()).object() != QJsonObject::fromVariantMap(authority)) return "Check this recurring scope again before deleting.";
+            || QJsonDocument::fromJson(context.value("authority").toString().toUtf8()).object() != QJsonObject::fromVariantMap(authority)) return "Check this recurring scope again before " + verb + ".";
         auto expected = event.value("recurring_context").toMap();
-        if (expected.value("scope") == "following") expected["reset_future_exceptions"] = true;
-        if (values.value("recurring").toMap() != expected || values.value("occurrence").toMap() != (expected.isEmpty() ? event.value("occurrence").toMap() : QVariantMap{})) return "The recurring deletion no longer matches the checked scope.";
-    } else if (source.value("etag") != event.value("etag") || source.value("can_delete") != true || source.value("can_resolve_occurrence").toBool() || !source.value("recurring_selector").toMap().isEmpty()) return "The event changed. Reopen it before deleting.";
-    if (!matchesDeletion(values, source)) return "This deletion does not match the selected event.";
+        if (!decline && expected.value("scope") == "following") expected["reset_future_exceptions"] = true;
+        const auto occurrence = decline || !expected.isEmpty() ? QVariantMap{} : event.value("occurrence").toMap();
+        if (values.value("recurring").toMap() != expected || values.value("occurrence").toMap() != occurrence)
+            return QString(decline ? "The recurring response" : "The recurring deletion") + " no longer matches the checked scope.";
+    } else if (source.value("etag") != event.value("etag") || source.value(decline ? "can_rsvp" : "can_delete") != true || source.value("can_resolve_occurrence").toBool() || !source.value("recurring_selector").toMap().isEmpty()) return "The event changed. Reopen it before " + verb + ".";
+    if (!matchesDeletion(values, source)) return QString(decline ? "This response" : "This deletion") + " does not match the selected event.";
     for (const auto &pending : m_calendarDeletions)
-        if (matchesDeletion(pending.request, source) || matchesDeletion(values, pending.source)) return "A deletion is already pending for this event or series.";
-    if (m_calendarDeletions.size() >= 8) return "Wait for a pending deletion before deleting another event.";
+        if (matchesDeletion(pending.request, source) || matchesDeletion(values, pending.source)) return "A change is already pending for this event or series.";
+    if (m_calendarDeletions.size() >= 8) return "Wait for a pending change before changing another event.";
     const auto key = account + '\n' + values.value("request_id").toString();
     CalendarDeletion pending; pending.request = values; pending.source = source; pending.authority = authority; pending.deadline = m_actionClock.elapsed() + m_calendarUndoMs;
     m_calendarDeletions.insert(key, pending);
     const auto scope = values.value("recurring").toMap().value("scope", values.contains("occurrence") ? "occurrence" : "").toString();
-    const auto text = scope == "series" ? "Deleting series “" : scope == "following" ? "Deleting following events for “" : scope == "occurrence" ? "Removing this occurrence of “" : "Deleting “";
+    const auto text = decline ? "Declined “"
+        : scope == "series" ? "Deleting series “" : scope == "following" ? "Deleting following events for “" : scope == "occurrence" ? "Removing this occurrence of “" : "Deleting “";
     showActionToast(text + source.value("title", "event").toString() + "”", "undo_calendar_delete", {{"key", key}}, m_calendarUndoMs);
     calendarDeletionVisibilityChanged();
     return {};
 }
 void MailBackend::undoCalendarDeletion(const QString &key) {
     if (!m_calendarDeletions.contains(key) || m_calendarDeletions[key].dispatched || m_actionClock.elapsed() >= m_calendarDeletions[key].deadline) return;
+    const bool decline = m_calendarDeletions[key].decline();
     m_calendarDeletions.remove(key); calendarDeletionVisibilityChanged();
-    showActionToast("Deletion undone", {}, {}, 2800, true);
+    showActionToast(decline ? "Decline undone" : "Deletion undone", {}, {}, 2800, true);
 }
 void MailBackend::cancelQueuedCalendarDeletions() {
     bool changed = false;
@@ -110,13 +139,23 @@ void MailBackend::cancelQueuedCalendarDeletions() {
 }
 void MailBackend::advanceCalendarDeletions() {
     for (const auto &key : m_calendarDeletions.keys()) {
-        const auto pending = m_calendarDeletions.value(key); if (pending.dispatched) continue;
+        const auto pending = m_calendarDeletions.value(key);
+        if (pending.confirmed) {
+            // Google accepted the decline; drop the hold once the refreshed
+            // event (or its absence) shows it, or after a minute.
+            const auto current = currentCalendarSource(pending.source);
+            if (current.isEmpty() || sourceIdentity(current) != sourceIdentity(pending.source) || m_actionClock.elapsed() >= pending.deadline) {
+                m_calendarDeletions.remove(key); calendarDeletionVisibilityChanged();
+            }
+            continue;
+        }
+        if (pending.dispatched) continue;
         const auto current = currentCalendarSource(pending.source);
         if (pending.authority != calendarOccurrenceContext(pending.request.value("account").toString(), pending.request.value("calendar_id").toString())
             || (!current.isEmpty() && sourceIdentity(current) != sourceIdentity(pending.source))) {
             m_calendarDeletions.remove(key); calendarDeletionVisibilityChanged();
             if (m_actionToast.value("key") == key) { m_actionToast = {}; emit actionToastChanged(); }
-            showActionToast("Deletion cancelled because the event or calendar changed.", {}, {}, 2800, true);
+            showActionToast(pending.decline() ? "Decline cancelled because the event or calendar changed." : "Deletion cancelled because the event or calendar changed.", {}, {}, 2800, true);
         } else if (m_actionClock.elapsed() >= pending.deadline) {
             m_calendarDeletions[key].dispatched = true;
             calendarWrite(pending.request);
@@ -126,10 +165,16 @@ void MailBackend::advanceCalendarDeletions() {
 void MailBackend::finishQueuedCalendarDeletion(const QString &account, const QString &id, bool confirmed, const QString &message) {
     const auto key = account + '\n' + id;
     if (!m_calendarDeletions.contains(key)) return;
+    if (confirmed && m_calendarDeletions[key].decline()) {
+        auto &pending = m_calendarDeletions[key];
+        pending.confirmed = true; pending.deadline = m_actionClock.elapsed() + 60000;
+        m_actionTimer.start();
+        return;
+    }
     const auto pending = m_calendarDeletions.take(key);
     if (confirmed) showActionToast("Deleted “" + pending.source.value("title", "event").toString() + "”", {}, {}, 2800, true);
     else {
         calendarDeletionVisibilityChanged();
-        showActionToast("Deletion needs attention. " + message, "calendar_activity", {}, 6000, true);
+        showActionToast((pending.decline() ? "Decline needs attention. " : "Deletion needs attention. ") + message, "calendar_activity", {}, 6000, true);
     }
 }

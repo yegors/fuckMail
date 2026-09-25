@@ -1297,3 +1297,81 @@ The founder supplied `Flight Progress v2 (offline) (4).html` with the designer's
 Choices beyond the notes: the Drafts count and chips come from Core's draft list (written drafts only); the ▾ menu counts come from Gmail when it opens; the discard confirmation says the draft leaves Gmail too; the event view, like a reminder, turns to "STARTING NOW" in its final minute.
 
 Core68, Gmail31, Mail UI89, Calendar34, CLI53, Local assistance26; schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+
+## D124 — live-mailbox acceptance fixes (2026-09-25T16:40:00Z)
+
+The founder reviewed the build against three synced real accounts (log `fuckmail-202609251225.log`) and reported eight problems. As fixed:
+
+1. **Reminder overlay hid and reappeared with its sound.** Sync bumped each calendar source's revision about once a minute; the reminder context included it, so every pass cleared and re-showed the overlay. The context now leaves the revision out (permission, zone, selection and account state still withdraw a reminder at once), a transient failed poll (busy, timeout, a request not sent) keeps it on screen, and the overlay never sounds again for a reminder and level it has already sounded; Snooze and Dismiss forget that. The one-minute and start sounds are unchanged.
+2. **Drafts.** Drafts imported by the previous build were read-only copies; the scan skipped them because their Gmail message had not changed, so they stayed read-only without From or To and could not be discarded. The scan now reads such a copy again and turns it into an ordinary editable draft, and removes copies whose Gmail draft is gone. The Drafts count counts every draft in Drafts. A draft with nothing written (no subject, recipients, attachments or text beyond the signature) is not sent to Gmail until something is, unless it already has a Gmail draft.
+3. **Deleting from Spam and Trash.** The engine's second, request-level allowlist did not include `messages/batchDelete`, so the request was refused locally and reported as "Gmail could not be reached". It now admits exactly that POST at 50 units.
+4. **Missing and uncommitted events.** The calendar view loads at most 128 repeating series per calendar, in id order. The founder's Windscribe calendar has 419, 375 of them finished; the Design standup series (an invitation answered Maybe) was number 374 and never shown. Series whose single RRULE ended (UNTIL) before the shown dates, and series starting after them, no longer count against the limit. Invitations answered Maybe or not answered show hatched inside a hairline with a lighter title and "Maybe" / "Not answered" in Day view, the agenda and tooltips; declined ones are dimmed and struck through and are never the strip's "next".
+5. **Event card.** Edit is offered only when the account organises the event (Google does not let guests change an event), and was also switched off for every event in a calendar whose first full import had not completed. One 2023 event from another client ended when it started; the importer refused it, so the Windscribe primary calendar never completed. Timed events may now end when they start (all-day events still need a later end date), and a calendar with failed events gets one full re-read per engine run. The View button uses the shared icon layout; notes written in Google's editor show as text (line breaks, bullets and link targets kept) instead of raw HTML, in the card and the full event view.
+6. **Contact card.** The card's pointer tracker was a hover handler on the popup overlay, which takes hover from the name beneath: the card closed and reopened in a loop. It now follows the pointer over the mail view; the name keeps its hover.
+7. **Embedded images as attachments.** Images the HTML shows through `cid:` are part of the body, as in Gmail, and are no longer stored or listed as attachments (Content-ID images the HTML does not use still are). Attachment ids keep their part position. Stored mail from earlier builds is tidied once in the background, in batches of 50, keeping rows a draft uses.
+8. **One-click unsubscribe refused.** A redirect in answer to the one-click POST now counts as accepted. If the list still refuses and its `List-Unsubscribe` also names an address, the same Unsubscribe sends the unsubscribe email through Gmail instead.
+
+Core69, Gmail32, Calendar35, Mail UI90; schema37 (no change), fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+
+## D125 — console copy, selection and inline details (2026-09-25T17:00:00Z)
+
+The founder asked for three changes to the developer console:
+- a copy button beside export;
+- no drag scrolling, since it is terminal-like: click-drag selects text for the usual copy shortcut;
+- one-line events showing their details directly on the line, with click-to-expand only for lines that do not fit.
+
+As built (Mail UI91):
+- **Copy.** `copy` (button and command) copies the filtered lines in the export format.
+- **Scrolling.** The wheel and the scrollbar scroll.
+- **Selection.** Pressing and dragging selects across rows and scrolls past an edge; Ctrl/⌘+C copies the selected text.
+- **Rows.** Each row is a single line with its details inline. Only a cut-off line or one with JSON expands.
+
+Nothing about capture, levels, filters or storage changes; schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+
+## D126 — twelfth export: invitation answers, sender pictures, hover timing; acceptance fixes (2026-09-25T18:55:00Z)
+
+The founder supplied `Flight Progress v2 (offline) (5).html` with 21 designer notes and, while testing the live mailbox, reported four problems. As fixed:
+
+1. **Old drafts still read-only, not discardable, and a crash.** D124 removed an earlier build's read-only copy before publishing its replacement, but in the live store other rows point at that copy, so the removal failed and the copy stayed read-only. Clicking between such drafts made open and save call each other until the GUI ran out of stack. Now:
+   - The copy becomes an ordinary editable draft in place (same row, revision +1).
+   - A copy whose Gmail draft is gone is marked discarded instead of removed.
+   - The GUI no longer re-enters open or save while a draft operation is running.
+2. **Send switched off and on while typing.** Each autosave queued a Gmail upload, and Send was off while it ran. Now:
+   - A draft goes to Gmail once its text has been unchanged for 30 s, or when it is left or sent. Local saves stay immediate.
+   - Send stays enabled. Pressed during an upload, it waits up to 60 s for Gmail to accept the draft, then sends.
+   - A newer local edit arriving during an upload is not an error.
+3. **Reply-To ignored, sent copy duplicated, reply closed by itself.**
+   - Replies fell back to the sender even when the message named a Reply-To. The sender is now used only when the headers name nobody else.
+   - After the bounce, the local preview of the sent message stayed beside Gmail's copy. The thread now rechecks for Gmail's copy and drops the preview once it arrives.
+   - The reply form stayed tied to the sent draft and closed when sync caught up. It now closes on send, and Reply starts a new draft.
+4. **Teams meetings had no Join, and notes could not be copied.**
+   - Join now also uses meeting links in the event's location or notes: Teams, Zoom, Meet, Webex, GoTo, Whereby, Jitsi and Chime, https only.
+   - Notes in the full event view can be selected and copied, and their links open.
+
+From the export:
+- **Invitations.** Answer styles in Day, Week, Month and the mail day strip:
+  - Maybe: striped.
+  - Not answered: dashed outline.
+  - Declined: struck through, and shown only with the new "Show declined" switch (off by default; `calendar_show_declined` preference).
+  - Month chips use solid, dashed or dotted edges.
+  - The card has a Going? Yes/Maybe/No row. No hides the event with an Undo toast for 6 s, then sends the answer to Google.
+  - The card's buttons are Edit and View on the left, and Delete (or Delete this / Delete series) on the right.
+- **Mail day strip.** Each event label starts with a 14 px account avatar, at 55% for past events.
+- **Sender pictures.**
+  - Sizes: 28 px in list rows, 18 px in thread headers, 36 px in the contact card. The participant stack stays 22 px, as the export draws it.
+  - Without a picture: initials on a colour taken from the name.
+  - Pictures come from the engine's `sender_avatar`:
+    - An automated sender gets the brand icon of its root domain from Google's favicon service, only when 32 px or larger and never for personal-mail domains.
+    - A person gets a Gravatar photo.
+    - Pictures go through the image proxy and blocklist and are cached with images. A miss is remembered for a week.
+  - Settings → Image loading → Sender pictures turns them off (`sender_pictures`, on by default).
+  - Google Contacts/People photos would need a new contacts permission and are not fetched.
+  - Synthetic profiles ask for nothing.
+- **Hover timing.**
+  - The contact card opens after 200 ms, switches to another name after 350 ms, and closes 220 ms after the pointer leaves. A 12 px strip above it counts as the card.
+  - Link cards open after 200 ms and stay open when their link is hovered again.
+
+Core70, Gmail33, Calendar36, Mail UI92; schema37 (no change), fixtures0/3, protocol1 and readiness0/9 unchanged.

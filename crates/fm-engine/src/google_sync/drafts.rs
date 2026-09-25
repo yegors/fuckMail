@@ -21,6 +21,10 @@ use tokio::sync::OwnedSemaphorePermit;
 
 pub(super) type Memory = Arc<OwnedSemaphorePermit>;
 
+/// A changed draft uploads once its text has rested this long: typing never
+/// uploads every few keystrokes, and leaving a draft uploads it shortly after.
+const QUIET_MS: i64 = if cfg!(test) { 0 } else { 30_000 };
+
 pub(crate) async fn step(ctx: &SyncContext) -> Result<Step> {
     if super::draft_transfers::step(ctx).await? {
         return Ok(Step::Progress);
@@ -28,7 +32,7 @@ pub(crate) async fn step(ctx: &SyncContext) -> Result<Step> {
     let account = ctx.account.as_str().to_owned();
     let generation = ctx.connection_generation;
     let due = ctx
-        .core_call(move |store| store.google_draft_due(&account, generation, 1))
+        .core_call(move |store| store.google_draft_due_after(&account, generation, 1, QUIET_MS))
         .await?;
     let Some(due) = due.into_iter().next() else {
         if delete_discarded(ctx).await? || resolve_conflict(ctx).await? {
@@ -43,7 +47,13 @@ pub(crate) async fn step(ctx: &SyncContext) -> Result<Step> {
             json!({"draft_id":due.draft_id,"expected_revision":due.revision,
             "request_id":fm_ipc::random_token()})
         });
-        let reply = execute(ctx, request).await?;
+        let reply = match execute(ctx, request).await {
+            Ok(reply) => reply,
+            // Edited again while its upload was being prepared: the newer
+            // text uploads once it rests. Not a sync failure.
+            Err(error) if error.code == "stale_revision" => return Ok(Step::Progress),
+            Err(error) => return Err(error),
+        };
         if reply["state"] == "prepared" {
             return Ok(Step::Idle(Duration::from_secs(1)));
         }

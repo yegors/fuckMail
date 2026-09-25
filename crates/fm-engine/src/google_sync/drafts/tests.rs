@@ -633,11 +633,18 @@ async fn oversized_oldest_draft_is_reported_without_starving_a_newer_valid_draft
     let valid = h
         .core
         .call(move |store| {
-            store.handle(
+            let created = store.handle(
                 "draft_create",
                 Some(&account),
                 json!({"mode":"new","request_id":"valid-newer"}),
-            )
+            )?;
+            // Only drafts with something written are uploaded.
+            store.handle(
+                "draft_save",
+                Some(&account),
+                json!({"draft_id":created["draft_id"],"expected_revision":created["revision"],"request_id":"valid-newer-text","body":"Newer authored text"}),
+            )?;
+            Ok(created)
         })
         .await
         .unwrap();
@@ -700,11 +707,18 @@ async fn retryable_missing_oldest_blob_defers_only_that_draft_and_later_recovers
     let valid = h
         .core
         .call(move |store| {
-            store.handle(
+            let created = store.handle(
                 "draft_create",
                 Some(&account),
                 json!({"mode":"new","request_id":"valid-after-io"}),
-            )
+            )?;
+            // Only drafts with something written are uploaded.
+            store.handle(
+                "draft_save",
+                Some(&account),
+                json!({"draft_id":created["draft_id"],"expected_revision":created["revision"],"request_id":"valid-after-io-text","body":"Newer authored text"}),
+            )?;
+            Ok(created)
         })
         .await
         .unwrap();
@@ -795,11 +809,18 @@ async fn acknowledged_raw_retention_failure_defers_without_changing_the_exact_ac
     let account = h.ctx.account.as_str().to_owned();
     h.core
         .call(move |store| {
-            store.handle(
+            let created = store.handle(
                 "draft_create",
                 Some(&account),
                 json!({"mode":"new","request_id":"valid-after-ack-io"}),
-            )
+            )?;
+            // Only drafts with something written are uploaded.
+            store.handle(
+                "draft_save",
+                Some(&account),
+                json!({"draft_id":created["draft_id"],"expected_revision":created["revision"],"request_id":"valid-after-ack-io-text","body":"Newer authored text"}),
+            )?;
+            Ok(created)
         })
         .await
         .unwrap();

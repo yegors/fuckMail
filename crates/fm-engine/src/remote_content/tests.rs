@@ -182,6 +182,7 @@ fn runtime(pki: &Pki) -> Runtime {
         Policy {
             allow_loopback: true,
             roots: vec![pki.root.clone()],
+            ..Default::default()
         },
     )
 }
@@ -417,4 +418,551 @@ async fn proxy_mode_tunnels_every_request_and_never_goes_direct() {
         1,
         "no request reached the origin without the proxy"
     );
+}
+
+/// A grey PNG of any size, written by hand with stored deflate blocks.
+fn png_sized(width: u32, height: u32) -> Vec<u8> {
+    fn crc(bytes: &[u8]) -> u32 {
+        let mut c = !0u32;
+        for byte in bytes {
+            c ^= u32::from(*byte);
+            for _ in 0..8 {
+                c = if c & 1 == 1 {
+                    0xEDB8_8320 ^ (c >> 1)
+                } else {
+                    c >> 1
+                };
+            }
+        }
+        !c
+    }
+    fn chunk(out: &mut Vec<u8>, kind: &[u8], data: &[u8]) {
+        out.extend((data.len() as u32).to_be_bytes());
+        let mut body = kind.to_vec();
+        body.extend(data);
+        out.extend(&body);
+        out.extend(crc(&body).to_be_bytes());
+    }
+    let mut raw = Vec::new();
+    for _ in 0..height {
+        raw.push(0);
+        raw.resize(raw.len() + width as usize, 0x80);
+    }
+    let mut zlib = vec![0x78, 0x01];
+    let blocks: Vec<&[u8]> = raw.chunks(65_535).collect();
+    for (index, block) in blocks.iter().enumerate() {
+        zlib.push(u8::from(index + 1 == blocks.len()));
+        let len = block.len() as u16;
+        zlib.extend(len.to_le_bytes());
+        zlib.extend((!len).to_le_bytes());
+        zlib.extend(*block);
+    }
+    let (mut a, mut b) = (1u32, 0u32);
+    for byte in &raw {
+        a = (a + u32::from(*byte)) % 65_521;
+        b = (b + a) % 65_521;
+    }
+    zlib.extend(((b << 16) | a).to_be_bytes());
+    let mut header = width.to_be_bytes().to_vec();
+    header.extend(height.to_be_bytes());
+    header.extend([8, 0, 0, 0, 0]);
+    let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
+    chunk(&mut out, b"IHDR", &header);
+    chunk(&mut out, b"IDAT", &zlib);
+    chunk(&mut out, b"IEND", &[]);
+    out
+}
+
+const PHOTO_ADDRESS: &str = "person@example.org";
+
+/// Brand icons and photos the way Google and Gravatar answer them.
+fn picture_route(path: &str) -> (&'static str, Vec<u8>) {
+    if let Some(query) = path.strip_prefix("/s2/favicons?") {
+        let domain = query
+            .strip_prefix("domain=")
+            .and_then(|q| q.strip_suffix("&sz=64"))
+            .unwrap_or_default();
+        return match domain {
+            "deel.com" | "osler.co.uk" => ("200 OK", png_sized(64, 64)),
+            "tiny.example" => ("200 OK", png_sized(16, 16)),
+            "flaky.example" => ("503 Service Unavailable", vec![]),
+            // Google's generic globe comes with a 404.
+            _ => ("404 Not Found", png_sized(16, 16)),
+        };
+    }
+    let photo = format!(
+        "/avatar/{}?s=64&d=404",
+        fm_core::view_cache::sha256_hex(PHOTO_ADDRESS)
+    );
+    if path == photo {
+        return ("200 OK", png_sized(64, 64));
+    }
+    ("404 Not Found", vec![])
+}
+
+/// An https origin on loopback that answers with `route`.
+async fn serve(pki: &Pki, route: fn(&str) -> (&'static str, Vec<u8>)) -> Origin {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let requests = Arc::new(Mutex::new(Vec::new()));
+    let acceptor = tokio_rustls::TlsAcceptor::from(pki.server.clone());
+    let seen = requests.clone();
+    tokio::spawn(async move {
+        loop {
+            let Ok((tcp, _)) = listener.accept().await else {
+                return;
+            };
+            let acceptor = acceptor.clone();
+            let seen = seen.clone();
+            tokio::spawn(async move {
+                let Ok(mut tls) = acceptor.accept(tcp).await else {
+                    return;
+                };
+                let request = head(&mut tls).await;
+                let path = request.split_whitespace().nth(1).unwrap_or("/").to_owned();
+                seen.lock().unwrap().push(path.clone());
+                let (status, body) = route(&path);
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = tls.write_all(response.as_bytes()).await;
+                let _ = tls.write_all(&body).await;
+                let _ = tls.shutdown().await;
+            });
+        }
+    });
+    Origin { port, requests }
+}
+
+struct Senders {
+    profile: tempfile::TempDir,
+    core: CoreBridge,
+    pki: Pki,
+    origin: Origin,
+    runtime: Runtime,
+}
+
+impl Senders {
+    async fn new() -> Self {
+        let profile = tempfile::tempdir().unwrap();
+        let path = profile.path().to_owned();
+        let (queue, mut receive) = tokio::sync::mpsc::channel(16);
+        std::thread::spawn(move || {
+            let mut store = fm_core::Store::open_live(&path).unwrap();
+            while let Some(crate::Work::Provider(call)) = receive.blocking_recv() {
+                call.run(&mut store);
+            }
+        });
+        let core = CoreBridge::new(queue, Arc::new(Semaphore::new(16)));
+        let pki = pki();
+        let origin = serve(&pki, picture_route).await;
+        let base = format!("https://localhost:{}", origin.port);
+        let runtime = Self::runtime_for(&core, profile.path(), &pki, &base);
+        Self {
+            profile,
+            core,
+            pki,
+            origin,
+            runtime,
+        }
+    }
+
+    fn runtime_for(core: &CoreBridge, profile: &std::path::Path, pki: &Pki, base: &str) -> Runtime {
+        Runtime::with_policy(
+            core.clone(),
+            profile,
+            None,
+            Policy {
+                allow_loopback: true,
+                roots: vec![pki.root.clone()],
+                brand_base: Some(base.to_owned()),
+                photo_base: Some(base.to_owned()),
+            },
+        )
+    }
+
+    /// A new engine on the same profile: nothing remembered in memory.
+    fn restarted(&self, base: Option<&str>) -> Runtime {
+        let base = base
+            .map(str::to_owned)
+            .unwrap_or_else(|| format!("https://localhost:{}", self.origin.port));
+        Self::runtime_for(&self.core, self.profile.path(), &self.pki, &base)
+    }
+
+    fn requests(&self) -> Vec<String> {
+        self.origin.requests.lock().unwrap().clone()
+    }
+
+    async fn save(&self, patch: Value) {
+        self.core
+            .call(move |store| {
+                let revision = store.handle("preferences_get", None, json!({}))?["revision"].clone();
+                store.handle(
+                    "preferences_save",
+                    None,
+                    json!({"preferences":patch,"expected_revision":revision,"request_id":format!("prefs-{revision}")}),
+                )
+            })
+            .await
+            .unwrap();
+    }
+}
+
+async fn avatar(runtime: &Runtime, address: &str, kind: &str) -> Result<Value> {
+    runtime
+        .handle(
+            CancellationToken::new(),
+            "sender_avatar",
+            None,
+            json!({"address":address,"kind":kind}),
+        )
+        .await
+}
+
+fn no_picture() -> Value {
+    json!({"state":"none","label":"No photo \u{b7} initials"})
+}
+
+#[test]
+fn root_domains_follow_the_country_second_level_heuristic() {
+    for (domain, root) in [
+        ("e.deel.com", "deel.com"),
+        ("deel.com", "deel.com"),
+        ("mail.osler.co.uk", "osler.co.uk"),
+        ("osler.co.uk", "osler.co.uk"),
+        ("a.b.example.com.au", "example.com.au"),
+        ("notifications.aircanada.ca", "aircanada.ca"),
+        ("news.bbc.co", "bbc.co"),
+        ("co.uk", "co.uk"),
+        ("mail.example.org.nz", "example.org.nz"),
+        ("x.shop.example.ltd", "example.ltd"),
+    ] {
+        assert_eq!(senders::root_domain(domain), root, "{domain}");
+    }
+    for personal in [
+        "gmail.com",
+        "googlemail.com",
+        "hotmail.co.uk",
+        "outlook.com",
+        "live.com",
+        "yahoo.com",
+        "yahoo.co.jp",
+        "gmx.de",
+        "yandex.ru",
+        "proton.me",
+        "pm.me",
+        "icloud.com",
+        "tuta.io",
+    ] {
+        assert!(senders::personal(personal), "{personal}");
+    }
+    for company in ["deel.com", "osler.co.uk", "mail.co.uk", "gmailify.com"] {
+        assert!(!senders::personal(company), "{company}");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sender_avatar_rejects_invalid_requests() {
+    let senders = Senders::new().await;
+    let long = format!("{}@deel.com", "a".repeat(312));
+    for address in [
+        "",
+        "   ",
+        "no-at-sign",
+        "a@localhost",
+        "@deel.com",
+        "a@@deel.com",
+        "a@b@deel.com",
+        "a b@deel.com",
+        "a@deel..com",
+        "a@.deel.com",
+        "a@deel.com.",
+        "a@1.2.3.4",
+        "a@[::1]",
+        "a@deel.com/x",
+        "a@deel.com?x",
+        "a\u{7}@deel.com",
+        long.as_str(),
+    ] {
+        let error = avatar(&senders.runtime, address, "automated")
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "invalid_request", "{address:?}");
+    }
+    for params in [
+        json!({"address":"a@deel.com"}),
+        json!({"address":"a@deel.com","kind":"robot"}),
+        json!({"address":"a@deel.com","kind":"people","account":"x"}),
+        json!({"address":7,"kind":"people"}),
+        json!(["a@deel.com"]),
+    ] {
+        let error = senders
+            .runtime
+            .handle(CancellationToken::new(), "sender_avatar", None, params)
+            .await
+            .unwrap_err();
+        assert_eq!(error.code, "invalid_request");
+    }
+    let normalized =
+        senders::parse(&json!({"address":" Billing@E.Deel.COM ","kind":"automated"})).unwrap();
+    assert_eq!(normalized.address, "billing@e.deel.com");
+    assert_eq!(normalized.domain, "e.deel.com");
+    assert!(senders.requests().is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn brand_icons_are_fetched_once_per_root_domain_and_cached() {
+    let senders = Senders::new().await;
+    let first = avatar(&senders.runtime, "billing@e.deel.com", "automated")
+        .await
+        .unwrap();
+    assert_eq!(first["state"], "ready", "{first}");
+    assert_eq!(first["source"], "brand");
+    assert_eq!(first["label"], "Brand icon \u{b7} deel.com");
+    assert_eq!(
+        (first["width"].as_u64(), first["height"].as_u64()),
+        (Some(64), Some(64))
+    );
+    let path = std::path::PathBuf::from(first["path"].as_str().unwrap());
+    assert!(path.is_absolute() && path.exists());
+    assert!(path.starts_with(std::fs::canonicalize(senders.profile.path()).unwrap()));
+    assert_eq!(senders.requests(), ["/s2/favicons?domain=deel.com&sz=64"]);
+    // Every address at the root shares the icon, across restarts.
+    let second = avatar(&senders.runtime, "news@mail.deel.com", "automated")
+        .await
+        .unwrap();
+    assert_eq!(second, first);
+    let restarted = avatar(&senders.restarted(None), "deel.com@deel.com", "automated")
+        .await
+        .unwrap();
+    assert_eq!(restarted, first);
+    assert_eq!(senders.requests().len(), 1);
+    let country = avatar(&senders.runtime, "alerts@mail.osler.co.uk", "automated")
+        .await
+        .unwrap();
+    assert_eq!(country["label"], "Brand icon \u{b7} osler.co.uk");
+    assert_eq!(
+        senders.requests()[1],
+        "/s2/favicons?domain=osler.co.uk&sz=64"
+    );
+    // Concurrent requests for one new picture fetch it once.
+    let (a, b) = tokio::join!(
+        avatar(&senders.runtime, "a@example.com.au", "automated"),
+        avatar(&senders.runtime, "b@www.example.com.au", "automated")
+    );
+    assert_eq!(a.unwrap(), no_picture());
+    assert_eq!(b.unwrap(), no_picture());
+    assert_eq!(senders.requests().len(), 3);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn missing_pictures_are_remembered_on_disk_until_the_cache_is_cleared() {
+    let senders = Senders::new().await;
+    assert_eq!(
+        avatar(&senders.runtime, "a@globe.example", "automated")
+            .await
+            .unwrap(),
+        no_picture()
+    );
+    assert_eq!(senders.requests().len(), 1);
+    assert_eq!(
+        avatar(&senders.runtime, "b@globe.example", "automated")
+            .await
+            .unwrap(),
+        no_picture()
+    );
+    assert_eq!(
+        avatar(&senders.restarted(None), "a@globe.example", "automated")
+            .await
+            .unwrap(),
+        no_picture()
+    );
+    assert_eq!(
+        senders.requests().len(),
+        1,
+        "the miss is remembered on disk"
+    );
+    // A 16px icon is Google's placeholder, not a brand.
+    assert_eq!(
+        avatar(&senders.runtime, "a@tiny.example", "automated")
+            .await
+            .unwrap(),
+        no_picture()
+    );
+    assert_eq!(
+        avatar(&senders.restarted(None), "a@tiny.example", "automated")
+            .await
+            .unwrap(),
+        no_picture()
+    );
+    assert_eq!(senders.requests().len(), 2);
+    // A server failure is not remembered.
+    let failed = json!({"state":"none","label":"No photo \u{b7} initials","transient":true});
+    assert_eq!(
+        avatar(&senders.runtime, "a@flaky.example", "automated")
+            .await
+            .unwrap(),
+        failed
+    );
+    assert_eq!(
+        avatar(&senders.runtime, "a@flaky.example", "automated")
+            .await
+            .unwrap(),
+        failed
+    );
+    assert_eq!(senders.requests().len(), 4);
+    avatar(&senders.runtime, "a@deel.com", "automated")
+        .await
+        .unwrap();
+    assert_eq!(senders.requests().len(), 5);
+    senders
+        .runtime
+        .handle(
+            CancellationToken::new(),
+            "remote_image_cache",
+            None,
+            json!({"op":"clear"}),
+        )
+        .await
+        .unwrap();
+    avatar(&senders.runtime, "a@globe.example", "automated")
+        .await
+        .unwrap();
+    let ready = avatar(&senders.runtime, "a@deel.com", "automated")
+        .await
+        .unwrap();
+    assert_eq!(ready["state"], "ready");
+    assert_eq!(
+        senders.requests().len(),
+        7,
+        "clearing forgets pictures and misses"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn people_get_photos_and_personal_domains_never_get_brand_icons() {
+    let senders = Senders::new().await;
+    let photo = avatar(&senders.runtime, " Person@Example.org", "people")
+        .await
+        .unwrap();
+    assert_eq!(photo["state"], "ready", "{photo}");
+    assert_eq!(photo["source"], "photo");
+    assert_eq!(photo["label"], "Profile photo \u{b7} person@example.org");
+    let hash = fm_core::view_cache::sha256_hex(PHOTO_ADDRESS);
+    assert_eq!(senders.requests(), [format!("/avatar/{hash}?s=64&d=404")]);
+    assert_eq!(
+        avatar(&senders.runtime, PHOTO_ADDRESS, "unknown")
+            .await
+            .unwrap(),
+        photo
+    );
+    assert_eq!(senders.requests().len(), 1);
+    // People never get a brand icon, even at a company domain.
+    assert_eq!(
+        avatar(&senders.runtime, "someone@deel.com", "people")
+            .await
+            .unwrap(),
+        no_picture()
+    );
+    assert!(senders.requests()[1].starts_with("/avatar/"));
+    // Personal providers: a photo at most, never their brand.
+    assert_eq!(
+        avatar(&senders.runtime, "friend@gmail.com", "automated")
+            .await
+            .unwrap(),
+        no_picture()
+    );
+    assert_eq!(senders.requests().len(), 2, "no request at all");
+    for (address, kind) in [
+        ("friend@gmail.com", "unknown"),
+        ("pal@mail.yahoo.co.uk", "unknown"),
+        ("mate@hotmail.co.uk", "people"),
+    ] {
+        assert_eq!(
+            avatar(&senders.runtime, address, kind).await.unwrap(),
+            no_picture()
+        );
+    }
+    let requests = senders.requests();
+    assert_eq!(requests.len(), 5);
+    assert!(
+        requests.iter().all(|r| r.starts_with("/avatar/")),
+        "{requests:?}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn unknown_senders_fall_back_from_a_missing_photo_to_the_brand() {
+    let senders = Senders::new().await;
+    let found = avatar(&senders.runtime, "nobody@e.deel.com", "unknown")
+        .await
+        .unwrap();
+    assert_eq!(found["state"], "ready");
+    assert_eq!(found["source"], "brand");
+    let requests = senders.requests();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[0].starts_with("/avatar/"));
+    assert_eq!(requests[1], "/s2/favicons?domain=deel.com&sz=64");
+    // Both answers are remembered.
+    assert_eq!(
+        avatar(&senders.restarted(None), "nobody@e.deel.com", "unknown")
+            .await
+            .unwrap(),
+        found
+    );
+    assert_eq!(senders.requests().len(), 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn blocked_disabled_and_cancelled_requests_fetch_nothing() {
+    let senders = Senders::new().await;
+    senders
+        .save(
+            json!({"blocked_hosts":[{"pattern":"blocked.test","source":"settings","added_at":1}]}),
+        )
+        .await;
+    let blocked = senders.restarted(Some(&format!(
+        "https://blocked.test:{}",
+        senders.origin.port
+    )));
+    assert_eq!(
+        avatar(&blocked, "a@deel.com", "automated").await.unwrap(),
+        json!({"state":"blocked","by":"blocked.test"})
+    );
+    assert_eq!(
+        avatar(&blocked, "a@deel.com", "unknown").await.unwrap(),
+        json!({"state":"blocked","by":"blocked.test"})
+    );
+    assert!(senders.requests().is_empty());
+    let stopped = CancellationToken::new();
+    stopped.cancel();
+    let error = senders
+        .runtime
+        .handle(
+            stopped,
+            "sender_avatar",
+            None,
+            json!({"address":"a@deel.com","kind":"automated"}),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, "cancelled");
+    assert!(senders.requests().is_empty());
+    let ready = avatar(&senders.runtime, "a@deel.com", "automated")
+        .await
+        .unwrap();
+    assert_eq!(ready["state"], "ready");
+    assert_eq!(senders.requests().len(), 1);
+    senders.save(json!({"sender_pictures":false})).await;
+    let off = json!({"state":"none","label":"No photo \u{b7} initials","off":true});
+    for (address, kind) in [
+        ("a@deel.com", "automated"),
+        ("new@other.example", "automated"),
+        (PHOTO_ADDRESS, "people"),
+        ("x@gmail.com", "unknown"),
+    ] {
+        assert_eq!(avatar(&senders.runtime, address, kind).await.unwrap(), off);
+    }
+    assert_eq!(senders.requests().len(), 1);
 }

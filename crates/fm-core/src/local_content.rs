@@ -555,8 +555,12 @@ fn prepare_after_import_metadata(
                     if let Ok((mut routing, _)) =
                         composition::routing_from_source(&bytes, &source.from, "reply", "")
                     {
-                        routing["to_recipients"] =
-                            json!([{"email":if sender==&source.from {recipient}else{sender}}]);
+                        // Reply-To (else From) as the source names it; the
+                        // stored sender only when it names nobody.
+                        if routing["to_recipients"].as_array().is_none_or(|rows| rows.is_empty()) {
+                            routing["to_recipients"] =
+                                json!([{"email":if sender==&source.from {recipient}else{sender}}]);
+                        }
                         routing["subject"] = json!(format!("Re: {}", source.title));
                         for (key, value) in routing.as_object().ok_or_else(invalid_proof)? {
                             draft[key] = value.clone();
