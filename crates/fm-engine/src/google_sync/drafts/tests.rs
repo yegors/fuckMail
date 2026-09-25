@@ -869,7 +869,7 @@ async fn lost_ack_survives_restart_without_automatic_duplicate_creation() {
 }
 
 #[tokio::test]
-async fn changed_remote_message_or_missing_twin_blocks_automatic_overwrite() {
+async fn changed_remote_message_or_missing_twin_is_resolved_with_the_local_text() {
     for missing in [false, true] {
         let dir = tempfile::tempdir().unwrap();
         let http = Arc::new(Http::default());
@@ -895,7 +895,22 @@ async fn changed_remote_message_or_missing_twin_blocks_automatic_overwrite() {
             h.draft().await["body"],
             "Newer local text remains authoritative"
         );
-        assert!(matches!(step(&h.ctx).await.unwrap(), Step::Idle(_)));
+        // D121: the local edit wins. A changed Gmail draft is replaced; a
+        // vanished one is created again.
+        let mut idle = false;
+        for _ in 0..8 {
+            if matches!(step(&h.ctx).await.unwrap(), Step::Idle(_)) {
+                idle = true;
+                break;
+            }
+        }
+        assert!(idle);
+        assert_eq!(http.0.lock().unwrap().writes, 2);
+        assert_eq!(h.status().await["state"], "synced");
+        assert_eq!(
+            h.draft().await["body"],
+            "Newer local text remains authoritative"
+        );
         h.close();
     }
 }

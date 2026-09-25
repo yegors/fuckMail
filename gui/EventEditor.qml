@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Effects
+import QtQuick.Shapes
 
 Popup {
     id: editor
@@ -73,6 +74,8 @@ Popup {
         return [rule]
     }
     property var initialTextFields: ({})
+    // Notes start 176px tall; the corner handle makes them taller.
+    property real notesHeight: 176
     property string conferenceChange: "keep"
     property var initialReminder: undefined
     property string initialAvailability: "busy"
@@ -195,6 +198,7 @@ Popup {
         initialAvailability = editEvent.availability || "busy"
         availabilityField.currentIndex = initialAvailability === "free" ? 1 : 0
         notesField.text = editEvent.description || ""
+        notesHeight = 176
         guestAddresses = live ? (editEvent.guest_addresses || []).slice() : (editEvent.attendees || []).map(function(a) { return a.email })
         initialGuestAddresses = guestAddresses.slice(); attendeeField.text = ""
         targetCalendar.currentIndex = Math.max(0, writableSources.findIndex(function(s) { return s.account === editor.editEvent.account && s.calendar_id === editor.editEvent.calendar_id }))
@@ -506,10 +510,27 @@ Popup {
                     }
                 }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
-                TextArea {
-                    id: notesField; objectName: "eventDescription"; Layout.fillWidth: true; Layout.preferredHeight: Math.max(88, implicitHeight)
-                    color: Theme.text; placeholderTextColor: Theme.subtle; placeholderText: "Notes, agenda, dial-in — anything guests should see"; wrapMode: TextEdit.Wrap; selectByMouse: true
-                    textFormat: TextEdit.PlainText; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); leftPadding: 20; rightPadding: 20; topPadding: 12; bottomPadding: 12; background: null
+                RowLayout {
+                    Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.topMargin: 12; Layout.bottomMargin: 12; spacing: 12
+                    Text { text: "Notes"; color: Theme.inkAlpha(0.45); font.pointSize: Theme.fontPoints(12.5); Layout.preferredWidth: 64; Layout.alignment: Qt.AlignTop; Layout.topMargin: 2 }
+                    TextArea {
+                        id: notesField; objectName: "eventDescription"; Layout.fillWidth: true; Layout.alignment: Qt.AlignTop; Layout.preferredHeight: Math.max(editor.notesHeight, implicitHeight)
+                        color: Theme.text; placeholderTextColor: Theme.subtle; placeholderText: "Agenda, dial-in — anything guests should see"; wrapMode: TextEdit.Wrap; selectByMouse: true
+                        textFormat: TextEdit.PlainText; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5); leftPadding: 0; rightPadding: 0; topPadding: 1; bottomPadding: 0; background: null
+                        Accessible.name: "Event notes"
+                        Shape {
+                            anchors.right: parent.right; anchors.bottom: parent.bottom; width: 10; height: 10
+                            ShapePath { strokeColor: Theme.inkAlpha(.3); strokeWidth: 1; fillColor: "transparent"; PathSvg { path: "M 9.5 3 L 3 9.5 M 9.5 6.5 L 6.5 9.5" } }
+                        }
+                        MouseArea {
+                            objectName: "eventDescriptionResize"
+                            anchors.right: parent.right; anchors.bottom: parent.bottom; width: 16; height: 16; cursorShape: Qt.SizeVerCursor; preventStealing: true
+                            property real startY: 0
+                            property real startHeight: 0
+                            onPressed: function(mouse) { startY = mapToItem(null, mouse.x, mouse.y).y; startHeight = notesField.height }
+                            onPositionChanged: function(mouse) { if (pressed) editor.notesHeight = Math.max(176, startHeight + mapToItem(null, mouse.x, mouse.y).y - startY) }
+                        }
+                    }
                 }
                 Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
                 RowLayout {

@@ -1,5 +1,6 @@
-//! People offered after a search's `from:`: senders of this account's recent
-//! mail, or the people it wrote to in Sent and Drafts. Read-only metadata.
+//! People offered after a search's `from:` or `to:`: senders of this
+//! account's recent mail, or the people it wrote to (`role: recipient`, the
+//! default in Sent and Drafts). Read-only metadata.
 use crate::{err, fields, Result, Store};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -17,7 +18,7 @@ struct Person {
 
 impl Store {
     pub(crate) fn search_senders(&self, account: &str, p: &Value) -> Result<Value> {
-        fields(p, &["query", "folder", "limit"])?;
+        fields(p, &["query", "folder", "limit", "role"])?;
         let query = match p.get("query") {
             None => String::new(),
             Some(value) => value
@@ -70,7 +71,14 @@ impl Store {
                 entry.name = name.trim().to_owned();
             }
         };
-        let recipients = folder == "sent" || folder == "drafts";
+        let recipients = match p.get("role") {
+            None => folder == "sent" || folder == "drafts",
+            Some(value) => match value.as_str() {
+                Some("sender") => false,
+                Some("recipient") => true,
+                _ => return Err(err("invalid_request", "role must be sender or recipient")),
+            },
+        };
         if recipients {
             let mut statement = self.db.prepare_cached(
                 "SELECT substr(recipient,1,65537) FROM messages WHERE account=?1 AND sent=1 AND trashed=0 ORDER BY rowid DESC LIMIT ?2",

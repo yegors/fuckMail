@@ -6,7 +6,7 @@ import QtQuick.Effects
 // Smart search dropdown (Search 7). The search box holds the whole query and
 // Core parses it. Empty, this offers recent searches and the advertised
 // operators. While typing it shows how Core read the text, the result count,
-// completion of a partial operator and people after a trailing from:.
+// completion of a partial operator and people after a trailing from: or to:.
 // label:, has: and is: still parse but are not advertised.
 Popup {
     id: popup
@@ -28,21 +28,26 @@ Popup {
     readonly property var operators: [
         {op: "subject:", description: "Only in subjects", example: "subject:board deck"},
         {op: "body:", description: "Only in message text", example: "body:invoice attached"},
-        {op: "from:", description: outgoingScope ? "Recipient name or address" : "Sender name or address", example: "from:maya@example.com"}
+        {op: "from:", description: "Only the sender", example: "from:maya@example.com"},
+        {op: "to:", description: "Only recipients (To or Cc)", example: "to:maya@example.com"}
     ]
     readonly property string lastToken: { const match = query.match(/(\S*)$/); return match ? match[1].toLowerCase() : "" }
     readonly property var completions: lastToken.length >= 2 && lastToken.indexOf(":") < 0 ? operators.filter(o => o.op.startsWith(lastToken)) : []
-    // The value after a trailing from:, or null when the text does not end in one.
-    readonly property var fromPart: { const match = query.match(/(?:^|\s)from:([^:]*)$/i); return match ? match[1].trim() : null }
-    readonly property var people: fromPart === null || backend.searchPeopleQuery !== fromPart ? []
-        : backend.searchPeople.filter(p => (p.email || "").toLowerCase() !== fromPart.toLowerCase()).slice(0, 5)
+    // A trailing from: or to: and its value so far, or null when the text does not end in one.
+    readonly property var personPart: { const match = query.match(/(?:^|\s)(from|to):([^:]*)$/i); return match ? {role: match[1].toLowerCase() === "to" ? "recipient" : "sender", op: match[1].toLowerCase(), value: match[2].trim()} : null }
+    readonly property string personKey: personPart ? personPart.role + ":" + personPart.value : ""
+    readonly property var people: !personPart || backend.searchPeopleQuery !== personKey ? []
+        : backend.searchPeople.filter(p => (p.email || "").toLowerCase() !== personPart.value.toLowerCase()).slice(0, 5)
     readonly property var chips: {
         const t = shownReading, out = []
         if (!t) return out
+        // Bare addresses lead, as textWithout() writes them back.
+        ;(t.people || []).forEach((value, index) => out.push({key: draftScope ? "To" : "From or To", value: value, part: "people", index: index}))
         if (t.words) out.push({key: "Subject or body", value: t.words, part: "words"})
         ;(t.subject || []).forEach((value, index) => out.push({key: "Subject", value: value, part: "subject", index: index}))
         ;(t.body || []).forEach((value, index) => out.push({key: "Body", value: value, part: "body", index: index}))
-        ;(t.from || []).forEach((value, index) => out.push({key: outgoingScope ? "To" : "From", value: value, part: "from", index: index}))
+        ;(t.from || []).forEach((value, index) => out.push({key: draftScope ? "To" : "From", value: value, part: "from", index: index}))
+        ;(t.to || []).forEach((value, index) => out.push({key: "To", value: value, part: "to", index: index}))
         if (t.label) out.push({key: "Label", value: t.label, part: "label"})
         if (t.has_attachment) out.push({key: "Has", value: "attachment", part: "has_attachment"})
         if (t.is) out.push({key: "Status", value: ({review: "To review", delayed: "Delayed", done: "Done"})[t.is] || t.is, part: "is"})
@@ -59,14 +64,17 @@ Popup {
     function textWithout(chip) {
         const t = JSON.parse(JSON.stringify(reading || {}))
         if (chip.part === "words") t.words = ""
-        else if (chip.part === "subject" || chip.part === "body" || chip.part === "from") t[chip.part].splice(chip.index, 1)
+        else if (["subject", "body", "from", "to", "people"].indexOf(chip.part) >= 0) t[chip.part].splice(chip.index, 1)
         else if (chip.part === "label") t.label = null
         else if (chip.part === "has_attachment") t.has_attachment = false
         else if (chip.part === "is") t.is = null
-        const parts = t.words ? [t.words] : []
+        // Bare addresses first: an operator's value runs to the next operator.
+        const parts = (t.people || []).slice()
+        if (t.words) parts.push(t.words)
         for (const value of t.subject || []) parts.push("subject:" + value)
         for (const value of t.body || []) parts.push("body:" + value)
         for (const value of t.from || []) parts.push("from:" + value)
+        for (const value of t.to || []) parts.push("to:" + value)
         if (t.label) parts.push("label:" + (/\s/.test(t.label) ? "\"" + t.label + "\"" : t.label))
         if (t.has_attachment) parts.push("has:attachment")
         if (t.is) parts.push("is:" + t.is)
@@ -94,9 +102,9 @@ Popup {
     // The parent is the search box: pressing it keeps the dropdown open.
     closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside | Popup.CloseOnPressOutsideParent
     Connections { target: backend; function onAccountChanged() { popup.close() } }
-    Timer { id: peopleTimer; interval: 120; onTriggered: if (popup.opened && popup.fromPart !== null) backend.requestSearchPeople(popup.fromPart) }
-    onFromPartChanged: if (fromPart !== null) peopleTimer.restart()
-    onOpened: if (fromPart !== null) peopleTimer.restart()
+    Timer { id: peopleTimer; interval: 120; onTriggered: if (popup.opened && popup.personPart) backend.requestSearchPeople(popup.personPart.value, popup.personPart.role) }
+    onPersonKeyChanged: if (personPart) peopleTimer.restart()
+    onOpened: if (personPart) peopleTimer.restart()
 
     component SectionLabel: Text {
         Layout.fillWidth: true; leftPadding: 14; rightPadding: 14; topPadding: 10; bottomPadding: 6
@@ -226,7 +234,7 @@ Popup {
                 visible: popup.typing && popup.people.length > 0
                 Layout.fillWidth: true; spacing: 0
                 Rule {}
-                SectionLabel { text: popup.outgoingScope ? "Recipients" : "Senders" }
+                SectionLabel { text: popup.personPart && popup.personPart.role === "recipient" ? "Recipients" : "Senders" }
                 Repeater {
                     model: popup.people
                     SearchRow {
@@ -236,7 +244,7 @@ Popup {
                         readonly property string name: modelData.name || ""
                         objectName: "mailSearchPerson_" + index
                         accessibleName: (name || modelData.email) + ", " + modelData.email
-                        onClicked: popup.edit(popup.query.replace(/from:([^:]*)$/i, "from:" + modelData.email) + " ")
+                        onClicked: popup.edit(popup.query.replace(/(from|to):([^:]*)$/i, popup.personPart.op + ":" + modelData.email) + " ")
                         Rectangle {
                             implicitWidth: 20; implicitHeight: 20; radius: 10; color: Theme.bg4
                             Text {
@@ -289,6 +297,12 @@ Popup {
                         Text { text: operatorRow.modelData.description; color: Theme.inkAlpha(.75); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); elide: Text.ElideRight; Layout.fillWidth: true }
                         Text { text: operatorRow.modelData.example; color: Theme.inkAlpha(.35); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideLeft; Layout.maximumWidth: popup.availableWidth * .42; textFormat: Text.PlainText }
                     }
+                }
+                Text {
+                    objectName: "mailSearchAddressHint"
+                    Layout.fillWidth: true; Layout.leftMargin: 14; Layout.rightMargin: 14; Layout.topMargin: 4; Layout.bottomMargin: 6
+                    text: popup.draftScope ? "An address on its own finds drafts to it." : "An address on its own finds mail from or to it."
+                    color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); wrapMode: Text.Wrap; textFormat: Text.PlainText
                 }
             }
             // Also search the account on the server; its results join the list.

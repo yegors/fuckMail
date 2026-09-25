@@ -217,9 +217,12 @@ void GuiCalendarSelfTest::step() {
         .arg(m_stage).arg(m_backend.calendarDate(),m_backend.timelineDate(),m_backend.error())); return; }
     if (qEnvironmentVariableIsSet("FM_GUI_TEST_TRACE")) qInfo() << "Native calendar form stage" << m_stage;
     switch (m_stage) {
-    case 0:
-        if (!m_backend.calendarReady() || !click("newEventButton")) return;
+    case 0: {
+        // The header New button is gone; Calendar's own entry point (also its n key) opens a new event.
+        const auto calendar = item("calendarWorkspace");
+        if (!m_backend.calendarReady() || !calendar || !QMetaObject::invokeMethod(calendar, "createEvent")) return;
         ++m_stage; break;
+    }
     case 1: {
         const auto editor = popup("eventEditor"); const auto title = item("eventTitle");
         if (!editor || !title) return;
@@ -321,8 +324,43 @@ void GuiCalendarSelfTest::step() {
         if (!m_writeOk) { finish("Native RSVP failed: " + m_writeError); return; }
         if (!m_backend.calendarReady() || occurrence()["self_response"].toString() != "accepted") return;
         if (!capture("event-details-rsvp.png")) return;
-        if (auto details = popup("eventDetails")) QMetaObject::invokeMethod(details, "close");
-        m_backend.setCalendarView("week"); ++m_stage; break;
+        if (!click("eventViewButton")) return;
+        m_stage = 80; break;
+    case 80: {
+        // View replaces the card with the reminder screen for the same event:
+        // no Snooze, and Close instead of Dismiss.
+        const auto view = popup("eventFullView"); const auto close = item("reminderDismiss");
+        if (!view || !close) return;
+        const auto content = qobject_cast<QQuickItem *>(view->property("contentItem").value<QObject *>());
+        if (popup("eventDetails") || item("reminderSnooze") || close->property("text").toString() != "Close"
+            || !content || !visibleTitle(content, "Edited native walkthrough event")) {
+            finish("View did not replace the card with a Close-only full view of the same event."); return;
+        }
+        if (!capture("event-view.png") || !click("reminderDismiss")) return;
+        m_stage = 81; break;
+    }
+    case 81:
+        if (popup("eventFullView")) return;
+        m_backend.setCalendarView("week"); m_stage = 82; break;
+    case 82: {
+        // Mail's Next row: from any view, Day view on the event's day with its card open.
+        const auto calendar = item("calendarWorkspace"); const auto event = occurrence();
+        if (!m_backend.calendarReady() || m_backend.calendarView() != "week" || !calendar || event.isEmpty()) return;
+        if (!QMetaObject::invokeMethod(calendar, "showEventInDay", Q_ARG(QVariant, QVariant(event)))) { finish("Calendar has no showEventInDay entry point."); return; }
+        m_stage = 83; break;
+    }
+    case 83: {
+        const auto details = popup("eventDetails");
+        if (!details) return;
+        const auto shown = variantValue(details->property("eventData")).toMap();
+        if (m_backend.calendarView() != "day" || m_backend.calendarDate() != "2026-09-11" || details->property("timelineSource").toBool()
+            || shown["event_id"].toString() != m_eventId || !item("calendarEvent-" + m_eventId)) {
+            finish("showEventInDay did not open the event's card on its Day view."); return;
+        }
+        if (!capture("event-day-details.png")) return;
+        QMetaObject::invokeMethod(details, "close");
+        m_backend.setCalendarView("week"); m_stage = 9; break;
+    }
     case 9: {
         static const QStringList views{"week", "month", "agenda", "day"};
         if (!m_backend.calendarReady() || m_backend.calendarView() != views[m_view]) return;

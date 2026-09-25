@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 // "Labels · {Account}", opened from the account's Labels row in Accounts.
-// The table is the same editor as before: name, description, Auto-read,
+// The table is the same editor as before: name, description, Read, Spam,
 // remove, add, and Sync with Google. Esc or a click outside closes it.
 FmDialog {
     id: dialog
@@ -35,7 +35,7 @@ FmDialog {
             }
             Text {
                 Layout.fillWidth: true; Layout.maximumWidth: 600; Layout.topMargin: 16
-                text: "Each account keeps its own list — the only labels its mail can carry. The description is handed to the local model so it knows what belongs where; removing a label takes it off every conversation in " + (dialog.row.name || "this account") + "."
+                text: "Labels for " + (dialog.row.name || "this account") + " only. Descriptions help the local model sort mail."
                 wrapMode: Text.Wrap; color: Theme.muted; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13.5) }
                 lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(13.5) * 1.5)
             }

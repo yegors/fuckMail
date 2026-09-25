@@ -1249,3 +1249,51 @@ Choices beyond the notes:
 - Per the founder, databases start fresh: schema37 is now the baseline with no migrations, and older profiles are refused with the existing "start fresh" message.
 
 Core67, Gmail30, Mail UI87, Calendar33, CLI51; schema37 (baseline reset); fixtures0/3, protocol1 (additive) and readiness0/9 unchanged.
+
+
+## D121 — to: search, and stable account progress (2026-09-25T06:30:00Z)
+
+The founder asked that search gain `to:email` alongside `from:email`, with a bare address searching both and `from:`/`to:` each limited to one side, and that the search help say so. As built (Search 9, CLI52, Mail UI88):
+
+- `from:` is always the sender, in Sent too; this replaces Revision 7's "from: is the recipient in Sent". `to:` is a To or Cc recipient; a bare address is either. The four-person limit covers all three.
+- Recipients come from the link index's existing `message_people` rows, plus the message's stored first To address for mail not yet indexed. No schema change.
+- In Drafts, which are all from the user, `from:`, `to:` and bare addresses name recipients.
+- The dropdown's Narrow it down lists `to:` and a line saying an address alone finds mail from or to it. `to:` offers recipients to pick.
+
+The founder also reported that the Calendar bar in Settings → Accounts animated while mail synced, although it read Complete. A calendar delta pass during mail sync made the bar drop and re-grow. A finished first pass now stays complete, and bars animate only live progress changes, never layout.
+
+Core, Search 9, CLI52 and Mail UI88; schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+
+## D122 — drafts are Gmail drafts (2026-09-25T07:48:50Z)
+
+The founder reported that Drafts showed debug material ("Saved sources", "Actions", "Original MIME, HTML and files are retained. This preview cannot be edited or sent.", "Saved Google draft sources … Export source") and asked that drafts sync perfectly with Gmail, because the new design makes drafts first-class (D123). As built:
+
+- **Every Gmail draft is an ordinary editable draft.** The inventory scan mirrors each readable Gmail draft as a local draft tied to it (`adopted` sync state); there are no read-only `google_snapshot` drafts, source panels, copy/adopt/delete actions or "Refresh" in the GUI. Saved source history stays in Core and the CLI.
+- **Gmail's edits.** When the Gmail draft changes and the local copy has no unsent edit, the local copy takes Gmail's version. A read started before our own upload cannot overwrite it (the scan fences each read by the local draft and its sync revision). An unchanged listing reads nothing; the full scan repeats every 60 s while sync runs.
+- **Deleted or sent elsewhere.** A complete listing without the draft, or Gmail answering not found, removes an unchanged local copy (nothing is deleted in Gmail); a copy with unsent edits stays and uploads as a new Gmail draft.
+- **Discard.** Discarding deletes the Gmail draft once Undo's window has passed (10 s). Undo after that recreates it.
+- **Conflicts resolve on their own**, with the local edit winning: a changed Gmail draft is replaced, a vanished one recreated. An unconfirmed create is left alone (retrying could make a second Gmail draft), and our own in-flight create is never mirrored as a second draft.
+- **What the composer says.** Only real problems, in plain words: "Couldn't save this draft to Gmail. It's kept here.", "Couldn't save this draft to Gmail: it's larger than Gmail's 35 MB limit." and "Gmail hasn't confirmed this draft yet. It's kept here." Normal syncing is silent; Check Google and Replace Google copy are gone.
+- **Empty new messages** (nothing beyond the signature) are dropped when you leave them, without Undo.
+- The GUI tests and self-tests for the removed source screens are retired (`gui-google-draft-snapshot-controls`, `gui-google-draft-authoring-controls`, the `--google-drafts-self-test` and `--google-draft-actions-self-test` flags). The Core/engine commands behind them remain for the CLI.
+
+Core68, Gmail31, Mail UI89; schema37 (the draft-source foreign key to drafts is dropped in the baseline; no migration), fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+
+## D123 — eleventh export: first-class drafts, header, label toggles, inline compose, event view (2026-09-25T07:48:50Z)
+
+The founder supplied `Flight Progress v2 (offline) (4).html` with the designer's 31 notes, and reported three bugs: Spam rows flashed and could not be deleted after a fresh connect, a day-strip event card opened at the top of the window, and the strip had a "more" menu that is not in the design. As built:
+
+- **Bugs.** Spam is no longer reloaded (and emptied) by sync's store refreshes. Deleting from Spam failed locally before reaching Gmail: the engine refused the batch delete outside its mutation allowlist; the granted scope was already full access. The strip card now reads its position when it opens. The strip's more menu is gone; "Back to today" stays.
+- **Labels (Settings → Accounts).** "Auto-read" is "Read"; a new "Spam" column sends mail to Gmail Spam whenever the local model applies that label (per account and label; Spam wins over Read; each message is moved at most once, so "Not spam" sticks). Intro: "Labels for {Account} only. Descriptions help the local model sort mail." CLI: `labels spam` and `labels auto-read`.
+- **Mail header.** Small raised counts after Inbox (to review) and Drafts (gold, unsent drafts), hidden at zero. Spam and Trash move behind a ▾ after Drafts that lists each with its icon and count; while in one, its name shows beside ▾. A solid "New" button follows the stats; the top-right New is removed in Mail and Calendar (events: click an empty slot or press n). Narrow panes wrap the stats and New below the tabs.
+- **Label filters.** Plain-text toggles (`#` name count, gold rule when on); several can be on and mail with any of them shows; none on shows all; a `label:` search decides instead. "All" is gone; Sent and Drafts day filters are toggles; Spam and Trash have none. Core takes `category` as comma-separated label ids.
+- **Composing.** A new message opens inline in the reading pane in place of the thread, at least max(420 px, half the window), starting at From; the body grows. The footer holds Send, Attach, one status line and a Discard button; the title row, minimise and top bin are gone. Leaving (another thread, folder, account, Settings) keeps it in Drafts without asking; Esc on a new message with content asks "Keep this message?" (Discard, Keep editing, Save to Drafts); drafts reopened from Drafts never ask. Under a new message, "Recent with {first name}" lists up to four conversations with the first recipient and links "All mail with {name} (N)", which searches that address.
+- **Draft chips.** One row at the bottom right, above the day strip: the account's unsent drafts (up to four, then "+N" to Drafts), each a small rounded chip with a gold reply or pencil icon and its subject, first words or "Untitled"; the tooltip names the account, "Reply to …" or "To …" and the start of the text. A reply draft opens in its thread; a new message opens in Drafts. The row hides while composing and the reader gains bottom space while it shows.
+- **Inbox clear.** A small gold check, "Inbox clear", "Nothing to review or delayed in {account}." and, when an event is still ahead today, "NEXT · time · title ›", which opens Calendar's Day view on today with that event's card beside its block.
+- **Calendar.** The event card shows up to three lines of the notes (all on hover) and Edit · View · Delete as outline buttons. View opens the full-screen event view: a countdown to the real start (m:ss → h:mm:ss → Nd h:mm:ss → Ny Nd h:mm:ss at 96/80/64 px), "Upcoming" or "In progress · Started h:mm ago" without alarm styling, no Snooze, Close, sounds only when the one-minute or start point passes while open. Ended events (View and real reminders) read "This event is over" and "Ended" with only Close. "Open event" is gone; Join shows only with a call link. The view is 720 px wide with larger type and a Notes row that scrolls past max(360 px, 36% of the height). The editor's Notes is a labelled row at least 176 px tall. Week and Month shade Saturday and Sunday; Month day numbers are 20 px; no gold on the month axes; the working-hours arrows are gone.
+
+Choices beyond the notes: the Drafts count and chips come from Core's draft list (written drafts only); the ▾ menu counts come from Gmail when it opens; the discard confirmation says the draft leaves Gmail too; the event view, like a reminder, turns to "STARTING NOW" in its final minute.
+
+Core68, Gmail31, Mail UI89, Calendar34, CLI53, Local assistance26; schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.

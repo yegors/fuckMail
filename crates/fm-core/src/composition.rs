@@ -770,13 +770,14 @@ impl Store {
                 ))
             }
         };
-        // The mail search grammar, where from: names a draft's recipients.
-        // Drafts have no labels, attachment filter or review state.
+        // The mail search grammar. Drafts are all from the user, so from:, to:
+        // and bare addresses all name a draft's recipients. Drafts have no
+        // labels, attachment filter or review state.
         let text = crate::search_query::parse(query)?;
         if text.label.is_some() || text.has_attachment || text.is.is_some() {
             return Err(err(
                 "invalid_request",
-                "Draft search supports words, subject:, body: and from:",
+                "Draft search supports words, subject:, body:, from: and to:",
             ));
         }
         let lowered = |values: &[String]| {
@@ -794,6 +795,8 @@ impl Store {
         let people_values = text
             .from
             .iter()
+            .chain(&text.to)
+            .chain(&text.people)
             .map(|v| v.to_lowercase())
             .collect::<Vec<_>>();
         let untokenized = text

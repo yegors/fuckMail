@@ -24,6 +24,7 @@ impl Store {
         let settings: Settings = serde_json::from_value(state["settings"].clone())?;
         let descriptions = settings.accounts.get(account).map(|a| &a.descriptions);
         let auto_read = settings.accounts.get(account).map(|a| &a.auto_read);
+        let auto_spam = settings.accounts.get(account).map(|a| &a.auto_spam);
         let mut catalog = self.categories(account)?;
         for row in catalog["categories"].as_array_mut().unwrap() {
             row["description"] = descriptions
@@ -38,6 +39,11 @@ impl Store {
                 .and_then(|choices| choices.get(row["id"].as_str().unwrap()))
                 .copied()
                 .unwrap_or(default_auto_read)
+                .into();
+            row["auto_spam"] = auto_spam
+                .and_then(|choices| choices.get(row["id"].as_str().unwrap()))
+                .copied()
+                .unwrap_or(false)
                 .into();
             row["creation_state"] = self
                 .db
@@ -58,6 +64,7 @@ impl Store {
                 "label_create" => &["request_id", "id", "name"],
                 "label_describe" => &["request_id", "id", "expected_description", "description"],
                 "label_auto_read" => &["request_id", "id", "expected_auto_read", "auto_read"],
+                "label_auto_spam" => &["request_id", "id", "expected_auto_spam", "auto_spam"],
                 "label_remove" => &[
                     "request_id",
                     "id",
@@ -103,7 +110,7 @@ impl Store {
         let state = self.local_model_settings()?;
         let mut settings: Settings = serde_json::from_value(state["settings"].clone())?;
         let mut settings_changed = false;
-        // Label descriptions feed model classification; Auto-read does not.
+        // Label descriptions feed model classification; Auto-read and Spam do not.
         let mut descriptions_changed = false;
         match method {
             "label_create" => {
@@ -170,29 +177,46 @@ impl Store {
                 settings_changed = true;
                 descriptions_changed = description != expected;
             }
-            "label_auto_read" => {
+            "label_auto_read" | "label_auto_spam" => {
                 let Some(name) = name.as_deref() else {
                     return Err(err("not_found", "Label no longer exists"));
                 };
-                let enabled = p["auto_read"]
+                let spam = method == "label_auto_spam";
+                let (field, title) = if spam {
+                    ("auto_spam", "Spam")
+                } else {
+                    ("auto_read", "Auto-read")
+                };
+                let enabled = p[field]
                     .as_bool()
-                    .ok_or_else(|| err("invalid_request", "Auto-read must be on or off"))?;
-                let expected = p["expected_auto_read"]
+                    .ok_or_else(|| err("invalid_request", &format!("{title} must be on or off")))?;
+                let expected = p[format!("expected_{field}").as_str()]
                     .as_bool()
-                    .ok_or_else(|| err("invalid_request", "Supply the previous Auto-read value"))?;
+                    .ok_or_else(|| {
+                        err(
+                            "invalid_request",
+                            &format!("Supply the previous {title} value"),
+                        )
+                    })?;
                 let policy = settings.accounts.entry(account.into()).or_default();
-                let current = policy
-                    .auto_read
-                    .get(category)
-                    .copied()
-                    .unwrap_or_else(|| name.eq_ignore_ascii_case("Receipts"));
+                let (choices, default) = if spam {
+                    (&mut policy.auto_spam, false)
+                } else {
+                    (&mut policy.auto_read, name.eq_ignore_ascii_case("Receipts"))
+                };
+                let current = choices.get(category).copied().unwrap_or(default);
                 if current != expected {
                     return Err(err(
                         "stale_revision",
-                        "Auto-read changed; reload before saving",
+                        &format!("{title} changed; reload before saving"),
                     ));
                 }
-                policy.auto_read.insert(category.into(), enabled);
+                // Spam is off unless chosen, so only chosen labels are kept.
+                if spam && !enabled {
+                    choices.remove(category);
+                } else {
+                    choices.insert(category.into(), enabled);
+                }
                 settings
                     .validate()
                     .map_err(|message| err("invalid_request", &message))?;
@@ -235,8 +259,9 @@ impl Store {
                 tx.execute("UPDATE views SET json=json_set(json,'$.category',''),revision=revision+1 WHERE account=?1 AND json_extract(json,'$.category')=?2",params![account,category])?;
                 if let Some(policy) = settings.accounts.get_mut(account) {
                     descriptions_changed = policy.descriptions.remove(category).is_some();
-                    settings_changed =
-                        descriptions_changed | policy.auto_read.remove(category).is_some();
+                    settings_changed = descriptions_changed
+                        | policy.auto_read.remove(category).is_some()
+                        | policy.auto_spam.remove(category).is_some();
                 }
             }
             _ => unreachable!(),
@@ -351,5 +376,69 @@ mod tests {
             .unwrap()
             .iter()
             .all(|r| r["id"] != "research"));
+    }
+    #[test]
+    fn label_spam_is_per_account_replays_and_goes_with_the_label() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open_synthetic(dir.path()).unwrap();
+        let (a, other) = ("windscribe", "personal");
+        for account in [a, other] {
+            let create = json!({"request_id":format!("create-{account}"),"id":"promotions","name":"Promotions"});
+            store.label_edit(account, "label_create", &create).unwrap();
+        }
+        let spam = |store: &Store, account: &str| {
+            store.label_catalog(account).unwrap()["categories"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["id"] == "promotions")
+                .unwrap()["auto_spam"]
+                .clone()
+        };
+        assert_eq!(spam(&store, a), false, "Spam is off by default");
+        let on = json!({"request_id":"spam-on","id":"promotions","expected_auto_spam":false,"auto_spam":true});
+        let result = store.label_edit(a, "label_auto_spam", &on).unwrap();
+        assert_eq!(store.label_edit(a, "label_auto_spam", &on).unwrap(), result);
+        assert_eq!(spam(&store, a), true);
+        assert_eq!(
+            spam(&store, other),
+            false,
+            "another account keeps its own choice"
+        );
+        let mut stale = on.clone();
+        stale["request_id"] = json!("spam-stale");
+        assert_eq!(
+            store
+                .label_edit(a, "label_auto_spam", &stale)
+                .unwrap_err()
+                .code,
+            "stale_revision"
+        );
+        let mut reused = on.clone();
+        reused["auto_spam"] = json!(false);
+        assert_eq!(
+            store
+                .label_edit(a, "label_auto_spam", &reused)
+                .unwrap_err()
+                .code,
+            "request_id_conflict"
+        );
+        let missing = json!({"request_id":"spam-missing","id":"promotions","auto_spam":true});
+        assert_eq!(
+            store
+                .label_edit(a, "label_auto_spam", &missing)
+                .unwrap_err()
+                .code,
+            "invalid_request"
+        );
+        let remove = json!({"request_id":"remove-promotions","id":"promotions","expected_name":"Promotions","expected_provider_label_id":null});
+        store.label_edit(a, "label_remove", &remove).unwrap();
+        let settings = store.local_model_settings().unwrap();
+        assert!(settings["settings"]["accounts"][a]
+            .get("auto_spam")
+            .is_none_or(|choices| choices.get("promotions").is_none()));
+        drop(store);
+        let store = Store::open_synthetic(dir.path()).unwrap();
+        assert_eq!(spam(&store, other), false);
     }
 }

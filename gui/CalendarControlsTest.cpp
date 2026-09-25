@@ -8,8 +8,10 @@
 #include <QFile>
 #include <QDir>
 #include <QDate>
+#include <QDateTime>
 #include <QGuiApplication>
 #include <QMouseEvent>
+#include <QFont>
 #include <QFontDatabase>
 #include <QJSValue>
 #include <QQmlApplicationEngine>
@@ -69,6 +71,7 @@ class CalendarBackendProbe : public QObject {
     Q_PROPERTY(QVariantList categories MEMBER categories NOTIFY categoriesChanged)
     Q_PROPERTY(QVariantList googleLabels MEMBER googleLabels NOTIFY googleLabelsChanged)
     Q_PROPERTY(QVariantMap googleLabelState MEMBER googleLabelState NOTIFY googleLabelsChanged)
+    Q_PROPERTY(QVariantList reminders MEMBER reminders CONSTANT)
 public:
     bool mailCombined = false, mailActive = false;
     Q_INVOKABLE void setCalendarMailActivityContext(bool active, bool combined) { mailActive = active; if (mailCombined != combined) { mailCombined = combined; emit eventsChanged(); } }
@@ -137,7 +140,15 @@ public:
     Q_INVOKABLE void openCalendarWeek(const QString &date) { calendarView = "week"; setCalendarDate(date); }
     Q_INVOKABLE void showCalendarToday() { setCalendarDate(todayDate); }
     Q_INVOKABLE void moveCalendar(int) {}
-    Q_INVOKABLE void joinCalendarEvent(const QVariantMap &) {}
+    Q_INVOKABLE void joinCalendarEvent(const QVariantMap &) { ++reminderActions; }
+    // The full event view shares the reminder screen; viewing must not touch reminders.
+    QVariantList reminders;
+    int reminderActions = 0, sounds = 0;
+    Q_INVOKABLE void dismissCalendarReminder(const QVariantMap &) { ++reminderActions; }
+    Q_INVOKABLE void snoozeCalendarReminder(const QVariantMap &) { ++reminderActions; }
+    Q_INVOKABLE void playReminderSound(int) { ++sounds; }
+    Q_INVOKABLE void stopReminderSound() {}
+    Q_INVOKABLE QString calendarReminderWhen(const QVariantMap &) const { return "Scripted time"; }
     Q_INVOKABLE void loadCalendarOperations() {}
     Q_INVOKABLE void loadMoreCalendarOperations() {}
     Q_INVOKABLE void retryCalendarOperation(const QString &account, const QString &id) { lastAction = {{"account", account}, {"request_id", id}, {"action", "local_retry"}}; ++actions; }
@@ -201,7 +212,7 @@ int main(int argc, char **argv) {
     app.setFont(QFont("Geist", 10));
     QTemporaryDir copy; require(copy.isValid(), "Temporary QML directory");
     require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/CalendarMailCount.qml", copy.filePath("CalendarMailCount.qml")), "Copy mail count component");
-    for (const auto name : {"AccountBadge.qml","ShortcutRegistry.qml","FmScrollBar.qml","Theme.qml", "FmDialog.qml", "FmConfirmDialog.qml", "FmDateField.qml", "FmSwitch.qml", "FmSegmented.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "FmTextField.qml", "CalendarOccurrenceRead.qml", "EventEditor.qml", "EventDetails.qml", "CalendarOperations.qml", "GoogleLabelSetup.qml", "CalendarView.qml", "CalendarEventList.qml", "StartupOverlay.qml"})
+    for (const auto name : {"AccountBadge.qml","ShortcutRegistry.qml","FmScrollBar.qml","Theme.qml", "FmDialog.qml", "FmConfirmDialog.qml", "FmDateField.qml", "FmSwitch.qml", "FmSegmented.qml", "FmButton.qml", "FmToolTip.qml", "FmIcon.qml", "FmComboBox.qml", "FmTextField.qml", "CalendarOccurrenceRead.qml", "EventEditor.qml", "EventDetails.qml", "ReminderPopup.qml", "CalendarOperations.qml", "GoogleLabelSetup.qml", "CalendarView.qml", "CalendarEventList.qml", "StartupOverlay.qml"})
         require(QFile::copy(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/" + name, copy.filePath(name)), "Copy actual QML control");
     QFile module(copy.filePath("qmldir")); require(module.open(QIODevice::WriteOnly), "QML singleton directory");
     module.write("singleton Theme 1.0 Theme.qml\nsingleton ShortcutRegistry 1.0 ShortcutRegistry.qml\n"); module.close();
@@ -360,6 +371,42 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     require(plain(details->property("eventData")).toMap()["account"] == "beta" && !details->property("hasPendingResponse").toBool(), "Closed pending popup can reopen a different event");
     require(backend.writes == pendingWrites && backend.actions == pendingActions, "Closing and reopening neither resends nor abandons the recorded RSVP; recovery remains in Activity");
     call(details, "close"); settle([&] { return !details->property("visible").toBool(); });
+
+    // View opens the reminder screen for any event: a countdown to its real
+    // start, its full notes and Join, but no Snooze, no acknowledgment and no
+    // sound on opening. It sounds only when a point passes while it is open.
+    auto viewed = original; viewed["description"] = "Agenda first\nDial-in second\nThird line\nFourth line";
+    const auto viewedStart = QDateTime::currentDateTimeUtc().addSecs(2 * 86400 + 3723);
+    viewed["start"] = viewedStart.toString(Qt::ISODate); viewed["end"] = viewedStart.addSecs(3600).toString(Qt::ISODate);
+    call(details, "openAt", viewed, QVariant{}); settle([&] { return details->property("opened").toBool(); });
+    auto cardNotes = named(root, "eventDetailsNotesText");
+    require(qobject_cast<QQuickItem *>(cardNotes)->isVisible() && cardNotes->property("maximumLineCount").toInt() == 3
+        && cardNotes->property("text") == viewed["description"], "Card shows the start of the notes in at most three lines");
+    require(named(root, "eventEditButton")->property("outlined").toBool() && !named(root, "eventEditButton")->property("prominent").toBool(), "Edit is an outline action beside View");
+    call(named(root, "eventViewButton"), "clicked");
+    auto fullView = named(root, "eventFullView");
+    settle([&] { return fullView->property("opened").toBool() && !details->property("visible").toBool(); });
+    auto viewPanel = named(root, "eventFullViewPanel");
+    auto viewKicker = named(root, "reminderKicker"), viewCountdown = named(root, "reminderCountdown"), viewClose = named(root, "reminderDismiss");
+    require(viewKicker->property("text") == "UPCOMING" && viewCountdown->property("text").toString().startsWith("2d 1:02:")
+        && viewCountdown->property("font").value<QFont>().pixelSize() == 80, "Days-away countdown reads Nd h:mm:ss at 80px");
+    require(viewClose->property("text") == "Close" && !qobject_cast<QQuickItem *>(named(root, "reminderSnooze"))->isVisible()
+        && named(root, "reminderPrimary")->property("text") == "Join meeting" && named(root, "reminderNotesText")->property("text") == viewed["description"],
+        "View offers Join and Close with the full notes, never Snooze");
+    require(backend.sounds == 0 && viewPanel->property("chimes").toInt() == 0 && backend.reminderActions == 0, "Opening View is silent and acknowledges nothing");
+    const auto viewedStartMs = viewPanel->property("startMs").toDouble();
+    viewPanel->setProperty("nowMs", viewedStartMs - 59000);
+    require(backend.sounds == 1 && viewKicker->property("text") == "STARTING NOW", "Passing the one-minute point while open sounds once");
+    viewPanel->setProperty("nowMs", viewedStartMs + 5000);
+    require(backend.sounds == 2 && viewKicker->property("text") == "IN PROGRESS" && viewCountdown->property("text") == "+0:05"
+        && named(root, "reminderRelative")->property("text") == "Started 0:05 ago" && !viewPanel->property("alerting").toBool(), "A started viewed event is in progress, counting up without an alarm");
+    viewPanel->setProperty("nowMs", viewedStartMs + 3601000);
+    require(viewKicker->property("text") == "ENDED" && viewCountdown->property("text") == "Ended" && named(root, "reminderRelative")->property("text") == "This event is over"
+        && !qobject_cast<QQuickItem *>(named(root, "reminderPrimary"))->isVisible() && viewClose->property("text") == "Close", "An ended event offers only Close");
+    viewPanel->setProperty("nowMs", viewedStartMs - (400. * 86400 + 5) * 1000);
+    require(viewCountdown->property("text") == "1y 35d 0:00:05" && viewCountdown->property("font").value<QFont>().pixelSize() == 64, "Years-away countdown reads Ny Nd h:mm:ss at 64px");
+    call(viewClose, "clicked"); settle([&] { return !fullView->property("visible").toBool(); });
+    require(backend.reminderActions == 0, "Closing View leaves reminders untouched");
 
     QVariantList rows;
     for (const auto state : {"prepared", "ready", "in_flight", "unknown", "accepted", "acknowledged", "conflict", "rejected", "abandoned"})
@@ -958,7 +1005,7 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     nativeMouse(QEvent::MouseButtonPress,emptyPoint,Qt::LeftButton,Qt::LeftButton);
     nativeMouse(QEvent::MouseButtonRelease,emptyPoint,Qt::LeftButton,Qt::NoButton);
     require(backend.calendarView=="day"&&backend.calendarDate=="2026-09-13","Month empty cell opens the selected Day view");
-    // Month's week axis: ISO numbers, today's week in accent, each opening its week.
+    // Month's week axis: ISO numbers in one muted colour, each opening its week.
     backend.setCalendarView("month"); QCoreApplication::processEvents();
     auto thisWeek=qobject_cast<QQuickItem *>(named(visualRoot,"calendarWeekNumber-0")), nextWeek=qobject_cast<QQuickItem *>(named(visualRoot,"calendarWeekNumber-1"));
     settle([&]{return nextWeek->isVisible()&&nextWeek->height()>0;});
@@ -967,6 +1014,15 @@ ApplicationWindow { width: 1100; height: 850; visible: true
     nativeMouse(QEvent::MouseButtonPress,weekPoint,Qt::LeftButton,Qt::LeftButton);
     nativeMouse(QEvent::MouseButtonRelease,weekPoint,Qt::LeftButton,Qt::NoButton);
     require(backend.calendarView=="week"&&backend.calendarDate=="2026-09-20","A week number opens that week in Week view");
+    // Mail's Next row: Day view on the event's day, its card open beside its block as if clicked.
+    call(calendar,"showEventInDay",visualA);
+    auto dayDetails=named(visualRoot,"eventDetails");
+    settle([&]{return dayDetails->property("opened").toBool();});
+    auto dayBlock=qobject_cast<QQuickItem *>(named(visualRoot,"calendarEvent-event"));
+    require(backend.calendarView=="day"&&backend.calendarDate=="2026-09-13"&&plain(dayDetails->property("eventData")).toMap()["id"]==visualA["id"]
+        &&dayBlock&&dayBlock->isVisible()&&qAbs(dayDetails->property("originY").toDouble()-dayBlock->mapToScene({0,dayBlock->height()}).y())<1,"showEventInDay opens the event's Day view card at its block");
+    call(dayDetails,"close");settle([&]{return !dayDetails->property("visible").toBool();});
+    backend.setCalendarView("week");
     backend.calendarBandRows=0; emit backend.eventsChanged();
     calendar->setProperty("visible", false); require(!backend.mailActive, "Hidden Calendar stops count queries");
     visualWindow->close();

@@ -72,7 +72,7 @@ Item {
         let end = new Date(selected.getFullYear(), selected.getMonth() + 1, 0, 12)
         return Math.ceil((Math.round((end - dateAt(0)) / 86400000) + 1) / 7) * 7
     }
-    readonly property bool popupOpen: editor.opened || details.opened || operationHistory.opened || datePicker.opened || moreMenu.opened || allDayOverflow.opened
+    readonly property bool popupOpen: editor.opened || details.opened || details.viewOpen || operationHistory.opened || datePicker.opened || moreMenu.opened || allDayOverflow.opened
     property bool shortcutsEnabled: visible && (!backend.reminders || backend.reminders.length === 0) && !editingField() && !popupOpen
     function editingField() {
         let item = Window.window ? Window.window.activeFocusItem : null
@@ -151,12 +151,59 @@ Item {
         return days
     }
     function eventsAt(index) { return eventsByDay[index] || [] }
+    // Saturday and Sunday columns and cells sit in a faint shade.
+    function weekend(date) { return date.getDay() % 6 === 0 }
+    readonly property color weekendShade: Theme.shadowAlpha(.22)
     function allDayAt(index) { return eventsAt(index).filter(function(e) { return e.all_day && !calendar.editingEvent(e) }) }
     function openDay(index) {
         if (backend.openCalendarDay !== undefined) backend.openCalendarDay(isoAt(index))
         else { backend.setCalendarDate(isoAt(index)); backend.setCalendarView("day") }
     }
     function showEvent(event, sourceItem) { if (!backend.calendarReady || !backend.connected) return; if (editor.opened) { editor.contentItem.forceActiveFocus(); return } details.openAt(event, sourceItem || calendar) }
+    // Mail's "Next" row: Day view on the event's day (else today), then its
+    // card beside its block, as if clicked. The window may load later, so the
+    // request waits for it; navigating elsewhere, leaving Calendar or a
+    // request older than 20 s (e.g. Calendar never opened) drops it.
+    property var dayEventRequest: null
+    function showEventInDay(event) {
+        if (!event || !event.id) return
+        const date = event.date || backend.todayDate
+        cancelRange(); details.close(); allDayOverflow.close()
+        dayEventRequest = {event: event, date: date, at: Date.now()}
+        if (backend.openCalendarDay !== undefined) backend.openCalendarDay(date)
+        else { backend.setCalendarDate(date); backend.setCalendarView("day") }
+        Qt.callLater(revealDayEvent)
+    }
+    readonly property bool dayEventReady: !!dayEventRequest && visible && backend.calendarReady
+    onDayEventReadyChanged: if (dayEventReady) Qt.callLater(revealDayEvent)
+    function eventBlock(root, id) {
+        for (const child of root.children) {
+            if (!child.visible) continue
+            if (child.modelData && child.modelData.id === id && child.width > 0 && /^calendar(Event|AllDay)-/.test(child.objectName)) return child
+            const found = eventBlock(child, id)
+            if (found) return found
+        }
+        return null
+    }
+    function revealDayEvent() {
+        const request = dayEventRequest
+        if (!request || !visible || !backend.calendarReady || !backend.connected) return
+        dayEventRequest = null
+        if (Date.now() - request.at > 20000 || backend.calendarView !== "day" || backend.calendarDate !== request.date) return
+        const rows = backend.events.filter(function(e) { return e.id === request.event.id })
+        const match = rows.find(function(e) { return e.date === request.date }) || rows[0]
+        if (!match) return
+        if (!match.all_day) {
+            const top = match.start_hour * hourHeight, bottom = top + Math.max(20, match.duration_hours * hourHeight)
+            if (top < gridScroll.contentY || bottom > gridScroll.contentY + gridScroll.height) {
+                retainedTopHour = Math.max(0, match.start_hour - 1)
+                preserveGridPosition()
+            }
+        }
+        const block = eventBlock(match.all_day ? dayHeaderRow : grid, match.id)
+        if (block) block.forceActiveFocus()
+        showEvent(match, block)
+    }
     function createEvent() { if (editor.opened) { editor.contentItem.forceActiveFocus(); return } editor.editEvent = ({}); editor.openForDate(backend.calendarDate) }
     function createAt(index, hour, endHour) {
         if (!backend.connected || !backend.calendarSources.some(function(s) { return s.writable })) return
@@ -241,7 +288,7 @@ Item {
         function onEventsChanged() { if (calendar.rangeDrag.index !== undefined && (calendar.rangeDrag.from !== backend.calendarFrom || calendar.rangeDrag.view !== backend.calendarView)) calendar.cancelRange(); calendar.hoverSlot = ({}); calendar.updateMailActivityContext() }
     }
     onHourHeightChanged: Qt.callLater(preserveGridPosition)
-    onVisibleChanged: { updateMailActivityContext(); if (visible) Qt.callLater(revealNow); if (!visible) { cancelRange(); details.close(); datePicker.close(); moreMenu.close(); allDayOverflow.close() } }
+    onVisibleChanged: { updateMailActivityContext(); if (visible) Qt.callLater(revealNow); if (!visible) { dayEventRequest = null; cancelRange(); details.close(); datePicker.close(); moreMenu.close(); allDayOverflow.close() } }
     Shortcut { sequence: ShortcutRegistry.sequence("day",backend.preferences); enabled: calendar.shortcutsEnabled; onActivated: backend.setCalendarView("day") }
     Shortcut { sequence: ShortcutRegistry.sequence("week",backend.preferences); enabled: calendar.shortcutsEnabled; onActivated: backend.setCalendarView("week") }
     Shortcut { sequence: ShortcutRegistry.sequence("month",backend.preferences); enabled: calendar.shortcutsEnabled; onActivated: backend.setCalendarView("month") }
@@ -381,7 +428,7 @@ Item {
                     Item {
                         visible: !dayHeader.single
                         x: 10; width: parent.width - 16; height: 26
-                        Text { id: dayNumber; anchors.verticalCenter: parent.verticalCenter; text: Qt.formatDate(calendar.dateAt(dayHeader.index), "d"); color: dayHeader.today ? Theme.accent : dayHeader.iso < backend.todayDate ? Theme.inkAlpha(.5) : Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(20); font.weight: Font.Medium; font.letterSpacing: -0.4 }
+                        Text { id: dayNumber; anchors.verticalCenter: parent.verticalCenter; text: Qt.formatDate(calendar.dateAt(dayHeader.index), "d"); color: dayHeader.today ? Theme.accent : dayHeader.iso < backend.todayDate ? Theme.inkAlpha(.5) : calendar.weekend(calendar.dateAt(dayHeader.index)) ? Theme.inkAlpha(.6) : Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(20); font.weight: Font.Medium; font.letterSpacing: -0.4 }
                         Text { x: dayNumber.width + 8; anchors.verticalCenter: parent.verticalCenter; text: Qt.formatDate(calendar.dateAt(dayHeader.index), "ddd"); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
                         CalendarMailCount {
                             objectName: "calendarMailCount-" + dayHeader.iso
@@ -431,22 +478,12 @@ Item {
                 Repeater { model: 25
                     Text { required property int index; objectName: "calendarHour-" + index; x: 0; y: Math.max(0, index * calendar.hourHeight - (index === 24 ? height : index === 0 ? 0 : height / 2)); text: (index < 10 ? "0" : "") + index + ":00"; color: Theme.inkAlpha(index >= calendar.workingStart && index <= calendar.workingEnd ? .5 : .3); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.features: {"tnum": 1} }
                 }
-                Repeater {
-                    model: [calendar.workingStart, calendar.workingEnd]
-                    Item {
-                        required property int index; required property real modelData
-                        objectName: "calendarWorkingHour-" + index
-                        x: 42; y: modelData * calendar.hourHeight - 4; width: 8; height: 8
-                        FmIcon { name: "down"; size: 8; color: Theme.inkAlpha(.35); rotation: parent.index === 0 ? 0 : 180 }
-                        HoverHandler { id: workingHover }
-                        FmToolTip { shown: workingHover.hovered; text: "Working hours " + calendar.hourText(calendar.workingStart) + " – " + calendar.hourText(calendar.workingEnd) }
-                    }
-                }
                 Item {
                     id: grid; x: 56; width: gridScroll.width - 56; height: 24 * calendar.hourHeight; property real dayWidth: width / calendar.dayCount
                     Repeater { model: calendar.timeGrid ? calendar.dayCount : 0
                         Rectangle {
-                            required property int index; x: index * grid.dayWidth; width: grid.dayWidth; height: grid.height; color: calendar.isoAt(index) === backend.todayDate ? Theme.bg1 : "transparent"
+                            required property int index; x: index * grid.dayWidth; width: grid.dayWidth; height: grid.height
+                            color: calendar.isoAt(index) === backend.todayDate ? Theme.bg1 : calendar.dayCount === 7 && calendar.weekend(calendar.dateAt(index)) ? calendar.weekendShade : "transparent"
                             Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, 0); width: Theme.ruleWidth; height: parent.height; color: Theme.line }
                             MouseArea {
                                 objectName: "calendarSlot-" + parent.index
@@ -575,7 +612,7 @@ Item {
                         objectName: "calendarMonthWeekday-" + parent.index
                         x: 10; height: 26; verticalAlignment: Text.AlignVCenter
                         text: Qt.formatDate(calendar.dateAt(parent.index), "ddd")
-                        color: calendar.dateAt(parent.index).getDay() === new Date(backend.todayDate + "T12:00:00").getDay() ? Theme.accent : Theme.inkAlpha(.5)
+                        color: calendar.weekend(calendar.dateAt(parent.index)) ? Theme.inkAlpha(.3) : Theme.inkAlpha(.5)
                         font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
                     }
                     Rectangle { y: parent.height - height; width: parent.width; height: Theme.ruleWidth; color: Theme.line }
@@ -601,7 +638,7 @@ Item {
                         y: index * weekAxis.height / weekAxis.rows; width: weekAxis.width - 1; height: weekAxis.height / weekAxis.rows
                         Accessible.role: Accessible.Button; Accessible.name: "Open week " + number
                         Accessible.onPressAction: open()
-                        Text { y: 9; text: weekRow.number ? "W" + weekRow.number : ""; color: weekMouse.containsMouse ? Theme.text : weekRow.current ? Theme.accent : Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.features: {"tnum": 1} }
+                        Text { y: 9; text: weekRow.number ? "W" + weekRow.number : ""; color: weekMouse.containsMouse ? Theme.text : Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.features: {"tnum": 1} }
                         MouseArea { id: weekMouse; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: weekRow.open() }
                         FmToolTip { shown: weekMouse.containsMouse; text: "Open week " + weekRow.number }
                     }
@@ -618,6 +655,7 @@ Item {
                         property var dayEvents: calendar.monthEvents[index] || []; property bool inMonth: day.date.getMonth() === calendar.monthNumber
                         readonly property bool isToday: day.iso === backend.todayDate
                         readonly property bool past: !!day.iso && day.iso < backend.todayDate
+                        readonly property bool weekendDay: !!day.iso && calendar.weekend(day.date)
                         readonly property int fit: Math.min(3, Math.max(0, Math.floor((height - 50) / 18) - (dayEvents.length * 18 > height - 50 ? 1 : 0)))
                         // Today orders finished timed events first, then all-day and upcoming
                         // ones, so the now line sits where the day is: at the top just after
@@ -633,7 +671,7 @@ Item {
                         readonly property int nowRow: needLine ? (upcoming >= first && upcoming < first + shown ? upcoming - first : -1) : -2
                         function eventDone(e) { return isToday ? !e.all_day && e.start_hour + e.duration_hours <= backend.nowHour : past }
                         Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredWidth: 1; Layout.preferredHeight: 1; clip: true
-                        color: monthHover.hovered ? Theme.bg1 : isToday ? Theme.accentAlpha(.06) : "transparent"
+                        color: monthHover.hovered ? Theme.bg1 : isToday ? Theme.accentAlpha(.06) : weekendDay ? calendar.weekendShade : "transparent"
                         Rectangle { x: parent.width - width; width: Theme.ruleWidth; height: parent.height; color: Theme.line }
                         Rectangle { y: parent.height - height; width: parent.width; height: Theme.ruleWidth; color: Theme.line }
                         Rectangle { objectName: "calendarMonthToday"; visible: monthCell.isToday; anchors.fill: parent; color: "transparent"; border.width: 1; border.color: Theme.accentAlpha(.45) }
@@ -641,8 +679,8 @@ Item {
                         MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: calendar.openDay(monthCell.index) }
                         FmToolTip { shown: monthHover.hovered && !monthDate.hovered; text: shown ? "Open " + Qt.formatDate(monthCell.day.date, "dddd d MMMM") : "" }
                         Column { x: 8; y: 6; width: parent.width - 16; spacing: 3
-                            Item { width: parent.width; height: Math.round(Theme.fontSize(13) * 1.4) + 6
-                                FmButton { id: monthDate; objectName: "calendarMonthDate-" + monthCell.index; text: monthCell.day.iso ? monthCell.day.date.getDate() : ""; height: Math.round(Theme.fontSize(13) * 1.4) + 4; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; textAlignment: Text.AlignLeft; font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium; foreground: monthCell.isToday ? Theme.accent : !monthCell.inMonth ? Theme.inkAlpha(.3) : monthCell.past ? Theme.inkAlpha(.5) : Theme.text; background: Item {} onClicked: calendar.openDay(monthCell.index) }
+                            Item { width: parent.width; height: Math.round(Theme.fontSize(20) * 1.2) + 2
+                                FmButton { id: monthDate; objectName: "calendarMonthDate-" + monthCell.index; text: monthCell.day.iso ? monthCell.day.date.getDate() : ""; height: Math.round(Theme.fontSize(20) * 1.2); leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0; textAlignment: Text.AlignLeft; font.pointSize: Theme.fontPoints(20); font.weight: Font.Medium; font.letterSpacing: -0.02 * Theme.fontSize(20); foreground: monthCell.isToday ? Theme.accent : !monthCell.inMonth ? Theme.inkAlpha(.3) : monthCell.past ? Theme.inkAlpha(.5) : monthCell.weekendDay ? Theme.inkAlpha(.6) : Theme.text; background: Item {} onClicked: calendar.openDay(monthCell.index) }
                             // Only past and current days with counts create a badge.
                             Loader {
                                 active: !!calendar.mailDays[monthCell.day.iso] && monthCell.day.iso <= backend.todayDate

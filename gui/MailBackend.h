@@ -116,6 +116,9 @@ class MailBackend final : public QObject {
     Q_PROPERTY(bool attachmentImportBusy READ attachmentImportBusy NOTIFY draftChanged)
     Q_PROPERTY(QVariantMap googleDraft READ googleDraft NOTIFY draftChanged)
     Q_PROPERTY(QVariantMap googleSend READ googleSend NOTIFY draftChanged)
+    Q_PROPERTY(QVariantMap draftChips READ draftChips NOTIFY draftChipsChanged)
+    Q_PROPERTY(QVariantMap recentWith READ recentWith NOTIFY recentWithChanged)
+    Q_PROPERTY(QVariantMap binMenuCounts READ binMenuCounts NOTIFY binCountsChanged)
     Q_PROPERTY(QVariantList calendarSources READ calendarSources NOTIFY calendarSourcesChanged)
     Q_PROPERTY(QString calendarSearchQuery READ calendarSearchQuery WRITE setCalendarSearchQuery NOTIFY calendarSearchChanged)
     Q_PROPERTY(QVariantMap calendarSearch READ calendarSearch NOTIFY calendarSearchChanged)
@@ -393,7 +396,8 @@ public:
     Q_INVOKABLE void commitSearch(const QString &text);
     Q_INVOKABLE void removeRecentSearch(const QString &text);
     // People after from:; senders, or recipients in Sent and Drafts.
-    Q_INVOKABLE void requestSearchPeople(const QString &part);
+    // role: "sender" or "recipient"; searchPeopleQuery answers as "role:part".
+    Q_INVOKABLE void requestSearchPeople(const QString &part, const QString &role = QStringLiteral("sender"));
     Q_INVOKABLE void setPreferences(const QVariantMap &patch);
     Q_INVOKABLE void updateAccountPreferences(const QString &account, const QString &name, const QString &signature, const QString &retention = {}, const QVariantMap &sync = {}, bool analyzeHistory = false, const QString &color = {});
     Q_INVOKABLE void setCalendarSelected(const QString &account, const QString &calendar, bool selected);
@@ -464,6 +468,8 @@ signals:
     void senderCardChanged();
     void actionToastChanged();
     void draftChanged();
+    void draftChipsChanged();
+    void recentWithChanged();
     void googleDraftInventoryChanged();
     void draftSourcesChanged();
     void draftAuthoringChanged();
@@ -505,9 +511,6 @@ private:
     friend class GuiSettingsSelfTest;
     friend class GuiCompositionSelfTest;
     friend class GoogleDraftControlsTest;
-    friend class GoogleDraftSnapshotControlsTest;
-    friend class GoogleDraftAuthoringControlsTest;
-    friend class GuiGoogleDraftSnapshotSelfTest;
     friend class GoogleSendControlsTest;
     friend class ComposerInputTest;
     friend class DraftTransferControlsTest;
@@ -998,4 +1001,25 @@ private:
     QVariantMap m_binCounts;
     QString m_spamToken;
     bool m_binBusy = false;
+public:
+    // The current account's unsent drafts for the chips row: {account, rows, total}.
+    QVariantMap draftChips() const { return m_draftChips; }
+    // Recent mail with a new message's first recipient: {account, email, rows, total}.
+    QVariantMap recentWith() const { return m_recentWith; }
+    Q_INVOKABLE void loadRecentWith(const QString &email);
+    // Leaving a new message keeps it in Drafts; one with nothing written goes.
+    Q_INVOKABLE void leaveNewDraft();
+    Q_INVOKABLE bool draftHasContent() const;
+    Q_INVOKABLE void noteSavedToDrafts() { showActionToast("Saved to Drafts"); }
+    // Spam and Trash counts for the ▾ menu: {account, spam, trash}.
+    QVariantMap binMenuCounts() const { return m_binMenuCounts; }
+    Q_INVOKABLE void loadBinMenuCounts();
+private:
+    QVariantMap m_binMenuCounts;
+    void refreshDraftChips();
+    bool authoredDraftRow(const QVariantMap &row) const;
+    void dropEmptyNewDraft();
+    QVariantMap m_draftChips, m_recentWith;
+    int m_draftChipsGeneration = 0, m_recentGeneration = 0;
+    QTimer m_draftChipsTimer;
 };

@@ -138,7 +138,12 @@ impl Store {
                 }
                 for (account, policy) in &settings.accounts {
                     self.require_active_account(account)?;
-                    for category in policy.descriptions.keys().chain(policy.auto_read.keys()) {
+                    for category in policy
+                        .descriptions
+                        .keys()
+                        .chain(policy.auto_read.keys())
+                        .chain(policy.auto_spam.keys())
+                    {
                         let exists: bool = tx.query_row(
                             "SELECT EXISTS(SELECT 1 FROM categories WHERE account=?1 AND id=?2)",
                             params![account, category],
@@ -450,12 +455,17 @@ impl Store {
                 label_state = crate::google_live_mutations::enqueue_assisted_category(
                     &tx, &p.account, &p.target, category,
                 )?;
-                if p.arrival
-                    && matches!(
-                        label_state,
-                        "pending" | "local_only" | "applied" | "already_present"
-                    )
-                {
+                let applied = matches!(
+                    label_state,
+                    "pending" | "local_only" | "applied" | "already_present"
+                );
+                // A label with Spam on sends the message to Spam whenever the
+                // model applies it; that is enough, so Auto-read is skipped.
+                if applied && policy.auto_spam.get(category).copied().unwrap_or(false) {
+                    crate::google_live_mutations::enqueue_assisted_spam(
+                        &tx, &p.account, &p.target,
+                    )?;
+                } else if p.arrival && applied {
                     let name: Option<String> = tx
                         .query_row(
                             "SELECT name FROM categories WHERE account=?1 AND id=?2",
@@ -748,6 +758,94 @@ mod tests {
         };
         assert!(!choice(account), "the explicit opt-out survives restart");
         assert!(choice(&other), "another account keeps the Receipts default");
+    }
+    #[test]
+    fn label_spam_is_per_account_and_moves_labelled_mail_instead_of_auto_read() {
+        let (_dir, mut store) = configured_store();
+        let other: String = store
+            .db
+            .query_row("SELECT id FROM accounts WHERE id<>?1 LIMIT 1", [A], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        for account in [A, other.as_str()] {
+            store
+                .db
+                .execute(
+                    "INSERT INTO categories(account,id,name) VALUES(?1,'receipts','Receipts')",
+                    [account],
+                )
+                .unwrap();
+        }
+        let choice = |store: &Store, account: &str| {
+            store.label_catalog(account).unwrap()["categories"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["id"] == "receipts")
+                .unwrap()["auto_spam"]
+                .as_bool()
+                .unwrap()
+        };
+        assert!(!choice(&store, A), "Spam is off until chosen");
+        store.label_edit(A,"label_auto_spam",&json!({"request_id":"receipts-spam","id":"receipts","expected_auto_spam":false,"auto_spam":true})).unwrap();
+        assert!(choice(&store, A));
+        assert!(
+            !choice(&store, &other),
+            "the choice belongs to one account and label"
+        );
+        let flags = |store: &Store| -> (bool, bool) {
+            store
+                .db
+                .query_row(
+                    "SELECT unread,inbox FROM messages WHERE account=?1 AND id=?2",
+                    params![A, M],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap()
+        };
+        store
+            .db
+            .execute(
+                "UPDATE messages SET unread=1,inbox=1 WHERE account=?1 AND id=?2",
+                params![A, M],
+            )
+            .unwrap();
+        // Receipts also has Auto-read on by default; Spam is enough.
+        let mut plan = store.local_model_prepare(A, C, M).unwrap();
+        plan.arrival = true;
+        let result =
+            json!({"summary":"A receipt.","sender_kind":"automated","category_ids":["receipts"]});
+        store.local_model_finish(&plan, result.clone()).unwrap();
+        assert_eq!(
+            flags(&store),
+            (true, false),
+            "out of the Inbox, still unread"
+        );
+        let receipts: i64 = store.db.query_row("SELECT count(*) FROM operations WHERE account=?1 AND json_extract(result_json,'$.kind')='assist_spam' AND json_extract(result_json,'$.message_id')=?2",params![A,M],|r|r.get(0)).unwrap();
+        assert_eq!(receipts, 1);
+        // Put back by hand, an explicit rerun does not move it again.
+        store
+            .db
+            .execute(
+                "UPDATE messages SET inbox=1,revision=revision+1 WHERE account=?1 AND id=?2",
+                params![A, M],
+            )
+            .unwrap();
+        let mut again = store.local_model_prepare(A, C, M).unwrap();
+        again.overwrite = true;
+        store.local_model_finish(&again, result).unwrap();
+        assert_eq!(
+            flags(&store),
+            (true, true),
+            "the model moves a message at most once"
+        );
+        // Removing the label forgets its Spam choice.
+        store.label_edit(A,"label_remove",&json!({"request_id":"remove-receipts","id":"receipts","expected_name":"Receipts","expected_provider_label_id":null})).unwrap();
+        let settings = store.local_model_settings().unwrap();
+        assert!(settings["settings"]["accounts"][A]
+            .get("auto_spam")
+            .is_none_or(|choices| choices.get("receipts").is_none()));
     }
     #[test]
     fn one_email_is_sent_with_its_labels_and_long_text_is_shortened() {

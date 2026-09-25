@@ -57,8 +57,12 @@ QtObject {
             const list = (samples[row.id] || []).filter(s => now - s.t <= 60000)
             list.push({t: now, mail: Number(sync.retained_sources || 0)})
             next[row.id] = list
-            const state = backend.googleSyncState(row.id), calendar = (state.progress || {}).calendar
-            if (!calendarSettled[row.id] && (calendar === "waiting" || calendar === "current")) {
+            const state = backend.googleSyncState(row.id), progress = state.progress || {}, calendar = progress.calendar
+            const events = Number(row.calendar_events || 0)
+            // Once a first pass has finished the calendar stays complete: later
+            // delta passes, which run alongside mail, never reset its bar.
+            const finished = calendar === "waiting" || calendar === "current" || (events > 0 && calendar !== "starting" && calendar !== "running")
+            if (!calendarSettled[row.id] && finished) {
                 const settled = Object.assign({}, calendarSettled); settled[row.id] = true; calendarSettled = settled
             }
         }

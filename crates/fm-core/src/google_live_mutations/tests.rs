@@ -830,6 +830,71 @@ fn assisted_arrival_read_is_durable_and_human_read_choice_wins() {
     );
 }
 #[test]
+fn assisted_spam_leaves_the_inbox_moves_to_gmail_spam_and_is_then_forgotten() {
+    let mut f = Fixture::new();
+    {
+        let tx = f.store.db.unchecked_transaction().unwrap();
+        assert!(enqueue_assisted_spam(&tx, &f.account, &f.message).unwrap());
+        tx.commit().unwrap();
+    }
+    assert_eq!(
+        f.flags(),
+        (true, true, false, false),
+        "leaves the Inbox at once; review state is unchanged"
+    );
+    let work = f.next(0);
+    assert_eq!(work.desired.len(), 2);
+    project_labels(
+        &f.store.db,
+        &f.account,
+        &f.message,
+        &BTreeSet::from(["INBOX".into(), "UNREAD".into()]),
+    )
+    .unwrap();
+    assert!(!f.flags().2, "provider snapshots keep the pending move");
+    let attempt = submit(
+        f.store
+            .google_mail_mutation_observe(
+                &work,
+                observation(&["INBOX", "UNREAD", "STARRED", "Label_unrelated"], "100"),
+            )
+            .unwrap(),
+    );
+    assert_eq!(attempt.work.action, MailMutationAction::Modify);
+    assert_eq!(attempt.add_labels, vec!["SPAM"]);
+    assert_eq!(attempt.remove_labels, vec!["INBOX"]);
+    f.store
+        .google_mail_mutation_attempt_result(&attempt, MailMutationAttemptOutcome::Submitted)
+        .unwrap();
+    let work = f.next(0);
+    assert!(matches!(
+        f.store
+            .google_mail_mutation_observe(
+                &work,
+                observation(&["SPAM", "UNREAD", "STARRED", "Label_unrelated"], "101")
+            )
+            .unwrap(),
+        MailMutationDecision::Finished
+    ));
+    assert_eq!(f.count("messages"), 0, "confirmed Spam is not kept");
+    assert_eq!(f.count("google_manual_intents"), 0);
+    // Not spam brings it back; the model does not send it to Spam again.
+    publish(&f.store, &f.account, "first", "102", &["INBOX", "UNREAD"]);
+    let tx = f.store.db.unchecked_transaction().unwrap();
+    assert!(!enqueue_assisted_spam(&tx, &f.account, &f.message).unwrap());
+    drop(tx);
+    assert!(f.flags().2);
+    let mut other = Fixture::new();
+    other
+        .command("mail_filing", "human-archive", json!({"action":"archive"}))
+        .unwrap();
+    let tx = other.store.db.unchecked_transaction().unwrap();
+    assert!(
+        !enqueue_assisted_spam(&tx, &other.account, &other.message).unwrap(),
+        "a pending human filing choice has precedence"
+    );
+}
+#[test]
 fn assisted_label_yields_to_new_provider_category_before_submission() {
     let mut f = Fixture::new();
     for (category, label) in [("one", "Label_one"), ("two", "Label_two")] {

@@ -699,7 +699,7 @@ void GuiMailNavigationSelfTest::step() {
     }
     case 13:
         if (!m_loadingSeen || m_backend.loading() || m_backend.m_searchTimer.isActive()) return;
-        if (m_backend.searchError()!="Search accepts up to four from: names or addresses" || !filterResultMatches()) {
+        if (m_backend.searchError()!="Search accepts up to four names or addresses across from:, to: and bare addresses" || !filterResultMatches()) {
             finish("Five from: parts were not refused with the last results kept."); return;
         }
         if (!typeQuery("")) return;
@@ -804,7 +804,7 @@ void GuiMailNavigationSelfTest::step() {
         break;
     case 30:
         if (auto mail=find(m_window->contentItem(),"mailWorkspace"); mail && mail->property("replyOpen").toBool()) {
-            click("collapseReply"); return;
+            QMetaObject::invokeMethod(mail, "minimizeComposer"); return;
         }
         if (!find(m_window->contentItem(),"unholdConversationButton")) {
             clickItem(find(m_window->contentItem(),"conversationActionsRow"),Qt::RightButton); return;

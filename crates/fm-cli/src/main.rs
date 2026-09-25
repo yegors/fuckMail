@@ -536,9 +536,10 @@ enum Mail {
         request_id: Option<String>,
     },
     List {
-        /// Search text: bare words match subject or message text; subject:,
-        /// body: and from: narrow one part (from: is the recipient in Sent);
-        /// label:, has:attachment and is:review|delayed|done also parse.
+        /// Search text: bare words match subject or message text; a bare
+        /// address matches the sender or a recipient; subject:, body:, from:
+        /// (sender) and to: (To or Cc) narrow one part; label:,
+        /// has:attachment and is:review|delayed|done also parse.
         #[arg(long)]
         query: Option<String>,
         /// Column for bare words; `all` means subject or message text.
@@ -577,13 +578,16 @@ enum Mail {
         #[arg(long, default_value_t = 0)]
         offset: u64,
     },
-    /// People a search's from: can name: recent senders, or recipients with
-    /// --folder sent|drafts. Querying never marks mail reviewed.
+    /// People a search's from: or to: can name: recent senders, or the
+    /// people you wrote to with --role recipient (the default in --folder
+    /// sent|drafts). Querying never marks mail reviewed.
     Senders {
         #[arg(default_value = "")]
         query: String,
         #[arg(long,default_value="inbox",value_parser=["inbox","all","sent","drafts","trash"])]
         folder: String,
+        #[arg(long,value_parser=["sender","recipient"])]
+        role: Option<String>,
         #[arg(long,default_value_t=5,value_parser=clap::value_parser!(u8).range(1..=10))]
         limit: u8,
     },
@@ -708,6 +712,26 @@ enum Labels {
         expected_name: String,
         #[arg(long)]
         expected_provider_label_id: Option<String>,
+        #[arg(long)]
+        request_id: String,
+    },
+    /// When the local model applies this label, mark arriving mail read.
+    AutoRead {
+        id: String,
+        #[arg(value_parser = ["on", "off"])]
+        state: String,
+        #[arg(long, value_parser = ["on", "off"])]
+        expected: String,
+        #[arg(long)]
+        request_id: String,
+    },
+    /// When the local model applies this label, send the message to Spam.
+    Spam {
+        id: String,
+        #[arg(value_parser = ["on", "off"])]
+        state: String,
+        #[arg(long, value_parser = ["on", "off"])]
+        expected: String,
         #[arg(long)]
         request_id: String,
     },
@@ -2476,6 +2500,24 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     "label_remove",
                     json!({"id":id,"expected_name":expected_name,"expected_provider_label_id":expected_provider_label_id,"request_id":request_id}),
                 ),
+                Labels::AutoRead {
+                    id,
+                    state,
+                    expected,
+                    request_id,
+                } => (
+                    "label_auto_read",
+                    json!({"id":id,"auto_read":state=="on","expected_auto_read":expected=="on","request_id":request_id}),
+                ),
+                Labels::Spam {
+                    id,
+                    state,
+                    expected,
+                    request_id,
+                } => (
+                    "label_auto_spam",
+                    json!({"id":id,"auto_spam":state=="on","expected_auto_spam":expected=="on","request_id":request_id}),
+                ),
                 Labels::Sync { request_id } => {
                     ("google_labels_sync", json!({"request_id":request_id}))
                 }
@@ -2593,15 +2635,14 @@ async fn run(args: &Args) -> Result<(), Failure> {
             Mail::Senders {
                 query,
                 folder,
+                role,
                 limit,
             } => {
-                client
-                    .call(
-                        "search_senders",
-                        scope,
-                        json!({"query":query,"folder":folder,"limit":limit}),
-                    )
-                    .await?
+                let mut params = json!({"query":query,"folder":folder,"limit":limit});
+                if let Some(role) = role {
+                    params["role"] = json!(role);
+                }
+                client.call("search_senders", scope, params).await?
             }
             Mail::Sender { address } => {
                 client

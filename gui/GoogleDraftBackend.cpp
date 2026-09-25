@@ -17,10 +17,10 @@ bool olderStatus(const QJsonObject &candidate, const QJsonObject &current) {
             && candidate["local_revision"].toInteger() < current["local_revision"].toInteger());
 }
 QString preparationReason(const QString &code) {
-    if (code == "limit_exceeded") return "The message exceeds Google's 35,000,000-byte limit.";
+    if (code == "limit_exceeded") return "It's larger than Gmail's 35 MB limit.";
     if (code == "invalid_identity") return "The From address is invalid.";
-    if (code == "identity_mismatch") return "The From address differs from this Google account's primary address.";
-    return "The saved addresses, formatting or attachments could not form a valid message.";
+    if (code == "identity_mismatch") return "It's from an address other than this account's.";
+    return "Some addresses, formatting or attachments aren't valid.";
 }
 }
 
@@ -80,46 +80,29 @@ QVariantMap MailBackend::googleDraft() const {
     const auto preparationFailure = status["preparation_failure"].toObject();
     const bool mismatch = !baseline["observed_sha256"].toString().isEmpty() && !baseline["upload_sha256"].toString().isEmpty()
         && baseline["observed_sha256"] != baseline["upload_sha256"];
-    const bool contentMismatch = status["fidelity_warning"].toBool();
+    // Drafts are Gmail drafts (D122): syncing, conflicts and Gmail's own edits
+    // resolve on their own. Only what the person should know is said, plainly.
     QString text;
-    if (state == "local") text = "Saved on this machine.";
-    else if (state == "adopted") text = "Editing the retained Google draft. Adoption alone has not uploaded anything; saved edits use normal draft sync.";
-    else if (state == "prepared") text = "Google draft upload queued.";
-    else if (state == "in_flight") text = "Uploading draft to Google…";
-    else if (state == "acceptance_unknown") text = "Google draft result is unknown. Check Google before continuing.";
-    else if (state == "acknowledged") text = "Google accepted the draft. Its saved copy still needs checking.";
-    else if (state == "synced") {
-        if (m_draftDirty) text = "Unsaved edits await local save and Google draft sync.";
-        else text = baseline["draft_revision"].toInteger() < m_draft.value("revision").toLongLong()
-            ? "Newer local edits await Google draft sync." : "Saved to Google.";
+    if (state == "failed") text = "Couldn't save this draft to Gmail. It's kept here.";
+    else if (unknown && target.isEmpty()) text = "Gmail hasn't confirmed this draft yet. It's kept here.";
+    if (!preparationFailure.isEmpty() && !m_draftDirty
+        && m_draft.value("revision").toLongLong() <= preparationFailure["draft_revision"].toInteger()) {
+        auto reason = preparationReason(preparationFailure["code"].toString());
+        reason[0] = reason[0].toLower();
+        text = "Couldn't save this draft to Gmail: " + reason;
     }
-    else if (state == "conflict") text = "Google draft conflict. Your local work remains retained; review the Google outcome before replacing.";
-    else if (state == "failed") text = "Google draft sync stopped. Check Google for its saved state.";
-    if (unknown && target.isEmpty()) text = "Google draft creation is unconfirmed and has no known target. Retry and replacement are unavailable.";
-    else if (unknown && state == "conflict" && observed.isEmpty()) text = "Google draft update is unconfirmed and its target is currently missing. Check Google again; replacement is unavailable.";
-    else if (unknown && state == "conflict" && !observedUnknownTarget) text = "Google draft update is unconfirmed and the observed draft does not match its target. Replacement is unavailable.";
-    else if (unknown && state == "conflict") text = "Google draft update is unconfirmed. Its existing target was checked; you can explicitly replace it with your saved local version.";
-    if (!preparationFailure.isEmpty()) {
-        const bool newerSaved = m_draft.value("revision").toLongLong() > preparationFailure["draft_revision"].toInteger();
-        text = QString(m_draftDirty || newerSaved ? "The previous saved version was not uploaded. " : "This saved version was not uploaded. ")
-            + preparationReason(preparationFailure["code"].toString());
-        if (m_draftDirty) text += " Unsaved edits await local save before Google draft preparation can retry.";
-        else if (newerSaved) text += " Newer saved edits await preparation and Google draft sync.";
-        else text += " Edit and save to retry.";
-    }
-    if (contentMismatch) text += " Google's saved draft differs from your local version. Your local text is safe.";
     if (googleSendBlocksDraftSync()) return {{"visible", false}, {"can_check", false}, {"can_replace", false}};
     if (busy) text += m_googleDraftOperationMethod == "google_draft_reconcile" ? " Checking Google…" : " Replacing the Google copy…";
     if (m_googleDraftFeedbackAccount == m_account && m_googleDraftFeedbackId == id && !m_googleDraftFeedback.isEmpty()) text += " " + m_googleDraftFeedback;
     const bool ready = visible && googleDraftRecoveryReady() && m_googleDraftOperationId.isEmpty();
     const bool requiresCheck = m_googleDraftRequiresCheck.contains(m_account + '\n' + id);
-    const bool warning = requiresCheck || contentMismatch || !preparationFailure.isEmpty() || state == "conflict" || state == "acceptance_unknown" || state == "failed";
+    const bool warning = !text.isEmpty() && (state == "failed" || !preparationFailure.isEmpty());
     const bool feedback = m_googleDraftFeedbackAccount == m_account && m_googleDraftFeedbackId == id && !m_googleDraftFeedback.isEmpty();
     return {{"visible", visible}, {"state", state}, {"status", text}, {"busy", busy}, {"byte_mismatch", mismatch},
         {"warning", warning},
         // The composer shows draft sync only when something needs the person: a
         // problem, its feedback or a check they started. Normal sync stays silent.
-        {"attention", visible && (warning || feedback || busy)},
+        {"attention", visible && !text.isEmpty() && (warning || feedback || busy || unknown)},
         {"can_check", ready && knownRemote && state != "local"},
         {"can_replace", ready && !requiresCheck && state == "conflict" && (!unknown || observedUnknownTarget)
             && !m_draftDirty && !draftBusy() && !attachmentImportPending() && !m_draftConflict}};

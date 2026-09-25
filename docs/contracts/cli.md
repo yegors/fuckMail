@@ -2,6 +2,14 @@
 
 
 
+## D123 — label Read and Spam (CLI53)
+
+`fm --account ID labels auto-read LABEL on|off --expected on|off --request-id R` (`label_auto_read`) and `labels spam LABEL on|off --expected on|off --request-id R` (`label_auto_spam`, Core68). Gmail drafts appear in `drafts` as ordinary local drafts (Gmail31); the draft source commands remain.
+
+## D121 — to: search (CLI52)
+
+`mail list --query` reads the Search 9 grammar: `from:` is the sender, `to:` a recipient and a bare address either. `mail senders` takes `--role sender|recipient` for the people a `to:` can name. Without it, `--folder sent|drafts` still lists recipients.
+
 ## D120 — Spam and Trash (CLI51)
 
 `fm --account ID google bin-count spam|trash` (`google_bin_counts`), `google not-spam THREAD_ID` (`google_not_spam`), `google delete-forever spam|trash ID --yes` (Spam takes a Gmail thread id, Trash a conversation id; `google_delete_forever`) and `google empty spam|trash --yes` (`google_empty`). Without `--yes` the two deleting commands refuse with an input error. Deleting needs the account reconnected with full mail access. Consumers: Gmail30, Core67.

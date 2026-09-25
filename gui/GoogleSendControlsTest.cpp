@@ -86,6 +86,10 @@ public:
             const auto method = request["method"].toString(), id = request["id"].toString();
             if (method == "accounts") { peer->write(reply(id, {{"accounts", QJsonArray::fromVariantList(backend.m_allAccounts)}})); return true; }
             if (method == "view_save") { peer->write(reply(id, {{"revision", 1}})); return true; }
+            // The draft chips list this account's drafts.
+            if (method == "drafts") { peer->write(reply(id, {{"drafts", QJsonArray{}}, {"total", 0}})); return true; }
+            // A new message looks up recent mail with its first recipient.
+            if (method == "conversations") { peer->write(reply(id, {{"conversations", QJsonArray{}}, {"filtered_conversation_count", 0}})); return true; }
             if (method == "google_sent") {
                 require(!request["account"].toString().isEmpty(), "outgoing read keeps its selected account");
                 peer->write(reply(id, {{"account",request["account"]},{"outgoing",QJsonArray{}},{"next_offset",QJsonValue::Null}})); return true;
@@ -135,7 +139,8 @@ ApplicationWindow { width: 900; height: 1200; visible: true
                 window->requestUpdate(); await([&] { return painted; }, "narrow recovery layout reaches a real frame");
                 QObject::disconnect(connection);
                 require(qAbs(composer->width() - 422) < .5, "composer matches the supported narrow reader");
-                const QRectF available(20, 0, 402, composer->height());
+                // The composer's fields start 18px in from its gold edge.
+                const QRectF available(18, 0, 404, composer->height());
                 QList<QRectF> previous;
                 for (const auto name : {"checkGoogleSend", "resumeGoogleSend", "abandonGoogleSend"}) {
                     auto button = qobject_cast<QQuickItem *>(named(root, name));

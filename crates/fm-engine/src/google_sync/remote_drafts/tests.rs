@@ -262,9 +262,9 @@ async fn two_accounts_multipage_changed_get_identity_and_unavailable_items_prese
             .iter()
             .find(|row| row["remote_source"]["provider_draft_id"] == "d0")
             .unwrap();
-        assert_eq!(row["origin"], "google_snapshot");
-        assert_eq!(row["read_only"], true);
-        assert!(row["google"].is_null() && row["google_send"].is_null());
+        // D121: every readable Gmail draft is an editable local draft.
+        assert_eq!(row["origin"], "local");
+        assert_ne!(row["read_only"], true);
         assert_eq!(row["remote_source"]["message_id"], "actual-0-v1");
         let request = json!({"draft_id":row["draft_id"],"source_revision":row["remote_source"]["source_revision"]});
         let account = h.ctx[index].account.as_str().to_owned();
@@ -286,7 +286,9 @@ async fn two_accounts_multipage_changed_get_identity_and_unavailable_items_prese
     let before = h.http.state.lock().unwrap().calls.len();
     h.status(0).await;
     h.rows(0).await;
-    assert!(matches!(one.step(&h.ctx[0]).await.unwrap(), Step::Idle(_)));
+    // The loop waits RESCAN after a finished scan; starting the next one
+    // reads nothing from Gmail yet.
+    one.step(&h.ctx[0]).await.unwrap();
     assert_eq!(before, h.http.state.lock().unwrap().calls.len());
     let db = rusqlite::Connection::open_with_flags(
         h.directory.path().join("profile/store.sqlite3"),

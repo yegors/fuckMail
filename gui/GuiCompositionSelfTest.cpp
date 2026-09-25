@@ -376,7 +376,7 @@ void GuiCompositionSelfTest::step() {
         if (!saved()) return;
         // The reader's actions hide while a reply is open; collapse it first.
         const QString action=m_mode==1 ? "replyAllButton" : m_mode==2 ? "forwardButton" : "replyButton";
-        if (!item(action)) { click("collapseReply"); return; }
+        if (!item(action)) { QMetaObject::invokeMethod(item("mailWorkspace"), "minimizeComposer"); return; }
         if (!click(action)) return;
         m_stage=21; break;
     }

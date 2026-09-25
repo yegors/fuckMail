@@ -19,8 +19,15 @@ Rectangle {
     property bool dragging: false
     property int navigationDelta: 0
     implicitHeight: 40 + shownLanes * 28
-    onVisibleChanged: if (!visible) { details.close(); timelineMenu.close(); dayEvents.close(); cancelDrag() }
-    function showEvent(event, item) { if (!backend.timelineReady || !backend.connected) return; if (editor.opened) { editor.contentItem.forceActiveFocus(); return } details.openAt(event, item || timeline) }
+    onVisibleChanged: if (!visible) { details.close(); cancelDrag() }
+    function showEvent(event, item) {
+        if (!backend.timelineReady || !backend.connected) return
+        if (editor.opened) { editor.contentItem.forceActiveFocus(); return }
+        // Where the strip meets the page, read now: a binding keeps the position
+        // from before the window laid out and opened the card at the top.
+        details.timelineEdge = timeline.mapToItem(Overlay.overlay, 0, timeline.headerPosition ? timeline.height : 0).y
+        details.openAt(event, item || timeline)
+    }
     function beginDrag(x) { if (slide.running) return; pressedX = x; dragging = false }
     function cancelDrag() { slide.stop(); navigationDelta = 0; dragging = false; dragOffset = 0 }
     function moveDrag(x) { if (slide.running) return; let delta = x - pressedX; if (Math.abs(delta) > 4) { dragging = true; dragOffset = Math.max(-width, Math.min(width, delta)); details.close() } }
@@ -206,7 +213,7 @@ Rectangle {
                 }
                 Rectangle {
                     visible: !panel.isToday
-                    anchors.right: parent.right; anchors.rightMargin: 24 + (timeline.hiddenEvents > 0 ? overflowButton.width + 10 : 0); y: 6
+                    anchors.right: parent.right; anchors.rightMargin: 24; y: 6
                     width: backToToday.implicitWidth + 6; height: 16; color: Theme.bg0
                     FmButton {
                         id: backToToday
@@ -223,23 +230,6 @@ Rectangle {
         }
     }
 
-    Rectangle {
-        visible: timeline.hiddenEvents > 0
-        anchors.right: parent.right; anchors.rightMargin: 21; y: 4; width: overflowButton.width + 6; height: 20; color: Theme.bg0
-        FmButton { id: overflowButton; objectName: "timelineOverflow"; anchors.right: parent.right; text: "+" + timeline.hiddenEvents + " more"; implicitHeight: 20; leftPadding: 5; rightPadding: 5; font.pointSize: Theme.fontPoints(11); foreground: hovered ? Theme.text : Theme.inkAlpha(.5); tip: "All events · " + (backend.preferences.calendar_display_time_zone || "Time zone unavailable") + " · " + backend.timelineCoverage; onClicked: timelineMenu.open() }
-    }
-    Popup {
-        id: timelineMenu; parent: overflowButton; width: 265; x: parent.width - width; y: timeline.headerPosition ? parent.height + timeline.height : -height - 10; padding: 8; focus: true
-        background: Rectangle { color: Theme.surface; radius: 6; border.color: Theme.controlBorder }
-        contentItem: ColumnLayout {
-            property bool blocksWorkspaceShortcuts: true
-            spacing: 4
-            FmButton { text: "All " + backend.todayEvents.length + " events"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { timelineMenu.close(); dayEvents.open() } }
-            FmButton { text: "Open calendar"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { timelineMenu.close(); timeline.openCalendar() } }
-            Text { text: (backend.preferences.calendar_display_time_zone || "Time zone unavailable") + "\n" + backend.timelineCoverage; color: Theme.subtle; font.pointSize: Theme.fontPoints(11); Layout.fillWidth: true; wrapMode: Text.Wrap }
-        }
-    }
-    EventDetails { id: details; timelineSource: true; timelineInset: timeline.height; timelineAtTop: timeline.headerPosition; timelineEdge: timeline.mapToItem(Overlay.overlay, 0, timeline.headerPosition ? timeline.height : 0).y; onEditRequested: function(event) { editor.editEvent = event; editor.openForDate(event.start.slice(0, 10)) } }
+    EventDetails { id: details; timelineSource: true; timelineInset: timeline.height; timelineAtTop: timeline.headerPosition; onEditRequested: function(event) { editor.editEvent = event; editor.openForDate(event.start.slice(0, 10)) } }
     EventEditor { id: editor; timelineSource: true; timelineInset: timeline.visible ? timeline.height : 0; timelineAtTop: timeline.headerPosition }
-    CalendarEventList { id: dayEvents; title: Qt.formatDate(new Date(backend.timelineDate + "T12:00:00"), "ddd d MMM") + " · all events"; eventRows: backend.todayEvents; available: backend.timelineReady && backend.connected; onEventSelected: function(event) { timeline.showEvent(event) } }
 }

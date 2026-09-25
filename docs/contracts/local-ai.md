@@ -1,5 +1,9 @@
 # Local mail analysis
 
+## D123 — Spam labels (Local assistance26)
+
+Settings → Accounts' label table renames "Auto-read" to "Read" and adds "Spam". With Spam on, a label the model applies sends the message to Gmail Spam (Core68): once per message, never sent or manually labelled mail, and Spam wins over Read. The intro reads "Labels for {Account} only. Descriptions help the local model sort mail." Everything in Local assistance25 is otherwise unchanged.
+
 ## D111 — one queue, one email, system/user prompts (Local assistance25)
 
 Supersedes the watcher (D097), the Backlog job (D086), the request template and variables ("Visible dynamic prompt", D060's request mapping, D080's correction retry, D112's placeholder rules) and the combined result fields below. Label authority, manual precedence, Auto-read (D090/D096), sent-mail exclusion, previews (D107) and diagnostics (D103) are unchanged. [Plan](../plans/local-model-pipeline.md).

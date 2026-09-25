@@ -389,3 +389,65 @@ async fn trash_and_restore_use_distinct_endpoints_without_invented_inbox_changes
     assert_eq!(h.status().await["counts"]["confirmed"], 2);
     h.close();
 }
+
+#[tokio::test]
+async fn model_spam_label_moves_the_message_to_gmail_spam_and_drops_the_local_copy() {
+    let h = Harness::new(PostResult::Success);
+    let account = h.account.as_str().to_owned();
+    let conversation = h.conversation.clone();
+    let message = h.message.clone();
+    h.core
+        .call(move |store| {
+            let settings = json!({"endpoint":"http://127.0.0.1:11434",
+                "model":{"name":"fixture","digest":"a".repeat(64)},"accounts":{}});
+            store.local_model_handle(
+                "assist_settings_save",
+                None,
+                &json!({"expected_revision":0,"settings":settings}),
+            )?;
+            store.label_edit(&account,"label_create",&json!({"request_id":"create-promotions","id":"promotions","name":"Promotions"}))?;
+            store.label_edit(&account,"label_auto_spam",&json!({"request_id":"promotions-spam","id":"promotions","expected_auto_spam":false,"auto_spam":true}))?;
+            let plan = store.local_model_prepare(&account, &conversation, &message)?;
+            store.local_model_finish(
+                &plan,
+                json!({"summary":"A promotion.","sender_kind":"automated","category_ids":["promotions"]}),
+            )
+        })
+        .await
+        .unwrap();
+    assert!(
+        h.http.0.lock().unwrap().requests.is_empty(),
+        "classification itself contacts no provider"
+    );
+    let mut worker = MailMutationWorker::new(h.account.clone());
+    worker.step(&h.ctx, 0).await.unwrap();
+    worker.step(&h.ctx, 0).await.unwrap();
+    assert_eq!(h.posts(), 1);
+    let requests = h.http.0.lock().unwrap().requests.clone();
+    assert!(requests
+        .iter()
+        .any(|(method, url)| *method == HttpMethod::Post && url.ends_with("/modify")));
+    assert_eq!(
+        h.http.0.lock().unwrap().labels,
+        ["SPAM", "UNREAD", "STARRED", "Label_unrelated"]
+            .into_iter()
+            .map(Into::into)
+            .collect::<BTreeSet<String>>(),
+        "SPAM added and INBOX removed; review state and other labels untouched"
+    );
+    let db = rusqlite::Connection::open_with_flags(
+        h.directory.path().join("profile/store.sqlite3"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .unwrap();
+    let kept: i64 = db
+        .query_row(
+            "SELECT count(*) FROM messages WHERE account=?1",
+            [h.account.as_str()],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(kept, 0, "confirmed Spam is not kept locally");
+    drop(db);
+    h.close();
+}

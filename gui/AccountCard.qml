@@ -92,12 +92,17 @@ Rectangle {
         Rectangle {
             id: track
             Layout.fillWidth: true; Layout.minimumWidth: 24; implicitHeight: 3; radius: 2; color: meter.track; clip: true
-            Rectangle { width: parent.width * Math.max(0, Math.min(1, meter.stage.frac || 0)); height: 3; color: meter.stage.fill || Theme.ai; Behavior on width { NumberAnimation { duration: 500 } } }
+            // Progress, not layout, animates: a resize or a neighbouring row's
+            // change never moves a bar, and a finished stage never moves at all.
+            property real done: Math.max(0, Math.min(1, meter.stage.frac || 0))
+            property real queued: Math.max(0, Math.min(1, meter.stage.qfrac || 0))
+            Behavior on done { enabled: meter.stage.live === true; NumberAnimation { duration: 500 } }
+            Behavior on queued { enabled: meter.stage.live === true; NumberAnimation { duration: 500 } }
+            Rectangle { width: parent.width * track.done; height: 3; color: meter.stage.fill || Theme.ai }
             Rectangle {
                 visible: meter.twoTone
-                x: parent.width * Math.max(0, Math.min(1, meter.stage.frac || 0))
-                width: parent.width * Math.max(0, Math.min(1, meter.stage.qfrac || 0)); height: 3; color: Theme.withAlpha(Theme.ai, .28)
-                Behavior on width { NumberAnimation { duration: 500 } }
+                x: parent.width * track.done
+                width: parent.width * track.queued; height: 3; color: Theme.withAlpha(Theme.ai, .28)
             }
             // Google reports no calendar total: an active first pass shimmers.
             Rectangle {

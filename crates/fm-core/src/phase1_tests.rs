@@ -592,7 +592,8 @@ fn search_grammar_scopes_fields_labels_state_and_recipients() {
         .handle("conversations", Some(ACCOUNT), json!({}))
         .unwrap()["search_terms"]
         .is_null());
-    // In Sent, from: names the recipient.
+    // to: names a recipient in every folder; from: is always the sender; a
+    // bare address is either.
     let sent: (i64, String) = store.db.query_row("SELECT rowid,conversation_id FROM messages WHERE account=?1 AND sent=1 AND trashed=0 ORDER BY id LIMIT 1", [ACCOUNT], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
     store
         .db
@@ -601,8 +602,28 @@ fn search_grammar_scopes_fields_labels_state_and_recipients() {
             [sent.0],
         )
         .unwrap();
-    assert_eq!(ids(&mut store, "from:zed", "sent"), vec![sent.1]);
-    assert!(ids(&mut store, "from:zed", "inbox").is_empty());
+    assert_eq!(ids(&mut store, "to:zed", "sent"), vec![sent.1.clone()]);
+    assert!(ids(&mut store, "from:zed", "sent").is_empty());
+    assert_eq!(ids(&mut store, "zed@fixture.example", "sent"), vec![sent.1]);
+    assert!(ids(&mut store, "to:zed", "inbox").is_empty());
+    // Cc people come from the link index's people rows; the sender is not a recipient.
+    let (row, conversation, sender): (i64, String, String) = store.db.query_row("SELECT rowid,conversation_id,sender_email FROM messages WHERE account=?1 AND conversation_id=?2 ORDER BY rowid LIMIT 1", rusqlite::params![ACCOUNT, b], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+    for (email, name) in [("yara@fixture.example", "Yara Cc"), (sender.to_lowercase().as_str(), "")] {
+        store.db.execute("INSERT INTO people(email,name) VALUES(?1,?2) ON CONFLICT(email) DO NOTHING", [email, name]).unwrap();
+        store.db.execute("INSERT OR IGNORE INTO message_people(message_rowid,person) SELECT ?1,id FROM people WHERE email=?2", rusqlite::params![row, email]).unwrap();
+    }
+    assert_eq!(ids(&mut store, "to:yara@fixture.example", "inbox"), vec![conversation.clone()]);
+    assert_eq!(ids(&mut store, "to:\"Yara Cc\"", "inbox"), vec![conversation.clone()]);
+    assert!(ids(&mut store, "from:yara", "inbox").is_empty());
+    assert_eq!(ids(&mut store, "yara@fixture.example", "inbox"), vec![conversation.clone()]);
+    assert!(!ids(&mut store, &format!("to:{sender}"), "inbox").contains(&conversation));
+    let terms = store
+        .handle("conversations", Some(ACCOUNT), json!({"query":"zed@fixture.example to:yara from:orchid"}))
+        .unwrap()["search_terms"]
+        .clone();
+    assert_eq!(terms["to"], json!(["yara"]));
+    assert_eq!(terms["from"], json!(["orchid"]));
+    assert_eq!(terms["people"], json!(["zed@fixture.example"]));
 }
 
 // Done is presented by month; counts cover the filtered set and a collapsed

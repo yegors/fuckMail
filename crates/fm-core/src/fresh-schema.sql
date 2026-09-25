@@ -129,7 +129,6 @@ CREATE TABLE google_draft_sources(
  observed_at INTEGER NOT NULL,last_observed_at INTEGER NOT NULL,
  metadata_json TEXT NOT NULL CHECK(json_valid(metadata_json) AND length(CAST(metadata_json AS BLOB))<=65536),
  PRIMARY KEY(account,source_revision),
- FOREIGN KEY(account,draft_id) REFERENCES drafts(account,draft_id),
  FOREIGN KEY(account,linked_local_draft_id) REFERENCES drafts(account,draft_id)
 ) STRICT;
 CREATE TABLE google_label_catalog_items (

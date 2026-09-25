@@ -55,6 +55,9 @@ pub struct Account {
     pub descriptions: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub auto_read: BTreeMap<String, bool>,
+    /// Labels whose model-applied mail goes to Spam. Missing means off.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub auto_spam: BTreeMap<String, bool>,
     /// The local model stage is paused for this account; downloading continues.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub paused: bool,
@@ -66,6 +69,7 @@ impl Default for Account {
             summaries: true,
             descriptions: BTreeMap::new(),
             auto_read: BTreeMap::new(),
+            auto_spam: BTreeMap::new(),
             paused: false,
         }
     }
@@ -136,10 +140,12 @@ impl Settings {
             || self.accounts.values().any(|a| {
                 a.descriptions.len() > 64
                     || a.auto_read.len() > 64
+                    || a.auto_spam.len() > 64
                     || a.descriptions
                         .iter()
                         .any(|(k, v)| k.is_empty() || k.len() > 128 || v.len() > 512)
                     || a.auto_read.keys().any(|k| k.is_empty() || k.len() > 128)
+                    || a.auto_spam.keys().any(|k| k.is_empty() || k.len() > 128)
             })
         {
             return Err("Account or label descriptions exceed their bounds".into());
@@ -370,6 +376,28 @@ mod tests {
         let old =
             json!({"endpoint":"http://127.0.0.1:11434","model":null,"prompt":"{}","accounts":{}});
         assert!(serde_json::from_value::<Settings>(old).is_err());
+    }
+    #[test]
+    fn label_spam_choices_are_optional_and_bounded() {
+        let saved = json!({"endpoint":"http://127.0.0.1:11434","model":null,
+            "accounts":{"work":{"classification":true,"summaries":true,"auto_read":{"receipts":false}}}});
+        let mut settings: Settings = serde_json::from_value(saved).unwrap();
+        assert!(settings.accounts["work"].auto_spam.is_empty());
+        let json = serde_json::to_value(&settings).unwrap();
+        assert!(json["accounts"]["work"].get("auto_spam").is_none());
+        let work = settings.accounts.get_mut("work").unwrap();
+        work.auto_spam.insert("promotions".into(), true);
+        settings.validate().unwrap();
+        assert_eq!(
+            serde_json::to_value(&settings).unwrap()["accounts"]["work"]["auto_spam"]["promotions"],
+            true
+        );
+        let work = settings.accounts.get_mut("work").unwrap();
+        work.auto_spam.insert(String::new(), true);
+        assert!(settings.validate().is_err());
+        let work = settings.accounts.get_mut("work").unwrap();
+        work.auto_spam = (0..65).map(|i| (format!("label-{i}"), true)).collect();
+        assert!(settings.validate().is_err());
     }
     #[test]
     fn user_message_variables_are_checked_and_expanded_once() {

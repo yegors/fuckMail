@@ -126,6 +126,7 @@ impl SyncContext {
                     | GmailMethod::MessageTrash
                     | GmailMethod::MessageRestore
                     | GmailMethod::LabelCreate
+                    | GmailMethod::MessagesBatchDelete
             )
         {
             return Err(GoogleError::PermissionDenied);

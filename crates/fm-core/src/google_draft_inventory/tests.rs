@@ -94,6 +94,23 @@ pub(super) fn import(
     let proof = available(fetch(store, s), raw, member);
     store.google_draft_import_finish(proof).unwrap()
 }
+/// One complete scan listing all `ids`, each fetched with the same RAW.
+fn import_many(store: &mut Store, s: &GoogleDraftReadScope, ids: &[&str], raw: &[u8]) {
+    store.google_draft_inventory_begin(s).unwrap();
+    page(store, s, ids, None);
+    for _ in ids {
+        let plan = fetch(store, s);
+        let member = format!("member-{}", plan.provider_draft_id());
+        let proof = available(plan, raw, &member);
+        store.google_draft_import_finish(proof).unwrap();
+    }
+}
+fn source_of(store: &Store, s: &GoogleDraftReadScope, id: &str) -> Value {
+    store
+        .google_draft_source_history(&s.account, &json!({"draft_id":id}))
+        .unwrap()["sources"][0]
+        .clone()
+}
 fn draft(store: &mut Store, s: &GoogleDraftReadScope, id: &str) -> Value {
     store
         .handle("draft_get", Some(&s.account), json!({"draft_id":id}))
@@ -170,8 +187,9 @@ fn exact_raw_routing_cid_parts_and_account_isolation_survive_restart() {
     import(&mut store, &a, "same-container", RAW, "fetched-new-member");
     let id = draft_id(&store, &a, "same-container");
     let got = draft(&mut store, &a, &id);
-    assert_eq!(got["origin"], "google_snapshot");
-    assert_eq!(got["read_only"], true);
+    // D121: a Gmail draft arrives as an ordinary editable draft tied to it.
+    assert_eq!(got["origin"], "local");
+    assert_ne!(got["read_only"], true);
     assert_eq!(got["from"], "outside@example.test");
     assert_eq!(got["from_name"], "Remote Author");
     for (key, email) in [
@@ -188,8 +206,7 @@ fn exact_raw_routing_cid_parts_and_account_isolation_survive_restart() {
         .unwrap()
         .contains("Original remote text"));
     assert!(got["body_html"].as_str().unwrap().contains("cid:picture"));
-    assert!(got["google"].is_null());
-    assert!(got["google_send"].is_null());
+    assert_eq!(got["google"]["state"], "adopted");
     assert_eq!(got["remote_source"]["message_id"], "fetched-new-member");
     assert_eq!(
         raw_export(&store, &a, &id, &got["remote_source"]["source_revision"]),
@@ -292,16 +309,42 @@ fn latest_preview_history_empty_scan_and_missing_observation_are_distinct() {
         raw_export(&store, &a, &id, &first["remote_source"]["source_revision"]),
         RAW
     );
+    // An unchanged listing re-reads nothing: the draft is only marked seen.
+    store.google_draft_inventory_begin(&a).unwrap();
+    let GoogleDraftInventoryStep::List(plan) = store.google_draft_inventory_next(&a).unwrap()
+    else {
+        panic!("list expected")
+    };
+    let status = store
+        .google_draft_inventory_list_finish(
+            plan,
+            GoogleDraftInventoryPage {
+                drafts: vec![GoogleDraftListedId {
+                    draft_id: "remote".into(),
+                    message_id: "member2".into(),
+                }],
+                next_page_token: None,
+                result_size_estimate: Some(1),
+            },
+        )
+        .unwrap();
+    assert_eq!(status["enumeration_complete"], true);
+    assert_eq!(status["observed_this_scan"], 1);
+    assert_eq!(draft(&mut store, &a, &id)["revision"], latest["revision"]);
+    // D121: a complete listing without it means Gmail no longer has it; the
+    // unchanged local copy leaves and nothing is deleted in Gmail.
     store.google_draft_inventory_begin(&a).unwrap();
     let status = page(&mut store, &a, &[], None);
     assert_eq!(status["enumeration_complete"], true);
     assert_eq!(status["observed_this_scan"], 0);
     assert_eq!(status["observed_items"], 1);
     assert_eq!(status["source_retained"], 1);
-    let unseen = draft(&mut store, &a, &id);
-    assert_eq!(unseen["remote_source"]["seen_in_latest_scan"], false);
-    assert_eq!(unseen["body"], latest["body"]);
-    assert_eq!(unseen["remote_source"]["absence_means_sent"], false);
+    let listed = store.handle("drafts", Some(&a.account), json!({})).unwrap();
+    assert_eq!(listed["total"], 0);
+    assert!(store
+        .google_draft_discard_due(&a.account)
+        .unwrap()
+        .is_none());
     store.google_draft_inventory_begin(&a).unwrap();
     page(&mut store, &a, &["remote"], None);
     let proof = prepare_google_draft_import(
@@ -315,7 +358,6 @@ fn latest_preview_history_empty_scan_and_missing_observation_are_distinct() {
     assert_eq!(status["source_retained"], 0);
     assert_eq!(status["source_unavailable"], 1);
     let missing = draft(&mut store, &a, &id);
-    assert_eq!(missing["body"], latest["body"]);
     assert_eq!(missing["remote_source"]["source_state"], "missing");
     assert_eq!(missing["remote_source"]["preview_state"], "unavailable");
     assert_eq!(
@@ -338,72 +380,196 @@ fn latest_preview_history_empty_scan_and_missing_observation_are_distinct() {
 }
 
 #[test]
-fn capable_account_cannot_mutate_upload_or_send_read_only_snapshot() {
+fn gmail_drafts_are_editable_and_discarding_deletes_them_in_gmail() {
     let dir = tempfile::tempdir().unwrap();
     let (mut store, a, _) = setup(dir.path());
-    import(&mut store, &a, "remote", RAW, "member");
+    let own = String::from_utf8(RAW.to_vec())
+        .unwrap()
+        .replace(
+            "Remote Author <outside@example.test>",
+            "Author <author@example.test>",
+        )
+        .into_bytes();
+    import(&mut store, &a, "remote", &own, "member");
     let id = draft_id(&store, &a, "remote");
     let original = draft(&mut store, &a, &id);
-    let revision = original["revision"].clone();
-    for method in ["draft_save", "draft_discard", "draft_attachment_import"] {
-        let mut p = json!({"draft_id":id,"expected_revision":revision,"request_id":method});
-        if method == "draft_save" {
-            p["body"] = json!("must not replace preview");
-        }
-        if method == "draft_attachment_import" {
-            p["path"] = json!(dir.path().join("missing-never-opened"));
-        }
-        assert_eq!(
-            code(store.handle(method, Some(&a.account), p)),
-            "draft_read_only",
-            "{method}"
-        );
-    }
-    let request = json!({"draft_id":id,"expected_revision":revision,"request_id":"upload"});
-    assert_eq!(
-        code(store.google_draft_intent(&scope(&a), &request)),
-        "draft_read_only"
-    );
-    assert_eq!(
-        code(store.google_draft_begin(&scope(&a), &request)),
-        "draft_read_only"
-    );
-    assert_eq!(
-        code(store.google_draft_prepare_failed(&scope(&a), &request, 0, "invalid_draft")),
-        "draft_read_only"
-    );
-    assert_eq!(
-        code(store.google_draft_defer(&scope(&a), &request, 0, "content_unavailable", 5)),
-        "draft_read_only"
-    );
-    assert_eq!(
-        code(store.google_draft_observe_begin(&scope(&a), &id)),
-        "draft_read_only"
-    );
-    let send = json!({"draft_id":id,"expected_revision":revision,"expected_google_revision":0,"request_id":"send"});
-    assert_eq!(
-        code(store.google_send_intent(&scope(&a), &send)),
-        "draft_read_only"
-    );
-    assert_eq!(
-        code(store.google_send_begin(&scope(&a), &send)),
-        "draft_read_only"
-    );
-    assert_eq!(
-        code(store.handle(
-            "draft_capture",
-            Some(&a.account),
-            json!({"draft_id":id,"expected_revision":revision,"request_id":"capture"})
-        )),
-        "capability_unavailable"
-    );
     assert!(store
         .google_draft_due(&a.account, a.connection_generation, 10)
         .unwrap()
         .is_empty());
-    assert_eq!(count(&store, "operations"), 0);
+    // An edit uploads to the same Gmail draft.
+    store
+        .handle(
+            "draft_save",
+            Some(&a.account),
+            json!({"draft_id":id,"expected_revision":original["revision"],"request_id":"edit","body":"Edited here"}),
+        )
+        .unwrap();
+    let edited = draft(&mut store, &a, &id);
+    let due = store
+        .google_draft_due(&a.account, a.connection_generation, 10)
+        .unwrap();
+    assert_eq!(due.len(), 1);
+    let request =
+        json!({"draft_id":id,"expected_revision":edited["revision"],"request_id":"upload"});
+    match store.google_draft_intent(&scope(&a), &request).unwrap() {
+        google_drafts::GoogleDraftIntent::Upload { provider_draft_id } => {
+            assert_eq!(provider_draft_id.as_deref(), Some("remote"))
+        }
+        _ => panic!("upload expected"),
+    }
+    // A Gmail change never overwrites a pending local edit.
+    let changed = String::from_utf8(own.clone())
+        .unwrap()
+        .replace("Original remote text", "Changed in Gmail")
+        .into_bytes();
+    import(&mut store, &a, "remote", &changed, "member-2");
+    assert_eq!(draft(&mut store, &a, &id)["body"], "Edited here");
+    // Discarding deletes the Gmail draft once Undo has passed.
+    store
+        .handle(
+            "draft_discard",
+            Some(&a.account),
+            json!({"draft_id":id,"expected_revision":edited["revision"],"request_id":"discard"}),
+        )
+        .unwrap();
+    assert!(store
+        .google_draft_discard_due(&a.account)
+        .unwrap()
+        .is_none());
+    store
+        .db
+        .execute(
+            "UPDATE drafts SET updated_at=updated_at-60 WHERE account=?1 AND draft_id=?2",
+            params![a.account, id],
+        )
+        .unwrap();
+    assert_eq!(
+        store.google_draft_discard_due(&a.account).unwrap(),
+        Some((id.clone(), "remote".into()))
+    );
+    store
+        .google_draft_remote_deleted(&a.account, &id, "remote")
+        .unwrap();
+    assert!(store
+        .google_draft_discard_due(&a.account)
+        .unwrap()
+        .is_none());
     assert_eq!(count(&store, "capture_operations"), 0);
-    assert_eq!(draft(&mut store, &a, &id), original);
+}
+
+#[test]
+fn a_vanished_gmail_draft_keeps_unsent_edits_and_undo_brings_a_deleted_one_back() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, a, _) = setup(dir.path());
+    let own = String::from_utf8(RAW.to_vec())
+        .unwrap()
+        .replace(
+            "Remote Author <outside@example.test>",
+            "Author <author@example.test>",
+        )
+        .into_bytes();
+    import_many(&mut store, &a, &["kept", "gone"], &own);
+    let kept = draft_id(&store, &a, "kept");
+    let revision = draft(&mut store, &a, &kept)["revision"].clone();
+    store
+        .handle(
+            "draft_save",
+            Some(&a.account),
+            json!({"draft_id":kept,"expected_revision":revision,"request_id":"unsent","body":"Not uploaded yet"}),
+        )
+        .unwrap();
+    // Both leave Gmail. The unchanged copy goes; the edited one stays and
+    // uploads as a new Gmail draft.
+    store
+        .db
+        .execute(
+            "UPDATE drafts SET updated_at=updated_at-60 WHERE account=?1",
+            [&a.account],
+        )
+        .unwrap();
+    store.google_draft_inventory_begin(&a).unwrap();
+    page(&mut store, &a, &[], None);
+    let listed = store.handle("drafts", Some(&a.account), json!({})).unwrap();
+    assert_eq!(listed["total"], 1);
+    assert_eq!(listed["drafts"][0]["draft_id"], kept);
+    let edited = draft(&mut store, &a, &kept);
+    assert_eq!(edited["body"], "Not uploaded yet");
+    let request =
+        json!({"draft_id":kept,"expected_revision":edited["revision"],"request_id":"recreate"});
+    match store.google_draft_intent(&scope(&a), &request).unwrap() {
+        google_drafts::GoogleDraftIntent::Upload { provider_draft_id } => {
+            assert!(provider_draft_id.is_none())
+        }
+        _ => panic!("a new upload expected"),
+    }
+    // A draft deleted in Gmail after its discard comes back on Undo and is
+    // uploaded again.
+    import(&mut store, &a, "again", &own, "again-member");
+    let again = draft_id(&store, &a, "again");
+    let before = draft(&mut store, &a, &again);
+    let discarded = store
+        .handle(
+            "draft_discard",
+            Some(&a.account),
+            json!({"draft_id":again,"expected_revision":before["revision"],"request_id":"toss"}),
+        )
+        .unwrap();
+    store
+        .db
+        .execute(
+            "UPDATE drafts SET updated_at=updated_at-60 WHERE account=?1 AND draft_id=?2",
+            params![a.account, again],
+        )
+        .unwrap();
+    assert_eq!(
+        store.google_draft_discard_due(&a.account).unwrap(),
+        Some((again.clone(), "again".into()))
+    );
+    store
+        .google_draft_remote_deleted(&a.account, &again, "again")
+        .unwrap();
+    let restored = store
+        .handle(
+            "draft_undo_discard",
+            Some(&a.account),
+            json!({"draft_id":again,"expected_revision":discarded["revision"],"discard_request_id":"toss","request_id":"untoss"}),
+        )
+        .unwrap();
+    let request =
+        json!({"draft_id":again,"expected_revision":restored["revision"],"request_id":"reupload"});
+    match store.google_draft_intent(&scope(&a), &request).unwrap() {
+        google_drafts::GoogleDraftIntent::Upload { provider_draft_id } => {
+            assert!(provider_draft_id.is_none())
+        }
+        _ => panic!("a new upload expected"),
+    }
+}
+
+#[test]
+fn a_gmail_edit_replaces_an_unchanged_local_copy() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut store, a, _) = setup(dir.path());
+    import(&mut store, &a, "remote", RAW, "member");
+    let id = draft_id(&store, &a, "remote");
+    let first = draft(&mut store, &a, &id);
+    let changed = String::from_utf8(RAW.to_vec())
+        .unwrap()
+        .replace("Original remote text", "Changed in Gmail")
+        .into_bytes();
+    import(&mut store, &a, "remote", &changed, "member-2");
+    let latest = draft(&mut store, &a, &id);
+    assert!(latest["body"]
+        .as_str()
+        .unwrap()
+        .contains("Changed in Gmail"));
+    assert!(latest["revision"].as_i64().unwrap() > first["revision"].as_i64().unwrap());
+    // Still in step with Gmail: nothing to upload.
+    assert!(store
+        .google_draft_due(&a.account, a.connection_generation, 10)
+        .unwrap()
+        .is_empty());
+    assert_eq!(latest["google"]["state"], "adopted");
 }
 
 #[test]
@@ -503,13 +669,25 @@ fn unknown_create_similarity_is_evidence_only_and_late_exact_ack_links_without_r
     import(&mut store, &a, "similar-container", &raw, "similar-member");
     let snapshot = draft_id(&store, &a, "similar-container");
     assert_ne!(snapshot, unknown_id);
-    let got = draft(&mut store, &a, &snapshot);
-    assert_eq!(got["remote_source"]["possible_unknown_create"], true);
+    // Exactly our unknown create's bytes: kept as evidence, not a second draft.
+    let source = store
+        .google_draft_source_history(&a.account, &json!({"draft_id":snapshot}))
+        .unwrap()["sources"][0]
+        .clone();
+    assert_eq!(source["possible_unknown_create"], true);
+    assert_eq!(source["candidate_request_ids"], json!(["unknown-create"]));
+    assert!(source["linked_local_draft_id"].is_null());
     assert_eq!(
-        got["remote_source"]["candidate_request_ids"],
-        json!(["unknown-create"])
+        store
+            .db
+            .query_row(
+                "SELECT COUNT(*) FROM drafts WHERE account=?1 AND draft_id=?2",
+                params![a.account, snapshot],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
     );
-    assert!(got["remote_source"]["linked_local_draft_id"].is_null());
     assert_eq!(
         store.google_draft_status(&a.account, &unknown_id).unwrap()["operation"],
         unknown_status["operation"]
@@ -520,7 +698,7 @@ fn unknown_create_similarity_is_evidence_only_and_late_exact_ack_links_without_r
     import(&mut store, &a, "late-container", &raw, "late-member");
     let duplicate = draft_id(&store, &a, "late-container");
     assert_ne!(duplicate, local);
-    let old_source = draft(&mut store, &a, &duplicate)["remote_source"]["source_revision"].clone();
+    let old_source = source_of(&store, &a, &duplicate)["source_revision"].clone();
     store
         .google_draft_outcome(
             &lease,
@@ -539,9 +717,10 @@ fn unknown_create_similarity_is_evidence_only_and_late_exact_ack_links_without_r
         )
         .unwrap();
     import(&mut store, &a, "late-container", &raw, "late-member");
-    let linked = draft(&mut store, &a, &duplicate);
-    assert_eq!(linked["remote_source"]["linked_local_draft_id"], local);
-    assert_eq!(linked["read_only"], true);
+    assert_eq!(
+        source_of(&store, &a, &duplicate)["linked_local_draft_id"],
+        local
+    );
     let owner = draft(&mut store, &a, &local);
     assert_eq!(owner["body"], authored["body"]);
     assert_eq!(owner["revision"], authored["revision"]);
@@ -552,15 +731,23 @@ fn unknown_create_similarity_is_evidence_only_and_late_exact_ack_links_without_r
         .unwrap()
         .iter()
         .any(|r| r["draft_id"] == duplicate));
-    assert_eq!(list["total"], 3);
-    assert!(!store
-        .db
-        .query_row(
-            "SELECT discarded FROM drafts WHERE account=?1 AND draft_id=?2",
-            params![a.account, duplicate],
-            |r| r.get::<_, bool>(0)
-        )
-        .unwrap());
+    assert_eq!(list["total"], 2);
+    // Our own in-flight create never gained a second, mirrored draft.
+    assert_eq!(
+        store
+            .db
+            .query_row(
+                "SELECT COUNT(*) FROM drafts WHERE account=?1 AND draft_id=?2",
+                params![a.account, duplicate],
+                |r| r.get::<_, i64>(0)
+            )
+            .unwrap(),
+        0
+    );
+    assert!(store
+        .google_draft_discard_due(&a.account)
+        .unwrap()
+        .is_none());
     assert_eq!(
         store
             .db
@@ -709,8 +896,12 @@ fn truncation_issues_and_large_read_cap_preserve_original_raw() {
         "too-big-member",
     );
     store.google_draft_import_finish(proof).unwrap();
+    // Too large to read: nothing to edit here, the history keeps the reason.
     let id = draft_id(&store, &a, "too-big");
-    let got = draft(&mut store, &a, &id);
+    let got = json!({"remote_source": store
+        .google_draft_source_history(&a.account, &json!({"draft_id":id}))
+        .unwrap()["sources"][0]
+        .clone()});
     assert_eq!(got["remote_source"]["source_state"], "unavailable");
     assert!(got["remote_source"]["sha256"].is_null());
     assert!(got["remote_source"]["issues"]
@@ -791,9 +982,13 @@ fn cached_page_reads_only_requested_routing_and_caps_enriched_payload() {
             params![a.account, hidden],
         )
         .unwrap();
-    for i in 0..20 {
-        import(&mut store, &a, &format!("remote-{i}"), RAW, "member");
-    }
+    let remotes: Vec<String> = (0..20).map(|i| format!("remote-{i}")).collect();
+    import_many(
+        &mut store,
+        &a,
+        &remotes.iter().map(String::as_str).collect::<Vec<_>>(),
+        RAW,
+    );
     let plan: Vec<String> = store
         .db
         .prepare(&format!("EXPLAIN QUERY PLAN {SOURCE_PAGE_SQL}"))
@@ -815,7 +1010,7 @@ fn cached_page_reads_only_requested_routing_and_caps_enriched_payload() {
     );
     let ids: Vec<String> = store
         .db
-        .prepare("SELECT draft_id FROM drafts WHERE origin='google_snapshot'")
+        .prepare("SELECT draft_id FROM google_draft_sources WHERE is_current=1")
         .unwrap()
         .query_map([], |r| r.get(0))
         .unwrap()

@@ -1,6 +1,22 @@
 # September 23 prototype implementation
 
 
+## D123 — eleventh export (2026-09-25)
+
+The founder supplied `Flight Progress v2 (offline) (4).html` (843,762 bytes, SHA-256 `e10b10cf05c0f03da3112ed213b2612f09dc24923c3390c0320d434dd6401aa6`) with the designer's 31 notes, screenshots of the draft source panels and the strip card, and a session log. Note 26 (the mockup's jump bar) belongs to the prototype only and was skipped. The draft rework is D122; the rest is D123.
+
+- **Log:** the Spam list was reloaded and emptied by each store refresh during sync (the flashing); the delete failure was the engine refusing `google_delete_forever` outside its mutation allowlist, not a missing scope; the connection already had full mail access.
+- **Header and rail:** counts, the ▾ bin menu, the solid New and the plain-text label toggles follow the export's sizes and inks; label filters became multi-select (Core `category` list, OR).
+- **Composer:** the export's inline compose (minimum height, body minimums, sticky footer, no title row), "Keep this message?", "Recent with" and draft chips; the source/snapshot panels, manual draft actions and their tests were removed.
+- **Calendar:** card notes and outline actions, the 720 px event view with the longer countdown and In progress/Ended states, the labelled Notes row, weekend shading and Month numbers.
+
+Verification on Windows, Release build in `build/p9` (the running app was left alone):
+- **Rust:** workspace tests pass (fm-core 374 lib, fm-engine 182, fm-cli and the others); clippy `-D warnings` clean for fm-core, fm-engine and fm-cli. New Core tests: `gmail_drafts_are_editable_and_discarding_deletes_them_in_gmail`, `a_gmail_edit_replaces_an_unchanged_local_copy`, `a_vanished_gmail_draft_keeps_unsent_edits_and_undo_brings_a_deleted_one_back` and `label_toggles_match_any_listed_label_and_a_label_query_decides`; inventory and engine draft tests now expect editable copies and self-resolving conflicts.
+- **Native:** the fast GUI tests, `gui-integration` and `gui-attachments` pass. `gui-google-draft-controls` checks silent sync and plain problem text; `gui-mail-selection` reaches Spam through the ▾ menu; the self-tests collapse the composer through `minimizeComposer`. `gui-google-draft-snapshot-controls` and `gui-google-draft-authoring-controls` are retired.
+- **Captures:** the Mail header, rail and chips, an inline New message, Week and Month.
+
+Not verified: drafts against real Gmail (edit or delete in Gmail, discard and Undo here), Spam labels on real mail, deleting from Spam against Gmail, the Inbox clear and event view by capture, and Mac/Linux. `gui-startup-recovery` still times out under CTest and passes directly.
+
 ## D120 — tenth export (2026-09-25)
 
 The founder supplied `Flight Progress v2 (offline) (3).html` (818,825 bytes, SHA-256 `6ed682f59fb94bdaae9745579671cccbc7c09aba5456980285f65b0093d1dc03`) with the designer's list of changes; the developer console part belongs to D119. The bundle was unpacked and the strip builder, folder tabs, Spam/Trash list, action bar and confirm markup were read for sizes, colours and text:

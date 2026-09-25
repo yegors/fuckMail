@@ -1,6 +1,8 @@
 # Local mail search
 
-State: Draft · Revision: 8 · Updated: 2026-09-25 · Implementation: D101 query grammar and people lookup; D093 fresh-profile FTS and planner maintenance; earlier measurements retain their source scope. Whole area remains Draft.
+State: Draft · Revision: 9 · Updated: 2026-09-25 · Implementation: D101 query grammar and people lookup; D093 fresh-profile FTS and planner maintenance; earlier measurements retain their source scope. Whole area remains Draft.
+
+Revision 9 (D121) adds `to:`, a recipient (To or Cc) name or address. `from:` now always means the sender, in Sent too, and a bare address matches the sender or a recipient. `search_terms` gains `to[]` and `people[]` (bare addresses), and `search_senders` takes an optional `role`. Drafts, which are all from the user, read `from:`, `to:` and bare addresses as recipients. Remote search already passes the same text to Gmail, which reads these the same way. Consumers: Core, Mail UI88 and CLI52; schema37 unchanged, because recipients come from the existing link-index `message_people` rows.
 
 Revision 8 (D118) adds an optional server search beside local search: with the dropdown's Search remote mailbox switch on, the same text is sent to Gmail (`google_remote_search`) scoped to the folder, and threads with nothing on this machine join the list marked remote. Local search, its grammar and its results are unchanged; `body:` words are searched everywhere on the server. Remote results are read live and never indexed. Consumers: Gmail29, Mail UI85, CLI50.
 
@@ -52,15 +54,18 @@ Core tests and the live CLI smoke verify combined filters, sender/address variat
 Operators are case-insensitive and recognised at the start of the text or after whitespace. An operator's value runs until the next operator or the end, so `subject:board deck from:maya` reads subject "board deck" and from "maya". Surrounding quotes are optional and removed. An operator without a value is still being typed and adds nothing.
 
 - `subject:` and `body:` match their own column, each word as a prefix, all words required.
-- `from:` matches a substring of the sender's name or address. In Sent and Drafts it matches the recipients: in Sent only the first `To` address, which is the one recipient field Core stores for a message; in Drafts every To/Cc/Bcc name and address. At most four `from:` values of up to 320 bytes each.
-- A bare word shaped like an address (`local@host.tld`) becomes a `from:` value.
+- `from:` matches a substring of the sender's name or address, in every folder (Revision 9).
+- `to:` matches a substring of a recipient's name or address: the stored first `To` address, or any To/Cc person the link index has recorded for the message (the sender excluded). Mail not yet indexed matches only its first `To` address.
+- A bare word shaped like an address (`local@host.tld`) matches the sender or a recipient.
+- At most four names or addresses across `from:`, `to:` and bare addresses, each up to 320 bytes.
+- In Drafts, `from:`, `to:` and bare addresses all match every To/Cc/Bcc name and address.
 - Other bare words must each appear, as a prefix, in the subject or message text.
 - `label:`, `has:attachment` and `is:review|delayed|done` still parse but are not advertised. Each takes its first word and returns the rest to bare words; a quoted label keeps its spaces. `label:` accepts an exact label name, ignoring case, or a unique prefix. `is:held` is accepted for `is:delayed`. Drafts reject these three.
 - Every value's words count toward the existing 32-word limit; a `subject:` or `body:` value with no searchable word, or a query of symbols only, is rejected.
 
-`search_terms` returns `{words, subject[], body[], from[], label, has_attachment, is}`, with `label` resolved to the label's name and `is` reported as `delayed` for held. It is `null` for blank text. A client draws one chip per part and removes a part by rebuilding the text from the remaining parts. `field` keeps its CLI meaning for bare words: `all` is now subject or message text, and `sender`, `subject` or `body` narrow them to one column.
+`search_terms` returns `{words, subject[], body[], from[], to[], people[], label, has_attachment, is}` (`people` are bare addresses), with `label` resolved to the label's name and `is` reported as `delayed` for held. It is `null` for blank text. A client draws one chip per part and removes a part by rebuilding the text from the remaining parts. `field` keeps its CLI meaning for bare words: `all` is now subject or message text, and `sender`, `subject` or `body` narrow them to one column.
 
-`search_senders(account, {query, folder, limit})` scans the account's latest 5,000 received messages for senders, or in Sent and Drafts the latest 5,000 sent messages' first `To` addresses plus the 200 newest drafts' recipients. It excludes the account's own address, ranks name-word or address prefix matches above substrings, then by frequency and recency, and returns `{name, email}` pairs. A recipient without a name takes the name that address last sent as. `query` is at most 320 bytes on one line; `limit` is 1–10, default 5.
+`search_senders(account, {query, folder, limit, role?})` scans the account's latest 5,000 received messages for senders, or in Sent and Drafts the latest 5,000 sent messages' first `To` addresses plus the 200 newest drafts' recipients. It excludes the account's own address, ranks name-word or address prefix matches above substrings, then by frequency and recency, and returns `{name, email}` pairs. A recipient without a name takes the name that address last sent as. `query` is at most 320 bytes on one line; `limit` is 1–10, default 5. `role` is `sender` or `recipient` (the people the account wrote to); without it, Sent and Drafts use recipients and other folders senders. The dropdown asks for recipients after `to:`.
 
 ## Search
 

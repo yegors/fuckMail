@@ -143,6 +143,7 @@ impl Store {
             proof.preview,
             proof.parts,
             &mut state,
+            None,
         )?;
         // An explicit GET is a fresh observation, not a claim that a list scan saw it.
         self.db.execute("UPDATE google_draft_sources SET seen_generation=?3 WHERE account=?1 AND provider_draft_id=?2 AND is_current=1",params![account,remote,seen.unwrap_or(0)])?;
@@ -567,6 +568,7 @@ pub(crate) fn prepare_adopted_source(
             draft_id: target.into(),
             message_id: message.into(),
         },
+        fence: None,
     };
     let outcome = remote
         .map(|r| GoogleDraftImportOutcome::Available {
@@ -596,6 +598,7 @@ fn prepare_action_source(
             draft_id: c.source.provider_draft_id.clone(),
             message_id: c.source.message_id.clone(),
         },
+        fence: None,
     };
     let outcome = remote
         .map(|r| GoogleDraftImportOutcome::Available {

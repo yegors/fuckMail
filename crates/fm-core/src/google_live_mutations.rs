@@ -387,6 +387,102 @@ pub(crate) fn enqueue_assisted_read(
     }
     Ok(true)
 }
+
+/// A model label with Spam on sends an incoming message to Spam: it leaves
+/// the Inbox here at once, and Gmail gets SPAM added and INBOX removed. A
+/// pending human filing choice wins. The model moves a message at most once,
+/// so Not spam sticks when the message comes back and is labelled again.
+pub(crate) fn enqueue_assisted_spam(
+    db: &Transaction<'_>,
+    account: &str,
+    message: &str,
+) -> Result<bool> {
+    let row: Option<(bool, bool, i64, String)> = db
+        .query_row(
+            "SELECT sent,trashed,revision,remote_id FROM messages WHERE account=?1 AND id=?2",
+            params![account, message],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .optional()?;
+    let Some((sent, trashed, revision, remote)) = row else {
+        return Ok(false);
+    };
+    // Receipts are named assist-spam-{message}-{revision}: '.' sorts right
+    // after '-', so this range holds exactly this message's receipts.
+    let moved_before: bool = db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM operations WHERE account=?1 AND request_id>=?2 AND request_id<?3 AND json_extract(result_json,'$.kind')='assist_spam' AND json_extract(result_json,'$.message_id')=?4)",
+        params![account, format!("assist-spam-{message}-"), format!("assist-spam-{message}."), message],
+        |r| r.get(0),
+    )?;
+    if sent || trashed || moved_before || db.query_row(
+        "SELECT EXISTS(SELECT 1 FROM google_manual_intents WHERE account=?1 AND message_id=?2 AND field='label')",
+        params![account, message], |r| r.get::<_, bool>(0),
+    )? {
+        return Ok(false);
+    }
+    let live: bool = db.query_row(
+        "SELECT value=1 FROM meta WHERE key='profile_kind'",
+        [],
+        |r| r.get(0),
+    )?;
+    if live {
+        if validate_authoring(db, account).is_err() {
+            return Ok(false);
+        }
+        let available:bool=db.query_row("SELECT EXISTS(SELECT 1 FROM google_message_state WHERE account=?1 AND message_id=?2 AND deleted=0)",params![account,message],|r|r.get(0))?;
+        if !available {
+            return Ok(false);
+        }
+    }
+    let next = revision + 1;
+    db.execute(
+        "UPDATE messages SET inbox=0,revision=?3 WHERE account=?1 AND id=?2",
+        params![account, message, next],
+    )?;
+    let request = format!("assist-spam-{message}-{next}");
+    use sha2::{Digest, Sha256};
+    let fingerprint = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(&json!([
+            "assist_spam_v1",
+            account,
+            message,
+            next
+        ]))?)
+    );
+    let receipt = if live {
+        json!({"kind":"assist_spam","message_id":message,"delivery":{"state":"pending","request_id":request}})
+    } else {
+        json!({"kind":"assist_spam","message_id":message,"local_only":true})
+    };
+    db.execute(
+        "INSERT INTO operations(account,request_id,fingerprint,result_json) VALUES(?1,?2,?3,?4)",
+        params![
+            account,
+            request,
+            fingerprint,
+            serde_json::to_string(&receipt)?
+        ],
+    )?;
+    if live {
+        let mut desired = Vec::new();
+        for (key, present) in [("SPAM", true), ("INBOX", false)] {
+            db.execute("INSERT INTO google_manual_intents(account,message_id,field,category_id,value,revision) VALUES(?1,?2,'label',?3,?4,?5)",params![account,message,key,present,next])?;
+            desired.push(DesiredField {
+                assisted: false,
+                provider_categories: None,
+                field: "label".into(),
+                key: key.into(),
+                value: present,
+                revision: next,
+                label: key.into(),
+                present,
+            });
+        }
+        db.execute("INSERT INTO google_mail_mutations(account,request_id,message_id,remote_id,action,desired_json,state) VALUES(?1,?2,?3,?4,'modify',?5,'pending')",params![account,request,message,remote,serde_json::to_string(&desired)?])?;
+    }
+    Ok(true)
+}
 fn mapped_labels(
     db: &Connection,
     account: &str,
@@ -649,6 +745,20 @@ impl Store {
                 },
                 None,
             )?;
+            if observed.labels.contains("SPAM") {
+                // Spam is never kept here. Drop the copy now, as acquisition
+                // would, instead of waiting for the next history change.
+                crate::google_live_mail::forget_spam(&tx, &work.account, Some(&work.remote_id))?;
+                let kept: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM messages WHERE account=?1 AND id=?2)",
+                    params![work.account, work.message_id],
+                    |r| r.get(0),
+                )?;
+                if !kept {
+                    tx.execute("UPDATE google_mail_metrics SET observed=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0),retained_sources=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND source_state='retained'),indexed=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND index_state='indexed'),complete_attachments=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND attachment_state='complete') WHERE account=?1",[&work.account])?;
+                    tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
+                }
+            }
             tx.commit()?;
             return Ok(MailMutationDecision::Finished);
         }

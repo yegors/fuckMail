@@ -30,11 +30,15 @@ Popup {
         layer.effect: MultiEffect { shadowEnabled: true; shadowColor: Theme.shadowAlpha(.6); shadowBlur: 0.8; shadowVerticalOffset: 12 }
     }
     enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 150 } }
+    // Opens at once for a click. Hover goes through hoverSender/leaveSender:
+    // a short dwell before opening, a longer one before an open card switches
+    // to another contact, and none while the pointer heads into the card, so
+    // names passed on the way to it never steal it.
     function showSender(address, name, anchor) {
         if (!address || !backend.connected) return
-        hideDelay.stop()
+        hideDelay.stop(); switchDelay.stop(); pending = null
         const canonical = address.trim().toLowerCase()
-        const point = anchor.mapToItem(parent, 0, anchor.height + 8)
+        const point = anchor.mapToItem(parent, 0, anchor.height + 4)
         originX = point.x; originY = point.y
         if (!opened || email !== canonical || account !== backend.account) {
             email = canonical; displayName = name || canonical; account = backend.account
@@ -42,8 +46,29 @@ Popup {
         }
         open()
     }
+    property var pending: null
+    property point lastPointer: Qt.point(-1, -1)
+    function hoverSender(address, name, anchor) {
+        if (!address || !backend.connected) return
+        if (opened && email === address.trim().toLowerCase() && account === backend.account) { hideDelay.stop(); switchDelay.stop(); pending = null; return }
+        pending = {address: address, name: name, anchor: anchor}
+        switchDelay.interval = opened ? 450 : 280
+        switchDelay.restart()
+    }
+    function leaveSender(anchor) {
+        if (pending && pending.anchor === anchor) { switchDelay.stop(); pending = null }
+        if (opened) scheduleClose()
+    }
+    // True while the pointer moves toward the open card: another name crossed
+    // on the way keeps waiting instead of switching.
+    function headingToCard(point) {
+        if (!opened || lastPointer.x < 0) return false
+        const dy = point.y - lastPointer.y, dx = point.x - lastPointer.x
+        const above = point.y < y
+        return above ? dy > 0 && Math.abs(dx) <= Math.max(dy * 3, 24) && point.x >= x - 40 && point.x <= x + width + 40 : false
+    }
     function scheduleClose() { hideDelay.restart() }
-    function stayOpen() { hideDelay.stop() }
+    function stayOpen() { hideDelay.stop(); switchDelay.stop(); pending = null }
     function openConversation(id) { close(); conversationOpened(id) }
     // The search box shows this filter, so it can be read and removed there.
     // All mail is the scope the card's count covers.
@@ -55,9 +80,33 @@ Popup {
         const address = email, name = displayName
         close(); backend.writeToSender(address, name)
     }
-    onClosed: { hideDelay.stop(); backend.clearSenderCard() }
+    onClosed: { hideDelay.stop(); switchDelay.stop(); pending = null; lastPointer = Qt.point(-1, -1); backend.clearSenderCard() }
     Connections { target: backend; function onAccountChanged() { card.close() } }
-    Timer { id: hideDelay; interval: 220; onTriggered: card.close() }
+    Timer { id: hideDelay; interval: 400; onTriggered: card.close() }
+    Timer {
+        id: switchDelay
+        onTriggered: {
+            const next = card.pending
+            if (!next || !next.anchor || !next.anchor.visible) return
+            // Still travelling into the card: look again shortly.
+            if (card.opened && pointerTracker.moving) { restart(); return }
+            card.showSender(next.address, next.name, next.anchor)
+        }
+    }
+    // Watches the pointer over the window while the card is open.
+    HoverHandler {
+        id: pointerTracker
+        parent: card.parent
+        enabled: card.opened
+        property bool moving: false
+        onPointChanged: {
+            const p = point.scenePosition
+            moving = card.headingToCard(p)
+            card.lastPointer = p
+            settle.restart()
+        }
+    }
+    Timer { id: settle; interval: 120; onTriggered: pointerTracker.moving = false }
     contentItem: ScrollView {
                 ScrollBar.vertical: FmScrollBar {}
         property bool blocksWorkspaceShortcuts: true

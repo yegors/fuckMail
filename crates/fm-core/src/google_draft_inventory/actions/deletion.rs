@@ -183,6 +183,7 @@ pub fn prepare_google_draft_delete_observation(
             draft_id: plan.operation.source.provider_draft_id.clone(),
             message_id: plan.operation.source.message_id.clone(),
         },
+        fence: None,
     };
     let outcome = remote
         .map(|r| GoogleDraftImportOutcome::Available {

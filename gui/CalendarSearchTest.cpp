@@ -107,7 +107,8 @@ class CalendarSearchTest {
                         QJsonObject terms{{"words", ""}, {"subject", QJsonArray{}}, {"body", QJsonArray{}}, {"from", QJsonArray{}},
                             {"label", QJsonValue::Null}, {"has_attachment", false}, {"is", QJsonValue::Null}};
                         if (query.startsWith("relay subject:board deck")) { terms["words"] = "relay"; terms["subject"] = QJsonArray{"board deck"}; }
-                        else if (!query.startsWith("from:")) terms["words"] = query.section(' ', 0, 0);
+                        else if (query == "maya@example.test to:priya") { terms["people"] = QJsonArray{"maya@example.test"}; terms["to"] = QJsonArray{"priya"}; }
+                        else if (!query.startsWith("from:") && !query.startsWith("to:")) terms["words"] = query.section(' ', 0, 0);
                         result = {{"conversations", QJsonArray{}}, {"revision", 1}, {"filtered_conversation_count", query.isEmpty() ? 0 : 12},
                             {"search_terms", query.isEmpty() ? QJsonValue() : QJsonValue(terms)}};
                     }
@@ -116,6 +117,7 @@ class CalendarSearchTest {
                     else if (method == "categories") result = {{"categories", QJsonArray{}}};
                     else if (method == "label_catalog") result = {{"account", request["account"]}, {"labels", QJsonArray{}}};
                     else if (method == "google_sent") result = {{"account", request["account"]}, {"outgoing", QJsonArray{}}, {"next_offset", QJsonValue::Null}};
+                    else if (method == "drafts") result = {{"drafts", QJsonArray{}}, {"total", 0}};
                     else require(false, qPrintable("unexpected cached test method: " + method));
                     peer->write(reply(request["id"].toString(), result));
                 }
@@ -463,8 +465,10 @@ class CalendarSearchTest {
         };
         auto shown = [&](const char *name) { auto *item = qobject_cast<QQuickItem *>(named(window, name)); return item && item->isVisible(); };
         auto textOf = [&](const char *name) { auto *item = named(window, name); return item ? item->property("text").toString() : QString(); };
+        auto accessibleName = [&](const char *name) { auto *item = named(window, name); auto *face = item ? QAccessible::queryAccessibleInterface(item) : nullptr; return face ? face->text(QAccessible::Name) : QString(); };
         // Empty query: the three advertised operators, and no recent searches yet.
-        require(shown("mailSearchOperator_subject") && shown("mailSearchOperator_body") && shown("mailSearchOperator_from"), "Narrow it down offers subject:, body: and from:");
+        require(shown("mailSearchOperator_subject") && shown("mailSearchOperator_body") && shown("mailSearchOperator_from") && shown("mailSearchOperator_to"), "Narrow it down offers subject:, body:, from: and to:");
+        require(textOf("mailSearchAddressHint") == "An address on its own finds mail from or to it.", "the help says a bare address finds mail from or to it");
         require(!shown("mailSearchOperator_label") && !shown("mailSearchOperator_is") && !shown("mailRecentSearch_0"), "label:, is: and recents are not offered on a new account");
         pressSearch("mailSearchOperator_from");
         require(h.backend.query() == "from:", "an operator is appended to the query");
@@ -473,10 +477,20 @@ class CalendarSearchTest {
         await([&] { return h.methods.contains("search_senders") && shown("mailSearchPerson_0"); }, "people follow a trailing from:");
         pressSearch("mailSearchPerson_0");
         require(h.backend.query() == "from:maya@example.test ", "picking a person fills in the address");
+        // to: offers people too and keeps its own operator.
+        h.backend.setQuery("to:");
+        await([&] { return h.backend.searchPeopleQuery() == "recipient:" && shown("mailSearchPerson_0"); }, "people follow a trailing to:, as recipients");
+        pressSearch("mailSearchPerson_0");
+        require(h.backend.query() == "to:maya@example.test ", "picking a person after to: keeps to:");
+        // A bare address reads as From or To; to: as To.
+        h.backend.setQuery("maya@example.test to:priya");
+        await([&] { return shown("mailSearchChip_1"); }, "bare address and to: chips show");
+        require(accessibleName("mailSearchChip_0") == "From or To maya@example.test" && accessibleName("mailSearchChip_1") == "To priya", "a bare address is From or To and to: is To");
+        pressSearch("removeMailSearchChip_1");
+        require(h.backend.query() == "maya@example.test", "removing the to: chip keeps the bare address");
         // Core's reading appears as removable chips with the result count.
         h.backend.setQuery("relay subject:board deck");
-        await([&] { return shown("mailSearchChip_1") && textOf("mailSearchCount") == "12 conversations"; }, "the reading and its count follow the search");
-        auto accessibleName = [&](const char *name) { auto *item = named(window, name); auto *face = item ? QAccessible::queryAccessibleInterface(item) : nullptr; return face ? face->text(QAccessible::Name) : QString(); };
+        await([&] { return shown("mailSearchChip_1") && accessibleName("mailSearchChip_1") == "Subject board deck" && textOf("mailSearchCount") == "12 conversations"; }, "the reading and its count follow the search");
         require(accessibleName("mailSearchChip_0") == "Subject or body relay" && accessibleName("mailSearchChip_1") == "Subject board deck", "each chip names a part as Core read it");
         pressSearch("removeMailSearchChip_1");
         require(h.backend.query() == "relay", "removing a chip rebuilds the query without that part");

@@ -14,9 +14,6 @@
 using namespace GoogleOperationFixture;
 
 namespace {
-QVariant unwrapped(QVariant value) {
-    return value.metaType() == QMetaType::fromType<QJSValue>() ? value.value<QJSValue>().toVariant() : value;
-}
 QQuickItem *visualNamed(QQuickItem *item, const QString &name) {
     if (item->objectName() == name) return item;
     for (auto child : item->childItems()) if (auto found = visualNamed(child, name)) return found;
@@ -91,11 +88,6 @@ ApplicationWindow { width: 900; height: 1000; visible: true
 })QML", QUrl::fromLocalFile(copy.filePath("Harness.qml")));
         require(!qml.rootObjects().isEmpty(), "actual ReplyComposer QML loads");
         auto root = qml.rootObjects().first();
-        const auto click = [&](const char *name) {
-            auto control = named(root, name);
-            require(control && control->property("enabled").toBool() && control->property("visible").toBool(), name);
-            require(QMetaObject::invokeMethod(control, "clicked"), "actual native QML handler invokes");
-        };
         const auto localEdit = [&](const QString &text) {
             backend.editFormattedDraft(text, "<p>" + text + "</p>"); backend.m_draftTimer.stop();
         };
@@ -112,25 +104,7 @@ ApplicationWindow { width: 900; height: 1000; visible: true
             cachedPeer->write(reply(cachedId, result));
             await([&] { return backend.m_pending.isEmpty(); }, "actual cached callback delivered");
         };
-        const auto prepareCheck = [&] {
-            fixture.expectedMethod = "google_draft_reconcile"; fixture.expectedParams = {{"draft_id", "draft-fixture"}};
-        };
-        const auto waitOperation = [&](int expected) { await([&] { return fixture.operations == expected; }, "recovery uses authenticated auxiliary connection"); };
-        const auto complete = [&](const QJsonObject &result) {
-            fixture.complete(result); await([&] { return backend.m_googleDraftOperationId.isEmpty(); }, "native recovery callback finishes");
-        };
-        const auto openReplacement = [&] {
-            click("replaceGoogleDraft");
-            auto dialog = named(root, "googleDraftReplaceDialog");
-            await([&] { return dialog && dialog->property("opened").toBool(); }, "actual replacement confirmation opens");
-            return QJsonObject::fromVariantMap(unwrapped(dialog->property("capturedContext")).toMap());
-        };
-        const auto expectReplacement = [&](QJsonObject captured) {
-            require(captured["account"] == "fixture-account" && captured["draft_id"] == "draft-fixture"
-                && !captured["request_id"].toString().isEmpty() && captured["action"] == "replace_local", "modal captures exact target before confirmation");
-            captured.remove("account"); captured.remove("generation");
-            fixture.expectedMethod = "google_draft_resolve"; fixture.expectedParams = captured;
-        };
+        const auto hint = [&] { return named(root, "composerHint")->property("text").toString(); };
         require(!named(root, "captureReply")->property("enabled").toBool(), "real Send remains disabled");
 
         // Cache and auxiliary completion order is deliberately inverted. A newer
@@ -147,139 +121,33 @@ ApplicationWindow { width: 900; height: 1000; visible: true
         startRead(); auto foreign = projection(20, status("synced", 30, 20)); foreign["account"] = "another-account";
         finishRead(foreign); require(authored(backend.m_draft) == edited && backend.m_draft["google"].toMap()["revision"].toLongLong() == 10, "foreign cached projection is refused");
 
+        // Drafts are Gmail drafts (D122): syncing and conflicts resolve on their
+        // own; only a problem the person should know about reaches the hint line.
         setStatus(status("synced", 11, 6));
-        require(!qobject_cast<QQuickItem *>(named(root, "googleDraftStatus"))->isVisible() && !qobject_cast<QQuickItem *>(named(root, "checkGoogleDraft"))->isVisible(),
-            "normal Google draft sync is silent in the composer");
-        setStatus(status("acceptance_unknown", 11, 6)); prepareCheck();
-        require(qobject_cast<QQuickItem *>(named(root, "googleDraftStatus"))->isVisible(), "an unknown result is shown with its recovery");
-        require(!backend.googleDraft()["can_replace"].toBool(), "unknown upload offers only readback");
-        click("checkGoogleDraft"); waitOperation(1);
-        require(!backend.m_googleOperations.isEmpty() && backend.m_socket.state() == QLocalSocket::ConnectedState, "auxiliary work preserves the cached connection");
-        auto wrong = status("synced", 12, 6); wrong["draft_id"] = "another-draft";
-        complete(wrong); require(authored(backend.m_draft) == edited && backend.m_draft["google"].toMap()["revision"].toLongLong() == 11, "mismatched auxiliary draft cannot apply status or author fields");
-        click("checkGoogleDraft"); waitOperation(2);
-        auto other = projection(1, status("local", 0, 1)); other["account"] = "other-account"; other["draft_id"] = "other-draft";
-        backend.m_account = "other-account"; backend.m_activeDraft = "other-draft"; backend.m_draft = other.toVariantMap(); ++backend.m_generation; emit backend.draftChanged();
-        const auto switched = backend.m_draft; complete(status("synced", 15, 6));
-        require(backend.m_draft == switched, "late auxiliary response leaves another account and draft unchanged");
-        backend.m_account = "fixture-account"; backend.m_activeDraft = "draft-fixture";
-        backend.m_draft = projection(6, status("conflict", 20, 6)).toVariantMap(); backend.m_draftDirty = false; ++backend.m_generation; emit backend.draftChanged();
-
-        const auto initialOperations = fixture.operations;
-        openReplacement(); localEdit("Edited while confirmation was open"); click("confirmReplaceGoogleDraft");
-        require(fixture.operations == initialOperations && backend.m_draftDirty && backend.m_draft["body"] == "Edited while confirmation was open", "confirmation refuses dirty context without autosave or dispatch");
-        backend.m_draftDirty = false; emit backend.draftChanged();
-        openReplacement(); setStatus(status("conflict", 21, 6)); click("confirmReplaceGoogleDraft");
-        require(fixture.operations == initialOperations, "changed Google revision invalidates confirmation");
-        openReplacement(); const auto importKey = backend.attachmentImportKey(); backend.m_attachmentImports.insert(importKey, {{"request_id", "held-import"}});
-        click("confirmReplaceGoogleDraft"); require(fixture.operations == initialOperations, "pending import invalidates confirmation");
-        backend.m_attachmentImports.remove(importKey); emit backend.draftChanged();
-        auto captured = openReplacement(); expectReplacement(captured); const auto frozenAuthor = authored(backend.m_draft);
-        click("confirmReplaceGoogleDraft"); waitOperation(3);
-        require(fixture.operationParams["expected_revision"] == 6 && fixture.operationParams["expected_google_revision"] == 21, "dispatch uses the two captured revisions");
-        localEdit("Typed during upload"); const auto duringUpload = authored(backend.m_draft);
-        auto acknowledged = status("acknowledged", 22, 6); acknowledged["body"] = "provider response cannot author text";
-        complete(acknowledged);
-        require(authored(backend.m_draft) == duringUpload && backend.m_draftDirty && authored(backend.m_draft) != frozenAuthor, "late acknowledged replacement merges only metadata");
-        require(fixture.operations == 3, "replacement issues one attempt");
-
-        backend.m_draftDirty = false; setStatus(status("conflict", 23, 6)); captured = openReplacement(); expectReplacement(captured);
-        click("confirmReplaceGoogleDraft"); waitOperation(4); fixture.operationPeer->abort();
-        await([&] { return backend.m_googleDraftOperationId.isEmpty(); }, "lost auxiliary response is handled");
-        require(!backend.googleDraft()["can_replace"].toBool() && backend.googleDraft()["can_check"].toBool() && fixture.operations == 4,
-            "unconfirmed replacement allows Check Google without automatic replay");
-        prepareCheck(); click("checkGoogleDraft"); waitOperation(5); click("cancelGoogleDraft");
-        await([&] { return backend.m_googleDraftOperationId.isEmpty(); }, "actual Cancel closes the recovery owner");
-        require(!backend.googleDraft()["can_replace"].toBool(), "cancelled readback does not clear uncertain replacement");
-        click("checkGoogleDraft"); waitOperation(6); complete(status("conflict", 24, 6));
-        require(backend.googleDraft()["can_replace"].toBool(), "fresh read-only result permits a new explicit confirmation");
-        setStatus(status("synced", 25, 6));
-        localEdit("Unsaved after Google checked the saved version");
-        auto statusText = named(root, "googleDraftStatus")->property("text").toString();
-        require(statusText.contains("Unsaved edits") && statusText.contains("local save") && statusText.contains("Google draft sync")
-            && !statusText.contains("Google draft checked"), "actual editor change immediately shows unsaved sync work");
-        auto differing = status("synced", 26, 6); auto baseline = differing["baseline"].toObject(); baseline["observed_sha256"] = QString(64, 'b'); differing["baseline"] = baseline;
-        setStatus(differing);
-        statusText = named(root, "googleDraftStatus")->property("text").toString();
-        require(backend.googleDraft()["byte_mismatch"].toBool() && !backend.googleDraft()["warning"].toBool() && statusText.contains("Unsaved edits")
-            && !named(root, "captureReply")->property("enabled").toBool(), "transport byte changes do not invent a content warning; unsaved Send stays disabled");
-        differing["fidelity_warning"] = true;
-        setStatus(differing);
-        require(backend.googleDraft()["warning"].toBool() && backend.googleDraft()["status"].toString().contains("differs from your local version"), "proven content changes retain an actionable warning");
-        auto saved = QJsonObject::fromVariantMap(backend.m_draft); saved["revision"] = 7;
-        differing["revision"] = 27; differing["local_revision"] = 7; saved["google"] = differing;
-        backend.m_draftDirty = false; startRead(); finishRead(saved);
-        statusText = named(root, "googleDraftStatus")->property("text").toString();
-        require(statusText.contains("Newer local edits await Google draft sync") && statusText.contains("differs from your local version")
-            && !statusText.contains("Unsaved edits"), "cached saved revision keeps both pending Google sync and fidelity warning visible");
-
-        // A selected old operation can arrive with today's twin revision. Its
-        // historical state must not supersede the current operation or editor.
-        setStatus(status("conflict", 28, 7)); captured = openReplacement(); expectReplacement(captured);
-        click("confirmReplaceGoogleDraft"); waitOperation(7);
-        localEdit("New work while the earlier receipt is held"); const auto duringReplay = authored(backend.m_draft);
-        setStatus(status("prepared", 29, 7));
-        auto historical = status("synced", 29, 7); historical["operation_is_current"] = false;
-        historical["operation"] = QJsonObject{{"request_id", captured["request_id"]}, {"state", "synced"}};
-        const auto expectedRefresh = reads + 1; complete(historical);
-        await([&] { return reads == expectedRefresh; }, "historical auxiliary reply requests current cached metadata");
-        require(backend.m_draft["google"].toMap()["state"] == "prepared" && authored(backend.m_draft) == duringReplay,
-            "same-revision historical state never replaces current metadata or authored fields");
-        finishRead(projection(8, status("prepared", 30, 8)));
-        require(backend.m_draft["google"].toMap()["revision"].toLongLong() == 30 && authored(backend.m_draft) == duringReplay
-            && backend.m_draftDirty && fixture.operations == 7, "historical recovery merges cached metadata only without replay or autosave");
-        historical["revision"] = 99; auto staleProjection = projection(9, historical);
-        require(backend.mergedDraftProjection(staleProjection)["google"] == backend.m_draft["google"], "ordinary projection merge also refuses historical Google receipts");
-
-        const auto unknownConflict = [&](qint64 revision, const QJsonValue &target, const QJsonValue &observed) {
-            auto value = status("conflict", revision, 7);
-            if (target.isNull()) value["baseline"] = QJsonValue::Null;
-            value["operation"] = QJsonObject{{"request_id", "unknown-original"}, {"state", "acceptance_unknown"}, {"provider_draft_id", target}};
-            value["conflict"] = QJsonObject{{"reason", "acceptance_unknown"}, {"observed", observed}};
-            return value;
-        };
-        backend.m_draftDirty = false; emit backend.draftChanged();
-        prepareCheck(); click("checkGoogleDraft"); waitOperation(8);
-        complete(unknownConflict(31, QJsonValue::Null, QJsonValue::Null));
-        require(!backend.googleDraft()["can_replace"].toBool() && !backend.googleDraft()["can_check"].toBool()
-            && named(root, "googleDraftStatus")->property("text").toString().contains("no known target"), "unknown creation exposes no unsafe action or read without a known identity");
-        setStatus(unknownConflict(32, "provider-draft", QJsonValue::Null));
-        require(!backend.googleDraft()["can_replace"].toBool() && named(root, "googleDraftStatus")->property("text").toString().contains("currently missing"),
-            "missing unknown update cannot create a replacement and does not imply delivery");
-        QJsonObject observed{{"draft_id", "foreign-provider-draft"}, {"message_id", "observed-message"}, {"sha256", QString(64, 'c')}, {"size", 200}};
-        setStatus(unknownConflict(33, "provider-draft", observed));
-        require(!backend.googleDraft()["can_replace"].toBool(), "unknown update rejects a different observed target");
-        auto pendingUnknown = unknownConflict(34, "provider-draft", QJsonValue::Null); pendingUnknown["state"] = "acceptance_unknown";
-        setStatus(pendingUnknown); click("checkGoogleDraft"); waitOperation(9);
-        observed["draft_id"] = "provider-draft";
-        complete(unknownConflict(35, "provider-draft", observed));
-        require(backend.googleDraft()["can_replace"].toBool(), "fresh matching unknown-update observation permits explicit replacement");
-        captured = openReplacement(); expectReplacement(captured);
-        require(captured["request_id"] != "unknown-original" && captured["expected_revision"] == 7 && captured["expected_google_revision"] == 35,
-            "unknown-update recovery captures new request identity and exact current revisions");
-        click("confirmReplaceGoogleDraft"); waitOperation(10); complete(status("acknowledged", 36, 7));
-        require(fixture.operations == 10 && authored(backend.m_draft) == duringReplay, "unknown-update recovery performs one explicit attempt and preserves local work");
-
-        auto unprepared = status("failed", 37, 7); unprepared["baseline"] = QJsonValue::Null;
-        unprepared["preparation_failure"] = QJsonObject{{"draft_revision", 7}, {"code", "invalid_draft"}};
-        setStatus(unprepared); statusText = named(root, "googleDraftStatus")->property("text").toString();
-        require(statusText.contains("not uploaded") && statusText.contains("addresses, formatting or attachments") && statusText.contains("Edit and save to retry")
-            && !backend.googleDraft()["can_check"].toBool() && !statusText.contains("Check Google"), "local preparation failure states its reason without claiming a remote copy");
-        localEdit("Edited to correct the local preparation failure");
-        require(named(root, "googleDraftStatus")->property("text").toString().contains("Unsaved edits await local save"), "failed draft shows edited unsaved work awaiting retry");
-        auto corrected = QJsonObject::fromVariantMap(backend.m_draft); corrected["revision"] = 8;
-        unprepared["revision"] = 38; unprepared["local_revision"] = 8; corrected["google"] = unprepared;
-        backend.m_draftDirty = false; startRead(); finishRead(corrected);
-        statusText = named(root, "googleDraftStatus")->property("text").toString();
-        require(statusText.contains("Newer saved edits await preparation") && !statusText.contains("Unsaved edits"), "new saved revision shows preparation pending while retaining the prior failure reason");
-        auto priorRemote = status("failed", 39, 8);
-        priorRemote["preparation_failure"] = QJsonObject{{"draft_revision", 8}, {"code", "limit_exceeded"}};
-        setStatus(priorRemote); statusText = named(root, "googleDraftStatus")->property("text").toString();
-        require(statusText.contains("35,000,000-byte") && backend.googleDraft()["can_check"].toBool() && fixture.operations == 10,
-            "oversize local revision can inspect a retained known remote baseline without automatically uploading");
+        require(!backend.googleDraft()["attention"].toBool() && !hint().contains("Gmail"), "normal Gmail draft sync is silent in the composer");
+        setStatus(status("conflict", 12, 6));
+        require(!backend.googleDraft()["attention"].toBool() && !hint().contains("Gmail"), "a conflict resolves without asking");
+        for (const auto name : {"checkGoogleDraft", "replaceGoogleDraft", "googleDraftReplaceDialog", "draftSourceHistoryButton", "draftSourceActionsButton", "collapseReply"})
+            require(!named(root, name), "no manual sync, source or minimise controls remain");
+        auto unknownCreate = status("acceptance_unknown", 13, 6); unknownCreate["baseline"] = QJsonValue::Null;
+        unknownCreate["operation"] = QJsonObject{{"request_id", "unknown-original"}, {"state", "acceptance_unknown"}, {"provider_draft_id", QJsonValue::Null}};
+        setStatus(unknownCreate);
+        require(hint().contains("Gmail hasn't confirmed") && !backend.googleDraft()["warning"].toBool(), "an unconfirmed create says so plainly, without alarm");
+        setStatus(status("failed", 14, 6));
+        require(hint().contains("Couldn't save this draft to Gmail") && backend.googleDraft()["warning"].toBool(), "a stopped sync says so plainly");
+        auto unprepared = status("failed", 15, 6); unprepared["baseline"] = QJsonValue::Null;
+        unprepared["preparation_failure"] = QJsonObject{{"draft_revision", 6}, {"code", "limit_exceeded"}};
+        backend.m_draftDirty = false; setStatus(unprepared);
+        require(hint().contains("35 MB"), "a draft Gmail cannot take states the reason");
+        localEdit("Edited to fix the size");
+        require(!hint().contains("35 MB") && hint().contains("Couldn't save"), "an edit after a failure drops the stale reason until the next upload");
+        // An old operation's receipt never replaces current metadata.
+        auto historical = status("synced", 99, 6); historical["operation_is_current"] = false;
+        historical["operation"] = QJsonObject{{"request_id", "old"}, {"state", "synced"}};
+        require(backend.mergedDraftProjection(projection(9, historical))["google"] == backend.m_draft["google"], "ordinary projection merge refuses historical Google receipts");
         require(!qmlError, "native draft controls generated no QML errors");
         backend.m_draftTimer.stop(); backend.m_pollTimer.stop();
-        qInfo() << "Native Google draft controls passed: actual QML recovery/confirmation, private held IPC, projection revision floors, authored-text/account isolation, historical receipt isolation, exact captured unknown-update recovery, unknown/cancel readback and visible byte mismatch. Synthetic IPC only; no provider or performance claim.";
+        qInfo() << "Native Google draft controls passed: silent sync, plain problem hints, no manual recovery controls, private held IPC, projection revision floors, authored-text/account isolation and historical receipt isolation. Synthetic IPC only; no provider or performance claim.";
     }
 };
 

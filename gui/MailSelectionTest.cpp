@@ -417,7 +417,12 @@ class MailSelectionTest {
         layout.restart();while(layout.elapsed()<260)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
         require(!popup(),"empty expanded header area is not a contact target");
         click(window,heading,Qt::LeftButton);
-        await([&]{auto body=find(window->contentItem(),"messageBody_first");return !body || !body->isVisible();},"expanded earlier header collapses its body");
+        layout.restart();while(layout.elapsed()<120)QCoreApplication::processEvents(QEventLoop::AllEvents,10);
+        require(find(window->contentItem(),"messageBody_first") && find(window->contentItem(),"messageBody_first")->isVisible(),"clicking an open header leaves it open, so its text can be selected");
+        require(find(window->contentItem(),"messageSenderAddress_first") && find(window->contentItem(),"messageSenderAddress_first")->property("selectByMouse").toBool(),"an open header's address is selectable");
+        click(window,find(window->contentItem(),"toggleMessage_first"),Qt::LeftButton);
+        await([&]{auto body=find(window->contentItem(),"messageBody_first");return !body || !body->isVisible();},"the chevron collapses an earlier message");
+        require(!heading->property("visualFocus").toBool(),"a mouse click leaves no focus outline");
         heading->forceActiveFocus();
         QKeyEvent expandDown(QEvent::KeyPress,Qt::Key_Space,Qt::NoModifier), expandUp(QEvent::KeyRelease,Qt::Key_Space,Qt::NoModifier);
         QCoreApplication::sendEvent(window,&expandDown);QCoreApplication::sendEvent(window,&expandUp);
@@ -588,12 +593,20 @@ class MailSelectionTest {
         {
             // Spam is listed and opened live through Google operations; nothing asks Core for it.
             const auto pid=h.backend.m_enginePid; h.backend.m_enginePid=QCoreApplication::applicationPid();
-            // Spam is a tab after the divider; its rows use the normal list, one per thread.
+            // Spam sits behind the menu after Drafts; its rows use the normal list, one per thread.
+            click(window,find(window->contentItem(),"binMenuButton"),Qt::LeftButton);
+            await([&]{auto item=find(window->contentItem(),"spamScopeButton");return item&&item->isVisible();},"the menu after Drafts lists Spam");
             click(window,find(window->contentItem(),"spamScopeButton"),Qt::LeftButton);
             await([&]{return h.backend.folder()=="spam" && h.backend.conversations().size()==1;},"live Spam listing shows one row per thread");
             require(find(window->contentItem(),"conversationList")->isVisible() && h.lastQuery["folder"]!="spam","Spam uses the normal list with no local query");
             const auto spamRow=h.backend.conversations().first().toMap();
             require(spamRow.value("id")=="remote:t9" && spamRow.value("message_count")==2 && spamRow.value("subject")=="You won","a Spam thread counts its messages");
+            {
+                // Sync refreshes the store every second or two; Spam is live and must not reload or blink.
+                const auto lists=h.methods.count("google_spam_list");
+                h.backend.loadConversations(false,true); QCoreApplication::processEvents();
+                require(h.methods.count("google_spam_list")==lists && h.backend.conversations().size()==1,"a sync refresh neither reloads nor clears Spam");
+            }
             require(!find(window->contentItem(),"moreMailFolders"),"the folder menu is gone");
             await([&]{return find(window->contentItem(),"scopeStatLabel")->property("text")=="in spam" && find(window->contentItem(),"scopeStatCount")->property("text").toString()=="1";},"the header counts Spam from Gmail");
             await([&]{return find(window->contentItem(),"binStrip")->isVisible();},"the strip offers to empty Spam");

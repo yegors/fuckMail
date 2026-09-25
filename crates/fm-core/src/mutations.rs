@@ -717,9 +717,12 @@ fn validate_view(db: &rusqlite::Connection, account: &str, view: &Value) -> Resu
             return Err(err("invalid_request", "weekStart must be an ISO date"));
         }
     }
-    if let Some(category) = view
+    // A saved view may hold several label toggles, comma-separated.
+    for category in view
         .get("category")
         .and_then(Value::as_str)
+        .unwrap_or("")
+        .split(',')
         .filter(|s| !s.is_empty())
     {
         let exists: bool = db.query_row(

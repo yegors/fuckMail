@@ -200,6 +200,8 @@ impl Store {
         // Google baselines, Send/deletion receipts and transfer state stay current.
         self.db.execute("UPDATE drafts SET body=?3,body_html=?4,signature_text=?5,attachments_json=?6,routing_json=?7,from_name=?8,identity_revision=?9,recipient_inputs_json=?10,discarded=0,revision=?11,updated_at=?12 WHERE account=?1 AND draft_id=?2",
             params![account,draft_id,snapshot["body"].as_str(),snapshot["body_html"].as_str(),snapshot["signature_text"].as_str(),snapshot["attachments_json"].as_str(),snapshot["routing_json"].as_str(),snapshot["from_name"].as_str(),snapshot["identity_revision"].as_i64(),snapshot["recipient_inputs_json"].as_str().unwrap_or("{}"),expected+1,composition::now()?])?;
+        // Its Gmail copy may already be gone; then it uploads as a new draft.
+        self.revive_deleted_draft(account, draft_id)?;
         let mut result = self.composition(account, &json!({"draft_id":draft_id}))?;
         result["undone_discard_request_id"] = json!(request);
         Ok(result)

@@ -31,6 +31,9 @@ pub(crate) async fn step(ctx: &SyncContext) -> Result<Step> {
         .core_call(move |store| store.google_draft_due(&account, generation, 1))
         .await?;
     let Some(due) = due.into_iter().next() else {
+        if delete_discarded(ctx).await? || resolve_conflict(ctx).await? {
+            return Ok(Step::Progress);
+        }
         return Ok(Step::Idle(Duration::from_secs(1)));
     };
     if due.state == "acknowledged" {
@@ -46,6 +49,71 @@ pub(crate) async fn step(ctx: &SyncContext) -> Result<Step> {
         }
     }
     Ok(Step::Progress)
+}
+
+/// A draft discarded here is deleted in Gmail once its Undo has passed.
+async fn delete_discarded(ctx: &SyncContext) -> Result<bool> {
+    let account = ctx.account.as_str().to_owned();
+    let Some((draft, target)) = ctx
+        .core_call(move |store| store.google_draft_discard_due(&account))
+        .await?
+    else {
+        return Ok(false);
+    };
+    let (api, _permit, dispatched) = ctx.gmail_delete_request(&target).await?;
+    let call = GmailCall::delete_draft(&ctx.account, &target).map_err(provider)?;
+    let reply = api.execute(call, "engine-managed", &ctx.cancel).await;
+    let gone = dispatched.load(Ordering::Acquire)
+        && matches!(
+            reply,
+            Ok(GmailReply::DraftDeletion(ref d))
+                if matches!(d.result, fm_google::gmail_api::DraftDeletionResult::Deleted
+                    | fm_google::gmail_api::DraftDeletionResult::Absent)
+        );
+    if !gone {
+        // Try again on a later pass; the draft stays discarded here either way.
+        return match reply {
+            Err(error) => Err(provider(error)),
+            _ => Err(failure(
+                "google_draft_delete_failed",
+                "Gmail did not delete a discarded draft",
+            )),
+        };
+    }
+    let account = ctx.account.as_str().to_owned();
+    ctx.core_call(move |store| store.google_draft_remote_deleted(&account, &draft, &target))
+        .await?;
+    Ok(true)
+}
+
+/// Local edits win a conflict: they replace the changed Gmail copy, or, when
+/// Gmail no longer has the draft, upload as a new one.
+async fn resolve_conflict(ctx: &SyncContext) -> Result<bool> {
+    let account = ctx.account.as_str().to_owned();
+    let Some(conflict) = ctx
+        .core_call(move |store| store.google_draft_conflicted(&account))
+        .await?
+    else {
+        return Ok(false);
+    };
+    let draft = text(&conflict, "draft_id")?.to_owned();
+    let google_revision = conflict["google_revision"].as_i64().unwrap_or(0);
+    if conflict["observed"] == true {
+        execute(
+            ctx,
+            json!({"draft_id":draft,"expected_revision":conflict["revision"],
+                "request_id":fm_ipc::random_token(),"expected_google_revision":google_revision,
+                "action":"replace_local"}),
+        )
+        .await?;
+    } else {
+        let account = ctx.account.as_str().to_owned();
+        ctx.core_call(move |store| {
+            store.google_draft_forget_target(&account, &draft, google_revision)
+        })
+        .await?;
+    }
+    Ok(true)
 }
 
 pub(crate) async fn execute(ctx: &SyncContext, request: Value) -> Result<Value> {

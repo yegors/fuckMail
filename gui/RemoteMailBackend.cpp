@@ -203,6 +203,19 @@ void MailBackend::refreshBinCounts() {
     });
 }
 
+void MailBackend::loadBinMenuCounts() {
+    if (m_syntheticProfile || m_account.isEmpty()) return;
+    const auto account = m_account;
+    if (m_binMenuCounts.value("account") != account) m_binMenuCounts = {{"account", account}};
+    for (const QString folder : {"spam", "trash"})
+        googleOperation("google_bin_counts", account, {{"folder", folder}}, [this, account, folder](auto result, bool ok) {
+            if (!ok || account != m_account) return;
+            if (m_binMenuCounts.value("account") != account) m_binMenuCounts = {{"account", account}};
+            m_binMenuCounts[folder] = result["conversations"].toVariant();
+            emit binCountsChanged();
+        });
+}
+
 void MailBackend::notSpam() {
     if (m_binBusy || m_folder != u"spam" || !m_selected.startsWith(u"remote:")) return;
     const auto account = m_account, id = m_selected;

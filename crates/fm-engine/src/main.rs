@@ -1154,6 +1154,8 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
         "label_create",
         "label_describe",
         "label_remove",
+        "label_auto_read",
+        "label_auto_spam",
         "set_category",
         "view_get",
         "view_save",

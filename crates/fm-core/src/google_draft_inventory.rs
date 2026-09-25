@@ -1,4 +1,5 @@
-//! Read-only Google draft inventory. RAW and part preparation never hold Store.
+//! Google draft inventory. RAW and part preparation never hold Store. Each
+//! observed Gmail draft is mirrored as an editable local draft (D121).
 use crate::{content::BlobStore, err, Result, Store};
 use fm_google::transport::CancellationToken;
 use rusqlite::{params, OptionalExtension};
@@ -64,6 +65,10 @@ pub struct GoogleDraftImportPlan {
     generation: i64,
     page_revision: i64,
     item: GoogleDraftListedId,
+    /// The local draft tied to this Gmail draft and its sync revision when the
+    /// read was planned. A read finishing after our own upload must not put
+    /// older Gmail text back; None (explicit actions) never mirrors.
+    fence: Option<Option<(String, i64)>>,
 }
 impl GoogleDraftImportPlan {
     pub fn provider_draft_id(&self) -> &str {
@@ -310,6 +315,7 @@ impl Store {
                 generation: state.generation,
                 page_revision: page.revision,
                 item: item.id.clone(),
+                fence: Some(self.draft_fence(&scope.account, &item.id.draft_id)?),
             }));
         }
         Ok(GoogleDraftInventoryStep::List(GoogleDraftListPlan {
@@ -357,9 +363,14 @@ impl Store {
         for id in page.drafts {
             identifier(&id.draft_id)?;
             identifier(&id.message_id)?;
-            if seen.insert(id.draft_id.clone()) {
-                items.push(PendingItem { id, done: false });
+            if !seen.insert(id.draft_id.clone()) {
+                continue;
             }
+            // An unchanged draft is only marked seen; RAW is read on change.
+            if self.mark_unchanged_draft(&plan.scope.account, &id, &mut state)? {
+                continue;
+            }
+            items.push(PendingItem { id, done: false });
         }
         state.revision += 1;
         state.estimate = page.result_size_estimate;
@@ -368,6 +379,11 @@ impl Store {
             state.complete = state.token.is_none();
             if state.complete {
                 state.completed_at = Some(now()?);
+                self.reconcile_absent_drafts(
+                    &plan.scope.account,
+                    state.generation,
+                    state.started_at,
+                )?;
             }
         } else {
             state.pending = Some(PendingPage {
@@ -436,10 +452,14 @@ impl Store {
         Ok(())
     }
     fn known_draft_owner(&self, account: &str, remote: &str) -> Result<(Option<String>, bool)> {
-        let mut stmt=self.db.prepare("SELECT draft_id FROM drafts WHERE account=?1 AND origin='local' AND json_extract(google_json,'$.baseline.draft_id')=?2 UNION SELECT draft_id FROM drafts WHERE account=?1 AND origin='local' AND json_extract(google_json,'$.adoption.target.provider_draft_id')=?2 UNION SELECT json_extract(json,'$.draft_id') FROM capture_operations WHERE account=?1 AND execution_kind='google' AND COALESCE(json_extract(json,'$.kind'),'draft')='draft' AND json_extract(json,'$.target')=?2 UNION SELECT json_extract(json,'$.draft_id') FROM capture_operations WHERE account=?1 AND execution_kind='google' AND json_extract(json,'$.ack.draft_id')=?2 UNION SELECT json_extract(json,'$.draft_id') FROM capture_operations WHERE account=?1 AND execution_kind='google' AND json_extract(json,'$.kind')='send' AND json_extract(json,'$.provider_draft_id')=?2 LIMIT 2")?;
-        let rows = stmt
+        let mut stmt=self.db.prepare("SELECT draft_id FROM drafts WHERE account=?1 AND origin='local' AND json_extract(google_json,'$.baseline.draft_id')=?2 AND json_extract(google_json,'$.remote_deleted') IS NOT 1 UNION SELECT draft_id FROM drafts WHERE account=?1 AND origin='local' AND json_extract(google_json,'$.adoption.target.provider_draft_id')=?2 AND json_extract(google_json,'$.remote_deleted') IS NOT 1 UNION SELECT json_extract(json,'$.draft_id') FROM capture_operations WHERE account=?1 AND execution_kind='google' AND COALESCE(json_extract(json,'$.kind'),'draft')='draft' AND json_extract(json,'$.target')=?2 UNION SELECT json_extract(json,'$.draft_id') FROM capture_operations WHERE account=?1 AND execution_kind='google' AND json_extract(json,'$.ack.draft_id')=?2 UNION SELECT json_extract(json,'$.draft_id') FROM capture_operations WHERE account=?1 AND execution_kind='google' AND json_extract(json,'$.kind')='send' AND json_extract(json,'$.provider_draft_id')=?2 LIMIT 3")?;
+        let mut rows = stmt
             .query_map(params![account, remote], |r| r.get::<_, String>(0))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
+        // Our own draft outranks the inventory's mirror of the same Gmail draft.
+        if rows.iter().any(|id| !id.starts_with("google-draft-")) {
+            rows.retain(|id| !id.starts_with("google-draft-"));
+        }
         Ok((
             if rows.len() == 1 {
                 rows.first().cloned()
@@ -448,6 +468,61 @@ impl Store {
             },
             rows.len() > 1,
         ))
+    }
+    /// The local draft mirroring a Gmail draft, with its sync revision.
+    fn draft_fence(&self, account: &str, remote: &str) -> Result<Option<(String, i64)>> {
+        let (owner, _) = self.known_draft_owner(account, remote)?;
+        let current: Option<(String, Option<String>)> = self.db.query_row(
+            "SELECT draft_id,linked_local_draft_id FROM google_draft_sources WHERE account=?1 AND provider_draft_id=?2 AND is_current=1",
+            params![account, remote],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        ).optional()?;
+        let named = current.as_ref().map(|c| c.0.clone()).unwrap_or_else(|| {
+            format!(
+                "google-draft-{}",
+                hash(format!("{account}\0{remote}").as_bytes())
+            )
+        });
+        let candidates = [owner, current.and_then(|c| c.1), Some(named)];
+        for local in candidates.into_iter().flatten() {
+            let revision: Option<Option<i64>> = self.db.query_row(
+                "SELECT json_extract(google_json,'$.revision') FROM drafts WHERE account=?1 AND draft_id=?2 AND origin='local'",
+                params![account, local],
+                |r| r.get(0),
+            ).optional()?;
+            if let Some(revision) = revision {
+                return Ok(Some((local, revision.unwrap_or(0))));
+            }
+        }
+        Ok(None)
+    }
+    /// A listed draft whose current source already has this message id is
+    /// unchanged: record that this scan saw it and skip its RAW read.
+    fn mark_unchanged_draft(
+        &self,
+        account: &str,
+        id: &GoogleDraftListedId,
+        state: &mut Inventory,
+    ) -> Result<bool> {
+        let current: Option<(String, i64)> = self.db.query_row(
+            "SELECT metadata_json,seen_generation FROM google_draft_sources WHERE account=?1 AND provider_draft_id=?2 AND is_current=1",
+            params![account, id.draft_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        ).optional()?;
+        let Some((raw, seen)) = current else {
+            return Ok(false);
+        };
+        let source: Source = serde_json::from_str(&raw)?;
+        if source.message_id.as_deref() != Some(id.message_id.as_str())
+            || source.source_state != "available"
+        {
+            return Ok(false);
+        }
+        if seen != state.generation {
+            state.observed_this_scan += 1;
+        }
+        self.db.execute("UPDATE google_draft_sources SET seen_generation=?3,last_observed_at=?4 WHERE account=?1 AND provider_draft_id=?2 AND is_current=1",params![account,id.draft_id,state.generation,now()?])?;
+        Ok(true)
     }
     pub fn google_draft_import_finish(
         &mut self,
@@ -487,6 +562,7 @@ impl Store {
             proof.preview,
             proof.parts,
             &mut state,
+            plan.fence.clone(),
         )?;
         let page = state.pending.as_mut().ok_or_else(stale)?;
         let item = page
@@ -501,6 +577,7 @@ impl Store {
             state.complete = state.token.is_none();
             if state.complete {
                 state.completed_at = Some(now()?);
+                self.reconcile_absent_drafts(account, state.generation, state.started_at)?;
             }
         }
         state.revision += 1;
@@ -509,6 +586,7 @@ impl Store {
         self.google_draft_inventory_status(account)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn publish_draft_source(
         &self,
         account: &str,
@@ -517,7 +595,12 @@ impl Store {
         preview: Option<Preview>,
         parts: Vec<Part>,
         state: &mut Inventory,
+        fence: Option<Option<(String, i64)>>,
     ) -> Result<()> {
+        let mirror = match fence {
+            Some(fence) => fence == self.draft_fence(account, remote)?,
+            None => false,
+        };
         let (owner, ambiguous) = self.known_draft_owner(account, remote)?;
         if ambiguous {
             source.issues.push("ambiguous_local_target".into());
@@ -554,6 +637,13 @@ impl Store {
             .or_else(|| old.as_ref().and_then(|r| r.1.clone()));
         let raw = encode(&source)?;
         let changed = old.as_ref().is_none_or(|r| r.2 != raw || r.1 != linked);
+        // A draft of ours whose create was acknowledged late may already have
+        // a mirror; the mirror goes, and the Gmail draft stays ours.
+        if let (Some(owner), Some((mirrored, ..))) = (&owner, &old) {
+            if owner != mirrored && mirrored.starts_with("google-draft-") {
+                self.db.execute("UPDATE drafts SET discarded=1,google_json=json_set(COALESCE(google_json,'{}'),'$.remote_deleted',json('true')) WHERE account=?1 AND draft_id=?2 AND origin='local' AND discarded=0",params![account,mirrored])?;
+            }
+        }
         let old_source: Option<Source> = old
             .as_ref()
             .map(|r| serde_json::from_str(&r.2))
@@ -579,14 +669,6 @@ impl Store {
                     .is_some_and(|s| s.preview_state != "complete"),
             );
         let tx = &self.db;
-        if !tx.query_row(
-            "SELECT EXISTS(SELECT 1 FROM drafts WHERE account=?1 AND draft_id=?2)",
-            params![account, draft_id],
-            |r| r.get::<_, bool>(0),
-        )? {
-            let empty = json!({"from":"","subject":"","to_recipients":[],"cc_recipients":[],"bcc_recipients":[],"references":[],"reply_to_message_id":null,"reply_all_available":false,"source_unavailable":true});
-            tx.execute("INSERT INTO drafts(account,draft_id,mode,routing_json,body,revision,origin,created_at,updated_at) VALUES(?1,?2,'new',?3,'',1,'google_snapshot',?4,?4)",params![account,draft_id,serde_json::to_string(&empty)?,now()?/1000])?;
-        }
         if changed {
             for part in &parts {
                 tx.execute("INSERT OR IGNORE INTO attachments(account,id,message_id,name,mime_type,size,state,blob_hash) VALUES(?1,?2,NULL,?3,?4,?5,'available',?6)",params![account,part.id,part.name,part.mime_type,part.size,part.sha256])?;
@@ -597,8 +679,52 @@ impl Store {
             }
             tx.execute("UPDATE google_draft_sources SET is_current=0 WHERE account=?1 AND provider_draft_id=?2 AND is_current=1",params![account,remote])?;
             tx.execute("INSERT INTO google_draft_sources(account,source_revision,provider_draft_id,draft_id,linked_local_draft_id,is_current,seen_generation,observed_at,last_observed_at,metadata_json) VALUES(?1,?2,?3,?4,?5,1,?6,?7,?7,?8)",params![account,revision,remote,draft_id,linked,state.generation,now()?,raw])?;
-            if let Some(preview) = preview {
-                tx.execute("UPDATE drafts SET routing_json=?3,body=?4,body_html=?5,from_name=?6,attachments_json=?7,revision=revision+1,updated_at=?8 WHERE account=?1 AND draft_id=?2 AND origin='google_snapshot'",params![account,draft_id,serde_json::to_string(&preview.routing)?,preview.body,preview.html,preview.from_name,serde_json::to_string(&source.attachment_ids)?,now()?/1000])?;
+            // Exactly the bytes of a create of ours still awaiting its answer:
+            // not mirrored as a second draft.
+            let pending: bool = tx.query_row("SELECT EXISTS(SELECT 1 FROM capture_operations WHERE account=?1 AND execution_kind='google' AND COALESCE(json_extract(json,'$.kind'),'draft')='draft' AND json_extract(json,'$.state') IN ('prepared','in_flight','acceptance_unknown') AND json_extract(json,'$.target') IS NULL AND json_extract(json,'$.ack') IS NULL AND blob_hash=?2)",params![account,source.sha256],|r|r.get(0))?;
+            let mirror = mirror && !pending;
+            if let (true, Some(preview), Some(message), Some(sha), Some(size), "available") = (
+                mirror,
+                preview,
+                source.message_id.as_deref(),
+                source.sha256.as_deref(),
+                source.size,
+                source.source_state.as_str(),
+            ) {
+                let local = match owner.clone().or(linked.clone()) {
+                    Some(local) => Some(local),
+                    None => tx
+                        .query_row(
+                            "SELECT draft_id FROM drafts WHERE account=?1 AND draft_id=?2 AND origin='local'",
+                            params![account, draft_id],
+                            |r| r.get::<_, String>(0),
+                        )
+                        .optional()?,
+                };
+                self.mirror_remote_draft(
+                    account,
+                    &crate::google_drafts::mirror::RemoteDraft {
+                        provider_draft_id: remote,
+                        message_id: message,
+                        thread_id: source.thread_id.as_deref().unwrap_or(""),
+                        sha256: sha,
+                        size,
+                        source_draft_id: &draft_id,
+                        source_revision: revision,
+                        routing: &preview.routing,
+                        body: &preview.body,
+                        html: preview.html.as_deref(),
+                        from_name: &preview.from_name,
+                        attachment_ids: &source.attachment_ids,
+                    },
+                    local.as_deref(),
+                    &draft_id,
+                )?;
+            }
+            if mirror && source.source_state == "missing" {
+                if let Some(local) = owner.clone().or(linked.clone()) {
+                    self.mirror_missing_draft(account, &local, remote)?;
+                }
             }
         } else {
             tx.execute("UPDATE google_draft_sources SET seen_generation=?3,last_observed_at=?4 WHERE account=?1 AND provider_draft_id=?2 AND is_current=1",params![account,remote,state.generation,now()?])?;

@@ -366,6 +366,7 @@ impl Store {
             "categories",
             "label_catalog",
             "label_auto_read",
+            "label_auto_spam",
             "label_create",
             "label_describe",
             "label_remove",
@@ -488,9 +489,8 @@ impl Store {
                 fields(&params, &[])?;
                 self.label_catalog(account)
             }
-            "label_create" | "label_describe" | "label_remove" | "label_auto_read" => {
-                self.label_edit(account, method, &params)
-            }
+            "label_create" | "label_describe" | "label_remove" | "label_auto_read"
+            | "label_auto_spam" => self.label_edit(account, method, &params),
             "flag" | "set_category" | "mail_filing" | "mail_undo" | "draft_create"
             | "draft_save" | "draft_discard" | "draft_undo_discard" | "view_save" => {
                 self.mutate(method, account, &params)

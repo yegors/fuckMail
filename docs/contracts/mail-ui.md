@@ -2,6 +2,26 @@
 
 
 
+## D122/D123 — first-class drafts, header, label toggles, inline compose (Mail UI89)
+
+- **Header.** Inbox and Drafts carry raised counts (Inbox: to review, 11.5 px DemiBold `inkAlpha(.7)`; Drafts: unsent written drafts, accent), hidden at zero. Spam and Trash sit behind `binMenuButton` (▾) after Drafts; its popup lists `spamScopeButton`/`trashScopeButton` with icon and Gmail count (`google_bin_counts`, read when it opens); in Spam or Trash the name shows beside ▾. `newMessageButton` (solid, 28 px, mail icon) follows the stats; `n` still opens it. The top-right New is removed in Mail and Calendar. Narrow panes wrap stats and New below the tabs.
+- **Label rail.** `railLabel_*` toggles (`#` 14 px mono, accent when on and `inkAlpha(.28)` off; name 12.5 px; count 10.5 px mono; 2 px accent underline when on). Any number can be on (OR); none shows everything; a `label:` query decides instead. No All. Sent and Drafts show `railDay_*` toggles; Spam and Trash show none.
+- **Inline compose.** A new message replaces the thread in the reader, at least max(420 px, 50% of the window), starting at From; the body is at least 96 px (140 px when tall) and grows. Footer (`composerFooter`): Send, `draftAttachButton`, one `composerHint` line and `discardReply`. No title row, minimise or top bin. Leaving (thread, folder, account, Settings, view) keeps it in Drafts; an empty new message is dropped without Undo. Esc on a new message with content opens `keepDialog` "Keep this message?" (`keepMessageDiscard`, `keepMessageEditing` "Keep editing (Esc)", `keepMessageSave` "Save to Drafts (↵)"); drafts opened from Drafts never ask. Discard confirms "Discard this draft?" — "It will be removed from Drafts here and in Gmail."
+- **Recent with.** Under a new message with a recipient: "Recent with {first name}", up to four conversations with that address (`conversations` folder all), each subject · first line and Today/Yesterday/d MMM; "All mail with {name} (N)" searches the address.
+- **Draft chips.** Bottom right above the day strip: up to four unsent drafts of the account (`draftChip_*`), then `draftChipsMore` "+N" to Drafts. 26 px rounded, near-transparent, accent reply or pencil icon, subject / first words / "Untitled"; tooltip account, "Reply to …" or "To …", start of text. Reply drafts open their thread with the inline reply; new drafts open Drafts with the composer. Hidden while composing; the reader adds 64 px bottom space while shown.
+- **Drafts sync is silent.** The source/actions panels, Refresh and inventory status row are removed. The composer hint shows only real problems: "Couldn't save this draft to Gmail. It's kept here.", "Couldn't save this draft to Gmail: {reason}" (35 MB limit, invalid From, another address, invalid addresses/formatting/attachments) and "Gmail hasn't confirmed this draft yet. It's kept here."
+- **Inbox clear.** `inboxClearTitle` "Inbox clear" (20 px) under a small accent check, "Nothing to review or delayed in {account}.", hairline, and `inboxClearNext` "NEXT · time · title ›" for the next event today, opening Calendar Day on today with that event's card.
+- **Day strip.** The event card opens next to the clicked event; the more menu is removed ("Back to today" stays).
+
+Consumers: Core68, Gmail31, Calendar34.
+
+## D121 — to: search, stable progress bars (Mail UI88)
+
+- **Search dropdown.** Narrow it down lists `subject:`, `body:`, `from:` ("Only the sender") and `to:` ("Only recipients (To or Cc)"), then "An address on its own finds mail from or to it." ("finds drafts to it" in Drafts).
+  - Chips: bare addresses lead as "From or To" ("To" in Drafts), then "Subject or body", Subject, Body, From, To and the rest. Removing a chip rebuilds the text with bare addresses first.
+  - People are offered after a trailing `from:` (Senders) or `to:` (Recipients); picking one keeps the operator.
+- **Account progress.** A calendar whose first pass has finished stays Complete with a full bar; later delta passes, which run alongside mail, no longer reset or animate it. Bars animate only changes in progress while their stage is live, never a relayout.
+
 ## D120 — tenth export: day strip, folder tabs, Spam and Trash (Mail UI87)
 
 - **Day strip.** Fallback range 0–24 (Core67 default). Per day: a full-height `Theme.ruleWidth` separator at x 24 (`accentAlpha(.45)` today, `inkAlpha(.2)` otherwise; it replaces the first hour rule) and a marker row at x 30, y 5, 5 px apart: date number 12 px DemiBold (accent today), `ddd` 10.5 px uppercase `inkAlpha(.5)` with .06 em spacing, then `·` (`inkAlpha(.25)`) and Today/Tomorrow/Yesterday (date colour, .85) when it applies. The marker exposes `label` (for example "11 Fri · Today"). Hour labels hide at index 0, at the last index, where they would overlap the marker, and within .42 h of now on today. The right-hand date label is removed; "Back to today" stays top-right away from today. The now line's time label hides when it would overlap the marker and a 7 px dot marks the line instead.
@@ -38,6 +58,8 @@ Consumers: Core67, Gmail30, Calendar33, CLI51; `gui-mail-selection`, `gui-html-m
   - Loaded: the icon is the plain picture; Load images becomes a green check with "{N} image(s) loaded" (`imageCount`); the text reads "Images loaded for this message only".
   - Allowed sender (`senderAllowed`): the text reads "Images from {sender} load automatically" and the button "Stop always loading from {sender}" (tooltip "Ask again before loading images from this sender").
   - Stop always loading calls `HtmlContent.disallowImages`; loaded images stay.
+- **Message headers.** A folded message expands from a click anywhere on its header row, which shows the accent outline only while hovered. An open message collapses only from its chevron: clicking its header does nothing, so its address (now selectable text) can be copied. The outline also shows for keyboard focus, never after a mouse click.
+- **Contact card hover.** Clicking a name or avatar opens the card at once. Hover opens it after 280 ms. While a card is open, hovering another contact switches only after 450 ms, and never while the pointer is moving down toward the card. The card stays open while hovered and closes 400 ms after the pointer leaves both it and its contact.
 
 ## D118 — ninth export: remote search, message notices, unsubscribe, retention badge (Mail UI85)
 

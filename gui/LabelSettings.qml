@@ -21,6 +21,19 @@ ColumnLayout {
     property var removal: ({})
     readonly property string accountName: (backend.accounts.find(a=>a.id===account)||{}).name || "this account"
     function key(id) { return account + "/" + id }
+    // Heading of a checkbox column that acts when the local model applies the label.
+    component ModelHeading: Item {
+        id: heading
+        property string text: ""
+        property string tip: ""
+        Layout.preferredWidth:56; Layout.minimumWidth:56; Layout.maximumWidth:56; implicitHeight:30
+        Row { anchors.centerIn:parent; spacing:5
+            FmIcon { name:"summary"; size:10; color:Theme.ai; anchors.verticalCenter:parent.verticalCenter }
+            Text { text:heading.text; color:Theme.ai; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11); font.letterSpacing:0.66 }
+        }
+        HoverHandler { id:headingHover }
+        FmToolTip { shown:headingHover.hovered; text:heading.tip }
+    }
     function send(method, params, scope) {
         const target=scope || account, values=Object.assign({},params)
         const ticket=backend.labelRequest(method,values,target)
@@ -47,7 +60,7 @@ ColumnLayout {
     Connections {
         target: backend
         function onConnectedChanged(){if(backend.connected)panel.load();else {
-            panel.pendingRetry=Object.values(panel.requests).find(r=>r.account===panel.account&&["label_create","label_describe","label_remove","label_auto_read","google_labels_sync"].indexOf(r.method)>=0)||null
+            panel.pendingRetry=Object.values(panel.requests).find(r=>r.account===panel.account&&["label_create","label_describe","label_remove","label_auto_read","label_auto_spam","google_labels_sync"].indexOf(r.method)>=0)||null
             panel.requests={};panel.syncJobs={};panel.loadTicket="";panel.status="Connection lost. Your edits are kept."
         }}
         function onLabelReply(ticket,method,result,ok) {
@@ -93,15 +106,13 @@ ColumnLayout {
         Text{text:"Labels";color:Theme.inkAlpha(0.45);font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(11.5);Layout.fillWidth:true}
         FmComboBox {visible:panel.showAccountPicker;objectName:"labelsAccount";Layout.preferredWidth:160;model:backend.accounts;textRole:"name";currentIndex:backend.accounts.findIndex(a=>a.id===panel.account);onActivated:panel.account=backend.accounts[currentIndex].id;Accessible.name:"Labels account"}
     }
-    Text {visible:panel.showHeading;Layout.fillWidth:true;Layout.topMargin:6;Layout.bottomMargin:14;text:"Each account keeps its own labels. Descriptions tell the local model what belongs where. Removing a label takes it off every conversation in "+panel.accountName+" here.";wrapMode:Text.Wrap;lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight);color:Theme.muted;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(13.5)}
+    Text {visible:panel.showHeading;Layout.fillWidth:true;Layout.topMargin:6;Layout.bottomMargin:14;text:"Labels for "+panel.accountName+" only. Descriptions help the local model sort mail.";wrapMode:Text.Wrap;lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontPixels(font) * 1.5); topPadding: Theme.leadingTop(font, lineHeight); bottomPadding: Theme.leadingBottom(font, lineHeight);color:Theme.muted;font.family:Theme.fontFamily;font.pointSize:Theme.fontPoints(13.5)}
     Rectangle{Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
     RowLayout { Layout.fillWidth:true; Layout.minimumHeight:30; spacing:12
         Text { text:"LABEL"; Layout.preferredWidth:150; color:Theme.subtle; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11); font.letterSpacing:0.66 }
         Text { text:"DESCRIPTION"; Layout.fillWidth:true; color:Theme.subtle; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11); font.letterSpacing:0.66 }
-        Row { Layout.preferredWidth:84; spacing:5
-            FmIcon { name:"summary"; size:10; color:Theme.ai; anchors.verticalCenter:parent.verticalCenter }
-            Text { text:"AUTO-READ"; color:Theme.ai; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11); font.letterSpacing:0.66 }
-        }
+        ModelHeading { text:"READ"; tip:"When the local model applies this label, the message is marked read on arrival" }
+        ModelHeading { objectName:"labelSpamHeading"; text:"SPAM"; tip:"When the local model applies this label, the message goes to Spam" }
         Item { Layout.preferredWidth:28 }
     }
     Rectangle{Layout.fillWidth:true;implicitHeight:1;color:Theme.line}
@@ -128,13 +139,24 @@ ColumnLayout {
                     Accessible.name:"Instructions for "+modelData.name
                 }
                 CheckBox {
-                    id:autoRead; objectName:"labelAutoRead_"+modelData.id; Layout.preferredWidth:84; implicitHeight:28
+                    id:autoRead; objectName:"labelAutoRead_"+modelData.id; Layout.preferredWidth:56; Layout.maximumWidth:56; implicitHeight:28
                     checked:modelData.auto_read===true; enabled:!panel.busy&&backend.connected
                     onClicked: panel.send("label_auto_read",{id:modelData.id,expected_auto_read:modelData.auto_read===true,auto_read:checked})
-                    Accessible.name:"Auto-read "+modelData.name
+                    Accessible.name:"Read "+modelData.name
                     ToolTip.visible:hovered; ToolTip.text:checked ? "Incoming mail assigned this label is marked read" : "Incoming mail assigned this label stays unread"
-                    indicator: Rectangle { width:16; height:16; radius:4; x:0; y:(parent.height-height)/2; color:autoRead.checked ? Theme.ai : "transparent"; border.color:autoRead.checked ? Theme.ai : Theme.line3
+                    indicator: Rectangle { width:16; height:16; radius:4; x:(parent.width-width)/2; y:(parent.height-height)/2; color:autoRead.checked ? Theme.ai : "transparent"; border.color:autoRead.checked ? Theme.ai : Theme.line3
                         FmIcon { anchors.centerIn:parent; name:"check"; size:11; color:Theme.canvas; visible:autoRead.checked }
+                    }
+                    contentItem:Item {}
+                }
+                CheckBox {
+                    id:autoSpam; objectName:"labelAutoSpam_"+modelData.id; Layout.preferredWidth:56; Layout.maximumWidth:56; implicitHeight:28
+                    checked:modelData.auto_spam===true; enabled:!panel.busy&&backend.connected
+                    onClicked: panel.send("label_auto_spam",{id:modelData.id,expected_auto_spam:modelData.auto_spam===true,auto_spam:checked})
+                    Accessible.name:"Spam "+modelData.name
+                    FmToolTip { shown:autoSpam.hovered; text:(autoSpam.checked ? "Stop sending " : "Send ")+modelData.name+" to Spam" }
+                    indicator: Rectangle { width:15; height:15; radius:4; x:(parent.width-width)/2; y:(parent.height-height)/2; color:autoSpam.checked ? Theme.ai : "transparent"; border.color:autoSpam.checked ? Theme.ai : Theme.withAlpha(Theme.ai,0.45)
+                        FmIcon { anchors.centerIn:parent; name:"check"; size:10; color:Theme.canvas; visible:autoSpam.checked }
                     }
                     contentItem:Item {}
                 }

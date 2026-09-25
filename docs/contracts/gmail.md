@@ -2,6 +2,17 @@
 
 
 
+## D122 — Gmail drafts are local drafts (Gmail31)
+
+- **Mirror.** The draft inventory scan mirrors every readable Gmail draft as a local draft (`origin local`, sync state `adopted`, target = the Gmail draft). Read-only `google_snapshot` drafts are no longer created. A pending own create (prepared, in flight or unknown, no target, same RAW blob) is not mirrored. When a draft's real owner appears later, a `google-draft-` mirror of the same target is retired (`discarded`, `remote_deleted`). Late acknowledgements prefer a non-mirror owner and ignore retired rows.
+- **Reads.** A listing whose message ids and history are unchanged reads no RAW. The scan repeats every 60 s while sync runs. A changed draft replaces the local copy only when it has no unsent edit; each read is fenced by the draft and its sync revision so a read that started before our upload cannot overwrite it.
+- **Absent.** A complete listing without the target, or `drafts.get` 404, retires an unchanged copy (nothing in Gmail is touched) or forgets the target of a copy with unsent edits, which then uploads as a new Gmail draft.
+- **Discard.** A discarded draft with a target is deleted at Gmail (`drafts.delete`) once the 10 s Undo window has passed; Undo after that recreates it.
+- **Conflicts** resolve locally without asking: a changed Gmail draft is replaced with the local text, a vanished one recreated. `acceptance_unknown` creates without a target are not retried.
+- **Spam/Trash fixes.** The engine's mutation allowlist admits `google_delete_forever` and `google_empty` batch deletes; sync's store refreshes no longer reload the live Spam list.
+
+Consumers: Core68, Mail UI89, CLI53.
+
 ## D120 — Spam and Trash actions, full mail access (Gmail30)
 
 - Write-mode mail access requests `https://mail.google.com/` instead of `gmail.modify` (also in `GOOGLE_SCOPES`). `ScopeSet::mail_full()` is true only for that scope; `mail_write` still accepts either.

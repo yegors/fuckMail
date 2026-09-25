@@ -2,6 +2,15 @@
 
 
 
+## D123 — event card, full event view, weekends (Calendar34)
+
+- **Card.** Notes preview up to three lines with a notes icon, full text on hover. Actions Edit · View · Delete, outline (View with an icon). `showEventInDay(event)` opens Day view on the event's day with its card beside the block (Inbox clear's NEXT link).
+- **Event view** (View, and reminders). 720 px wide, 36 px title, 16 px time, 14 px labels in an 84 px column, 15.5 px values; Notes row pre-wrapped, scrolling past max(360 px, 36% of the height). Countdown to the real start: m:ss, h:mm:ss, Nd h:mm:ss, Ny Nd h:mm:ss at 96/80/64 px; "Upcoming", or "In progress · Started h:mm ago" in neutral ink; "STARTING NOW" in the last minute. Ended: "This event is over" and "Ended", only Close. No Snooze, no Open event; Join only with a call link. Sounds play only when the one-minute or start point passes while open.
+- **Editor.** Notes is a labelled row (64 px label `inkAlpha(.45)`), at least 176 px, resizable, placeholder "Agenda, dial-in — anything guests should see".
+- **Grids.** Week and Month shade Saturday and Sunday (22% shadow) with day numbers at 60% ink; Month's Sat/Sun headers 30% ink; Month numbers 20 px Medium −0.02 em; no accent on the month axes; the working-hours arrows are removed. The top-right New is removed (click an empty slot or press n).
+
+Consumers: Mail UI89.
+
 ## D120 — now lines and the 24-hour default (Calendar33)
 
 The timeline and Day/Week fallback range is 0–24 (Core67's default preference). Day and Week draw the now line in today's column (unchanged) and call `revealNow()` when the view becomes visible, when the grid completes and when the view, range start or today changes: if today is shown and the line is outside the viewport, the grid scrolls so it sits a quarter down. Manual scrolling is kept otherwise. Month's today cell orders finished timed events first, then all-day and upcoming ones; the line is drawn before the first unfinished row (above the first row when none has finished) or after the last shown row when all have finished, so just after midnight it sits at the top. Mail UI87 owns the day strip. Consumers: Mail UI87, Core67.

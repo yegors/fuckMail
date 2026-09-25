@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 mod fidelity;
+pub mod mirror;
 
 pub const MAX_GOOGLE_DRAFT_BYTES: u64 = 35_000_000;
 const MAX_METADATA: usize = 32 * 1024;
@@ -115,6 +116,9 @@ struct Twin {
     derivation: Option<crate::google_draft_actions::Derivation>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     deletion: Option<crate::google_draft_actions::DeletionGuard>,
+    /// A discarded or vanished draft's Gmail copy is gone (D121).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    remote_deleted: bool,
 }
 impl Default for Twin {
     fn default() -> Self {
@@ -132,6 +136,7 @@ impl Default for Twin {
             adoption: None,
             derivation: None,
             deletion: None,
+            remote_deleted: false,
         }
     }
 }

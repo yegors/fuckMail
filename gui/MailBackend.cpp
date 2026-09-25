@@ -202,6 +202,11 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
     connect(&m_searchTimer, &QTimer::timeout, this, [this] { loadConversations(); });
     m_draftTimer.setSingleShot(true); m_draftTimer.setInterval(450);
     connect(&m_draftTimer, &QTimer::timeout, this, &MailBackend::saveDraft);
+    // Draft chips follow saves, account changes and synced Gmail drafts.
+    m_draftChipsTimer.setSingleShot(true); m_draftChipsTimer.setInterval(600);
+    connect(&m_draftChipsTimer, &QTimer::timeout, this, &MailBackend::refreshDraftChips);
+    for (auto signal : {&MailBackend::draftChanged, &MailBackend::accountChanged, &MailBackend::accountsChanged, &MailBackend::connectedChanged})
+        connect(this, signal, &m_draftChipsTimer, qOverload<>(&QTimer::start));
     // The server is searched once typing pauses, not per keystroke.
     m_remoteSearchTimer.setSingleShot(true); m_remoteSearchTimer.setInterval(600);
     connect(&m_remoteSearchTimer, &QTimer::timeout, this, &MailBackend::runRemoteSearch);
@@ -488,6 +493,7 @@ void MailBackend::selectAccount(const QString &id) {
     ++m_draftSaveGeneration;
     if (!accountRemoved(id)) m_archiveSelection.clear();
     if (!m_attachmentQueues.value(attachmentImportKey()).isEmpty()) m_attachmentQueuePaused.insert(attachmentImportKey());
+    dropEmptyNewDraft();
     m_account = id; m_conversation.clear(); m_draft.clear(); m_activeDraft.clear(); m_recipientInputs.clear(); m_selected.clear(); m_draftStatus.clear(); m_pinnedRow.clear(); m_pinnedIndex = -1;
     m_query.clear(); m_category.clear(); m_filters.clear(); m_querySummary.clear(); m_captureStatus.clear(); m_folder = "inbox"; m_categories.clear(); m_captures.clear(); m_nextOffset = -1; m_nextCursor.clear(); m_loading = false;
     m_searchTerms.clear(); m_searchError.clear(); m_searchPeople.clear(); m_searchPeopleQuery.clear(); ++m_searchPeopleGeneration;
@@ -607,14 +613,15 @@ void MailBackend::removeRecentSearch(const QString &text) {
     if (!recent.removeAll(text)) return;
     remember("recentSearches", recent); emit recentSearchesChanged(); emit presentationChanged();
 }
-void MailBackend::requestSearchPeople(const QString &part) {
+void MailBackend::requestSearchPeople(const QString &part, const QString &role) {
     if (!m_connected || m_account.isEmpty()) return;
     const auto account = m_account; const int generation = ++m_searchPeopleGeneration;
-    request("search_senders", account, {{"query", part.left(320)}, {"folder", m_folder}, {"limit", 5}},
-        [this, account, part, generation](auto result, bool ok) {
+    const auto side = role == u"recipient" ? QStringLiteral("recipient") : QStringLiteral("sender");
+    request("search_senders", account, {{"query", part.left(320)}, {"folder", m_folder}, {"role", side}, {"limit", 5}},
+        [this, account, part, side, generation](auto result, bool ok) {
             if (account != m_account || generation != m_searchPeopleGeneration) return;
             m_searchPeople = ok ? result["people"].toArray().toVariantList() : QVariantList{};
-            m_searchPeopleQuery = part; emit searchPeopleChanged();
+            m_searchPeopleQuery = side + u':' + part; emit searchPeopleChanged();
         });
 }
 // A list or draft response reports how Core read the search text. An
@@ -743,7 +750,8 @@ void MailBackend::loadConversations(bool append, bool preserveLoaded) {
     if (!append && !preserveLoaded) m_browsingOlder = false;
     if (!append && m_folder == "sent") loadOutgoing();
     if (m_folder == "drafts") { loadDraftRows(append, preserveLoaded); return; }
-    if (m_folder == "spam") { loadSpamRows(append); return; }
+    // Spam is read live from Gmail: store refreshes during sync leave it alone.
+    if (m_folder == "spam") { if (append || !preserveLoaded) loadSpamRows(append); return; }
     const int generation = ++m_listGeneration;
     const QString account = m_account;
     const int offset = append ? m_nextOffset : 0;
@@ -1008,6 +1016,7 @@ void MailBackend::selectConversationInternal(const QString &id, bool review, QVa
     if (!m_attachmentQueues.value(attachmentImportKey()).isEmpty()) m_attachmentQueuePaused.insert(attachmentImportKey());
     ++m_generation; m_readerFuture.cancel(); m_readerPrefetchFuture.cancel();
     m_readerPrefetchTimer.stop(); m_readerPrefetchTarget.clear();
+    dropEmptyNewDraft();
     m_selected = id; m_activeDraft.clear(); m_recipientInputs.clear(); m_conversation.clear(); m_draft.clear(); m_draftStatus.clear();
     restoreConversation(m_account, id);
     remember("selectedDraft", "");
@@ -1754,7 +1763,7 @@ QString MailBackend::assistanceRequest(const QString &method, const QVariantMap 
 }
 
 QString MailBackend::labelRequest(const QString &method, const QVariantMap &params, const QString &account) {
-    if (!QStringList{"label_catalog","label_create","label_describe","label_remove","label_auto_read","google_labels_sync","google_labels_sync_status","google_labels_sync_cancel"}.contains(method)) return {};
+    if (!QStringList{"label_catalog","label_create","label_describe","label_remove","label_auto_read","label_auto_spam","google_labels_sync","google_labels_sync_status","google_labels_sync_cancel"}.contains(method)) return {};
     const auto ticket=QUuid::createUuid().toString(QUuid::WithoutBraces);
     auto values=QJsonObject::fromVariantMap(params);
     if(method!="label_catalog"&&!method.endsWith("_status")&&!method.endsWith("_cancel")) {
@@ -1764,7 +1773,7 @@ QString MailBackend::labelRequest(const QString &method, const QVariantMap &para
     QTimer::singleShot(0,this,[this,method,values,account,ticket]{
         request(method,account,values,[this,method,values,account,ticket](auto result,bool ok){
             emit labelReply(ticket,method,result.toVariantMap(),ok);
-            if(ok&&(method=="label_create"||method=="label_describe"||method=="label_remove"||method=="label_auto_read"||(method.startsWith("google_labels_sync")&&result["state"].toString()=="complete"))) {
+            if(ok&&(method=="label_create"||method=="label_describe"||method=="label_remove"||method=="label_auto_read"||method=="label_auto_spam"||(method.startsWith("google_labels_sync")&&result["state"].toString()=="complete"))) {
                 if(account==m_account&&method=="label_remove"&&values["id"].toString()==m_category) setCategory({});
                 refresh();
             }

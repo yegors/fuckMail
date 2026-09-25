@@ -865,17 +865,19 @@ impl Store {
         } else {
             text.terms(label_name.as_deref())
         };
-        // In Sent, from: names the people the mail went to.
+        // from: is the sender, to: a recipient and a bare address either, in every folder.
+        let person_roles: Vec<PersonRole> =
+            std::iter::repeat_n(PersonRole::Sender, text.from.len())
+                .chain(std::iter::repeat_n(PersonRole::Recipient, text.to.len()))
+                .chain(std::iter::repeat_n(PersonRole::Either, text.people.len()))
+                .collect();
         let from_patterns: Vec<String> = text
             .from
             .iter()
+            .chain(&text.to)
+            .chain(&text.people)
             .map(|value| search_query::like_pattern(value))
             .collect();
-        let from_column = if folder == "sent" {
-            "recipient"
-        } else {
-            "sender"
-        };
         let month_zone = match p.get("month_zone") {
             None => None,
             Some(value) => Some(
@@ -909,8 +911,22 @@ impl Store {
                 }
             }
         }
-        let category = optional_string(p, "category", "")?;
-        if !category.is_empty() {
+        // Labels filter as toggles: mail with any listed label (comma-separated
+        // ids). A label: in the query decides instead.
+        let mut categories: Vec<&str> = if label_id.is_empty() {
+            optional_string(p, "category", "")?
+                .split(',')
+                .filter(|s| !s.is_empty())
+                .collect()
+        } else {
+            Vec::new()
+        };
+        categories.sort_unstable();
+        categories.dedup();
+        if categories.len() > 32 {
+            return Err(err("invalid_request", "Filter by up to 32 labels"));
+        }
+        for category in &categories {
             id(category)?;
             let exists: bool = self.db.query_row(
                 "SELECT EXISTS(SELECT 1 FROM categories WHERE account=?1 AND id=?2)",
@@ -921,6 +937,13 @@ impl Store {
                 return Err(err("not_found", "Category does not exist in this account"));
             }
         }
+        let category = if categories.is_empty() {
+            String::new()
+        } else {
+            serde_json::to_string(&categories)?
+        };
+        let mut effective = p.clone();
+        effective["category"] = json!(category);
         // Bare words match the subject or message text. The CLI's `field` can
         // narrow them to one column, the sender column included.
         let word_text = text.words.join(" ");
@@ -1018,11 +1041,10 @@ impl Store {
         let simple = grouped && !source_filtered;
         let sql = search_matches_sql_with(
             !expression.is_empty(),
-            p,
+            &effective,
             &TextPredicates {
                 attachment,
-                from_column,
-                from_count: from_patterns.len(),
+                people: &person_roles,
                 label: !label_id.is_empty(),
             },
         );
@@ -1614,13 +1636,22 @@ fn valid_month(month: &str) -> bool {
             && chrono::NaiveDate::parse_from_str(&format!("{month}-01"), "%Y-%m-%d").is_ok())
 }
 
+/// Which side of a message a search name or address must be on.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum PersonRole {
+    Sender,
+    /// To or Cc. The first To address is on the message row; the link index
+    /// adds every From/To/Cc person once it has read the source.
+    Recipient,
+    Either,
+}
+
 /// Predicates the search text adds beyond the typed filters in the request.
 #[derive(Default)]
 pub(crate) struct TextPredicates<'a> {
     pub attachment: Option<bool>,
-    /// `sender` matches sender name/address; `recipient` the To address.
-    pub from_column: &'a str,
-    pub from_count: usize,
+    /// One LIKE pattern slot per name or address, in order.
+    pub people: &'a [PersonRole],
     pub label: bool,
 }
 
@@ -1645,8 +1676,9 @@ pub(crate) fn search_matches_sql_with(search: bool, p: &Value, text: &TextPredic
         "trash" => predicate.push_str(" AND m.trashed=1"),
         _ => predicate.push_str(" AND m.trashed=0"),
     }
+    // ?3 is a JSON array of label ids; any of them matches.
     if p["category"].as_str().is_some_and(|s| !s.is_empty()) {
-        predicate.push_str(" AND m.id IN (SELECT message_id FROM message_categories WHERE account=?1 AND category_id=?3)");
+        predicate.push_str(" AND m.id IN (SELECT message_id FROM message_categories WHERE account=?1 AND category_id IN (SELECT value FROM json_each(?3)))");
     }
     if search {
         predicate.push_str(" AND message_fts MATCH ?4");
@@ -1679,12 +1711,16 @@ pub(crate) fn search_matches_sql_with(search: bool, p: &Value, text: &TextPredic
     }
     // Text predicates take the slots after the twelve typed ones, in order.
     let mut slots = 12;
-    for _ in 0..text.from_count {
+    for role in text.people {
         slots += 1;
-        predicate.push_str(&if text.from_column == "recipient" {
-            format!(" AND m.recipient LIKE ?{slots} ESCAPE '\\'")
-        } else {
-            format!(" AND (m.sender_name LIKE ?{slots} ESCAPE '\\' OR m.sender_email LIKE ?{slots} ESCAPE '\\')")
+        let sender = format!(
+            "m.sender_name LIKE ?{slots} ESCAPE '\\' OR m.sender_email LIKE ?{slots} ESCAPE '\\'"
+        );
+        let recipient = format!("m.recipient LIKE ?{slots} ESCAPE '\\' OR EXISTS (SELECT 1 FROM message_people mp JOIN people p ON p.id=mp.person WHERE mp.message_rowid=m.rowid AND p.email<>lower(trim(m.sender_email)) AND (p.email LIKE ?{slots} ESCAPE '\\' OR p.name LIKE ?{slots} ESCAPE '\\'))");
+        predicate.push_str(&match role {
+            PersonRole::Sender => format!(" AND ({sender})"),
+            PersonRole::Recipient => format!(" AND ({recipient})"),
+            PersonRole::Either => format!(" AND ({sender} OR {recipient})"),
         });
     }
     if text.label {
@@ -1719,7 +1755,11 @@ mod projection_tests {
         store.db.execute("UPDATE messages SET unread=0,starred=0,inbox=1,sent=0,trashed=0 WHERE account='windscribe'", []).unwrap();
         let ids: Vec<String> = {
             let mut statement = store.db.prepare("SELECT DISTINCT conversation_id FROM messages WHERE account='windscribe' ORDER BY conversation_id LIMIT 4").unwrap();
-            let rows = statement.query_map([], |r| r.get(0)).unwrap().collect::<std::result::Result<_, _>>().unwrap();
+            let rows = statement
+                .query_map([], |r| r.get(0))
+                .unwrap()
+                .collect::<std::result::Result<_, _>>()
+                .unwrap();
             rows
         };
         for (id, update) in ids.iter().zip([
@@ -2408,5 +2448,59 @@ mod projection_tests {
             store.account_counts("windscribe").unwrap()["conversation_count"],
             0
         );
+    }
+
+    #[test]
+    fn label_toggles_match_any_listed_label_and_a_label_query_decides() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = Store::open(temp.path()).unwrap();
+        let ids = |store: &mut Store, p: Value| -> std::collections::BTreeSet<String> {
+            let mut p = p;
+            p["folder"] = json!("all");
+            p["limit"] = json!(100);
+            store
+                .handle("conversations", Some("windscribe"), p)
+                .unwrap()["conversations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| row["id"].as_str().unwrap().to_owned())
+                .collect()
+        };
+        let infra = ids(&mut store, json!({"category":"infra"}));
+        let finance = ids(&mut store, json!({"category":"finance"}));
+        assert!(!infra.is_empty() && !finance.is_empty());
+        let either = ids(&mut store, json!({"category":"infra,finance"}));
+        assert_eq!(either, infra.union(&finance).cloned().collect());
+        assert_eq!(
+            ids(&mut store, json!({"category":"finance,infra,infra"})),
+            either
+        );
+        // label: in the query decides; the toggles step aside.
+        assert_eq!(
+            ids(
+                &mut store,
+                json!({"category":"infra","query":"label:finance"})
+            ),
+            finance
+        );
+        assert_eq!(
+            store
+                .handle(
+                    "conversations",
+                    Some("windscribe"),
+                    json!({"category":"infra,missing"})
+                )
+                .unwrap_err()
+                .code,
+            "not_found"
+        );
+        store
+            .handle(
+                "view_save",
+                Some("windscribe"),
+                json!({"view":{"category":"infra,finance"},"expected_revision":0,"request_id":"toggles"}),
+            )
+            .unwrap();
     }
 }

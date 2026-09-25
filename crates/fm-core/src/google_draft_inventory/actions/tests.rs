@@ -443,7 +443,8 @@ fn prepared_proofs_are_cancelled_or_fenced_without_authored_commit() {
                 |r| r.get::<_, i64>(0)
             )
             .unwrap(),
-        0
+        1,
+        "only the inventory's own mirror of the Gmail draft"
     );
 }
 
@@ -555,7 +556,8 @@ fn invocation_proof_distinguishes_early_refusal_from_an_attempted_authored_commi
                 |r| r.get::<_, i64>(0)
             )
             .unwrap(),
-        0
+        1,
+        "only the inventory's own mirror of the Gmail draft"
     );
 }
 

@@ -21,6 +21,11 @@ QQuickItem *named(QQuickItem *root, const QString &name) {
     return nullptr;
 }
 QVariant plain(QVariant value) { return value.canConvert<QJSValue>() ? value.value<QJSValue>().toVariant() : value; }
+// The header New button is gone; Calendar's own entry point (also its n key) opens a new event.
+bool createEvent(QQuickWindow *window) {
+    auto workspace = window ? named(window->contentItem(), "calendarWorkspace") : nullptr;
+    return workspace && workspace->isVisible() && QMetaObject::invokeMethod(workspace, "createEvent");
+}
 QJsonObject object(QObject *item, const char *property) { return item ? QJsonObject::fromVariantMap(plain(item->property(property)).toMap()) : QJsonObject{}; }
 QStringList addresses(const QJsonValue &value) {
     QStringList result;
@@ -272,7 +277,7 @@ void GuiGoogleCalendarSelfTest::tick() {
         if (click("eventRemoveGuest-" + QString::number(index))) m_stage = 17; break;
     }
     case 17: submit("remove", 21); break;
-    case 21: if (click("newEventButton")) m_stage = 22; break;
+    case 21: if (createEvent(m_window)) m_stage = 22; break;
     case 22: {
         if (!editor || !editor->property("opened").toBool()) return;
         const auto fresh = account["new_event"].toObject();
@@ -406,7 +411,7 @@ void GuiGoogleCalendarSelfTest::occurrenceTick(const QJsonObject &account, QObje
             m_accountResult["calendar_from"] = m_backend.calendarFrom(); m_accountResult["calendar_days"] = m_backend.calendarDays();
         }
         if (m_backend.calendarDate() != action.value("date").toString()) { m_backend.setCalendarDate(action.value("date").toString()); return; }
-        if (kind == "create") { if (click("newEventButton")) { m_initial = {}; m_resolvedOccurrence = {}; m_occurrenceResponse = {}; m_stage = 108; } break; }
+        if (kind == "create") { if (createEvent(m_window)) { m_initial = {}; m_resolvedOccurrence = {}; m_occurrenceResponse = {}; m_stage = 108; } break; }
         if (selector.value("series_id").toString().isEmpty()) { finish("A dynamic recurring action has no prior created series."); return; }
         m_initial = occurrenceFor(id, selector); if (m_initial.isEmpty()) return;
         const auto scopes = m_initial.value("recurring_scopes").toObject();

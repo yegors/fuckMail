@@ -355,7 +355,7 @@ void GuiAccountLifecycleSelfTest::tick() {
         m_backend.clearError(); if (click("settingsButton")) m_stage = 56; break;
     case 56: if (click("keepRemovedAccountBuffer")) { if (!m_backend.unsavedAccountBuffer() || m_window->property("settingsOpen").toBool()) { finish("Keep here lost the buffer or allowed navigation."); return; } m_disposition["keep_here_preserved"] = true; m_disposition["navigation_guarded"] = true; m_window->close(); m_stage = 57; } break;
     case 57: if (click("keepRemovedAccountBuffer")) { if (m_backend.m_shutdown || !m_window->isVisible()) { finish("Close bypassed unsaved disposition."); return; } m_disposition["close_guarded"] = true; m_stage = 58; } break;
-    case 58: if (click("collapseReply")) m_stage = 59; break;
+    case 58: if (QMetaObject::invokeMethod(named(m_window->contentItem(), "mailWorkspace"), "minimizeComposer")) m_stage = 59; break;
     case 59: if (click("discardRemovedAccountBuffer")) m_stage = 60; break;
     case 60:
         if (!m_backend.account().isEmpty() || m_backend.unsavedAccountBuffer() || !m_backend.conversations().isEmpty()) { finish("Last-account buffer disposition did not clear active selection."); return; }

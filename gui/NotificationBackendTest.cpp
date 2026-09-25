@@ -202,6 +202,7 @@ class NotificationBackendTest {
             require(QFontDatabase::addApplicationFont(QString::fromUtf8(FM_GUI_SOURCE_DIR) + "/fonts/" + font) >= 0, "bundled popup font");
         auto current = event(); current["title"] = "<b>Human meeting title</b> — a longer invitation 日本語 that wraps without pushing either action outside the card";
         current["start"]=QDateTime::currentDateTimeUtc().addSecs(600).toString(Qt::ISODate);
+        current["end"]=QDateTime::currentDateTimeUtc().addSecs(2400).toString(Qt::ISODate);
         h.backend.m_reminders = {current.toVariantMap()};
         QQmlApplicationEngine engine; FmIconItem::registerType(); bool warnings = false;
         QObject::connect(&engine,&QQmlEngine::warnings,[&](const auto &errors) {
@@ -246,6 +247,12 @@ ApplicationWindow {
                 require(window->grabWindow().save(capture+QString::number(remaining)+".png"),"reminder state capture");
             }
         }
+        // A reminder still open after its event ends is over: no Join, no Snooze, no alarm, only Close.
+        panel->setProperty("nowMs",panel->property("endMs").toDouble()+1000);
+        require(button("reminderKicker")->property("text")=="ENDED" && button("reminderCountdown")->property("text")=="Ended"
+            && button("reminderRelative")->property("text")=="This event is over" && !panel->property("alerting").toBool()
+            && !button("reminderPrimary")->isVisible() && !button("reminderSnooze")->isVisible()
+            && button("reminderDismiss")->property("text")=="Close", "ended reminder offers only Close");
         require(QMetaObject::invokeMethod(button("reminderDismiss"),"clicked",Qt::DirectConnection), "actual QML dismissal handler");
         auto held = h.take("calendar_reminder_ack");
         require(held.request["params"].toObject()["occurrence_id"] == current["id"], "QML keeps the exact card occurrence");

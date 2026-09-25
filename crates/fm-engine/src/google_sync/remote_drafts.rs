@@ -1,4 +1,5 @@
-//! One resumable read-only inventory per explicitly owned account job.
+//! One resumable Gmail draft inventory per owned account job, repeated every
+//! minute so drafts made, changed or deleted in Gmail follow here (D121).
 use super::{drafts, failure, mail::Step, progress_state, retry_wait, SyncContext};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use fm_core::{
@@ -18,6 +19,9 @@ use std::{
     sync::{Arc, Mutex},
     time::Duration,
 };
+
+/// How often Gmail's drafts are listed again while the account syncs.
+const RESCAN: Duration = Duration::from_secs(60);
 
 pub(super) fn scope(ctx: &SyncContext) -> GoogleDraftReadScope {
     GoogleDraftReadScope {
@@ -49,7 +53,9 @@ impl RemoteDraftWorker {
         match next {
             GoogleDraftInventoryStep::Complete(status) => {
                 self.status = Some(status);
-                Ok(Step::Idle(Duration::from_secs(3600)))
+                // The next pass starts a new scan; unchanged drafts cost one list.
+                self.begun = false;
+                Ok(Step::Idle(RESCAN))
             }
             GoogleDraftInventoryStep::List(plan) => {
                 let call =
@@ -211,7 +217,6 @@ pub(super) async fn run(ctx: SyncContext, progress: Arc<Mutex<Value>>) {
                         Duration::from_millis(1)
                     }
                     Step::Idle(delay) => {
-                        wait_for_refresh = true;
                         progress_state(&progress, "remote_drafts", "waiting", None);
                         delay
                     }

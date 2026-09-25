@@ -1,5 +1,35 @@
 # Current status
 
+**D122–D123 / drafts are Gmail drafts; eleventh export (2026-09-25):**
+- **Drafts:** every Gmail draft is an ordinary editable draft here. Gmail-side edits, deletions and sends show up within a minute; discarding deletes it in Gmail after Undo's 10 s. Conflicts resolve on their own (your edit wins). The composer only speaks up for real problems, in plain words; the source/actions panels and Refresh are gone.
+- **Composing:** New opens inline in the reader with a sticky Send/Attach/Discard footer. Leaving keeps it in Drafts; empty ones are dropped; Esc asks "Keep this message?". "Recent with {name}" sits under a new message. Unsent drafts show as chips bottom right.
+- **Mail header:** Inbox/Drafts counts, Spam and Trash behind ▾, a solid New after the stats (top-right New removed in Mail and Calendar). Label filters are multi-select toggles; no All.
+- **Inbox clear** screen with the next event today, which opens Calendar's Day view with its card.
+- **Calendar:** card notes preview and Edit · View · Delete; a larger full-screen event view with a longer countdown, In progress/Ended states and no Snooze or Open event; labelled editor Notes; weekend shading; bigger month numbers; no working-hours arrows.
+- **Labels:** "Read" and a new "Spam" column (model-applied label sends mail to Spam). CLI `labels auto-read` and `labels spam`.
+- **Bugs:** Spam no longer flashes and deleting from it works (the engine refused the batch delete; the granted scope was already full access). Day-strip cards open next to the event; the strip's more menu is gone.
+- **Schema:** baseline 37 still; the draft-source foreign key is dropped in the baseline. Delete old profiles.
+- **Checks (Windows Release, build/p9):** Rust workspace tests (fm-core 374, fm-engine 182, fm-cli and the rest) and clippy `-D warnings` pass. Native: the fast GUI tests, `gui-integration` and `gui-attachments` pass; the draft snapshot/authoring GUI tests are retired. Captures of the header, rail, chips, inline New message, Week and Month.
+- **Not verified:** drafts against a real Gmail account (edit in Gmail, delete there, discard here, Undo); Spam labels on real mail; delete from Spam against Gmail; other hosts. `gui-startup-recovery` still times out under CTest and passes directly.
+
+[Decisions](decisions.md) · [Gmail31](contracts/gmail.md) · [Mail UI89](contracts/mail-ui.md) · [Record](research/prototype-september-23.md#d123--eleventh-export-2026-09-25).
+
+**D121 / to: search and steady progress bars (2026-09-25):**
+- **Search:**
+  - `from:` finds only the sender and `to:` only recipients (To or Cc), in every folder.
+  - An address on its own finds either.
+  - The dropdown help lists `to:` and says what a bare address does.
+  - `to:` offers recipients to pick.
+  - CLI: `mail senders --role`.
+- **Settings → Accounts:** a finished Calendar stays Complete with a full bar while mail syncs. Bars animate only live progress, never relayout.
+- **Reader:** clicking an open message header no longer collapses it (use the chevron) and its address is selectable. The hover outline only shows on folded messages and for keyboard focus. The contact card waits before opening or switching and stays open as you move into it.
+- **Checks (Windows Release, build/dc):**
+  - fm-core search, phase1, composition and `tests/search.rs`; fm-cli.
+  - `gui-calendar-search` (from:/to: people and chips), `gui-mail-selection`, `gui-integration` and the other GUI tests.
+- **Not verified:** `to:` against a real mailbox. Cc matches depend on the link index having read each message.
+
+[Decision](decisions.md) · [Search 9](contracts/search.md).
+
 **D120 / tenth export: day strip, Spam and Trash, delete for good, now lines (2026-09-25):**
 - **Day strip:** 00:00–24:00 by default; each day has a left separator (gold today) and a marker "25 FRI · Today"; edge and covered hour labels hide; the right date label is gone, "Back to today" stays.
 - **Now lines:** Day and Week scroll the line into view; Month puts it at the top of today just after midnight instead of under an all-day event.

@@ -2,12 +2,29 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 import QtQuick.Effects
+import QtQuick.Shapes
 
 Popup {
     id: details
     objectName: "eventDetails"
     parent: Overlay.overlay
+    // A 16-unit line drawing, stroked like FmIcon.
+    component LineIcon: Shape {
+        id: lineIcon
+        property string path
+        property real size: 14
+        property color color: Theme.muted
+        implicitWidth: size; implicitHeight: size
+        preferredRendererType: Shape.CurveRenderer
+        ShapePath {
+            strokeColor: lineIcon.color; strokeWidth: 1.5 * lineIcon.size / 16; fillColor: "transparent"
+            capStyle: ShapePath.RoundCap; joinStyle: ShapePath.RoundJoin; scale: Qt.size(lineIcon.size / 16, lineIcon.size / 16)
+            PathSvg { path: lineIcon.path }
+        }
+    }
     property var eventData: ({})
+    readonly property string notes: String(eventData.description || "").trim()
+    readonly property bool viewOpen: eventView.visible
     property bool saving: false
     property string feedback: ""
     property var pendingResponse: ({})
@@ -91,6 +108,13 @@ Popup {
         requestedResponse = ""
         if (anchor) { let point = anchor.mapToItem(parent, anchor.width / 2, anchor.height); originX = point.x; originY = point.y }
         open()
+    }
+    // View replaces this card with the full-screen event view.
+    function openView() {
+        if (!visible || saving || !eventData.id) return
+        const event = Object.assign({}, eventData)
+        close()
+        eventView.show(event)
     }
     function respond(response) {
         if (saving || occurrenceRead.busy || !accountReady || (live && hasPendingResponse)) return
@@ -220,6 +244,17 @@ Popup {
                 FmIcon { name: "people"; size: 13; color: Theme.inkAlpha(.45); Layout.alignment: Qt.AlignTop; Layout.topMargin: 3 }
                 Text { text: (details.eventData.attendees || []).map(function(a) { return (a.name || a.email) + (a.self ? " (you)" : "") }).join(", "); color: Theme.inkAlpha(.75); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(13) * 1.45); textFormat: Text.PlainText; wrapMode: Text.Wrap; Layout.fillWidth: true }
             }
+            // The start of the description; View and the hover help show all of it.
+            RowLayout {
+                objectName: "eventDetailsNotes"; visible: details.notes.length > 0; Layout.fillWidth: true; spacing: 9
+                LineIcon { path: "M3 4h10M3 7h10M3 10h7M3 13h5"; size: 14; color: Theme.inkAlpha(.45); Layout.alignment: Qt.AlignTop; Layout.topMargin: 2 }
+                Text {
+                    objectName: "eventDetailsNotesText"; text: details.notes; color: Theme.inkAlpha(.6); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
+                    lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(12.5) * 1.5); wrapMode: Text.Wrap; maximumLineCount: 3; elide: Text.ElideRight; textFormat: Text.PlainText; Layout.fillWidth: true
+                    HoverHandler { id: notesHover }
+                    FmToolTip { shown: notesHover.hovered; text: details.notes }
+                }
+            }
             RowLayout {
                 visible: details.conflicts.length > 0; Layout.fillWidth: true; spacing: 9
                 Rectangle { Layout.alignment: Qt.AlignTop; Layout.topMargin: 6; implicitWidth: 7; implicitHeight: 7; radius: 3.5; color: "transparent"; border.width: 1.5; border.color: Theme.accent }
@@ -234,11 +269,6 @@ Popup {
                 property real end: start + (details.eventData.duration_hours || 0)
                 text: details.eventData.all_day ? "today" : backend.nowHour < start ? "in " + details.relative(start - backend.nowHour) : backend.nowHour < end ? "now · ends " + details.eventData.end_display : "ended " + details.eventData.end_display
                 color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); wrapMode: Text.Wrap; Layout.fillWidth: true
-            }
-            ScrollView {
-                ScrollBar.vertical: FmScrollBar {}
-                visible: !!details.eventData.description; Layout.fillWidth: true; Layout.preferredHeight: Math.min(100, description.implicitHeight + 4); clip: true
-                TextArea { id: description; text: details.eventData.description || ""; color: Theme.muted; font.pointSize: Theme.fontPoints(12); textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; readOnly: true; selectByMouse: true; background: null; padding: 0 }
             }
             Text { visible: !!details.eventData.busy_only; text: "Availability only · details are not shared."; color: Theme.subtle; font.pointSize: Theme.fontPoints(11); wrapMode: Text.Wrap; Layout.fillWidth: true }
             RowLayout {
@@ -278,7 +308,16 @@ Popup {
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
             Flow {
                 Layout.fillWidth: true; Layout.minimumWidth:0; Layout.preferredWidth:1; spacing: 6
-                FmButton { objectName: "eventEditButton"; visible: !!details.eventData.can_edit || details.scopedAllowed("edit") || (!details.recurringScopes.length && details.eventData.can_resolve_occurrence === true); text: occurrenceRead.busy ? "Checking…" : !details.recurringScopes.length && details.eventData.can_resolve_occurrence === true ? "Edit this occurrence" : "Edit"; prominent: true; implicitHeight: 28; leftPadding: 12; rightPadding: 12; font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium; enabled: !details.saving && !occurrenceRead.busy && !details.awaitedEtag.length && details.accountReady && !details.hasPendingResponse; onClicked: { if (details.scopedAllowed("edit") || details.eventData.can_resolve_occurrence === true) details.readScoped("edit"); else { details.editRequested(details.eventData); details.close() } } }
+                FmButton { objectName: "eventEditButton"; visible: !!details.eventData.can_edit || details.scopedAllowed("edit") || (!details.recurringScopes.length && details.eventData.can_resolve_occurrence === true); text: occurrenceRead.busy ? "Checking…" : !details.recurringScopes.length && details.eventData.can_resolve_occurrence === true ? "Edit this occurrence" : "Edit"; outlined: true; implicitHeight: 28; leftPadding: 12; rightPadding: 12; font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium; enabled: !details.saving && !occurrenceRead.busy && !details.awaitedEtag.length && details.accountReady && !details.hasPendingResponse; onClicked: { if (details.scopedAllowed("edit") || details.eventData.can_resolve_occurrence === true) details.readScoped("edit"); else { details.editRequested(details.eventData); details.close() } } }
+                FmButton {
+                    id: viewButton; objectName: "eventViewButton"; text: "View"; outlined: true; implicitHeight: 28; leftPadding: 12; rightPadding: 12; font.pointSize: Theme.fontPoints(12); font.weight: Font.Medium
+                    tip: "Open the full event view"; enabled: !details.saving && !!details.eventData.id; onClicked: details.openView()
+                    contentItem: Row {
+                        spacing: 6
+                        LineIcon { path: "M2.5 3.5h11v9h-11zM2.5 6h11"; size: 12; color: viewButton.foreground; anchors.verticalCenter: parent.verticalCenter }
+                        Text { text: viewButton.text; font: viewButton.font; color: viewButton.foreground; textFormat: Text.PlainText; anchors.verticalCenter: parent.verticalCenter }
+                    }
+                }
                 FmButton { objectName: "eventScopedCancel"; visible: details.live && (((details.eventData.recurring_scopes||{}).delete||[]).indexOf("occurrence")>=0 || details.scopedAllowed("delete") || (details.eventData.can_delete===true&&!details.recurringScopes.length)); text: details.recurringScope==="following"?"Delete following":details.recurringScopes.length?"Delete this":"Delete"; outlined:true;implicitHeight:28;leftPadding:12;rightPadding:12;font.pointSize:Theme.fontPoints(12);font.weight:Font.Medium;foreground:hovered?Theme.error:Theme.inkAlpha(.75);enabled:!details.saving&&!occurrenceRead.busy&&details.accountReady&&!details.hasPendingResponse;onClicked:details.deleteEvent(details.recurringScopes.length?(details.recurringScope==="following"?"following":"occurrence"):"") }
                 FmButton { objectName:"eventDeleteSeries";visible:details.live&&((details.eventData.recurring_scopes||{}).delete||[]).indexOf("series")>=0;text:"Delete series";outlined:true;implicitHeight:28;leftPadding:12;rightPadding:12;font.pointSize:Theme.fontPoints(12);font.weight:Font.Medium;foreground:hovered?Theme.error:Theme.inkAlpha(.75);enabled:!details.saving&&!occurrenceRead.busy&&details.accountReady&&!details.hasPendingResponse;onClicked:details.deleteEvent("series") }
                 FmButton { objectName: "eventDetailsClose"; visible:details.saving||(!details.eventData.can_edit&&!details.scopedAllowed("edit"));text: details.live && details.saving ? "Cancel request" : "Close"; implicitHeight: 28; font.pointSize: Theme.fontPoints(11); enabled: !details.saving || details.live; onClicked: { if (details.live && details.saving) backend.cancelGoogleOperation(details.pendingResponse.account, details.pendingResponse.request_id); else details.close() } }
@@ -291,6 +330,26 @@ Popup {
         message:"Remove “"+(details.deleteTarget.title||"this event")+"”"+((details.deleteTarget.recurring_context||{}).scope==="series"?" and every occurrence":(details.deleteTarget.recurring_context||{}).scope==="occurrence"||details.deleteTarget.occurrence?" for this occurrence only":"")+" from Google Calendar? Google may notify guests. You can undo for a few seconds afterwards."
         actionText:"Delete";destructive:true
         onAccepted:details.submitDeletion()
+    }
+    // The reminder screen for any event: a countdown, the full notes and Join,
+    // without acknowledging, snoozing or sounding on open.
+    Popup {
+        id: eventView; objectName: "eventFullView"
+        parent: Overlay.overlay; x: 0; y: 0; width: parent ? parent.width : 0; height: parent ? parent.height : 0
+        padding: 0; modal: true; dim: false; focus: true; closePolicy: Popup.NoAutoClose
+        property var event: ({})
+        function show(value) { event = value; open() }
+        // A due reminder takes the screen over.
+        readonly property bool reminderDue: visible && backend.reminders.length > 0
+        onReminderDueChanged: if (reminderDue) close()
+        onClosed: event = ({})
+        enter: Transition { NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 250 } }
+        background: Item {}
+        contentItem: Loader {
+            active: eventView.visible
+            sourceComponent: ReminderPopup { objectName: "eventFullViewPanel"; viewing: true; viewEvent: eventView.event; backgroundSource: ApplicationWindow.contentItem; onCloseRequested: eventView.close() }
+            onLoaded: item.reveal()
+        }
     }
     FmConfirmDialog {
         id: responseAbandonConfirmation; objectName: "eventRsvpAbandonConfirmation"

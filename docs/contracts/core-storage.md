@@ -2,6 +2,14 @@
 
 
 
+## D122/D123 — Gmail draft mirror, label toggles, Spam labels (Core68)
+
+- **Drafts.** Core publishes each inventoried Gmail draft as an editable local draft (Gmail31) and keeps its saved source history for the CLI. Schema37's baseline drops the draft-source foreign key to `drafts` so a retired mirror can keep its sources; no migration (profiles below 37 are still refused).
+- **Label toggles.** `conversations` takes `category` as up to 32 comma-separated label ids; a conversation matches when any listed label is on it (`json_each`). A `label:` term in the query replaces the list. `view_save` accepts the same list.
+- **Spam labels.** `label_auto_spam {request_id, id, expected_auto_spam, auto_spam}` stores a per-account, per-label `auto_spam` policy beside `auto_read`; `labels` rows add `auto_spam`. When the local model applies such a label, the message leaves Inbox and gets SPAM/−INBOX label intents (receipt `assist-spam-{message}-{revision}`). Sent, trashed, manually labelled or already-moved messages are skipped, so "Not spam" sticks. Spam wins over Auto-read.
+
+Consumers: Gmail31, Mail UI89, CLI53, Local assistance26.
+
 ## D120 — fresh baseline, deleting for good, restore to Inbox (Core67)
 
 - **Baseline.** `RESET_BASELINE_VERSION` is 37 with no post-reset migrations; `fresh-schema.sql` holds everything (coverage date index, link index, people, local model failures, unsubscribes, sender index). Profiles below 37 are refused with the "start fresh" message. The schema33–36 upgrade tests are replaced by a fresh-profile index check.

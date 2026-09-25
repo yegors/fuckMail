@@ -35,7 +35,7 @@ Item {
     property string replyRevealIdentity: ""
     readonly property string composerIdentity: backend.account + (backend.activeDraftId.length ? "/draft/" + backend.activeDraftId : "/" + backend.selectedId)
     readonly property bool newMessageAvailable: backend.connected && backend.account.length > 0 && !backend.accountArchived && !backend.unsavedAccountBuffer
-    readonly property bool popupOpen: mediaViewer.opened || assistancePopupOpen() || labelMenu.opened || discardSelection.opened || binConfirm.opened || reconnectPrompt.opened || categoryPopup.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
+    readonly property bool popupOpen: mediaViewer.opened || assistancePopupOpen() || labelMenu.opened || discardSelection.opened || binConfirm.opened || reconnectPrompt.opened || categoryPopup.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || binMenu.opened || keepDialog.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
     readonly property bool canMutate: { const accounts = backend.accounts; return backend.connected && backend.accountCapability(backend.account,"mail_write") }
     readonly property bool singleKeyActionsAllowed: mail.visible && !popupOpen && mail.ApplicationWindow.window && mail.ApplicationWindow.window.singleKeysAllowed
     // Spam is listed and read live from Gmail; none of it is stored. Spam and
@@ -170,7 +170,7 @@ Item {
         if (f.before) labels.push("Before " + f.before + " UTC")
         return labels.join(" · ")
     }
-    onVisibleChanged: if (!visible) { categoryPopup.close(); morePopup.close(); senderCard.close(); railCategories.close() }
+    onVisibleChanged: if (!visible) { categoryPopup.close(); morePopup.close(); senderCard.close(); railCategories.close(); binMenu.close(); if (composingNew) { backend.leaveNewDraft(); setReplyOpen(false) } }
     function clearSelection() { selectionRows = []; selectionCursor = "" }
     function cancelKeyboardOpen() { keyboardOpen.stop(); keyboardOpen.target = "" }
     function listHasFocus() {
@@ -368,6 +368,55 @@ Item {
         foreground: Theme.text
         background: Rectangle { radius: 4; color: headerLabel.hovered ? Theme.surface : "transparent"; border.color: headerLabel.activeFocus ? Theme.focusBorder : Theme.inkAlpha(.35) }
     }
+    // Scope tab: 20px title, dimmed until chosen.
+    component ScopeTab: FmButton {
+        property string folder: ""
+        selected: backend.folder === folder
+        font.pointSize: Theme.fontPoints(20); font.weight: Font.Medium; font.letterSpacing: -0.4
+        implicitWidth: contentItem.implicitWidth; implicitHeight: 22; topPadding: 0; bottomPadding: 0; leftPadding: 0; rightPadding: 0
+        foreground: selected || hovered ? Theme.text : Theme.inkAlpha(.32); textAlignment: Text.AlignLeft; background: Item {}
+        onClicked: mail.leaveComposerFor(function() { backend.folder = folder })
+    }
+    // A small raised count after a tab; hidden at zero.
+    component ScopeCount: Item {
+        id: scopeCount
+        property int count: 0
+        property color tone: Theme.text
+        property string folder: ""
+        property string tip: ""
+        visible: count > 0
+        Layout.leftMargin: -8
+        implicitWidth: countText.implicitWidth; implicitHeight: 22
+        Text { id: countText; anchors.verticalCenter: parent.verticalCenter; anchors.verticalCenterOffset: -7; text: scopeCount.count; color: scopeCount.tone; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.weight: Font.DemiBold; font.features: {"tnum": 1} }
+        HoverHandler { id: countHover; cursorShape: Qt.PointingHandCursor }
+        TapHandler { onTapped: mail.leaveComposerFor(function() { backend.folder = scopeCount.folder }) }
+        FmToolTip { shown: countHover.hovered; text: scopeCount.tip }
+    }
+    // Filter toggle as plain text: a monospace #, the name and a small count;
+    // a gold rule under it while on.
+    component RailToggle: AbstractButton {
+        id: railToggle
+        property string label: ""
+        property var count: ""
+        property bool selected: false
+        property string tip: ""
+        readonly property string mono: typeof debugDiagnostics !== "undefined" && debugDiagnostics ? debugDiagnostics.monoFamily : "monospace"
+        hoverEnabled: true
+        implicitWidth: toggleRow.implicitWidth; implicitHeight: 28
+        topPadding: 0; bottomPadding: 0; leftPadding: 0; rightPadding: 0
+        Accessible.name: label + ", " + count + (selected ? ", on" : ", off")
+        FmToolTip { shown: railToggle.hovered && railToggle.tip.length > 0; text: railToggle.tip }
+        contentItem: Item {
+            Row {
+                id: toggleRow; spacing: 4; y: 4
+                Text { id: glyph; anchors.baseline: toggleName.baseline; text: "#"; color: railToggle.selected ? Theme.accent : Theme.inkAlpha(.28); font.family: railToggle.mono; font.pointSize: Theme.fontPoints(14); rightPadding: -1 }
+                Text { id: toggleName; text: railToggle.label; textFormat: Text.PlainText; color: railToggle.selected || railToggle.hovered ? Theme.text : Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); Behavior on color { ColorAnimation { duration: 150 } } }
+                Text { anchors.baseline: toggleName.baseline; text: railToggle.count; color: railToggle.selected ? Theme.accentAlpha(.85) : Theme.inkAlpha(.3); font.family: railToggle.mono; font.pointSize: Theme.fontPoints(10.5); font.features: {"tnum": 1} }
+            }
+            Rectangle { y: toggleRow.y + toggleRow.height + 4; width: toggleRow.width; height: Theme.ruleWidth; color: railToggle.selected ? Theme.accent : "transparent" }
+        }
+        background: Rectangle { color: "transparent"; radius: 3; border.width: railToggle.activeFocus ? 1 : 0; border.color: Theme.focusBorder }
+    }
     // Category rail chip: name plus a smaller, dimmed count.
     component RailChip: FmButton {
         id: railChip
@@ -437,6 +486,14 @@ Item {
             }
         }
     }
+    // Inbox label toggles travel to Core as comma-separated ids; mail with any
+    // of them matches. A label: in the search decides instead.
+    readonly property var categoryIds: backend.category.length ? backend.category.split(",") : []
+    function categoryOn(id) { return categoryIds.indexOf(id) >= 0 }
+    function toggleCategory(id) {
+        const next = categoryOn(id) ? categoryIds.filter(function(key) { return key !== id }) : categoryIds.concat([id])
+        backend.category = next.join(",")
+    }
     function setKind(kind) {
         const next = Object.assign({}, backend.filters)
         if (next.kind === kind) delete next.kind; else next.kind = kind
@@ -452,7 +509,7 @@ Item {
         implicitHeight: contentItem.implicitHeight
         textAlignment: Text.AlignLeft
         foreground: Theme.inkAlpha(0.85)
-        onHoveredChanged: hovered ? senderCard.showSender(email, text, contact) : senderCard.scheduleClose()
+        onHoveredChanged: hovered ? senderCard.hoverSender(email, text, contact) : senderCard.leaveSender(contact)
         onClicked: senderCard.showSender(email, text, contact)
         background: Item {
             Row {
@@ -476,7 +533,7 @@ Item {
         implicitHeight: 24; leftPadding: 3; rightPadding: 8; topPadding: 0; bottomPadding: 0
         implicitWidth: leftPadding + 25 + pillName.implicitWidth + rightPadding
         Accessible.name: "Contact: " + personName
-        onHoveredChanged: hovered ? senderCard.showSender(email, personName, pill) : senderCard.scheduleClose()
+        onHoveredChanged: hovered ? senderCard.hoverSender(email, personName, pill) : senderCard.leaveSender(pill)
         onClicked: senderCard.showSender(email, personName, pill)
         background: Rectangle {
             radius: 12; color: pill.open && pill.hovered ? Theme.bg4 : "transparent"
@@ -514,7 +571,7 @@ Item {
         implicitWidth: diameter; implicitHeight: diameter
         leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
         Accessible.name: "Contact: " + personName
-        onHoveredChanged: hovered ? senderCard.showSender(email, personName, avatar) : senderCard.scheduleClose()
+        onHoveredChanged: hovered ? senderCard.hoverSender(email, personName, avatar) : senderCard.leaveSender(avatar)
         onClicked: senderCard.showSender(email, personName, avatar)
         contentItem: Text { text: mail.initials(avatar.own && backend.currentAccount.name ? backend.currentAccount.name : avatar.personName); color: avatar.own ? Theme.accent : Theme.inkAlpha(.8); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(avatar.diameter > 26 ? 12 : avatar.diameter > 22 ? 10 : 9); font.letterSpacing: avatar.diameter > 22 ? 0 : -0.18; font.weight: Font.Medium; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
         background: Item {
@@ -536,6 +593,47 @@ Item {
     function newMessage() {
         cancelKeyboardOpen(); clearSelection(); backend.beginDraft("new")
     }
+    // A new message being written here (not one reopened from Drafts).
+    readonly property bool composingNew: replyOpen && backend.draft.mode === "new" && !draftsMode && !backend.accountArchived
+    // Leaving a new message keeps it in Drafts without asking; an empty one is
+    // dropped. Drafts itself keeps the composer open.
+    function leaveComposerFor(action, toDrafts) {
+        if (composingNew && !toDrafts) { backend.leaveNewDraft(); setReplyOpen(false) }
+        action()
+    }
+    // Save and close the composer without asking.
+    function minimizeComposer() { if (backend.accountNavigationAllowed()) { backend.saveDraft(); setReplyOpen(false) } }
+    // Esc on a new message with something written asks; replies and drafts
+    // reopened from Drafts save back and close.
+    function escapeComposer() {
+        if (!backend.accountNavigationAllowed()) return
+        if (composingNew && backend.draftHasContent()) { keepDialog.open(); return }
+        if (composingNew) { backend.leaveNewDraft(); setReplyOpen(false); return }
+        backend.saveDraft(); setReplyOpen(false)
+    }
+    // Chips open a reply draft in its thread, a new message in Drafts.
+    function openDraftChip(row) {
+        if (row.mode !== "new" && row.conversation_id) {
+            if (backend.folder === "drafts" || mail.binMode) backend.folder = "inbox"
+            backend.openDraft(row.draft_id)
+        } else {
+            backend.folder = "drafts"
+            backend.openDraft(row.draft_id)
+        }
+    }
+    function chipSubject(row) {
+        const text = String(row.subject || "").trim() || String(row.snippet || "").trim() || "Untitled"
+        return text.replace(/\s+/g, " ")
+    }
+    function chipTip(row) {
+        const to = (row.to_recipients || []).map(function(r) { return r.name || r.email })
+        const who = to.length ? (row.mode !== "new" ? "Reply to " : "To ") + to.join(", ") : "No recipient yet"
+        const body = String(row.snippet || "").trim()
+        return (backend.currentAccount.name || backend.account) + " · " + who + (body ? " — " + body.slice(0, 80) : "")
+    }
+    function showEventInCalendar(event) { const window = mail.ApplicationWindow.window; if (window) window.showEventInCalendar(event) }
+    readonly property var chipRows: backend.draftChips.account === backend.account ? backend.draftChips.rows || [] : []
+    readonly property bool chipsVisible: chipRows.length > 0 && !replyOpen && !binMode
     function openActions() { morePopup.open() }
     function restoreListPosition() {
         if (list.moving) return
@@ -815,75 +913,94 @@ Item {
                         text: (backend.currentAccount.email || "") + (backend.unsavedAccountBuffer ? " · unsaved edits retained in this editor" : " · read-only account archive")
                         color: backend.unsavedAccountBuffer ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
                     }
-                    RowLayout {
-                        Layout.fillWidth: true; spacing: 12
-                        FmButton { objectName: "inboxScopeButton"; text: "Inbox"; selected: backend.folder==="inbox"; font.pointSize: Theme.fontPoints(20); font.weight: Font.Medium; font.letterSpacing: -0.4; implicitWidth: contentItem.implicitWidth; implicitHeight: 22; topPadding: 0; bottomPadding: 0; foreground: selected || hovered ? Theme.text : Theme.inkAlpha(.32); leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft; background: Item {} onClicked: backend.folder="inbox" }
-                        Rectangle { implicitWidth: 3; implicitHeight: 3; radius: 2; color: Theme.inkAlpha(.3) }
-                        FmButton { objectName: "sentScopeButton"; text: "Sent"; selected: backend.folder==="sent"; font.pointSize: Theme.fontPoints(20); font.weight: Font.Medium; font.letterSpacing: -0.4; implicitWidth: contentItem.implicitWidth; implicitHeight: 22; topPadding: 0; bottomPadding: 0; foreground: selected || hovered ? Theme.text : Theme.inkAlpha(.32); leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft; background: Item {} onClicked: backend.folder="sent" }
-                        Rectangle { implicitWidth: 3; implicitHeight: 3; radius: 2; color: Theme.inkAlpha(.3) }
-                        FmButton { objectName: "draftsScopeButton"; text: "Drafts"; selected: backend.folder==="drafts"; font.pointSize: Theme.fontPoints(20); font.weight: Font.Medium; font.letterSpacing: -0.4; implicitWidth: contentItem.implicitWidth; implicitHeight: 22; topPadding: 0; bottomPadding: 0; foreground: selected || hovered ? Theme.text : Theme.inkAlpha(.32); leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft; background: Item {} onClicked: backend.folder="drafts" }
-                        Text { objectName: "sendingCount"; visible: backend.sendingCount > 0; text: backend.sendingCount + " sending"; color: Theme.accent; font.pointSize: Theme.fontPoints(12) }
-                        // Spam and Trash sit apart, smaller and dimmed until chosen.
-                        Rectangle { visible: !backend.syntheticProfile; implicitWidth: 1; implicitHeight: 14; Layout.leftMargin: 4; Layout.rightMargin: 4; Layout.alignment: Qt.AlignBottom; Layout.bottomMargin: 2; color: Theme.inkAlpha(.14) }
-                        Repeater {
-                            model: backend.syntheticProfile ? [] : ["spam", "trash"]
+                    // Inbox · Sent · Drafts with raised counts, Spam and Trash behind
+                    // ▾, then the stats and New. A narrow pane wraps the stats and
+                    // New below the tabs.
+                    Item {
+                        id: scopeHeader
+                        objectName: "scopeHeader"
+                        Layout.fillWidth: true
+                        readonly property bool wrapped: scopeTabs.implicitWidth + scopeStats.implicitWidth + 16 > width
+                        implicitHeight: wrapped ? scopeTabs.implicitHeight + 8 + scopeStats.implicitHeight : Math.max(scopeTabs.implicitHeight, scopeStats.implicitHeight)
+                        RowLayout {
+                            id: scopeTabs
+                            spacing: 12
+                            ScopeTab { objectName: "inboxScopeButton"; text: "Inbox"; folder: "inbox" }
+                            ScopeCount {
+                                objectName: "inboxCount"; folder: "inbox"; tone: Theme.inkAlpha(.7)
+                                count: (backend.currentAccount.inbox_review_count ?? backend.currentAccount.unread_conversation_count) || 0
+                                tip: count + " to review in " + (backend.currentAccount.name || "this account")
+                            }
+                            Rectangle { implicitWidth: 3; implicitHeight: 3; radius: 2; color: Theme.inkAlpha(.3) }
+                            ScopeTab { objectName: "sentScopeButton"; text: "Sent"; folder: "sent" }
+                            Rectangle { implicitWidth: 3; implicitHeight: 3; radius: 2; color: Theme.inkAlpha(.3) }
+                            ScopeTab { objectName: "draftsScopeButton"; text: "Drafts"; folder: "drafts" }
+                            ScopeCount {
+                                objectName: "draftsCount"; folder: "drafts"; tone: Theme.accent
+                                count: backend.draftChips.account === backend.account ? backend.draftChips.total || 0 : 0
+                                tip: count + (count === 1 ? " unsent draft" : " unsent drafts") + " in " + (backend.currentAccount.name || "this account")
+                            }
                             FmButton {
-                                required property string modelData
-                                objectName: modelData + "ScopeButton"; text: modelData === "spam" ? "Spam" : "Trash"; selected: backend.folder === modelData
-                                tip: modelData === "spam" ? "Spam · read live from Gmail, never downloaded" : "Trash"
-                                font.pointSize: Theme.fontPoints(14); font.weight: Font.Medium; implicitWidth: contentItem.implicitWidth; implicitHeight: 18
-                                Layout.alignment: Qt.AlignBottom; Layout.bottomMargin: 1
-                                topPadding: 0; bottomPadding: 0; leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft
-                                foreground: selected || hovered ? Theme.text : Theme.inkAlpha(.32); background: Item {}
-                                onClicked: backend.folder = modelData
+                                id: binMenuButton; objectName: "binMenuButton"
+                                visible: !backend.syntheticProfile
+                                text: mail.spamMode ? "Spam" : backend.folder === "trash" ? "Trash" : ""
+                                iconName: "chevronDown"; iconSize: 10; iconTrailing: true; iconSpacing: 5
+                                implicitHeight: 22; leftPadding: 6; rightPadding: 6; topPadding: 0; bottomPadding: 0; radius: 4
+                                font.pointSize: Theme.fontPoints(13); font.weight: Font.Medium
+                                foreground: mail.binMode || hovered ? Theme.text : Theme.inkAlpha(.4)
+                                tip: "Spam and Trash"
+                                background: Rectangle { radius: 4; color: binMenu.opened || binMenuButton.hovered ? Theme.bg4 : "transparent"; border.width: binMenuButton.activeFocus ? 1 : 0; border.color: Theme.focusBorder }
+                                onClicked: binMenu.opened ? binMenu.close() : binMenu.open()
+                            }
+                            Text { objectName: "sendingCount"; visible: backend.sendingCount > 0; text: backend.sendingCount + " sending"; color: Theme.accent; font.pointSize: Theme.fontPoints(12) }
+                        }
+                        RowLayout {
+                            id: scopeStats
+                            x: scopeHeader.wrapped ? 0 : scopeHeader.width - width
+                            y: scopeHeader.wrapped ? scopeTabs.implicitHeight + 8 : Math.round((scopeHeader.height - height) / 2) + 2
+                            spacing: 12
+                            RowLayout {
+                                objectName: "scopeStat"
+                                spacing: 6
+                                FmIcon { name: mail.spamMode ? "shield" : mail.binMode ? "bin" : mail.draftsMode ? "edit" : backend.folder === "sent" ? "arrowRight" : "review"; size: 13; color: Theme.muted }
+                                Text { objectName: "scopeStatCount"; text: mail.binMode ? mail.binCount : mail.draftsMode ? backend.conversations.length : backend.folder === "sent" ? mail.sentThisWeek : (backend.currentAccount.inbox_review_count ?? backend.currentAccount.unread_conversation_count)||0; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium }
+                                Text { objectName: "scopeStatLabel"; visible: leftPane.width>570 || backend.folder !== "inbox"; text: mail.spamMode ? "in spam" : mail.binMode ? "in trash" : mail.draftsMode ? (backend.conversations.length === 1 ? "draft" : "drafts") : backend.folder === "sent" ? "sent this week" : "to review"; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5) }
+                                HoverHandler { id: scopeStatHover; enabled: mail.binMode }
+                                FmToolTip { shown: scopeStatHover.hovered && mail.binMode; text: mail.spamMode ? "Messages Google marked as spam · auto-deleted after 30 days" : "Deleted messages · auto-deleted after 30 days" }
+                            }
+                            RowLayout {
+                                visible: backend.folder === "inbox"
+                                spacing: 6
+                                FmIcon { name: "clock"; size: 13; color: Theme.muted }
+                                Text { text: (backend.currentAccount.inbox_held_count ?? backend.currentAccount.held_conversation_count)||0; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium }
+                                Text { visible: leftPane.width>570; text: "delayed"; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5) }
+                            }
+                            FmButton {
+                                id: newMessageButton; objectName: "newMessageButton"
+                                text: "New"; iconName: "mail"; iconSize: 12; iconSpacing: 6; prominent: true
+                                implicitHeight: 28; leftPadding: 12; rightPadding: 12; topPadding: 0; bottomPadding: 0; Layout.leftMargin: -6
+                                font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium
+                                opacity: hovered ? .88 : 1
+                                enabled: mail.newMessageAvailable
+                                tip: "New message — " + ShortcutRegistry.label(ShortcutRegistry.sequence("compose", backend.preferences)).toLowerCase()
+                                onClicked: mail.newMessage()
                             }
                         }
-                        Item { Layout.fillWidth: true }
-                        RowLayout {
-                            objectName: "scopeStat"
-                            spacing: 6; Layout.alignment: Qt.AlignBottom; Layout.bottomMargin: 2
-                            FmIcon { name: mail.spamMode ? "shield" : mail.binMode ? "bin" : mail.draftsMode ? "edit" : backend.folder === "sent" ? "arrowRight" : "review"; size: 13; color: Theme.muted }
-                            Text { objectName: "scopeStatCount"; text: mail.binMode ? mail.binCount : mail.draftsMode ? backend.conversations.length : backend.folder === "sent" ? mail.sentThisWeek : (backend.currentAccount.inbox_review_count ?? backend.currentAccount.unread_conversation_count)||0; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium }
-                            Text { objectName: "scopeStatLabel"; visible: leftPane.width>570 || backend.folder !== "inbox"; text: mail.spamMode ? "in spam" : mail.binMode ? "in trash" : mail.draftsMode ? (backend.conversations.length === 1 ? "draft" : "drafts") : backend.folder === "sent" ? "sent this week" : "to review"; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5) }
-                            HoverHandler { id: scopeStatHover; enabled: mail.binMode }
-                            FmToolTip { shown: scopeStatHover.hovered && mail.binMode; text: mail.spamMode ? "Messages Google marked as spam · auto-deleted after 30 days" : "Deleted messages · auto-deleted after 30 days" }
-                        }
-                        RowLayout {
-                            visible: backend.folder === "inbox"
-                            spacing: 6; Layout.leftMargin: 2; Layout.alignment: Qt.AlignBottom; Layout.bottomMargin: 2
-                            FmIcon { name: "clock"; size: 13; color: Theme.muted }
-                            Text { text: (backend.currentAccount.inbox_held_count ?? backend.currentAccount.held_conversation_count)||0; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium }
-                            Text { visible: leftPane.width>570; text: "delayed"; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5) }
-                        }
-                    }
-                    RowLayout {
-                    visible: mail.draftsMode && !backend.syntheticProfile
-                    Layout.fillWidth: true; spacing: 8
-                    Text {
-                        objectName: "googleDraftInventoryStatus"
-                        Layout.fillWidth: true
-                        text: backend.googleDraftInventory.status || "Cached Google drafts"
-                        textFormat: Text.PlainText; wrapMode: Text.Wrap
-                        color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
-                    }
-                    FmButton {
-                        objectName: "refreshGoogleDrafts"; text: "Refresh"; outlined: true
-                        enabled: backend.googleDraftInventory.can_refresh || false
-                        tip: "Check Google drafts using this account's active sync session"
-                        onClicked: backend.refreshGoogleDraftInventory()
                     }
                 }
                 RowLayout {
-                    Layout.fillWidth: true; Layout.bottomMargin: 8; spacing: 6
+                    visible: !mail.binMode
+                    Layout.fillWidth: true; Layout.leftMargin: 24; Layout.rightMargin: 24; Layout.topMargin: 16; Layout.bottomMargin: 8; spacing: 6
                     Flickable {
-                        Layout.fillWidth: true; implicitHeight: allCategories.implicitHeight; clip: true
+                        Layout.fillWidth: true; implicitHeight: 28; clip: true
                         contentWidth: categoryRow.width; contentHeight: height; boundsBehavior: Flickable.StopAtBounds; flickableDirection: Flickable.HorizontalFlick
+                        // Plain-text toggles. Inbox labels match any chosen label
+                        // (none chosen shows all mail); Sent and Drafts filter by day.
                         Row {
-                            id: categoryRow; spacing: 6
-                            RailChip { id: allCategories; objectName: "railAll"; label: "All"; count: mail.binMode ? mail.binCount : mail.draftsMode ? backend.conversations.length : backend.mailScopeCount; selected: mail.binMode || (backend.folder === "inbox" ? backend.category.length===0 : mail.activeDay === ""); onClicked: { if (mail.binMode) return; if (backend.folder === "inbox") backend.category=""; else mail.selectDay("") } }
+                            id: categoryRow; spacing: 16
                             Repeater {
                                 model: backend.folder === "sent" || mail.draftsMode ? mail.dayOptions : []
-                                RailChip {
+                                RailToggle {
                                     required property var modelData
                                     objectName: "railDay_" + modelData.key
                                     label: modelData.name; count: mail.dayCounts[modelData.key] || 0; selected: mail.activeDay === modelData.key
@@ -892,15 +1009,16 @@ Item {
                                 }
                             }
                             Repeater {
-                                model: backend.folder === "sent" || mail.draftsMode || mail.binMode ? [] : mail.popularCategories
-                                RailChip {
+                                model: backend.folder === "sent" || mail.draftsMode ? [] : mail.popularCategories
+                                RailToggle {
                                     required property var modelData
-                                    label: modelData.name; count: modelData.conversation_count; selected: backend.category===modelData.id
-                                    tip: modelData.conversation_count+" conversations in this category across the account"
-                                    onClicked: backend.category=backend.category===modelData.id ? "" : modelData.id
+                                    objectName: "railLabel_" + modelData.id
+                                    label: modelData.name; count: modelData.conversation_count; selected: mail.categoryOn(modelData.id)
+                                    tip: modelData.conversation_count + " conversations labelled " + modelData.name + (selected ? " · click to turn off" : "")
+                                    onClicked: mail.toggleCategory(modelData.id)
                                 }
                             }
-                            FmButton { id: allLabels; objectName: "allCategoriesButton"; visible: backend.folder !== "sent" && !mail.draftsMode && !mail.binMode && backend.categories.length > 7; iconName: "more"; implicitHeight: allCategories.implicitHeight; implicitWidth: allCategories.implicitHeight; tip: "All categories"; onClicked: railCategories.open() }
+                            FmButton { id: allLabels; objectName: "allCategoriesButton"; visible: backend.folder !== "sent" && !mail.draftsMode && backend.categories.length > 7; iconName: "more"; implicitHeight: 24; implicitWidth: 24; tip: "All labels"; onClicked: railCategories.open() }
                         }
                     }
                     Rectangle {
@@ -919,7 +1037,6 @@ Item {
                                 }
                             }
                         }
-                    }
                     }
                 }
                 RowLayout {
@@ -1260,12 +1377,12 @@ Item {
                 Flickable {
                     id: reader; objectName: "reader"
                     Layout.fillWidth: true; Layout.fillHeight: true
-                    contentWidth: width; contentHeight: readerColumn.implicitHeight+40; clip: true; boundsBehavior: Flickable.StopAtBounds
+                    contentWidth: width; contentHeight: readerColumn.implicitHeight + (mail.chipsVisible ? 64 : 40); clip: true; boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: FmScrollBar { policy: ScrollBar.AlwaysOn }
                     onMovementEnded: if (!mail.restoring) backend.remember("readerY",contentY)
                     ColumnLayout {
                         id: readerColumn
-                        x: readerPane.margin; y: 8; width: reader.width-readerPane.margin*2; spacing: 0; visible: mail.members.length>0 || mail.replyOpen || mail.collapsedDraftVisible
+                        x: readerPane.margin; y: 8; width: reader.width-readerPane.margin*2; spacing: 0; visible: mail.members.length>0 || mail.replyOpen
                         RowLayout {
                             Layout.fillWidth: true; visible: mail.members.length>1; spacing: 12; Layout.topMargin: 16; Layout.bottomMargin: 4
                             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
@@ -1333,10 +1450,13 @@ Item {
                                     Layout.fillWidth: true; implicitHeight: 44; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
                                     objectName: "messageHeading_" + member.modelData.id
                                     focusPolicy: Qt.StrongFocus
-                                    hoverEnabled: true
-                                    Accessible.name: (member.isExpanded ? "Collapse message from " : "Expand message from ") + (member.modelData.sender_name || member.modelData.sender_email)
-                                    onClicked: { forceActiveFocus(); mail.toggleMember(member.modelData.id,member.index) }
-                                    background: Rectangle { x: -12; width: memberHeading.width + 24; height: memberHeading.height; color: "transparent"; border.color: memberHeading.activeFocus ? Theme.accent : "transparent"; radius: 8 }
+                                    // A folded message expands from its whole row; an open one collapses only
+                                    // from its chevron, so its header text can be selected and copied.
+                                    hoverEnabled: !member.isExpanded
+                                    Accessible.name: (member.isExpanded ? "Message from " : "Expand message from ") + (member.modelData.sender_name || member.modelData.sender_email)
+                                    onClicked: if (!member.isExpanded) mail.toggleMember(member.modelData.id,member.index)
+                                    // Outline on hover while folded, or for keyboard focus; never left behind by a click.
+                                    background: Rectangle { x: -12; width: memberHeading.width + 24; height: memberHeading.height; color: "transparent"; border.color: memberHeading.visualFocus || (!member.isExpanded && memberHeading.hovered) ? Theme.accent : "transparent"; radius: 8 }
                                     contentItem: RowLayout {
                                         spacing: 10
                                         RowLayout {
@@ -1366,9 +1486,19 @@ Item {
                                         }
                                         Text {
                                             objectName: "messageInlineDetail_" + member.modelData.id
-                                            text: member.isExpanded ? member.modelData.sender_email || "" : (member.modelData.text || "").replace(/\s+/g," ")
+                                            visible: !member.isExpanded
+                                            text: (member.modelData.text || "").replace(/\s+/g," ")
                                             Layout.fillWidth: true; Layout.minimumWidth: 0; elide: Text.ElideRight
                                             color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); textFormat: Text.PlainText
+                                        }
+                                        TextEdit {
+                                            objectName: "messageSenderAddress_" + member.modelData.id
+                                            visible: member.isExpanded
+                                            text: member.modelData.sender_email || ""
+                                            Layout.fillWidth: true; Layout.minimumWidth: 0; clip: true
+                                            readOnly: true; selectByMouse: true; activeFocusOnPress: false; textFormat: TextEdit.PlainText
+                                            selectionColor: Theme.selection; selectedTextColor: Theme.text
+                                            color: Theme.inkAlpha(.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13)
                                         }
                                         RowLayout {
                                             id: headerActions; Layout.fillWidth: false; spacing: 2
@@ -1597,26 +1727,15 @@ Item {
                                 }
                             }
                         }
-                        Item {
-                            objectName: "minimisedDraft"
-                            visible: mail.collapsedDraftVisible
-                            Layout.fillWidth: true; Layout.topMargin: visible ? 36 : 0
-                            implicitHeight: 32
-                            Rectangle { width: 2; height: parent.height; color: Theme.accentAlpha(.35) }
-                            RowLayout {
-                                anchors.fill: parent; anchors.leftMargin: 20; spacing: 10
-                                FmIcon { name: "edit"; size: 13; color: Theme.accent }
-                                FmButton { objectName: "resumeDraftButton"; text: backend.draft.subject || "New message"; foreground: Theme.text; font.pointSize: Theme.fontPoints(13); Layout.fillWidth: true; leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft; tip: "Open the draft"; onClicked: mail.resumeDraft() }
-                                Text { text: (backend.draft.to_recipients || []).length ? "to " + (backend.draft.to_recipients[0].name || backend.draft.to_recipients[0].email) : "no recipients yet"; color: Theme.muted; font.pointSize: Theme.fontPoints(12); Layout.maximumWidth: 135; elide: Text.ElideRight }
-                                FmButton { objectName: "minimisedDraftDiscard"; visible: !reply.readOnly; iconName: "close"; iconSize: 11; implicitWidth: 28; implicitHeight: 28; leftPadding: 0; rightPadding: 0; tip: "Discard draft"; enabled: !backend.draftLocked && !backend.attachmentImport.pending; onClicked: reply.confirmDiscard() }
-                            }
-                        }
                         ReplyComposer {
                             id: reply
                             objectName: "replyPanel"
                             Layout.fillWidth: true; Layout.topMargin: visible ? (mail.members.length ? 36 : 24) : 0
                             visible: mail.replyOpen
+                            minimumHeight: mode === "new" && !readOnly ? Math.max(420, (mail.ApplicationWindow.window ? mail.ApplicationWindow.window.height : readerPane.height) * 0.5) : 0
                             onDismissed: mail.setReplyOpen(false)
+                            onRecentOpened: function(id) { mail.leaveComposerFor(function() { backend.openConversation(id) }) }
+                            onAllMailWith: function(email) { if (email) backend.query = email }
                         }
                     }
                     Column {
@@ -1624,20 +1743,51 @@ Item {
                         objectName: "emptyReader"
                         readonly property bool clear: backend.folder === "inbox" && !mail.filtering && backend.accounts.length > 0 && ((backend.currentAccount.inbox_review_count ?? backend.currentAccount.unread_conversation_count) || 0) === 0 && ((backend.currentAccount.inbox_held_count ?? backend.currentAccount.held_conversation_count) || 0) === 0
                         readonly property var nextEvent: (backend.todayEvents || []).find(function(e) { return !e.all_day && e.start_hour > backend.nowHour }) || null
-                        visible: mail.members.length===0 && !mail.replyOpen && !mail.collapsedDraftVisible; x: readerPane.margin; y: 8 + Math.round((mail.ApplicationWindow.window ? mail.ApplicationWindow.window.height : readerPane.height) * 0.18); width: Math.min(640, parent.width-readerPane.margin*2); spacing: 0
-                        FmIcon { visible: emptyReader.clear && !backend.loading; name: "checkCircle"; size: 28; color: Theme.accent }
-                        Item { visible: emptyReader.clear && !backend.loading; width: 1; height: 18 }
+                        readonly property bool inboxClear: clear && !backend.loading
+                        visible: mail.members.length===0 && !mail.replyOpen; x: readerPane.margin; y: 8 + Math.round((mail.ApplicationWindow.window ? mail.ApplicationWindow.window.height : readerPane.height) * (inboxClear ? 0.16 : 0.18)); width: Math.min(inboxClear ? 520 : 640, parent.width-readerPane.margin*2); spacing: 0
+                        // Inbox clear: a small check, the title, one line and today's next event.
+                        RowLayout {
+                            visible: emptyReader.inboxClear
+                            spacing: 10
+                            FmIcon { name: "checkCircle"; size: 18; color: Theme.accent }
+                            Text { objectName: "inboxClearTitle"; text: "Inbox clear"; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(20); font.weight: Font.Medium; font.letterSpacing: -0.4 }
+                        }
+                        Text {
+                            visible: emptyReader.inboxClear
+                            leftPadding: 28; topPadding: 10; width: parent.width; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                            text: "Nothing to review or delayed in " + (backend.currentAccount.name || "this account") + "."
+                            color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13.5)
+                            lineHeightMode: Text.FixedHeight; lineHeight: Math.round(Theme.fontSize(13.5) * 1.55)
+                        }
+                        ItemDelegate {
+                            id: nextEventRow
+                            objectName: "inboxClearNext"
+                            visible: emptyReader.inboxClear && !!emptyReader.nextEvent
+                            x: 28; width: parent.width - 28; implicitHeight: 40; topPadding: 12; bottomPadding: 4; leftPadding: 0; rightPadding: 0
+                            hoverEnabled: true
+                            background: Rectangle { color: "transparent"; Rectangle { width: parent.width; height: Theme.ruleWidth; color: Theme.line } }
+                            FmToolTip { shown: nextEventRow.hovered; text: "Open in Calendar" }
+                            onClicked: if (emptyReader.nextEvent) mail.showEventInCalendar(emptyReader.nextEvent)
+                            contentItem: RowLayout {
+                                spacing: 10
+                                Text { text: "NEXT"; color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.letterSpacing: 0.66 }
+                                Text { text: emptyReader.nextEvent ? emptyReader.nextEvent.time_display || "" : ""; color: Theme.accent; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); font.features: {"tnum": 1} }
+                                Text { Layout.fillWidth: true; Layout.maximumWidth: implicitWidth; text: emptyReader.nextEvent ? String(emptyReader.nextEvent.title || "") : ""; textFormat: Text.PlainText; elide: Text.ElideRight; color: nextEventRow.hovered ? Theme.accent : Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); Behavior on color { ColorAnimation { duration: 150 } } }
+                                FmIcon { name: "next"; size: 10; color: Theme.inkAlpha(.4) }
+                                Item { Layout.fillWidth: true }
+                            }
+                        }
                         Text {
                             objectName: "emptyReaderTitle"
-                            text: backend.loading ? "Loading…" : mail.draftsMode ? "Nothing open." : backend.folder === "sent" ? "Nothing here." : emptyReader.clear ? "Clear." : "Nothing open."
+                            visible: !emptyReader.inboxClear
+                            text: backend.loading ? "Loading…" : mail.draftsMode ? "Nothing open." : backend.folder === "sent" ? "Nothing here." : "Nothing open."
                             color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(32); font.weight: Font.Medium; font.letterSpacing: -0.64; width: parent.width; wrapMode: Text.Wrap
                         }
-                        Item { width: 1; height: 12 }
+                        Item { visible: !emptyReader.inboxClear; width: 1; height: 12 }
                         Text {
-                            visible: !backend.loading
+                            visible: !backend.loading && !emptyReader.inboxClear
                             text: mail.draftsMode ? "Pick a draft on the left to keep writing, or press <font color=\"" + Theme.text + "\">" + ShortcutRegistry.label(ShortcutRegistry.sequence("compose", backend.preferences)).toLowerCase() + "</font> for a new message."
                                 : backend.folder === "sent" ? "No sent mail from " + (backend.currentAccount.name || "this account") + (mail.filtering ? " matches. Clear the filter or pick another day." : " is open. Pick a message on the left.")
-                                : emptyReader.clear ? "Nothing to review, nothing delayed in " + (backend.currentAccount.name || "this account") + "." + (emptyReader.nextEvent ? " Next on the line: <font color=\"" + Theme.accent + "\">" + emptyReader.nextEvent.time_display + "</font> <font color=\"" + Theme.text + "\">" + String(emptyReader.nextEvent.title || "").replace(/&/g,"&amp;").replace(/</g,"&lt;") + "</font>." : "")
                                 : "Pick a conversation on the left. Mail stays in " + (backend.currentAccount.name || "the selected account") + "; your calendar remains in view below."
                             textFormat: Text.StyledText
                             color: Theme.inkAlpha(.55); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(15); width: parent.width; wrapMode: Text.Wrap
@@ -1647,6 +1797,100 @@ Item {
                 }
             }
         }
+    }
+    // Unsent drafts of this account as one row of chips, bottom right, above
+    // the day strip. Hidden while a composer is open.
+    Row {
+        id: draftChipRow
+        objectName: "draftChips"
+        visible: mail.chipsVisible
+        anchors { right: parent.right; bottom: parent.bottom; rightMargin: 16; bottomMargin: 12 }
+        spacing: 6; layoutDirection: Qt.RightToLeft
+        width: Math.min(implicitWidth, Math.min(760, mail.width * 0.62))
+        z: 20
+        FmButton {
+            objectName: "draftChipsMore"
+            visible: mail.chipRows.length > 4
+            text: "+" + (mail.chipRows.length - 4)
+            implicitHeight: 28; leftPadding: 8; rightPadding: 8; topPadding: 0; bottomPadding: 0
+            font.pointSize: Theme.fontPoints(12); foreground: hovered ? Theme.text : Theme.inkAlpha(.5); background: Item {}
+            tip: "All drafts"
+            onClicked: mail.leaveComposerFor(function() { backend.folder = "drafts" }, true)
+        }
+        Repeater {
+            model: mail.chipRows.slice(0, 4).reverse()
+            AbstractButton {
+                id: chip
+                required property var modelData
+                objectName: "draftChip_" + modelData.draft_id
+                hoverEnabled: true
+                implicitHeight: 26; leftPadding: 9; rightPadding: 10; topPadding: 0; bottomPadding: 0
+                implicitWidth: Math.min(240, leftPadding + 11 + 7 + chipText.implicitWidth + rightPadding)
+                anchors.verticalCenter: parent ? parent.verticalCenter : undefined
+                Accessible.name: "Draft: " + mail.chipSubject(modelData)
+                FmToolTip { shown: chip.hovered; text: mail.chipTip(chip.modelData) }
+                onClicked: mail.openDraftChip(modelData)
+                background: Rectangle { radius: 13; color: chip.hovered ? Theme.bg4 : Theme.canvasAlpha(.85); border.width: chip.activeFocus ? 1 : 0; border.color: Theme.focusBorder; Behavior on color { ColorAnimation { duration: 150 } } }
+                contentItem: RowLayout {
+                    spacing: 7
+                    FmIcon { name: chip.modelData.mode !== "new" && chip.modelData.conversation_id ? "reply" : "edit"; size: 11; color: Theme.accent }
+                    Text { id: chipText; Layout.fillWidth: true; text: mail.chipSubject(chip.modelData); textFormat: Text.PlainText; elide: Text.ElideRight; color: chip.hovered ? Theme.text : Theme.inkAlpha(.7); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); Behavior on color { ColorAnimation { duration: 150 } } }
+                }
+            }
+        }
+    }
+    // Spam and Trash, behind the ▾ after Drafts.
+    Popup {
+        id: binMenu; objectName: "binMenu"
+        parent: Overlay.overlay; padding: 4; focus: true
+        width: Math.max(150, binChoices.implicitWidth + 8)
+        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutsideParent
+        onAboutToShow: { const point = binMenuButton.mapToItem(parent, 0, binMenuButton.height + 6); x = point.x; y = point.y; backend.loadBinMenuCounts() }
+        background: Rectangle { color: Theme.bg2; border.color: Theme.line2; radius: 6 }
+        contentItem: Column {
+            id: binChoices
+            Repeater {
+                model: [{folder: "spam", name: "Spam", icon: "shield"}, {folder: "trash", name: "Trash", icon: "bin"}]
+                ItemDelegate {
+                    id: binChoice
+                    required property var modelData
+                    readonly property bool current: backend.folder === modelData.folder
+                    readonly property var count: backend.binMenuCounts.account === backend.account ? backend.binMenuCounts[modelData.folder] : undefined
+                    objectName: modelData.folder + "ScopeButton"
+                    width: Math.max(142, implicitWidth); implicitHeight: 30; leftPadding: 10; rightPadding: 10; topPadding: 0; bottomPadding: 0
+                    hoverEnabled: true
+                    background: Rectangle { radius: 4; color: binChoice.hovered ? Theme.bg4 : binChoice.current ? Theme.bg6 : "transparent" }
+                    onClicked: { binMenu.close(); mail.leaveComposerFor(function() { backend.folder = binChoice.modelData.folder }) }
+                    contentItem: RowLayout {
+                        spacing: 8
+                        FmIcon { name: binChoice.modelData.icon; size: 12; color: Theme.inkAlpha(.45) }
+                        Text { Layout.fillWidth: true; text: binChoice.modelData.name; color: binChoice.current || binChoice.hovered ? Theme.text : Theme.inkAlpha(.75); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
+                        Text { text: binChoice.count ? binChoice.count : ""; color: Theme.inkAlpha(.4); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); font.features: {"tnum": 1} }
+                    }
+                }
+            }
+        }
+    }
+    // Esc on a new message with something written.
+    FmDialog {
+        id: keepDialog; objectName: "keepMessageDialog"
+        title: "Keep this message?"
+        width: Math.min(400, parent ? parent.width - 48 : 400)
+        contentItem: Label {
+            text: "Save it to Drafts to finish later, or discard it."
+            color: Theme.inkAlpha(0.6); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); wrapMode: Text.Wrap
+        }
+        footer: RowLayout {
+            spacing: 6
+            Item { implicitWidth: 16 }
+            FmButton { objectName: "keepMessageDiscard"; text: "Discard"; implicitHeight: 32; leftPadding: 12; rightPadding: 12; foreground: Theme.error; font.weight: Font.Medium; onClicked: { keepDialog.close(); backend.discardDraft(backend.draftDiscardContext()) } }
+            Item { Layout.fillWidth: true }
+            FmButton { objectName: "keepMessageEditing"; text: "Keep editing"; shortcutHint: "Esc"; outlined: true; implicitHeight: 32; leftPadding: 14; rightPadding: 14; font.weight: Font.Medium; onClicked: { keepDialog.close(); reply.focusEditor() } }
+            FmButton { objectName: "keepMessageSave"; text: "Save to Drafts"; shortcutHint: "↵"; prominent: true; implicitHeight: 32; leftPadding: 14; rightPadding: 14; font.weight: Font.Medium; onClicked: keepDialog.saveToDrafts() }
+            Item { implicitWidth: 16 }
+        }
+        function saveToDrafts() { close(); backend.saveDraft(); mail.setReplyOpen(false); backend.noteSavedToDrafts() }
+        Shortcut { sequences: ["Return", "Enter"]; enabled: keepDialog.opened; onActivated: keepDialog.saveToDrafts() }
     }
     AttachmentViewer { id: mediaViewer; backdrop: mail }
     function showAttachment(attachment) {
@@ -1687,7 +1931,7 @@ Item {
                 id: categoryChoices; width: railCategories.availableWidth; spacing: 4
                 Text { text: "All categories"; font.pointSize: Theme.fontPoints(13); color: Theme.text }
                 Repeater { model: backend.categories
-                    FmButton { required property var modelData; Layout.fillWidth: true; textAlignment: Text.AlignLeft; text: modelData.name + "  " + modelData.conversation_count; selected: backend.category === modelData.id; onClicked: { backend.category = selected ? "" : modelData.id; railCategories.close() } }
+                    FmButton { required property var modelData; Layout.fillWidth: true; textAlignment: Text.AlignLeft; text: modelData.name + "  " + modelData.conversation_count; selected: mail.categoryOn(modelData.id); onClicked: mail.toggleCategory(modelData.id) }
                 }
             }
         }
@@ -1894,8 +2138,8 @@ Item {
     Shortcut { sequence: ShortcutRegistry.sequence("forward",backend.preferences); enabled: mail.readerKeyActionsAllowed && !mail.hasSelection && mail.members.length>0 && !mail.thread.is_outgoing; onActivated: backend.beginDraft("forward") }
     Shortcut { sequence: ShortcutRegistry.sequence("done",backend.preferences); enabled: mail.readerKeyActionsAllowed && !mail.draftsMode && (mail.hasSelection || mail.members.length>0) && mail.selectionMutable; onActivated: mail.selectionAction("done") }
     Shortcut { sequence: ShortcutRegistry.sequence("delay",backend.preferences); enabled: mail.readerKeyActionsAllowed && !mail.draftsMode && (mail.hasSelection || mail.members.length>0) && mail.selectionMutable; onActivated: mail.selectionAction(mail.hasSelection || !mail.anyStarred ? "delay" : "undelay") }
-    Shortcut { sequence: ShortcutRegistry.sequence("scopes",backend.preferences); enabled: mail.singleKeyActionsAllowed; onActivated: backend.folder=backend.folder==="inbox" ? "sent" : backend.folder==="sent" ? "drafts" : "inbox" }
+    Shortcut { sequence: ShortcutRegistry.sequence("scopes",backend.preferences); enabled: mail.singleKeyActionsAllowed; onActivated: { const next = backend.folder==="inbox" ? "sent" : backend.folder==="sent" ? "drafts" : "inbox"; mail.leaveComposerFor(function() { backend.folder = next }, next === "drafts") } }
     Shortcut { sequence: ShortcutRegistry.sequence("next",backend.preferences); enabled: mail.singleKeyActionsAllowed; onActivated: mail.moveSelection(1) }
     Shortcut { sequence: ShortcutRegistry.sequence("prev",backend.preferences); enabled: mail.singleKeyActionsAllowed; onActivated: mail.moveSelection(-1) }
-    Shortcut { sequence: "Escape"; enabled: mail.visible && mail.replyOpen && !mail.hasSelection && !mail.popupOpen; onActivated: { if (backend.accountNavigationAllowed()) { backend.saveDraft(); mail.setReplyOpen(false) } } }
+    Shortcut { sequence: "Escape"; enabled: mail.visible && mail.replyOpen && !mail.hasSelection && !mail.popupOpen; onActivated: mail.escapeComposer() }
 }

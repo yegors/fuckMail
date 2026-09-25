@@ -88,6 +88,8 @@ ApplicationWindow {
         if (belongsTo(activeFocusItem, mailView)) mailFocus = activeFocusItem
         else if (belongsTo(activeFocusItem, calendarView)) calendarFocus = activeFocusItem
     }
+    // Mail's empty inbox opens today's next event in the Calendar day view.
+    function showEventInCalendar(event) { navigate("calendar"); calendarView.showEventInDay(event) }
     function navigate(target) {
         if (settingsOpen && target !== "settings" && settingsView && settingsView.modelDirty) { settingsView.confirmLeave(function(){window.navigate(target)}); return }
         if (!backend.accountNavigationAllowed()) return
@@ -367,17 +369,6 @@ ApplicationWindow {
                         }
                     }
                 }
-                // One label in both views; the icon and tooltip say what it creates.
-                FmButton {
-                    objectName: window.workspace === "calendar" ? "newEventButton" : "newMessageButton"
-                    visible: !window.settingsOpen && (window.workspace === "calendar" || mailView.newMessageAvailable)
-                    text: "New"
-                    iconName: window.workspace === "calendar" ? "calendar" : "mail"; iconSize: 13; prominent: true; radius: 6
-                    font.pointSize: Theme.fontPoints(12.5); leftPadding: 10; rightPadding: 12
-                    tip: window.workspace === "calendar" ? "New event — n · or click an empty slot on the grid" : "New message — n"
-                    Accessible.name: window.workspace === "calendar" ? "New event" : "New message"
-                    onClicked: { searchPopup.close(); calendarSearchPopup.close(); if (window.workspace === "calendar") calendarView.createEvent(); else mailView.newMessage() }
-                }
             }
         }
     }
@@ -412,7 +403,6 @@ ApplicationWindow {
         backgroundSource: workspaceLayer
         z: 300
         visible: backend.reminders.length > 0 && !startupOverlay.visible
-        onOpenEventRequested: function(event) { window.navigate("calendar"); calendarView.showEvent(event, calendarView) }
     }
     ActionToast {
         anchors.horizontalCenter: parent.horizontalCenter; anchors.bottom: parent.bottom

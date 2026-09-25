@@ -450,7 +450,7 @@ void GuiSelfTest::step() {
         // The saved editor can reopen when returning to its conversation.
         // Minimize it through the visible control before using reader actions.
         if (auto mail = m_window->findChild<QQuickItem *>("mailWorkspace"); mail && mail->property("replyOpen").toBool()) {
-            click("collapseReply"); return;
+            QMetaObject::invokeMethod(mail, "minimizeComposer"); return;
         }
         if (!click("doneConversationButton")) return;
         m_stage = 31; break;
@@ -794,11 +794,11 @@ void GuiSelfTest::step() {
     case 70:
         QMetaObject::invokeMethod(m_window->findChild<QObject *>("mailWorkspace"), "openReply"); m_stage = 71; break;
     case 71: {
-        const auto button = m_window->findChild<QQuickItem *>("collapseReply");
+        const auto button = m_window->findChild<QQuickItem *>("discardReply");
         const auto reader = m_window->findChild<QQuickItem *>("reader");
         if (!button || !reader || button->mapToItem(reader, QPointF(button->width()/2,button->height()/2)).y() < 0
             || button->mapToItem(reader, QPointF(button->width()/2,button->height()/2)).y() > reader->height()) return;
-        if (!click("collapseReply")) return;
+        QMetaObject::invokeMethod(m_window->findChild<QObject *>("mailWorkspace"), "minimizeComposer");
         m_stage = 72; break;
     }
     case 72: {
@@ -811,12 +811,12 @@ void GuiSelfTest::step() {
     case 73: {
         const auto panel = m_window->findChild<QQuickItem *>("replyPanel");
         const auto document = m_window->findChild<ReplyDocument *>("replyDocument");
-        const auto button = m_window->findChild<QQuickItem *>("collapseReply");
+        const auto button = m_window->findChild<QQuickItem *>("discardReply");
         const auto reader = m_window->findChild<QQuickItem *>("reader");
         if (!panel || !panel->isVisible() || !button || !reader || button->mapToItem(reader, QPointF(button->width()/2,button->height()/2)).y() < 0
             || button->mapToItem(reader, QPointF(button->width()/2,button->height()/2)).y() > reader->height()) return;
         if (!document || document->plainText() != m_recoveredBody) { failed("Explicit Reply did not restore retained text."); return; }
-        if (!click("collapseReply")) return;
+        QMetaObject::invokeMethod(m_window->findChild<QObject *>("mailWorkspace"), "minimizeComposer");
         m_captureWait.start(); m_unknownCaptureId = "native-unknown-draft"; m_stage = 74;
         cliWithParams("draft_capture", {{"conversation_id", m_id}, {"expected_revision", m_backend.draft()["revision"].toLongLong()},
             {"request_id", m_unknownCaptureId}, {"outcome", "unknown"}}, [this](auto result) {

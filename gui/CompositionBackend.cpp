@@ -78,6 +78,7 @@ void MailBackend::beginDraftWithRecipient(const QString &mode, const QString &em
     }
     const auto members = m_conversation.value("messages").toList();
     if (mode != "new" && (members.isEmpty() || m_conversation.value("remote").toBool())) return;
+    dropEmptyNewDraft();
     const auto source = mode == "new" ? QString{} : members.last().toMap()["id"].toString();
     if (m_draftCreation.isEmpty() || m_draftCreationAccount != m_account
         || m_draftCreation["mode"].toString() != mode || m_draftCreation["source_message_id"].toString() != source || m_draftCreationEmail != email) {
@@ -118,6 +119,7 @@ void MailBackend::openDraft(const QString &draftId, bool restoreView) {
     if (draftId.isEmpty() || !m_connected) return;
     cancelPendingGoogleSend("Send cancelled by draft navigation.");
     if (m_draftDirty || draftBusy()) { m_afterDraftSave = [this, draftId, restoreView] { openDraft(draftId, restoreView); }; saveDraft(); return; }
+    if (draftId != m_activeDraft) dropEmptyNewDraft();
     m_resolvingDraft = true; m_draftStatus = "Opening draft…"; emit draftChanged();
     const auto account = m_account;
     const int generation = ++m_generation;
@@ -282,4 +284,80 @@ void MailBackend::setDraftSubject(const QString &subject) {
     if (draftLocked() || m_draft.isEmpty() || m_draft["subject"].toString() == subject) return;
     m_draft["subject"] = subject; m_draftDirty = true; m_draftStatus = "Saving…";
     emit draftChanged(); m_draftTimer.start();
+}
+
+bool MailBackend::draftHasContent() const {
+    if (m_draft.isEmpty()) return false;
+    for (const auto field : {"to_recipients", "cc_recipients", "bcc_recipients", "attachment_ids"})
+        if (!m_draft.value(field).toList().isEmpty()) return true;
+    for (const auto &input : m_recipientInputs) if (!input.trimmed().isEmpty()) return true;
+    // The starting signature alone is not something written.
+    const auto body = m_draft.value("body").toString().trimmed();
+    return !m_draft.value("subject").toString().trimmed().isEmpty()
+        || (!body.isEmpty() && body != currentAccount().value("signature_text").toString().trimmed());
+}
+bool MailBackend::authoredDraftRow(const QVariantMap &row) const {
+    const auto body = row.value("body").toString().trimmed();
+    return !row.value("subject").toString().trimmed().isEmpty() || !row.value("to_recipients").toList().isEmpty()
+        || row.value("attachment_count").toInt() > 0
+        || (!body.isEmpty() && body != currentAccount().value("signature_text").toString().trimmed());
+}
+void MailBackend::dropEmptyNewDraft() {
+    // A new message with nothing written is not kept in Drafts. No Undo: there
+    // is nothing to bring back.
+    if (m_draft.value("mode").toString() != "new" || m_activeDraft.isEmpty() || m_draft.value("discarded").toBool()
+        || draftHasContent() || draftBusy() || accountArchived() || m_unsavedAccountBuffer || !m_connected) return;
+    const auto revision = m_draft.value("revision").toLongLong();
+    if (revision <= 0) return;
+    m_draftTimer.stop(); m_draftDirty = false;
+    auto params = draftSelector(); params["request_id"] = mutation()["request_id"]; params["expected_revision"] = revision;
+    const auto account = m_account;
+    request("draft_discard", account, params, [this, account](auto, bool ok) {
+        if (ok && account == m_account) { loadAccounts(); if (m_folder == "drafts") loadDraftRows(false); m_draftChipsTimer.start(); }
+    }, true);
+}
+void MailBackend::leaveNewDraft() {
+    if (m_draft.value("mode").toString() != "new" || m_activeDraft.isEmpty()) return;
+    if (!draftHasContent()) { dropEmptyNewDraft(); return; }
+    if (m_draftDirty) saveDraft();
+}
+void MailBackend::refreshDraftChips() {
+    const auto account = m_account;
+    const int generation = ++m_draftChipsGeneration;
+    // Chips follow the loaded account list; before it loads there are none.
+    if (account.isEmpty() || !m_connected || !m_initialAccountsLoaded || accountArchived()) {
+        if (!m_draftChips.isEmpty()) { m_draftChips.clear(); emit draftChipsChanged(); }
+        return;
+    }
+    request("drafts", account, {{"limit", 40}}, [this, account, generation](auto result, bool ok) {
+        if (!ok || account != m_account || generation != m_draftChipsGeneration) return;
+        QVariantList rows;
+        const auto page = result["drafts"].toArray();
+        for (const auto &value : page) {
+            const auto row = value.toObject().toVariantMap();
+            if (!row.value("read_only").toBool() && authoredDraftRow(row)) rows.append(row);
+        }
+        // Beyond the first page, count every draft as written.
+        const auto total = rows.size() + std::max<qsizetype>(0, result["total"].toInteger() - page.size());
+        const QVariantMap next{{"account", account}, {"rows", rows}, {"total", total}};
+        if (next != m_draftChips) { m_draftChips = next; emit draftChipsChanged(); }
+    });
+}
+void MailBackend::loadRecentWith(const QString &email) {
+    const auto address = email.trimmed().toLower(), account = m_account;
+    if (address.isEmpty() || account.isEmpty() || !validFilterSender(address)) {
+        ++m_recentGeneration;
+        if (!m_recentWith.isEmpty()) { m_recentWith.clear(); emit recentWithChanged(); }
+        return;
+    }
+    if (m_recentWith.value("email") == address && m_recentWith.value("account") == account) return;
+    const int generation = ++m_recentGeneration;
+    // A bare address matches mail from, to or copying that person.
+    request("conversations", account, {{"query", address}, {"folder", "all"}, {"limit", 4}}, [this, account, address, generation](auto result, bool ok) {
+        if (account != m_account || generation != m_recentGeneration) return;
+        QVariantList rows;
+        if (ok) for (const auto &value : result["conversations"].toArray()) rows.append(value.toObject().toVariantMap());
+        m_recentWith = {{"account", account}, {"email", address}, {"rows", rows}, {"total", ok ? result["filtered_conversation_count"].toInt() : 0}};
+        emit recentWithChanged();
+    });
 }

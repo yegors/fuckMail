@@ -94,7 +94,7 @@ pub(crate) async fn not_spam(ctx: &SyncContext, params: Value) -> Result<Value> 
     let remove = ["SPAM".to_owned()];
     for id in &ids {
         let call = GmailCall::modify_message(&ctx.account, id, &add, &remove).map_err(provider)?;
-        match ctx.gmail(call).await.map_err(provider)? {
+        match ctx.gmail_mutation(call).await.map_err(provider)? {
             GmailReply::Message(_) => {}
             _ => return Err(invalid()),
         }
@@ -106,7 +106,7 @@ pub(crate) async fn not_spam(ctx: &SyncContext, params: Value) -> Result<Value> 
 async fn delete(ctx: &SyncContext, ids: Vec<String>) -> Result<()> {
     for chunk in ids.chunks(DELETE_BATCH) {
         let call = GmailCall::batch_delete(&ctx.account, chunk).map_err(provider)?;
-        match ctx.gmail(call).await.map_err(provider)? {
+        match ctx.gmail_mutation(call).await.map_err(provider)? {
             GmailReply::Deleted => {}
             _ => return Err(invalid()),
         }

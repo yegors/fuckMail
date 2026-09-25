@@ -1,13 +1,13 @@
-//! Search box grammar shared by conversation and draft search (Search 7).
+//! Search box grammar shared by conversation and draft search (Search 9).
 //! GUI and CLI send the same text. Core parses it once, reports how it read
 //! the text and runs the typed predicates; clients never re-implement it.
 use crate::{err, Result};
 use serde_json::{json, Value};
 
-/// A query may name at most this many senders (or recipients in Sent).
+/// A query may name at most this many people across from:, to: and bare addresses.
 pub(crate) const MAX_FROM: usize = 4;
 const MAX_FROM_BYTES: usize = 320;
-const OPERATORS: [&str; 6] = ["subject", "body", "from", "label", "has", "is"];
+const OPERATORS: [&str; 7] = ["subject", "body", "from", "to", "label", "has", "is"];
 
 /// How one search text was read. Values keep the user's spelling; matching
 /// is case-insensitive.
@@ -17,8 +17,12 @@ pub(crate) struct SearchText {
     pub words: Vec<String>,
     pub subject: Vec<String>,
     pub body: Vec<String>,
-    /// Sender name or address; recipients in Sent and Drafts.
+    /// Sender name or address.
     pub from: Vec<String>,
+    /// Recipient (To or Cc) name or address.
+    pub to: Vec<String>,
+    /// Bare addresses: the sender or a recipient.
+    pub people: Vec<String>,
     pub label: Option<String>,
     pub has_attachment: bool,
     /// Review state: `review`, `held` (shown as delayed) or `done`.
@@ -31,6 +35,8 @@ impl SearchText {
             && self.subject.is_empty()
             && self.body.is_empty()
             && self.from.is_empty()
+            && self.to.is_empty()
+            && self.people.is_empty()
             && self.label.is_none()
             && !self.has_attachment
             && self.is.is_none()
@@ -43,6 +49,8 @@ impl SearchText {
             "subject": self.subject,
             "body": self.body,
             "from": self.from,
+            "to": self.to,
+            "people": self.people,
             "label": label.or(self.label.as_deref()),
             "has_attachment": self.has_attachment,
             "is": self.is.map(|state| if state == "held" { "delayed" } else { state }),
@@ -113,7 +121,7 @@ pub(crate) fn parse(text: &str) -> Result<SearchText> {
     let bare = |query: &mut SearchText, text: &str| {
         for word in text.split_whitespace() {
             if looks_like_email(word) {
-                query.from.push(word.to_owned());
+                query.people.push(word.to_owned());
             } else {
                 query.words.push(word.to_owned());
             }
@@ -132,6 +140,7 @@ pub(crate) fn parse(text: &str) -> Result<SearchText> {
             "subject" => query.subject.push(unquote(value).trim().to_owned()),
             "body" => query.body.push(unquote(value).trim().to_owned()),
             "from" => query.from.push(unquote(value).trim().to_owned()),
+            "to" => query.to.push(unquote(value).trim().to_owned()),
             _ => {
                 // label:, has: and is: take one word; the rest are bare words.
                 // A quoted label keeps its spaces.
@@ -170,10 +179,12 @@ pub(crate) fn parse(text: &str) -> Result<SearchText> {
     query.subject.retain(|v| !v.is_empty());
     query.body.retain(|v| !v.is_empty());
     query.from.retain(|v| !v.is_empty());
-    if query.from.len() > MAX_FROM || query.from.iter().any(|v| v.len() > MAX_FROM_BYTES) {
+    query.to.retain(|v| !v.is_empty());
+    let people = || query.from.iter().chain(&query.to).chain(&query.people);
+    if people().count() > MAX_FROM || people().any(|v| v.len() > MAX_FROM_BYTES) {
         return Err(err(
             "invalid_request",
-            "Search accepts up to four from: names or addresses",
+            "Search accepts up to four names or addresses across from:, to: and bare addresses",
         ));
     }
     Ok(query)
@@ -220,9 +231,21 @@ mod tests {
     }
 
     #[test]
-    fn bare_addresses_become_from_and_other_words_stay_bare() {
+    fn from_and_to_name_one_side_each() {
+        let query = read("to:priya@windscribe.com from:Maya deck");
+        assert_eq!(query.to, ["priya@windscribe.com"]);
+        assert_eq!(query.from, ["Maya deck"]);
+        assert_eq!(read("TO:priya").to, ["priya"]);
+        assert_eq!(read("tomorrow").words, ["tomorrow"]);
+        assert!(parse("c@d.co f@g.co i@j.co from:a to:b").is_err());
+        assert!(parse("c@d.co f@g.co from:a to:b").is_ok());
+    }
+
+    #[test]
+    fn bare_addresses_name_either_side_and_other_words_stay_bare() {
         let query = read("maya@windscribe.com relay");
-        assert_eq!(query.from, ["maya@windscribe.com"]);
+        assert_eq!(query.people, ["maya@windscribe.com"]);
+        assert!(query.from.is_empty() && query.to.is_empty());
         assert_eq!(query.words, ["relay"]);
         assert_eq!(read("a@b").words, ["a@b"]);
         assert_eq!(read("@windscribe.com").words, ["@windscribe.com"]);
