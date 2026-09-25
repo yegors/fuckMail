@@ -27,6 +27,7 @@ class MailSelectionTest {
         QStringList methods;
         QJsonObject lastQuery;
         QHash<QString,QJsonObject> attachments;
+        QList<QJsonObject> remoteSearches;
         QVariantList rows;
         Harness() {
             backend.m_account = "personal";
@@ -57,14 +58,25 @@ class MailSelectionTest {
                         result = {{"account","personal"},{"id",params["id"]},{"source_version",params["source_version"]},{"raw","From: Sender <sender@example.test>\r\nTo: Me <me@example.test>\r\n\r\nRetained body"},{"body_html","<p><b>Retained HTML</b><img src=\"https://images.example.test/pixel\" alt=\"Logo\"></p>"},{"metadata",QJsonArray{QJsonObject{{"label","Cc"},{"people",QJsonArray{QJsonObject{{"name","Team"},{"email","team@example.test"}}}}}}}};
                     }
                     else if (method == "attachment") result = attachments.value(request["params"].toObject()["id"].toString());
-                    else if (method == "google_spam_list") result = {{"messages",QJsonArray{QJsonObject{{"id","s1"},{"sender_name","Prize Desk"},{"sender_email","win@example.test"},{"subject","You won"},{"snippet","Claim now"},{"internal_date_ms",1789210800123LL},{"unread",true}}}},{"next_page_token",QJsonValue()}};
-                    else if (method == "google_spam_message") result = {{"id",request["params"].toObject()["id"]},{"text","Claim your prize."}};
+                    else if (method == "google_spam_list") result = {{"messages",QJsonArray{QJsonObject{{"id","s1"},{"thread_id","t9"},{"sender_name","Prize Desk"},{"sender_email","win@example.test"},{"subject","You won"},{"snippet","Claim now"},{"internal_date_ms",1789210800123LL},{"unread",true}},
+                        QJsonObject{{"id","s0"},{"thread_id","t9"},{"sender_name","Prize Desk"},{"sender_email","win@example.test"},{"subject","You won"},{"snippet","First"},{"internal_date_ms",1789210700123LL},{"unread",false}}}},{"next_page_token",QJsonValue()}};
+                    else if (method == "google_bin_counts") result = {{"folder",request["params"].toObject()["folder"]},{"messages",2},{"conversations",1}};
+                    else if (method == "google_not_spam") result = {{"thread_id",request["params"].toObject()["thread_id"]},{"moved",2}};
+                    else if (method == "google_delete_forever") { peer->write(QJsonDocument(QJsonObject{{"version",1},{"id",request["id"]},{"ok",false},{"error",QJsonObject{{"code","reconnect_required"},{"message","Reconnect this account to allow deleting mail for good"}}}}).toJson(QJsonDocument::Compact)+'\n'); return true; }
+                    else if (method == "google_remote_search") { remoteSearches.append(request["params"].toObject()); result = {{"conversations",QJsonArray{QJsonObject{{"id","remote:t1"},{"remote",true},{"remote_thread_id","t1"},{"subject","Old invoice"},{"sender_name","Billing"},{"sender_email","billing@example.test"},{"snippet","Your invoice"},{"latest_at","2020-01-05T09:00:00Z"},{"message_count",2},{"group","done"},{"kind","unknown"},{"unread",false},{"starred",false},{"revision",0},{"message_ids",QJsonArray{}},{"categories",QJsonArray{}}}}}}; }
+                    else if (method == "google_remote_thread") result = {{"id","remote:"+request["params"].toObject()["thread_id"].toString()},{"remote",true},{"subject","Old invoice"},{"revision",0},{"message_ids",QJsonArray{}},{"categories",QJsonArray{}},{"messages",QJsonArray{
+                        QJsonObject{{"id","remote-m1"},{"sender_name","Billing"},{"sender_email","billing@example.test"},{"sent_at","2020-01-04T09:00:00Z"},{"text","First"},{"remote",true},{"source_available",false},{"source_version",""},{"attachments",QJsonArray{}},{"sent",false}},
+                        QJsonObject{{"id","remote-m2"},{"sender_name","Billing"},{"sender_email","billing@example.test"},{"sent_at","2020-01-05T09:00:00Z"},{"text","Invoice attached"},{"body_html","<p><b>Invoice</b> attached</p>"},{"remote",true},{"source_available",false},{"source_version",""},{"sent",false},
+                            {"attachments",QJsonArray{QJsonObject{{"id","remote-att:m2:0"},{"name","invoice.pdf"},{"mime_type","application/pdf"},{"size",4},{"state","remote"}}}}}}}};
+                    else if (method == "message_unsubscribe") result = {{"method","one_click"},{"at","2026-09-25T10:00:00Z"}};
+                    else if (method == "google_unsubscribe_mail") result = {{"method","mailto"},{"address","leave@example.test"},{"at","2026-09-25T10:00:00Z"}};
                     else if (method == "categories") result["categories"] = QJsonArray{QJsonObject{{"id","imported"},{"name","Imported folder"},{"conversation_count",3}}};
                     else if (method == "view_save") result["revision"] = 1;
                     else if (method == "draft_get") result = {{"conversation_id",request["params"].toObject()["conversation_id"]},{"account","personal"},{"revision",0}};
                     else if (method == "conversation") {
                         const auto id = request["params"].toObject()["id"].toString();
-                        result = {{"id",id},{"revision",3},{"message_ids",QJsonArray{id+"-original"}},{"messages",QJsonArray{QJsonObject{{"id",id+"-original"},{"unread",true},{"starred",false},{"sender_name","Sender"},{"sent_at","2026-09-14T10:00:00Z"},{"text","Retained plain body"},{"source_available",true},{"source_version",QString(64,char(97))},{"sent",false}}}}};
+                        result = {{"id",id},{"revision",3},{"message_ids",QJsonArray{id+"-original"}},{"messages",QJsonArray{QJsonObject{{"id",id+"-original"},{"unread",true},{"starred",false},{"sender_name","Sender"},{"sent_at","2026-09-14T10:00:00Z"},{"text","Retained plain body"},{"source_available",true},{"source_version",QString(64,char(97))},{"sent",false}}}},
+                            {"mailing_list",QJsonObject{{"sender_email","sender@example.test"},{"month",2},{"year",9},{"unsubscribed",QJsonValue()}}}};
                     }
                     peer->write(reply(request["id"].toString(),result));
                 }
@@ -576,17 +588,41 @@ class MailSelectionTest {
         {
             // Spam is listed and opened live through Google operations; nothing asks Core for it.
             const auto pid=h.backend.m_enginePid; h.backend.m_enginePid=QCoreApplication::applicationPid();
-            h.backend.setFolder("spam");
-            await([&]{auto *row=find(window->contentItem(),"spamRow_s1");return row && row->isVisible();},"live Spam listing shows its rows");
-            require(!find(window->contentItem(),"conversationList")->isVisible() && h.lastQuery["folder"]!="spam","Spam has no local list query");
-            require(find(window->contentItem(),"moreMailFolders")->property("text")=="Spam","folder button names Spam");
+            // Spam is a tab after the divider; its rows use the normal list, one per thread.
+            click(window,find(window->contentItem(),"spamScopeButton"),Qt::LeftButton);
+            await([&]{return h.backend.folder()=="spam" && h.backend.conversations().size()==1;},"live Spam listing shows one row per thread");
+            require(find(window->contentItem(),"conversationList")->isVisible() && h.lastQuery["folder"]!="spam","Spam uses the normal list with no local query");
+            const auto spamRow=h.backend.conversations().first().toMap();
+            require(spamRow.value("id")=="remote:t9" && spamRow.value("message_count")==2 && spamRow.value("subject")=="You won","a Spam thread counts its messages");
+            require(!find(window->contentItem(),"moreMailFolders"),"the folder menu is gone");
+            await([&]{return find(window->contentItem(),"scopeStatLabel")->property("text")=="in spam" && find(window->contentItem(),"scopeStatCount")->property("text").toString()=="1";},"the header counts Spam from Gmail");
+            await([&]{return find(window->contentItem(),"binStrip")->isVisible();},"the strip offers to empty Spam");
             {QElapsedTimer settle;settle.start();while(settle.elapsed()<200)QCoreApplication::processEvents(QEventLoop::AllEvents,10);}
-            click(window,find(window->contentItem(),"spamRow_s1"),Qt::LeftButton);
-            await([&]{auto *body=find(window->contentItem(),"spamBody");return body && body->isVisible() && body->property("text")=="Claim your prize.";},"opened Spam message reads its live text");
-            require(find(window->contentItem(),"spamSubject")->property("text")=="You won","Spam reader shows the listed subject");
+            h.backend.openConversation("remote:t9");
+            await([&]{auto *bar=find(window->contentItem(),"binActionsRow");return bar && bar->isVisible() && h.backend.conversation().value("messages").toList().size()==2;},"an opened Spam thread reads like any thread, with the Spam actions");
+            require(!find(window->contentItem(),"conversationActionsRow")->isVisible(),"Spam has no Reply or Delay");
+            // FM_BIN_CAPTURE=<dir> keeps frames of the Spam view for visual checks.
+            const auto shots=qEnvironmentVariable("FM_BIN_CAPTURE");
+            auto shot=[&](const QString &name){ if(!shots.isEmpty()) require(QDir().mkpath(shots) && window->grabWindow().save(shots+"/"+name+".png"),"Spam frame saved"); };
+            shot("spam-thread");
+            // Delete permanently asks first; an account without full access is asked to reconnect.
+            click(window,find(window->contentItem(),"deleteForeverButton"),Qt::LeftButton);
+            await([&]{auto *m=find(window->contentItem(),"binConfirmMessage");return m && m->isVisible();},"deleting for good asks first");
+            shot("spam-confirm");
+            require(find(window->contentItem(),"binConfirmMessage")->property("text").toString()==QString::fromUtf8("\u201cOld invoice\u201d will be deleted for good. This can\u2019t be undone."),"the confirm names the subject");
+            click(window,find(window->contentItem(),"binConfirmAction"),Qt::LeftButton);
+            await([&]{auto *m=find(window->contentItem(),"reconnectFullAccessAction");return m && m->isVisible();},"missing full access offers to reconnect");
+            click(window,find(window->contentItem(),"reconnectFullAccessCancel"),Qt::LeftButton);
+            await([&]{auto *m=find(window->contentItem(),"reconnectFullAccessAction");return !m || !m->isVisible();},"the reconnect prompt closes");
+            {auto *button=find(window->contentItem(),"notSpamButton"); require(button && button->isVisible() && button->isEnabled(),"Move to Inbox is offered");}
+            click(window,find(window->contentItem(),"notSpamButton"),Qt::LeftButton);
+            await([&]{return h.methods.contains("google_not_spam");},"Move to Inbox asks Google");
+            await([&]{return h.backend.conversations().isEmpty() && h.backend.actionToast().value("text").toString().startsWith("Moved to Inbox");},"Move to Inbox removes the row and says so");
+            require(h.methods.contains("google_not_spam"),"not spam goes to Google");
+            await([&]{auto *t=find(window->contentItem(),"binEmptyText");return t && t->isVisible() && t->property("text")=="No spam. Nice.";},"empty Spam says so");
             require(!h.backend.m_views.value("personal").toMap().value("folder").toString().startsWith("spam"),"Spam is not remembered as the view to reopen");
             h.backend.setFolder("inbox"); h.backend.m_enginePid=pid;
-            await([&]{return find(window->contentItem(),"conversationList")->isVisible();},"leaving Spam restores the mail list");
+            await([&]{return h.backend.folder()=="inbox" && !find(window->contentItem(),"binStrip")->isVisible();},"leaving Spam restores the Inbox list");
         }
         require(!warnings,"no QML errors in production selection/splash controls");
         const auto capture=qEnvironmentVariable("FM_SELECTION_CAPTURE");
@@ -661,6 +697,13 @@ public:
         await([&]{auto *status=find(window->contentItem(),"accountAnalysisStatus_personal");return status&&status->property("text").toString().startsWith("40% · 7 queued");},"Catch up shows as queued work with its estimate");
         settings->setProperty("page","General");settings->setProperty("page","Accounts");
         capture("backlog-running");
+        {
+            auto *badge=find(window->contentItem(),"accountRetention_personal");
+            require(badge && badge->isVisible(),"the account shows its retention badge");
+            bool everything=false;
+            for (auto child : badge->childItems()) everything |= child->property("text")=="Keeps everything";
+            require(everything,"an account without a limit keeps everything");
+        }
         auto *pause=find(window->contentItem(),"accountAiPause_personal");require(pause&&pause->isVisible(),"queued work can be paused");
         click(window,pause,Qt::LeftButton);
         await([&]{return savedAssist["settings"].toObject()["accounts"].toObject()["personal"].toObject()["paused"].toBool();},"pausing the model saves the account's pause");
@@ -716,6 +759,52 @@ public:
         capture("shortcuts-edited");
         require(!warnings,"Accounts coverage/menu/progress has no QML errors");
     }
-    static void run(){mutations();undoActions();controls();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
+    // Remote search rows join the list by date, open live, and change nothing
+    // here; unsubscribing goes to the engine by method and is remembered.
+    static void remoteMail() {
+        Harness h;
+        // Google operations open their own connection to the fake engine.
+        h.backend.m_enginePid=QCoreApplication::applicationPid();
+        h.backend.loadConversations(); await([&]{return !h.backend.m_loading;},"mailbox loads before a remote search");
+        h.backend.setQuery("invoice"); await([&]{return !h.backend.m_loading && h.lastQuery["query"]=="invoice";},"local search runs");
+        require(h.remoteSearches.isEmpty(),"the server is not searched while the switch is off");
+        h.backend.setRemoteSearch(true);
+        await([&]{return h.backend.remoteSearchState().value("count").toInt()==1;},"remote search answers");
+        require(h.remoteSearches.size()==1 && h.remoteSearches[0]["query"]=="invoice" && h.remoteSearches[0]["folder"]=="inbox","the server search names the query and folder");
+        auto rows=h.backend.conversations();
+        require(rows.size()==4 && rows.last().toMap().value("id")=="remote:t1" && rows.last().toMap().value("section")=="done:2020-01","an older remote row joins Done by month after local rows");
+        require(h.backend.snapshotMailRows({"remote:t1"}).isEmpty(),"remote rows are left out of bulk actions");
+        const auto before=h.methods.size();
+        h.backend.openConversation("remote:t1");
+        await([&]{return h.backend.conversation().value("remote").toBool() && h.backend.conversation().value("messages").toList().size()==2;},"a remote result opens its whole thread");
+        const auto latest=h.backend.conversation().value("messages").toList().last().toMap();
+        require(!latest.value("reader_sections").toList().isEmpty() && !latest.contains("body_html"),"the newest remote message is formatted like stored mail");
+        const auto opened=h.methods.mid(before);
+        if (opened.contains("draft_get") || opened.contains("flag")) qInfo()<<opened;
+        require(!opened.contains("draft_get") && !opened.contains("flag"),"opening a remote thread reads no draft and marks nothing read");
+        h.backend.setStarred(true); QCoreApplication::processEvents();
+        require(h.writes.isEmpty(),"a remote thread cannot be changed here");
+        require(h.backend.m_views.value("personal").toMap().value("selected").toString().isEmpty() || !h.backend.m_views.value("personal").toMap().value("selected").toString().startsWith("remote:"),"a remote thread is not reopened after restart");
+        h.backend.setQuery("other");
+        require(!h.backend.conversations().last().toMap().value("remote").toBool(),"remote rows for an old query leave at once");
+        await([&]{return h.remoteSearches.size()==2;},"a new query searches the server again");
+        h.backend.setRemoteSearch(false);
+        require(!h.backend.conversations().last().toMap().value("remote").toBool(),"turning the switch off removes remote rows");
+        // Unsubscribe by the method the reader read, then remember it.
+        h.backend.setQuery(""); await([&]{return !h.backend.m_loading;},"search clears");
+        h.backend.openConversation("a");
+        await([&]{return h.backend.conversation().value("id")=="a" && h.backend.conversation().contains("mailing_list");},"a list conversation carries its mailing-list counts");
+        bool replied=false, accepted=false;
+        QObject::connect(&h.backend,&MailBackend::unsubscribeReady,[&](auto,auto,bool ok){replied=true;accepted=ok;});
+        h.backend.unsubscribe({{"id","a-original"},{"source_version",QString(64,char(97))},{"method","one_click"}});
+        await([&]{return replied;},"one-click unsubscribe answers");
+        require(accepted && h.methods.contains("message_unsubscribe") && !h.methods.contains("google_unsubscribe_mail"),"one-click goes to the engine's background POST");
+        require(h.backend.conversation().value("mailing_list").toMap().value("unsubscribed").toMap().value("method")=="one_click","the reader remembers the unsubscribe");
+        replied=false;
+        h.backend.unsubscribe({{"id","a-original"},{"source_version",QString(64,char(97))},{"method","mailto"}});
+        await([&]{return replied;},"mailto unsubscribe answers");
+        require(h.methods.contains("google_unsubscribe_mail"),"a mailto list is unsubscribed by email through Google");
+    }
+    static void run(){mutations();undoActions();remoteMail();controls();accountControls();qInfo()<<"Inbox scope, immutable bulk targets, native navigation/layout and account backlog controls pass.";}
 };
 int main(int argc,char **argv){QGuiApplication app(argc,argv);QQuickStyle::setStyle("Basic");for(const auto *font:{"Geist-Regular.ttf","Geist-Medium.ttf","Geist-SemiBold.ttf"}) require(QFontDatabase::addApplicationFont(QString(FM_GUI_SOURCE_DIR)+"/fonts/"+font)>=0,"bundled font loads");QGuiApplication::setFont(QFont("Geist",10));MailSelectionTest::run();return 0;}

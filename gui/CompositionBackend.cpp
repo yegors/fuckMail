@@ -77,7 +77,7 @@ void MailBackend::beginDraftWithRecipient(const QString &mode, const QString &em
         saveDraft(); return;
     }
     const auto members = m_conversation.value("messages").toList();
-    if (mode != "new" && members.isEmpty()) return;
+    if (mode != "new" && (members.isEmpty() || m_conversation.value("remote").toBool())) return;
     const auto source = mode == "new" ? QString{} : members.last().toMap()["id"].toString();
     if (m_draftCreation.isEmpty() || m_draftCreationAccount != m_account
         || m_draftCreation["mode"].toString() != mode || m_draftCreation["source_message_id"].toString() != source || m_draftCreationEmail != email) {

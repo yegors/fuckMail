@@ -227,7 +227,9 @@ void GuiSettingsSelfTest::step() {
         ++m_stage; break;
     case 13:
         if (!saved() || m_backend.preferences()["week_start"].toString() != "sunday") return;
-        // End selects 23:00 for the start, which must be rejected against 22:00.
+        // The default range is the whole day; end it at 22:00 first so End,
+        // which selects 23:00 for the start, must be rejected.
+        if (m_backend.preferences()["timeline_end_hour"].toInt() != 22) { m_backend.setPreferences({{"timeline_end_hour",22}}); return; }
         if (auto start = item("timeline_start_hour")) { reveal(start); start->forceActiveFocus(); key(start,Qt::Key_End); }
         else return;
         ++m_stage; break;

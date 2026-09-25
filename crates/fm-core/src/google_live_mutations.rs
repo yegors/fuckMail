@@ -178,6 +178,18 @@ pub(crate) fn enqueue(
                 })?
                 .collect::<std::result::Result<Vec<_>, _>>()?;
             rows
+        } else if method == "mail_filing" && action == MailMutationAction::Restore {
+            // Restoring received mail also returns it to the Inbox.
+            let received: bool = db.query_row(
+                "SELECT sent=0 FROM messages WHERE account=?1 AND id=?2",
+                params![account, message],
+                |r| r.get(0),
+            )?;
+            let mut keys = keys.clone();
+            if received {
+                keys.push(("label".into(), "INBOX".into()));
+            }
+            keys
         } else {
             keys.clone()
         };

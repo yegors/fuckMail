@@ -58,37 +58,19 @@ mod phase1_calendar;
 mod phase1_tests;
 mod preferences;
 mod queries;
+pub mod remote_mail;
 pub mod remote_prefs;
 mod search_query;
 mod search_senders;
 #[cfg(test)]
 mod sender_kind_tests;
+pub mod unsubscribe;
 pub mod view_cache;
-const RESET_BASELINE_VERSION: u32 = 32;
+// D118 reset: every profile before this baseline is refused and started fresh.
+const RESET_BASELINE_VERSION: u32 = 37;
 // Append one SQL step per version after the fresh baseline. Each step commits
 // with its own user_version update before normal recovery begins.
-const POST_RESET_MIGRATIONS: &[&str] = &[
-    // 33: Calendar mail counts read one date range instead of the whole mailbox.
-    "CREATE INDEX google_mail_coverage_by_date ON google_mail_coverage(account,internal_date_ms) WHERE deleted=0;",
-    // 34: link hosts per message, for link hover cards and blocked-domain counts.
-    link_index::SCHEMA,
-    // 35: people per message, for the list's "+N"; the link pass runs again to fill them.
-    concat!(
-        "CREATE TABLE people(id INTEGER PRIMARY KEY,email TEXT NOT NULL UNIQUE,name TEXT NOT NULL) STRICT;",
-        "CREATE TABLE message_people(message_rowid INTEGER NOT NULL REFERENCES messages(rowid) ON DELETE CASCADE,person INTEGER NOT NULL REFERENCES people(id),PRIMARY KEY(message_rowid,person)) STRICT, WITHOUT ROWID;",
-        "UPDATE link_index_state SET indexed_rowid=0;"
-    ),
-    // 36: D111 local model pipeline. System/user prompts replace the stored
-    // request template (missing prompts read as the built-in text), failures
-    // are counted per email, and the watcher's cursor keys go.
-    concat!(
-        "CREATE TABLE local_model_failures(account TEXT NOT NULL,message_id TEXT NOT NULL,attempts INTEGER NOT NULL,code TEXT NOT NULL,message TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(account,message_id),FOREIGN KEY(account,message_id) REFERENCES messages(account,id) ON DELETE CASCADE) STRICT;",
-        "INSERT OR REPLACE INTO local_model_settings_history(revision,settings_json) SELECT revision,settings_json FROM local_model_settings;",
-        "UPDATE local_model_settings SET revision=revision+1,settings_json=json_remove(settings_json,'$.prompt');",
-        "DELETE FROM meta WHERE key IN ('local_model_watch_cursor','local_model_watch_requeue');",
-        "DELETE FROM local_model_results WHERE target='';"
-    ),
-];
+const POST_RESET_MIGRATIONS: &[&str] = &[];
 pub const SCHEMA_VERSION: u32 = RESET_BASELINE_VERSION + POST_RESET_MIGRATIONS.len() as u32;
 pub const FIXTURE_REVISION: u32 = 3;
 pub const FIXTURE_TODAY: &str = "2026-09-11";

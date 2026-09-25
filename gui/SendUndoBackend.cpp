@@ -178,7 +178,7 @@ void MailBackend::finishQueuedSendNotice(const QString &key, const QJsonObject &
 
 QString MailBackend::mailActionLabel(const QString &method, const QJsonObject &params, int count) const {
     QString label;
-    if (method == "mail_filing") label=params["action"]=="trash" ? "Deleted" : params["action"]=="restore" ? "Restored" : "Archived";
+    if (method == "mail_filing") label=params["action"]=="trash" ? "Deleted" : params["action"]=="restore" ? "Restored to Inbox" : "Archived";
     else if (method == "set_category") label=params["present"].toBool() ? "Label added" : "Label removed";
     else if (params.contains("read") && params.contains("starred")) label="Marked done";
     else if (params.contains("starred")) label=params["starred"].toBool() ? "Delayed" : "Back in To review";

@@ -17,9 +17,10 @@
 #include <cstdio>
 #include <functional>
 
-// HtmlMessageBody and RemoteContentSettings against a scripted service: image
-// states, Load images, Always from, the proxy-unavailable bar, blocked hosts,
-// link activation and cancellation.
+// HtmlMessageBody, MessageNotices and RemoteContentSettings against a scripted
+// service: image states, Load images, Always load images from, the
+// proxy-unavailable row, blocked hosts, link activation, cancellation and the
+// mailing-list row's unsubscribe states.
 namespace {
 int failures = 0;
 void check(bool ok, const char *what) {
@@ -102,6 +103,7 @@ public:
     Q_INVOKABLE QString blockedBy(const QString &host) const { return host == "tracker.io" ? host : QString(); }
     Q_INVOKABLE bool imagesAllowed(const QString &account, const QString &email) const { return allowed.contains(account + "/" + email); }
     Q_INVOKABLE void allowImages(const QString &account, const QString &email) { allowed.append(account + "/" + email); }
+    Q_INVOKABLE void disallowImages(const QString &account, const QString &email) { allowed.removeAll(account + "/" + email); }
     Q_INVOKABLE QString saveProxy(bool enabled, const QString &host, const QString &username) {
         if (host.contains("://")) return "Enter the proxy's host name, without https:// or a path";
         savedProxy = {{"enabled", enabled}, {"host", host}, {"username", username}};
@@ -137,9 +139,12 @@ public:
     QString account() const { return "acct"; }
     QString preferencesStatus() const { return {}; }
     QObject *htmlContent() { return &service; }
+    QVariantList unsubscribes;
     Q_INVOKABLE void openLink(const QString &url) { opened.append(url); }
+    Q_INVOKABLE QString unsubscribe(const QVariantMap &message) { unsubscribes.append(message); return "u" + QString::number(unsubscribes.size()); }
 signals:
     void connectedChanged();
+    void unsubscribeReady(const QString &ticket, const QVariantMap &result, bool ok);
 };
 
 int main(int argc, char **argv) {
@@ -149,11 +154,11 @@ int main(int argc, char **argv) {
     QTemporaryDir temp;
     const auto dir = temp.filePath("HtmlTest");
     QDir().mkpath(dir);
-    for (const auto name : {"Theme.qml", "FmIcon.qml", "FmButton.qml", "FmToolTip.qml", "FmSwitch.qml", "FmTextField.qml", "HtmlMessageBody.qml", "RemoteContentSettings.qml"})
+    for (const auto name : {"Theme.qml", "FmIcon.qml", "FmButton.qml", "FmToolTip.qml", "FmSwitch.qml", "FmTextField.qml", "HtmlMessageBody.qml", "MessageNotices.qml", "RemoteContentSettings.qml"})
         check(QFile::copy(QString(FM_GUI_SOURCE_DIR) + "/" + name, dir + "/" + name), "copy production QML");
     QFile module(dir + "/qmldir");
     check(module.open(QIODevice::WriteOnly), "module metadata");
-    module.write("module HtmlTest\nsingleton Theme 1.0 Theme.qml\nHtmlMessageBody 1.0 HtmlMessageBody.qml\nRemoteContentSettings 1.0 RemoteContentSettings.qml\n");
+    module.write("module HtmlTest\nsingleton Theme 1.0 Theme.qml\nHtmlMessageBody 1.0 HtmlMessageBody.qml\nMessageNotices 1.0 MessageNotices.qml\nRemoteContentSettings 1.0 RemoteContentSettings.qml\n");
     module.close();
     Backend backend;
     QImage image(40, 40, QImage::Format_ARGB32);
@@ -177,13 +182,24 @@ ApplicationWindow {
     property var message: ({id: "m1", source_available: true, source_version: "v1", sender_email: "news@x.test", sender_name: "News"})
     property bool shown: true
     property string hovered: ""
+    property var mailingList: null
+    property var unsubscribe: null
+    property real noticesWidth: 560
     function show(next) { shown = false; message = next; shown = true }
-    Loader {
-        id: loader; x: 20; y: 20; width: 560; active: shown
-        sourceComponent: HtmlMessageBody {
-            objectName: "body"; width: 560; message: root.message; account: "acct"; active: true
-            onLinkHovered: function(href, box) { root.hovered = href + "@" + Math.round(box.width) }
-            onLinkExited: root.hovered = ""
+    ColumnLayout {
+        x: 20; y: 20; width: root.noticesWidth; spacing: 0
+        MessageNotices {
+            objectName: "notices"; Layout.fillWidth: true; Layout.bottomMargin: visible ? 9 : 0
+            message: root.message; mailingList: root.mailingList; unsubscribe: root.unsubscribe
+            htmlBody: loader.item && !loader.item.failed ? loader.item : null
+        }
+        Loader {
+            id: loader; Layout.fillWidth: true; Layout.preferredHeight: item ? item.implicitHeight : 0; active: shown
+            sourceComponent: HtmlMessageBody {
+                objectName: "body"; width: 560; message: root.message; account: "acct"; active: true
+                onLinkHovered: function(href, box) { root.hovered = href + "@" + Math.round(box.width) }
+                onLinkExited: root.hovered = ""
+            }
         }
     }
     RemoteContentSettings { objectName: "settings"; x: 20; y: 480; width: 560 }
@@ -208,7 +224,15 @@ ApplicationWindow {
     check(images["1"].toMap()["state"] == "hidden" && images["3"].toMap()["state"] == "blocked" && images["4"].toMap()["state"] == "insecure",
           "remote images wait, blocked hosts and http images never load");
     check(await([&] { return body()->property("images").toMap()["2"].toMap()["state"] == "ready"; }), "the inline image shows");
-    check(body()->property("hiddenCount").toInt() == 1 && find(window->contentItem(), "htmlImageBar_m1")->isVisible(), "the image bar counts hidden images");
+    check(body()->property("hiddenCount").toInt() == 1 && find(window->contentItem(), "htmlImageBar_m1")->isVisible(), "the images row counts hidden images");
+    check(!find(window->contentItem(), "unsubscribeRow_m1")->isVisible(), "without a mailing list only the images row shows");
+    {
+        auto *row = find(window->contentItem(), "htmlImageBar_m1");
+        QString text;
+        for (auto child : row->childItems()) if (child->property("text").toString().contains("hidden")) text = child->property("text").toString();
+        check(text == QString::fromUtf8("1 image hidden so News can\u2019t tell you opened this"), "the images row names the sender");
+        check(find(window->contentItem(), "htmlAllowImages_m1")->property("text") == "Always load images from News", "Always load images names the sender");
+    }
     check(body()->property("blockedLinks").toList() == QVariantList{2}, "links to blocked hosts are struck through");
 
     // Load images fetches the waiting remote image, never the blocked one.
@@ -219,11 +243,53 @@ ApplicationWindow {
         const auto barRect = bar->mapRectToScene(bar->boundingRect()), viewRect = view()->mapRectToScene(view()->boundingRect());
         return load->width() > 0 && viewRect.top() >= barRect.bottom();
     }), "the image bar lays out above the paper");
+    // Buttons keep their full label inside the row; the row's text gives way first.
+    auto inside = [&](QQuickItem *item, const char *rowName) {
+        auto *row = find(window->contentItem(), rowName);
+        const auto a = item->mapRectToScene(item->boundingRect()), b = row->mapRectToScene(row->boundingRect());
+        return item->isVisible() && a.left() >= b.left() - 0.5 && a.right() <= b.right() + 0.5 && item->width() + 0.5 >= item->implicitWidth();
+    };
+    check(inside(load, "htmlImageBar_m1") && inside(find(window->contentItem(), "htmlAllowImages_m1"), "htmlImageBar_m1"), "Load images and Always load images fit in their row");
     QTest::mouseMove(window, load->mapToScene(QPointF(load->width() / 2, load->height() / 2)).toPoint());
     QTest::mouseClick(window, Qt::LeftButton, {}, load->mapToScene(QPointF(load->width() / 2, load->height() / 2)).toPoint());
     check(await([&] { return body()->property("images").toMap()["1"].toMap()["state"] == "ready"; }), "Load images loads the remote image");
     check(!service.requests.join(",").contains(":3") && !service.requests.join(",").contains(":4"), "Load images skips blocked and http images");
-    check(await([&] { return !find(window->contentItem(), "htmlImageBar_m1")->isVisible(); }), "the bar goes away once images load");
+    check(await([&] { return find(window->contentItem(), "htmlImagesLoaded_m1")->isVisible(); }), "Load images becomes a loaded count");
+    check(!load->isVisible(), "the Load images button gives way to the count");
+    check(find(window->contentItem(), "htmlImageText_m1")->property("text") == "Images loaded for this message only", "the row says the images are for this message only");
+    check(find(window->contentItem(), "htmlAllowImages_m1")->isVisible()
+          && find(window->contentItem(), "htmlAllowImages_m1")->property("text") == "Always load images from News", "Always load images stays after loading");
+    {
+        QString loaded;
+        for (auto child : find(window->contentItem(), "htmlImagesLoaded_m1")->childItems())
+            if (child->property("text").toString().contains("loaded")) loaded = child->property("text").toString();
+        check(loaded == "1 image loaded", "the count names the loaded images");
+    }
+
+    // The mailing-list row: counts, the method's button, then the done state.
+    window->setProperty("mailingList", QVariantMap{{"month", 3}, {"year", 12}, {"unsubscribed", QVariant()}});
+    window->setProperty("unsubscribe", QVariantMap{{"method", "one_click"}, {"url", "https://news.test/u"}});
+    auto *unsubscribeText = find(window->contentItem(), "unsubscribeText_m1");
+    auto *unsubscribeButton = find(window->contentItem(), "unsubscribeButton_m1");
+    check(await([&] { return find(window->contentItem(), "unsubscribeRow_m1")->isVisible() && unsubscribeButton->width() > 0; }), "a list message shows the mailing-list row");
+    check(unsubscribeText->property("text") == QString::fromUtf8("Mailing list \u00b7 3 this month, 12 this year"), "the row counts the sender's mail");
+    check(inside(unsubscribeButton, "unsubscribeRow_m1"), "Unsubscribe fits inside its row");
+    if (const auto shot = qEnvironmentVariable("FM_NOTICES_CAPTURE"); !shot.isEmpty()) window->grabWindow().save(shot);
+    // A narrow reader squeezes the text, never the buttons.
+    window->setProperty("noticesWidth", 380);
+    check(await([&] { return inside(unsubscribeButton, "unsubscribeRow_m1") && inside(find(window->contentItem(), "htmlAllowImages_m1"), "htmlImageBar_m1"); }), "buttons stay whole in a narrow reader");
+    window->setProperty("noticesWidth", 560);
+    QTest::mouseClick(window, Qt::LeftButton, {}, unsubscribeButton->mapToScene(QPointF(unsubscribeButton->width() / 2, unsubscribeButton->height() / 2)).toPoint());
+    check(backend.unsubscribes.size() == 1 && backend.unsubscribes.value(0).toMap()["method"] == "one_click" && backend.unsubscribes.value(0).toMap()["id"] == "m1", "Unsubscribe asks the backend with the message's method");
+    check(unsubscribeButton->property("text").toString() == QString("Unsubscribing") + QChar(0x2026), "the button shows progress");
+    emit backend.unsubscribeReady("u1", {{"method", "one_click"}}, true);
+    window->setProperty("mailingList", QVariantMap{{"month", 3}, {"year", 12}, {"unsubscribed", QVariantMap{{"method", "one_click"}}}});
+    check(await([&] { return !unsubscribeButton->isVisible(); }), "the button hides once unsubscribed");
+    check(unsubscribeText->property("text") == QString::fromUtf8("Unsubscribed from News \u00b7 it can take a few days to stop"), "the row confirms the unsubscribe");
+    window->setProperty("mailingList", QVariantMap{{"month", 3}, {"year", 12}, {"unsubscribed", QVariantMap{{"method", "link"}}}});
+    check(unsubscribeText->property("text") == "Unsubscribe page opened in your browser", "a link reads as opened in the browser");
+    window->setProperty("mailingList", QVariant());
+    window->setProperty("unsubscribe", QVariant());
 
     // Links open through the backend unless their host is blocked.
     QMetaObject::invokeMethod(view(), "linkActivated", Q_ARG(int, 1));
@@ -251,6 +317,14 @@ ApplicationWindow {
     QMetaObject::invokeMethod(body(), "allowSender");
     check(service.allowed == QStringList{"acct/other@x.test"}, "Always from saves the sender");
     check(await([&] { return body()->property("images").toMap()["1"].toMap()["state"] == "ready"; }), "Always from also loads this message");
+    check(await([&] { return find(window->contentItem(), "htmlImageText_m2")->property("text") == "Images from Other load automatically"; }), "the row says the sender's images load automatically");
+    check(find(window->contentItem(), "htmlAllowImages_m2")->property("text") == "Stop always loading from Other", "the button offers to stop");
+    QMetaObject::invokeMethod(body(), "disallowSender");
+    check(service.allowed.isEmpty(), "Stop always loading forgets the sender");
+    check(body()->property("images").toMap()["1"].toMap()["state"] == "ready", "images already loaded stay loaded");
+    check(find(window->contentItem(), "htmlImageText_m2")->property("text") == "Images loaded for this message only"
+          && find(window->contentItem(), "htmlAllowImages_m2")->property("text") == "Always load images from Other", "the row returns to this message only");
+    QMetaObject::invokeMethod(body(), "allowSender");
     const auto before = service.requests.size();
     show("m3", "other@x.test");
     check(await([&] { return ready() && service.requests.mid(before).contains("m3:1"); }), "an allowed sender's next message loads remote images");

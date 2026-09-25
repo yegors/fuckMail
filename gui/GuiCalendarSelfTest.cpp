@@ -198,14 +198,12 @@ bool GuiCalendarSelfTest::startConcurrentEdit() {
     return true;
 }
 bool GuiCalendarSelfTest::checkTimeline(const QString &date, const QString &label) {
-    // The strip names only a day away from today; today itself is unlabelled.
-    const auto displayed = item("timelineDateLabel");
-    const bool today = date == m_backend.property("todayDate").toString();
-    if (m_backend.timelineDate() != date || (today ? displayed != nullptr : (!displayed || !unclipped(displayed)
-        || displayed->property("text").toString() != label))
+    // The day marker names the date, weekday and Today/Tomorrow/Yesterday.
+    const auto displayed = item("timelineDayMarker");
+    if (m_backend.timelineDate() != date || !displayed || !unclipped(displayed) || displayed->property("label").toString() != label
         || m_backend.calendarDate() != "2026-09-14" || m_backend.calendarView() != m_timelineCalendarView) {
         finish(QString("Timeline navigation expected %1 (%2) with independent Calendar date 2026-09-14; got timeline=%3, label=%4, Calendar=%5/%6.")
-            .arg(date,label,m_backend.timelineDate(),displayed ? displayed->property("text").toString() : "missing",
+            .arg(date,label,m_backend.timelineDate(),displayed ? displayed->property("label").toString() : "missing",
                 m_backend.calendarDate(),m_backend.calendarView()));
         return false;
     }
@@ -363,27 +361,27 @@ void GuiCalendarSelfTest::step() {
         m_stage = 11; break;
     case 11:
         if (!m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.preferencesPending()) return;
-        if (!checkTimeline("2026-09-11","")) return;
+        if (!checkTimeline("2026-09-11","11 Fri · Today")) return;
         m_backend.moveTimeline(-1);
         m_stage = 12; break;
     case 12:
         if (!m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.preferencesPending()) return;
-        if (!checkTimeline("2026-09-10","Yesterday · Thursday 10 Sep")) return;
+        if (!checkTimeline("2026-09-10","10 Thu · Yesterday")) return;
         m_backend.moveTimeline(1);
         m_stage = 13; break;
     case 13:
         if (!m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.preferencesPending()) return;
-        if (!checkTimeline("2026-09-11","")) return;
+        if (!checkTimeline("2026-09-11","11 Fri · Today")) return;
         m_backend.moveTimeline(1);
         m_stage = 14; break;
     case 14:
         if (!m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.preferencesPending()) return;
-        if (!checkTimeline("2026-09-12","Tomorrow · Saturday 12 Sep")) return;
+        if (!checkTimeline("2026-09-12","12 Sat · Tomorrow")) return;
         if (!click("timelineToday")) { finish("The native timeline Back to today button is unavailable away from today."); return; }
         m_stage = 15; break;
     case 15:
         if (!m_backend.calendarReady() || !m_backend.timelineReady() || m_backend.preferencesPending()) return;
-        if (!checkTimeline("2026-09-11","")) return;
+        if (!checkTimeline("2026-09-11","11 Fri · Today")) return;
         if (item("timelineToday")) { finish("Back to today remained visible after returning to the fixture date."); return; }
         m_timelineSurface=headerTimeline(m_window->contentItem());
         if (!m_timelineSurface || m_backend.preferences()["timeline_position"].toString()!="header") {

@@ -182,10 +182,16 @@ QUrl MailBackend::attachmentSaveLocation(const QString &name) const {
     if (filename.isEmpty() || filename == "." || filename == "..") filename = "attachment";
     return QUrl::fromLocalFile(QDir(QStandardPaths::writableLocation(QStandardPaths::DownloadLocation)).filePath(filename));
 }
+// A stored attachment's local copy, or a remote thread's attachment fetched from the server.
+void MailBackend::attachmentFile(const QString &account, const QString &id, Callback callback) {
+    if (id.startsWith(u"remote-att:")) googleOperation("google_remote_attachment", account, {{"id", id}}, std::move(callback));
+    else request("attachment", account, {{"id", id}}, std::move(callback));
+}
+
 QString MailBackend::requestAttachmentPreview(const QString &account, const QString &id) {
     const auto ticket = QUuid::createUuid().toString(QUuid::WithoutBraces);
     QTimer::singleShot(0, this, [this, ticket, account, id] {
-        request("attachment", account, {{"id",id}}, [this, ticket, account, id](auto result, bool ok) {
+        attachmentFile(account, id, [this, ticket, account, id](auto result, bool ok) {
             const auto path = result["path"].toString();
             ok = ok && result["account"] == account && result["id"] == id && QDir::isAbsolutePath(path) && QFileInfo(path).isFile();
             if (ok) {
@@ -244,7 +250,7 @@ QString MailBackend::saveAttachment(const QString &account, const QString &id, c
             emit attachmentSaved(ticket, "Choose a local file to save this attachment."); return;
         }
         if (findChildren<QTimer *>("attachmentCopy").size() >= 4) { emit attachmentSaved(ticket, "Wait for another attachment to finish saving."); return; }
-        request("attachment", account, {{"id",id}}, [this, ticket, account, id, destination](auto result, bool ok) {
+        attachmentFile(account, id, [this, ticket, account, id, destination](auto result, bool ok) {
             if (!ok || result["account"] != account || result["id"] != id || !QDir::isAbsolutePath(result["path"].toString())
                 || result["sha256"].toString().size() != 64 || result["size"].toInteger(-1) < 0) {
                 emit attachmentSaved(ticket, "This attachment could not be saved. Its local copy is unavailable."); return;

@@ -1,5 +1,21 @@
 # Core and storage
 
+
+
+## D120 — fresh baseline, deleting for good, restore to Inbox (Core67)
+
+- **Baseline.** `RESET_BASELINE_VERSION` is 37 with no post-reset migrations; `fresh-schema.sql` holds everything (coverage date index, link index, people, local model failures, unsubscribes, sender index). Profiles below 37 are refused with the "start fresh" message. The schema33–36 upgrade tests are replaced by a fresh-profile index check.
+- **Timeline default.** `timeline_start_hour` 0, `timeline_end_hour` 24.
+- **Deleting for good.** `google_trashed_in_conversation(account, conversation)` returns the Gmail ids of a conversation's trashed messages (`not_found` when none). `google_forget_deleted(account, remote_ids)` removes those stored messages and everything derived from them through the retention purge, in one transaction, and returns how many; messages an open draft uses as its source are kept.
+- **Provider deletions.** When sync reports a message deleted at Gmail it now also clears `trashed`, so it leaves Trash and stays as archived local mail; local data is still retained.
+- **Restore.** `mail_filing restore` on a live profile also sets `inbox=1` on received messages and records an INBOX label intent, delivered after the untrash in the same durable operation.
+
+Consumers: Gmail30, Mail UI87, CLI51, Calendar33.
+
+## D118 — unsubscribes and remote threads (Core66)
+
+Schema37 adds `unsubscribes(account, conversation_id, sender_email, method one_click|mailto|link, unsubscribed_at)`, keyed per account, conversation and lowercase sender, and the index `messages_sender(account, sender_email COLLATE NOCASE, sent_at)`. `conversation` adds `mailing_list` when its latest message is received: `{sender_email, month, year, unsubscribed: {method, at}|null}`, where month and year count that sender's received messages in the last 30 and 365 days. `message_source` adds `unsubscribe`: null or `{method, url|address}`, from `fm_mail::unsubscribe` (one-click needs `List-Unsubscribe-Post: List-Unsubscribe=One-Click` and an https URI; then mailto; then a header http(s) URI; then the last body link naming unsubscribe or opt out). `unsubscribe_begin`/`resolve`/`unsubscribe_record` serve the engine and refuse sent messages and stale sources. `google_threads_present` tells remote search which Gmail threads have a stored message. Archive deletion clears `unsubscribes` with the account's other rows. The engine's remote-content method `message_unsubscribe {id, source_version}` POSTs `List-Unsubscribe=One-Click` for `one_click` (public https only, blocked hosts refused, through the proxy when set, 2xx required; else `unsubscribe_failed` or `proxy_unavailable`), records `link` and returns its URL for the browser, and refuses `mailto`. Consumers: Gmail29, Mail UI85, CLI50.
+
 ## D117 — Inbox counts (Core65)
 
 `accounts` rows and `account_counts` add `inbox_review_count` (conversations with an Inbox member, unread) and `inbox_held_count` (the same, starred), matching the Inbox's review and held groups. Trash and archived mail are left out. The existing all-mail counts and `count_scope` are unchanged. Consumers: Mail UI84, CLI (printed as received).

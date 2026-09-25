@@ -1,5 +1,28 @@
 # Gmail provider
 
+
+
+## D120 — Spam and Trash actions, full mail access (Gmail30)
+
+- Write-mode mail access requests `https://mail.google.com/` instead of `gmail.modify` (also in `GOOGLE_SCOPES`). `ScopeSet::mail_full()` is true only for that scope; `mail_write` still accepts either.
+- `GmailCall::thread` now asks `fields=id,messages(id,labelIds)` and returns `GmailThreadMessage {id, label_ids}`. New `GmailCall::label(id)` (`labels.get`, 1 unit, `LabelCounts {messages_total, threads_total}`) and `GmailCall::batch_delete(ids)` (`messages.batchDelete`, 1–1,000 ids, 50 units, state-mutation class; an empty or `{}` body is `Deleted`).
+- `google_spam_list` rows add `thread_id`.
+- `google_bin_counts {folder: spam|trash}`: the label's totals.
+- `google_not_spam {thread_id}`: needs mail write; each message of the thread labelled SPAM gets `messages.modify` add INBOX, remove SPAM. Sync brings them in.
+- `google_delete_forever {folder:"spam", thread_id}` or `{folder:"trash", conversation_id}`: needs full access, else `reconnect_required`. Spam deletes the thread's SPAM messages; Trash deletes the stored conversation's trashed messages (Core67). Local copies are then forgotten. Returns `{folder, deleted}`.
+- `google_empty {folder}`: needs full access; lists `in:spam`/`in:trash` (spam and trash included) 500 at a time up to 10,000, batch-deletes them, forgets local copies; returns `{folder, deleted, more}`.
+- All run on the account's active sync (`sync_not_running` otherwise). GUI operation timeouts: 60 s, emptying 300 s.
+
+Consumers: Core67, Mail UI87, CLI51.
+
+## D118 — remote search and unsubscribe email (Gmail29)
+
+- `GmailCall::thread` (`threads.get format=minimal fields=id,messages/id`, 10 units; 404 is `None`).
+- `google_remote_search {query, folder}` lists 50 messages with the folder-scoped `q`, groups them by thread, drops threads with a stored message and reads metadata for up to 25 (eight at a time). Rows use the list row shape with `remote`, `remote_thread_id`, id `remote:<thread>` and `group: done`.
+- `google_remote_thread {thread_id}` reads the thread's newest 50 messages as raw MIME under the preparation permit and returns a conversation-shaped reply (`remote: true`; messages `remote-<id>` with text, labels as unread/starred/sent, attachments `remote-att:<id>:<index>`; the newest carries `body_html`), trimmed to fit one IPC frame.
+- `google_remote_attachment {id}` reads that message again and writes the part to `<profile>/cache/remote` (newest 16 kept), returning the `attachment` reply shape.
+- `google_unsubscribe_mail {id, source_version}` sends one message (`messages.send`, 100 units) to a stored message's `List-Unsubscribe` mailto address and records it when Google accepts. A rejected send is `unsubscribe_failed`; no definitive response is `send_unknown` and records nothing. It needs mail write scope; the others need mail read. All need an active account sync and store no mail. Consumers: Core66, Mail UI85, CLI50.
+
 ## D116 — Spam stays at Google (Gmail28)
 
 - Full listings use `includeSpamTrash=true` with `q` ending ` -in:spam` (Recent: `after:N -in:spam`; Inventory: `-in:spam` or `after:N -in:spam`). Trash is still acquired.

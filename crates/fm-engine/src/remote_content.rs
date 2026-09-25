@@ -15,6 +15,7 @@ use fm_core::view_cache::ViewCache;
 use fm_core::{CoreError, Result};
 use fm_google::transport::CancellationToken;
 use fm_google::vault::NativeSecret;
+use fm_mail::unsubscribe::Unsubscribe;
 use serde_json::{json, Value};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex, RwLock};
@@ -108,6 +109,7 @@ impl Runtime {
                 | "remote_proxy_test"
                 | "remote_proxy_password"
                 | "remote_image_cache"
+                | "message_unsubscribe"
         )
     }
 
@@ -138,6 +140,12 @@ impl Runtime {
                     .ok_or_else(|| failure("account_required", "Choose an account"))?
                     .to_owned();
                 self.image(cancel, account, params).await
+            }
+            "message_unsubscribe" => {
+                let account = account
+                    .ok_or_else(|| failure("account_required", "Choose an account"))?
+                    .to_owned();
+                self.unsubscribe(cancel, account, params).await
             }
             "remote_proxy_test" => {
                 only(&params, &[])?;
@@ -292,6 +300,104 @@ impl Runtime {
             Ok(ready(path, image.width, image.height))
         })
         .await
+    }
+
+    /// Unsubscribe from a received message's list, the way its headers or body
+    /// allow: a one-click POST here, or the unsubscribe page for the person's
+    /// browser. An unsubscribe email goes through Google instead.
+    async fn unsubscribe(
+        &self,
+        cancel: CancellationToken,
+        account: String,
+        params: Value,
+    ) -> Result<Value> {
+        let plan = self
+            .core
+            .call(move |store| store.unsubscribe_begin(&account, &params))
+            .await?;
+        let (plan, found) = self
+            .blocking(&cancel, move |_| {
+                let found = fm_core::unsubscribe::resolve(&plan)?;
+                Ok((plan, found))
+            })
+            .await?;
+        let settings = self
+            .core
+            .call(|store| store.remote_content_settings())
+            .await?;
+        let url = match found {
+            Unsubscribe::Mailto { .. } => {
+                return Err(failure(
+                    "invalid_request",
+                    "This list unsubscribes by email, which is sent through Google",
+                ))
+            }
+            Unsubscribe::Link { ref url } | Unsubscribe::OneClick { ref url }
+                if blocked_link(url, &settings.blocked) =>
+            {
+                return Err(failure(
+                    "blocked",
+                    "The unsubscribe address is on your blocked list",
+                ));
+            }
+            Unsubscribe::Link { url } => {
+                let recorded = self
+                    .core
+                    .call(move |store| store.unsubscribe_record(&plan, "link"))
+                    .await?;
+                return Ok(json!({"method":"link","url":url,"at":recorded["at"]}));
+            }
+            Unsubscribe::OneClick { url } => url,
+        };
+        let client = self.client(&settings).map_err(|_| {
+            failure(
+                "proxy_unavailable",
+                "The image proxy is unavailable, so nothing was sent",
+            )
+        })?;
+        let target = reqwest::Url::parse(&url)
+            .map_err(|_| failure("unsubscribe_failed", "The unsubscribe address is not valid"))?;
+        check_url(&target, &settings.blocked, self.policy.allow_loopback()).map_err(|_| {
+            failure(
+                "unsubscribe_failed",
+                "The unsubscribe address is not a public https address",
+            )
+        })?;
+        let proxied = settings.proxy.is_some();
+        // RFC 8058: an https POST of exactly this form body, without cookies.
+        let response = tokio::select! {
+            biased;
+            _ = cancel.cancelled() => return Err(stopped()),
+            response = client
+                .post(target)
+                .header(reqwest::header::ACCEPT, "*/*")
+                .header(reqwest::header::CONTENT_TYPE, "application/x-www-form-urlencoded")
+                .body("List-Unsubscribe=One-Click")
+                .send() => response,
+        };
+        let accepted = match response {
+            Ok(response) => response.status().is_success(),
+            Err(e) => match classify(&e, proxied) {
+                Failure::Proxy(_) => {
+                    return Err(failure(
+                        "proxy_unavailable",
+                        "The image proxy is unavailable, so nothing was sent",
+                    ))
+                }
+                _ => false,
+            },
+        };
+        if !accepted {
+            return Err(failure(
+                "unsubscribe_failed",
+                "The list did not accept the unsubscribe. Try again later.",
+            ));
+        }
+        let recorded = self
+            .core
+            .call(move |store| store.unsubscribe_record(&plan, "one_click"))
+            .await?;
+        Ok(json!({"method":"one_click","at":recorded["at"]}))
     }
 
     /// A client for the current proxy choice. Errors name why the proxy cannot be used.
@@ -545,6 +651,16 @@ fn build_client(
             .dns_resolver(Arc::new(PublicResolver { allow_loopback })),
     };
     builder.build()
+}
+
+/// Whether a link's host is on the blocked list.
+fn blocked_link(url: &str, blocked: &[String]) -> bool {
+    url::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_ascii_lowercase))
+        .is_some_and(|host| {
+            fm_mail::html_view::blocked_by(blocked.iter().map(String::as_str), &host).is_some()
+        })
 }
 
 /// Scheme, port, host shape and blocklist for a request or redirect target.

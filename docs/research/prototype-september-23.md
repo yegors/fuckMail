@@ -1,5 +1,33 @@
 # September 23 prototype implementation
 
+
+## D120 — tenth export (2026-09-25)
+
+The founder supplied `Flight Progress v2 (offline) (3).html` (818,825 bytes, SHA-256 `6ed682f59fb94bdaae9745579671cccbc7c09aba5456980285f65b0093d1dc03`) with the designer's list of changes; the developer console part belongs to D119. The bundle was unpacked and the strip builder, folder tabs, Spam/Trash list, action bar and confirm markup were read for sizes, colours and text:
+- **Strip:** `relTxt`, the marker's px estimate, the hour-label filter (not the start, not 24, clear of the marker and of now), `sepColor` and `hourLines.slice(1)`.
+- **Tabs:** Spam/Trash 14 px weight 500, `.32` ink until chosen, a 1×14 px `.14` divider with 4 px margins.
+- **Bin:** strip 11.5 px `.45` with a rule and a `.7` Empty label (red on hover); rows with a 2 px gold inset on the selected one; header icons (shield, bin) and titles; the action bar's filled Restore/Move to Inbox and red-outline Delete permanently; confirm copy.
+
+The founder's own requests (now lines everywhere, fix the notices row, check earlier work) were handled alongside. Before the change, a Week capture showed the line correctly at 00:40 in a tall window, so the missing line came from a remembered 07:00 scroll position in shorter windows; the strip's 07–22 default hid it; Month drew it after an all-day event.
+
+Verification on Windows, Release build in `build/p9` (the running app was left alone):
+- **Rust:** `cargo test` for fm-core (367), fm-engine, fm-google, fm-mail and fm-cli pass; clippy clean. New: Core `deleting_for_good_forgets_trash_but_keeps_draft_sources`, `fresh_profiles_carry_the_calendar_mail_count_date_index`, the restore test now expecting INBOX, engine `only_spam_and_trash_are_emptied`, and the scope test's `mail_full`.
+- **Native:** the 30 fast GUI tests plus `gui-smoke`, `gui-live-empty`, `gui-integration` (including the settings self-test, adjusted for the 0–24 default, and the calendar self-test reading the new marker) and `gui-attachments` pass. `gui-mail-selection` covers the Spam tab, one row per thread, the header count, the strip, opening in the normal reader with the Spam actions, the delete confirm text, the reconnect prompt, Move to Inbox and the empty state. `gui-html-message-body` checks that the image and Unsubscribe buttons keep their full width inside their rows, also at 380 px.
+- **Also:** CTest `rust-workspace` passes. `gui_startup_recovers_after_writer_closes` passes when run directly with the built GUI (5.7 s); the CTest entry times out because cargo rebuilds the shared `target` inside its 90 s limit.
+- **Captures:** Spam with its action bar and the delete confirm (`FM_BIN_CAPTURE`), Week and Month at 01:45 on 25 September, the Mail strip at 0–24, and the notices row (`FM_NOTICES_CAPTURE`).
+
+Not verified: real Gmail not-spam, delete-for-good and empty, reconnecting for full access, Trash's action bar by capture (the demo profile is synthetic and hides Spam/Trash), and Mac/Linux.
+
+## D118 — ninth export (2026-09-25)
+
+The founder supplied `Flight Progress v2 (offline).html` (774,731 bytes, SHA-256 `aa4b5bf7fa7bf413c29edbd979568cc411b3c54f66eb57b85d7e4486e32c37c9`) with the designer's list of changes, and asked for unsubscribe to be built for real. The bundle was unpacked; each note was matched to the component's `calTitle`/`calSub`/`weekSub`, the remote-search row (`toggleRemote`, `rsNote`), `retBadge`/`retTitle`, and the thread's `hasNotice`/`hasUnsub`/`hasImgBar` logic and markup. Where the notes and the export differ, the notes win: the export puts Today after the day title and shows week years only when they differ.
+
+Verification on Windows, Release build in `build/p9` (the running app in `build/release` was left alone):
+- **Rust:** CTest `rust-workspace` passes. New tests: `fm-mail` unsubscribe parsing (one-click, mailto, folded headers, HTML and plain body links), Core `unsubscribes_are_found_remembered_and_counted` and `schema36_profiles_gain_unsubscribes` (the four older upgrade tests now also drop the new table), engine query translation, remote message projection and frame fitting. Clippy is clean for the touched crates.
+- **Native:** CTest 36/36. `gui-mail-selection` covers remote search (folder-scoped query, Done-by-month placement, exclusion from bulk actions, stale rows leaving on a new query, switch off), opening a remote thread (formatted newest message, no draft read or read-on-open, no mutation, not remembered), one-click and mailto unsubscribe routing and the remembered state, and the Accounts retention badge. `gui-html-message-body` covers the notices group: the images row text and buttons, the group hiding with no rows, the mailing-list counts, Unsubscribing…, and both done texts.
+
+Not verified: a real Gmail remote search or thread, a real one-click POST or unsubscribe email, visual capture against the export, and Mac/Linux.
+
 ## D113 — eighth export (2026-09-24)
 
 The founder supplied `fuckMail (1).html` (761,098 bytes, SHA-256 `bd4cb90b41892a830c7c058e19411c4d36d55fcde1570256b8c6fd8e237b2cb0`). Diffed against the seventh export's unpacked component and markup, apart from renamed resource ids it changes:

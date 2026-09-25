@@ -174,7 +174,19 @@ Rectangle {
                 RowLayout {
                     Layout.fillWidth: true; spacing: 6
                     FmIcon { name: "google"; size: 12; color: Theme.inkAlpha(.5); visible: !backend.syntheticProfile }
-                    Text { text: card.modelData.email; color: Theme.inkAlpha(.5); font.pointSize: Theme.fontPoints(12.5); elide: Text.ElideRight; Layout.fillWidth: true; textFormat: Text.PlainText }
+                    Text { text: card.modelData.email; color: Theme.inkAlpha(.5); font.pointSize: Theme.fontPoints(12.5); elide: Text.ElideRight; Layout.fillWidth: true; Layout.maximumWidth: implicitWidth; textFormat: Text.PlainText }
+                    // Local Retention, changed through Edit…; mail past it is still in Google.
+                    Rectangle {
+                        id: retentionBadge
+                        objectName: "accountRetention_" + card.accountId
+                        readonly property string period: ({"1_month": "1 month", "3_months": "3 months", "90_days": "90 days", "1_year": "1 year", "2_years": "2 years", "5_years": "5 years"})[card.modelData.mail_retention || "all"] || ""
+                        implicitWidth: retentionText.implicitWidth + 12; implicitHeight: 16; radius: 3
+                        color: "transparent"; border.width: Theme.ruleWidth; border.color: Theme.controlBorder
+                        Text { id: retentionText; anchors.centerIn: parent; text: retentionBadge.period ? "Keeps " + retentionBadge.period : "Keeps everything"; color: Theme.inkAlpha(.6); font.pointSize: Theme.fontPoints(11); textFormat: Text.PlainText }
+                        HoverHandler { id: retentionHover }
+                        FmToolTip { shown: retentionHover.hovered; text: retentionBadge.period ? "Mail older than " + retentionBadge.period + " is removed from this machine · still in Google" : "All mail is kept on this machine" }
+                    }
+                    Item { Layout.fillWidth: true }
                 }
             }
             // One status line: Downloading / Processing / Up to date / Paused / Disconnected.

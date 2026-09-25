@@ -14,11 +14,6 @@ use fm_google::transport::CancellationToken;
 use rusqlite::{params, OptionalExtension};
 use serde_json::{json, Value};
 
-pub(crate) const SCHEMA: &str = "CREATE TABLE link_hosts(id INTEGER PRIMARY KEY,rhost TEXT NOT NULL UNIQUE) STRICT;
-CREATE TABLE message_link_hosts(host INTEGER NOT NULL REFERENCES link_hosts(id),message_rowid INTEGER NOT NULL REFERENCES messages(rowid) ON DELETE CASCADE,PRIMARY KEY(host,message_rowid)) STRICT, WITHOUT ROWID;
-CREATE INDEX message_link_hosts_message ON message_link_hosts(message_rowid);
-CREATE TABLE link_index_state(singleton INTEGER PRIMARY KEY CHECK(singleton=1),indexed_rowid INTEGER NOT NULL) STRICT;";
-
 const MAX_HOSTS_PER_MESSAGE: usize = 200;
 const MAX_PEOPLE_PER_MESSAGE: usize = 100;
 /// Names listed for a conversation's other people.

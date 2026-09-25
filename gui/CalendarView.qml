@@ -45,8 +45,8 @@ Item {
         return true
     }
     property var visibleEvents: combinedAccounts ? backend.events : backend.events.filter(function(e) { return e.account === backend.account })
-    readonly property real workingStart: backend.preferences.timeline_start_hour === undefined ? 7 : backend.preferences.timeline_start_hour
-    readonly property real workingEnd: backend.preferences.timeline_end_hour === undefined ? 21 : backend.preferences.timeline_end_hour
+    readonly property real workingStart: backend.preferences.timeline_start_hour === undefined ? 0 : backend.preferences.timeline_start_hour
+    readonly property real workingEnd: backend.preferences.timeline_end_hour === undefined ? 24 : backend.preferences.timeline_end_hour
     property var rangeDrag: ({})
     property var agendaEvents: {
         let seen = {}
@@ -140,7 +140,6 @@ Item {
         const end = t + ghostHeight / hourHeight
         return !eventsAt(index).some(function(e) { return !e.all_day && !calendar.editingEvent(e) && e.start_hour < end && e.start_hour + e.duration_hours > t })
     }
-    function rangeTitle() { return Qt.formatDate(dateAt(0), dateAt(0).getMonth() === dateAt(6).getMonth() ? "d" : "d MMM") + " – " + Qt.formatDate(dateAt(6), "d MMMM") }
     // Events bucketed by grid day once per change, in presentation order.
     readonly property var eventsByDay: {
         const days = []
@@ -188,10 +187,14 @@ Item {
     // The account colour marks an event; other accounts' events use it at half strength.
     function sourceRule(event) { return event.busy_only ? Theme.inkAlpha(.45) : event.account === backend.account ? Theme.accountColor(event.account) : Theme.accountTint(event.account, .5) }
     readonly property string accountName: (backend.accounts.find(function(a) { return a.id === backend.account }) || {}).name || backend.account
-    function subtitle() {
-        const count = agendaEvents.length, events = count + (count === 1 ? " event" : " events")
-        return (backend.calendarView === "week" ? rangeTitle() : backend.calendarView === "day" && backend.calendarDate === backend.todayDate ? "Today · " + events : events) + " · " + accountName
+    // Day: the full date, after Today/Tomorrow/Yesterday when one applies.
+    function dayTitle() {
+        const offset = Math.round((new Date(backend.calendarDate + "T12:00:00") - new Date(backend.todayDate + "T12:00:00")) / 86400000)
+        const relative = offset === 0 ? "Today" : offset === 1 ? "Tomorrow" : offset === -1 ? "Yesterday" : ""
+        return (relative ? relative + " · " : "") + Qt.formatDate(new Date(backend.calendarDate + "T12:00:00"), "dddd MMMM d yyyy")
     }
+    // Week: the range with the year on both ends. The event count and account are shown elsewhere.
+    function subtitle() { return backend.calendarView === "week" ? Qt.formatDate(dateAt(0), "d MMMM yyyy") + " – " + Qt.formatDate(dateAt(6), "d MMMM yyyy") : "" }
     function conferenceLabel(url) {
         const value = String(url || "").toLowerCase()
         return !value ? "" : value.indexOf("meet.google") >= 0 ? "Google Meet" : value.indexOf("teams") >= 0 ? "Teams" : value.indexOf("zoom") >= 0 ? "Zoom" : "Video call"
@@ -211,6 +214,20 @@ Item {
         laidOutGridHeight = gridScroll.height
         restoringGridPosition = false
     }
+    // Bring the now line into view when a day or week containing today opens
+    // and the remembered position would leave it off screen.
+    readonly property string gridRange: timeGrid ? backend.calendarView + ":" + backend.calendarFrom + ":" + backend.todayDate : ""
+    onGridRangeChanged: Qt.callLater(revealNow)
+    function revealNow() {
+        if (!visible || !timeGrid || gridScroll.moving || gridScroll.height <= 0) return
+        let today = false
+        for (let i = 0; i < dayCount; ++i) today = today || isoAt(i) === backend.todayDate
+        if (!today) return
+        const y = backend.nowHour * hourHeight
+        if (y >= gridScroll.contentY + 12 && y <= gridScroll.contentY + gridScroll.height - 24) return
+        retainedTopHour = Math.max(0, backend.nowHour - gridScroll.height / 4 / hourHeight)
+        preserveGridPosition()
+    }
     function rememberGridPosition() {
         // Ignore Flickable's automatic clamp while geometry is changing. Keep
         // the intended time so a taller-then-shorter resize can restore it.
@@ -224,7 +241,7 @@ Item {
         function onEventsChanged() { if (calendar.rangeDrag.index !== undefined && (calendar.rangeDrag.from !== backend.calendarFrom || calendar.rangeDrag.view !== backend.calendarView)) calendar.cancelRange(); calendar.hoverSlot = ({}); calendar.updateMailActivityContext() }
     }
     onHourHeightChanged: Qt.callLater(preserveGridPosition)
-    onVisibleChanged: { updateMailActivityContext(); if (!visible) { cancelRange(); details.close(); datePicker.close(); moreMenu.close(); allDayOverflow.close() } }
+    onVisibleChanged: { updateMailActivityContext(); if (visible) Qt.callLater(revealNow); if (!visible) { cancelRange(); details.close(); datePicker.close(); moreMenu.close(); allDayOverflow.close() } }
     Shortcut { sequence: ShortcutRegistry.sequence("day",backend.preferences); enabled: calendar.shortcutsEnabled; onActivated: backend.setCalendarView("day") }
     Shortcut { sequence: ShortcutRegistry.sequence("week",backend.preferences); enabled: calendar.shortcutsEnabled; onActivated: backend.setCalendarView("week") }
     Shortcut { sequence: ShortcutRegistry.sequence("month",backend.preferences); enabled: calendar.shortcutsEnabled; onActivated: backend.setCalendarView("month") }
@@ -264,8 +281,8 @@ Item {
             Layout.fillWidth: true; Layout.topMargin: 24; Layout.bottomMargin: 16; spacing: 12
             Item {
                 Layout.fillWidth: true; implicitHeight: calendarTitle.implicitHeight
-                Text { id: calendarTitle; objectName: "calendarTitle"; anchors.verticalCenter: parent.verticalCenter; text: backend.calendarView === "week" ? "Week " + calendar.weekNumber() : backend.calendarView === "agenda" ? "Agenda" : Qt.formatDate(new Date(backend.calendarDate + "T12:00:00"), backend.calendarView === "day" ? "dddd d MMMM" : "MMMM yyyy"); color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(22); font.weight: Font.Medium; font.letterSpacing: -0.44 }
-                Text { objectName: "calendarSubtitle"; x: calendarTitle.width + 12; width: Math.max(0, parent.width - x); anchors.baseline: calendarTitle.baseline; text: calendar.subtitle(); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); visible: calendar.width > 1050; elide: Text.ElideRight; textFormat: Text.PlainText }
+                Text { id: calendarTitle; objectName: "calendarTitle"; anchors.verticalCenter: parent.verticalCenter; text: backend.calendarView === "week" ? "Week " + calendar.weekNumber() : backend.calendarView === "agenda" ? "Agenda" : backend.calendarView === "day" ? calendar.dayTitle() : Qt.formatDate(new Date(backend.calendarDate + "T12:00:00"), "MMMM yyyy"); color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(22); font.weight: Font.Medium; font.letterSpacing: -0.44 }
+                Text { objectName: "calendarSubtitle"; x: calendarTitle.width + 12; width: Math.max(0, parent.width - x); anchors.baseline: calendarTitle.baseline; text: calendar.subtitle(); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13); visible: text.length > 0 && calendar.width > 1050; elide: Text.ElideRight; textFormat: Text.PlainText }
             }
             Item {
                 implicitWidth: combinedRow.width + 8; implicitHeight: 30
@@ -406,7 +423,7 @@ Item {
             visible: backend.calendarView === "day" || backend.calendarView === "week"; Layout.fillWidth: true; Layout.fillHeight: true; Layout.bottomMargin: 16; spacing: 32
             Flickable {
                 id: gridScroll; objectName: "calendarGrid"; Layout.fillWidth: true; Layout.fillHeight: true; clip: true; contentWidth: width; contentHeight: 24 * calendar.hourHeight + 10; boundsBehavior: Flickable.StopAtBounds
-                Component.onCompleted: Qt.callLater(calendar.preserveGridPosition)
+                Component.onCompleted: { Qt.callLater(calendar.preserveGridPosition); Qt.callLater(calendar.revealNow) }
                 onHeightChanged: Qt.callLater(calendar.preserveGridPosition)
                 onContentYChanged: calendar.rememberGridPosition()
                 onMovementEnded: { calendar.retainedTopHour = Math.max(0, contentY) / calendar.hourHeight; backend.remember("calendarY", contentY); Qt.callLater(calendar.preserveGridPosition) }
@@ -602,13 +619,17 @@ Item {
                         readonly property bool isToday: day.iso === backend.todayDate
                         readonly property bool past: !!day.iso && day.iso < backend.todayDate
                         readonly property int fit: Math.min(3, Math.max(0, Math.floor((height - 50) / 18) - (dayEvents.length * 18 > height - 50 ? 1 : 0)))
-                        // Today shows a window around now: the last finished event, then the
-                        // upcoming ones; two rows when the now line is needed and more wait.
-                        readonly property int upcoming: isToday ? dayEvents.findIndex(function(e) { return !e.all_day && e.start_hour + e.duration_hours > backend.nowHour }) : -1
-                        readonly property bool needLine: isToday && dayEvents.length > 0 && upcoming !== 0
-                        readonly property int cap: Math.min(fit, needLine && dayEvents.length > 2 ? 2 : 3)
-                        readonly property int first: !isToday || upcoming === 0 ? 0 : upcoming > 0 ? Math.max(0, Math.min(upcoming - 1, dayEvents.length - cap)) : Math.max(0, dayEvents.length - cap)
-                        readonly property int shown: Math.max(0, Math.min(cap, dayEvents.length - first))
+                        // Today orders finished timed events first, then all-day and upcoming
+                        // ones, so the now line sits where the day is: at the top just after
+                        // midnight. It shows a window around now: the last finished event,
+                        // then the rest; two rows when the now line is needed and more wait.
+                        readonly property var finishedEvents: isToday ? dayEvents.filter(function(e) { return !e.all_day && e.start_hour + e.duration_hours <= backend.nowHour }) : []
+                        readonly property var rows: isToday ? finishedEvents.concat(dayEvents.filter(function(e) { return finishedEvents.indexOf(e) < 0 })) : dayEvents
+                        readonly property int upcoming: isToday && finishedEvents.length < rows.length ? finishedEvents.length : -1
+                        readonly property bool needLine: isToday && rows.length > 0
+                        readonly property int cap: Math.min(fit, needLine && rows.length > 2 ? 2 : 3)
+                        readonly property int first: !isToday || upcoming === 0 ? 0 : upcoming > 0 ? Math.max(0, Math.min(upcoming - 1, rows.length - cap)) : Math.max(0, rows.length - cap)
+                        readonly property int shown: Math.max(0, Math.min(cap, rows.length - first))
                         readonly property int nowRow: needLine ? (upcoming >= first && upcoming < first + shown ? upcoming - first : -1) : -2
                         function eventDone(e) { return isToday ? !e.all_day && e.start_hour + e.duration_hours <= backend.nowHour : past }
                         Layout.fillWidth: true; Layout.fillHeight: true; Layout.preferredWidth: 1; Layout.preferredHeight: 1; clip: true
@@ -636,16 +657,16 @@ Item {
                             }
                             }
                             // At most three rows fit. A count model keeps rows while the grid lays out and on navigation.
-                            Repeater { model: Math.min(3, monthCell.dayEvents.length)
+                            Repeater { model: Math.min(3, monthCell.rows.length)
                                 Rectangle {
-                                    id: monthEvent; required property int index; readonly property var modelData: monthCell.dayEvents[monthCell.first + index] || ({}); visible: index < monthCell.shown; width: monthCell.width - 16; height: Math.round(Theme.fontSize(11.5) * 1.3); color: "transparent"
+                                    id: monthEvent; required property int index; readonly property var modelData: monthCell.rows[monthCell.first + index] || ({}); visible: index < monthCell.shown; width: monthCell.width - 16; height: Math.round(Theme.fontSize(11.5) * 1.3); color: "transparent"
                                     readonly property real doneOpacity: monthCell.eventDone(modelData) ? .5 : 1
                                     Rectangle { width: 2; height: parent.height; opacity: monthEvent.doneOpacity; color: monthCell.inMonth ? calendar.sourceRule(parent.modelData) : Theme.line3 }
                                     // The now line takes no height: drawn over the gap above this row, or
                                     // below the last shown row when every shown event has finished.
                                     Item {
                                         objectName: "calendarNowLine-" + monthCell.day.iso
-                                        readonly property bool before: monthEvent.index === monthCell.nowRow && (monthEvent.index > 0 || monthCell.first > 0)
+                                        readonly property bool before: monthEvent.index === monthCell.nowRow
                                         readonly property bool after: monthCell.nowRow === -1 && monthEvent.index === monthCell.shown - 1
                                         visible: before || after; z: 3
                                         x: 4; y: before ? -2 : monthEvent.height + 1; width: monthEvent.width - 4; height: 1
@@ -667,8 +688,8 @@ Item {
                                 }
                             }
                             Loader {
-                                active: monthCell.dayEvents.length > monthCell.shown; visible: active
-                                sourceComponent: FmButton { text: "+ " + (monthCell.dayEvents.length - monthCell.shown) + " more"; height: Math.round(Theme.fontSize(11) * 1.4); leftPadding: 8; rightPadding: 0; topPadding: 0; bottomPadding: 0; textAlignment: Text.AlignLeft; foreground: hovered ? Theme.text : Theme.inkAlpha(.45); font.pointSize: Theme.fontPoints(11); background: Item {} onClicked: calendar.openDay(monthCell.index) }
+                                active: monthCell.rows.length > monthCell.shown; visible: active
+                                sourceComponent: FmButton { text: "+ " + (monthCell.rows.length - monthCell.shown) + " more"; height: Math.round(Theme.fontSize(11) * 1.4); leftPadding: 8; rightPadding: 0; topPadding: 0; bottomPadding: 0; textAlignment: Text.AlignLeft; foreground: hovered ? Theme.text : Theme.inkAlpha(.45); font.pointSize: Theme.fontPoints(11); background: Item {} onClicked: calendar.openDay(monthCell.index) }
                             }
                         }
                     }

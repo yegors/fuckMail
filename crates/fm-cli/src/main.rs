@@ -450,6 +450,41 @@ enum Google {
     },
     /// Read one Spam message's text live from Gmail without storing it.
     SpamShow { id: String },
+    /// Search the account on Gmail; lists threads with nothing on this machine, read live.
+    Search {
+        query: String,
+        #[arg(long,default_value="all",value_parser=["inbox","sent","all","trash","drafts"])]
+        folder: String,
+    },
+    /// Read a remote search result's thread live from Gmail without storing it.
+    Thread { thread_id: String },
+    /// Fetch one attachment of a remote thread into the view cache and print its path.
+    Attachment { id: String },
+    /// Gmail's message and conversation totals for Spam or Trash.
+    BinCount {
+        #[arg(value_parser=["spam","trash"])]
+        folder: String,
+    },
+    /// Move a Spam thread to the Inbox, marking it not spam.
+    NotSpam { thread_id: String },
+    /// Delete one conversation's Spam or Trash messages for good (Spam takes a
+    /// Gmail thread id, Trash a conversation id). Needs full mail access.
+    DeleteForever {
+        #[arg(value_parser=["spam","trash"])]
+        folder: String,
+        id: String,
+        /// Confirm: this cannot be undone.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Delete everything in Spam or Trash for good. Needs full mail access.
+    Empty {
+        #[arg(value_parser=["spam","trash"])]
+        folder: String,
+        /// Confirm: this cannot be undone.
+        #[arg(long)]
+        yes: bool,
+    },
     /// Begin or resume remote Drafts inventory through an already owned sync session.
     DraftsRefresh,
     /// Read cached remote Drafts coverage without contacting Google.
@@ -556,6 +591,14 @@ enum Mail {
     Read { id: String },
     /// Inspect retained message headers, HTML and source without marking reviewed.
     Source {
+        id: String,
+        #[arg(long)]
+        source_version: String,
+    },
+    /// Unsubscribe from a received message's mailing list: one-click in the
+    /// background, the list's unsubscribe email through Google, or print the
+    /// unsubscribe page to open.
+    Unsubscribe {
         id: String,
         #[arg(long)]
         source_version: String,
@@ -1879,6 +1922,68 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 .await?
         }
         Command::Google {
+            command: Google::Search { query, folder },
+        } => {
+            client
+                .call(
+                    "google_remote_search",
+                    scope,
+                    json!({"query":query,"folder":folder}),
+                )
+                .await?
+        }
+        Command::Google {
+            command: Google::Thread { thread_id },
+        } => {
+            client
+                .call("google_remote_thread", scope, json!({"thread_id":thread_id}))
+                .await?
+        }
+        Command::Google {
+            command: Google::Attachment { id },
+        } => {
+            client
+                .call("google_remote_attachment", scope, json!({"id":id}))
+                .await?
+        }
+        Command::Google {
+            command: Google::BinCount { folder },
+        } => {
+            client
+                .call("google_bin_counts", scope, json!({"folder":folder}))
+                .await?
+        }
+        Command::Google {
+            command: Google::NotSpam { thread_id },
+        } => {
+            client
+                .call("google_not_spam", scope, json!({"thread_id":thread_id}))
+                .await?
+        }
+        Command::Google {
+            command: Google::DeleteForever { folder, id, yes },
+        } => {
+            if !yes {
+                return Err(invalid("Deleting for good cannot be undone; add --yes"));
+            }
+            let target = if folder == "spam" {
+                json!({"folder":folder,"thread_id":id})
+            } else {
+                json!({"folder":folder,"conversation_id":id})
+            };
+            client.call("google_delete_forever", scope, target).await?
+        }
+        Command::Google {
+            command: Google::Empty { folder, yes },
+        } => {
+            if !yes {
+                return Err(invalid("Emptying cannot be undone; add --yes"));
+            }
+            client
+                .call("google_empty", scope, json!({"folder":folder}))
+                .await?
+        }
+        Command::Google {
             command:
                 Google::CategoryBind {
                     category_id,
@@ -2463,6 +2568,19 @@ async fn run(args: &Args) -> Result<(), Failure> {
                         json!({"id":id,"source_version":source_version}),
                     )
                     .await?
+            }
+            Mail::Unsubscribe { id, source_version } => {
+                let params = json!({"id":id,"source_version":source_version});
+                let source = client.call("message_source", scope, params.clone()).await?;
+                match source["unsubscribe"]["method"].as_str() {
+                    Some("mailto") => {
+                        client.call("google_unsubscribe_mail", scope, params).await?
+                    }
+                    Some(_) => client.call("message_unsubscribe", scope, params).await?,
+                    None => {
+                        return Err(invalid("This message has no way to unsubscribe"))
+                    }
+                }
             }
             Mail::Html { id, source_version } => {
                 client

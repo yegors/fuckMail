@@ -216,6 +216,7 @@ CREATE TABLE local_model_settings(id INTEGER PRIMARY KEY CHECK(id=1),revision IN
 CREATE TABLE local_model_settings_history(revision INTEGER PRIMARY KEY,settings_json TEXT NOT NULL) STRICT;
 CREATE TABLE message_categories(account TEXT NOT NULL,message_id TEXT NOT NULL,category_id TEXT NOT NULL,PRIMARY KEY(account,message_id,category_id),FOREIGN KEY(account,message_id) REFERENCES messages(account,id),FOREIGN KEY(account,category_id) REFERENCES categories(account,id)) STRICT;
 CREATE VIRTUAL TABLE message_fts USING fts5(sender,subject,body,tokenize='unicode61 remove_diacritics 2',prefix='2 3 4',content='',contentless_delete=1);
+CREATE TABLE unsubscribes(account TEXT NOT NULL,conversation_id TEXT NOT NULL,sender_email TEXT NOT NULL,method TEXT NOT NULL CHECK(method IN ('one_click','mailto','link')),unsubscribed_at TEXT NOT NULL,PRIMARY KEY(account,conversation_id,sender_email),FOREIGN KEY(account) REFERENCES accounts(id)) STRICT;
 CREATE TABLE message_sender_kinds(account TEXT NOT NULL,message_id TEXT NOT NULL,source_hash TEXT NOT NULL CHECK(length(source_hash)=64),kind TEXT NOT NULL CHECK(kind IN ('people','automated','unknown')),provenance TEXT NOT NULL CHECK(provenance IN ('fixture','ollama','openai_compatible','manual')),PRIMARY KEY(account,message_id),FOREIGN KEY(account,message_id) REFERENCES messages(account,id) ON DELETE CASCADE) STRICT;
 CREATE TABLE messages(rowid INTEGER PRIMARY KEY,account TEXT NOT NULL,id TEXT NOT NULL,conversation_id TEXT NOT NULL,remote_id TEXT NOT NULL,sender_name TEXT NOT NULL,sender_email TEXT NOT NULL,recipient TEXT NOT NULL,subject TEXT NOT NULL,body TEXT NOT NULL,sent_at TEXT NOT NULL,unread INTEGER NOT NULL,starred INTEGER NOT NULL,inbox INTEGER NOT NULL,sent INTEGER NOT NULL,source_hash TEXT NOT NULL,revision INTEGER NOT NULL DEFAULT 1, trashed INTEGER NOT NULL DEFAULT 0 CHECK(trashed IN (0,1)),UNIQUE(account,id),UNIQUE(account,remote_id),FOREIGN KEY(account,conversation_id) REFERENCES conversations(account,id)) STRICT;
 CREATE TABLE meta(key TEXT PRIMARY KEY,value INTEGER NOT NULL) STRICT;
@@ -284,6 +285,7 @@ CREATE INDEX google_send_recovery ON capture_operations(account,id)
 WHERE execution_kind='google' AND json_extract(json,'$.kind')='send' AND json_extract(json,'$.state')='in_flight';
 CREATE INDEX messages_conversation ON messages(account,conversation_id,sent_at,id);
 CREATE INDEX messages_order ON messages(account,sent_at DESC,id);
+CREATE INDEX messages_sender ON messages(account,sender_email COLLATE NOCASE,sent_at);
 CREATE INDEX messages_projection ON messages(account,conversation_id,sent_at,id,unread,starred,inbox,sent,source_hash);
 CREATE INDEX message_categories_by_category ON message_categories(account,category_id,message_id);
 

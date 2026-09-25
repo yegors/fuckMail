@@ -113,6 +113,7 @@ fn row(message: &GmailMessageMetadata) -> Value {
     let (name, email) = mailbox(message.header("From").unwrap_or(""));
     json!({
         "id": message.id,
+        "thread_id": message.thread_id,
         "sender_name": name,
         "sender_email": email,
         "subject": message.header("Subject").unwrap_or(""),
@@ -123,7 +124,7 @@ fn row(message: &GmailMessageMetadata) -> Value {
 }
 
 /// "Name <address>" or a bare address, as Gmail reports From.
-fn mailbox(from: &str) -> (String, String) {
+pub(super) fn mailbox(from: &str) -> (String, String) {
     match (from.rfind('<'), from.rfind('>')) {
         (Some(open), Some(close)) if open < close => {
             let name = from[..open].trim().trim_matches('"').trim();
@@ -134,7 +135,7 @@ fn mailbox(from: &str) -> (String, String) {
 }
 
 /// Google's snippet is HTML-escaped text.
-fn unescape(snippet: &str) -> String {
+pub(super) fn unescape(snippet: &str) -> String {
     snippet
         .replace("&quot;", "\"")
         .replace("&#39;", "'")
@@ -144,7 +145,7 @@ fn unescape(snippet: &str) -> String {
         .replace("&amp;", "&")
 }
 
-async fn require_mail_read(ctx: &SyncContext) -> Result<()> {
+pub(super) async fn require_mail_read(ctx: &SyncContext) -> Result<()> {
     let account = ctx.account.as_str().to_owned();
     ctx.core_call(move |store| {
         let allowed = store

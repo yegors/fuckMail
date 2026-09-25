@@ -84,12 +84,18 @@ pub fn read(plan: ReadPlan, cancel: &CancellationToken) -> Result<Value> {
     // body_html() then synthesizes HTML; expose only an actual HTML part.
     let html = fm_mail::html_view::html_part(&parsed);
     let (body_html, html_truncated) = bounded(html.unwrap_or(""));
+    let plain = parsed
+        .body_text(0)
+        .map(|t| t.into_owned())
+        .unwrap_or_default();
+    let unsubscribe =
+        crate::unsubscribe::describe(fm_mail::unsubscribe::unsubscribe(&parsed, &plain).as_ref());
     let (raw, raw_truncated) = bounded(&String::from_utf8_lossy(&bytes));
     if cancel.is_cancelled() {
         return Err(err("cancelled", "Message read cancelled"));
     }
     let mut result = json!({"account":plan.account,"id":plan.message,"source_version":plan.version,
-        "metadata":metadata,"body_html":body_html,"html_truncated":html_truncated,
+        "metadata":metadata,"unsubscribe":unsubscribe,"body_html":body_html,"html_truncated":html_truncated,
         "raw":raw,"raw_truncated":raw_truncated,"size":bytes.len()});
     fit_reply(&mut result)?;
     Ok(result)

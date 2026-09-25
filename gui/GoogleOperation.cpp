@@ -9,7 +9,8 @@ constexpr qsizetype maxFrame = 1024 * 1024;
 // fetches and the proxy test outlast the engine's 15-second fetch limit.
 bool remoteContent(const QString &method) {
     return method == "message_html" || method == "message_image" || method == "link_host_summary" || method == "link_pattern_counts"
-        || method == "remote_proxy_test" || method == "remote_proxy_password" || method == "remote_image_cache";
+        || method == "remote_proxy_test" || method == "remote_proxy_password" || method == "remote_image_cache"
+        || method == "message_unsubscribe";
 }
 }
 
@@ -56,6 +57,9 @@ void GoogleOperation::start(const QString &profile, qint64 enginePid, const QStr
         && method != "google_draft_delete" && method != "google_draft_delete_reconcile" && method != "google_draft_delete_abandon"
         && method != "draft_transfer" && method != "draft_attachment_import" && method != "google_draft_source" && method != "google_drafts_refresh"
         && method != "google_spam_list" && method != "google_spam_message"
+        && method != "google_remote_search" && method != "google_remote_thread" && method != "google_remote_attachment"
+        && method != "google_unsubscribe_mail" && method != "google_bin_counts" && method != "google_not_spam"
+        && method != "google_delete_forever" && method != "google_empty"
         && method != "conversation" && method != "message_source" && method != "assist_results" && method != "assist_settings_get"
         && !remoteContent(method)) {
         reject("invalid_request", "Unsupported Google operation."); return;
@@ -115,8 +119,12 @@ void GoogleOperation::receive() {
     m_hello = true;
     // Quota cooldown can exceed the ordinary local query timeout. The user can
     // cancel at any time; no timeout automatically repeats a provider mutation.
-    m_timer.start(m_method == "message_image" || m_method == "remote_proxy_test" ? 25000
-        : m_method == "google_spam_list" || m_method == "google_spam_message" ? 60000
+    m_timer.start(m_method == "message_image" || m_method == "remote_proxy_test" || m_method == "message_unsubscribe" ? 25000
+        : m_method == "google_spam_list" || m_method == "google_spam_message" || m_method == "google_remote_search"
+            || m_method == "google_unsubscribe_mail" || m_method == "google_bin_counts" || m_method == "google_not_spam"
+            || m_method == "google_delete_forever" ? 60000
+        : m_method == "google_empty" ? 300000
+        : m_method == "google_remote_thread" || m_method == "google_remote_attachment" ? 120000
         : m_method == "conversation" || m_method == "message_source" || m_method == "assist_results" || m_method == "assist_settings_get" || remoteContent(m_method) ? 15000
         : localImport ? 60 * 1000 : 10 * 60 * 1000);
     const auto params = std::exchange(m_params, QJsonObject{});

@@ -210,6 +210,17 @@ void HtmlContent::allowImages(const QString &account, const QString &email) {
     m_backend->setPreferences({{"remote_images_from", list}});
 }
 
+void HtmlContent::disallowImages(const QString &account, const QString &email) {
+    const auto address = email.trimmed().toLower();
+    auto list = m_backend->preferences().value("remote_images_from").toList();
+    const auto before = list.size();
+    list.removeIf([&](const QVariant &value) {
+        const auto entry = value.toMap();
+        return entry.value("account") == account && entry.value("email") == address;
+    });
+    if (list.size() != before) m_backend->setPreferences({{"remote_images_from", list}});
+}
+
 QVariantMap HtmlContent::linkSummary(const QString &input, const QString &conversation) {
     const auto account = m_backend->account();
     const auto host = HtmlLinks::withoutWww(input);

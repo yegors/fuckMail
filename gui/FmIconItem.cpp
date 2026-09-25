@@ -90,6 +90,17 @@ bool draw(const QString &name, Sketch &c) {
     else if (n == "redo") { c.line({10,2.5,13.5,6,10,9.5}); c.moveTo(13,6); c.cubicTo(2,3,1,13,8,13); }
     else if (n == "trash") { c.line({2.5,4,13.5,4}); c.line({6,2,10,2}); c.line({4,4,4.7,14,11.3,14,12,4}); c.line({6.5,6.5,6.8,11.5}); c.line({9.5,6.5,9.2,11.5}); }
     else if (n == "check") c.line({3.5,8,6.5,11,12.5,4.5});
+    // M8 2 13 4v4c0 3-2.2 5.2-5 6-2.8-.8-5-3-5-6V4zM6 8l1.5 1.5L10.5 6.5
+    else if (n == "shield") { c.moveTo(8,2); c.lineTo(13,4); c.lineTo(13,8); c.cubicTo(13,11,10.8,13.2,8,14); c.cubicTo(5.2,13.2,3,11,3,8); c.lineTo(3,4); c.path.closeSubpath(); c.line({6,8,7.5,9.5,10.5,6.5}); }
+    // M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5
+    else if (n == "bin") { c.line({3,4.5,13,4.5}); c.line({6.5,4.5,6.5,3,9.5,3,9.5,4.5}); c.line({4.5,4.5,5.1,13,10.9,13,11.5,4.5}); }
+    // M2.5 9.5h3l1 1.5h3l1-1.5h3M2.5 9.5 4 4h8l1.5 5.5V13h-11z
+    else if (n == "inbox") { c.line({2.5,9.5,5.5,9.5,6.5,11,9.5,11,10.5,9.5,13.5,9.5}); c.line({2.5,9.5,4,4,12,4,13.5,9.5,13.5,13,2.5,13,2.5,9.5}); }
+    // M3 7.5h7a3 3 0 0 1 0 6H7M5.5 5 3 7.5 5.5 10
+    else if (n == "restore") { c.moveTo(3,7.5); c.lineTo(10,7.5); c.svgArc(3,false,true,10,13.5); c.lineTo(7,13.5); c.line({5.5,5,3,7.5,5.5,10}); }
+    // M4.5 12.5h7a3 3 0 0 0 .4-6 4 4 0 0 0-7.7 1A2.5 2.5 0 0 0 4.5 12.5z
+    else if (n == "cloud") { c.moveTo(4.5,12.5); c.lineTo(11.5,12.5); c.svgArc(3,false,false,11.9,6.5); c.svgArc(4,false,false,4.2,7.5); c.svgArc(2.5,false,false,4.5,12.5); c.path.closeSubpath(); }
+    else if (n == "external") { c.line({9,3,13,3,13,7}); c.line({13,3,7.5,8.5}); c.line({11.5,9.5,11.5,13,2.5,13,2.5,4.5,6,4.5}); }
     else if (n == "plus") { c.line({8,3,8,13}); c.line({3,8,13,8}); }
     else if (n == "minus") c.line({3.5,8,12.5,8});
     else if (n == "combined") { c.roundedRect(2.5,2.5,6.5,6.5,1); c.roundedRect(7,7,6.5,6.5,1); }

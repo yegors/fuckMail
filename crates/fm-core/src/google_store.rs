@@ -276,7 +276,7 @@ impl PageStore for GooglePageStore<'_> {
         // hides provider-folder membership only, retaining authored/local data.
         for remote in &plan.explicitly_deleted_ids {
             tx.execute("UPDATE google_message_state SET deleted=1 WHERE account=?1 AND message_id IN (SELECT id FROM messages WHERE account=?1 AND remote_id=?2)",params![account,remote]).map_err(storage_error)?;
-            tx.execute("UPDATE messages SET inbox=0,sent=0,revision=revision+1 WHERE account=?1 AND remote_id=?2",params![account,remote]).map_err(storage_error)?;
+            tx.execute("UPDATE messages SET inbox=0,sent=0,trashed=0,revision=revision+1 WHERE account=?1 AND remote_id=?2",params![account,remote]).map_err(storage_error)?;
             tx.execute("UPDATE conversations SET revision=revision+1 WHERE account=?1 AND id IN (SELECT conversation_id FROM messages WHERE account=?1 AND remote_id=?2)",params![account,remote]).map_err(storage_error)?;
         }
         let next = serde_json::to_string(&plan.next).map_err(storage_error)?;

@@ -79,7 +79,7 @@ QVariantMap MailBackend::outgoingMessage(const QVariantMap &value) const {
 }
 
 QVariantList MailBackend::conversations() const {
-    auto rows=m_conversations;
+    auto rows=withRemoteRows(m_conversations);
     // Filters describe acquired mail. A pending submission cannot satisfy labels,
     // review state or sender-kind filters, and never contributes to Inbox.
     if (m_folder != "sent" || !m_query.isEmpty() || !m_filters.isEmpty() || !m_category.isEmpty()) return rows;

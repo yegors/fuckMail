@@ -1184,3 +1184,68 @@ The founder: "trash is trash and 'to review' should only include inbox". A conve
 
 Core65, Mail UI84; schema36, fixtures0/3, protocol1 (additive) and readiness0/9 unchanged.
 
+
+## D118 — ninth export: calendar headers, remote search, retention badge, message notices and unsubscribe (2026-09-25T04:34:33Z)
+
+The founder supplied `Flight Progress v2 (offline).html` with the designer's notes and asked for them implemented, together with unsubscribe "as that's a good UX feature". The notes, as built:
+
+- **Calendar.** Day view reads "Today · Tuesday December 3 2026" (Today, Tomorrow or Yesterday only when it applies). Week view's subtitle is "30 November 2026 – 6 December 2026", years on both ends; the title stays "Week N". The "8 events · Windscribe" summary is gone.
+- **Search remote mailbox.** A session-only switch at the foot of the search dropdown. While on and text is typed, the engine searches the account on Gmail (`messages.list q=`, scoped to the folder: `in:inbox`, `in:sent`, `in:trash`, `in:drafts`, or everything for All mail; `body:` words are searched everywhere because Gmail has no such operator) 600 ms after typing pauses. Threads with any message stored here are dropped; up to 25 others become list rows marked only by a cloud icon ("Not on this machine yet · fetched from the server"). They join by date; in the Inbox they sit under Done by month. The status line reads "Searching {address}…", "N more results from the server" or "Nothing more on the server", or the failure. The word Gmail is not shown.
+- **Opening a remote result** reads its thread live (`threads.get` for ids, then each message's raw MIME, newest 50) into the reader: all messages, formatted text of the newest, and attachments fetched on open or save into the view cache. Nothing is stored and it is not reopened after a restart. The thread shows no reply or Done/Delay actions and is never marked read; its status line reads "Read from the server · not on this machine". This is the D116 Spam model (read live, keep nothing) rather than importing old mail past the account's retention, which the sync pipeline would refuse and reconcile.
+- **Retention badge.** Each account card shows "Keeps 1 year" or "Keeps everything" after the address, from Local Retention, with the tooltip from the notes.
+- **Notices above the message text.** The mailing-list row and hidden-images row form one ruled group with no fill, 36 px rows, only the rows that apply. The old images bar is removed; its proxy-failure text and Retry move into the images row. "Always load images from {sender}" uses the existing per-account `remote_images_from`.
+- **Unsubscribe.** Shown on the latest message only, never on sent mail, when it has `List-Unsubscribe` or an unsubscribe link in the body. The row reads "Mailing list · N this month, N this year" (received messages from that sender in the last 30 and 365 days). One-click (RFC 8058) is an https POST of `List-Unsubscribe=One-Click` through the remote-content client (public https only, blocked hosts refused, proxy with no direct fallback). `mailto:` sends one plain email from the account through Gmail (subject and body from the URI, else "unsubscribe"); an uncertain send says to check Sent and records nothing. A header URL without one-click, or a body link, opens in the browser. Done states follow the notes. The state is stored per account, conversation and sender (schema37 `unsubscribes`).
+
+Choices beyond the notes: the remote switch is not remembered across restarts; remote rows are excluded from bulk actions; a remote thread cannot be replied to yet (no stored Message-ID); an unsubscribe failure shows its reason in the row and the button stays for another try; the CLI gains `google search`, `google thread`, `google attachment` and `mail unsubscribe`.
+
+Core66, Gmail29, Mail UI85, Calendar32, Search8, CLI50; schema37; fixtures0/3, protocol1 (additive) and readiness0/9 unchanged.
+
+
+## D119 — developer console redesign and loaded-images state (2026-09-25T04:58:00Z)
+
+The founder supplied the designer's "Dev console (new)" notes with `Flight Progress v2 (offline) (2).html` and asked for them implemented, along with the image-loading notes. As built:
+
+- **Console.** It drops from the top over a dim overlay, at 76% of the window height and at least 360 px, with a short slide-in. The existing toggle rules stay: ~ or ` outside normal text fields, and in the console's own fields. Esc, `exit`/`quit`, the close button or the overlay closes it. The design follows the notes:
+  - system monospace at 12/19 px;
+  - a `logs`/`state` top bar with `tail -f`, pause, clear and export;
+  - a filter row with level ≤ (the eight syslog levels, default info), facility (sync, gmail, cal, llm, db, net, ui, app) and a case-insensitive grep that also searches details and JSON;
+  - four-column lines with the notes' level colours;
+  - a `└ key=value` details line, then a coloured, selectable JSON block with copy, on click;
+  - "↓ N new" while scrolled up;
+  - a command line with history and the listed commands;
+  - a 22 px status bar with last-hour err/warn counts.
+- **Backend.** Qt messages and existing debug events map to syslog levels and a facility. Facilities come from the IPC method family, the source or the engine scope. Lines are kept in a 5,000-entry ring, and the view shows the latest 600 matching. Pause stops capture into the console while `gui.log` keeps recording; clear hides the lines retained so far. Export writes the filtered lines to Downloads as `ISO8601 <n> level facility message {details}`, with JSON pretty-printed underneath at four spaces, then shows the path.
+- **JSON payloads.** Any line can carry one, but only explicit metadata projections fill it: scrubbed like messages, bounded in depth, width and size. Engine category ids already use it. The D082 rule stands: no request or response bodies, mail content, recipients or credentials.
+- **Images row.** After Load images, the button becomes a green check with "N images loaded", and the row reads "Images loaded for this message only". Always load images stays. For an allowed sender, the row reads "Images from {sender} load automatically", and the button becomes "Stop always loading from {sender}". Stopping removes the sender from `remote_images_from`; images already loaded in that message stay. The icon switches to the plain picture once images show. This replaces Mail UI85's "row hides once images load".
+
+Choices beyond the notes:
+- The prompt reads `~/fuckmail` and the export file is `fuckmail-YYYYMMDDHHMM.log`; "Flight" is the prototype's placeholder name.
+- The state tab shows real account addresses and the store path live, but never writes them to a file or an export.
+- Log lines keep account aliases and D082 redaction.
+- Console commands, their replies and the export notice are not written to `gui.log`.
+- Copy report is replaced by export.
+- `sync <account>` runs Sync now for an active account, or resumes a paused one.
+
+Mail UI86; Core, CLI, schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+
+## D120 — tenth export: day strip, folder tabs, Spam and Trash, delete for good, now lines; fresh schema baseline (2026-09-25T05:46:44Z)
+
+The founder supplied `Flight Progress v2 (offline) (3).html` with the designer's list of changes (the developer console rework is D119's) and asked for a "now" line on the Day and Week calendars and in the Mail day strip, saying the Month line did not show the time of day ("It's 12:35am, the now line should be almost at the top of the day"). They also asked that the earlier changes be checked, and reported that the notices row lost its image buttons and pushed Unsubscribe off screen. As built:
+
+- **Day strip.** The default visible range is 00:00–24:00. Each day has a full-height 1 px separator at its left edge (gold at 45% for today, ink at 20% otherwise) and a marker beside it: date number (12 px, semibold, gold on today), weekday (10.5 px, uppercase, muted), then "· Today", "· Tomorrow" or "· Yesterday" when it applies. Hour labels at the edges and any label under the marker are hidden; the right-hand date label is gone and "Back to today" stays away from today. The strip's now line keeps its time label unless the marker covers it, then shows a dot.
+- **Now lines.** Day and Week draw the line in today's column as before, and now scroll it into view when a range containing today opens and the remembered position would hide it. Month orders today's rows as finished timed events, then all-day and upcoming ones, so the line sits at the top just after midnight rather than under an all-day event.
+- **Folder tabs.** "Inbox · Sent · Drafts | Spam Trash": Spam and Trash at 14 px after a thin divider, dimmed until chosen. The chevron menu and All mail are gone from the header (All mail stays reachable from search and the sender card). `s` still cycles Inbox, Sent and Drafts only.
+- **Spam and Trash lists.** The normal row style, no row buttons, no section headings. Above the rows: "Auto-deleted after 30 days", a rule, and "Empty spam"/"Empty trash". The header reads "N in spam"/"N in trash" with a shield or bin icon and the designer's tooltip; the delayed stat hides; the filter row shows only "All N". Empty: "No spam. Nice." / "Trash is empty.". Spam stays live (D116): the list is Gmail's Spam grouped into one row per thread, and a row opens in the normal reader through the live thread read (D118). Trash stays the synced local folder.
+- **Actions.** Below the last message, Spam shows "Move to Inbox" (removes SPAM and adds INBOX on each spam message; toast "Moved to Inbox · marked not spam") and Trash shows "Restore" (toast "Restored to Inbox"); both show a red-outline "Delete permanently". Deleting and emptying always confirm with the designer's text; the confirm buttons stay on one line.
+- **Deleting for good** uses Gmail `messages.batchDelete`, which needs `https://mail.google.com/`. The founder chose "Ask for full access": Write-mode mail access now requests that scope. An account connected with `gmail.modify` gets `reconnect_required`, and the app offers Reconnect, which reuses Settings → Accounts' reconnect flow. Trash's local copies are removed once Gmail confirms, as retention pruning removes them; a message an open draft replies to stays until the draft is sent or discarded.
+
+Choices beyond the notes:
+- Restore now also returns received mail to the Inbox (Gmail's untrash alone lands it in All mail), so the toast is true; this replaces the earlier rule that restore changes only Trash.
+- When Gmail deletes a trashed message by itself (after 30 days) the local copy leaves Trash and stays as archived local mail, as other provider deletions already do; only the person's own delete removes local copies.
+- Emptying works through at most 10,000 messages per run and says how many it removed.
+- The CLI gains `google bin-count`, `google not-spam`, `google delete-forever --yes` and `google empty --yes`.
+- The notices row's buttons size from their labels; the text gives way first, including in a narrow reader.
+- Per the founder, databases start fresh: schema37 is now the baseline with no migrations, and older profiles are refused with the existing "start fresh" message.
+
+Core67, Gmail30, Mail UI87, Calendar33, CLI51; schema37 (baseline reset); fixtures0/3, protocol1 (additive) and readiness0/9 unchanged.

@@ -482,7 +482,8 @@ fn archive_trash_restore_preserve_review_flags_and_other_labels() {
         .unwrap();
     f.command("mail_filing", "restore", json!({"action":"restore"}))
         .unwrap();
-    assert_eq!(f.flags(), (true, true, false, false));
+    // Restore returns received mail to the Inbox, even mail archived before.
+    assert_eq!(f.flags(), (true, true, true, false));
     let work = f.next(0);
     let attempt = submit(
         f.store
@@ -493,7 +494,7 @@ fn archive_trash_restore_preserve_review_flags_and_other_labels() {
             .unwrap(),
     );
     assert_eq!(attempt.work.action, MailMutationAction::Restore);
-    assert!(!attempt.add_labels.contains(&"INBOX".into()));
+    assert!(attempt.add_labels.contains(&"INBOX".into()));
 }
 
 #[test]

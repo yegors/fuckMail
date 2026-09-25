@@ -5,7 +5,9 @@ import FuckMail.Html
 
 // One message's sanitised HTML on a light paper card. Remote images stay
 // placeholders until Load images; blocked hosts never load. `failed` asks the
-// reader to show Text instead, with `failure` as its notice.
+// reader to show Text instead, with `failure` as its notice. The hidden-images
+// notice is MessageNotices, which uses hiddenCount, imageCount, imagesShown,
+// senderAllowed, proxyFailed, loadImages(), allowSender() and disallowSender().
 ColumnLayout {
     id: body
     objectName: "htmlMessageBody_" + (message.id || "")
@@ -31,6 +33,15 @@ ColumnLayout {
     readonly property bool shown: ready || (view.status === "loading" && view.implicitHeight > 0)
     readonly property var remote: (result.resources || []).filter(function(r) { return r.kind === "remote" })
     readonly property int hiddenCount: remote.filter(function(r) { const s = (images[r.id] || {}).state; return !s || s === "hidden" }).length
+    // Remote images this message can show at all: not blocked, not insecure.
+    readonly property int imageCount: remote.filter(function(r) { const s = (images[r.id] || {}).state; return s !== "blocked" && s !== "insecure" }).length
+    readonly property bool imagesShown: imageCount > 0 && hiddenCount === 0 && !proxyFailed
+    // Re-read when preferences change; allowing and stopping save optimistically.
+    property int allowRevision: 0
+    readonly property bool senderAllowed: {
+        backend.preferences; allowRevision
+        return !!service && !!sender && service.imagesAllowed(account, sender)
+    }
     readonly property var blockedLinks: {
         if (!service || service.revision < 0) return []
         return (result.links || []).filter(function(l) { return !!l.host && !!service.blockedBy(l.host) }).map(function(l) { return l.id })
@@ -81,7 +92,9 @@ ColumnLayout {
         }
         images = next
     }
-    function allowSender() { service.allowImages(account, sender); loadImages() }
+    function allowSender() { service.allowImages(account, sender); allowRevision++; loadImages() }
+    // Later messages ask again; images already loaded here stay loaded.
+    function disallowSender() { service.disallowImages(account, sender); allowRevision++ }
     function refreshBlocked() {
         if (!result.resources) return
         const next = Object.assign({}, images)
@@ -134,36 +147,6 @@ ColumnLayout {
     }
     Connections { target: backend; function onConnectedChanged() { if (backend.connected) body.load() } }
 
-    RowLayout {
-        objectName: "htmlImageBar_" + (body.message.id || "")
-        visible: body.shown && (body.hiddenCount > 0 || body.proxyFailed)
-        Layout.fillWidth: true; spacing: 10
-        FmIcon { name: "imageOff"; size: 13; color: Theme.inkAlpha(.5) }
-        Text {
-            text: body.proxyFailed ? "Proxy unavailable — images not loaded"
-                : (body.hiddenCount === 1 ? "1 image hidden" : body.hiddenCount + " images hidden") + " to keep senders from tracking you"
-            color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
-            elide: Text.ElideRight; Layout.maximumWidth: Math.ceil(implicitWidth); Layout.fillWidth: true; Layout.minimumWidth: 0
-        }
-        Text {
-            objectName: "htmlLoadImages_" + (body.message.id || "")
-            text: body.proxyFailed ? "Retry" : "Load images"
-            color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
-            Rectangle { anchors.left: parent.left; anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.bottomMargin: -1; height: 1; color: loadArea.containsMouse ? Theme.text : Theme.inkAlpha(.3) }
-            MouseArea { id: loadArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: body.loadImages() }
-            Accessible.role: Accessible.Button; Accessible.name: text
-        }
-        Text { visible: !body.proxyFailed && !!body.sender; text: "·"; opacity: .5; color: Theme.inkAlpha(.5); font.pointSize: Theme.fontPoints(12.5) }
-        Text {
-            objectName: "htmlAllowImages_" + (body.message.id || "")
-            visible: !body.proxyFailed && !!body.sender
-            text: "Always from " + (body.message.sender_name || body.sender)
-            color: allowArea.containsMouse ? Theme.text : Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5)
-            elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 0
-            MouseArea { id: allowArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: body.allowSender() }
-            Accessible.role: Accessible.Button; Accessible.name: text
-        }
-    }
     Rectangle {
         id: paper
         // The item needs a width to lay out, so the card stays in the layout

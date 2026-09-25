@@ -169,6 +169,8 @@ ApplicationWindow {
         hostWindow: window
         diagnostics: typeof debugDiagnostics !== "undefined" ? debugDiagnostics : null
         searchActive: window.searchPopupOpen
+        uiState: ({view: window.settingsOpen ? "settings" : window.workspace, theme: Theme.themeId,
+            settings_tab: window.settingsOpen && settingsView ? settingsView.page : null})
     }
     SearchPopup {
         id: searchPopup

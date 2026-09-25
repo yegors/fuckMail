@@ -4,7 +4,7 @@ use rusqlite::params;
 use sha2::{Digest, Sha256};
 
 fn defaults() -> Value {
-    json!({"density":"comfortable","mail_date_grouping":"grouped","message_format":"html","sync_every_minutes":1,"week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":7,"timeline_end_hour":22,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
+    json!({"density":"comfortable","mail_date_grouping":"grouped","message_format":"html","sync_every_minutes":1,"week_start":"monday","calendar_start_hour":7,"calendar_end_hour":22,"timeline_start_hour":0,"timeline_end_hour":24,"selected_calendars":null,"calendar_view":"week","calendar_date":null,"timeline_date":null,
         "theme":"graphite","text_size":"default","startup_view":"mail","last_workspace":"mail","timeline_position":"footer","default_event_duration_minutes":60,"default_reminder_minutes":15,"reminder_snooze_minutes":5,"calendar_display_time_zone":null,"calendar_account_visibility":"all","google_sync_limits":null,"google_sync_services":{},"notifications":"events","shortcuts":{},
         "blocked_hosts":[],"remote_images_from":[],"remote_proxy":{"enabled":false,"host":"","port":443,"username":""}})
 }

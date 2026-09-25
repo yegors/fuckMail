@@ -271,7 +271,9 @@ ColumnLayout {
     RowLayout {
         Layout.fillWidth: true; Layout.topMargin: 10; spacing: 10
         FmComboBox {
-            objectName:"mailModel"; Layout.fillWidth:true; Layout.maximumWidth:360; textRole:"name"; model:panel.choices; currentIndex:panel.indexFor()
+            objectName:"mailModel"; Layout.fillWidth:true; Layout.maximumWidth:480; textRole:"name"; model:panel.choices; currentIndex:panel.indexFor()
+            // Model names like hf.co/org/name:Q4_K_M differ at both ends.
+            textElide: Text.ElideMiddle; popupWidth: Math.min(640, panel.width)
             onActivated: function(index) { const m=panel.choices[index]; if(m) panel.chooseModel(index===0 ? null : {name:m.name,digest:m.digest}); currentIndex=Qt.binding(function(){return panel.indexFor()}) }
             Accessible.name:"Mail model"
         }

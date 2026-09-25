@@ -9,6 +9,8 @@ pub(crate) mod labels;
 pub(crate) mod mail;
 pub(crate) mod mail_mutations;
 mod quota;
+mod bin;
+pub(crate) mod remote;
 pub(crate) mod remote_drafts;
 #[cfg(test)]
 mod runtime_tests;
@@ -653,6 +655,14 @@ impl Runtime {
                 | "google_send_abandon"
                 | "google_spam_list"
                 | "google_spam_message"
+                | "google_remote_search"
+                | "google_remote_thread"
+                | "google_remote_attachment"
+                | "google_unsubscribe_mail"
+                | "google_bin_counts"
+                | "google_not_spam"
+                | "google_delete_forever"
+                | "google_empty"
         )
     }
     async fn operation_context(
@@ -1012,6 +1022,14 @@ impl Runtime {
                 | "google_draft_delete_reconcile"
                 | "google_spam_list"
                 | "google_spam_message"
+                | "google_remote_search"
+                | "google_remote_thread"
+                | "google_remote_attachment"
+                | "google_unsubscribe_mail"
+                | "google_bin_counts"
+                | "google_not_spam"
+                | "google_delete_forever"
+                | "google_empty"
         ) {
             let (context, _operation_owner) = self
                 .operation_context(&account, owner_id, owner_cancel.clone())
@@ -1047,6 +1065,14 @@ impl Runtime {
                     "google_send" => send::execute(&context, params).await,
                     "google_spam_list" => spam::list(&context, params).await,
                     "google_spam_message" => spam::message(&context, params).await,
+                    "google_remote_search" => remote::search(&context, params).await,
+                    "google_remote_thread" => remote::thread(&context, params).await,
+                    "google_remote_attachment" => remote::attachment(&context, params).await,
+                    "google_unsubscribe_mail" => remote::unsubscribe_mail(&context, params).await,
+                    "google_bin_counts" => bin::counts(&context, params).await,
+                    "google_not_spam" => bin::not_spam(&context, params).await,
+                    "google_delete_forever" => bin::delete_forever(&context, params).await,
+                    "google_empty" => bin::empty(&context, params).await,
                     "google_send_reconcile" => {
                         send::reconcile(&context, params["request_id"].as_str().unwrap()).await
                     }

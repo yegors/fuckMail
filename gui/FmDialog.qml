@@ -11,7 +11,8 @@ Dialog {
     anchors.centerIn: parent
     modal: true
     focus: true
-    width: Math.min(360, parent ? parent.width - 48 : 360)
+    // Wide enough that Cancel and the action always sit on one line.
+    width: Math.min(Math.max(360, footer && footer.visible ? footer.implicitWidth : 0), parent ? parent.width - 48 : 360)
     padding: 22
     topPadding: title.length ? 0 : 22
     bottomPadding: footer && footer.visible ? 0 : 18

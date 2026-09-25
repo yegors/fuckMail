@@ -1239,6 +1239,15 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
         "google_draft_delete_abandon",
         "google_spam_list",
         "google_spam_message",
+        "google_remote_search",
+        "google_remote_thread",
+        "google_remote_attachment",
+        "google_unsubscribe_mail",
+        "google_bin_counts",
+        "google_not_spam",
+        "google_delete_forever",
+        "google_empty",
+        "message_unsubscribe",
     ];
     Ok(
         json!({"protocol":PROTOCOL_VERSION,"schema_version":status["schema_version"],

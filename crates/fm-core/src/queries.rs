@@ -1398,8 +1398,15 @@ impl Store {
         // rebuilding an entire account, particularly inside a flag transaction.
         let state = self.conversation_state(account, cid)?;
         let kind = kind_name(state.kind);
+        // Only a received latest message gets the mailing-list line.
+        let latest = messages.last().unwrap();
+        let mailing_list = if latest["sent"] == true {
+            Value::Null
+        } else {
+            self.mailing_list(account, cid, latest["sender_email"].as_str().unwrap_or(""))?
+        };
         Ok(
-            json!({"kind":kind,"id":cid,"subject":subject,"revision":revision,"message_ids":ids,"categories":categories,"messages":messages}),
+            json!({"kind":kind,"id":cid,"subject":subject,"revision":revision,"message_ids":ids,"categories":categories,"messages":messages,"mailing_list":mailing_list}),
         )
     }
     /// The account label a search `label:` names: its exact name ignoring

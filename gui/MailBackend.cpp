@@ -202,6 +202,11 @@ MailBackend::MailBackend(QString profile, QString engine, QObject *parent, bool 
     connect(&m_searchTimer, &QTimer::timeout, this, [this] { loadConversations(); });
     m_draftTimer.setSingleShot(true); m_draftTimer.setInterval(450);
     connect(&m_draftTimer, &QTimer::timeout, this, &MailBackend::saveDraft);
+    // The server is searched once typing pauses, not per keystroke.
+    m_remoteSearchTimer.setSingleShot(true); m_remoteSearchTimer.setInterval(600);
+    connect(&m_remoteSearchTimer, &QTimer::timeout, this, &MailBackend::runRemoteSearch);
+    connect(this, &MailBackend::queryChanged, this, &MailBackend::scheduleRemoteSearch);
+    connect(this, &MailBackend::accountChanged, this, &MailBackend::scheduleRemoteSearch);
     m_viewTimer.setSingleShot(true); m_viewTimer.setInterval(700);
     connect(&m_viewTimer, &QTimer::timeout, this, [this] {
         for (const auto &account : m_viewDirty.values()) saveView(account);
@@ -213,7 +218,7 @@ MailBackend::~MailBackend() {
     // A fatal GUI exit may destroy a still-connected backend. Detach callbacks
     // before member destruction: QLocalSocket::~QLocalSocket can emit signals
     // after the pending-request maps and buffers have already been destroyed.
-    for (auto timer : {&m_clockTimer, &m_connectTimer, &m_pollTimer, &m_searchTimer, &m_draftTimer, &m_viewTimer, &m_notificationTimer, &m_actionTimer, &m_calendarMailActivityTimer, &m_calendarPrefetchTimer, &m_navigationSaveTimer}) {
+    for (auto timer : {&m_clockTimer, &m_connectTimer, &m_pollTimer, &m_searchTimer, &m_draftTimer, &m_viewTimer, &m_notificationTimer, &m_actionTimer, &m_calendarMailActivityTimer, &m_calendarPrefetchTimer, &m_navigationSaveTimer, &m_remoteSearchTimer}) {
         timer->stop(); QObject::disconnect(timer, nullptr, this, nullptr);
     }
     QObject::disconnect(&m_socket, nullptr, this, nullptr);
@@ -550,10 +555,12 @@ void MailBackend::setFolder(const QString &value) {
     // Day chips are a Sent control; their dates must not filter other views unseen.
     if (m_folder == u"sent" && (m_filters.remove("after") | m_filters.remove("before"))) remember("filters", m_filters);
     m_folder = value; m_pinnedRow.clear(); m_pinnedIndex = -1;
-    if (value == "drafts" || value == "spam") { m_filters.clear(); m_category.clear(); remember("filters", QVariantMap{}); remember("category", ""); }
+    if (value == "drafts" || value == "spam" || value == "trash") { m_filters.clear(); m_category.clear(); remember("filters", QVariantMap{}); remember("category", ""); }
     // Spam is read live each visit, so it is not the view a restart reopens.
     if (value != "spam") remember("folder", value);
+    if (!m_binCounts.isEmpty()) { m_binCounts.clear(); emit binCountsChanged(); }
     emit queryChanged(); loadConversations();
+    if (value == "trash") refreshBinCounts();
 }
 void MailBackend::setCategory(const QString &value) {
     if (m_category == value) return;
@@ -736,13 +743,7 @@ void MailBackend::loadConversations(bool append, bool preserveLoaded) {
     if (!append && !preserveLoaded) m_browsingOlder = false;
     if (!append && m_folder == "sent") loadOutgoing();
     if (m_folder == "drafts") { loadDraftRows(append, preserveLoaded); return; }
-    if (m_folder == "spam") {
-        // Nothing local: SpamView lists Gmail's Spam live.
-        ++m_listGeneration; m_nextOffset = -1; m_nextCursor.clear(); m_listError.clear();
-        publishConversations({}); emit conversationsChanged();
-        if (m_loading) { m_loading = false; emit loadingChanged(); }
-        return;
-    }
+    if (m_folder == "spam") { loadSpamRows(append); return; }
     const int generation = ++m_listGeneration;
     const QString account = m_account;
     const int offset = append ? m_nextOffset : 0;
@@ -1010,12 +1011,14 @@ void MailBackend::selectConversationInternal(const QString &id, bool review, QVa
     m_selected = id; m_activeDraft.clear(); m_recipientInputs.clear(); m_conversation.clear(); m_draft.clear(); m_draftStatus.clear();
     restoreConversation(m_account, id);
     remember("selectedDraft", "");
-    remember("selected", id); remember("readerY", 0); emit conversationChanged(); emit draftChanged(); emit mailDeliveryChanged();
+    // A server-only thread is not reopened after a restart.
+    remember("selected", id.startsWith("remote:") ? QString{} : id); remember("readerY", 0); emit conversationChanged(); emit draftChanged(); emit mailDeliveryChanged();
     loadConversation(true, review);
 }
 
 void MailBackend::loadConversation(bool loadDraft, bool reviewOnLoad) {
     if (m_selected.isEmpty()) return;
+    if (m_selected.startsWith("remote:")) { loadRemoteThread(); return; }
     if (m_selected.startsWith("outgoing:")) {
         if (loadDraft) {
             const auto key=m_account+'\n'+m_selected.mid(QStringLiteral("outgoing:").size());
@@ -1080,7 +1083,8 @@ void MailBackend::flag(const QString &name, bool value) {
     mutateConversation("flag", {{name, value}});
 }
 void MailBackend::mutateConversation(const QString &method, QJsonObject params, bool undoable) {
-    if (m_selected.startsWith("outgoing:")) return;
+    // A pending send and a thread read live from the server have nothing to change here.
+    if (m_selected.startsWith("outgoing:") || m_selected.startsWith("remote:")) return;
     if (m_conversation.isEmpty() || m_mutatingConversation) return;
     if (!accountCapability(m_account, "mail_write")) { fail("Reconnect Google with Mail access to change this conversation."); return; }
     params["request_id"] = uuid(); params["id"] = m_selected;
@@ -1147,7 +1151,7 @@ QVariantList MailBackend::snapshotMailRows(const QStringList &ids) const {
     const auto displayed = conversations();
     if (ids.size() > 200 || m_account.isEmpty()) return result;
     for (const auto &id : ids) {
-        auto found = std::find_if(displayed.cbegin(), displayed.cend(), [&id](const auto &row) { return row.toMap().value("id").toString() == id; });
+        auto found = std::find_if(displayed.cbegin(), displayed.cend(), [&id](const auto &row) { return row.toMap().value("id").toString() == id && !row.toMap().value("remote").toBool(); });
         QVariantMap row;
         if (id.startsWith("outgoing:")) {
             for (const auto &value : outgoingMessages()) if (value.toMap().value("id") == id) { row=outgoingMessage(value.toMap());row["revision"]=0; }
@@ -1384,8 +1388,8 @@ void MailBackend::saveDraft() {
 }
 
 void MailBackend::openAttachment(const QString &id) {
-    request("attachment", m_account, {{"id", id}}, [this](auto result, bool ok) {
-        if (!ok) return;
+    attachmentFile(m_account, id, [this, id](auto result, bool ok) {
+        if (!ok) { if (id.startsWith(u"remote-att:")) fail(result["message"].toString("This attachment could not be read from the server.")); return; }
         const auto path = result["path"].toString();
         if (path.isEmpty()) { fail("This attachment has no complete, verified local copy (" + result["state"].toString("unavailable") + ")."); return; }
         if (!QDir::isAbsolutePath(path) || !QDesktopServices::openUrl(QUrl::fromLocalFile(path))) fail("No application could open this retained attachment.");
@@ -1744,18 +1748,6 @@ QString MailBackend::assistanceRequest(const QString &method, const QVariantMap 
             if (ok && (method == "assist_correct" || method == "assist_accept") && account == m_account) {
                 loadConversation(false, false); loadConversations(false, true);
             }
-        });
-    });
-    return ticket;
-}
-
-QString MailBackend::spamRequest(const QString &method, const QVariantMap &params) {
-    if (method != "google_spam_list" && method != "google_spam_message") return {};
-    const auto ticket = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    const auto account = m_account;
-    QTimer::singleShot(0, this, [this, method, params, account, ticket] {
-        googleOperation(method, account, QJsonObject::fromVariantMap(params), [this, ticket, method, account](auto result, bool ok) {
-            emit spamReply(ticket, method, account, result.toVariantMap(), ok);
         });
     });
     return ticket;

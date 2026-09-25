@@ -1,6 +1,8 @@
 # Local mail search
 
-State: Draft · Revision: 7 · Updated: 2026-09-24 · Implementation: D101 query grammar and people lookup; D093 fresh-profile FTS and planner maintenance; earlier measurements retain their source scope. Whole area remains Draft.
+State: Draft · Revision: 8 · Updated: 2026-09-25 · Implementation: D101 query grammar and people lookup; D093 fresh-profile FTS and planner maintenance; earlier measurements retain their source scope. Whole area remains Draft.
+
+Revision 8 (D118) adds an optional server search beside local search: with the dropdown's Search remote mailbox switch on, the same text is sent to Gmail (`google_remote_search`) scoped to the folder, and threads with nothing on this machine join the list marked remote. Local search, its grammar and its results are unchanged; `body:` words are searched everywhere on the server. Remote results are read live and never indexed. Consumers: Gmail29, Mail UI85, CLI50.
 
 Revision 7 makes the search box text the whole query, parsed once by Core for GUI and CLI (see [Query grammar](#query-grammar-revision-7)). Bare words now match the subject or message text, not the sender; `from:` names senders, or recipients in Sent and Drafts. Conversation and draft responses return `search_terms`, Core's reading of the text. Unsupported or malformed operators fail with `invalid_request` and a message the dropdown shows. A new read-only `search_senders` method returns up to ten recent senders (recipients in Sent and Drafts) matching a partial name or address. Typed filter fields remain for existing callers and conflict explicitly with the same operator in the text. Consumers: Core56, Mail UI71, CLI43 and Quality72; schema33, fixtures0/3 and protocol1 unchanged.
 

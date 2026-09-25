@@ -249,6 +249,16 @@ impl Store {
                     for message in &targets {
                         tx.execute("UPDATE messages SET inbox=CASE WHEN ?3='INBOX' THEN ?4 ELSE inbox END,trashed=CASE WHEN ?3='TRASH' THEN ?4 ELSE trashed END,revision=revision+1 WHERE account=?1 AND id=?2",params![account,message,label,present])?;
                         record_manual_intent(&tx, account, message, "label", label, present)?;
+                        // Restore returns received mail to the Inbox, as the
+                        // reader says; Gmail's untrash alone may not.
+                        if action == "restore"
+                            && tx.execute(
+                                "UPDATE messages SET inbox=1 WHERE account=?1 AND id=?2 AND sent=0",
+                                params![account, message],
+                            )? > 0
+                        {
+                            record_manual_intent(&tx, account, message, "label", "INBOX", true)?;
+                        }
                     }
                 }
                 tx.execute(

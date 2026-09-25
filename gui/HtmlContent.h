@@ -52,6 +52,7 @@ public:
     Q_INVOKABLE void unblock(const QString &pattern);
     Q_INVOKABLE bool imagesAllowed(const QString &account, const QString &email) const;
     Q_INVOKABLE void allowImages(const QString &account, const QString &email);
+    Q_INVOKABLE void disallowImages(const QString &account, const QString &email);
 
     // Cached count for the card; starts a request when missing.
     Q_INVOKABLE QVariantMap linkSummary(const QString &host, const QString &conversation);

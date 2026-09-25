@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 pub const GOOGLE_SCOPES: [&str; 6] = [
     "openid",
     "email",
-    "https://www.googleapis.com/auth/gmail.modify",
+    "https://mail.google.com/",
     "https://www.googleapis.com/auth/calendar.events",
     "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
     "https://www.googleapis.com/auth/calendar.events.freebusy",
@@ -41,7 +41,8 @@ impl RequestedAccess {
         match self.mail {
             None => {}
             Read => scopes.push("https://www.googleapis.com/auth/gmail.readonly"),
-            Write => scopes.push("https://www.googleapis.com/auth/gmail.modify"),
+            // Full mail access: deleting for good (Spam and Trash) needs it.
+            Write => scopes.push("https://mail.google.com/"),
         }
         match self.calendar {
             None => {}
@@ -80,6 +81,10 @@ impl<'a> ScopeSet<'a> {
         self.0
             .contains("https://www.googleapis.com/auth/gmail.modify")
             || self.0.contains("https://mail.google.com/")
+    }
+    /// Deleting mail for good; `gmail.modify` alone cannot.
+    pub fn mail_full(&self) -> bool {
+        self.0.contains("https://mail.google.com/")
     }
     pub fn calendar_catalog_read(&self) -> bool {
         self.calendar_all_read()
@@ -236,6 +241,11 @@ mod scope_tests {
             let scopes = ScopeSet::new(&granted);
             assert_eq!(scopes.mail_read(), read, "{scope}");
             assert_eq!(scopes.mail_write(), write, "{scope}");
+            assert_eq!(
+                scopes.mail_full(),
+                scope == "https://mail.google.com/",
+                "{scope}"
+            );
         }
         assert!(!ScopeSet::new(&BTreeSet::new()).mail_read());
     }

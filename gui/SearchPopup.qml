@@ -291,6 +291,57 @@ Popup {
                     }
                 }
             }
+            // Also search the account on the server; its results join the list.
+            Rectangle {
+                id: remoteRow
+                objectName: "mailSearchRemote"
+                readonly property var search: backend.remoteSearchState
+                readonly property bool on: backend.remoteSearch
+                readonly property string note: !on || !popup.typing ? ""
+                    : search.busy ? "Searching " + (search.address || "the server") + "…"
+                    : search.error ? search.error
+                    : search.count > 0 ? search.count + (search.count === 1 ? " more result" : " more results") + " from the server"
+                    : "Nothing more on the server"
+                visible: !backend.syntheticProfile && backend.folder !== "spam"
+                Layout.fillWidth: true; Layout.topMargin: 6
+                implicitHeight: remoteContent.implicitHeight + 16
+                color: remoteArea.containsMouse ? Theme.bg4 : "transparent"
+                Rectangle { width: parent.width; height: Theme.ruleWidth; color: Theme.line }
+                Accessible.role: Accessible.CheckBox; Accessible.name: "Search remote mailbox"; Accessible.checkable: true; Accessible.checked: on
+                Accessible.onToggleAction: backend.remoteSearch = !on; Accessible.onPressAction: backend.remoteSearch = !on
+                MouseArea { id: remoteArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: backend.remoteSearch = !remoteRow.on }
+                RowLayout {
+                    id: remoteContent
+                    anchors.left: parent.left; anchors.right: parent.right; anchors.leftMargin: 14; anchors.rightMargin: 14
+                    y: 10; spacing: 10
+                    FmIcon {
+                        name: "cloud"; size: 14; color: remoteRow.on ? Theme.text : Theme.inkAlpha(.45)
+                        SequentialAnimation on opacity {
+                            running: remoteRow.on && remoteRow.search.busy && popup.typing; loops: Animation.Infinite
+                            onRunningChanged: if (!running) parent.opacity = 1
+                            NumberAnimation { to: .35; duration: 500; easing.type: Easing.InOutSine }
+                            NumberAnimation { to: 1; duration: 500; easing.type: Easing.InOutSine }
+                        }
+                    }
+                    ColumnLayout {
+                        Layout.fillWidth: true; spacing: 1
+                        Text { text: "Search remote mailbox"; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(13) }
+                        Text {
+                            objectName: "mailSearchRemoteNote"
+                            visible: remoteRow.note.length > 0; text: remoteRow.note; Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
+                            color: !remoteRow.search.busy && !remoteRow.search.error && remoteRow.search.count > 0 ? Theme.text : Theme.inkAlpha(.45)
+                            font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
+                        }
+                    }
+                    FmSwitch {
+                        objectName: "mailSearchRemoteSwitch"
+                        checked: remoteRow.on; implicitWidth: 28; implicitHeight: 16
+                        onClicked: backend.remoteSearch = checked
+                        Accessible.name: "Search remote mailbox"
+                    }
+                }
+            }
+            Item { visible: remoteRow.visible; implicitHeight: 2 }
         }
     }
 }

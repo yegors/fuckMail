@@ -25,7 +25,10 @@ pub enum GmailMethod {
     MessageRaw,
     MessageState,
     MessageMetadata,
+    ThreadGet,
     LabelsList,
+    LabelGet,
+    MessagesBatchDelete,
     LabelCreate,
     MessageModify,
     MessageTrash,
@@ -42,7 +45,7 @@ impl GmailMethod {
     /// Google's method-unit table checked 2026-09-13; project limits are separate.
     pub fn quota_units(self) -> u32 {
         match self {
-            Self::Profile | Self::LabelsList => 1,
+            Self::Profile | Self::LabelsList | Self::LabelGet => 1,
             Self::HistoryList => 2,
             Self::MessagesList
             | Self::MessageModify
@@ -50,17 +53,20 @@ impl GmailMethod {
             | Self::DraftsList
             | Self::LabelCreate
             | Self::MessageMetadata => 5,
-            Self::DraftCreate | Self::DraftDelete => 10,
+            Self::DraftCreate | Self::DraftDelete | Self::ThreadGet => 10,
             Self::DraftUpdate => 15,
             Self::MessageRaw | Self::MessageState | Self::MessageTrash | Self::DraftGet => 20,
             Self::MessageSend | Self::DraftSend => 100,
+            Self::MessagesBatchDelete => 50,
         }
     }
     fn class(self) -> WorkClass {
         match self {
-            Self::MessageModify | Self::MessageTrash | Self::MessageRestore | Self::LabelCreate => {
-                WorkClass::StateMutation
-            }
+            Self::MessageModify
+            | Self::MessageTrash
+            | Self::MessageRestore
+            | Self::LabelCreate
+            | Self::MessagesBatchDelete => WorkClass::StateMutation,
             Self::DraftCreate | Self::DraftUpdate | Self::DraftDelete => WorkClass::DraftMutation,
             Self::MessageSend | Self::DraftSend => WorkClass::Submission,
             _ => WorkClass::UserRead,
@@ -290,6 +296,54 @@ impl GmailCall {
         )?;
         call.expected_id = Some(id.into());
         Ok(call)
+    }
+    /// The messages of one thread with their labels, oldest first, for a
+    /// thread opened live or acted on in Spam. Reads no content.
+    pub fn thread(account: &AccountId, id: &str) -> Result<Self, GoogleError> {
+        let mut call = Self::new(
+            account,
+            GmailMethod::ThreadGet,
+            HttpMethod::Get,
+            &["threads", id],
+            &[
+                ("format", "minimal"),
+                ("fields", "id,messages(id,labelIds)"),
+            ],
+            None,
+        )?;
+        call.expected_id = Some(id.into());
+        Ok(call)
+    }
+    /// A system label's totals, such as SPAM or TRASH.
+    pub fn label(account: &AccountId, id: &str) -> Result<Self, GoogleError> {
+        let mut call = Self::new(
+            account,
+            GmailMethod::LabelGet,
+            HttpMethod::Get,
+            &["labels", id],
+            &[("fields", "id,messagesTotal,threadsTotal")],
+            None,
+        )?;
+        call.expected_id = Some(id.into());
+        Ok(call)
+    }
+    /// Deletes up to 1,000 messages for good, skipping Trash. Needs full
+    /// mail access (`https://mail.google.com/`).
+    pub fn batch_delete(account: &AccountId, ids: &[String]) -> Result<Self, GoogleError> {
+        if ids.is_empty() || ids.len() > 1000 {
+            return Err(invalid());
+        }
+        for id in ids {
+            checked(id, 256)?;
+        }
+        Self::new(
+            account,
+            GmailMethod::MessagesBatchDelete,
+            HttpMethod::Post,
+            &["messages", "batchDelete"],
+            &[],
+            Some(json!({ "ids": ids })),
+        )
     }
     /// One explicit existing message. Never uses threads.modify, which could capture a new arrival.
     pub fn modify_message(
@@ -551,6 +605,28 @@ pub struct GmailMessageMetadata {
     #[serde(default)]
     pub payload: GmailMetadataPayload,
 }
+#[derive(Deserialize)]
+struct GmailThread {
+    id: String,
+    #[serde(default)]
+    messages: Vec<GmailThreadMessage>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GmailThreadMessage {
+    pub id: String,
+    #[serde(default)]
+    pub label_ids: Vec<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GmailLabelCounts {
+    pub id: String,
+    #[serde(default)]
+    pub messages_total: u64,
+    #[serde(default)]
+    pub threads_total: u64,
+}
 #[derive(Deserialize, Default)]
 pub struct GmailMetadataPayload {
     #[serde(default)]
@@ -578,6 +654,11 @@ pub enum GmailReply {
     MessageState(Option<GmailMessageState>),
     /// None when the message is gone.
     MessageMetadata(Option<GmailMessageMetadata>),
+    /// A thread's messages, oldest first; None when the thread is gone.
+    Thread(Option<Vec<GmailThreadMessage>>),
+    LabelCounts(GmailLabelCounts),
+    /// Messages deleted for good.
+    Deleted,
     Labels(GmailLabels),
     Label(GmailLabel),
     /// HTTP 400/409 rejected creation; a malformed success remains uncertain.
@@ -656,6 +737,9 @@ impl<T: HttpTransport> GmailApi<T> {
         }
         if response.status == 404 && call.method == GmailMethod::MessageMetadata {
             return Ok(GmailReply::MessageMetadata(None));
+        }
+        if response.status == 404 && call.method == GmailMethod::ThreadGet {
+            return Ok(GmailReply::Thread(None));
         }
         if response.status == 400
             && call.method == GmailMethod::DraftsList
@@ -746,6 +830,45 @@ impl<T: HttpTransport> GmailApi<T> {
                     return Err(invalid());
                 }
                 Ok(GmailReply::MessageMetadata(Some(value)))
+            }
+            GmailMethod::ThreadGet => {
+                let value: GmailThread = decode_json(bytes, MAX_JSON)?;
+                if Some(value.id.as_str()) != call.expected_id.as_deref()
+                    || value.messages.len() > 1_000
+                {
+                    return Err(invalid());
+                }
+                for message in &value.messages {
+                    checked(&message.id, 256)?;
+                    if message.label_ids.len() > 10_000 {
+                        return Err(invalid());
+                    }
+                    for label in &message.label_ids {
+                        checked(label, 256)?;
+                    }
+                }
+                Ok(GmailReply::Thread(Some(value.messages)))
+            }
+            GmailMethod::LabelGet => {
+                let value: GmailLabelCounts = decode_json(bytes, MAX_JSON)?;
+                if Some(value.id.as_str()) != call.expected_id.as_deref() {
+                    return Err(invalid());
+                }
+                Ok(GmailReply::LabelCounts(value))
+            }
+            // Google answers an empty body; anything else is not a receipt.
+            GmailMethod::MessagesBatchDelete => {
+                if bytes.is_empty()
+                    || serde_json::from_slice::<Value>(bytes)
+                        .ok()
+                        .is_some_and(|v| v.as_object().is_some_and(|v| v.is_empty()))
+                {
+                    Ok(GmailReply::Deleted)
+                } else {
+                    Err(GoogleError::InvalidResponse(
+                        "invalid Google deletion receipt",
+                    ))
+                }
             }
             GmailMethod::LabelsList => {
                 let value: GmailLabels = decode_json(bytes, MAX_JSON)?;

@@ -1,5 +1,15 @@
 # CLI and external agent interface
 
+
+
+## D120 — Spam and Trash (CLI51)
+
+`fm --account ID google bin-count spam|trash` (`google_bin_counts`), `google not-spam THREAD_ID` (`google_not_spam`), `google delete-forever spam|trash ID --yes` (Spam takes a Gmail thread id, Trash a conversation id; `google_delete_forever`) and `google empty spam|trash --yes` (`google_empty`). Without `--yes` the two deleting commands refuse with an input error. Deleting needs the account reconnected with full mail access. Consumers: Gmail30, Core67.
+
+## D118 — remote search and unsubscribe (CLI50)
+
+`fm --account ID google search QUERY [--folder inbox|sent|all|trash|drafts]` (`google_remote_search`), `google thread THREAD_ID` (`google_remote_thread`) and `google attachment ID` (`google_remote_attachment`, prints the cached path) read live and store nothing. `fm --account ID mail unsubscribe ID --source-version V` reads the message's `unsubscribe` and calls `google_unsubscribe_mail` for mailto or `message_unsubscribe` otherwise; for a link it records the page as opened and prints its URL.
+
 ## D116 — live Spam (CLI49)
 
 `fm --account ID google spam [--page-token T]` lists Gmail's Spam live (`google_spam_list`); `fm --account ID google spam-show ID` prints one message's text (`google_spam_message`). Both need the account's sync running and store nothing.

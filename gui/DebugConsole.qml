@@ -2,35 +2,51 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// The developer console: drops from the top over a dim overlay. ~ or ` toggles
+// it outside normal text fields; Esc, `exit` or the overlay closes it. The logs
+// tab shows the latest 600 filtered lines of the 5,000 retained; the state tab
+// shows a read-only tree of live state.
 Popup {
     id: panel
     objectName: "debugConsole"
     required property var hostWindow
     required property var diagnostics
     property bool searchActive: false
-    property bool paused: false
-    property bool showState: false
+    // {view, settings_tab, theme} for the state tab.
+    property var uiState: ({})
+    property string tab: "logs"
     property bool followTail: true
-    property bool updating: false
-    property var previousFocus: null
-    property string selectedScope: "All"
+    property real newMark: 0
     property string selectedSequence: ""
-    property string selectedText: ""
-    property string displayText: ""
-    property string copyStatus: ""
-    readonly property string mono: Qt.platform.os === "windows" ? "Consolas" : "monospace"
-    readonly property int rowHeight: Math.ceil(Theme.fontSize(34))
+    property string copiedSequence: ""
+    property var history: []
+    property int historyIndex: 0
+    property var stateModel: []
+    property var previousFocus: null
+    readonly property int newCount: followTail || !diagnostics ? 0 : Math.max(0, diagnostics.appended - newMark)
+    readonly property bool paused: !!diagnostics && diagnostics.paused
     readonly property bool blocksWorkspaceShortcuts: true
+    readonly property font monoFont: Qt.font({family: diagnostics ? diagnostics.monoFamily : "monospace", pixelSize: Math.round(Theme.fontSize(12))})
+    readonly property font smallFont: Qt.font({family: monoFont.family, pixelSize: Math.round(Theme.fontSize(11))})
+    readonly property real line: Math.round(Theme.fontSize(19))
+    readonly property real lineGap: (line - monoMetrics.height) / 2
+    readonly property var levelNames: diagnostics ? diagnostics.levels : []
+    // Syntax colours for JSON and state values; the theme has no green of its own.
+    readonly property color green: Theme.light ? "#2F7A55" : "#7FC4A4"
+    readonly property color stringColor: Theme.light ? "#4A7443" : "#9FC79F"
+    readonly property color numberColor: Theme.ai
+
     parent: Overlay.overlay
-    width: Math.max(0, parent.width - 64)
-    height: Math.max(0, parent.height - 64)
-    x: (parent.width - width) / 2
-    y: (parent.height - height) / 2
+    x: 0; y: 0
+    width: parent ? parent.width : 0
+    height: parent ? Math.min(parent.height, Math.max(360, parent.height * 0.76)) : 0
     padding: 0
     modal: true
     focus: true
-    font.family: Theme.fontFamily
-    closePolicy: Popup.CloseOnEscape
+    closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+    font: monoFont
+
+    FontMetrics { id: monoMetrics; font: panel.monoFont }
 
     function typing(item) {
         while (item) {
@@ -43,253 +59,473 @@ Popup {
         if (opened) close()
         else { previousFocus = hostWindow.activeFocusItem; open() }
     }
-    function tail() { followTail = true; paused = false; settleTail() }
+    function levelColor(level) {
+        return level <= 3 ? Theme.error : level === 4 ? Theme.amber : level === 5 ? Theme.text : level === 6 ? Theme.inkAlpha(.6) : Theme.inkAlpha(.35)
+    }
+    function tail() { followTail = true; settleTries = 0; settleTail() }
+    // Rows have varying heights, so the end can move once they lay out; try again briefly.
+    property int settleTries: 0
     function settleTail() {
-        if (opened && followTail && !showState && !paused) {
-            events.forceLayout()
-            events.positionViewAtEnd()
-        }
+        if (!opened || !followTail || tab !== "logs") return
+        events.forceLayout(); events.positionViewAtEnd()
+        // positionViewAtEnd can stop short of bottomMargin once rows leave the top.
+        if (!events.atYEnd) events.contentY = Math.max(events.originY - events.topMargin, events.originY + events.contentHeight + events.bottomMargin - events.height)
+        if (!events.atYEnd && settleTries++ < 10) settleTimer.restart()
+        else if (events.atYEnd) settleTries = 0
     }
-    function inspect(row) {
-        selectedSequence = row.sequence
-        selectedText = row.at + "   " + row.level + " / " + row.scope + " / " + row.source
-            + "\n" + row.message + (row.details ? "\n\n" + JSON.stringify(JSON.parse(row.details), null, 2) : "")
+    function stopFollowing() {
+        if (!followTail) return
+        followTail = false
+        newMark = diagnostics ? diagnostics.appended : 0
     }
-    function updateView(reset) {
-        if (!diagnostics || !opened || (paused && !reset)) return
-        if (showState) { displayText = diagnostics.stateText; return }
-        const rows = diagnostics.eventRows(level.currentText, filter.text, selectedScope)
-        if (!reset && rows.length === entries.count && (!rows.length
-            || (rows[0].sequence === entries.get(0).sequence && rows[rows.length - 1].sequence === entries.get(entries.count - 1).sequence))) return
-        displayText = rows.map(row => row.line).join("\n")
-        // Anchor an event and its viewport offset across head eviction. New
-        // events append to the model; they never replace a text document.
-        const oldIndex = events.indexAt(1, events.contentY + 1)
-        const anchor = oldIndex >= 0 ? entries.get(oldIndex).sequence : ""
-        const item = oldIndex >= 0 ? events.itemAtIndex(oldIndex) : null
-        const offset = item ? events.contentY - item.y : 0
-        updating = true
-        if (reset) { entries.clear(); followTail = true }
-        else {
-            let remove = 0
-            while (remove < entries.count && (!rows.length || Number(entries.get(remove).sequence) < Number(rows[0].sequence))) ++remove
-            if (remove) entries.remove(0, remove)
-        }
-        for (let i = entries.count; i < rows.length; ++i) entries.append(rows[i])
-        events.forceLayout()
-        if (!followTail && anchor) {
-            let index = 0
-            while (index < entries.count && entries.get(index).sequence !== anchor) ++index
-            // Expired anchors fall back to the oldest retained event.
-            index = index < entries.count ? index : 0
-            if (entries.count) {
-                events.positionViewAtIndex(index, ListView.Beginning)
-                const retained = events.itemAtIndex(index)
-                if (retained) events.contentY = retained.y + offset
-            }
-        }
-        updating = false
-        settleTail()
+    function toggleTail() { if (followTail) stopFollowing(); else tail() }
+    function exportLog() { if (diagnostics) diagnostics.exportLog(); tail() }
+    function run(text) {
+        const command = text.trim()
+        commandField.text = ""
+        if (!command.length || !diagnostics) return
+        history = history.concat([command]); historyIndex = history.length
+        const result = diagnostics.run(command)
+        if (result.close) { close(); return }
+        if (result.tab) tab = result.tab
+        if (result.tail) tail()
     }
-    onOpened: { followTail = true; paused = false; diagnostics.refresh(); updateView(true); events.forceActiveFocus() }
+    function refreshState() { if (diagnostics && opened && tab === "state") stateModel = diagnostics.stateRows(uiState) }
+    function escapeHtml(text) { return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
+    // Rich text takes opaque colours; blend translucent ones over the console.
+    function solid(color) { return String(Qt.tint(Theme.canvas, color)) }
+    // Pretty JSON as coloured rich text: keys muted, strings green, numbers blue,
+    // booleans green/red, null grey, punctuation faint.
+    function jsonHtml(json) {
+        let value
+        try { value = JSON.parse(json) } catch (e) { return escapeHtml(json) }
+        const lines = [], faint = solid(Theme.inkAlpha(.35))
+        const span = (color, text) => '<span style="color:' + color + '">' + escapeHtml(text) + '</span>'
+        const scalar = v => typeof v === "string" ? span(String(stringColor), JSON.stringify(v))
+            : typeof v === "boolean" ? span(String(v ? green : Theme.error), String(v))
+            : v === null || v === undefined ? span(solid(Theme.inkAlpha(.4)), "null") : span(String(numberColor), String(v))
+        const emit = (key, v, depth, last) => {
+            const indent = "&nbsp;".repeat(depth * 2), name = key === null ? "" : span(solid(Theme.inkAlpha(.6)), JSON.stringify(key) + ": ")
+            const comma = last ? "" : span(faint, ",")
+            if (v !== null && typeof v === "object") {
+                const array = Array.isArray(v), keys = Object.keys(v)
+                if (!keys.length) { lines.push(indent + name + span(solid(Theme.inkAlpha(.5)), array ? "[]" : "{}") + comma); return }
+                lines.push(indent + name + span(faint, array ? "[" : "{"))
+                keys.forEach((k, i) => emit(array ? null : k, v[k], depth + 1, i === keys.length - 1))
+                lines.push(indent + span(faint, array ? "]" : "}") + comma)
+            } else lines.push(indent + name + scalar(v) + comma)
+        }
+        emit(null, value, 0, true)
+        return lines.join("<br>")
+    }
+    function copyJson(sequence, json) {
+        try { diagnostics.copyText(JSON.stringify(JSON.parse(json), null, 2)) } catch (e) { diagnostics.copyText(json) }
+        copiedSequence = sequence; copiedTimer.restart()
+    }
+
+    onOpened: { tail(); refreshState(); if (diagnostics) diagnostics.requestState(); commandField.forceActiveFocus() }
     onClosed: if (previousFocus && previousFocus.visible) previousFocus.forceActiveFocus()
-    onPausedChanged: if (!paused) updateView()
-    onShowStateChanged: { paused = false; updateView(true) }
-    onSelectedScopeChanged: updateView(true)
-    Connections { target: panel.diagnostics; function onChanged() { panel.updateView() } }
+    onTabChanged: { refreshState(); if (tab === "state" && diagnostics) diagnostics.requestState(); Qt.callLater(settleTail) }
+    Connections {
+        target: panel.diagnostics
+        function onFilterChanged() {
+            if (grepField.text !== panel.diagnostics.grep) grepField.text = panel.diagnostics.grep
+            panel.tail()
+        }
+    }
     Shortcut {
         sequences: ["`", "~", "Shift+~", "Shift+`"]
         autoRepeat: false
-        enabled: panel.diagnostics !== null && !panel.searchActive && !panel.typing(panel.hostWindow.activeFocusItem)
+        enabled: panel.diagnostics !== null && !panel.searchActive && (panel.opened || !panel.typing(panel.hostWindow.activeFocusItem))
         onActivated: panel.toggle()
     }
-    background: Rectangle { color: Theme.bg1; radius: 10; border.color: Theme.line2 }
-    Overlay.modal: Rectangle { color: Theme.shadowAlpha(0.65) }
+    Timer { id: settleTimer; interval: 16; onTriggered: panel.settleTail() }
+    Timer { id: copiedTimer; interval: 1200; onTriggered: panel.copiedSequence = "" }
+    Timer { interval: 1000; repeat: true; running: panel.opened && panel.tab === "state"; onTriggered: panel.refreshState() }
+
+    enter: Transition {
+        NumberAnimation { property: "opacity"; from: 0; to: 1; duration: 180; easing.type: Easing.OutCubic }
+        NumberAnimation { property: "y"; from: -16; to: 0; duration: 180; easing.type: Easing.OutCubic }
+    }
+    exit: Transition { NumberAnimation { property: "opacity"; to: 0; duration: 100 } }
+    Overlay.modal: Rectangle { color: Theme.shadowAlpha(0.4) }
+    background: Rectangle {
+        color: Theme.canvas
+        Rectangle { anchors.bottom: parent.bottom; width: parent.width; height: Theme.ruleWidth; color: Theme.line2 }
+    }
+
+    // One monospace line of console text.
+    component Mono: Text {
+        font: panel.monoFont; color: Theme.inkAlpha(.85); textFormat: Text.PlainText
+        lineHeightMode: Text.FixedHeight; lineHeight: panel.line
+        topPadding: panel.lineGap; bottomPadding: -panel.lineGap
+    }
+    // A text button in the top bar (24 px, hover fill) or the filter row (compact).
+    component Chip: Rectangle {
+        id: chip
+        property alias text: label.text
+        property color textColor: Theme.inkAlpha(.65)
+        property color hoverColor: Theme.text
+        property bool selected: false
+        property bool compact: false
+        property string tip: ""
+        signal clicked()
+        implicitWidth: label.implicitWidth + (compact ? 10 : 16); implicitHeight: compact ? panel.line : 24; radius: 3
+        color: selected || (area.containsMouse && !compact) ? Theme.bg4 : "transparent"
+        Accessible.role: Accessible.Button; Accessible.name: label.text; Accessible.description: tip; Accessible.onPressAction: clicked()
+        Mono { id: label; anchors.centerIn: parent; color: area.containsMouse ? chip.hoverColor : chip.textColor }
+        MouseArea { id: area; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: chip.clicked() }
+        FmToolTip { shown: area.containsMouse && chip.tip.length > 0; text: chip.tip }
+    }
+    component Rule: Rectangle { Layout.fillWidth: true; implicitHeight: Theme.ruleWidth; color: Theme.line }
+    component Status: Text { font: panel.smallFont; textFormat: Text.PlainText; color: Theme.inkAlpha(.5) }
+
     contentItem: ColumnLayout {
         spacing: 0
+        // Top bar
         RowLayout {
-            Layout.fillWidth: true; Layout.margins: 20; Layout.bottomMargin: 14; spacing: 12
-            Rectangle {
-                width: 32; height: 32; radius: 7; color: Theme.accentAlpha(0.1); border.color: Theme.accentAlpha(0.25)
-                Label { anchors.centerIn: parent; text: ">_"; font.family: panel.mono; font.pointSize: Theme.fontPoints(16); color: Theme.accent }
+            Layout.fillWidth: true; Layout.preferredHeight: 40; Layout.leftMargin: 16; Layout.rightMargin: 10; spacing: 18
+            Row {
+                spacing: 8
+                Mono { text: "~/fuckmail"; color: Theme.amber }
+                Mono { text: "$"; color: Theme.inkAlpha(.35) }
+                Mono { text: "console" }
             }
-            ColumnLayout {
-                spacing: 1
-                Label { text: "Developer console"; color: Theme.text; font.pointSize: Theme.fontPoints(17); font.weight: Font.Medium }
-                Label { text: "fuckMail / runtime diagnostics"; color: Theme.muted; font.family: panel.mono; font.pointSize: Theme.fontPoints(11) }
-            }
-            Item { Layout.fillWidth: true }
-            Label { text: panel.copyStatus; color: Theme.accent; font.pointSize: Theme.fontPoints(12) }
-            FmButton { objectName: "debugCopy"; text: "Copy report"; onClicked: { panel.diagnostics.refresh(); panel.diagnostics.copyReport(); panel.copyStatus = "Copied"; copiedTimer.restart() } }
-            FmButton { text: "Close  Esc"; onClicked: panel.close() }
-        }
-        RowLayout {
-            Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.bottomMargin: 14; spacing: 6
-            FmButton { text: "Events"; prominent: !panel.showState; onClicked: panel.showState = false }
-            FmButton { text: "State"; prominent: panel.showState; onClicked: panel.showState = true }
-            Rectangle { Layout.leftMargin: 8; Layout.rightMargin: 8; width: 1; height: 20; color: Theme.line2 }
-            FmTextField {
-                id: filter; objectName: "debugFilter"; enabled: !panel.showState
-                Layout.fillWidth: true; placeholderText: "Filter messages, methods, metadata…"
-                onTextChanged: panel.updateView(true)
-                Accessible.name: "Filter debug events"
-            }
-            FmComboBox {
-                id: level; objectName: "debugLevel"; enabled: !panel.showState
-                model: ["All", "Warnings + errors", "ERROR", "WARN", "INFO", "DEBUG"]
-                Layout.preferredWidth: 166
-                onCurrentTextChanged: panel.updateView(true)
-                Accessible.name: "Event severity"
-            }
-        }
-        RowLayout {
-            visible: !panel.showState
-            Layout.fillWidth: true; Layout.leftMargin: 20; Layout.rightMargin: 20; Layout.bottomMargin: 12; spacing: 4
-            Repeater {
-                model: ["All", "Mail", "Calendar", "Sync", "Model", "App"]
-                delegate: FmButton {
-                    required property string modelData
-                    objectName: "debugScope" + modelData
-                    text: modelData; prominent: panel.selectedScope === modelData
-                    onClicked: panel.selectedScope = modelData
-                    Accessible.name: modelData === "All" ? "All subsystem scopes" : modelData + " scope"
+            Row {
+                spacing: 2
+                Repeater {
+                    model: ["logs", "state"]
+                    delegate: Chip {
+                        required property string modelData
+                        objectName: "debugTab_" + modelData
+                        text: modelData; selected: panel.tab === modelData
+                        textColor: selected ? Theme.text : Theme.inkAlpha(.5)
+                        onClicked: { panel.tab = modelData; panel.tail() }
+                    }
                 }
             }
             Item { Layout.fillWidth: true }
-            FmButton { objectName: "debugPause"; text: panel.paused ? "Resume" : "Pause"; onClicked: panel.paused = !panel.paused }
-            FmButton { text: "Clear"; onClicked: { panel.paused = false; panel.selectedText = ""; panel.diagnostics.clear(); panel.updateView(true) } }
-        }
-        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line2 }
-        Rectangle {
-            visible: !panel.showState; Layout.fillWidth: true; height: 30; color: Theme.bg2
             Row {
-                anchors.fill: parent; anchors.leftMargin: 20; anchors.rightMargin: 20; spacing: 12
-                Label { width: 102; height: parent.height; verticalAlignment: Text.AlignVCenter; text: "TIME · UTC"; color: Theme.muted; font.family: panel.mono; font.pointSize: Theme.fontPoints(10) }
-                Label { width: 46; height: parent.height; verticalAlignment: Text.AlignVCenter; text: "LEVEL"; color: Theme.muted; font.family: panel.mono; font.pointSize: Theme.fontPoints(10) }
-                Label { width: 68; height: parent.height; verticalAlignment: Text.AlignVCenter; text: "SCOPE"; color: Theme.muted; font.family: panel.mono; font.pointSize: Theme.fontPoints(10) }
-                Label { height: parent.height; verticalAlignment: Text.AlignVCenter; text: "EVENT / METADATA"; color: Theme.muted; font.family: panel.mono; font.pointSize: Theme.fontPoints(10) }
+                spacing: 2
+                Rectangle {
+                    id: tailToggle
+                    objectName: "debugTailToggle"
+                    readonly property color tint: panel.followTail ? panel.green : Theme.inkAlpha(.5)
+                    width: tailRow.implicitWidth + 16; height: 24; radius: 3
+                    color: tailArea.containsMouse ? Theme.bg4 : "transparent"
+                    Row {
+                        id: tailRow
+                        anchors.centerIn: parent; spacing: 6
+                        Rectangle {
+                            id: tailDot
+                            width: 7; height: 7; radius: 3.5; anchors.verticalCenter: parent.verticalCenter
+                            color: panel.followTail ? panel.green : Theme.inkAlpha(.3)
+                            SequentialAnimation on opacity {
+                                running: panel.opened && panel.followTail && !panel.paused
+                                loops: Animation.Infinite
+                                onRunningChanged: if (!running) tailDot.opacity = 1
+                                NumberAnimation { to: 0.3; duration: 700; easing.type: Easing.InOutSine }
+                                NumberAnimation { to: 1; duration: 700; easing.type: Easing.InOutSine }
+                            }
+                        }
+                        Mono { text: "tail -f"; color: tailToggle.tint; anchors.verticalCenter: parent.verticalCenter }
+                    }
+                    MouseArea { id: tailArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: panel.toggleTail() }
+                    FmToolTip { shown: tailArea.containsMouse; text: panel.followTail ? "Following new lines · click to stop" : "Follow new lines" }
+                    Accessible.role: Accessible.CheckBox; Accessible.name: "tail -f"; Accessible.checked: panel.followTail; Accessible.onPressAction: panel.toggleTail()
+                }
+                Chip {
+                    objectName: "debugPause"
+                    text: panel.paused ? "resume" : "pause"
+                    textColor: panel.paused ? Theme.amber : Theme.inkAlpha(.65); hoverColor: panel.paused ? Theme.amber : Theme.text
+                    tip: panel.paused ? "Resume capturing" : "Stop capturing new lines · the log file keeps recording"
+                    onClicked: panel.diagnostics.paused = !panel.paused
+                }
+                Chip { objectName: "debugClear"; text: "clear"; tip: "Clear the view · the log file is kept"; onClicked: { panel.selectedSequence = ""; panel.diagnostics.clear(); panel.tail() } }
+                Chip { objectName: "debugExport"; text: "export"; tip: "Save the filtered lines as a .log file in Downloads"; onClicked: panel.exportLog() }
+                Item { width: 13; height: 24; Rectangle { anchors.centerIn: parent; width: 1; height: 16; color: Theme.line2 } }
+                Rectangle {
+                    objectName: "debugClose"
+                    width: 27; height: 24; radius: 3; color: closeArea.containsMouse ? Theme.bg4 : "transparent"
+                    FmIcon { anchors.centerIn: parent; name: "close"; size: 11; color: closeArea.containsMouse ? Theme.text : Theme.inkAlpha(.65) }
+                    MouseArea { id: closeArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: panel.close() }
+                    FmToolTip { shown: closeArea.containsMouse; text: "Close — ~ or Esc" }
+                    Accessible.role: Accessible.Button; Accessible.name: "Close console"; Accessible.onPressAction: panel.close()
+                }
             }
         }
+        Rule {}
+        // Filter row
+        RowLayout {
+            visible: panel.tab === "logs"
+            Layout.fillWidth: true; Layout.minimumHeight: 34; Layout.leftMargin: 16; Layout.rightMargin: 10; spacing: 20
+            Row {
+                spacing: 1
+                Mono { text: "level ≤"; color: Theme.inkAlpha(.35); rightPadding: 5 }
+                Repeater {
+                    model: panel.levelNames
+                    delegate: Chip {
+                        required property string modelData
+                        required property int index
+                        readonly property int chosen: panel.diagnostics ? panel.diagnostics.level : 6
+                        objectName: "debugLevel_" + modelData
+                        compact: true; text: modelData; selected: index === chosen
+                        textColor: index <= chosen ? panel.levelColor(index) : Theme.inkAlpha(.3)
+                        hoverColor: index <= chosen ? textColor : Theme.inkAlpha(.6)
+                        tip: (index === chosen ? "Showing " : "Show ") + modelData + " and worse"
+                        onClicked: panel.diagnostics.level = index
+                    }
+                }
+            }
+            Row {
+                spacing: 1
+                Mono { text: "fac"; color: Theme.inkAlpha(.35); rightPadding: 5 }
+                Repeater {
+                    model: ["all"].concat(panel.diagnostics ? panel.diagnostics.facilities : [])
+                    delegate: Chip {
+                        required property string modelData
+                        objectName: "debugFac_" + modelData
+                        compact: true; text: modelData; selected: (panel.diagnostics ? panel.diagnostics.facility : "all") === modelData
+                        textColor: selected ? Theme.text : Theme.inkAlpha(.45)
+                        onClicked: panel.diagnostics.facility = modelData
+                    }
+                }
+            }
+            Item { Layout.fillWidth: true }
+            Rectangle {
+                Layout.preferredWidth: 220; Layout.minimumWidth: 140; implicitHeight: 24; radius: 3
+                color: "transparent"; border.color: grepField.activeFocus ? Theme.line3 : Theme.line2
+                RowLayout {
+                    anchors.fill: parent; anchors.leftMargin: 8; anchors.rightMargin: 8; spacing: 6
+                    Mono { text: "grep"; color: Theme.inkAlpha(.35) }
+                    TextInput {
+                        id: grepField
+                        objectName: "debugGrep"
+                        Layout.fillWidth: true; clip: true
+                        font: panel.monoFont; color: Theme.text; selectionColor: Theme.selection; selectByMouse: true
+                        onTextEdited: panel.diagnostics.grep = text
+                        Keys.onPressed: event => { if (event.text === "`" || event.text === "~") { panel.close(); event.accepted = true } }
+                        Accessible.name: "Filter lines"
+                    }
+                }
+            }
+        }
+        Rule { visible: panel.tab === "logs" }
+        // Lines, or the state tree
         Item {
             Layout.fillWidth: true; Layout.fillHeight: true
-            Rectangle { anchors.fill: parent; color: Theme.bg0 }
-            ListModel { id: entries }
             ListView {
-                id: events; objectName: "debugEvents"
-                anchors.fill: parent; visible: !panel.showState; clip: true
-                model: entries; reuseItems: true; boundsBehavior: Flickable.StopAtBounds
+                id: events
+                objectName: "debugEvents"
+                anchors.fill: parent; visible: panel.tab === "logs"; clip: true
+                topMargin: 8; bottomMargin: 10
+                model: panel.diagnostics ? panel.diagnostics.lines : null
+                boundsBehavior: Flickable.StopAtBounds
                 keyNavigationEnabled: false
-                // Only deliberate navigation changes follow mode. Layout and
-                // model changes to contentY cannot unexpectedly turn it off.
-                onMovementStarted: panel.followTail = false
-                onMovementEnded: if (!panel.updating) panel.followTail = atYEnd
-                onContentYChanged: if (!panel.updating && (dragging || flicking || bar.pressed)) panel.followTail = atYEnd
-                onContentHeightChanged: if (!panel.updating) panel.settleTail()
+                // Only deliberate navigation changes follow mode.
+                onMovementStarted: panel.stopFollowing()
+                onMovementEnded: if (atYEnd) panel.tail()
+                onContentHeightChanged: panel.settleTail()
+                onCountChanged: panel.settleTail()
                 onHeightChanged: panel.settleTail()
-                WheelHandler {
-                    target: null; blocking: false
-                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
-                    onWheel: event => { panel.followTail = false; event.accepted = false }
-                    onActiveChanged: if (!active && !panel.updating) panel.followTail = events.atYEnd
-                }
+                // Any deliberate scroll away from the end stops following; wheel scrolls move the view too.
+                onContentYChanged: if (moving && !atYEnd) panel.stopFollowing()
                 Keys.onPressed: event => {
                     if (event.key === Qt.Key_End) { panel.tail(); event.accepted = true }
-                    else if ([Qt.Key_Home, Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown].indexOf(event.key) >= 0) {
-                        panel.followTail = false
-                        const step = event.key === Qt.Key_Up ? -panel.rowHeight : event.key === Qt.Key_Down ? panel.rowHeight : event.key === Qt.Key_PageUp ? -height : height
-                        contentY = event.key === Qt.Key_Home ? originY : Math.max(originY, Math.min(originY + contentHeight - height, contentY + step))
-                        if (atYEnd) panel.followTail = true
+                    else if ([Qt.Key_Home, Qt.Key_PageUp, Qt.Key_PageDown].indexOf(event.key) >= 0) {
+                        panel.stopFollowing()
+                        const top = originY - topMargin, bottom = originY + contentHeight + bottomMargin - height
+                        contentY = event.key === Qt.Key_Home ? top : Math.max(top, Math.min(bottom, contentY + (event.key === Qt.Key_PageUp ? -height : height)))
+                        if (atYEnd) panel.tail()
                         event.accepted = true
                     }
                 }
                 ScrollBar.vertical: FmScrollBar {
                     id: bar
                     onPressedChanged: {
-                        if (pressed) panel.followTail = false
-                        else if (!panel.updating) panel.followTail = events.atYEnd
+                        if (pressed) panel.stopFollowing()
+                        else if (events.atYEnd) panel.tail()
                     }
                 }
                 delegate: Rectangle {
                     id: row
-                    required property int index
                     required property string sequence
-                    required property string at
-                    required property string level
-                    required property string scope
-                    required property string source
+                    required property string time
+                    required property int level
+                    required property string facility
                     required property string message
-                    required property string details
-                    required property string line
-                    width: events.width; height: panel.rowHeight
-                    color: panel.selectedSequence === sequence ? Theme.accentAlpha(0.1) : hover.hovered ? Theme.inkAlpha(0.035) : "transparent"
-                    readonly property color severityColor: level === "ERROR" ? Theme.error : level === "WARN" ? Theme.warn : level === "DEBUG" ? Theme.subtle : Theme.secondary
-                    Rectangle { width: 2; height: parent.height; color: row.severityColor; visible: row.level === "ERROR" || row.level === "WARN" }
-                    RowLayout {
-                        anchors.fill: parent; anchors.leftMargin: 20; anchors.rightMargin: 22; spacing: 12
-                        Label { Layout.preferredWidth: 102; text: row.at.slice(11, 23); color: Theme.subtle; font.family: panel.mono; font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText }
-                        Label { Layout.preferredWidth: 46; text: row.level; color: row.severityColor; font.family: panel.mono; font.pointSize: Theme.fontPoints(11); textFormat: Text.PlainText }
-                        Label { Layout.preferredWidth: 68; text: row.scope; color: row.scope === "Model" ? Theme.ai : Theme.secondary; font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText }
-                        Label { Layout.fillWidth: true; text: row.message + (row.details ? "   " + row.details : ""); color: Theme.text; elide: Text.ElideRight; font.family: panel.mono; font.pointSize: Theme.fontPoints(12); textFormat: Text.PlainText }
-                    }
-                    HoverHandler { id: hover }
-                    TapHandler { onTapped: { panel.inspect(row); events.forceActiveFocus() } }
+                    required property string context
+                    required property string json
+                    required property int jsonLines
+                    required property bool typed
+                    readonly property bool open: panel.selectedSequence === sequence
+                    readonly property bool badge: !typed && level <= 2
+                    readonly property real detailIndent: 92 + 62 + 56 + 36
+                    width: events.width; height: lineColumn.implicitHeight
+                    color: open ? Theme.inkAlpha(.06) : hover.hovered ? Theme.inkAlpha(.035)
+                        : !typed && level <= 3 ? Theme.errorAlpha(.07) : !typed && level === 4 ? Theme.withAlpha(Theme.amber, .04) : "transparent"
+                    function toggle() { panel.selectedSequence = open ? "" : sequence }
+                    function inJson(position) { return jsonBlock.visible && jsonBlock.contains(jsonBlock.mapFromItem(row, position)) }
+                    HoverHandler { id: hover; cursorShape: Qt.PointingHandCursor }
+                    // A press the JSON text takes for selection leaves the line open.
+                    TapHandler { onTapped: (point) => { if (!row.inJson(point.position)) row.toggle() } }
                     Accessible.role: Accessible.ListItem
-                    Accessible.name: line
-                    Accessible.onPressAction: panel.inspect(row)
+                    Accessible.name: time + " " + (typed ? "" : (panel.levelNames[level] || "") + " " + facility + " ") + message
+                    Accessible.onPressAction: row.toggle()
+                    ColumnLayout {
+                        id: lineColumn
+                        x: 16; width: parent.width - 32; spacing: 0
+                        RowLayout {
+                            Layout.fillWidth: true; spacing: 12
+                            Mono { Layout.preferredWidth: 92; Layout.alignment: Qt.AlignTop; text: row.time; color: Theme.inkAlpha(.3) }
+                            Item {
+                                Layout.preferredWidth: 62; Layout.alignment: Qt.AlignTop; implicitHeight: panel.line
+                                Rectangle { visible: row.badge; x: -4; y: 1; width: levelText.implicitWidth + 8; height: panel.line - 2; radius: 2; color: Theme.error }
+                                Mono {
+                                    id: levelText
+                                    text: row.typed ? "" : panel.levelNames[row.level] || ""
+                                    color: row.badge ? Theme.canvas : panel.levelColor(row.level)
+                                    font.weight: row.badge ? Font.DemiBold : row.level <= 4 ? Font.Medium : Font.Normal
+                                }
+                            }
+                            Mono { Layout.preferredWidth: 56; Layout.alignment: Qt.AlignTop; text: row.facility; color: Theme.inkAlpha(.45); elide: Text.ElideRight }
+                            Mono {
+                                Layout.fillWidth: true; Layout.alignment: Qt.AlignTop
+                                wrapMode: Text.WrapAtWordBoundaryOrAnywhere; textFormat: Text.StyledText
+                                color: row.typed ? Theme.amber : row.level <= 3 ? Theme.error : row.level <= 5 ? Theme.text : row.level === 6 ? Theme.inkAlpha(.78) : Theme.inkAlpha(.45)
+                                text: panel.escapeHtml(row.message)
+                                    + (row.json && !row.open ? '<font color="' + panel.solid(Theme.inkAlpha(.35)) + '">&nbsp;&nbsp;{…} ' + row.jsonLines + (row.jsonLines === 1 ? " line" : " lines") + '</font>' : "")
+                            }
+                        }
+                        Mono {
+                            visible: row.open
+                            Layout.fillWidth: true; Layout.leftMargin: row.detailIndent; Layout.bottomMargin: 4; topPadding: panel.lineGap + 1
+                            wrapMode: Text.WrapAnywhere; color: Theme.inkAlpha(.45)
+                            text: row.open ? "└ " + (row.context ? row.context.split(" ").join("  ") : "(no context)") : ""
+                        }
+                        Rectangle {
+                            id: jsonBlock
+                            visible: row.open && row.json.length > 0
+                            Layout.fillWidth: true; Layout.leftMargin: row.detailIndent; Layout.topMargin: 2; Layout.bottomMargin: 8
+                            implicitHeight: visible ? jsonText.implicitHeight + 16 : 0
+                            color: Theme.inkAlpha(.025)
+                            Rectangle { width: Theme.ruleWidth; height: parent.height; color: Theme.line2 }
+                            TextEdit {
+                                id: jsonText
+                                objectName: "debugJson_" + row.sequence
+                                x: 12; y: 8; width: parent.width - 24 - copyButton.width
+                                readOnly: true; selectByMouse: true; wrapMode: TextEdit.WrapAnywhere
+                                textFormat: TextEdit.RichText; font: panel.monoFont; color: Theme.text; selectionColor: Theme.selection
+                                text: row.open && row.json ? panel.jsonHtml(row.json) : ""
+                                Accessible.name: "JSON payload"
+                            }
+                            Rectangle {
+                                id: copyButton
+                                objectName: "debugCopyJson_" + row.sequence
+                                anchors.top: parent.top; anchors.right: parent.right; anchors.topMargin: 6; anchors.rightMargin: 8
+                                width: copyLabel.implicitWidth + 12; height: copyLabel.implicitHeight + 2; radius: 3
+                                color: copyArea.containsMouse ? Theme.bg4 : "transparent"
+                                Status {
+                                    id: copyLabel; anchors.centerIn: parent
+                                    text: panel.copiedSequence === row.sequence ? "copied" : "copy"
+                                    color: copyArea.containsMouse ? Theme.text : Theme.inkAlpha(.5)
+                                }
+                                MouseArea { id: copyArea; anchors.fill: parent; hoverEnabled: true; cursorShape: Qt.PointingHandCursor; onClicked: panel.copyJson(row.sequence, row.json) }
+                                Accessible.role: Accessible.Button; Accessible.name: "Copy JSON"; Accessible.onPressAction: panel.copyJson(row.sequence, row.json)
+                            }
+                        }
+                    }
                 }
             }
-            Label { anchors.centerIn: parent; visible: !panel.showState && entries.count === 0; text: "No matching events"; color: Theme.muted; font.pointSize: Theme.fontPoints(14) }
-            ScrollView {
-                anchors.fill: parent; visible: panel.showState; clip: true
+            Mono {
+                x: 16; y: 8; visible: panel.tab === "logs" && events.count === 0
+                text: "-- no lines match --"; color: Theme.inkAlpha(.35)
+            }
+            ListView {
+                id: stateView
+                objectName: "debugState"
+                anchors.fill: parent; visible: panel.tab === "state"; clip: true
+                topMargin: 8; bottomMargin: 10; boundsBehavior: Flickable.StopAtBounds
+                model: panel.stateModel
                 ScrollBar.vertical: FmScrollBar {}
-                TextArea {
-                    objectName: "debugState"; text: panel.showState ? panel.displayText : ""
-                    padding: 20; rightPadding: 28; readOnly: true; selectByMouse: true; textFormat: TextEdit.PlainText
-                    wrapMode: TextEdit.WrapAnywhere; color: Theme.secondary; selectionColor: Theme.selection
-                    font.family: panel.mono; font.pointSize: Theme.fontPoints(12); background: null
-                    Accessible.name: "Runtime application state"
+                delegate: Row {
+                    id: stateRow
+                    required property var modelData
+                    x: 16 + modelData.depth * 18; spacing: 10
+                    Mono {
+                        width: stateRow.modelData.kind === "section" ? implicitWidth : Math.max(implicitWidth, 170)
+                        text: stateRow.modelData.key
+                        color: stateRow.modelData.kind !== "section" ? Theme.inkAlpha(.5) : stateRow.modelData.depth ? Theme.inkAlpha(.75) : Theme.amber
+                    }
+                    Mono {
+                        text: stateRow.modelData.value
+                        color: stateRow.modelData.kind === "string" ? panel.stringColor : stateRow.modelData.kind === "number" ? panel.numberColor
+                            : stateRow.modelData.kind === "null" ? Theme.inkAlpha(.4) : stateRow.modelData.kind === "bool" ? (stateRow.modelData.value === "true" ? panel.green : Theme.error) : Theme.text
+                    }
                 }
+            }
+            Rectangle {
+                objectName: "debugTail"
+                visible: panel.tab === "logs" && panel.newCount > 0
+                anchors.right: parent.right; anchors.bottom: parent.bottom; anchors.rightMargin: 20; anchors.bottomMargin: 12
+                width: newLabel.implicitWidth + 20; height: 24; radius: 3
+                color: Theme.bg4; border.color: Theme.line2
+                Mono { id: newLabel; anchors.centerIn: parent; text: "↓ " + panel.newCount + " new"; color: Theme.amber }
+                MouseArea { anchors.fill: parent; cursorShape: Qt.PointingHandCursor; onClicked: panel.tail() }
+                Accessible.role: Accessible.Button; Accessible.name: panel.newCount + " new lines · follow"; Accessible.onPressAction: panel.tail()
             }
         }
-        Rectangle { visible: panel.selectedText !== "" && !panel.showState; Layout.fillWidth: true; height: 1; color: Theme.line2 }
+        Rule {}
+        // Command line
         RowLayout {
-            visible: panel.selectedText !== "" && !panel.showState
-            Layout.fillWidth: true; Layout.preferredHeight: Math.min(170, panel.height * 0.25); spacing: 0
-            ScrollView {
-                Layout.fillWidth: true; Layout.fillHeight: true; clip: true
-                ScrollBar.vertical: FmScrollBar {}
-                TextArea {
-                    objectName: "debugDetail"; text: panel.selectedText; padding: 16; rightPadding: 24
-                    readOnly: true; selectByMouse: true; textFormat: TextEdit.PlainText; wrapMode: TextEdit.WrapAnywhere
-                    font.family: panel.mono; font.pointSize: Theme.fontPoints(12); color: Theme.secondary; selectionColor: Theme.selection; background: null
-                    Accessible.name: "Selected event details"
+            Layout.fillWidth: true; Layout.preferredHeight: 34; Layout.leftMargin: 16; Layout.rightMargin: 16; spacing: 8
+            Mono { text: "›"; color: Theme.amber }
+            TextInput {
+                id: commandField
+                objectName: "debugCommand"
+                Layout.fillWidth: true; clip: true
+                font: panel.monoFont; color: Theme.text; selectionColor: Theme.selection; selectByMouse: true
+                cursorDelegate: Rectangle { width: 1.5; color: Theme.amber; visible: commandField.activeFocus && commandField.cursorVisible }
+                Text { visible: !commandField.text.length; text: "type help"; font: panel.monoFont; color: Theme.inkAlpha(.3); textFormat: Text.PlainText }
+                Keys.onPressed: event => {
+                    if (event.text === "`" || event.text === "~") { panel.close(); event.accepted = true }
+                    else if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) { panel.run(text); event.accepted = true }
+                    else if (event.key === Qt.Key_Up && panel.history.length) {
+                        panel.historyIndex = Math.max(0, panel.historyIndex - 1); text = panel.history[panel.historyIndex]; event.accepted = true
+                    } else if (event.key === Qt.Key_Down && panel.history.length) {
+                        panel.historyIndex = Math.min(panel.history.length, panel.historyIndex + 1); text = panel.history[panel.historyIndex] || ""; event.accepted = true
+                    }
                 }
+                Accessible.name: "Console command"
             }
-            FmButton { Layout.alignment: Qt.AlignTop; Layout.margins: 8; text: "Hide details"; onClicked: panel.selectedText = "" }
         }
-        Rectangle { Layout.fillWidth: true; height: 1; color: Theme.line2 }
-        RowLayout {
-            Layout.fillWidth: true; Layout.margins: 12; Layout.leftMargin: 20; Layout.rightMargin: 20; spacing: 8
-            Rectangle { width: 6; height: 6; radius: 3; color: panel.paused ? Theme.warn : panel.followTail ? Theme.accent : Theme.muted }
-            Label {
-                text: panel.paused ? "View paused · capture continues" : panel.showState ? "Runtime state" : panel.followTail ? "Following latest" : "Reading history"
-                color: panel.followTail && !panel.paused ? Theme.accent : Theme.muted; font.pointSize: Theme.fontPoints(12)
-            }
-            FmButton { objectName: "debugTail"; visible: !panel.showState && (!panel.followTail || panel.paused); text: "Jump to latest ↓"; onClicked: panel.tail() }
-            Item { Layout.fillWidth: true }
-            Label {
-                text: entries.count + " / " + (panel.diagnostics ? panel.diagnostics.count : 0) + " events"
-                color: Theme.muted; font.family: panel.mono; font.pointSize: Theme.fontPoints(11)
-                HoverHandler { id: countHover }
-                FmToolTip { shown: countHover.hovered; text: "Latest 1,000 events · " + (panel.diagnostics ? panel.diagnostics.dropped : 0) + " older events evicted. Select a row to inspect its metadata." }
-            }
-            Label {
-                text: "·  " + (panel.diagnostics && panel.diagnostics.logDirectory ? "Saved to disk · 10 MiB" : "Disk log unavailable")
-                color: Theme.muted; font.pointSize: Theme.fontPoints(11)
-                HoverHandler { id: diskHover }
-                FmToolTip { shown: diskHover.hovered; text: panel.diagnostics ? panel.diagnostics.logDirectory : "" }
+        // Status bar
+        Rectangle {
+            Layout.fillWidth: true; Layout.preferredHeight: 22; color: Theme.bg4; clip: true
+            RowLayout {
+                readonly property var d: panel.diagnostics
+                anchors.fill: parent; anchors.leftMargin: 16; anchors.rightMargin: 16; spacing: 14
+                Status {
+                    objectName: "debugMode"
+                    text: panel.paused ? "‖ paused" : panel.followTail ? "● tail" : "○ scrolled"
+                    color: panel.followTail ? panel.green : Theme.inkAlpha(.5)
+                }
+                Status {
+                    objectName: "debugCounts"
+                    text: parent.d ? parent.d.count.toLocaleString(Qt.locale("en_US"), "f", 0) + " lines · " + parent.d.matched.toLocaleString(Qt.locale("en_US"), "f", 0) + " shown" : ""
+                }
+                Status {
+                    Layout.fillWidth: true; elide: Text.ElideRight
+                    text: parent.d ? "level ≤ " + panel.levelNames[parent.d.level] + " · fac " + parent.d.facility + (parent.d.grep ? " · grep \"" + parent.d.grep + "\"" : "") : ""
+                }
+                Status {
+                    objectName: "debugErrors"
+                    text: (parent.d ? parent.d.errors : 0) + " err"
+                    color: parent.d && parent.d.errors > 0 ? Theme.error : Theme.inkAlpha(.5)
+                }
+                Status { text: (parent.d ? parent.d.warnings : 0) + " warn · last hour" }
+                Status { text: "~ close"; color: Theme.inkAlpha(.35) }
             }
         }
     }
-    Timer { id: copiedTimer; interval: 2500; onTriggered: panel.copyStatus = "" }
 }

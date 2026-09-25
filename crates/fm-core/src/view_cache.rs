@@ -163,6 +163,23 @@ impl ViewCache {
         self.bytes.store(u64::MAX, Ordering::SeqCst);
     }
 
+    /// An attachment of a message read live from Google, written so it can be
+    /// previewed or saved. Keeps only the newest few files.
+    pub fn remote_file(&self, name: &str, bytes: &[u8]) -> Result<PathBuf> {
+        let cache = private_directory(&self.profile, "cache", true)?;
+        let directory = private_directory(&cache, "remote", true)?;
+        let destination = directory.join(name);
+        if !destination.exists() {
+            let (temporary, mut file) = create_stage(&directory)?;
+            file.write_all(bytes)?;
+            file.sync_all()?;
+            drop(file);
+            fs::rename(&temporary, &destination)?;
+        }
+        prune(&directory, &destination);
+        Ok(destination)
+    }
+
     /// Sanitised HTML too large to send inline. Keeps only the newest few files.
     pub fn html_file(&self, name: &str, html: &str) -> Result<PathBuf> {
         let cache = private_directory(&self.profile, "cache", true)?;
@@ -175,19 +192,27 @@ impl ViewCache {
             drop(file);
             fs::rename(&temporary, &destination)?;
         }
-        let mut files: Vec<_> = fs::read_dir(&directory)?
-            .flatten()
-            .filter_map(|e| Some((e.path(), e.metadata().ok()?.modified().ok()?)))
-            .collect();
-        if files.len() > HTML_FILES_KEPT {
-            files.sort_by_key(|(_, modified)| *modified);
-            for (path, _) in &files[..files.len() - HTML_FILES_KEPT] {
-                if path != &destination {
-                    let _ = fs::remove_file(path);
-                }
+        prune(&directory, &destination);
+        Ok(destination)
+    }
+}
+
+/// Keep the newest few files of a directory, and always `keep`.
+fn prune(directory: &Path, keep: &Path) {
+    let Ok(entries) = fs::read_dir(directory) else {
+        return;
+    };
+    let mut files: Vec<_> = entries
+        .flatten()
+        .filter_map(|e| Some((e.path(), e.metadata().ok()?.modified().ok()?)))
+        .collect();
+    if files.len() > HTML_FILES_KEPT {
+        files.sort_by_key(|(_, modified)| *modified);
+        for (path, _) in &files[..files.len() - HTML_FILES_KEPT] {
+            if path != keep {
+                let _ = fs::remove_file(path);
             }
         }
-        Ok(destination)
     }
 }
 

@@ -1,5 +1,15 @@
 # Calendar, feeds and reminders
 
+
+
+## D120 — now lines and the 24-hour default (Calendar33)
+
+The timeline and Day/Week fallback range is 0–24 (Core67's default preference). Day and Week draw the now line in today's column (unchanged) and call `revealNow()` when the view becomes visible, when the grid completes and when the view, range start or today changes: if today is shown and the line is outside the viewport, the grid scrolls so it sits a quarter down. Manual scrolling is kept otherwise. Month's today cell orders finished timed events first, then all-day and upcoming ones; the line is drawn before the first unfinished row (above the first row when none has finished) or after the last shown row when all have finished, so just after midnight it sits at the top. Mail UI87 owns the day strip. Consumers: Mail UI87, Core67.
+
+## D118 — header dates (Calendar32)
+
+Day view's title is "{Today|Tomorrow|Yesterday} · dddd MMMM d yyyy", the relative word only when it applies. Week view keeps "Week N" with the subtitle "d MMMM yyyy – d MMMM yyyy". Day and Month views have no subtitle; the event count and account summary line is removed. Consumers: Mail UI85.
+
 ## D106 — valid long reminder identities (Calendar31)
 
 Reminder queries and acknowledgements use Core58's dedicated 1,024-byte calendar and 8,192-byte occurrence limits, including serialized recurrence identities longer than 256 bytes. A valid long identity must survive poll, shown acknowledgement, snooze, resumed poll and dismissal without generating an IPC error. Existing exact receipt identity and permission/due-time validation remain. Consumers: Core58, native running-client reminders, CLI and Quality76; schema, fixtures and protocol unchanged.

@@ -37,7 +37,8 @@ void MailBackend::googleOperation(const QString &method, const QString &account,
         callback(error, false);
     };
     const bool localContent = method == "draft_attachment_import" || method == "google_draft_source"
-        || method == "google_draft_authoring" || method == "google_draft_copy" || method == "draft_transfer";
+        || method == "google_draft_authoring" || method == "google_draft_copy" || method == "draft_transfer"
+        || method == "message_unsubscribe";
     if (blockArchivedRequest(method, account)) {
         refuseBeforeRequest("account_removed", "This is a read-only account archive. Restore it explicitly before making changes."); return;
     }

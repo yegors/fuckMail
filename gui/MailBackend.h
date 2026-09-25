@@ -85,6 +85,12 @@ class MailBackend final : public QObject {
     // How Core read the current search text, or why it could not.
     Q_PROPERTY(QVariantMap searchTerms READ searchTerms NOTIFY searchTermsChanged)
     Q_PROPERTY(QString searchError READ searchError NOTIFY searchTermsChanged)
+    // Also search the account on the server; results not on this machine join the list.
+    Q_PROPERTY(bool remoteSearch READ remoteSearch WRITE setRemoteSearch NOTIFY remoteSearchChanged)
+    Q_PROPERTY(QVariantMap remoteSearchState READ remoteSearchState NOTIFY remoteSearchChanged)
+    // Spam and Trash: Gmail's totals for the open one, and whether an action runs.
+    Q_PROPERTY(QVariantMap binCounts READ binCounts NOTIFY binCountsChanged)
+    Q_PROPERTY(bool binBusy READ binBusy NOTIFY binCountsChanged)
     Q_PROPERTY(QStringList recentSearches READ recentSearches NOTIFY recentSearchesChanged)
     Q_PROPERTY(QVariantList searchPeople READ searchPeople NOTIFY searchPeopleChanged)
     Q_PROPERTY(QString searchPeopleQuery READ searchPeopleQuery NOTIFY searchPeopleChanged)
@@ -255,7 +261,13 @@ public:
     Q_INVOKABLE void loadMore();
     Q_INVOKABLE QString assistanceRequest(const QString &method, const QVariantMap &params, const QString &account = QString());
     // Live Gmail Spam for the current account: google_spam_list or google_spam_message.
-    Q_INVOKABLE QString spamRequest(const QString &method, const QVariantMap &params);
+    // Unsubscribe from the list of a received message the reader shows.
+    Q_INVOKABLE QString unsubscribe(const QVariantMap &message);
+    // The open Spam conversation to the Inbox; the open Spam or Trash
+    // conversation, or the whole folder, deleted for good.
+    Q_INVOKABLE void notSpam();
+    Q_INVOKABLE void deleteForever();
+    Q_INVOKABLE void emptyBin();
     Q_INVOKABLE QString labelRequest(const QString &method, const QVariantMap &params, const QString &account);
     Q_INVOKABLE QString requestAttachmentPreview(const QString &account, const QString &id);
     Q_INVOKABLE QString saveAttachment(const QString &account, const QString &id, const QUrl &destination);
@@ -419,7 +431,10 @@ signals:
     void debugEvent(const QString &level, const QString &source, const QString &message, const QVariantMap &fields);
     void recipientSuggestionsReply(const QString &ticket, const QVariantMap &result, bool ok);
     void assistanceReply(const QString &ticket, const QString &method, const QVariantMap &result, bool ok);
-    void spamReply(const QString &ticket, const QString &method, const QString &account, const QVariantMap &result, bool ok);
+    void remoteSearchChanged();
+    void unsubscribeReady(const QString &ticket, const QVariantMap &result, bool ok);
+    void binCountsChanged();
+    void binActionFinished(const QString &action, bool ok, const QVariantMap &result);
     void attachmentPreviewReady(const QString &ticket, const QVariantMap &result, bool ok);
     void attachmentSaved(const QString &ticket, const QString &error);
     void mailSelectionRestored(const QVariantList &rows);
@@ -532,6 +547,7 @@ private:
                        qint64 lifecycle, bool prefetch, std::function<void(QVariantMap)> ready);
     QVariantMap retainReaderPresentation(QVariantMap data) const;
     void googleOperation(const QString &method, const QString &account, const QJsonObject &params, Callback callback);
+    void attachmentFile(const QString &account, const QString &id, Callback callback);
     void cancelGoogleOperations(bool notify = true);
     void cancelGoogleProviderOperations(const QString &account);
     void pollGoogleSync();
@@ -960,4 +976,26 @@ private:
     std::function<void()> m_afterDraftSave;
     std::function<void()> m_afterConversationMutation;
     QSet<QString> m_viewSaving, m_viewDirty;
+    // Remote search: session-only switch, rows for exactly one account/folder/query.
+    bool remoteSearch() const { return m_remoteSearch; }
+    void setRemoteSearch(bool value);
+    QVariantMap remoteSearchState() const;
+    void scheduleRemoteSearch();
+    void runRemoteSearch();
+    QVariantList withRemoteRows(QVariantList rows) const;
+    void loadRemoteThread();
+    bool m_remoteSearch = false, m_remoteBusy = false;
+    QString m_remoteAccount, m_remoteFolder, m_remoteQuery, m_remoteError;
+    QVariantList m_remoteRows;
+    int m_remoteSerial = 0;
+    QTimer m_remoteSearchTimer;
+    // Spam is listed live, a page of Gmail messages at a time, one row per thread.
+    void loadSpamRows(bool append);
+    void refreshBinCounts();
+    void finishBinAction(const QString &action, const QString &account, const QString &folder, const QString &id, const QJsonObject &result, bool ok);
+    QVariantMap binCounts() const { return m_binCounts; }
+    bool binBusy() const { return m_binBusy; }
+    QVariantMap m_binCounts;
+    QString m_spamToken;
+    bool m_binBusy = false;
 };

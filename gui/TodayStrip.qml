@@ -8,8 +8,8 @@ Rectangle {
     color: Theme.bg0
     property bool headerPosition: false
     signal openCalendar()
-    property int firstHour: backend.preferences.timeline_start_hour === undefined ? 7 : backend.preferences.timeline_start_hour
-    property int lastHour: backend.preferences.timeline_end_hour === undefined ? 21 : backend.preferences.timeline_end_hour
+    property int firstHour: backend.preferences.timeline_start_hour === undefined ? 0 : backend.preferences.timeline_start_hour
+    property int lastHour: backend.preferences.timeline_end_hour === undefined ? 24 : backend.preferences.timeline_end_hour
     property real hours: Math.max(1, lastHour - firstHour)
     property real trackWidth: Math.max(1, width - 48)
     property int shownLanes: 1
@@ -93,6 +93,9 @@ Rectangle {
                     }
                     return ranges
                 }
+                readonly property int dayOffset: Math.round((new Date(panel.snapshot.date + "T12:00:00") - new Date(backend.todayDate + "T12:00:00")) / 86400000)
+                readonly property bool isToday: dayOffset === 0
+                readonly property real markerEnd: dayMarker.x + dayMarker.width + 6
                 Binding { target: timeline; property: "shownLanes"; value: panel.shownLanes; when: panel.index === 1 }
                 Binding { target: timeline; property: "hiddenEvents"; value: panel.hiddenEvents; when: panel.index === 1 }
                 MouseArea {
@@ -107,8 +110,10 @@ Rectangle {
                     Item {
                         required property int index
                         x: 24 + index / timeline.hours * timeline.trackWidth; height: panel.height
-                        Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, 24); width: Theme.ruleWidth; height: panel.shownLanes * 28 + 8; color: Theme.bg3 }
-                        Text { visible: panel.snapshot.date !== backend.todayDate || Math.abs(timeline.firstHour + index - backend.nowHour) > .42; y: 8; x: index === 0 ? 0 : index === timeline.hours ? -width : -width / 2; text: (timeline.firstHour + index < 10 ? "0" : "") + (timeline.firstHour + index); color: Theme.inkAlpha((timeline.firstHour + index) % 3 === 0 || index === 0 || index === timeline.hours ? .45 : .28); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5) }
+                        // The day separator replaces the first hour's rule.
+                        Rectangle { visible: index > 0; x: Theme.snapX(parent, 0); y: Theme.snapY(parent, 24); width: Theme.ruleWidth; height: panel.shownLanes * 28 + 8; color: Theme.bg3 }
+                        // No label at the edges, under the day marker or beside now.
+                        Text { visible: index > 0 && index < timeline.hours && parent.x - width / 2 > panel.markerEnd && (!panel.isToday || Math.abs(timeline.firstHour + index - backend.nowHour) > .42); y: 8; x: index === timeline.hours ? -width : -width / 2; text: (timeline.firstHour + index < 10 ? "0" : "") + (timeline.firstHour + index); color: Theme.inkAlpha((timeline.firstHour + index) % 3 === 0 || index === 0 || index === timeline.hours ? .45 : .28); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5) }
                     }
                 }
                 Repeater {
@@ -170,38 +175,50 @@ Rectangle {
                         Accessible.onPressAction: timeline.showEvent(modelData, eventBlock)
                     }
                 }
+                // The day separator and marker: date, weekday and Today/Tomorrow/Yesterday.
+                Rectangle {
+                    objectName: panel.index === 1 ? "timelineDaySeparator" : ""
+                    x: Theme.snapX(panel, 24); width: Theme.ruleWidth; height: panel.height
+                    color: panel.isToday ? Theme.accentAlpha(.45) : Theme.inkAlpha(.2)
+                }
+                Row {
+                    id: dayMarker
+                    objectName: panel.index === 1 ? "timelineDayMarker" : ""
+                    x: 30; y: 5; spacing: 5
+                    readonly property string relative: panel.dayOffset === 0 ? "Today" : panel.dayOffset === 1 ? "Tomorrow" : panel.dayOffset === -1 ? "Yesterday" : ""
+                    readonly property string label: dayNumber.text + " " + weekday.text + (relative.length > 0 ? " · " + relative : "")
+                    Accessible.role: Accessible.StaticText; Accessible.name: label
+                    Text { id: dayNumber; text: new Date(panel.snapshot.date + "T12:00:00").getDate(); color: panel.isToday ? Theme.accent : Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); font.weight: Font.DemiBold; font.features: {"tnum": 1} }
+                    Text { id: weekday; anchors.baseline: dayNumber.baseline; text: Qt.formatDate(new Date(panel.snapshot.date + "T12:00:00"), "ddd"); color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.capitalization: Font.AllUppercase; font.letterSpacing: Theme.fontSize(10.5) * .06 }
+                    Text { visible: dayMarker.relative.length > 0; anchors.baseline: dayNumber.baseline; text: "·"; color: Theme.inkAlpha(.25); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5) }
+                    Text { visible: dayMarker.relative.length > 0; anchors.baseline: dayNumber.baseline; text: dayMarker.relative; color: panel.isToday ? Theme.accent : Theme.text; opacity: .85; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5) }
+                }
                 Item {
-                    visible: panel.snapshot.date === backend.todayDate && backend.nowHour >= timeline.firstHour && backend.nowHour <= timeline.lastHour
+                    objectName: panel.index === 1 ? "timelineNowLine" : ""
+                    visible: panel.isToday && backend.nowHour >= timeline.firstHour && backend.nowHour <= timeline.lastHour
                     x: 24 + (backend.nowHour - timeline.firstHour) / timeline.hours * timeline.trackWidth; height: panel.height
                     Rectangle { x: Theme.snapX(parent, 0); y: Theme.snapY(parent, 22); width: Theme.ruleWidth; height: panel.shownLanes * 28 + 12; color: Theme.accent }
-                    Rectangle { y: 5; x: -nowLabel.implicitWidth / 2 - 3; width: nowLabel.implicitWidth + 6; height: 16; color: Theme.bg0
+                    Rectangle { visible: !nowTime.visible; x: -3; y: 19; width: 7; height: 7; radius: 3.5; color: Theme.accent }
+                    // The time label gives way to the day marker; the line stays.
+                    Rectangle { id: nowTime; visible: parent.x - nowLabel.implicitWidth / 2 - 3 > panel.markerEnd; y: 5; x: -nowLabel.implicitWidth / 2 - 3; width: nowLabel.implicitWidth + 6; height: 16; color: Theme.bg0
                         Text { id: nowLabel; anchors.centerIn: parent; text: (Math.floor(backend.nowHour) < 10 ? "0" : "") + Math.floor(backend.nowHour) + ":" + (Math.floor(backend.nowHour * 60) % 60 < 10 ? "0" : "") + Math.floor(backend.nowHour * 60) % 60; color: Theme.accent; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(10.5); font.weight: Font.Medium }
                     }
                 }
                 Rectangle {
-                    readonly property int offset: Math.round((new Date(panel.snapshot.date + "T12:00:00") - new Date(backend.todayDate + "T12:00:00")) / 86400000)
-                    visible: panel.snapshot.date !== backend.todayDate
+                    visible: !panel.isToday
                     anchors.right: parent.right; anchors.rightMargin: 24 + (timeline.hiddenEvents > 0 ? overflowButton.width + 10 : 0); y: 6
-                    width: awayRow.implicitWidth + 6; height: 16; color: Theme.bg0
-                    Row {
-                        id: awayRow; anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter; spacing: 10
-                        Text {
-                            objectName: panel.index === 1 ? "timelineDateLabel" : ""
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: (parent.parent.offset === 1 ? "Tomorrow · " : parent.parent.offset === -1 ? "Yesterday · " : "") + Qt.formatDate(new Date(panel.snapshot.date + "T12:00:00"), "dddd d MMM")
-                            color: Theme.inkAlpha(.6); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11); font.weight: Font.Medium
-                        }
-                        FmButton {
-                            objectName: panel.index === 1 ? "timelineToday" : ""
-                            anchors.verticalCenter: parent.verticalCenter
-                            text: "Back to today"; implicitHeight: 16; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
-                            font.pointSize: Theme.fontPoints(11); foreground: hovered ? Theme.text : Theme.accent
-                            background: Item {}
-                            onClicked: backend.showTimelineToday()
-                        }
+                    width: backToToday.implicitWidth + 6; height: 16; color: Theme.bg0
+                    FmButton {
+                        id: backToToday
+                        objectName: panel.index === 1 ? "timelineToday" : ""
+                        anchors.right: parent.right; anchors.verticalCenter: parent.verticalCenter
+                        text: "Back to today"; implicitHeight: 16; leftPadding: 0; rightPadding: 0; topPadding: 0; bottomPadding: 0
+                        font.pointSize: Theme.fontPoints(11); foreground: hovered ? Theme.text : Theme.accent
+                        background: Item {}
+                        onClicked: backend.showTimelineToday()
                     }
                 }
-                Text { x: 24; y: 32; visible: panel.blocks.length === 0; text: panel.snapshot.ready ? "Nothing scheduled" : panel.index === 1 ? backend.timelineCoverage : "Loading timeline…"; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); width: panel.width - 48; elide: Text.ElideRight }
+                Text { x: 30; y: 32; visible: panel.blocks.length === 0; text: panel.snapshot.ready ? "Nothing scheduled" : panel.index === 1 ? backend.timelineCoverage : "Loading timeline…"; color: Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5); width: panel.width - 48; elide: Text.ElideRight }
             }
         }
     }

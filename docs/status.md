@@ -1,5 +1,48 @@
 # Current status
 
+**D120 / tenth export: day strip, Spam and Trash, delete for good, now lines (2026-09-25):**
+- **Day strip:** 00:00–24:00 by default; each day has a left separator (gold today) and a marker "25 FRI · Today"; edge and covered hour labels hide; the right date label is gone, "Back to today" stays.
+- **Now lines:** Day and Week scroll the line into view; Month puts it at the top of today just after midnight instead of under an all-day event.
+- **Folders:** "Inbox · Sent · Drafts | Spam Trash"; the chevron menu and All mail are gone from the header.
+- **Spam and Trash:** normal rows, "Auto-deleted after 30 days · Empty …" strip, "N in spam/trash" header, only "All N", "No spam. Nice." / "Trash is empty.". Spam opens in the normal reader (still read live). Action bar: Move to Inbox / Restore and Delete permanently, with confirms. Restore now returns mail to the Inbox.
+- **Access:** deleting for good needs Gmail full access; new connections ask for it, existing ones get a Reconnect prompt.
+- **Notices row:** Load images, Always load images and Unsubscribe keep their full labels; the text shrinks first.
+- **Schema:** fresh baseline 37, no migrations; delete old profiles and reconnect.
+- **Checks (Windows Release, build/p9):** Rust fm-core 367, fm-engine, fm-google, fm-mail and fm-cli tests; clippy clean. Native: 30 fast GUI tests plus `gui-smoke`, `gui-live-empty`, `gui-integration` and `gui-attachments` pass. Captures of Spam with its action bar and confirm, Week/Month now lines, the strip and the notices row.
+- **Also:** CTest `rust-workspace` passes. `gui_startup_recovers_after_writer_closes` passes when run directly (5.7 s); its CTest entry times out while cargo rebuilds the shared `target` inside the 90 s limit.
+- **Not verified:** real Gmail not-spam, delete-for-good and empty; reconnecting for full access; other hosts.
+
+[Decision](decisions.md) · [Record](research/prototype-september-23.md#d120--tenth-export-2026-09-25).
+
+**D119 / developer console redesign and loaded images (2026-09-25):**
+- **Console:**
+  - Opening: drops from the top over a dim overlay; ~, `, Esc, `exit` or the overlay closes it.
+  - Filters: `logs`/`state` tabs; `level ≤` over the eight syslog levels; facility (sync, gmail, cal, llm, db, net, ui, app); a grep that also searches details and JSON.
+  - Lines: aligned four-column lines that expand to `└ key=value` details and a coloured, selectable JSON block with copy.
+  - Following: `tail -f` with "↓ N new".
+  - Commands with history: help, clear, level, fac, grep, tail, pause, resume, state, logs, sync, export, exit.
+  - Status bar: last-hour err/warn counts.
+  - State tab: live app, ui, accounts, llm, network and db.
+- **Backend:** 5,000-line ring; the view shows the latest 600 matching; pause leaves `gui.log` recording; export writes `fuckmail-YYYYMMDDHHMM.log` to Downloads.
+- **Reader images row:** after Load images it shows "N images loaded" and "Images loaded for this message only". "Always load images from {sender}" becomes "Stop always loading from {sender}" and keeps this message's images.
+- **Local LLM:** the model picker is wider, elides long names in the middle, and its list can be wider than the field.
+- **Checks (Windows Release, build/dc):** `gui-debug-console` 8/8 (5 consecutive runs), `gui-html-message-body`, `gui-local-model`, `gui-smoke`, Rust workspace and 32 other native tests pass.
+- **Also:** `gui-integration` passes after D120's settings self-test fix (the timeline default changed). `gui-startup-recovery` times out while cargo rebuilds the engine inside the test.
+- **Not verified:** the console against the export by capture, a real wheel/trackpad, macOS/Linux fonts.
+
+[Decision](decisions.md) · [Contract](contracts/mail-ui.md).
+
+**D118 / ninth export: remote search, notices and unsubscribe (2026-09-25):**
+- **Calendar:** Day title "Today · Tuesday December 3 2026" (Tomorrow/Yesterday when they apply); Week subtitle has years on both ends; the event-count summary line is gone.
+- **Search remote mailbox:** a dropdown switch that also searches the account on the server; threads not on this machine join the list with a cloud icon and open live (all messages, attachments on demand). Nothing is kept.
+- **Accounts:** a "Keeps 1 year" / "Keeps everything" badge after each address.
+- **Reader:** one ruled notices group above the text: the mailing-list row ("N this month, N this year", Unsubscribe by one-click POST, email or browser link, remembered per conversation and sender) and the hidden-images row (Load images, Always load images from {sender}). The old image bar is gone.
+- **Engine/CLI:** schema37 (`unsubscribes`, sender index), `google_remote_search`/`_thread`/`_attachment`, `google_unsubscribe_mail`, `message_unsubscribe`; `fm google search|thread|attachment`, `fm mail unsubscribe`.
+- **Checks (Windows Release, build/p9):** Rust workspace (CTest `rust-workspace`) and native CTest 36/36, with new Core, mail, engine and GUI cases (`gui-mail-selection` remote search/thread/unsubscribe and retention badge; `gui-html-message-body` notices group).
+- **Not verified:** a real Gmail remote search, a real one-click/mailto unsubscribe, the new screens against the export by capture, and other hosts.
+
+[Decision](decisions.md) · [Record](research/prototype-september-23.md#d118--ninth-export-2026-09-25).
+
 **D117 / To review is Inbox only; read mail moves at once (2026-09-24):** header, tab badge and hover card count Inbox conversations only (`inbox_review_count`, `inbox_held_count`), and an opened or Done conversation leaves To review immediately; it is pinned only when the view no longer returns it, so sections no longer repeat when mail arrives. Checks: core `inbox_counts_leave_out_trash_and_archived_mail`, `gui-mail-selection` read-moves/filtered-pin cases.
 
 **D116 / Spam read live, not synced (2026-09-24):** full sync lists with `-in:spam`, spam that reaches the store is removed, and existing profiles drop stored spam once on open, so "to review", All mail and Downloading stop counting it. The folder menu's Spam lists and opens Gmail's Spam live (headers and snippet, then text on open); CLI `google spam` / `spam-show`. Checks: core `spam_is_never_kept_and_leaving_spam_brings_the_message_back`, engine spam parsing, `gui-mail-selection` Spam listing/open. Not yet tried against the real mailbox.
