@@ -827,6 +827,15 @@ fn publish_item_inner(
     if item.disposition == Disposition::OutsideRetention {
         return Ok(());
     }
+    // A page prepared before this rule may still carry a spam message.
+    if item.disposition == Disposition::Spam
+        || item
+            .message
+            .as_ref()
+            .is_some_and(|message| message.labels.iter().any(|label| label == "SPAM"))
+    {
+        return forget_spam(db, &page.account, Some(remote));
+    }
     let previous: Option<(Option<String>, bool)> = db
         .query_row(
             "SELECT history_id,deleted FROM google_mail_coverage WHERE account=?1 AND remote_id=?2",
@@ -890,4 +899,51 @@ fn publish_item_inner(
     };
     db.execute("INSERT INTO google_mail_coverage(account,remote_id,last_inventory_generation,remote_thread_id,history_id,source_state,index_state,attachment_state,source_hash,source_size,issue,internal_date_ms,deleted,observed_generation) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14) ON CONFLICT(account,remote_id) DO UPDATE SET last_inventory_generation=coalesce(excluded.last_inventory_generation,google_mail_coverage.last_inventory_generation),remote_thread_id=coalesce(excluded.remote_thread_id,google_mail_coverage.remote_thread_id),history_id=coalesce(excluded.history_id,google_mail_coverage.history_id),source_state=CASE WHEN excluded.deleted=1 THEN google_mail_coverage.source_state ELSE excluded.source_state END,index_state=CASE WHEN excluded.deleted=1 THEN google_mail_coverage.index_state ELSE excluded.index_state END,attachment_state=CASE WHEN excluded.deleted=1 THEN google_mail_coverage.attachment_state ELSE excluded.attachment_state END,source_hash=coalesce(excluded.source_hash,google_mail_coverage.source_hash),source_size=coalesce(excluded.source_size,google_mail_coverage.source_size),issue=excluded.issue,internal_date_ms=coalesce(excluded.internal_date_ms,google_mail_coverage.internal_date_ms),deleted=excluded.deleted,observed_generation=excluded.observed_generation",params![page.account,remote,inventory,item.remote_thread_id,stored_history,source_state,if ready {"indexed"} else {"unindexed"},if ready {"complete"} else {"incomplete"},item.source.as_ref().map(|s|&s.hash),item.source.as_ref().map(|s|s.size),item.issue.map(|i|i.key()),item.internal_date_ms,deleted,page.generation])?;
     Ok(())
+}
+
+/// Drops local copies of Gmail Spam: one remote message, or every stored
+/// message whose Gmail labels include SPAM. A message that a draft or a
+/// pending change still uses stays until that work is done.
+pub(crate) fn forget_spam(db: &Connection, account: &str, remote: Option<&str>) -> Result<()> {
+    db.execute_batch("CREATE TEMP TABLE IF NOT EXISTS retention_messages(id TEXT PRIMARY KEY,conversation_id TEXT NOT NULL,remote_id TEXT NOT NULL,source_hash TEXT NOT NULL,source_rowid INTEGER NOT NULL); DELETE FROM retention_messages;")?;
+    db.execute("INSERT INTO retention_messages SELECT m.id,m.conversation_id,m.remote_id,m.source_hash,m.rowid FROM messages m JOIN google_message_state g ON g.account=m.account AND g.message_id=m.id WHERE m.account=?1 AND (m.remote_id=?2 OR (?2 IS NULL AND EXISTS(SELECT 1 FROM json_each(g.provider_labels_json) WHERE value='SPAM'))) AND NOT EXISTS(SELECT 1 FROM google_mail_mutations w WHERE w.account=m.account AND w.message_id=m.id AND w.state IN ('pending','in_flight','reconcile')) AND NOT EXISTS(SELECT 1 FROM drafts d WHERE d.account=m.account AND d.source_message_id=m.id AND d.discarded=0)",params![account,remote])?;
+    crate::account_retention::purge_messages(db, account)?;
+    if let Some(remote) = remote {
+        // Never stored, or already gone: it is no longer part of the mailbox.
+        db.execute("DELETE FROM google_mail_coverage WHERE account=?1 AND remote_id=?2 AND NOT EXISTS(SELECT 1 FROM messages WHERE account=?1 AND remote_id=?2)",params![account,remote])?;
+    }
+    db.execute_batch("DROP TABLE retention_messages")?;
+    Ok(())
+}
+
+impl Store {
+    /// Once per profile: remove spam kept by builds that synced it.
+    pub(crate) fn forget_stored_spam(&self) -> Result<()> {
+        let done: bool = self.db.query_row(
+            "SELECT EXISTS(SELECT 1 FROM meta WHERE key='spam_forgotten')",
+            [],
+            |r| r.get(0),
+        )?;
+        if done {
+            return Ok(());
+        }
+        let tx = self.db.unchecked_transaction()?;
+        let accounts: Vec<String> = {
+            let mut statement = tx.prepare("SELECT DISTINCT account FROM google_message_state WHERE provider_labels_json LIKE '%\"SPAM\"%'")?;
+            let rows = statement
+                .query_map([], |r| r.get(0))?
+                .collect::<std::result::Result<_, _>>()?;
+            rows
+        };
+        for account in &accounts {
+            forget_spam(&tx, account, None)?;
+            tx.execute("UPDATE google_mail_metrics SET observed=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0),retained_sources=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND source_state='retained'),indexed=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND index_state='indexed'),complete_attachments=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND attachment_state='complete') WHERE account=?1",[account])?;
+        }
+        tx.execute("INSERT INTO meta(key,value) VALUES('spam_forgotten',1)", [])?;
+        if !accounts.is_empty() {
+            tx.execute("UPDATE meta SET value=value+1 WHERE key='revision'", [])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
 }

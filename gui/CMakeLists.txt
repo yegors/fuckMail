@@ -75,7 +75,7 @@ qt_add_qml_module(fuckmail-gui
     URI FuckMail
     VERSION 1.0
     QML_FILES DebugConsole.qml AccountAnalysis.qml
-    QML_FILES AccountProgress.qml AccountPolicy.qml AccountCard.qml AccountHoverCard.qml AccountColorPicker.qml LabelsDialog.qml
+    QML_FILES AccountProgress.qml AccountPolicy.qml AccountCard.qml AccountHoverCard.qml AccountColorPicker.qml LabelsDialog.qml SignatureDialog.qml SpamState.qml SpamList.qml SpamReader.qml
     QML_FILES HtmlMessageBody.qml RemoteContentSettings.qml
     QML_FILES CalendarMailCount.qml
     QML_FILES FmScrollBar.qml Main.qml StartupOverlay.qml ReminderPopup.qml AccountLifecycleDialogs.qml Theme.qml ShortcutRegistry.qml ShortcutSettings.qml ActionToast.qml FmButton.qml FmMenu.qml FmMenuItem.qml FmDialog.qml FmConfirmDialog.qml FmToolTip.qml FmIcon.qml FmTextField.qml FmDateField.qml FmSwitch.qml FmCheckBox.qml FmComboBox.qml MailView.qml SearchPopup.qml CalendarSearchPopup.qml FmSegmented.qml RecipientField.qml ReplyComposer.qml SenderCard.qml CalendarView.qml CalendarOccurrenceRead.qml EventDetails.qml EventEditor.qml CalendarOperations.qml CalendarEventList.qml SettingsView.qml GoogleConnectionDialog.qml LocalModelSettings.qml MailAssistance.qml MessageSource.qml AccountBadge.qml MessageHeaderButton.qml AccountEditor.qml AttachmentTile.qml AttachmentViewer.qml SummaryCard.qml SummarizeAction.qml MessageAssistance.qml BlockedDomainsSettings.qml LinkCard.qml GoogleLabelSetup.qml LabelSettings.qml TodayStrip.qml

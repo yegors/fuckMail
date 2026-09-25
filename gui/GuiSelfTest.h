@@ -40,7 +40,6 @@ private:
     bool m_shutdownExpectedStar = false;
     const QString m_authored = "Hello Maya,\n\nConfirmed — Montréal at 14:00.\nI wrote this reply myself.\n";
     const QString m_recoveredBody = m_authored + QString("Retained local detail — Montréal 日本語.\n").repeated(28);
-    const QString m_recoveredSignature = "Human signature — local conflict version";
     QString m_recoveredHtml;
     MailBackend *m_recreatedBackend = nullptr;
     bool m_recreatedClosed = false;

@@ -2,6 +2,11 @@
 
 **D093 profile version:** protocol1 remains unchanged. Ordinary Windows GUI/CLI use `%LOCALAPPDATA%\fuckMail\default` as the empty live profile; `--demo-profile` selects `demo-v1`. New stores are schema32. A schema1–31 profile receives `schema_mismatch` with a fresh-start instruction; startup does not migrate or reseed it. Move the complete old default profile after all clients exit before using the new build. Historical version-specific walkthroughs below describe earlier packages only.
 
+
+## D111 — local model queue
+
+`assist_backlog {}` (account required) now answers directly: `{account, enabled, ranges:{week,month,year,all}}`. `assist_catch_up {range}` (account required; `week|month|year|all|stop`) replaces `assist_batch_start` and returns `assist_progress` rows. `assist_start {conversation_id, message_id}` analyses one received message and replaces its results; `task` is optional and only `message` behaviour remains. The sample form takes `{sample:true, sample_case?, settings?}`. `assist_watch` registers the session with the engine's single queue worker. `assist_results` adds `failures`. Settings carry `system` and `user` instead of `prompt`. Protocol1 unchanged; schema36. Details: [Local assistance25](contracts/local-ai.md#d111--one-queue-one-email-systemuser-prompts-local-assistance25).
+
 ## D086 — explicit historical local analysis
 
 `assist_backlog {}` requires an active account and returns `{job_id,status:"scanning"}` immediately. Poll the session-owned `assist_job {job_id}`. Completed coverage has `kind:"coverage"`, `local_messages`, `google_messages:null`, `eligible`, `processed`, `missing`, `ranges:{week,month,year,all}`, account enablement flags and `as_of`. These count messages, not conversations. A missing Google total is unknown. Exclude sent, Trash, provider-deleted/Draft, missing-source-identity/empty-body, future and malformed-date messages from eligible analysis. Local totals still include retained sent/Trash mail.
@@ -182,6 +187,8 @@ All methods in this table require account scope. Catalog and delivery queries wo
 | --- | --- | --- |
 | `google_labels` | Optional `limit` (integer 1–100, default 100), `after` (last label ID), `expected_catalog_revision` (nonnegative integer); `after` requires the revision | `catalog_revision`, `available`, `observed_at_ms`, `connection_state`, `stale_connection`, `labels`, `next_after` |
 | `google_labels_refresh` | Empty object | `catalog_revision`, numeric `labels` count, `observed_at_ms`, `available`; requires an active account sync job and holds a temporary operation owner |
+| `google_spam_list` | Optional `page_token` (text ≤4096) | `messages` (each `id`, `sender_name`, `sender_email`, `subject`, `snippet`, `internal_date_ms`, `unread`), `next_page_token`, `estimated_total`; live from Gmail, 50 per page, stores nothing; requires an active account sync |
+| `google_spam_message` | Exactly `{id}` | `{id, text}`: the message's extracted text, read live and not stored; `not_found` when it has left Spam; requires an active account sync |
 | `google_category_bind` | `request_id`, `expected_catalog_revision`, `category_id`, `provider_label_id`, plus either `create_name` for a new local category or `expected_provider_label_id` (string or explicit null) for an existing category | Durable `{request_id, category: {id, name, provider_label_id, label_name}, catalog_revision, local_only: true}` receipt |
 | `google_mail_mutation_status` | Empty object for the earlier bounded overview, or exactly `{request_id}` for one operation | Exact form returns `{request_id, state, counts, total}` across every captured target; an absent journal is `not_found` |
 | `google_calendar_resume` | Exactly `{request_id}` | Reuses the retained immutable request only in `prepared` or `ready`, then returns the existing conditional execution outcome; requires active account sync |

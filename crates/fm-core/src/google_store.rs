@@ -420,12 +420,15 @@ pub(crate) fn prepare_message(
         .parse(&content.source_mime)
         .ok_or(GoogleError::InvalidResponse("Cannot parse source MIME"))?;
     let sender = parsed.from().and_then(|list| list.first());
-    let body = fm_mail::extract_parsed_incoming_contribution(&parsed)
+    let mut body = fm_mail::extract_parsed_incoming_contribution(&parsed)
         .map_err(|_| GoogleError::InvalidResponse("Cannot extract source text"))?;
+    // The reading copy keeps its first 256 KiB; the source MIME stays whole.
     if body.len() > 256 * 1024 {
-        return Err(GoogleError::InvalidResponse(
-            "Normalized body exceeds the first-slice bound",
-        ));
+        let mut end = 256 * 1024;
+        while !body.is_char_boundary(end) {
+            end -= 1;
+        }
+        body.truncate(end);
     }
     let mut attachments = Vec::new();
     for part in parsed.attachments() {

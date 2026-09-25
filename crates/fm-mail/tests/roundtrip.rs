@@ -91,7 +91,7 @@ fn recipient_free_plain_draft_keeps_exact_headers_and_text_without_an_envelope()
     assert_eq!(plain.len(), 1);
     assert_eq!(
         plain[0].contents(),
-        format!("{}\n\n-- \n{}", request.body_text, account.signature_text).as_bytes()
+        format!("{}\n\n{}", request.body_text, account.signature_text).as_bytes()
     );
     assert!(!parsed
         .parts
@@ -149,7 +149,7 @@ fn recipient_free_rich_draft_retains_exact_alternatives_and_attachment_metadata(
     assert_eq!(texts.len(), 1);
     assert_eq!(
         texts[0].contents(),
-        format!("{}\n\n-- \n{}", request.body_text, account.signature_text).as_bytes()
+        format!("{}\n\n{}", request.body_text, account.signature_text).as_bytes()
     );
     let html: Vec<_> = parsed
         .parts
@@ -157,7 +157,7 @@ fn recipient_free_rich_draft_retains_exact_alternatives_and_attachment_metadata(
         .filter(|part| part.is_content_type("text", "html"))
         .collect();
     assert_eq!(html.len(), 1);
-    assert_eq!(html[0].contents(), "<p>Authored café 日本語</p><img src=\"cid:logo-1\" alt=\"Logo\"><div>-- <br><b>Signature</b></div>".as_bytes());
+    assert_eq!(html[0].contents(), "<p>Authored café 日本語</p><img src=\"cid:logo-1\" alt=\"Logo\"><br><br><b>Signature</b>".as_bytes());
     let parts: BTreeMap<_, _> = parsed
         .attachments()
         .map(|part| (part.attachment_name().unwrap(), part))
@@ -336,7 +336,7 @@ fn plain_unicode_reply_roundtrips_exact_author_text_signature_and_headers() {
     );
     assert_eq!(
         parsed.body_text(0).unwrap(),
-        format!("{}\n\n-- \n{}", request.body_text, account.signature_text)
+        format!("{}\n\n{}", request.body_text, account.signature_text)
     );
     assert_eq!(
         build_mail(&request, &account, &[]).unwrap().raw,

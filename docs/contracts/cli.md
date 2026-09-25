@@ -1,5 +1,17 @@
 # CLI and external agent interface
 
+## D116 — live Spam (CLI49)
+
+`fm --account ID google spam [--page-token T]` lists Gmail's Spam live (`google_spam_list`); `fm --account ID google spam-show ID` prints one message's text (`google_spam_message`). Both need the account's sync running and store nothing.
+
+## D111 — local model queue (CLI48)
+
+- `assist run` (alias `assist watch`) keeps the engine's one queue running until Ctrl-C.
+- `--account ID assist catch-up --range week|month|year|all|stop` widens or clears the account's Catch up bound and returns its progress. `assist backlog` prints each range's unprocessed count.
+- `--account ID assist pause` / `assist resume` save the account's model pause.
+- `assist analyze CONVERSATION --message-id ID` analyses one received message now, replacing its saved results. `assist summarize`, `assist classify` and `assist batch` are removed; `assist test` no longer takes a task.
+- `assist progress` adds `failed`, `catching_up`, `model_error` and `running`. See [Local assistance25](local-ai.md#d111--one-queue-one-email-systemuser-prompts-local-assistance25).
+
 ## D112 — progress and account colour (CLI47)
 
 - `assist progress` prints per-account analysis counts: done, queued, unprocessed and seconds per message (Local assistance24).

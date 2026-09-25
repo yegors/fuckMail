@@ -70,7 +70,7 @@ ColumnLayout {
             }
             Rectangle { Layout.fillWidth: true; implicitHeight: 1; color: Theme.line }
             Repeater {
-                model: [{name: "Human", kind: "human"}, {name: "Automated", kind: "automated"}, {name: "Unknown", kind: "unknown"}, {name: "Reset correction", kind: "reset"}]
+                model: [{name: "Human", kind: "human"}, {name: "Automated", kind: "automated"}, {name: "Reset correction", kind: "reset"}]
                 FmButton {
                     required property var modelData
                     text: modelData.name; Layout.fillWidth: true; textAlignment: Text.AlignLeft
@@ -79,8 +79,8 @@ ColumnLayout {
                 }
             }
             Text {
-                visible: !!panel.classification; Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
-                text: panel.classification ? (panel.classification.stale ? "Out-of-date classification. " : "") + panel.classification.output.reason : ""
+                visible: !!panel.classification && panel.classification.stale; Layout.fillWidth: true; wrapMode: Text.Wrap; textFormat: Text.PlainText
+                text: "Out-of-date classification."
                 color: Theme.muted; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11)
             }
         }

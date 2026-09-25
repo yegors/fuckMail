@@ -620,7 +620,10 @@ fn new_accounts_take_distinct_palette_colours_that_can_be_changed() {
             .clone()
     };
     assert_eq!(color(&store, &first), crate::preferences::ACCOUNT_COLORS[0]);
-    assert_eq!(color(&store, &second), crate::preferences::ACCOUNT_COLORS[1]);
+    assert_eq!(
+        color(&store, &second),
+        crate::preferences::ACCOUNT_COLORS[1]
+    );
     let row = |store: &Store| -> Value {
         store.accounts().unwrap()["accounts"]
             .as_array()

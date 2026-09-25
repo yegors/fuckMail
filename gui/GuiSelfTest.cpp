@@ -154,7 +154,7 @@ bool GuiSelfTest::verifyRestart() {
     qInfo() << "GUI process restart preserved exact edited calendar identity, ETag, all authored fields and accepted self RSVP; visible GUI projection and independent CLI agree without duplicates.";
     const auto draft = read({"draft", "show", m_id});
     if (draft["body"].toString() != m_recoveredBody || draft["body_html"].toString() != m_recoveredHtml
-        || draft["signature_text"].toString() != m_recoveredSignature + "\nNewer unsent signature."
+        || !draft["signature_text"].toString().isEmpty()
         || draft["attachment_ids"].toArray() != QJsonArray{m_attachmentId}) {
         qCritical() << "GUI process restart changed the authored text, HTML, signature or exact attachment selection."; return false;
     }
@@ -361,6 +361,8 @@ void GuiSelfTest::step() {
             const auto reader = m_window->findChild<QQuickItem *>("reader");
             if (!reader || !reader->mapRectToScene(reader->boundingRect()).contains(editor->mapToScene({editor->width()/2, editor->height()/2}))) return;
             editor->forceActiveFocus();
+            // The reply starts with the account signature as plain text; replace it all.
+            QMetaObject::invokeMethod(editor, "selectAll");
             QInputMethodEvent input; input.setCommitString(m_authored);
             QCoreApplication::sendEvent(editor, &input);
             if (m_backend.draft()["body"].toString() != m_authored) { failed("Unicode text input did not reach the durable draft adapter."); return; }
@@ -685,7 +687,9 @@ void GuiSelfTest::step() {
         if (m_backend.draftBusy() || m_backend.draftStatus() != "Draft discarded") return;
         m_stage = 108;
         cli({"draft", "show", m_discardId}, [this](auto result) {
-            if (!result["body"].toString().isEmpty() || !result["body_html"].isNull() || !result["signature_text"].toString().isEmpty()
+            // A discarded draft reads like a new one: at most blank lines and the signature.
+            const auto body = result["body"].toString();
+            if (!(body.isEmpty() || body.startsWith("\n\n")) || body.contains(m_discardBefore["body"].toString().trimmed()) || !result["body_html"].isNull() || !result["signature_text"].toString().isEmpty()
                 || !result["attachment_ids"].toArray().isEmpty() || result["revision"].toInteger() != m_discardBefore["revision"].toInteger() + 1) {
                 failed("Confirmed Discard did not clear only the target's saved authored fields once."); return;
             }
@@ -739,15 +743,15 @@ void GuiSelfTest::step() {
         QMetaObject::invokeMethod(editor, "select", Q_ARG(int, 6), Q_ARG(int, 10));
         if (!document->html().contains("font-weight:700")) document->format("bold");
         m_recoveredHtml = document->html();
-        m_backend.setDraftSignature(m_recoveredSignature); m_backend.saveDraft(); m_stage = 51; break;
+        m_backend.saveDraft(); m_stage = 51; break;
     }
     case 51:
         if (m_backend.draftBusy() || !m_backend.draftConflict()) return;
         if (m_backend.draft()["body"].toString() != m_recoveredBody || m_backend.draft()["body_html"].toString() != m_recoveredHtml
-            || m_backend.draft()["signature_text"].toString() != m_recoveredSignature || !m_backend.draft()["attachment_ids"].toList().contains(m_attachmentId)) { failed("A stale save discarded local authored fields."); return; }
+            || !m_backend.draft()["signature_text"].toString().isEmpty() || !m_backend.draft()["attachment_ids"].toList().contains(m_attachmentId)) { failed("A stale save discarded local authored fields."); return; }
         m_backend.clearError(); m_backend.setProperty("selfTestExpectedError", false);
         m_stage = 52;
-        cli({"draft", "show", m_id}, [this](auto result) { if (result["body"].toString() != "Other interface version") failed("Conflict handling overwrote the other saved draft without confirmation."); });
+        cli({"draft", "show", m_id}, [this](auto result) { if (result["body"].toString() != "Other interface version\n\nOther signature") failed("Conflict handling overwrote the other saved draft without confirmation."); });
         break;
     case 52: {
         auto scroll = m_window->findChild<QQuickItem *>("replyBodyScroll");
@@ -763,7 +767,7 @@ void GuiSelfTest::step() {
         auto dialog = m_window->findChild<QObject *>("draftConflictDialog");
         if (!dialog || !dialog->property("opened").toBool()) return;
         m_stage = 55;
-        cli({"draft", "show", m_id}, [this](auto result) { if (result["body"].toString() != "Other interface version") failed("Opening conflict confirmation already overwrote the saved draft."); });
+        cli({"draft", "show", m_id}, [this](auto result) { if (result["body"].toString() != "Other interface version\n\nOther signature") failed("Opening conflict confirmation already overwrote the saved draft."); });
         break;
     }
     case 55:
@@ -773,7 +777,7 @@ void GuiSelfTest::step() {
         if (m_backend.draftBusy() || m_backend.draftConflict() || m_backend.draftStatus() != "Saved on this machine") return;
         m_stage = 57;
         cli({"draft", "show", m_id}, [this](auto result) {
-            if (result["body"].toString() != m_recoveredBody || result["body_html"].toString() != m_recoveredHtml || result["signature_text"].toString() != m_recoveredSignature
+            if (result["body"].toString() != m_recoveredBody || result["body_html"].toString() != m_recoveredHtml || !result["signature_text"].toString().isEmpty()
                 || !result["attachment_ids"].toArray().contains(m_attachmentId)) failed("Confirmed conflict recovery did not preserve exact local authored fields.");
         });
         break;
@@ -784,7 +788,7 @@ void GuiSelfTest::step() {
         m_backend.selectAccount("windscribe"); m_stage = 59; break;
     case 59:
         if (m_backend.account() != "windscribe" || m_backend.draft().isEmpty()) return;
-        if (m_backend.draft()["body"].toString() != m_recoveredBody || m_backend.draft()["body_html"].toString() != m_recoveredHtml || m_backend.draft()["signature_text"].toString() != m_recoveredSignature
+        if (m_backend.draft()["body"].toString() != m_recoveredBody || m_backend.draft()["body_html"].toString() != m_recoveredHtml || !m_backend.draft()["signature_text"].toString().isEmpty()
             || !m_backend.draft()["attachment_ids"].toList().contains(m_attachmentId)) { failed("Recovered formatting/signature/attachments did not survive account navigation."); return; }
         m_stage = 70; break;
     case 70:
@@ -801,7 +805,7 @@ void GuiSelfTest::step() {
         const auto panel = m_window->findChild<QQuickItem *>("replyPanel");
         if (!panel || panel->isVisible() || m_backend.presentation()["replyOpen"].toBool()) { failed("Collapse did not hide the nonempty saved reply."); return; }
         if (m_backend.draft()["body"].toString() != m_recoveredBody || m_backend.draft()["body_html"].toString() != m_recoveredHtml
-            || m_backend.draft()["signature_text"].toString() != m_recoveredSignature || !m_backend.draft()["attachment_ids"].toList().contains(m_attachmentId)) { failed("Collapse changed authored draft fields."); return; }
+            || !m_backend.draft()["signature_text"].toString().isEmpty() || !m_backend.draft()["attachment_ids"].toList().contains(m_attachmentId)) { failed("Collapse changed authored draft fields."); return; }
         QMetaObject::invokeMethod(m_window->findChild<QObject *>("mailWorkspace"), "openReply"); m_stage = 73; break;
     }
     case 73: {
@@ -817,7 +821,7 @@ void GuiSelfTest::step() {
         cliWithParams("draft_capture", {{"conversation_id", m_id}, {"expected_revision", m_backend.draft()["revision"].toLongLong()},
             {"request_id", m_unknownCaptureId}, {"outcome", "unknown"}}, [this](auto result) {
             if (result["state"].toString() != "acceptance_unknown") { failed("Independent capture did not create the requested unknown receipt."); return; }
-            m_backend.setDraftSignature(m_recoveredSignature + "\nNewer unsent signature."); m_backend.saveDraft();
+            m_backend.setDraftSubject(m_backend.draft()["subject"].toString() + " (newer)"); m_backend.saveDraft();
         });
         break;
     }
@@ -844,7 +848,7 @@ void GuiSelfTest::step() {
     case 77:
         if (m_recreatedBackend->draftBusy() || !m_recreatedBackend->captureStatus().contains("acceptance_unknown")) return;
         if (!m_recreatedBackend->captureStatus().contains("earlier saved revision") || m_recreatedBackend->draft()["body"].toString() != m_recoveredBody
-            || m_recreatedBackend->draft()["body_html"].toString() != m_recoveredHtml || m_recreatedBackend->draft()["signature_text"].toString() != m_recoveredSignature + "\nNewer unsent signature."
+            || m_recreatedBackend->draft()["body_html"].toString() != m_recoveredHtml || !m_recreatedBackend->draft()["signature_text"].toString().isEmpty()
             || !m_recreatedBackend->draft()["attachment_ids"].toList().contains(m_attachmentId)) { failed("Recovery changed the newer authored draft or omitted its earlier-revision explanation."); return; }
         m_stage = 78;
         cli({"draft", "history", "--conversation-id", m_id}, [this](auto result) {
@@ -861,7 +865,7 @@ void GuiSelfTest::step() {
         m_stage = 79;
         cli({"draft", "show", m_id}, [this](auto result) {
             if (result["body"].toString() != m_recoveredBody || result["body_html"].toString() != m_recoveredHtml
-                || result["signature_text"].toString() != m_recoveredSignature + "\nNewer unsent signature." || !result["attachment_ids"].toArray().contains(m_attachmentId)) { failed("Capture recovery changed persisted current authored fields."); return; }
+                || !result["signature_text"].toString().isEmpty() || !result["attachment_ids"].toArray().contains(m_attachmentId)) { failed("Capture recovery changed persisted current authored fields."); return; }
             // Exercise teardown with a live socket; its destructor must not
             // invoke callbacks into already-destroyed request/view storage.
             delete m_recreatedBackend; m_recreatedBackend = nullptr; m_recreatedClosed = true;

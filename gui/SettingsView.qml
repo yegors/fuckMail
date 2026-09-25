@@ -9,28 +9,27 @@ Item {
     signal done()
     signal archiveOpened()
     property string page: "General"
-    readonly property bool popupOpen: accountEditor.opened || googleSignIn.opened || modelUnsaved.opened || labelsDialog.opened || colorPicker.opened
+    readonly property bool popupOpen: accountEditor.opened || googleSignIn.opened || modelUnsaved.opened || labelsDialog.opened || colorPicker.opened || signatureDialog.opened
     readonly property bool recordingShortcut: !!shortcutsPage.item && shortcutsPage.item.recording.length > 0
-    property var accountEdits: ({})
     property var pageScroll: ({})
     property string localError: ""
-    property bool signaturesOpen: false
     property bool calendarDetailsOpen: false
     property string reconnectAccount: ""
     property double restoreRevision: -1
-    AccountAnalysis { id: accountAnalysis; objectName: "accountAnalysis"; showing: settings.visible && settings.page === "Accounts" }
+    AccountAnalysis { id: accountAnalysis; objectName: "accountAnalysis" }
     // Main hands in the app's pipeline model; loaded alone, Settings keeps its own.
     property var progress: localProgress
     AccountProgress { id: localProgress; active: settings.progress === localProgress }
     AccountPolicy { id: accountPolicy; onChanged: settings.progress.refresh() }
     AccountColorPicker { id: colorPicker }
     LabelsDialog { id: labelsDialog; onChanged: settings.labelsEdited(account) }
+    SignatureDialog { id: signatureDialog }
     signal labelsEdited(string account)
     readonly property var subtitles: ({
         "General": "Appearance, text size and notifications for the whole app.",
         "Accounts": "Connect accounts and see what each one is syncing and processing.",
         "Local LLM": "Pick the on-device model that summarizes and labels your mail.",
-        "Mail": "How the mail list looks, and which domains stay blocked.",
+        "Mail": "How the mail list looks, what stays blocked, and how images load.",
         "Calendar": "Defaults for new events, reminders and the calendar view.",
         "Shortcuts": "Keyboard shortcuts. Click any row to change it.",
         "Diagnostics": "Local engine and stored-copy information."
@@ -38,6 +37,7 @@ Item {
     // AccountCard actions.
     function editAccount(row) { accountEditor.show(row) }
     function openLabels(account) { labelsDialog.show(account) }
+    function editSignature(account) { signatureDialog.show(account) }
     function pickColor(account, x, y) { colorPicker.show(account, x, y) }
     function openArchive(account) { backend.openAccountArchive(account); if (!backend.unsavedAccountBuffer) archiveOpened() }
     function restore(row) {
@@ -46,26 +46,6 @@ Item {
     }
     readonly property string modifier: Qt.platform.os === "osx" ? "⌘" : "Ctrl+"
     readonly property var hourLabels: Array.from({length:25}, (_, h) => (h < 10 ? "0" : "") + h + ":00")
-    Connections {
-        target: backend
-        function onAccountsChanged() {
-            const pending = Object.assign({}, settings.accountEdits)
-            for (const account of backend.accounts) {
-                if (!pending[account.id]) continue
-                const fields = Object.assign({}, pending[account.id])
-                if (fields.name === account.name) delete fields.name
-                if (fields.signature_text === account.signature_text) delete fields.signature_text
-                if (Object.keys(fields).length) pending[account.id] = fields
-                else delete pending[account.id]
-            }
-            settings.accountEdits = pending
-        }
-
-    }
-    function accountValue(account, field) {
-        const edited = accountEdits[account.id]
-        return edited && edited[field] !== undefined ? edited[field] : account[field] || ""
-    }
     function reconnect(row, access) {
         restoreRevision=-1; reconnectAccount=row.id
         googleSignIn.email=row.email;googleSignIn.renewAccess=true
@@ -75,17 +55,6 @@ Item {
     }
     AccountEditor {id:accountEditor;onReconnectRequested:(row,access)=>settings.reconnect(row,access)}
     function startSync(account) { backend.startGoogleSync(account, {}) }
-    function changeAccount(account, field, value) {
-        const copy = Object.assign({}, accountEdits), fields = Object.assign({}, copy[account.id] || {})
-        fields[field] = value; copy[account.id] = fields; accountEdits = copy
-    }
-    function accountDirty(account) { return accountValue(account,"name") !== account.name || accountValue(account,"signature_text") !== (account.signature_text || "") }
-    function saveAccount(account) {
-        localError = ""
-        const name = accountValue(account,"name").trim()
-        if (!name.length || name.length > 80) { localError = "Use a display name between 1 and 80 characters."; return }
-        backend.updateAccountPreferences(account.id,name,accountValue(account,"signature_text"))
-    }
     function sourceSelected(source) {
         const chosen = backend.preferences.selected_calendars
         return chosen === null || chosen === undefined || chosen.some(item => item.account === source.account && item.calendar_id === source.calendar_id)
@@ -303,7 +272,6 @@ Item {
                         Accessible.role: Accessible.AlertMessage
                     }
                     FmButton { visible: backend.preferencesPending && backend.preferencesStatus.indexOf("Not saved") === 0; text: "Retry display preferences"; outlined: true; onClicked: backend.setPreferences({}) }
-                    Description { visible: Object.keys(settings.accountEdits).length > 0 && backend.preferencesStatus.indexOf("Not saved") === 0; text: "Your edits are still here. Use Save beside the account or signature to retry." }
                     SettingsPage {
                         name: "General"
                         sourceComponent: ColumnLayout {
@@ -392,33 +360,6 @@ Item {
                             Divider {}
                             BlockedDomainsSettings { Layout.fillWidth: true; Layout.topMargin: 28 }
                             RemoteContentSettings { Layout.fillWidth: true; Layout.topMargin: 28 }
-                            FmButton { objectName: "settingsSignaturesButton"; Layout.topMargin: 24; text: "Signatures"; iconName: settings.signaturesOpen ? "down" : "next"; textAlignment: Text.AlignLeft; leftPadding: 0; onClicked: settings.signaturesOpen = !settings.signaturesOpen }
-                            ColumnLayout {
-                                visible: settings.signaturesOpen; Layout.fillWidth: true; spacing: 12
-                                Description { text: "Applied to new drafts. Changing a signature leaves existing replies and your edits intact." }
-                                Repeater {
-                                    model: backend.accountModel
-                                    ColumnLayout {
-                                        required property var rowData
-                                        readonly property var modelData: rowData
-                                        Layout.fillWidth: true; spacing: 8
-                                        RowLayout { Layout.fillWidth: true; Text { text: modelData.name; color: Theme.text; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13); weight: Font.Medium } Layout.fillWidth: true } FmButton { objectName: "saveSignature_" + modelData.id; text: "Save signature"; enabled: settings.accountDirty(modelData); outlined: true; onClicked: settings.saveAccount(modelData) } }
-                                        ScrollView {
-                    ScrollBar.vertical: FmScrollBar {}
-                                            Layout.fillWidth: true; Layout.preferredHeight: 100
-                                            TextArea {
-                                                objectName: "signature_" + modelData.id
-                                                text: settings.accountValue(modelData,"signature_text"); placeholderText: "Your signature"
-                                                padding: 12; color: Theme.text; placeholderTextColor: Theme.faint; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(13) }
-                                                textFormat: TextEdit.PlainText; wrapMode: TextEdit.Wrap; selectByMouse: true
-                                                onTextChanged: if (activeFocus) settings.changeAccount(modelData,"signature_text",text)
-                                                background: Rectangle { color: Theme.surface; radius: 5; border.color: parent.activeFocus ? Theme.focusBorder : Theme.controlBorder }
-                                                Accessible.name: "Signature for " + modelData.email
-                                            }
-                                        }
-                                    }
-                                }
-                            }
                         }
                     }
                     SettingsPage {

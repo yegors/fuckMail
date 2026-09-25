@@ -1,5 +1,20 @@
 # September 23 prototype implementation
 
+## D113 — eighth export (2026-09-24)
+
+The founder supplied `fuckMail (1).html` (761,098 bytes, SHA-256 `bd4cb90b41892a830c7c058e19411c4d36d55fcde1570256b8c6fd8e237b2cb0`). Diffed against the seventh export's unpacked component and markup, apart from renamed resource ids it changes:
+- **Signatures:** a card Signature row (`sigOf`, `sigLine`, `editSig`) and its editor window.
+- **Mail:** the subtitle.
+- **Image loading:** the proxy section, proxy fields, Test and Save, and image cache rows (`px`).
+
+Verification on the Mac:
+- **Tests:** `gui-mail-selection` (adding the Signature window), `gui-integration` (its signature steps now use the card, including the refused 16 KiB signature), `gui-html-message-body` (proxy save, test, invalid host, cache), `gui-calendar-search`, `gui-account-lifecycle-controls` and `gui-google-connection-controls` pass.
+- **Visual checks:** the GUI-only build rendered Settings → Mail and Accounts on a demo profile against the last good engine. A harness capture of the Signature window matched the export.
+
+Not verified:
+- The engine was mid-refactor in another session and did not compile, so the full suite and a release app build could not run.
+- `gui-local-model` needs the prompt file that refactor removed.
+
 ## D112 — seventh export (2026-09-24)
 
 The founder supplied the seventh export, `fuckMail-7.html` (747,584 bytes, SHA-256 `32c362c08d929983d276aa44c2b6eda1f988558aed470b37d102820985072d29`), with designer notes on account progress, colours, labels and the Local LLM page. The export's bundled component and markup were unpacked. Each note was matched to the component's `pipeV`, `pipeCard` and `pipeTab` logic and its Accounts, hover-card, colour-picker, labels-modal and Local LLM markup. The export was served on `127.0.0.1` and opened in the in-app browser at 1440×900. The sixth export is not on this Mac, so this round follows the designer's list of changes rather than a byte diff.
@@ -54,6 +69,7 @@ The founder supplied the seventh export, `fuckMail-7.html` (747,584 bytes, SHA-2
   - the hover card.
 
   The real Mac app rendered the Accounts, General, Mail and Local LLM pages on a demo profile.
+- Full native CTest: 35/36. The failure is `gui-html-view`'s intermittent link-hover check in unchanged code; it passed three isolated reruns.
 
 ### Limits
 

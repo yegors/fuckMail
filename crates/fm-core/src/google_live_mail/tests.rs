@@ -913,3 +913,67 @@ fn successful_history_timestamp_requires_full_application_and_survives_reopen() 
         1
     );
 }
+
+#[test]
+fn spam_is_never_kept_and_leaving_spam_brings_the_message_back() {
+    let (directory, mut store, account) = setup();
+    let delta = catch_up(&mut store, &account, "200", &["kept", "junk"], &[]);
+    let kept = prepared(&store, &delta, "kept", raw("kept", "200", "wanted"));
+    let junk = prepared(
+        &store,
+        &delta,
+        "junk",
+        raw_bytes(
+            "junk",
+            "200",
+            &source("offer"),
+            &["SPAM", "UNREAD"],
+            "1789210800123",
+        ),
+    );
+    store.google_live_stage_prepared(&delta, &kept).unwrap();
+    store.google_live_stage_prepared(&delta, &junk).unwrap();
+    store
+        .google_live_commit_part(&delta, &[kept, junk])
+        .unwrap();
+    store.google_live_finish_page(&delta).unwrap();
+    assert_eq!(count(&store, &account), 1);
+    assert_metrics(&store, &account);
+    // Marked spam in Gmail: the next change removes the local copy and its coverage.
+    let delta = catch_up(&mut store, &account, "210", &["kept"], &[]);
+    let moved = prepared(
+        &store,
+        &delta,
+        "kept",
+        raw_bytes("kept", "210", &source("wanted"), &["SPAM"], "1789210800123"),
+    );
+    publish(&mut store, &delta, moved);
+    store.google_live_finish_page(&delta).unwrap();
+    assert_eq!(count(&store, &account), 0);
+    let coverage: i64 = store
+        .db
+        .query_row(
+            "SELECT count(*) FROM google_mail_coverage WHERE account=?1",
+            [&account],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(coverage, 0);
+    assert_metrics(&store, &account);
+    // Not spam again: it is fetched and kept like any other message.
+    let delta = catch_up(&mut store, &account, "220", &["kept"], &[]);
+    let back = prepared(&store, &delta, "kept", raw("kept", "220", "wanted"));
+    publish(&mut store, &delta, back);
+    store.google_live_finish_page(&delta).unwrap();
+    assert_eq!(count(&store, &account), 1);
+    // Spam stored by an earlier build goes the next time the profile opens.
+    store.db.execute("UPDATE google_message_state SET provider_labels_json='[\"SPAM\",\"UNREAD\"]' WHERE account=?1", [&account]).unwrap();
+    store
+        .db
+        .execute("DELETE FROM meta WHERE key='spam_forgotten'", [])
+        .unwrap();
+    drop(store);
+    let store = Store::open_live(directory.path()).unwrap();
+    assert_eq!(count(&store, &account), 0);
+    assert_metrics(&store, &account);
+}

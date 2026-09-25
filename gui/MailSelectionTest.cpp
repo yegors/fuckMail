@@ -57,6 +57,8 @@ class MailSelectionTest {
                         result = {{"account","personal"},{"id",params["id"]},{"source_version",params["source_version"]},{"raw","From: Sender <sender@example.test>\r\nTo: Me <me@example.test>\r\n\r\nRetained body"},{"body_html","<p><b>Retained HTML</b><img src=\"https://images.example.test/pixel\" alt=\"Logo\"></p>"},{"metadata",QJsonArray{QJsonObject{{"label","Cc"},{"people",QJsonArray{QJsonObject{{"name","Team"},{"email","team@example.test"}}}}}}}};
                     }
                     else if (method == "attachment") result = attachments.value(request["params"].toObject()["id"].toString());
+                    else if (method == "google_spam_list") result = {{"messages",QJsonArray{QJsonObject{{"id","s1"},{"sender_name","Prize Desk"},{"sender_email","win@example.test"},{"subject","You won"},{"snippet","Claim now"},{"internal_date_ms",1789210800123LL},{"unread",true}}}},{"next_page_token",QJsonValue()}};
+                    else if (method == "google_spam_message") result = {{"id",request["params"].toObject()["id"]},{"text","Claim your prize."}};
                     else if (method == "categories") result["categories"] = QJsonArray{QJsonObject{{"id","imported"},{"name","Imported folder"},{"conversation_count",3}}};
                     else if (method == "view_save") result["revision"] = 1;
                     else if (method == "draft_get") result = {{"conversation_id",request["params"].toObject()["conversation_id"]},{"account","personal"},{"revision",0}};
@@ -554,6 +556,21 @@ class MailSelectionTest {
         require(mail->property("selectionCursor").toString()=="page-19","End skips collapsed groups");
         QMetaObject::invokeMethod(mail,"toggleGroup",Q_ARG(QVariant,"held"),Q_ARG(QVariant,QVariant()));
         QMetaObject::invokeMethod(mail,"clearSelection");h.rows=originalRows;h.backend.publishConversations(h.rows); emit h.backend.conversationsChanged();
+        {
+            // Spam is listed and opened live through Google operations; nothing asks Core for it.
+            const auto pid=h.backend.m_enginePid; h.backend.m_enginePid=QCoreApplication::applicationPid();
+            h.backend.setFolder("spam");
+            await([&]{auto *row=find(window->contentItem(),"spamRow_s1");return row && row->isVisible();},"live Spam listing shows its rows");
+            require(!find(window->contentItem(),"conversationList")->isVisible() && h.lastQuery["folder"]!="spam","Spam has no local list query");
+            require(find(window->contentItem(),"moreMailFolders")->property("text")=="Spam","folder button names Spam");
+            {QElapsedTimer settle;settle.start();while(settle.elapsed()<200)QCoreApplication::processEvents(QEventLoop::AllEvents,10);}
+            click(window,find(window->contentItem(),"spamRow_s1"),Qt::LeftButton);
+            await([&]{auto *body=find(window->contentItem(),"spamBody");return body && body->isVisible() && body->property("text")=="Claim your prize.";},"opened Spam message reads its live text");
+            require(find(window->contentItem(),"spamSubject")->property("text")=="You won","Spam reader shows the listed subject");
+            require(!h.backend.m_views.value("personal").toMap().value("folder").toString().startsWith("spam"),"Spam is not remembered as the view to reopen");
+            h.backend.setFolder("inbox"); h.backend.m_enginePid=pid;
+            await([&]{return find(window->contentItem(),"conversationList")->isVisible();},"leaving Spam restores the mail list");
+        }
         require(!warnings,"no QML errors in production selection/splash controls");
         const auto capture=qEnvironmentVariable("FM_SELECTION_CAPTURE");
         if(!capture.isEmpty()) {
@@ -577,7 +594,7 @@ public:
             if(method=="preferences_save") {++preferenceWrites;savedPreferences=request["params"].toObject()["preferences"].toObject();result={{"revision",preferenceWrites},{"preferences",savedPreferences}};}
             else if(method=="preferences_get")result={{"revision",preferenceWrites},{"preferences",QJsonObject::fromVariantMap(h.backend.preferences())}};
             else if(method=="account_update") {savedAccount=request["params"].toObject();auto row=h.backend.m_allAccounts[0].toMap();row["name"]=savedAccount["name"].toString();row["mail_retention"]=savedAccount["mail_retention"].toString();row["metadata_revision"]=1;h.backend.m_allAccounts[0]=row;result=QJsonObject::fromVariantMap(row);}
-            else if(method=="assist_backlog") {++scans;result={{"job_id","coverage"},{"status","scanning"}};}
+            else if(method=="assist_backlog") {++scans;result={{"account","personal"},{"enabled",true},{"ranges",QJsonObject{{"week",7},{"month",40},{"year",500},{"all",600}}}};}
             else if(method=="assist_progress") {
                 const bool batch=starts>0&&!stopped;
                 result={{"accounts",QJsonArray{QJsonObject{{"account","personal"},{"local",1200},{"eligible",1000},{"done",400},{"queued",batch?7:0},{"unprocessed",batch?593:600},
@@ -586,12 +603,9 @@ public:
             else if(method=="assist_settings_get") result={{"revision",settingsRevision},{"settings",QJsonObject{{"accounts",QJsonObject{}}}}};
             else if(method=="assist_settings_save") {++settingsRevision;savedAssist=request["params"].toObject();result={{"revision",settingsRevision},{"settings",savedAssist["settings"]}};}
             else if(method=="assist_jobs")result={{"items",QJsonArray{}}};
-            else if(method=="assist_batch_start") {++starts;requestedAccount=request["account"].toString();requestedRange=request["params"].toObject()["range"].toString();result={{"job_id","batch"},{"status","running"},{"total",7}};}
-            else if(method=="assist_cancel") {++stops;stopped=true;result={{"job_id","batch"},{"status","canceled"},{"completed",2},{"processed",2},{"total",7}};}
-            else if(method=="assist_job") {
-                if(request["params"].toObject()["job_id"]=="coverage")result={{"job_id","coverage"},{"status","completed"},{"local_messages",1200},{"eligible",1000},{"processed",400},{"missing",600},{"enabled",true},{"summaries",true},{"classification",true},{"ranges",QJsonObject{{"week",7},{"month",40},{"year",500},{"all",600}}}};
-                else result={{"job_id","batch"},{"status",stopped ? "canceled" : "running"},{"completed",2},{"processed",2},{"total",7}};
-            } else return ordinary(peer,request);
+            else if(method=="assist_catch_up") {++starts;requestedAccount=request["account"].toString();requestedRange=request["params"].toObject()["range"].toString();result={{"accounts",QJsonArray{}}};}
+            else if(method=="assist_cancel") {++stops;stopped=true;result={{"status","canceled"}};}
+            else return ordinary(peer,request);
             peer->write(reply(request["id"].toString(),result));return true;
         };
         QTemporaryDir copy;const auto path=copy.filePath("AccountsTest");require(QDir().mkpath(path),"account QML module");
@@ -614,6 +628,7 @@ public:
         require(scans==0 && starts==0,"viewing Accounts reads cheap progress: no mail scan and no inference");
         require(find(window->contentItem(),"accountAnalysisCount_personal")->property("text")=="400 of 1k","processed of eligible mail displayed");
         require(find(window->contentItem(),"accountAnalysisStatus_personal")->property("text")=="600 not processed","unprocessed mail is named on the model row");
+        {auto *status=find(window->contentItem(),"accountAnalysisStatus_personal");require(status->width()+0.5>=status->property("implicitWidth").toReal() && !status->property("truncated").toBool(),"a meter's status shows in full, not elided");}
         const auto captureDir=qEnvironmentVariable("FM_BACKLOG_CAPTURE_DIR");
         auto capture=[&](const QString &name) {
             bool painted=false;const auto connection=QObject::connect(window,&QQuickWindow::frameSwapped,[&]{painted=true;});window->requestUpdate();await([&]{return painted;},"account frame");QObject::disconnect(connection);
@@ -625,13 +640,14 @@ public:
         require(scans==1,"only opening Catch up scans the account's mail");
         capture("backlog-menu");click(window,find(window->contentItem(),"backlogRange_personal_week"),Qt::LeftButton);
         await([&]{return starts==1;},"range starts one real account command");
-        require(requestedAccount=="personal"&&requestedRange=="week","batch freezes exact selected account and range");
-        await([&]{auto *status=find(window->contentItem(),"accountAnalysisStatus_personal");return status&&status->property("text").toString().startsWith("40% · 7 queued");},"the running batch shows as queued work with its estimate");
+        require(requestedAccount=="personal"&&requestedRange=="week","Catch up widens exactly the selected account and range");
+        await([&]{auto *status=find(window->contentItem(),"accountAnalysisStatus_personal");return status&&status->property("text").toString().startsWith("40% · 7 queued");},"Catch up shows as queued work with its estimate");
         settings->setProperty("page","General");settings->setProperty("page","Accounts");
         capture("backlog-running");
         auto *pause=find(window->contentItem(),"accountAiPause_personal");require(pause&&pause->isVisible(),"queued work can be paused");
         click(window,pause,Qt::LeftButton);
-        await([&]{return stops==1 && savedAssist["settings"].toObject()["accounts"].toObject()["personal"].toObject()["paused"].toBool();},"pausing the model stops the batch and saves the account's pause");
+        await([&]{return savedAssist["settings"].toObject()["accounts"].toObject()["personal"].toObject()["paused"].toBool();},"pausing the model saves the account's pause");
+        require(stops==0,"pausing holds the queue; Catch up is not cancelled");
         // The avatar opens the colour picker; a swatch saves through account_update.
         click(window,find(window->contentItem(),"accountAvatar_personal"),Qt::LeftButton);
         await([&]{auto *swatch=find(window->contentItem(),"accountColor_6FB5B2");return swatch&&swatch->isVisible();},"avatar opens the 16-swatch colour picker");
@@ -646,6 +662,15 @@ public:
         capture("labels-dialog");
         click(window,find(window->contentItem(),"closeLabelsDialog"),Qt::LeftButton);
         await([&]{auto *title=find(window->contentItem(),"labelsDialogTitle");return !title||!title->isVisible();},"the labels modal closes");
+        // The Signature row opens its editor; Save needs an edit and saves through account_update.
+        click(window,find(window->contentItem(),"editSignature_personal"),Qt::LeftButton);
+        await([&]{auto *editor=find(window->contentItem(),"signature_personal");return editor&&editor->isVisible();},"Signature opens its editor from Accounts");
+        require(!find(window->contentItem(),"saveSignature_personal")->isEnabled(),"Save waits for an edit");
+        find(window->contentItem(),"signature_personal")->setProperty("text","Alex\nWindscribe  \n\n");
+        capture("signature-dialog");
+        click(window,find(window->contentItem(),"saveSignature_personal"),Qt::LeftButton);
+        await([&]{return savedAccount["signature_text"].toString()=="Alex\nWindscribe";},"the signature saves without trailing blank lines");
+        savedAccount={};
         window->resize(960,720);QMetaObject::invokeMethod(window,"appearance",Q_ARG(QVariant,"paper"),Q_ARG(QVariant,"large"));capture("accounts-narrow-large");
         auto *button=find(window->contentItem(),"accountBacklog_personal");require(button->mapToScene({button->width(),0}).x()<=window->width(),"backlog control stays within narrow settings");
         window->resize(1280,900);QMetaObject::invokeMethod(window,"appearance",Q_ARG(QVariant,"graphite"),Q_ARG(QVariant,"default"));

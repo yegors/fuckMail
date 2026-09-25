@@ -56,7 +56,7 @@ fn discard_undo_preserves_editor_content_identity_files_and_pending_recipients_a
     let buffer = json!({"body":"Unsaved human words\nSecond line ✨","body_html":"<p>Unsaved <b>human words</b></p><p>Second line ✨</p>","signature_text":"Edited signature","subject":"Edited title","to_recipients":[{"name":"Zoë, Design","email":"zoe@example.test"}],"cc_recipients":[],"bcc_recipients":[{"email":"private@example.test"}],"attachment_ids":original["attachment_ids"],"recipient_inputs":{"bcc_recipients":"Unfinished <address@"}});
     let request = json!({"draft_id":original["draft_id"],"expected_revision":original["revision"],"request_id":"discard-editor","buffer":buffer});
     let discarded = call(&mut store, "draft_discard", request.clone());
-    assert_eq!(discarded["body"], "");
+    assert_eq!(discarded["body"], "\n\n—\nWindscribe");
     assert!(discarded["body_html"].is_null());
     assert_eq!(discarded["signature_text"], "");
     assert_eq!(discarded["attachment_ids"], json!([]));
@@ -102,10 +102,17 @@ fn discard_undo_preserves_editor_content_identity_files_and_pending_recipients_a
     );
     let undo = undo_params(&discarded, "discard-editor", "restore-editor");
     let restored = call(&mut store, "draft_undo_discard", undo.clone());
+    // The buffer's separate signature comes back as body text.
+    assert_eq!(
+        restored["body"],
+        "Unsaved human words\nSecond line ✨\n\nEdited signature"
+    );
+    assert_eq!(
+        restored["body_html"],
+        "<p>Unsaved <b>human words</b></p><p>Second line ✨</p><br><br>Edited signature"
+    );
+    assert_eq!(restored["signature_text"], "");
     for field in [
-        "body",
-        "body_html",
-        "signature_text",
         "subject",
         "to_recipients",
         "cc_recipients",

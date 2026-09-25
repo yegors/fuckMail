@@ -1113,3 +1113,65 @@ The founder supplied the seventh prototype export with designer notes and asked 
 - A character and token count covers both boxes.
 
 Local assistance24/Core62/Mail UI79/CLI47; schema35, fixtures0/3, protocol1 and readiness0/9 unchanged. [Research record](research/prototype-september-23.md#d112--seventh-export-2026-09-24).
+
+## D113 — eighth export: signatures on the account card, Image loading, review pass (2026-09-24T22:08:42Z)
+
+The founder supplied an updated export, `fuckMail (1).html`. It moves signatures to the Accounts card and reformats the image proxy settings. The founder also asked for a review pass over everything recently changed.
+
+**Signatures.**
+- The card gains a Signature row between Labels and the Local model. It shows the signature's lines joined by " · ", or "None", with Edit or Add ›.
+- That opens "Signature · {Account}" with the account's address, a 150 px editor and "Leave empty for none. Existing drafts keep theirs." Cancel and Save follow.
+- Save needs an edit and drops trailing blank lines. A refused save keeps the window and its text.
+- The Signatures section leaves Settings → Mail.
+
+**Image loading.** Settings → Mail's subtitle becomes "How the mail list looks, what stays blocked, and how images load." The Remote images block becomes Image loading, containing:
+- **Load through a proxy**, a switch.
+- **Proxy fields**, shown only while the proxy is on: Host, Username (Optional) and Password (Saved or Optional), then a status line with Test and Save.
+- **Image cache**, with Clear.
+
+Choices beyond the export:
+- The engine still tests only a saved proxy, so Test waits for Save and the status says "Not saved yet".
+- The host check also accepts IPv4 addresses, bracketed IPv6 and localhost. An unusable host such as one with https:// still reaches the engine's explanation.
+- Forget stays for a saved password.
+- The note about where names are looked up is removed.
+
+**Review pass.**
+- Mail and Calendar rows now follow the scopes Google granted; `capabilities` is true for every active account.
+- The account ring shows only a sliver while Google's mail list is still being counted.
+- The Local LLM page adopts settings saved by an account's Summarize, Label or pause while it has nothing unsaved, so its next save does not conflict.
+- A policy error shows only on its own account's card.
+- The unused `AccountAnalysis` refresh-all code is removed.
+
+**Not verified here.** The other session's pipeline refactor was mid-edit, so the engine did not compile and the full suite could not run. That refactor removed `message-request.json`, which `gui-local-model` reads, so that test cannot run until the refactor lands. It also removes the request template that the Local LLM page edits, so the page must adopt the new system and user prompt settings then.
+
+Mail UI80; schema, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D114 — local model pipeline implemented (D111) (2026-09-24T22:51:01Z)
+
+The founder confirmed the queue and pause work was committed and asked for D111 end to end. The model now reads one received email at a time: its stored text, already free of reply history, with new rules for attributions in other languages and localized Outlook headers. Settings hold `system` and `user` text in place of the stored request template, and schema36 archives the old template and removes it. The request, schema and options live in code: fixed context size, 512 output tokens, `keep_alive`, `think:false`. The reply is `{summary, label, sender}`, where `label` is limited to the account's label IDs by the schema and `sender` is human or bot. There is one HTTP request per email; the model is checked once and again after model errors. The watcher, the Backlog job and the job map for batches are replaced by one queue computed from the store. Its order is explicit requests, then new mail, then Catch up, newest first, with accounts taking turns. It works in batches with a cursor per account and goes back to the top when new mail is stored. Pause uses the saved per-account flag. When the model is down the queue holds; an email that fails twice waits for Try again (`local_model_failures`). Saving settings no longer cancels work or makes saved results out of date, per the founder's answers. CLI: `assist run`, `catch-up`, `pause`/`resume`, `analyze --message-id`; `summarize`, `classify` and `batch` are removed. The GUI's Local LLM page, reader, Accounts card and progress now use the new fields; visuals are unchanged. The GUI's display-only quote code stays for the HTML reader work. Local assistance25, CLI48, schema36; fixtures0/3 and protocol1 unchanged; readiness 0/9. [Plan](plans/local-model-pipeline.md), [evidence](research/local-assistance-execution.md#d114--local-model-pipeline-2026-09-24).
+
+## D115 — the signature is ordinary draft text (2026-09-24T22:48:46Z)
+
+Written as a second D114 in the same working tree; renumbered before commit.
+
+The founder: a signature should not be special or add characters the person did not type. It is normal text in the composer and can be deleted like any other text. A sent message had arrived with a "--" line above the signature, and the composer showed the signature in its own box.
+
+- A new draft, or a discarded one reopened, starts with two blank lines, then the account signature, then any forwarded text. The person edits or deletes it like the rest of the body.
+- Drafts no longer keep a separate signature. `signature_text` reads as empty. A draft saved earlier with its own signature shows it at the end of its body, and the next save stores it there.
+- Sending and local capture add nothing: no "-- " delimiter and no second copy. An explicit `signature_text` (CLI `--signature-file`) is still accepted and joined to the body with one blank line.
+- The composer's signature box and its Edit signature menu item are removed. The account card still edits the default signature.
+
+Core63 and Mail UI82; schema36, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D116 — Spam is read live, never synced (2026-09-24T23:47:34Z)
+
+The founder started a 90-day sync of a personal mailbox with about 2,000 unread messages in Spam. The top bar and Inbox showed 948, then 1,863, "to review" while one message actually needed review, and Downloading counted the spam too. Full sync listed with `includeSpamTrash=true`, so spam was downloaded and stored like archived mail, and the account's unread count covers all stored mail. The founder: do not sync spam; put it in the folder menu and read it live from Gmail when visited.
+
+- **Sync.** Full listings add `-in:spam`; Trash stays synced. A message that reaches the store with Gmail's SPAM label, from history or an older prepared page, removes its local copy and coverage with everything derived from it (the retention purge, now shared). A message that a draft or a pending change still uses stays until that work finishes. Marked not spam, it is fetched again like any change.
+- **Existing profiles.** On the first open after this change, stored messages with the SPAM label are removed once (meta `spam_forgotten`). Counts, All mail and Downloading then match.
+- **Spam view.** The folder menu gains Spam after Trash. It lists Gmail's Spam live, 50 at a time with Load more: sender, date, subject and Google's snippet (headers-only reads). Opening one reads its text live; links and images are not loaded. Nothing is stored and the view is not reopened after a restart. It needs the account's sync running, as other live Google reads do, and says so otherwise.
+- **Protocol and CLI.** Additive `google_spam_list {page_token?}` and `google_spam_message {id}`; `fm --account ID google spam [--page-token T]` and `google spam-show ID`.
+- **Not changed.** "To review" still counts unread across all stored mail, including Trash. Actions in Spam (Not spam, Delete) are not added.
+
+Gmail28, Core64, Mail UI83, CLI49; schema36, fixtures0/3, protocol1 (additive) and readiness0/9 unchanged.
+

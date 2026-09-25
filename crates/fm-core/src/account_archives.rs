@@ -153,7 +153,12 @@ impl Store {
                 )?;
             }
         }
-        crate::local_model::local_model_messages_deleted(&tx)?;
+        for key in [
+            crate::local_model::history_cutoff_key(account),
+            crate::local_model::catch_up_key(account),
+        ] {
+            tx.execute("DELETE FROM meta WHERE key=?1", [key])?;
+        }
         for table in ["local_model_settings", "local_model_settings_history"] {
             let rows = tx
                 .prepare(&format!("SELECT rowid,settings_json FROM {table}"))?

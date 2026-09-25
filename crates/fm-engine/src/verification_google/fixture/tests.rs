@@ -749,7 +749,7 @@ async fn actual_gmail_adapter_routes_keep_account_identity_pages_and_review_read
     assert_eq!(profile.messages_total, 4156);
     let GmailReply::Messages(recent) = api
         .execute(
-            GmailCall::list_messages(&first, None, Some("after:100"), true, 100).unwrap(),
+            GmailCall::list_messages(&first, None, Some("after:100 -in:spam"), true, 100).unwrap(),
             &token,
             &cancel,
         )
@@ -764,7 +764,7 @@ async fn actual_gmail_adapter_routes_keep_account_identity_pages_and_review_read
     assert!(recent.next_page_token.is_none());
     let GmailReply::Messages(initial) = api
         .execute(
-            GmailCall::list_messages(&first, None, None, true, 100).unwrap(),
+            GmailCall::list_messages(&first, None, Some("-in:spam"), true, 100).unwrap(),
             &token,
             &cancel,
         )
@@ -777,8 +777,14 @@ async fn actual_gmail_adapter_routes_keep_account_identity_pages_and_review_read
     assert_eq!(initial.next_page_token.as_deref(), Some("inventory-100"));
     let GmailReply::Messages(next) = api
         .execute(
-            GmailCall::list_messages(&first, initial.next_page_token.as_deref(), None, true, 100)
-                .unwrap(),
+            GmailCall::list_messages(
+                &first,
+                initial.next_page_token.as_deref(),
+                Some("-in:spam"),
+                true,
+                100,
+            )
+            .unwrap(),
             &token,
             &cancel,
         )

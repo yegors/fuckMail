@@ -944,7 +944,7 @@ mod tests {
         let parsed = mail_parser::MessageParser::default().parse(&raw).unwrap();
         assert_eq!(
             parsed.body_text(0).unwrap(),
-            format!("{plain}\n\n-- \n—\nWindscribe")
+            plain
         );
         let alternative = parsed.body_html(0).unwrap();
         assert!(alternative.contains("font-weight:700"));
@@ -1241,7 +1241,7 @@ mod tests {
         let parsed = mail_parser::MessageParser::default().parse(&raw).unwrap();
         assert_eq!(
             parsed.body_text(0).unwrap(),
-            format!("{authored}\n\n-- \n—\nWindscribe")
+            authored
         );
         assert_eq!(
             parsed.from().unwrap().first().unwrap().address.as_deref(),

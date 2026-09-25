@@ -78,6 +78,16 @@ const POST_RESET_MIGRATIONS: &[&str] = &[
         "CREATE TABLE message_people(message_rowid INTEGER NOT NULL REFERENCES messages(rowid) ON DELETE CASCADE,person INTEGER NOT NULL REFERENCES people(id),PRIMARY KEY(message_rowid,person)) STRICT, WITHOUT ROWID;",
         "UPDATE link_index_state SET indexed_rowid=0;"
     ),
+    // 36: D111 local model pipeline. System/user prompts replace the stored
+    // request template (missing prompts read as the built-in text), failures
+    // are counted per email, and the watcher's cursor keys go.
+    concat!(
+        "CREATE TABLE local_model_failures(account TEXT NOT NULL,message_id TEXT NOT NULL,attempts INTEGER NOT NULL,code TEXT NOT NULL,message TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(account,message_id),FOREIGN KEY(account,message_id) REFERENCES messages(account,id) ON DELETE CASCADE) STRICT;",
+        "INSERT OR REPLACE INTO local_model_settings_history(revision,settings_json) SELECT revision,settings_json FROM local_model_settings;",
+        "UPDATE local_model_settings SET revision=revision+1,settings_json=json_remove(settings_json,'$.prompt');",
+        "DELETE FROM meta WHERE key IN ('local_model_watch_cursor','local_model_watch_requeue');",
+        "DELETE FROM local_model_results WHERE target='';"
+    ),
 ];
 pub const SCHEMA_VERSION: u32 = RESET_BASELINE_VERSION + POST_RESET_MIGRATIONS.len() as u32;
 pub const FIXTURE_REVISION: u32 = 3;
@@ -257,6 +267,7 @@ impl Store {
             }
             store.seed()?;
         }
+        store.forget_stored_spam()?;
         store.cleanup_deleted_archive_blobs()?;
         store.validate_profile_identity()?;
         store.recover_google_category_projections()?;

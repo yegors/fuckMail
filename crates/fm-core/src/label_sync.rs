@@ -141,7 +141,7 @@ impl Store {
             Ok(result) => {
                 if result["pulled"].as_u64().is_some_and(|pulled| pulled > 0) {
                     // Mail classified before the import saw no labels; queue it again.
-                    self.local_model_requeue_account(account)?;
+                    self.local_model_forget_unlabeled(account)?;
                 }
                 Ok(Some(result))
             }

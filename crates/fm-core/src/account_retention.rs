@@ -27,40 +27,57 @@ impl Store {
             if pending {
                 return Err(err("retention_work_pending","Finish pending mail changes and drafts using older messages before shortening retention"));
             }
-            // Existing startup cleanup verifies all surviving references before
-            // unlinking blobs, including draft snapshots and other accounts.
-            self.db.execute("INSERT OR IGNORE INTO archive_blob_cleanup SELECT source_hash FROM retention_messages",[])?;
-            self.db.execute("INSERT OR IGNORE INTO archive_blob_cleanup SELECT blob_hash FROM attachments WHERE account=?1 AND message_id IN (SELECT id FROM retention_messages)",[account])?;
-            self.db.execute("DELETE FROM message_fts WHERE rowid IN (SELECT source_rowid FROM retention_messages)",[])?;
-            for table in [
-                "message_categories",
-                "attachments",
-                "google_message_state",
-                "google_manual_intents",
-                "assist_category_intents",
-                "local_model_label_overrides",
-                "message_sender_kinds",
-                "google_mail_mutations",
-            ] {
-                self.db.execute(&format!("DELETE FROM {table} WHERE account=?1 AND message_id IN (SELECT id FROM retention_messages)"),[account])?;
-            }
-            for table in ["assist_results", "local_model_results"] {
-                self.db.execute(&format!("DELETE FROM {table} WHERE account=?1 AND conversation_id IN (SELECT conversation_id FROM retention_messages)"),[account])?;
-            }
-            // Completed mail receipts contain reader copies. Remove only those
-            // whose exact members are evicted; authored draft receipts remain.
-            self.db.execute("DELETE FROM google_mail_mutations WHERE account=?1 AND request_id IN (SELECT request_id FROM operations WHERE account=?1 AND json_type(result_json,'$.messages')='array' AND json_extract(result_json,'$.id') IN (SELECT conversation_id FROM retention_messages))",[account])?;
-            self.db.execute("DELETE FROM operations WHERE account=?1 AND json_type(result_json,'$.messages')='array' AND json_extract(result_json,'$.id') IN (SELECT conversation_id FROM retention_messages)",[account])?;
-            self.db.execute("DELETE FROM google_mail_coverage WHERE account=?1 AND remote_id IN (SELECT remote_id FROM retention_messages)",[account])?;
-            self.db.execute("DELETE FROM messages WHERE account=?1 AND id IN (SELECT id FROM retention_messages)",[account])?;
-            crate::local_model::local_model_messages_deleted(&self.db)?;
-            self.db.execute("UPDATE conversations SET revision=revision+1 WHERE account=?1 AND id IN (SELECT conversation_id FROM retention_messages)",[account])?;
-            // Keep empty conversation identities that are referenced by durable
-            // authored work; browsing already requires at least one message.
-            self.db.execute("DELETE FROM conversations WHERE account=?1 AND id IN (SELECT conversation_id FROM retention_messages) AND NOT EXISTS(SELECT 1 FROM messages m WHERE m.account=conversations.account AND m.conversation_id=conversations.id) AND NOT EXISTS(SELECT 1 FROM drafts d WHERE d.account=conversations.account AND d.conversation_id=conversations.id) AND NOT EXISTS(SELECT 1 FROM assist_results r WHERE r.account=conversations.account AND r.conversation_id=conversations.id)",[account])?;
+            purge_messages(&self.db, account)?;
             self.db.execute_batch("DROP TABLE retention_messages")?;
         }
         self.db.execute("UPDATE google_mail_metrics SET observed=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0),retained_sources=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND source_state='retained'),indexed=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND index_state='indexed'),complete_attachments=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0 AND attachment_state='complete'),unavailable=(SELECT count(*) FROM google_mail_coverage WHERE account=?1 AND deleted=0) WHERE account=?1",[account])?;
         Ok(())
     }
+}
+
+/// Removes the local copies listed in the temporary `retention_messages`
+/// table (id, conversation_id, remote_id, source_hash, source_rowid) with
+/// everything derived from them. Provider content is untouched; startup
+/// cleanup unlinks blobs nothing else references.
+pub(crate) fn purge_messages(db: &rusqlite::Connection, account: &str) -> Result<()> {
+    // Existing startup cleanup verifies all surviving references before
+    // unlinking blobs, including draft snapshots and other accounts.
+    db.execute(
+        "INSERT OR IGNORE INTO archive_blob_cleanup SELECT source_hash FROM retention_messages",
+        [],
+    )?;
+    db.execute("INSERT OR IGNORE INTO archive_blob_cleanup SELECT blob_hash FROM attachments WHERE account=?1 AND message_id IN (SELECT id FROM retention_messages)",[account])?;
+    db.execute(
+        "DELETE FROM message_fts WHERE rowid IN (SELECT source_rowid FROM retention_messages)",
+        [],
+    )?;
+    for table in [
+        "message_categories",
+        "attachments",
+        "google_message_state",
+        "google_manual_intents",
+        "assist_category_intents",
+        "local_model_label_overrides",
+        "message_sender_kinds",
+        "google_mail_mutations",
+    ] {
+        db.execute(&format!("DELETE FROM {table} WHERE account=?1 AND message_id IN (SELECT id FROM retention_messages)"),[account])?;
+    }
+    for table in ["assist_results", "local_model_results"] {
+        db.execute(&format!("DELETE FROM {table} WHERE account=?1 AND conversation_id IN (SELECT conversation_id FROM retention_messages)"),[account])?;
+    }
+    // Completed mail receipts contain reader copies. Remove only those
+    // whose exact members are evicted; authored draft receipts remain.
+    db.execute("DELETE FROM google_mail_mutations WHERE account=?1 AND request_id IN (SELECT request_id FROM operations WHERE account=?1 AND json_type(result_json,'$.messages')='array' AND json_extract(result_json,'$.id') IN (SELECT conversation_id FROM retention_messages))",[account])?;
+    db.execute("DELETE FROM operations WHERE account=?1 AND json_type(result_json,'$.messages')='array' AND json_extract(result_json,'$.id') IN (SELECT conversation_id FROM retention_messages)",[account])?;
+    db.execute("DELETE FROM google_mail_coverage WHERE account=?1 AND remote_id IN (SELECT remote_id FROM retention_messages)",[account])?;
+    db.execute(
+        "DELETE FROM messages WHERE account=?1 AND id IN (SELECT id FROM retention_messages)",
+        [account],
+    )?;
+    db.execute("UPDATE conversations SET revision=revision+1 WHERE account=?1 AND id IN (SELECT conversation_id FROM retention_messages)",[account])?;
+    // Keep empty conversation identities that are referenced by durable
+    // authored work; browsing already requires at least one message.
+    db.execute("DELETE FROM conversations WHERE account=?1 AND id IN (SELECT conversation_id FROM retention_messages) AND NOT EXISTS(SELECT 1 FROM messages m WHERE m.account=conversations.account AND m.conversation_id=conversations.id) AND NOT EXISTS(SELECT 1 FROM drafts d WHERE d.account=conversations.account AND d.conversation_id=conversations.id) AND NOT EXISTS(SELECT 1 FROM assist_results r WHERE r.account=conversations.account AND r.conversation_id=conversations.id)",[account])?;
+    Ok(())
 }

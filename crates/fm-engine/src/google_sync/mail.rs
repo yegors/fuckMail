@@ -175,10 +175,15 @@ impl MailWorker {
                 baseline_history_id,
                 page_token,
             } => {
+                // Trash is kept; Spam is never downloaded and is read live.
+                let query = match state.query.as_deref() {
+                    Some(query) => format!("{query} -in:spam"),
+                    None => "-in:spam".to_owned(),
+                };
                 let call = GmailCall::list_messages(
                     &self.account,
                     page_token.as_deref(),
-                    state.query.as_deref(),
+                    Some(&query),
                     true,
                     LIST_PAGE_SIZE,
                 )

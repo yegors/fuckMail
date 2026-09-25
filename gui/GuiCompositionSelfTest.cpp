@@ -138,7 +138,7 @@ bool verifyMime(const QString &profile,const QJsonObject &draft,const QJsonObjec
     auto encoded=bytes.mid(begin+4,end-begin-4); encoded.replace("\r",""); encoded.replace("\n","");
     const auto decoded=QByteArray::fromBase64(encoded,QByteArray::AbortOnBase64DecodingErrors);
     auto expected=draft["body"].toString(); const auto signature=draft["signature_text"].toString();
-    if (!signature.isEmpty()) expected+="\n\n-- \n"+signature;
+    if (!signature.isEmpty()) expected+="\n\n"+signature;
     if (decoded!=expected.toUtf8()) { error="Capture changed the exact authored body/signature bytes."; return false; }
     return true;
 }
@@ -392,7 +392,12 @@ void GuiCompositionSelfTest::step() {
         }
         m_body="Native "+modes[m_mode]+" note — Montréal 日本語.";
         if (m_mode==2) {
-            const auto quote=draft["body"].toString();
+            // A new forward starts with blank lines and the account signature, then the quote.
+            const auto signature=m_backend.currentAccount()["signature_text"].toString();
+            const auto opening=signature.trimmed().isEmpty() ? QString() : "\n\n"+signature+"\n\n";
+            const auto full=draft["body"].toString();
+            if (!full.startsWith(opening)) { finish("Forward did not start with the account signature as plain text."); return; }
+            const auto quote=full.mid(opening.size());
             // Exact normalized text of fixture html-only.eml, independently
             // confirmed through the real CLI; its heading shares the first line.
             const QString expectedQuote="---------- Forwarded message ----------\nFrom: status@service.example\nDate: \nSubject: Weekly service availability\n\n"
@@ -755,7 +760,8 @@ void GuiCompositionSelfTest::step() {
         if (m_backend.draft()["discarded"].toBool() || m_backend.draft()["attachment_ids"].toList().size()!=1
             || m_backend.draft()["revision"].toLongLong()!=m_frozenStored["revision"].toInteger()+2
             || m_backend.draft()["source_message_id"].toString()!=m_frozenStored["source_message_id"].toString()
-            || !m_backend.draft()["body"].toString().isEmpty()) { finish("Attach did not save/revive the discarded legacy reply once before importing without changing its source/body."); return; }
+            // The revived reply keeps the discarded projection's starting text: the signature.
+            || m_backend.draft()["body"].toString()!=m_frozenStored["body"].toString()) { finish("Attach did not save/revive the discarded legacy reply once before importing without changing its source/body."); return; }
         m_stage=104; cli({"draft","show","--draft-id",m_frozenStored["draft_id"].toString()},[this](auto draft) {
             if (durableFields(draft)!=durableFields(QJsonObject::fromVariantMap(m_backend.draft()))) { finish("Reopened reply attachment differs from the independently saved draft."); return; }
             m_attachmentDrafts.append(draft);

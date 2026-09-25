@@ -18,7 +18,7 @@ fn new_live_profile_has_direct_strict_schema_and_valid_references() {
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(strict_tables, 65);
+    assert_eq!(strict_tables, 66);
     let fts_content_tables: i64 = store
         .db
         .query_row(
@@ -167,7 +167,7 @@ fn baseline_profiles_upgrade_to_the_current_schema_once() {
     let path = temp.path().join("store.sqlite3");
     let db = Connection::open(&path).unwrap();
     // A schema32 profile predates the calendar mail count date index and the link index.
-    db.execute_batch("DROP INDEX google_mail_coverage_by_date; DROP TABLE message_people; DROP TABLE people; DROP TABLE message_link_hosts; DROP TABLE link_hosts; DROP TABLE link_index_state; PRAGMA user_version=32;")
+    db.execute_batch("DROP TABLE local_model_failures; DROP INDEX google_mail_coverage_by_date; DROP TABLE message_people; DROP TABLE people; DROP TABLE message_link_hosts; DROP TABLE link_hosts; DROP TABLE link_index_state; PRAGMA user_version=32;")
         .unwrap();
     drop(db);
     let store = Store::open(temp.path()).unwrap();
@@ -195,7 +195,7 @@ fn schema33_profiles_gain_the_link_index() {
     drop(Store::open_live(temp.path()).unwrap());
     let path = temp.path().join("store.sqlite3");
     let db = Connection::open(&path).unwrap();
-    db.execute_batch("DROP TABLE message_people; DROP TABLE people; DROP TABLE message_link_hosts; DROP TABLE link_hosts; DROP TABLE link_index_state; PRAGMA user_version=33;")
+    db.execute_batch("DROP TABLE local_model_failures; DROP TABLE message_people; DROP TABLE people; DROP TABLE message_link_hosts; DROP TABLE link_hosts; DROP TABLE link_index_state; PRAGMA user_version=33;")
         .unwrap();
     drop(db);
     let store = Store::open(temp.path()).unwrap();
@@ -224,7 +224,7 @@ fn schema34_profiles_gain_people_and_index_again() {
     drop(Store::open_live(temp.path()).unwrap());
     let path = temp.path().join("store.sqlite3");
     let db = Connection::open(&path).unwrap();
-    db.execute_batch("DROP TABLE message_people; DROP TABLE people; INSERT INTO link_index_state VALUES(1,42); PRAGMA user_version=34;")
+    db.execute_batch("DROP TABLE local_model_failures; DROP TABLE message_people; DROP TABLE people; INSERT INTO link_index_state VALUES(1,42); PRAGMA user_version=34;")
         .unwrap();
     drop(db);
     let store = Store::open(temp.path()).unwrap();
@@ -255,4 +255,41 @@ fn schema34_profiles_gain_people_and_index_again() {
         plan.contains("PRIMARY KEY") || plan.contains("COVERING INDEX"),
         "{plan}"
     );
+}
+
+#[test]
+fn schema35_profiles_keep_model_choices_and_use_the_built_in_prompts() {
+    let temp = tempfile::tempdir().unwrap();
+    drop(Store::open_live(temp.path()).unwrap());
+    let path = temp.path().join("store.sqlite3");
+    let db = Connection::open(&path).unwrap();
+    let old = r#"{"endpoint":"http://127.0.0.1:11434","model":{"name":"m","digest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"prompt":"{\"model\":\"{{model}}\"}","accounts":{}}"#;
+    db.execute_batch("DROP TABLE local_model_failures; INSERT INTO meta VALUES('local_model_watch_cursor',9),('local_model_watch_requeue',3); PRAGMA user_version=35;")
+        .unwrap();
+    db.execute("INSERT INTO local_model_settings VALUES(1,4,?1)", [old])
+        .unwrap();
+    drop(db);
+    let store = Store::open(temp.path()).unwrap();
+    let state = store.local_model_settings().unwrap();
+    assert_eq!(state["revision"], 5);
+    assert_eq!(state["settings"]["model"]["name"], "m");
+    assert_eq!(state["settings"]["system"], fm_assist::ollama::DEFAULT_SYSTEM);
+    let archived: String = store
+        .db
+        .query_row(
+            "SELECT settings_json FROM local_model_settings_history WHERE revision=4",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(archived, old);
+    let keys: i64 = store
+        .db
+        .query_row(
+            "SELECT count(*) FROM meta WHERE key LIKE 'local_model_watch_%'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(keys, 0);
 }

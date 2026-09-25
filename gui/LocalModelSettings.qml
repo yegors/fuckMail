@@ -3,10 +3,10 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 // Settings → Local LLM: the provider, the model, a sample Test, and the two
-// prompt parts. The system prompt holds behaviour rules; the user message is
-// sent with each message and must carry {{messages}} and {{labels}}. Choosing
-// a model saves at once; each prompt box saves on its own. All of it is the
-// same request template the engine and CLI use.
+// prompt parts. The system prompt holds behaviour rules and the reply shape;
+// the user message is sent with each email and must carry {{messages}}
+// ({{labels}} is optional). Choosing a model saves at once; each prompt box
+// saves on its own. The engine and CLI use the same `system` and `user` text.
 ColumnLayout {
     id: panel
     spacing: 0
@@ -22,7 +22,6 @@ ColumnLayout {
     property string discoveryTicket: ""
     property bool discovering: false
     property bool discovered: false
-    property string jobErrors: ""
     property bool saving: false
     // Box being saved (0 system, 1 user), -1 for the whole draft, -2 the model choice.
     property int savingPart: -1
@@ -41,25 +40,17 @@ ColumnLayout {
         if (draft.model && !selectedAvailable) rows.push(draft.model)
         return rows
     }
-    function parse(text) { try { return JSON.parse(text || "{}") } catch (e) { return ({}) } }
-    readonly property var requestTemplate: parse(draft.prompt)
-    readonly property var promptMessages: requestTemplate.messages || []
-    readonly property var savedMessages: parse(saved.prompt).messages || []
-    readonly property var defaultMessages: parse(defaults.prompt).messages || []
-    function textOf(list, index) { return (list[index] || {}).content || "" }
-    function boxDirty(index) { return revision >= 0 && textOf(promptMessages, index) !== textOf(savedMessages, index) }
-    readonly property var missingVariables: ["{{messages}}", "{{labels}}"].filter(v => textOf(promptMessages, 1).indexOf(v) < 0)
-    readonly property string promptText: textOf(promptMessages, 0) + textOf(promptMessages, 1)
+    // Box 0 edits `system`, box 1 edits `user`.
+    readonly property var promptKeys: ["system", "user"]
+    function textOf(settings, index) { return (settings || {})[promptKeys[index]] || "" }
+    function boxDirty(index) { return revision >= 0 && textOf(draft, index) !== textOf(saved, index) }
+    readonly property var missingVariables: ["{{messages}}", "{{labels}}"].filter(v => textOf(draft, 1).indexOf(v) < 0)
+    readonly property string promptText: textOf(draft, 0) + textOf(draft, 1)
     readonly property string modelNote: {
         const m = installedModels.find(m => draft.model && m.name === draft.model.name && m.digest === draft.model.digest)
         return m && m.size ? (m.size / 1e9).toFixed(1) + " GB" : ""
     }
-    function editMessage(index, content) {
-        if (!promptMessages[index] || promptMessages[index].content === content) return
-        const request = copy(requestTemplate)
-        request.messages[index].content = content
-        edit("prompt", JSON.stringify(request, null, 2))
-    }
+    function editMessage(index, content) { edit(promptKeys[index], content) }
     function copy(v) { return JSON.parse(JSON.stringify(v)) }
     function send(method, params, kind, account, extra) {
         const ticket = backend.assistanceRequest(method, params || {}, account || "")
@@ -100,26 +91,20 @@ ColumnLayout {
     }
     function saveBox(index) {
         if (!boxDirty(index)) return
-        const content = textOf(promptMessages, index)
-        commit(savedWith(s => { const request = parse(s.prompt); request.messages[index].content = content; s.prompt = JSON.stringify(request, null, 2) }), index)
+        const content = textOf(draft, index)
+        commit(savedWith(s => { s[promptKeys[index]] = content }), index)
     }
-    function cancelBox(index) { editMessage(index, textOf(savedMessages, index)) }
-    function restoreBox(index) { if (defaultMessages[index]) editMessage(index, textOf(defaultMessages, index)) }
+    function cancelBox(index) { editMessage(index, textOf(saved, index)) }
+    function restoreBox(index) { editMessage(index, textOf(defaults, index)) }
     function discard() { draft=copy(saved); status="Changes discarded" }
     function reloadSaved() { send("assist_settings_get",{},"reload") }
     // After a partial save, the other unsaved edits stay in the draft.
     function adopt(settings, part) {
         const next = copy(settings)
         if (part >= 0 || part === -2) {
-            const request = parse(next.prompt), mine = parse(draft.prompt)
-            for (let i = 0; i < (request.messages || []).length; ++i)
-                if (i !== part && mine.messages && mine.messages[i]) request.messages[i].content = mine.messages[i].content
-            if (part === -2) request.messages = mine.messages || request.messages
-            next.prompt = JSON.stringify(request, null, 2)
+            for (let i = 0; i < promptKeys.length; ++i) if (i !== part) next[promptKeys[i]] = textOf(draft, i)
             if (part >= 0) { next.endpoint = draft.endpoint; next.model = draft.model; if (draft.provider) next.provider = draft.provider; else delete next.provider }
         }
-        // Unchanged prompt text keeps the saved bytes exactly.
-        if (JSON.stringify(parse(next.prompt)) === JSON.stringify(parse(settings.prompt))) next.prompt = settings.prompt
         draft = next
     }
     function runTest() {
@@ -128,7 +113,7 @@ ColumnLayout {
         if (!model) return
         test = {state: "run", at: Date.now(), model: model.name}
         testJob = ""
-        send("assist_start", {task: "message", sample: true, sample_case: "personal", settings: draft}, "test", backend.account || "")
+        send("assist_start", {sample: true, sample_case: "personal", settings: draft}, "test", backend.account || "")
     }
     function testFinished(job) {
         const at = test ? test.at : Date.now(), ms = Date.now() - at, model = test ? test.model : ""
@@ -138,7 +123,7 @@ ColumnLayout {
             return
         }
         const error = job.error || {}
-        const format = ["assistance_format", "invalid_assistance_result", "assistance_output_limit"].indexOf(error.code) >= 0
+        const format = ["invalid_assistance_result", "assistance_output_limit"].indexOf(error.code) >= 0
         test = {state: format ? "fail" : "err", at: at, ms: (error.metrics || {}).total_ms || ms, model: model, metrics: error.metrics || {},
             out: format ? String(error.raw || "") : "", message: error.message || (job.status === "canceled" ? "The test was stopped." : "The model did not answer.")}
     }
@@ -157,7 +142,13 @@ ColumnLayout {
             else if (panel.visible) panel.send("assist_settings_get",{},"load")
         }
         function onAssistanceReply(ticket,method,result,ok) {
-            const req=panel.requests[ticket]; if (!req) return
+            const req=panel.requests[ticket]
+            // Another control (an account's Summarize, Label or pause) saved settings:
+            // adopt them while there is nothing unsaved here, so the next save is current.
+            if (!req && method==="assist_settings_save" && ok && result.settings && !panel.dirty && !panel.saving) {
+                panel.saved=panel.copy(result.settings); panel.draft=panel.copy(result.settings); panel.revision=result.revision; return
+            }
+            if (!req) return
             const kind=req.kind
             const r=Object.assign({},panel.requests); delete r[ticket]; panel.requests=r
             if(kind==="discover" && (ticket!==panel.discoveryTicket || req.endpoint!==panel.draft.endpoint || req.provider!==panel.provider))return
@@ -187,9 +178,8 @@ ColumnLayout {
                     if (req.part >= 0) { const at=Object.assign({},panel.savedAt); at[req.part]=Date.now(); panel.savedAt=at }
                     panel.saveCompleted()
                 }
-                if (panel.visible && kind!=="save") { panel.refresh(); panel.send("assist_jobs",{},"jobs") }
+                if (panel.visible && kind!=="save") panel.refresh()
             } else if (kind==="discover") { panel.models=result.models || []; panel.discovered=true; panel.status=(panel.provider === "ollama" ? "Ollama "+(result.version || "") : "Local server")+" · "+panel.models.length+(panel.models.length === 1 ? " model" : " models") }
-            else if (kind==="jobs") panel.jobErrors=(result.items || []).filter(j=>j.error && j.kind==="backlog").map(j=>j.error.message).join("\n")
         }
     }
     component Caption: Text { color: Theme.inkAlpha(0.45); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(11.5) }
@@ -208,14 +198,14 @@ ColumnLayout {
         default property alias extra: extraSlot.data
         Layout.fillWidth: true; spacing: 0
         readonly property bool dirty: panel.boxDirty(index)
-        readonly property bool isDefault: panel.textOf(panel.promptMessages, index) === panel.textOf(panel.defaultMessages, index)
+        readonly property bool isDefault: panel.textOf(panel.draft, index) === panel.textOf(panel.defaults, index)
         Caption { text: box.title; Layout.topMargin: 32 }
         Body { text: box.description; Layout.topMargin: 6 }
         ColumnLayout { id: extraSlot; Layout.fillWidth: true; spacing: 0 }
         TextArea {
             objectName: "mailPrompt" + box.index
             Layout.fillWidth: true; Layout.topMargin: 12; Layout.preferredHeight: Math.max(box.minimum, contentHeight + 24)
-            text: panel.textOf(panel.promptMessages, box.index)
+            text: panel.textOf(panel.draft, box.index)
             onTextChanged: if (activeFocus) panel.editMessage(box.index, text)
             wrapMode: TextEdit.Wrap; textFormat: TextEdit.PlainText; selectByMouse: true; color: Theme.inkAlpha(0.85)
             font.family: backend.fixedFontFamily(); font.pointSize: Theme.fontPoints(12.5); padding: 12; leftPadding: 14; rightPadding: 14
@@ -227,7 +217,7 @@ ColumnLayout {
             AbstractButton {
                 id: restore
                 objectName: "restorePrompt" + box.index
-                enabled: !box.isDefault && panel.defaultMessages.length > box.index
+                enabled: !box.isDefault && panel.textOf(panel.defaults, box.index).length > 0
                 hoverEnabled: true
                 onClicked: panel.restoreBox(box.index)
                 contentItem: Text { text: "Restore default"; color: !restore.enabled ? Theme.inkAlpha(.3) : restore.hovered ? Theme.text : Theme.amber; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } }
@@ -395,6 +385,5 @@ ColumnLayout {
         Text { text: "These settings changed elsewhere."; color: Theme.secondary; font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) } }
         FmButton { objectName:"reloadModelSettings"; text:"Reload saved settings"; outlined: true; onClicked:panel.reloadSaved() }
     }
-    Text { visible:panel.jobErrors.length>0; text:panel.jobErrors; Layout.topMargin: 10; Layout.fillWidth:true; wrapMode:Text.Wrap; color:Theme.secondary; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(12) }
     Text { visible:panel.models.some(m=>!m.eligible); Layout.topMargin: 10; Layout.fillWidth:true; text:panel.models.filter(m=>!m.eligible).map(m=>m.name+": "+m.reason).join("\n"); wrapMode:Text.Wrap; color:Theme.subtle; font.family:Theme.fontFamily; font.pointSize:Theme.fontPoints(11) }
 }

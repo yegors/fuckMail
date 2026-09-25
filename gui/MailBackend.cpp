@@ -544,14 +544,16 @@ void MailBackend::setQuery(const QString &value) {
 }
 void MailBackend::setFolder(const QString &value) {
     if (!accountNavigationAllowed()) return;
-    if (value != "inbox" && value != "sent" && value != "all" && value != "drafts" && value != "trash") return;
+    if (value != "inbox" && value != "sent" && value != "all" && value != "drafts" && value != "trash" && value != "spam") return;
     if (m_folder == value) return;
     m_queryActivity.start();
     // Day chips are a Sent control; their dates must not filter other views unseen.
     if (m_folder == u"sent" && (m_filters.remove("after") | m_filters.remove("before"))) remember("filters", m_filters);
     m_folder = value; m_pinnedRow.clear(); m_pinnedIndex = -1;
-    if (value == "drafts") { m_filters.clear(); m_category.clear(); remember("filters", QVariantMap{}); remember("category", ""); }
-    remember("folder", value); emit queryChanged(); loadConversations();
+    if (value == "drafts" || value == "spam") { m_filters.clear(); m_category.clear(); remember("filters", QVariantMap{}); remember("category", ""); }
+    // Spam is read live each visit, so it is not the view a restart reopens.
+    if (value != "spam") remember("folder", value);
+    emit queryChanged(); loadConversations();
 }
 void MailBackend::setCategory(const QString &value) {
     if (m_category == value) return;
@@ -678,7 +680,7 @@ QVariantMap MailBackend::mailViewScope() const {
 }
 
 void MailBackend::cacheMailView() {
-    if (m_account.isEmpty() || m_folder == "drafts" || accountArchived()) return;
+    if (m_account.isEmpty() || m_folder == "drafts" || m_folder == "spam" || accountArchived()) return;
     // Two small byte-bounded caches, independent of total mailbox size. Keep
     // pagination metadata with the exact list; a stale cursor is revalidated.
     const auto bytes = QJsonDocument(QJsonObject{{"rows", QJsonArray::fromVariantList(m_conversations)},
@@ -734,6 +736,13 @@ void MailBackend::loadConversations(bool append, bool preserveLoaded) {
     if (!append && !preserveLoaded) m_browsingOlder = false;
     if (!append && m_folder == "sent") loadOutgoing();
     if (m_folder == "drafts") { loadDraftRows(append, preserveLoaded); return; }
+    if (m_folder == "spam") {
+        // Nothing local: SpamView lists Gmail's Spam live.
+        ++m_listGeneration; m_nextOffset = -1; m_nextCursor.clear(); m_listError.clear();
+        publishConversations({}); emit conversationsChanged();
+        if (m_loading) { m_loading = false; emit loadingChanged(); }
+        return;
+    }
     const int generation = ++m_listGeneration;
     const QString account = m_account;
     const int offset = append ? m_nextOffset : 0;
@@ -867,6 +876,7 @@ QVariantMap MailBackend::retainReaderPresentation(QVariantMap data) const {
     }
     data["messages"] = members;
     if (m_conversation.contains("assistance_results")) data["assistance_results"] = m_conversation.value("assistance_results");
+    if (m_conversation.contains("assistance_failures")) data["assistance_failures"] = m_conversation.value("assistance_failures");
     if (m_conversation.contains("assistance_settings")) data["assistance_settings"] = m_conversation.value("assistance_settings");
     data["reader_prepared"] = m_conversation.value("reader_prepared");
     return data;
@@ -938,6 +948,7 @@ void MailBackend::prepareReader(const QString &account, const QString &id, QVari
         requestReader(account, {{"conversation_id", id}}, [this, snapshot, account, current, prefetch, finish](auto result, bool ok) {
             if (!current()) return;
             (*snapshot)["assistance_results"] = ok ? result.value("items").toArray().toVariantList() : QVariantList{};
+            (*snapshot)["assistance_failures"] = ok ? result.value("failures").toArray().toVariantList() : QVariantList{};
             requestReader(account, {}, [snapshot, current, finish](auto settings, bool available) {
                 if (!current()) return;
                 if (available) (*snapshot)["assistance_settings"] = settings.toVariantMap();
@@ -1731,6 +1742,18 @@ QString MailBackend::assistanceRequest(const QString &method, const QVariantMap 
             if (ok && (method == "assist_correct" || method == "assist_accept") && account == m_account) {
                 loadConversation(false, false); loadConversations(false, true);
             }
+        });
+    });
+    return ticket;
+}
+
+QString MailBackend::spamRequest(const QString &method, const QVariantMap &params) {
+    if (method != "google_spam_list" && method != "google_spam_message") return {};
+    const auto ticket = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const auto account = m_account;
+    QTimer::singleShot(0, this, [this, method, params, account, ticket] {
+        googleOperation(method, account, QJsonObject::fromVariantMap(params), [this, ticket, method, account](auto result, bool ok) {
+            emit spamReply(ticket, method, account, result.toVariantMap(), ok);
         });
     });
     return ticket;

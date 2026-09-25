@@ -24,6 +24,7 @@ pub enum GmailMethod {
     HistoryList,
     MessageRaw,
     MessageState,
+    MessageMetadata,
     LabelsList,
     LabelCreate,
     MessageModify,
@@ -47,7 +48,8 @@ impl GmailMethod {
             | Self::MessageModify
             | Self::MessageRestore
             | Self::DraftsList
-            | Self::LabelCreate => 5,
+            | Self::LabelCreate
+            | Self::MessageMetadata => 5,
             Self::DraftCreate | Self::DraftDelete => 10,
             Self::DraftUpdate => 15,
             Self::MessageRaw | Self::MessageState | Self::MessageTrash | Self::DraftGet => 20,
@@ -260,6 +262,29 @@ impl GmailCall {
             &[
                 ("format", "full"),
                 ("fields", "id,threadId,labelIds,historyId"),
+            ],
+            None,
+        )?;
+        call.expected_id = Some(id.into());
+        Ok(call)
+    }
+    /// Headers and Google's snippet for a live listing, such as Spam, that is
+    /// shown without downloading or keeping the message.
+    pub fn message_metadata(account: &AccountId, id: &str) -> Result<Self, GoogleError> {
+        let mut call = Self::new(
+            account,
+            GmailMethod::MessageMetadata,
+            HttpMethod::Get,
+            &["messages", id],
+            &[
+                ("format", "metadata"),
+                ("metadataHeaders", "From"),
+                ("metadataHeaders", "Subject"),
+                ("metadataHeaders", "Date"),
+                (
+                    "fields",
+                    "id,threadId,labelIds,snippet,internalDate,payload/headers",
+                ),
             ],
             None,
         )?;
@@ -512,12 +537,47 @@ pub struct GmailMessageState {
     #[serde(default)]
     pub label_ids: Vec<String>,
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GmailMessageMetadata {
+    pub id: String,
+    pub thread_id: String,
+    #[serde(default)]
+    pub label_ids: Vec<String>,
+    #[serde(default)]
+    pub snippet: String,
+    #[serde(default)]
+    pub internal_date: Option<String>,
+    #[serde(default)]
+    pub payload: GmailMetadataPayload,
+}
+#[derive(Deserialize, Default)]
+pub struct GmailMetadataPayload {
+    #[serde(default)]
+    pub headers: Vec<GmailHeader>,
+}
+#[derive(Deserialize)]
+pub struct GmailHeader {
+    pub name: String,
+    pub value: String,
+}
+impl GmailMessageMetadata {
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.payload
+            .headers
+            .iter()
+            .find(|header| header.name.eq_ignore_ascii_case(name))
+            .map(|header| header.value.as_str())
+    }
+}
 pub enum GmailReply {
     Profile(GmailProfile),
     Messages(ListPage),
     History(HistoryPage),
     Raw(RawOutcome),
     MessageState(Option<GmailMessageState>),
+    /// None when the message is gone.
+    MessageMetadata(Option<GmailMessageMetadata>),
     Labels(GmailLabels),
     Label(GmailLabel),
     /// HTTP 400/409 rejected creation; a malformed success remains uncertain.
@@ -594,6 +654,9 @@ impl<T: HttpTransport> GmailApi<T> {
         if response.status == 404 && call.method == GmailMethod::MessageState {
             return Ok(GmailReply::MessageState(None));
         }
+        if response.status == 404 && call.method == GmailMethod::MessageMetadata {
+            return Ok(GmailReply::MessageMetadata(None));
+        }
         if response.status == 400
             && call.method == GmailMethod::DraftsList
             && call.previous_page.is_some()
@@ -665,6 +728,24 @@ impl<T: HttpTransport> GmailApi<T> {
                     checked(label, 256)?;
                 }
                 Ok(GmailReply::MessageState(Some(value)))
+            }
+            GmailMethod::MessageMetadata => {
+                let value: GmailMessageMetadata = decode_json(bytes, MAX_JSON)?;
+                checked(&value.id, 256)?;
+                checked(&value.thread_id, 256)?;
+                if Some(value.id.as_str()) != call.expected_id.as_deref()
+                    || value.label_ids.len() > 10_000
+                    || value.payload.headers.len() > 100
+                    || value.snippet.len() > 16 * 1024
+                    || value
+                        .payload
+                        .headers
+                        .iter()
+                        .any(|header| header.name.len() > 256 || header.value.len() > 64 * 1024)
+                {
+                    return Err(invalid());
+                }
+                Ok(GmailReply::MessageMetadata(Some(value)))
             }
             GmailMethod::LabelsList => {
                 let value: GmailLabels = decode_json(bytes, MAX_JSON)?;

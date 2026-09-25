@@ -122,7 +122,7 @@ fn local_import_capture_restart_and_replay_preserve_bytes_and_received_queries()
     let saved = call(
         &mut store,
         "draft_save",
-        json!({"draft_id":draft["draft_id"],"expected_revision":3,"request_id":"after-import","body":"Later local text"}),
+        json!({"draft_id":draft["draft_id"],"expected_revision":3,"request_id":"after-import","body":"Later local text\n\nFrozen signature"}),
     );
     assert_eq!(saved["attachment_ids"], reply["draft"]["attachment_ids"]);
     let capture_request =

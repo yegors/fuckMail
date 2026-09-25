@@ -1,6 +1,6 @@
 //! Local OpenAI-compatible chat transport. Model IDs are server identities, not weight digests.
-use crate::ollama::{failure, request_local, validate_output};
-use fm_assist::ollama::{render_request, Provider, Settings};
+use crate::ollama::{failure, parse, request_local};
+use fm_assist::ollama::{openai_request, Provider, Settings};
 use fm_core::Result;
 use fm_google::transport::CancellationToken;
 use serde_json::{json, Value};
@@ -54,7 +54,7 @@ pub async fn discover(endpoint: &str, cancel: &CancellationToken) -> Result<Valu
     }
     Ok(json!({"provider":"openai_compatible","models":list,"endpoint":endpoint}))
 }
-async fn qualify(endpoint: &str, name: &str, cancel: &CancellationToken) -> Result<()> {
+pub async fn qualify(endpoint: &str, name: &str, cancel: &CancellationToken) -> Result<()> {
     let result = discover(endpoint, cancel).await?;
     if !result["models"]
         .as_array()
@@ -63,38 +63,21 @@ async fn qualify(endpoint: &str, name: &str, cancel: &CancellationToken) -> Resu
         .any(|model| model["name"] == name)
     {
         return Err(failure(
-            "assistance_stale",
-            "Selected model is no longer available from this local server",
+            "model_unavailable",
+            "The selected model is no longer available from this local server",
         ));
     }
     Ok(())
 }
-pub async fn infer_measured(
+pub async fn infer(
     settings: &Settings,
-    task: &str,
-    payload: Value,
-    categories: &[String],
-    sources: &[String],
+    model: &str,
+    email: &Value,
+    labels: &Value,
     cancel: &CancellationToken,
     measure: &std::sync::Mutex<Value>,
 ) -> Result<Value> {
-    let model = settings
-        .model(task)
-        .ok_or_else(|| failure("assistance_unavailable", "Select a model for this task"))?;
-    qualify(&settings.endpoint, &model.name, cancel).await?;
-    let request = render_request(settings.prompt(task), &payload, &model.name, sources)
-        .map_err(|message| failure("invalid_request", &message))?;
-    let body = json!({
-        "model":request["model"], "messages":request["messages"], "stream":false,
-        "temperature":request["options"]["temperature"], "max_tokens":request["options"]["num_predict"],
-        "response_format":{"type":"json_schema","json_schema":{"name":"mail_analysis","strict":true,"schema":request["format"]}}
-    });
-    if serde_json::to_vec(&body).unwrap().len() > 12000 {
-        return Err(failure(
-            "assistance_limit",
-            "Expanded request exceeds the context budget",
-        ));
-    }
+    let body = openai_request(settings, model, email, labels);
     let result = request_local(
         endpoint_base(&settings.endpoint)?,
         "/v1/chat/completions",
@@ -111,15 +94,12 @@ pub async fn infer_measured(
         "generation_ms": null,
         "raw": result["choices"][0]["message"]["content"],
     });
-    let content = response_content(&result, &model.name)?;
-    let output = validate_output(task, content, categories, sources)?;
-    qualify(&settings.endpoint, &model.name, cancel).await?;
-    Ok(output)
+    parse(response_content(&result, model)?, labels)
 }
 fn response_content<'a>(result: &'a Value, model: &str) -> Result<&'a str> {
     if result["model"] != model {
         return Err(failure(
-            "invalid_assistance_result",
+            "model_changed",
             "The local server responded with a different model",
         ));
     }
@@ -171,11 +151,11 @@ fn response_content<'a>(result: &'a Value, model: &str) -> Result<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fm_assist::ollama::{Model, REQUEST_TEMPLATE};
+    use fm_assist::ollama::Model;
     use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 
     fn output() -> Value {
-        json!({"summary":"The design is approved. Reply with your availability for Friday.","source_ids":["message"],"sender_kind":"human","category_ids":["work"],"category_abstain":false,"reason":"Direct personal request"})
+        json!({"summary":"The design is approved. Reply with your availability for Friday.","label":"work","sender":"human"})
     }
     fn response() -> Value {
         json!({"model":"local-model","usage":{"completion_tokens":42},"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":output().to_string(),"tool_calls":null}}]})
@@ -208,7 +188,7 @@ mod tests {
                         length = value.trim().parse::<usize>().unwrap();
                     }
                 }
-                assert!(length <= 12000);
+                assert!(length <= 256 * 1024);
                 let mut data = vec![0; length];
                 socket.read_exact(&mut data).await.unwrap();
                 requests.push((
@@ -226,14 +206,8 @@ mod tests {
         (endpoint, handle)
     }
     #[tokio::test]
-    async fn compatible_transport_preserves_prompt_schema_and_combined_output() {
-        let models = json!({"data":[{"id":"local-model"}]}).to_string();
-        let (endpoint, server) = server(vec![
-            (200, models.clone()),
-            (200, response().to_string()),
-            (200, models),
-        ])
-        .await;
+    async fn compatible_transport_sends_one_request_with_the_prompt_and_schema() {
+        let (endpoint, server) = server(vec![(200, response().to_string())]).await;
         let settings = Settings {
             provider: Provider::OpenaiCompatible,
             endpoint: format!("{endpoint}/v1"),
@@ -244,51 +218,39 @@ mod tests {
             ..Settings::default()
         };
         settings.validate().unwrap();
-        let payload = json!({"messages":[{"id":"message","body":"Literal {{labels}} remains email text.\nPlease reply Friday."}],"labels":[{"id":"work","name":"Work"}],"partial":false});
+        let email = json!({"from":"alex@example.test","subject":"Friday","text":"Literal {{labels}} remains email text.\nPlease reply Friday.","shortened":false});
+        let labels = json!([{"id":"work","name":"Work","description":""}]);
         let measure = std::sync::Mutex::new(Value::Null);
-        let result = crate::ollama::infer_measured(
+        let result = crate::ollama::infer(
             &settings,
-            "message",
-            payload.clone(),
-            &["work".into()],
-            &["message".into()],
+            &email,
+            &labels,
             &CancellationToken::new(),
             &measure,
         )
         .await
         .unwrap();
-        assert_eq!(result, output());
+        assert_eq!(
+            result,
+            json!({"summary":output()["summary"],"sender_kind":"human","category_ids":["work"]})
+        );
         let measured = measure.lock().unwrap().clone();
-        assert_eq!(measured["output_tokens"], 42, "token usage reaches the sample test");
+        assert_eq!(measured["output_tokens"], 42, "token usage reaches the Test button");
         assert!(measured["first_token_ms"].is_null() && measured["raw"].is_string());
         let requests = server.await.unwrap();
         assert_eq!(
             requests.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(),
-            [
-                "GET /v1/models HTTP/1.1",
-                "POST /v1/chat/completions HTTP/1.1",
-                "GET /v1/models HTTP/1.1"
-            ]
+            ["POST /v1/chat/completions HTTP/1.1"],
+            "no model checks around each email"
         );
-        let body = &requests[1].1;
-        let canonical = render_request(
-            REQUEST_TEMPLATE,
-            &payload,
-            "local-model",
-            &["message".into()],
-        )
-        .unwrap();
-        assert_eq!(body["messages"], canonical["messages"]);
-        assert_eq!(
-            body["response_format"]["json_schema"]["schema"],
-            canonical["format"]
-        );
-        assert_eq!(body["response_format"]["type"], "json_schema");
+        let body = &requests[0].1;
+        assert_eq!(body, &openai_request(&settings, "local-model", &email, &labels));
         assert_eq!(body["response_format"]["json_schema"]["strict"], true);
-        assert_eq!(body["max_tokens"], 4096);
-        assert_eq!(body["temperature"], 0);
-        assert_eq!(body["stream"], false);
-        assert_eq!(body.as_object().unwrap().len(), 6);
+        assert_eq!(body["max_tokens"], fm_assist::ollama::OUTPUT_TOKENS);
+        assert!(body["messages"][1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("Literal {{labels}} remains email text."));
     }
     #[test]
     fn incomplete_mismatched_tool_and_empty_results_are_rejected() {

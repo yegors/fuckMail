@@ -7,7 +7,6 @@ Rectangle {
     id: root
     signal dismissed()
     property bool loading: false
-    property bool signatureOpen: false
     property bool ccOpen: false
     property bool bccOpen: false
     readonly property bool popupOpen: fromMenu.opened || toField.popupOpen || ccField.popupOpen || bccField.popupOpen || sourceActions.opened || sourceActionDialog.opened || deleteAbandonDialog.opened || sourceHistory.opened || discardDialog.opened || reloadDialog.opened || conflictDialog.opened || googleDraftDialog.opened || attachmentMenu.opened || contextMenu.opened || localAttachmentDialog.visible
@@ -71,7 +70,10 @@ Rectangle {
     function confirmDiscard() {
         if (backend.draftLocked || backend.draftBusy || backend.attachmentImport.pending) return
         const draft = backend.draft
-        const hasContent = (draft.subject || "").trim().length || (draft.body || "").trim().length
+        const body = (draft.body || "").trim()
+        const row = (backend.allAccounts || []).find(a => a.id === backend.account) || {}
+        // The starting signature alone is not something to confirm losing.
+        const hasContent = (draft.subject || "").trim().length || (body.length && body !== (row.signature_text || "").trim())
             || (draft.to_recipients || []).length || (draft.cc_recipients || []).length || (draft.bcc_recipients || []).length
             || (draft.attachment_ids || []).length || Object.keys(backend.recipientInputs).length
         discardDialog.capturedContext = backend.draftDiscardContext()
@@ -81,7 +83,6 @@ Rectangle {
         loading = true
         document.setIdentity(backend.account + "/" + (backend.activeDraftId || backend.selectedId))
         document.load(backend.draft.body || "", root.snapshotReadOnly ? "" : (backend.draft.body_html || ""))
-        if (signature.text !== (backend.draft.signature_text || "")) signature.text = backend.draft.signature_text || ""
         loading = false
     }
     color: "transparent"
@@ -339,37 +340,10 @@ Rectangle {
                 MenuItem { text: "Bold"; enabled: !root.readOnly && root.hasSelection; onTriggered: document.format("bold") }
                 MenuItem { text: "Italic"; enabled: !root.readOnly && root.hasSelection; onTriggered: document.format("italic") }
                 MenuItem { text: "Underline"; enabled: !root.readOnly && root.hasSelection; onTriggered: document.format("underline") }
-                MenuItem { text: "Edit signature"; enabled: !root.readOnly; onTriggered: root.signatureOpen = true }
                 MenuSeparator {}
                 MenuItem { text: "Select all"; onTriggered: bodyEditor.selectAll() }
             }
         }
-        }
-        Text {
-            visible: !root.snapshotReadOnly && !root.signatureOpen && (backend.draft.signature_text || "").length > 0
-            Layout.fillWidth: true; Layout.bottomMargin: 12
-            text: backend.draft.signature_text || ""
-            textFormat: Text.PlainText; wrapMode: Text.Wrap
-            color: Theme.muted; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12)
-            TapHandler { enabled: !root.readOnly; onTapped: { root.signatureOpen = true; signature.forceActiveFocus() } }
-        }
-        TextArea {
-            id: signature
-            objectName: "replySignature"
-            property bool blocksWorkspaceShortcuts: true
-            Layout.fillWidth: true
-            visible: !root.readOnly && root.signatureOpen
-            enabled: !backend.draftLocked
-            textFormat: TextEdit.PlainText
-            placeholderText: "Signature for this reply"
-            placeholderTextColor: Theme.subtle
-            selectByMouse: true
-            wrapMode: TextEdit.Wrap
-            color: Theme.muted
-            font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }
-            background: Rectangle { color: Theme.canvas; radius: 4; border.color: Theme.line }
-            onTextChanged: if (!root.loading) backend.setDraftSignature(text)
-            Accessible.name: "Signature for this reply"
         }
         Flow {
             id: attachmentChips
@@ -477,7 +451,8 @@ Rectangle {
             }
         }
         ColumnLayout {
-            visible: backend.googleDraft.visible || false
+            // Silent while drafts sync normally; shown for an error and its recovery.
+            visible: backend.googleDraft.attention || false
             Layout.fillWidth: true; Layout.topMargin: visible ? 8 : 0; spacing: 6
             Text { objectName: "googleDraftStatus"; Layout.fillWidth: true; text: backend.googleDraft.status || ""; textFormat: Text.PlainText; wrapMode: Text.Wrap; color: backend.googleDraft.warning ? Theme.warn : Theme.subtle; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12) }
             RowLayout {

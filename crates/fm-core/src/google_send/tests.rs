@@ -605,7 +605,7 @@ fn synced_target_uses_frozen_mime_and_remote_divergence_prevents_claim() {
     );
     assert_eq!(
         body(&mut store, &scope, &id)["body"],
-        "local edited after twin baseline"
+        "local edited after twin baseline\n\nExact signature once"
     );
     assert_eq!(
         store
@@ -1141,7 +1141,10 @@ fn accepted_draft_leaves_lists_but_preserves_history_and_newer_edits() {
     accepted(&mut store, &lease, "sent-consumed");
     count(&mut store, 0);
     let original = body(&mut store, &scope, &id);
-    assert_eq!(original["body"], "original authored text");
+    assert_eq!(
+        original["body"],
+        "original authored text\n\nExact signature once"
+    );
     assert_eq!(original["discarded"], false);
     drop(store);
     let mut store = Store::open_live(temp.path()).unwrap();

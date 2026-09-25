@@ -77,7 +77,8 @@ QtObject {
     function view(account) {
         const _ = tick
         const row = backend.allAccounts.find(a => a.id === account) || {}
-        const google = row.google || {}, sync = google.sync || {}, caps = google.capabilities || {}
+        // What Google granted; `capabilities` is true for every active account.
+        const google = row.google || {}, sync = google.sync || {}, caps = google.granted_capabilities || google.capabilities || {}
         const state = backend.googleSyncState(account), progress = state.progress || {}
         const A = analysis[account] || {}
         const err = !backend.syntheticProfile && (google.connection_state !== "connected" || state.credential_access_required === true)
@@ -124,7 +125,9 @@ QtObject {
         const modelReady = A.model_configured === true, sOn = A.summaries !== false, lOn = A.classification !== false
         const done = Number(A.done || 0), queued = Number(A.queued || 0), rest = Number(A.unprocessed || 0), eligible = Math.max(1, Number(A.eligible || 0))
         const aiPaused = A.paused === true
-        const aiOn = modelReady && !err && !paused && !aiPaused && queued > 0 && (sOn || lOn)
+        // The queue holds (nothing is skipped) while the model cannot be used.
+        const modelDown = !!A.model_error, failed = Number(A.failed || 0)
+        const aiOn = modelReady && !err && !paused && !aiPaused && !modelDown && queued > 0 && (sOn || lOn)
         const aiPct = Math.floor(done / eligible * 100), perMessage = Number(A.seconds_per_message || 0)
         const aiEta = perMessage > 0 ? queued * perMessage : -1
         const what = sOn && lOn ? "Summarizing & labeling" : sOn ? "Summarizing" : lOn ? "Labeling" : "Processing"
@@ -135,13 +138,15 @@ QtObject {
             frac: done / eligible, qfrac: queued / eligible,
             short: A.account === undefined ? "…" : !modelReady ? "No model" : !sOn && !lOn ? "Off" + (rest ? " · " + fmtN(rest) + " not processed" : "")
                 : (aiPaused || paused || err) && queued ? "Paused · " + fmtN(queued) + " queued"
+                : modelDown && queued ? "Model unavailable · " + fmtN(queued) + " queued"
                 : aiOn ? aiPct + "% · " + fmtN(queued) + " queued" + (aiEta >= 0 ? " · " + shortEta(aiEta) : "")
                 : rest ? fmtN(rest) + " not processed" : "Complete",
             status: !modelReady ? "No local model set up" : err && queued ? "Waiting · " + fmtN(queued) + " queued"
                 : (aiPaused || paused) && queued ? "Paused at " + aiPct + "% · " + fmtN(queued) + " queued"
+                : modelDown && queued ? "Waiting for the local model · " + fmtN(queued) + " queued · " + (A.model_error.message || "")
                 : aiOn ? aiPct + "% · " + fmtN(queued) + " queued" + (aiEta >= 0 ? " · " + eta(aiEta) + " left" : "")
                 : !sOn && !lOn ? "Off for this account" + (rest ? " · " + fmtN(rest) + " not processed" : "")
-                : rest ? fmtN(rest) + " not processed" : "Every message is processed",
+                : rest ? fmtN(rest) + " not processed" : failed ? fmtN(failed) + " could not be processed · open one to try again" : "Every message is processed",
             label: aiOn ? what : "Processed",
             live: aiOn, eta: aiEta, modelReady: modelReady, paused: aiPaused, summaries: sOn, labels: lOn,
             unprocessed: rest, queued: queued, catchingUp: A.catching_up === true,
@@ -156,7 +161,8 @@ QtObject {
             : phase === "ai" ? "Processing" + (ai.eta >= 0 ? " · " + eta(ai.eta) + " left" : "")
             : "Up to date" + (lastSync > 0 ? " · " + ago(lastSync * 1000) : "")
         return {phase: phase, status: status, err: err, paused: paused, mail: mail, cal: cal, ai: ai, mailShown: mailShown, calShown: calShown,
-            ring: phase === "dl" ? mail.frac : phase === "ai" ? ai.frac : 0, ringColor: phase === "dl" ? amber : aiColor,
+            // While Google's list is still being counted the ring shows only a sliver.
+            ring: phase === "dl" ? (listing ? .08 : mail.frac) : phase === "ai" ? ai.frac : 0, ringColor: phase === "dl" ? amber : aiColor,
             ringShown: phase === "dl" || phase === "ai"}
     }
 
@@ -169,7 +175,7 @@ QtObject {
         target: backend
         function onAssistanceReply(ticket, method, result, ok) {
             // A person's action shows at once rather than on the next poll.
-            if (ok && ["assist_batch_start", "assist_cancel", "assist_settings_save"].indexOf(method) >= 0) { model.ticket = ""; model.refresh() }
+            if (ok && ["assist_catch_up", "assist_cancel", "assist_settings_save"].indexOf(method) >= 0) { model.ticket = ""; model.refresh() }
             if (ticket !== model.ticket) return
             model.ticket = ""
             if (!ok) return

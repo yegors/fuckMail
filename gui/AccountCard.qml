@@ -110,7 +110,8 @@ Rectangle {
         Text {
             objectName: meter.countName.length ? meter.countName.replace("Count", "Status") : ""
             text: meter.stage.short || ""
-            Layout.maximumWidth: implicitWidth; Layout.fillWidth: true; Layout.minimumWidth: 0; elide: Text.ElideRight
+            // Its full width; the bar takes what is left and gives way first.
+            Layout.preferredWidth: implicitWidth; Layout.minimumWidth: 0; elide: Text.ElideRight
             color: meter.stage.live ? Theme.inkAlpha(.78) : Theme.inkAlpha(.5)
             font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12); features: {"tnum": 1} }
         }
@@ -271,6 +272,32 @@ Rectangle {
                 Accessible.name: "Edit labels"
             }
         }
+        // Signature for new messages and replies from this account.
+        StageRow {
+            id: signatureRow
+            visible: !card.archived
+            readonly property string signature: card.modelData.signature_text || ""
+            StageLabel { iconName: "edit"; text: "Signature"; iconColor: Theme.inkAlpha(.4) }
+            Text {
+                objectName: "accountSignature_" + card.accountId
+                text: signatureRow.signature.length ? signatureRow.signature.split("\n").map(line => line.trim()).filter(line => line.length).join(" · ") : "None"
+                Layout.fillWidth: true; elide: Text.ElideRight; textFormat: Text.PlainText
+                color: signatureRow.signature.length ? Theme.inkAlpha(.6) : Theme.inkAlpha(.35); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) }
+            }
+            AbstractButton {
+                id: editSignature
+                objectName: "editSignature_" + card.accountId
+                hoverEnabled: true; enabled: backend.connected
+                onClicked: card.host.editSignature(card.accountId)
+                contentItem: Row {
+                    spacing: 4
+                    Text { text: (card.modelData.signature_text || "").length ? "Edit" : "Add"; color: editSignature.hovered ? Theme.text : Theme.inkAlpha(.75); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12.5) } anchors.verticalCenter: parent.verticalCenter }
+                    FmIcon { name: "next"; size: 10; color: editSignature.hovered ? Theme.text : Theme.inkAlpha(.75); anchors.verticalCenter: parent.verticalCenter }
+                }
+                background: null
+                Accessible.name: "Edit signature"
+            }
+        }
         // Local model: silver-blue tint, done and queued as solid and pale segments.
         StageRow {
             id: modelRow
@@ -330,7 +357,8 @@ Rectangle {
                                 required property var modelData
                                 objectName: "backlogRange_" + card.accountId + "_" + modelData.key
                                 readonly property var count: (catchUpMenu.stats.ranges || {})[modelData.key]
-                                enabled: count > 0 && !(card.analysis && card.analysis.running(card.accountId))
+                                // A wider range may be chosen while a narrower one runs.
+                                enabled: count > 0
                                 onTriggered: {
                                     if (card.aiPolicy.paused) card.policy.change(card.accountId, {paused: false})
                                     card.analysis.start(card.accountId, modelData.key)
@@ -379,8 +407,7 @@ Rectangle {
                     tip: card.aiPolicy.paused ? "Resume the local model" : "Pause the local model · downloading carries on"
                     enabled: backend.connected && !(card.policy && card.policy.saving)
                     onClicked: {
-                        // Pausing also stops a running Catch up; finished results stay.
-                        if (!card.aiPolicy.paused && card.analysis && card.analysis.running(card.accountId)) card.analysis.stop(card.accountId)
+                        // Pausing holds the queue, Catch up included; resuming continues it.
                         card.policy.change(card.accountId, {paused: !card.aiPolicy.paused})
                     }
                 }
@@ -388,7 +415,7 @@ Rectangle {
         }
         Text {
             visible: text.length > 0; Layout.fillWidth: true; Layout.margins: 18; Layout.topMargin: 10; Layout.bottomMargin: 10
-            text: (card.analysis ? card.analysis.errors[card.accountId] || "" : "") || (card.policy && card.policy.status.length ? card.policy.status : "")
+            text: (card.analysis ? card.analysis.errors[card.accountId] || "" : "") || (card.policy && card.policy.status.length && card.policy.statusAccount === card.accountId ? card.policy.status : "")
             color: Theme.error; font.pointSize: Theme.fontPoints(12); wrapMode: Text.Wrap; textFormat: Text.PlainText
         }
         // A removed account keeps a read-only archive until it is deleted or restored.

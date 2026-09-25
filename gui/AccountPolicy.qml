@@ -10,6 +10,8 @@ QtObject {
     property string ticket: ""
     property bool saving: false
     property string status: ""
+    // The account whose save produced `status`.
+    property string statusAccount: ""
     signal changed()
     function of(account) { return ((saved || {}).accounts || {})[account] || {summaries: true, classification: true} }
     function load() {
@@ -20,7 +22,7 @@ QtObject {
         const settings = JSON.parse(JSON.stringify(saved)), choice = Object.assign({}, of(account), patch)
         settings.accounts = Object.assign({}, settings.accounts || {})
         settings.accounts[account] = choice
-        saving = true; status = ""
+        saving = true; status = ""; statusAccount = account
         ticket = backend.assistanceRequest("assist_settings_save", {expected_revision: revision, settings: settings}, "")
         return true
     }

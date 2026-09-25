@@ -113,8 +113,13 @@ QVariantMap MailBackend::googleDraft() const {
     if (m_googleDraftFeedbackAccount == m_account && m_googleDraftFeedbackId == id && !m_googleDraftFeedback.isEmpty()) text += " " + m_googleDraftFeedback;
     const bool ready = visible && googleDraftRecoveryReady() && m_googleDraftOperationId.isEmpty();
     const bool requiresCheck = m_googleDraftRequiresCheck.contains(m_account + '\n' + id);
+    const bool warning = requiresCheck || contentMismatch || !preparationFailure.isEmpty() || state == "conflict" || state == "acceptance_unknown" || state == "failed";
+    const bool feedback = m_googleDraftFeedbackAccount == m_account && m_googleDraftFeedbackId == id && !m_googleDraftFeedback.isEmpty();
     return {{"visible", visible}, {"state", state}, {"status", text}, {"busy", busy}, {"byte_mismatch", mismatch},
-        {"warning", requiresCheck || contentMismatch || !preparationFailure.isEmpty() || state == "conflict" || state == "acceptance_unknown" || state == "failed"},
+        {"warning", warning},
+        // The composer shows draft sync only when something needs the person: a
+        // problem, its feedback or a check they started. Normal sync stays silent.
+        {"attention", visible && (warning || feedback || busy)},
         {"can_check", ready && knownRemote && state != "local"},
         {"can_replace", ready && !requiresCheck && state == "conflict" && (!unknown || observedUnknownTarget)
             && !m_draftDirty && !draftBusy() && !attachmentImportPending() && !m_draftConflict}};

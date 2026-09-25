@@ -254,6 +254,8 @@ public:
     Q_INVOKABLE void writeToSender(const QString &email, const QString &name);
     Q_INVOKABLE void loadMore();
     Q_INVOKABLE QString assistanceRequest(const QString &method, const QVariantMap &params, const QString &account = QString());
+    // Live Gmail Spam for the current account: google_spam_list or google_spam_message.
+    Q_INVOKABLE QString spamRequest(const QString &method, const QVariantMap &params);
     Q_INVOKABLE QString labelRequest(const QString &method, const QVariantMap &params, const QString &account);
     Q_INVOKABLE QString requestAttachmentPreview(const QString &account, const QString &id);
     Q_INVOKABLE QString saveAttachment(const QString &account, const QString &id, const QUrl &destination);
@@ -417,6 +419,7 @@ signals:
     void debugEvent(const QString &level, const QString &source, const QString &message, const QVariantMap &fields);
     void recipientSuggestionsReply(const QString &ticket, const QVariantMap &result, bool ok);
     void assistanceReply(const QString &ticket, const QString &method, const QVariantMap &result, bool ok);
+    void spamReply(const QString &ticket, const QString &method, const QString &account, const QVariantMap &result, bool ok);
     void attachmentPreviewReady(const QString &ticket, const QVariantMap &result, bool ok);
     void attachmentSaved(const QString &ticket, const QString &error);
     void mailSelectionRestored(const QVariantList &rows);

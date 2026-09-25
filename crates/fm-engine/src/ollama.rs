@@ -1,5 +1,5 @@
 //! Same-machine Ollama HTTP. Requests have no tools, proxy or redirects.
-use fm_assist::ollama::{self, Model, Settings};
+use fm_assist::ollama::{self, Settings};
 use fm_core::{CoreError, Result};
 use fm_google::transport::CancellationToken;
 use reqwest::{Client, Method};
@@ -28,6 +28,18 @@ pub async fn request(
     )
     .await
 }
+/// One HTTP client for every local model call: no proxy, no redirects.
+fn client() -> &'static Client {
+    static CLIENT: std::sync::OnceLock<Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(|| {
+        Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .connect_timeout(Duration::from_secs(3))
+            .build()
+            .expect("local HTTP client")
+    })
+}
 pub(crate) async fn request_local(
     endpoint: &str,
     path: &str,
@@ -43,21 +55,16 @@ pub(crate) async fn request_local(
         ));
     }
     let endpoint = endpoint.replace("localhost:", "127.0.0.1:");
-    let client = Client::builder()
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .connect_timeout(Duration::from_secs(3))
-        .timeout(Duration::from_secs(if generation { 120 } else { 5 }))
-        .build()
-        .map_err(|_| failure("assistance_unavailable", "Cannot initialize local HTTP"))?;
-    let mut req = client.request(
-        if body.is_some() {
-            Method::POST
-        } else {
-            Method::GET
-        },
-        format!("{endpoint}{path}"),
-    );
+    let mut req = client()
+        .request(
+            if body.is_some() {
+                Method::POST
+            } else {
+                Method::GET
+            },
+            format!("{endpoint}{path}"),
+        )
+        .timeout(Duration::from_secs(if generation { 120 } else { 5 }));
     if let Some(body) = body {
         req = req.header("Content-Type", "application/json").body(
             serde_json::to_vec(&body)
@@ -65,11 +72,19 @@ pub(crate) async fn request_local(
         );
     }
     let work = async {
-        let mut response = req.send().await.map_err(|_| {
-            failure(
-                "assistance_unavailable",
-                &format!("{service} is unavailable or timed out"),
-            )
+        let mut response = req.send().await.map_err(|e| {
+            if e.is_timeout() && generation {
+                // One slow email, not an unavailable runner.
+                failure(
+                    "assistance_timeout",
+                    &format!("{service} did not answer within 120 seconds"),
+                )
+            } else {
+                failure(
+                    "assistance_unavailable",
+                    &format!("{service} is unavailable or timed out"),
+                )
+            }
         })?;
         if !response.status().is_success() {
             return Err(failure(
@@ -78,11 +93,18 @@ pub(crate) async fn request_local(
             ));
         }
         let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await.map_err(|_| {
-            failure(
-                "assistance_unavailable",
-                &format!("{service} response was interrupted"),
-            )
+        while let Some(chunk) = response.chunk().await.map_err(|e| {
+            if e.is_timeout() && generation {
+                failure(
+                    "assistance_timeout",
+                    &format!("{service} did not answer within 120 seconds"),
+                )
+            } else {
+                failure(
+                    "assistance_unavailable",
+                    &format!("{service} response was interrupted"),
+                )
+            }
         })? {
             if bytes.len() + chunk.len() > 256 * 1024 {
                 return Err(failure(
@@ -124,32 +146,42 @@ pub async fn discover(endpoint: &str, cancel: &CancellationToken) -> Result<Valu
  }).collect();
     Ok(json!({"version":version["version"],"models":list,"endpoint":endpoint}))
 }
-async fn qualify(endpoint: &str, model: &Model, cancel: &CancellationToken) -> Result<()> {
-    let list = discover(endpoint, cancel).await?;
+/// Confirm the selected model is installed, local and unchanged. The engine
+/// runs this when the model is first used and after model errors, not per email.
+pub async fn qualify(settings: &Settings, cancel: &CancellationToken) -> Result<()> {
+    let model = settings
+        .model
+        .as_ref()
+        .ok_or_else(|| failure("assistance_unavailable", "Choose a model in Settings → Local LLM"))?;
+    if !settings.provider.is_ollama() {
+        return crate::openai_local::qualify(&settings.endpoint, &model.name, cancel).await;
+    }
+    let list = discover(&settings.endpoint, cancel).await?;
     let entry = list["models"]
         .as_array()
         .unwrap()
         .iter()
         .find(|m| m["name"] == model.name)
-        .ok_or_else(|| {
-            failure(
-                "assistance_unavailable",
-                "Selected model is no longer installed",
-            )
-        })?;
+        .ok_or_else(|| failure("model_unavailable", "The selected model is no longer installed"))?;
     if entry["digest"] != model.digest {
         return Err(failure(
-            "assistance_stale",
-            "Model weights changed; select the installed model again",
+            "model_changed",
+            "The model's weights changed; choose the installed model again",
         ));
     }
     if entry["eligible"] != true {
         return Err(failure(
-            "assistance_unavailable",
-            "Selected model is not eligible for local mail processing",
+            "model_unavailable",
+            "The selected model is not eligible for local mail processing",
         ));
     }
-    let detail = request(endpoint, "show", Some(json!({"model":model.name})), cancel).await?;
+    let detail = request(
+        &settings.endpoint,
+        "show",
+        Some(json!({"model":model.name})),
+        cancel,
+    )
+    .await?;
     if detail.get("remote_host").is_some_and(|v| !v.is_null())
         || detail.get("remote_model").is_some_and(|v| !v.is_null())
         || !detail["capabilities"]
@@ -159,115 +191,40 @@ async fn qualify(endpoint: &str, model: &Model, cancel: &CancellationToken) -> R
             .contains(&detail["details"]["format"].as_str().unwrap_or_default())
     {
         return Err(failure(
-            "assistance_unavailable",
+            "model_unavailable",
             "Model metadata does not establish installed local completion weights",
         ));
     }
     Ok(())
 }
+/// One request for one email. Returns the stored analysis
+/// `{summary, sender_kind, category_ids}` and records what the provider
+/// reported (`first_token_ms`, `output_tokens`, `generation_ms`, `raw`) in
+/// `measure`. Only the synthetic Test shows `raw`; mail text is never logged.
 pub async fn infer(
     settings: &Settings,
-    task: &str,
-    payload: Value,
-    categories: &[String],
-    sources: &[String],
-    cancel: &CancellationToken,
-) -> Result<Value> {
-    infer_measured(
-        settings,
-        task,
-        payload,
-        categories,
-        sources,
-        cancel,
-        &std::sync::Mutex::new(Value::Null),
-    )
-    .await
-}
-/// `infer`, also recording what the provider reports about the last reply:
-/// `first_token_ms`, `output_tokens`, `generation_ms` and the `raw` text.
-/// Only the synthetic sample test shows these; real mail text is never kept.
-pub async fn infer_measured(
-    settings: &Settings,
-    task: &str,
-    payload: Value,
-    categories: &[String],
-    sources: &[String],
+    email: &Value,
+    labels: &Value,
     cancel: &CancellationToken,
     measure: &std::sync::Mutex<Value>,
 ) -> Result<Value> {
-    if !settings.provider.is_ollama() {
-        return crate::openai_local::infer_measured(
-            settings, task, payload, categories, sources, cancel, measure,
-        )
-        .await;
-    }
     let model = settings
-        .model(task)
-        .ok_or_else(|| failure("assistance_unavailable", "Select a model for this task"))?;
-    qualify(&settings.endpoint, model, cancel).await?;
-    let mut body = ollama::render_request(settings.prompt(task), &payload, &model.name, sources)
-        .map_err(|s| failure("invalid_request", &s))?;
-    if serde_json::to_vec(&body).unwrap().len() > ollama::INITIAL_REQUEST_BYTES {
-        return Err(failure(
-            "assistance_limit",
-            "Expanded request exceeds the context budget",
-        ));
+        .model
+        .as_ref()
+        .ok_or_else(|| failure("assistance_unavailable", "Choose a model in Settings → Local LLM"))?;
+    if !settings.provider.is_ollama() {
+        return crate::openai_local::infer(settings, &model.name, email, labels, cancel, measure)
+            .await;
     }
-    let generation = async {
-        for attempt in 0..2 {
-            let result = request(&settings.endpoint, "chat", Some(body.clone()), cancel).await?;
-            *measure.lock().unwrap() = measurement(&result);
-            match response_output(task, &result, &model.name, categories, sources) {
-                Ok(output) => return Ok(output),
-                Err(error)
-                    if attempt == 0
-                        && ["assistance_output_limit", "assistance_format"]
-                            .contains(&error.code.as_str()) =>
-                {
-                    crate::diagnostics::event("Model", "format_retry", json!({"code":error.code,"attempt":1,"task":task}));
-                    // Retry only format/completion failures once. The rejected
-                    // output never enters the prompt, store or mail actions.
-                    body["messages"].as_array_mut().unwrap().push(json!({"role":"user","content":"Return a complete JSON object with exactly sender_kind, category_ids, category_abstain, reason, summary, source_ids. Use a short factual prose summary, not a code block. Copy IDs from the supplied data only. With no matching label use category_ids:[]; if category_abstain is true the array must be empty. No reasoning or extra text."}));
-                    if serde_json::to_vec(&body).unwrap().len() > 12000 {
-                        return Err(failure(
-                            "assistance_limit",
-                            "Correction request exceeds the context budget",
-                        ));
-                    }
-                }
-                Err(mut error) => {
-                    if error.code == "assistance_format" {
-                        error.code = "invalid_assistance_result".into();
-                    }
-                    return Err(error);
-                }
-            }
-        }
-        unreachable!()
-    };
-    let output = tokio::time::timeout(Duration::from_secs(120), generation)
-        .await
-        .map_err(|_| {
-            failure(
-                "assistance_unavailable",
-                "Ollama analysis timed out after 120 seconds",
-            )
-        })??;
-    // A tag may have been replaced while generation or correction was running.
-    let list = discover(&settings.endpoint, cancel).await?;
-    if !list["models"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|m| m["name"] == model.name && m["digest"] == model.digest && m["eligible"] == true)
-    {
-        return Err(failure(
-            "assistance_stale",
-            "Selected model changed during generation",
-        ));
-    }
-    Ok(output)
+    let body = ollama::ollama_request(settings, &model.name, email, labels);
+    let result = request(&settings.endpoint, "chat", Some(body), cancel).await?;
+    *measure.lock().unwrap() = measurement(&result);
+    let content = response_content(&result, &model.name)?;
+    parse(content, labels)
+}
+pub(crate) fn parse(content: &str, labels: &Value) -> Result<Value> {
+    ollama::parse_reply(content, &ollama::label_ids(labels))
+        .map_err(|message| failure("invalid_assistance_result", &message))
 }
 /// Ollama reports nanosecond durations; the first token follows model loading
 /// and prompt evaluation.
@@ -280,16 +237,10 @@ fn measurement(result: &Value) -> Value {
         "raw": result["message"]["content"],
     })
 }
-fn response_output(
-    task: &str,
-    result: &Value,
-    model: &str,
-    categories: &[String],
-    sources: &[String],
-) -> Result<Value> {
+fn response_content<'a>(result: &'a Value, model: &str) -> Result<&'a str> {
     if result["model"] != model {
         return Err(failure(
-            "invalid_assistance_result",
+            "model_changed",
             "Ollama responded with a different model",
         ));
     }
@@ -305,45 +256,19 @@ fn response_output(
     if result["done_reason"] == "length" {
         return Err(failure(
             "assistance_output_limit",
-            "The model reached its response limit before finishing. Try again.",
+            "The model reached its response limit before finishing",
         ));
     }
     if result["done"] != true {
         return Err(failure(
-            "assistance_format",
-            "Ollama stopped before completing the response. Try again.",
+            "invalid_assistance_result",
+            "Ollama stopped before completing the response",
         ));
     }
-    let content = result["message"]["content"]
+    result["message"]["content"]
         .as_str()
         .filter(|s| !s.trim().is_empty())
-        .ok_or_else(|| {
-            failure(
-                "assistance_format",
-                "The model returned no analysis text. Try again.",
-            )
-        })?;
-    validate_output(task, content, categories, sources).map_err(|mut error| {
-        error.code = "assistance_format".into();
-        error
-    })
-}
-pub(crate) fn validate_output(
-    task: &str,
-    content: &str,
-    categories: &[String],
-    sources: &[String],
-) -> Result<Value> {
-    let mut output = ollama::validate("message", content, categories, sources)
-        .map_err(|s| failure("invalid_assistance_result", &s))?;
-    // Legacy CLI operations project the same combined analysis after validation.
-    if task == "summary" {
-        output = json!({"summary":output["summary"],"source_ids":output["source_ids"]});
-    } else if task == "classification" {
-        output.as_object_mut().unwrap().remove("summary");
-        output.as_object_mut().unwrap().remove("source_ids");
-    }
-    Ok(output)
+        .ok_or_else(|| failure("invalid_assistance_result", "The model returned no text"))
 }
 
 #[cfg(test)]
@@ -359,5 +284,32 @@ mod measurement_tests {
         );
         let bare = measurement(&json!({"message":{"content":"{}"}}));
         assert!(bare["first_token_ms"].is_null() && bare["output_tokens"].is_null());
+    }
+}
+
+#[cfg(test)]
+mod reply_tests {
+    use super::*;
+    #[test]
+    fn only_a_complete_reply_from_the_selected_model_is_read() {
+        let content = r#"{"summary":"You paid $49.","label":null,"sender":"bot"}"#;
+        let ok = json!({"model":"m","done":true,"done_reason":"stop","message":{"content":content,"tool_calls":null}});
+        assert_eq!(response_content(&ok, "m").unwrap(), content);
+        assert_eq!(parse(content, &json!([])).unwrap()["sender_kind"], "automated");
+        let mut other = ok.clone();
+        other["model"] = "x".into();
+        assert_eq!(response_content(&other, "m").unwrap_err().code, "model_changed");
+        let mut long = ok.clone();
+        long["done_reason"] = "length".into();
+        assert_eq!(response_content(&long, "m").unwrap_err().code, "assistance_output_limit");
+        let mut tool = ok.clone();
+        tool["message"]["tool_calls"] = json!([{"function":{}}]);
+        assert!(response_content(&tool, "m").is_err());
+        assert_eq!(
+            parse(r#"{"summary":"x","label":"invented","sender":"bot"}"#, &json!([]))
+                .unwrap_err()
+                .code,
+            "invalid_assistance_result"
+        );
     }
 }

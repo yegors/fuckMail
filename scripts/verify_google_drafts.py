@@ -43,7 +43,7 @@ def verify_mime(profile, digest, size, account, body, signature, recipients, att
     text_parts = [part for part in message.walk() if part.get_content_type() == "text/plain"
                   and part.get_content_disposition() != "attachment"]
     require(len(text_parts) == 1, "Expected exactly one authored text part")
-    require(text_parts[0].get_payload(decode=True) == (body + "\n\n-- \n" + signature).encode("utf-8"),
+    require(text_parts[0].get_payload(decode=True) == (body + "\n\n" + signature).encode("utf-8"),
             "Authored text/signature bytes differ")
     # MIME's explicit disposition distinguishes attachments from a nested plain
     # multipart container; EmailMessage.iter_attachments() guesses that the

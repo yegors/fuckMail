@@ -40,6 +40,8 @@ pub(super) enum Disposition {
     Missing,
     Observed,
     OutsideRetention,
+    /// In Gmail's Spam. Spam is read live, never kept; a local copy goes.
+    Spam,
 }
 #[derive(Clone, Serialize, Deserialize)]
 pub(super) struct BlobRef {
@@ -164,6 +166,19 @@ pub fn prepare_google_item_since(
         .internal_date
         .as_ref()
         .and_then(|s| s.parse::<i64>().ok());
+    if raw.message.label_ids.iter().any(|label| label == "SPAM") {
+        if raw.message.id != remote_id {
+            return Err(err(
+                "google_invalid_response",
+                "Unexpected message identity",
+            ));
+        }
+        manifest.remote_thread_id = Some(raw.message.thread_id);
+        manifest.history_id = Some(raw.message.history_id);
+        manifest.internal_date_ms = date;
+        manifest.disposition = Disposition::Spam;
+        return proof(blobs, page, manifest);
+    }
     if since
         .zip(date)
         .is_some_and(|(since, date)| date < since.saturating_mul(1000))
@@ -232,7 +247,6 @@ pub fn prepare_google_item_since(
         }
         Err(fm_google::GoogleError::InvalidResponse(reason)) => {
             manifest.issue = Some(match reason {
-                "Normalized body exceeds the first-slice bound" => ItemIssue::IndexTooLarge,
                 "Too many staged attachments" => ItemIssue::AttachmentLimit,
                 "Normalized header exceeds import bound" => ItemIssue::HeaderLimit,
                 _ => ItemIssue::MalformedMime,

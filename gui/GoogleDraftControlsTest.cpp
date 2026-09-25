@@ -147,7 +147,11 @@ ApplicationWindow { width: 900; height: 1000; visible: true
         startRead(); auto foreign = projection(20, status("synced", 30, 20)); foreign["account"] = "another-account";
         finishRead(foreign); require(authored(backend.m_draft) == edited && backend.m_draft["google"].toMap()["revision"].toLongLong() == 10, "foreign cached projection is refused");
 
+        setStatus(status("synced", 11, 6));
+        require(!qobject_cast<QQuickItem *>(named(root, "googleDraftStatus"))->isVisible() && !qobject_cast<QQuickItem *>(named(root, "checkGoogleDraft"))->isVisible(),
+            "normal Google draft sync is silent in the composer");
         setStatus(status("acceptance_unknown", 11, 6)); prepareCheck();
+        require(qobject_cast<QQuickItem *>(named(root, "googleDraftStatus"))->isVisible(), "an unknown result is shown with its recovery");
         require(!backend.googleDraft()["can_replace"].toBool(), "unknown upload offers only readback");
         click("checkGoogleDraft"); waitOperation(1);
         require(!backend.m_googleOperations.isEmpty() && backend.m_socket.state() == QLocalSocket::ConnectedState, "auxiliary work preserves the cached connection");

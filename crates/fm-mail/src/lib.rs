@@ -233,7 +233,7 @@ fn build_authored_mail(
         let joined = if signature.is_empty() {
             html.clone()
         } else {
-            format!("{html}<div>-- <br>{signature}</div>")
+            format!("{html}<br><br>{signature}")
         };
         let safe = sanitize_authored_html(&joined, cids);
         sanitized = safe != joined;
@@ -300,11 +300,14 @@ fn build_authored_mail(
     })
 }
 
+/// Signatures are body text the author sees and can delete. Only a draft saved
+/// before that, still holding a separate signature, gets it appended here: as
+/// the same plain text its composer showed, with no "-- " delimiter.
 pub fn with_signature(body: &str, signature: &str) -> String {
     if signature.is_empty() {
         body.to_owned()
     } else {
-        format!("{body}\n\n-- \n{signature}")
+        format!("{body}\n\n{signature}")
     }
 }
 

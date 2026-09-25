@@ -13,6 +13,7 @@ pub(crate) mod remote_drafts;
 #[cfg(test)]
 mod runtime_tests;
 pub(crate) mod send;
+mod spam;
 
 use crate::{core_tasks::CoreBridge, google_auth};
 use fm_calendar::google_api::GoogleCalendarApi;
@@ -650,6 +651,8 @@ impl Runtime {
                 | "google_send_status"
                 | "google_send_reconcile"
                 | "google_send_abandon"
+                | "google_spam_list"
+                | "google_spam_message"
         )
     }
     async fn operation_context(
@@ -1007,6 +1010,8 @@ impl Runtime {
                 | "google_draft_adopt"
                 | "google_draft_delete"
                 | "google_draft_delete_reconcile"
+                | "google_spam_list"
+                | "google_spam_message"
         ) {
             let (context, _operation_owner) = self
                 .operation_context(&account, owner_id, owner_cancel.clone())
@@ -1040,6 +1045,8 @@ impl Runtime {
                             .await
                     }
                     "google_send" => send::execute(&context, params).await,
+                    "google_spam_list" => spam::list(&context, params).await,
+                    "google_spam_message" => spam::message(&context, params).await,
                     "google_send_reconcile" => {
                         send::reconcile(&context, params["request_id"].as_str().unwrap()).await
                     }

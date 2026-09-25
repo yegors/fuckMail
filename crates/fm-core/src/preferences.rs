@@ -548,7 +548,11 @@ pub(crate) fn assign_account_color(db: &rusqlite::Connection, account: &str) -> 
 /// The account's colour: its saved palette entry, or palette order by account.
 pub(crate) fn account_color(db: &rusqlite::Connection, account: &str) -> Result<&'static str> {
     let saved: Option<i64> = db
-        .query_row("SELECT value FROM meta WHERE key=?1", [color_key(account)], |r| r.get(0))
+        .query_row(
+            "SELECT value FROM meta WHERE key=?1",
+            [color_key(account)],
+            |r| r.get(0),
+        )
         .optional()?;
     let index = match saved {
         Some(index) => index,
@@ -560,7 +564,11 @@ pub(crate) fn account_color(db: &rusqlite::Connection, account: &str) -> Result<
     };
     Ok(ACCOUNT_COLORS[index.rem_euclid(ACCOUNT_COLORS.len() as i64) as usize])
 }
-pub(crate) fn set_account_color(db: &rusqlite::Connection, account: &str, color: &str) -> Result<()> {
+pub(crate) fn set_account_color(
+    db: &rusqlite::Connection,
+    account: &str,
+    color: &str,
+) -> Result<()> {
     let index = ACCOUNT_COLORS
         .iter()
         .position(|c| c.eq_ignore_ascii_case(color))

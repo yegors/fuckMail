@@ -286,7 +286,8 @@ fn phase1_signature_snapshot_capture_discard_and_history_are_durable() {
     let empty = store
         .handle("draft_discard", Some(ACCOUNT), discard.clone())
         .unwrap();
-    assert_eq!(empty["body"], "");
+    // A discarded reply reopens like a new one: blank lines, then the signature.
+    assert_eq!(empty["body"], "\n\nNew signature must not enter old reply");
     assert!(empty["body_html"].is_null());
     assert_eq!(empty["attachment_ids"], json!([]));
     assert_eq!(empty["signature_text"], "");
@@ -318,7 +319,8 @@ fn phase1_discarded_reply_restarts_with_current_identity_and_outgoing_reply_targ
     let discard=store.handle("draft_discard",Some(ACCOUNT),json!({"conversation_id":THREAD,"expected_revision":first["revision"],"request_id":"clear"})).unwrap();
     store.handle("account_update",Some(ACCOUNT),json!({"name":"New name","signature_text":"New signature","expected_revision":0,"request_id":"new-identity"})).unwrap();
     let restarted=store.handle("draft_save",Some(ACCOUNT),json!({"conversation_id":THREAD,"body":"New draft","expected_revision":discard["revision"],"request_id":"new"})).unwrap();
-    assert_eq!(restarted["signature_text"], "New signature");
+    assert_eq!(restarted["body"], "New draft");
+    assert_eq!(restarted["signature_text"], "");
     assert_eq!(restarted["from_name"], "New name");
     let outgoing = store.draft(ACCOUNT, "windscribe-thread-017").unwrap();
     assert_eq!(outgoing["to"], "maya@windscribe.example");
@@ -349,8 +351,11 @@ fn phase1_authored_signature_override_captures_once_after_preference_change() {
     let signature = "Personally edited signature — exact-marker";
     let saved=store.handle("draft_save",Some(ACCOUNT),json!({"conversation_id":THREAD,"body":"Authored reply","signature_text":signature,"expected_revision":0,"request_id":"signature-override"})).unwrap();
     store.handle("account_update",Some(ACCOUNT),json!({"name":"New name","signature_text":"Changed default","expected_revision":0,"request_id":"default-change"})).unwrap();
-    let updated=store.handle("draft_save",Some(ACCOUNT),json!({"conversation_id":THREAD,"body":"Edited authored reply","expected_revision":saved["revision"],"request_id":"body-only"})).unwrap();
-    assert_eq!(updated["signature_text"], signature);
+    // The override reads back as body text; saving that text keeps it once.
+    assert_eq!(saved["body"], format!("Authored reply\n\n{signature}"));
+    assert_eq!(saved["signature_text"], "");
+    let updated=store.handle("draft_save",Some(ACCOUNT),json!({"conversation_id":THREAD,"body":format!("Edited authored reply\n\n{signature}"),"expected_revision":saved["revision"],"request_id":"body-only"})).unwrap();
+    assert_eq!(updated["signature_text"], "");
     let capture=store.handle("draft_capture",Some(ACCOUNT),json!({"conversation_id":THREAD,"expected_revision":updated["revision"],"request_id":"signed-capture"})).unwrap();
     let bytes = std::fs::read(capture["path"].as_str().unwrap()).unwrap();
     let mime = mail_parser::MessageParser::default().parse(&bytes).unwrap();

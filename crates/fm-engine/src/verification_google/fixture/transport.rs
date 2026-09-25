@@ -389,12 +389,18 @@ impl FixtureHttp {
                     {
                         return Err(self.reject("unexpected_synthetic_list_query"));
                     }
-                    let recent = match params.get("q") {
-                        None => false,
+                    // Every full listing leaves Spam out; Recent adds its cutoff.
+                    let query = params.get("q").and_then(|query| decoded_query(query));
+                    let recent = match query.as_deref() {
+                        Some("-in:spam") => false,
                         Some(query)
-                            if query.strip_prefix("after%3A").is_some_and(|value| {
-                                !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
-                            }) =>
+                            if query
+                                .strip_prefix("after:")
+                                .and_then(|rest| rest.strip_suffix(" -in:spam"))
+                                .is_some_and(|value| {
+                                    !value.is_empty()
+                                        && value.bytes().all(|byte| byte.is_ascii_digit())
+                                }) =>
                         {
                             true
                         }

@@ -787,8 +787,9 @@ void GuiMailNavigationSelfTest::step() {
     case 28: {
         const auto editor=find(m_window->contentItem(),"replyComposer");
         if (!editor || !editor->isEnabled() || !inputViewportVisible(editor,m_window)) return;
-        if (!m_backend.draft()["body"].toString().isEmpty()) { finish("The fresh provider conversation unexpectedly already has an authored draft."); return; }
-        editor->forceActiveFocus(); QInputMethodEvent input; input.setCommitString(arrivalBody); QCoreApplication::sendEvent(editor,&input);
+        // A fresh reply is unsaved and starts with only the account signature.
+        if (m_backend.draft()["revision"].toLongLong()!=0) { finish("The fresh provider conversation unexpectedly already has an authored draft."); return; }
+        editor->forceActiveFocus(); QMetaObject::invokeMethod(editor,"selectAll"); QInputMethodEvent input; input.setCommitString(arrivalBody); QCoreApplication::sendEvent(editor,&input);
         if (m_backend.draft()["body"].toString()!=arrivalBody) { finish("Unicode native input did not reach the snapshot-arrival draft."); return; }
         m_backend.saveDraft(); m_stage=29; break;
     }

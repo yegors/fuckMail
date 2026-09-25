@@ -37,12 +37,22 @@ Item {
     readonly property bool newMessageAvailable: backend.connected && backend.account.length > 0 && !backend.accountArchived && !backend.unsavedAccountBuffer
     readonly property bool popupOpen: mediaViewer.opened || assistancePopupOpen() || labelMenu.opened || discardSelection.opened || folderPopup.opened || categoryPopup.opened || railCategories.opened || senderCard.opened || morePopup.opened || capturePopup.opened || reply.popupOpen || (mail.ApplicationWindow.window && mail.ApplicationWindow.window.searchPopupOpen)
     readonly property bool canMutate: { const accounts = backend.accounts; return backend.connected && backend.accountCapability(backend.account,"mail_write") }
-    readonly property bool singleKeyActionsAllowed: mail.visible && !popupOpen && mail.ApplicationWindow.window && mail.ApplicationWindow.window.singleKeysAllowed
+    readonly property bool singleKeyActionsAllowed: mail.visible && !popupOpen && !spamMode && mail.ApplicationWindow.window && mail.ApplicationWindow.window.singleKeysAllowed
+    // Spam is listed and read live from Gmail; none of it is stored.
+    readonly property bool spamMode: backend.folder === "spam"
+    SpamState { id: spam; active: mail.spamMode && mail.visible }
     readonly property bool readerKeyActionsAllowed: singleKeyActionsAllowed && readerMatchesCursor
     readonly property bool dateGroups: (backend.folder === "sent" || backend.folder === "drafts") && backend.preferences.mail_date_grouping !== "plain"
     readonly property bool draftsMode: backend.folder === "drafts"
     readonly property bool collapsedDraftVisible: !replyOpen && !backend.sendQueued && !backend.googleSend.sent_current && backend.draftStatus !== "Draft discarded"
-        && (backend.activeDraftId.length > 0 || (backend.draft.body || "").length > 0)
+        && (backend.activeDraftId.length > 0 || draftAuthored(backend.draft))
+    // A draft starts with the account signature; only text beyond it, or a
+    // file, makes it one worth opening or showing.
+    function draftAuthored(draft) {
+        const body = (draft.body || "").trim()
+        const row = (backend.allAccounts || []).find(function(a) { return a.id === backend.account }) || {}
+        return (draft.attachment_ids || []).length > 0 || (body.length > 0 && body !== (row.signature_text || "").trim())
+    }
     readonly property bool anyUnread: members.some(function(m) { return m.unread })
     readonly property bool anyStarred: members.some(function(m) { return m.starred })
     readonly property int rowHeight: Math.ceil((backend.preferences.density === "compact" ? Theme.compactRowHeight : Theme.comfortableRowHeight) * Theme.fontScale)
@@ -766,7 +776,7 @@ Item {
             if (mail.hydratedDraftIdentity !== identity) {
                 mail.hydratedDraftIdentity = identity
                 if (mail.replyStates[identity] === undefined)
-                    mail.setReplyOpen((backend.draft.body||"").length>0 || (backend.draft.attachment_ids||[]).length>0)
+                    mail.setReplyOpen(mail.draftAuthored(backend.draft))
                 else mail.replyOpen = mail.replyStates[identity] === true
             }
         }
@@ -803,10 +813,11 @@ Item {
                         Rectangle { implicitWidth: 3; implicitHeight: 3; radius: 2; color: Theme.inkAlpha(.3) }
                         FmButton { objectName: "draftsScopeButton"; text: "Drafts"; selected: backend.folder==="drafts"; font.pointSize: Theme.fontPoints(20); font.weight: Font.Medium; font.letterSpacing: -0.4; implicitWidth: contentItem.implicitWidth; implicitHeight: 22; topPadding: 0; bottomPadding: 0; foreground: selected || hovered ? Theme.text : Theme.inkAlpha(.32); leftPadding: 0; rightPadding: 0; textAlignment: Text.AlignLeft; background: Item {} onClicked: backend.folder="drafts" }
                         Text { objectName: "sendingCount"; visible: backend.sendingCount > 0; text: backend.sendingCount + " sending"; color: Theme.accent; font.pointSize: Theme.fontPoints(12) }
-                        FmButton { id: folderButton; objectName: "moreMailFolders"; visible: !backend.syntheticProfile; text: backend.folder === "trash" ? "Trash" : backend.folder === "all" ? "All mail" : ""; iconName: "down"; implicitHeight: 22; topPadding: 0; bottomPadding: 0; leftPadding: 0; rightPadding: 0; tip: "More mail folders"; onClicked: folderPopup.open() }
+                        FmButton { id: folderButton; objectName: "moreMailFolders"; visible: !backend.syntheticProfile; text: backend.folder === "trash" ? "Trash" : backend.folder === "all" ? "All mail" : backend.folder === "spam" ? "Spam" : ""; iconName: "down"; implicitHeight: 22; topPadding: 0; bottomPadding: 0; leftPadding: 0; rightPadding: 0; tip: "More mail folders"; onClicked: folderPopup.open() }
                         Item { Layout.fillWidth: true }
                         RowLayout {
                             objectName: "scopeStat"
+                            visible: !mail.spamMode
                             spacing: 6; Layout.alignment: Qt.AlignBottom; Layout.bottomMargin: 2
                             FmIcon { name: mail.draftsMode ? "edit" : backend.folder === "sent" ? "arrowRight" : "review"; size: 13; color: Theme.muted }
                             Text { text: mail.draftsMode ? backend.conversations.length : backend.folder === "sent" ? mail.sentThisWeek : backend.currentAccount.unread_conversation_count||0; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium }
@@ -838,6 +849,7 @@ Item {
                     }
                 }
                 RowLayout {
+                    visible: !mail.spamMode
                     Layout.fillWidth: true; Layout.bottomMargin: 8; spacing: 6
                     Flickable {
                         Layout.fillWidth: true; implicitHeight: allCategories.implicitHeight; clip: true
@@ -900,8 +912,13 @@ Item {
                     Layout.fillWidth: true; Layout.leftMargin: 24; Layout.rightMargin: 24
                     wrapMode: Text.Wrap; color: Theme.subtle; font.pointSize: Theme.fontPoints(12)
                 }
+                SpamList {
+                    visible: mail.spamMode; spam: spam
+                    Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 6
+                }
                 ListView {
                     id: list; objectName: "conversationList"
+                    visible: !mail.spamMode
                     Layout.fillWidth: true; Layout.fillHeight: true; Layout.topMargin: 6
                     clip: true; model: backend.conversationModel; boundsBehavior: Flickable.StopAtBounds
                     ScrollBar.vertical: FmScrollBar { policy: ScrollBar.AlwaysOn }
@@ -1118,10 +1135,11 @@ Item {
         }
         Item {
             id: readerPane
-            enabled: mail.readerMatchesCursor
+            enabled: mail.readerMatchesCursor || mail.spamMode
             SplitView.fillWidth: true; SplitView.minimumWidth: 470
             readonly property int margin: width<620 ? 24 : 40
             Rectangle { anchors.fill: parent; color: Theme.bg0 }
+            SpamReader { anchors.fill: parent; z: 10; visible: mail.spamMode; spam: spam; margin: readerPane.margin }
             ColumnLayout {
                 anchors.fill: parent; spacing: 0
                 ColumnLayout {
@@ -1624,6 +1642,7 @@ Item {
             spacing: 2
             FmButton { objectName: "allMailScopeButton"; text: "All mail"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { backend.folder="all"; folderPopup.close() } }
             FmButton { objectName: "trashScopeButton"; text: "Trash"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; onClicked: { backend.folder="trash"; folderPopup.close() } }
+            FmButton { objectName: "spamScopeButton"; text: "Spam"; Layout.fillWidth: true; textAlignment: Text.AlignLeft; tip: "Read live from Gmail; spam is not downloaded"; onClicked: { backend.folder="spam"; folderPopup.close() } }
         }
     }
     function menuKey(id) { const key = ShortcutRegistry.sequence(id, backend.preferences); return key === "Delete" ? "Del" : ShortcutRegistry.label(key) }

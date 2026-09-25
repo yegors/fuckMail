@@ -1122,7 +1122,8 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
     let methods = [
         "assist_jobs",
         "assist_backlog",
-        "assist_batch_start",
+        "assist_catch_up",
+        "assist_progress",
         "assist_catalog",
         "assist_settings_get",
         "assist_settings_save",
@@ -1236,6 +1237,8 @@ fn handshake_metadata(store: &mut fm_core::Store) -> fm_core::Result<Value> {
         "google_draft_delete_status",
         "google_draft_delete_reconcile",
         "google_draft_delete_abandon",
+        "google_spam_list",
+        "google_spam_message",
     ];
     Ok(
         json!({"protocol":PROTOCOL_VERSION,"schema_version":status["schema_version"],

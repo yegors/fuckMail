@@ -1,6 +1,6 @@
 # Local model pipeline refactor — plan
 
-**Status:** proposed by D111 (2026-09-24). Nothing here is implemented. The founder answered its questions (below). It supersedes parts of [Local assistance](../contracts/local-ai.md) once the contract is revised with L1. Readiness is unchanged.
+**Status:** implemented by D114 (2026-09-24) as [Local assistance25](../contracts/local-ai.md#d111--one-queue-one-email-systemuser-prompts-local-assistance25), schema36 and CLI48. The contract is now the source of behaviour; this file keeps the audit, the reasoning and the differences below. Readiness is unchanged.
 
 **Goal:** one simple, robust pipeline for summaries, labels and sender kind. Each email is summarized alone, without its quoted reply chain. One queue serves single emails and mass catch-up. New mail goes to the front of the queue. Each account's queue can be paused, resumed or started (Catch up). No wasted HTTP calls, retries or whole-thread packing.
 
@@ -114,6 +114,16 @@ Retire `assist_start` for batches, `assist_batch_start`, `assist_backlog`, `assi
 
 Measure: time per email and tok/s on `gemma4:e4b` and `qwen3.8-obliterated:27b`, before and after, on the founder's mailbox. Record them in [local assistance execution](../research/local-assistance-execution.md). Model quality claims remain separate.
 
+## As built (D114)
+
+Where the implementation differs from the design above:
+- **GUI quote code stays.** `gui/ReceivedBody.h` splits rich HTML into reader sections, which overlaps the HTML reader work. Its extra rules, plus localized attributions and Outlook headers, were added to the engine's `reply_contribution`, which produces the stored text the model reads. Replacing the GUI copy is left to the HTML reader.
+- **Pause uses the existing saved flag.** Saving settings no longer cancels work, so no separate `assist_pause` method was needed. CLI `assist pause`/`resume` save the flag.
+- **Explicit requests use the inference seat directly.** Tokio's semaphore is first-come first-served, so a Summarize waits at most for the email in progress. There is no separate replaceable Now slot.
+- **The Test button stays `assist_start {sample:true}`.** The old sample path was already right.
+- **Added:** `local_model_failures` (schema36) for per-email attempts; when the queue is empty the worker skips rescans until the store revision changes or something wakes it; the model check is cached per settings and cleared after model errors.
+- **`num_ctx` is fixed at 16,384**, not sized per request, because a changing value makes Ollama reload the model.
+
 ## Founder answers (D111)
 
 1. **Output:** the mockup shape `{summary, label, sender: human|bot}`. `unknown` and `reason` are dropped. Stored as `human|automated` internally, so existing sender corrections and filters keep working.
@@ -121,4 +131,3 @@ Measure: time per email and tok/s on `gemma4:e4b` and `qwen3.8-obliterated:27b`,
 3. **Prompt/model change:** keep old results, captioned with their model. Resummarize or Catch up redoes them on demand. No automatic requeue.
 4. **Catch up order:** newest first. New arrivals still go ahead of it.
 
-Remaining gate: start L1 after the uncommitted pause/progress work in the tree is committed.

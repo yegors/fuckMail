@@ -1,5 +1,36 @@
 # Mail UI, reader and human composer
 
+## D116 — Spam view (Mail UI83)
+
+- The folder menu lists All mail, Trash and Spam; the folder button reads "Spam" while it is open.
+- Spam replaces the list with a live Gmail listing: a note that spam is read live and not kept, then rows of sender (bold when unread), date, subject and snippet, and a status line (reading, empty or the error, with Try again) and Load more.
+- Selecting a row reads that message live into the reader pane: subject, sender and date, then its plain text. Links and images are not loaded.
+- Category chips, sender kinds, counts and single-key actions are off in Spam. Spam is never remembered as the folder to reopen. Backend: `folder` accepts `spam` without a Core query; `spamRequest(method, params)` and `spamReply(ticket, method, account, result, ok)` run the two methods as Google operations (60 s).
+
+## D115 — the signature is ordinary composer text (Mail UI82)
+
+The composer has no signature box and no Edit signature menu item. A new or reopened draft's body starts with two blank lines, then the account signature; the person edits or deletes it as normal text. Nothing is added at send. A body that is only the account signature is not authored: it does not open the reply box on a thread, show the collapsed draft, or ask before discarding. Consumers: Core63, CLI (unchanged grammar), Quality.
+
+## Composer draft sync is silent unless something is wrong (Mail UI81)
+
+The composer no longer shows Google draft sync progress ("Saved to Google.", "Uploading…", newer edits waiting) or a standing Check Google button. The status and its Check Google / Replace actions appear only when a draft needs the person: a conflict, an unknown or failed result, an upload that was not prepared, a content mismatch, feedback from a check, or a check in progress. Backend field: `googleDraft.attention`.
+
+## D113 — signatures on the card and Image loading (Mail UI80)
+
+- **Signature row.** It sits between Labels and the Local model and shows the signature's non-empty lines joined by " · ", or "None" (at .35). Edit, or Add when there is none, opens "Signature · {Account}".
+- **Signature window.**
+  - 560 px wide, with "Added to new messages and replies from {address}" and a close button.
+  - A 150 px plain-text editor on the canvas colour, 14 pt, with the placeholder "No signature".
+  - "Leave empty for none. Existing drafts keep theirs.", then Cancel and Save.
+  - Save is active only with an edit, trims trailing whitespace, closes when saved and stays open with the error when refused. Esc or a click outside closes it.
+- **Settings → Mail.** It no longer has Signatures. Its subtitle is "How the mail list looks, what stays blocked, and how images load."
+- **Image loading.** A 15 pt title and a paragraph, then rows split by rules:
+  - **Load through a proxy**, with its note and a switch. Turning it on with no saved host shows the fields without enabling anything.
+  - **The proxy fields**, while it is on: Host, Username and Password in a 100 px label column.
+    - The status line reads Testing, Reachable (with the time), the failure, "Enter the proxy host to test it", "That doesn’t look like a host name" (amber), "Not saved yet" or "Saved".
+    - Test works on the saved proxy; Save needs a host. Forget removes a saved password.
+  - **Image cache**: the size of 256 MB with Clear.
+
 ## D112 — seventh export: Accounts, account tabs, colours, labels modal and Local LLM (Mail UI79)
 
 - **Accounts card.**

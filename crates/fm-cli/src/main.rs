@@ -95,7 +95,7 @@ enum Command {
         #[arg(long,value_parser=["none","read","write"],requires="mail_access")]
         calendar_access: Option<String>,
         /// Also summarize/label mail that was already in the account when it was
-        /// added (true), or leave it for `assist batch` (false, the default).
+        /// added (true), or leave it for `assist catch-up` (false, the default).
         #[arg(long)]
         analyze_history: Option<bool>,
         /// The account's colour, one of the 16 palette entries such as #6FB5B2.
@@ -443,6 +443,13 @@ enum Google {
     },
     /// Refresh the label catalog through the currently active owned sync runtime.
     LabelsRefresh,
+    /// List Gmail Spam live, 50 at a time; spam is never downloaded or stored.
+    Spam {
+        #[arg(long)]
+        page_token: Option<String>,
+    },
+    /// Read one Spam message's text live from Gmail without storing it.
+    SpamShow { id: String },
     /// Begin or resume remote Drafts inventory through an already owned sync session.
     DraftsRefresh,
     /// Read cached remote Drafts coverage without contacting Google.
@@ -669,15 +676,20 @@ enum Labels {
 
 #[derive(Subcommand)]
 enum Assist {
-    /// Count retained incoming mail and missing local analysis, without running inference.
+    /// How many unprocessed messages each Catch up range would add, for this account.
     Backlog,
-    /// Quick per-account counts: analysed, queued for the watcher and unprocessed.
+    /// Per-account counts: processed, queued, failed and unprocessed.
     Progress,
-    /// Process missing analysis in this account; Ctrl-C stops and keeps finished results.
-    Batch {
-        #[arg(long, value_parser = ["week", "month", "year", "all"])]
+    /// Queue older mail in this account after new mail, newest first. The range
+    /// only widens; `stop` drops older mail from the queue again.
+    CatchUp {
+        #[arg(long, value_parser = ["week", "month", "year", "all", "stop"])]
         range: String,
     },
+    /// Pause the local model for this account; downloading continues.
+    Pause,
+    /// Resume the local model for this account.
+    Resume,
     /// Discover models from the configured same-machine service.
     Discover {
         #[arg(long)]
@@ -694,32 +706,18 @@ enum Assist {
         #[arg(long)]
         expected_revision: u64,
     },
-    /// Test a chosen task on built-in synthetic mail without changing settings.
+    /// Run built-in synthetic mail through the model without changing settings.
     Test {
-        #[arg(value_parser=["summary","classification","message"])]
-        task: String,
         #[arg(long, default_value = "personal")]
         sample_case: String,
         #[arg(long)]
         settings_file: Option<PathBuf>,
     },
-    /// Summarize retained mail without marking it read.
-    Summarize {
-        conversation_id: String,
-        #[arg(long)]
-        message_id: Option<String>,
-    },
-    /// Analyze each received message once: summary, sender kind and automatic label.
+    /// Summarize, label and tag one received message now, replacing saved results.
     Analyze {
         conversation_id: String,
         #[arg(long)]
-        message_id: Option<String>,
-    },
-    /// Classify received messages and automatically apply the matching label.
-    Classify {
-        conversation_id: String,
-        #[arg(long)]
-        message_id: Option<String>,
+        message_id: String,
     },
     Results {
         conversation_id: String,
@@ -739,8 +737,9 @@ enum Assist {
         #[arg(long)]
         request_id: String,
     },
-    /// Classify new arrivals for enabled accounts until Ctrl-C; no backfill sweep.
-    Watch,
+    /// Work through the queue until Ctrl-C: new mail first, then Catch up.
+    #[command(alias = "watch")]
+    Run,
 }
 
 #[derive(Subcommand)]
@@ -1864,6 +1863,22 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 .await?
         }
         Command::Google {
+            command: Google::Spam { page_token },
+        } => {
+            let params = match page_token {
+                Some(token) => json!({"page_token":token}),
+                None => json!({}),
+            };
+            client.call("google_spam_list", scope, params).await?
+        }
+        Command::Google {
+            command: Google::SpamShow { id },
+        } => {
+            client
+                .call("google_spam_message", scope, json!({"id":id}))
+                .await?
+        }
+        Command::Google {
             command:
                 Google::CategoryBind {
                     category_id,
@@ -2133,7 +2148,25 @@ async fn run(args: &Args) -> Result<(), Failure> {
                 }
             }
         }
-        Command::Assist { command } => {
+        Command::Assist { command } => 'assist: {
+            if matches!(command, Assist::Pause | Assist::Resume) {
+                let account = account(args)?;
+                let state = self::result(client.call("assist_settings_get", None, json!({})).await?)?;
+                let mut settings = state["settings"].clone();
+                let policy = settings["accounts"]
+                    .as_object_mut()
+                    .ok_or_else(|| invalid("Invalid local model settings"))?
+                    .entry(account)
+                    .or_insert_with(|| json!({"classification":true,"summaries":true}));
+                policy["paused"] = json!(matches!(command, Assist::Pause));
+                break 'assist client
+                    .call(
+                        "assist_settings_save",
+                        None,
+                        json!({"settings":settings,"expected_revision":state["revision"]}),
+                    )
+                    .await?;
+            }
             let (method, params) = match command {
                 Assist::Discover { endpoint, provider } => {
                     let mut params = json!({});
@@ -2146,9 +2179,16 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     ("assist_discover", params)
                 }
                 Assist::Settings => ("assist_settings_get", json!({})),
-                Assist::Backlog => ("assist_backlog", json!({})),
+                Assist::Backlog => {
+                    account(args)?;
+                    ("assist_backlog", json!({}))
+                }
                 Assist::Progress => ("assist_progress", json!({})),
-                Assist::Batch { range } => ("assist_batch_start", json!({"range":range})),
+                Assist::CatchUp { range } => {
+                    account(args)?;
+                    ("assist_catch_up", json!({"range":range}))
+                }
+                Assist::Pause | Assist::Resume => unreachable!(),
                 Assist::Configure {
                     settings_file,
                     expected_revision,
@@ -2162,33 +2202,24 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     )
                 }
                 Assist::Test {
-                    task,
                     sample_case,
                     settings_file,
                 } => {
-                    let mut p = json!({"task":task,"sample":true,"sample_case":sample_case});
+                    let mut p = json!({"sample":true,"sample_case":sample_case});
                     if let Some(path) = settings_file {
                         p["settings"] = serde_json::from_slice(&read_input(path, 48 * 1024)?)
                             .map_err(|_| invalid("Settings must be JSON"))?;
                     }
                     ("assist_start", p)
                 }
-                Assist::Summarize {
-                    conversation_id,
-                    message_id,
-                }
-                | Assist::Analyze {
-                    conversation_id,
-                    message_id,
-                }
-                | Assist::Classify {
+                Assist::Analyze {
                     conversation_id,
                     message_id,
                 } => {
                     account(args)?;
                     (
                         "assist_start",
-                        json!({"task":if matches!(command,Assist::Summarize{..}){"summary"}else{"message"},"conversation_id":conversation_id,"message_id":message_id}),
+                        json!({"conversation_id":conversation_id,"message_id":message_id}),
                     )
                 }
                 Assist::Results { conversation_id } => {
@@ -2212,13 +2243,14 @@ async fn run(args: &Args) -> Result<(), Failure> {
                     "assist_accept",
                     json!({"conversation_id":conversation_id,"message_id":message_id,"category_id":category_id,"request_id":request_id}),
                 ),
-                Assist::Watch => ("assist_watch", json!({})),
+                Assist::Run => ("assist_watch", json!({})),
             };
             let mut result = client.call(method, scope, params).await?;
-            if matches!(command, Assist::Watch) {
+            if matches!(command, Assist::Run) {
+                self::result(result.clone())?;
                 tokio::signal::ctrl_c().await?;
-                json!({"version":1,"ok":true,"result":{"status":"canceled"}})
-            } else if ["assist_start", "assist_batch_start", "assist_backlog"].contains(&method) {
+                json!({"version":1,"ok":true,"result":{"status":"stopped"}})
+            } else if method == "assist_start" {
                 self::result(result.clone())?;
                 let job = result["result"]["job_id"].clone();
                 loop {
@@ -2227,7 +2259,7 @@ async fn run(args: &Args) -> Result<(), Failure> {
                         .call("assist_job", None, json!({"job_id":job}))
                         .await?;
                     self::result(result.clone())?;
-                    if !["queued", "scanning", "running"]
+                    if !["queued", "running"]
                         .contains(&result["result"]["status"].as_str().unwrap_or_default())
                     {
                         break;

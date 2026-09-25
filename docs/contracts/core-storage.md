@@ -1,5 +1,16 @@
 # Core and storage
 
+## D116 — no stored spam (Core64)
+
+`account_retention::purge_messages` is the shared local removal of listed messages and their FTS rows, categories, attachments, provider state, intents, sender kinds, model results, mail receipts, coverage and empty conversations; blobs go through startup cleanup. Retention and spam both use it. `forget_spam` applies it to one remote message (live publication of a `Spam` item) or to every stored message whose provider labels include SPAM (`forget_stored_spam`, once per profile at open, meta `spam_forgotten`), skipping messages used by an active draft or pending mail change. Consumers: Gmail28, Mail UI83, Search, Local assistance.
+
+## D115 — signatures are draft body text (Core63)
+
+- `draft_get` for a new draft, a discarded one or a legacy virtual reply returns `body` = "\n\n" + account signature (empty when there is none). `draft_create` puts it before any forwarded quote.
+- Stored drafts keep `signature_text` empty; every save clears it. A row saved earlier with its own signature reads with that signature appended to `body` after one blank line (and to `body_html` after `<br><br>`), so the next save stores it in the body.
+- An explicit `signature_text` in `draft_save` is stored and read back the same way. MIME building joins a non-empty draft signature with one blank line and no "-- " delimiter.
+- This supersedes "Capture appends the saved signature once" and the per-draft signature snapshot described below. Consumers: Mail UI82, CLI, Gmail send/upload, Quality.
+
 ## D107 — conversation people, readable previews and one message format (Core59, schema35)
 
 **People.** Schema35 adds `people(email, name)` and `message_people`.

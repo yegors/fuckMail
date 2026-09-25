@@ -1,5 +1,18 @@
 # Local assistance execution
 
+## D114 — local model pipeline (2026-09-24)
+
+Mac, working tree after commit `56df239`, with another session's uncommitted signature/settings work in the same tree. Synthetic profiles and a fake model server except where noted.
+
+- **Before:** the full Rust workspace passed 757 tests, zero failed.
+- **After, full workspace:** 750 passed, 10 failed, 6 ignored. All 10 failures are draft/signature tests (`capture`, `composition`, `draft_discard`, `google_send`, `local_content`, `phase1`). They fail because the other session's uncommitted change moves the signature into the draft body; none touch the local model. After the last queue changes, rerun per crate: fm-assist 13, fm-mail 21 + 13, fm-engine 176 + 11 + 2, fm-cli 9 + 19, and the affected fm-core modules (queue 5, local model 8, schema 8, accounts 28, live profile 10, labels 2 + 1, sender kinds 5) all pass. Clippy on the five crates: no warnings.
+- **End to end** (`scripts/verify_ollama.py`, built engine + CLI + fake server), all pass: system/user settings with no inference on save; one request per email with review state unchanged; the queue processes every eligible email once, newest first; CLI pause/resume; Catch up waits behind the cutoff, runs newest first, and an email stored mid-Catch-up is analysed next; with the model down the queue holds, marks nothing failed and resumes on a settings save; a failing email gets two attempts and then waits; Test with unsaved settings and timings, with a cloud model refused; the OpenAI-compatible provider; the engine exits when its clients close.
+- **Native GUI:** `gui-local-model`, `gui-mail-selection`, `gui-calendar-search`, `gui-debug-console` and `gui-smoke` pass. `gui-integration` stops at the draft-discard stage and `gui-mail-navigation-cache` at the signature editor; both come from the other session's signature work.
+- **Real models** (installed Ollama, synthetic sample emails through the engine, 8 cases each): `gemma4:e4b` about 1 s per email once loaded, `qwen3.8-obliterated:27b` about 2–2.5 s. All 16 completed, labels 16/16 as expected. Sender kind was 14/16; the two misses were the content-less sample, which expected the removed `unknown` and is now expected to be `automated`. Replies are about 50 output tokens, against 90–130 before. Output stays under ignored `build/verification/`.
+- **Real profile:** a release GUI built from this tree (running since 18:14) had already opened the founder's profile. Read-only inspection: schema36, the old settings archived, the prompt removed, the model choice kept, 216 results kept, the watcher keys gone, no failures.
+
+Limits: no real-mailbox queue run or large-mailbox timing yet, and no Windows/Linux run.
+
 ## D097 — first label import and synced-mail analysis (2026-09-23)
 
 Founder report: a new account with a local model neither summarized nor labeled its mail until labels were synced by hand. Root causes: the watcher started at the newest stored message and only accepted mail dated after its own start, so first-sync history was never queued, and Gmail labels were imported only by the manual Sync with Google job, leaving Auto-label with no labels to choose. The per-account default was already on.

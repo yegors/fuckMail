@@ -1,5 +1,12 @@
 # Gmail provider
 
+## D116 — Spam stays at Google (Gmail28)
+
+- Full listings use `includeSpamTrash=true` with `q` ending ` -in:spam` (Recent: `after:N -in:spam`; Inventory: `-in:spam` or `after:N -in:spam`). Trash is still acquired.
+- A fetched message whose labels include SPAM is prepared as `Spam`: no source is staged, and publication removes any local copy and its coverage row. Delta label changes refetch as before, so leaving Spam restores the message.
+- `GmailCall::message_metadata` (`format=metadata`, From/Subject/Date headers, `fields=id,threadId,labelIds,snippet,internalDate,payload/headers`, 5 units) serves live listings; a 404 is `None`.
+- `google_spam_list` lists `in:spam` 50 per page and reads metadata eight at a time; `google_spam_message` reads one raw message under the preparation permit and returns its extracted text. Neither writes to the store. Both need an active account sync and mail-read scope. Consumers: Core64, Mail UI83, CLI49.
+
 ## D097 — first label import (Gmail27)
 
 After a newly added account's labels worker publishes its first complete catalog, it runs the explicit name merge once. Existing Gmail user labels become or link local labels, and memberships already retained from Gmail appear locally. Nothing is created at Google and no label membership write is queued. The GUI and CLI refresh from the published revision. Without mail editing permission the import is skipped and Settings → Labels Sync with Google or CLI `labels sync` remain the path. Later Gmail labels still wait for explicit sync. Consumers: GUI Settings → Labels, CLI `labels sync`; Core54, Local assistance20.

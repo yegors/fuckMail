@@ -55,6 +55,7 @@ void GoogleOperation::start(const QString &profile, qint64 enginePid, const QStr
         && method != "google_draft_authoring" && method != "google_draft_copy" && method != "google_draft_adopt"
         && method != "google_draft_delete" && method != "google_draft_delete_reconcile" && method != "google_draft_delete_abandon"
         && method != "draft_transfer" && method != "draft_attachment_import" && method != "google_draft_source" && method != "google_drafts_refresh"
+        && method != "google_spam_list" && method != "google_spam_message"
         && method != "conversation" && method != "message_source" && method != "assist_results" && method != "assist_settings_get"
         && !remoteContent(method)) {
         reject("invalid_request", "Unsupported Google operation."); return;
@@ -115,6 +116,7 @@ void GoogleOperation::receive() {
     // Quota cooldown can exceed the ordinary local query timeout. The user can
     // cancel at any time; no timeout automatically repeats a provider mutation.
     m_timer.start(m_method == "message_image" || m_method == "remote_proxy_test" ? 25000
+        : m_method == "google_spam_list" || m_method == "google_spam_message" ? 60000
         : m_method == "conversation" || m_method == "message_source" || m_method == "assist_results" || m_method == "assist_settings_get" || remoteContent(m_method) ? 15000
         : localImport ? 60 * 1000 : 10 * 60 * 1000);
     const auto params = std::exchange(m_params, QJsonObject{});

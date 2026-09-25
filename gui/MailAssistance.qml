@@ -8,6 +8,8 @@ Item {
     property var settings: ({accounts: {}})
     property int settingsRevision: -1
     property var items: []
+    // Queue failures for messages in this conversation: [{target, code, message, attempts}].
+    property var failures: []
     property var requests: ({})
     property int context: 0
     property int session: 0
@@ -40,7 +42,11 @@ Item {
         return items.find(item => item.task === task && item.target === target && !(task === "summary" && item.format_outdated)) || null
     }
     function workingOn(task, target) { return busy && (jobTask === task || jobTask === "message") && jobTarget === target }
-    function errorFor(task, target) { return ((jobTask === task || jobTask === "message") && jobTarget === target ? error : "") || (task === "classification" ? changeErrors[target] || "" : "") }
+    function failureFor(target) { const f = failures.find(row => row.target === target); return f ? f.message || "The local model could not analyse this message." : "" }
+    function errorFor(task, target) {
+        return ((jobTask === task || jobTask === "message") && jobTarget === target ? error : "")
+            || (task === "classification" ? changeErrors[target] || "" : busy && jobTarget === target ? "" : failureFor(target))
+    }
     function refresh() {
         if (backend.connected && accountId && conversationId)
             latestResults = send("assist_results", {conversation_id: conversationId}, "results")
@@ -49,20 +55,25 @@ Item {
         const snapshot = backend.conversation
         if (!snapshot || snapshot.id !== conversationId || snapshot.assistance_results === undefined) return false
         if (snapshot.assistance_settings && snapshot.assistance_settings.settings) adoptSettings(snapshot.assistance_settings)
+        // A finished job is reading back its own result. A list refresh can
+        // republish the reader with earlier results first; keep waiting for
+        // the readback, which is newer, instead of dropping it.
+        if (completing) return true
         // A query started while the reader was empty may arrive after its
         // complete snapshot. It cannot replace that newer saved projection.
         latestResults = ""
         items = snapshot.assistance_results
+        failures = snapshot.assistance_failures || []
         return true
     }
     function loadSettings() { if (backend.connected) send("assist_settings_get", {}, "settings") }
     function adoptSettings(result) {
         if (!result || typeof result.revision !== "number" || !result.settings) return
         if (result.revision < settingsRevision) return
-        const changed = settingsRevision !== result.revision
         settingsRevision = result.revision
         settings = result.settings
-        if (backend.connected && (changed || !watching)) {
+        // One queue per engine; this session keeps it running while open.
+        if (backend.connected && !watching) {
             watching = true
             send("assist_watch", {}, "ignore")
         }
@@ -75,7 +86,7 @@ Item {
         jobTarget = target || ""
         status = "Queued"
         error = ""
-        send("assist_start", {task: jobTask, conversation_id: conversationId, message_id: jobTarget}, "start")
+        send("assist_start", {conversation_id: conversationId, message_id: jobTarget}, "start")
     }
     function cancel() {
         ++operation
@@ -91,6 +102,7 @@ Item {
         cancel()
         ++context
         items = []
+        failures = []
         status = ""
         error = ""
         latestResults = ""
@@ -119,9 +131,9 @@ Item {
             else if (assistance.settingsRevision < 0) assistance.loadSettings()
         }
         function onAssistanceReply(ticket, method, result, ok) {
+            // Saved settings apply to the next email; a Summarize in progress finishes.
             if (method === "assist_settings_save" && ok) {
                 assistance.adoptSettings(result)
-                assistance.cancel()
                 assistance.refresh()
             }
             const req = assistance.requests[ticket]
@@ -157,6 +169,7 @@ Item {
                 assistance.adoptSettings(result)
             } else if (req.kind === "results") {
                 assistance.items = result.items || []
+                assistance.failures = result.failures || []
                 if (req.operation === assistance.operation) assistance.completing = false
             }
             else if (req.kind === "start") { assistance.job = result.job_id; assistance.status = "Queued" }

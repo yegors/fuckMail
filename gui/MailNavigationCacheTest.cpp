@@ -132,12 +132,15 @@ class MailNavigationCacheTest {
         }
         auto *settings = window->findChild<QQuickItem *>("settingsView");
         require(settings, "actual Settings view exists");
-        settings->setProperty("page", "Mail"); settings->setProperty("signaturesOpen", true); settings->setVisible(true);
+        settings->setVisible(true);
+        QMetaObject::invokeMethod(settings, "editSignature", Q_ARG(QVariant, QVariant(QStringLiteral("one"))));
+        frame();
         QQuickItem *signature = nullptr;
         const auto findSignature = [&](auto &&self, QQuickItem *item) -> void {
             if (item->objectName() == "signature_one") signature = item;
             for (auto *child : item->childItems()) self(self, child);
         };
+        // The signature window is a popup; its overlay sits in the content item.
         findSignature(findSignature, window->contentItem()); require(signature, "actual signature editor");
         QPointer<QQuickItem> editor(signature); signature->forceActiveFocus();
         QMetaObject::invokeMethod(signature, "selectAll");
@@ -152,6 +155,9 @@ class MailNavigationCacheTest {
         }
         QInputMethodEvent next; next.setCommitString(" user"); QCoreApplication::sendEvent(editor, &next);
         require(editor->property("text").toString() == "Regards\nTest user", "typing continues after repeated sync refresh");
+        auto *dialog = settings->findChild<QObject *>("signatureDialog");
+        require(dialog && QMetaObject::invokeMethod(dialog, "close"), "signature window closes");
+        frame();
         settings->setVisible(false);
         QObject::disconnect(&backend.m_socket, SIGNAL(connected()), &backend, nullptr);
         backend.m_socket.connectToServer(syncEngine.server.serverName());

@@ -1,13 +1,18 @@
-//! Versioned production data boundary. No provider or mail-action authority.
+//! Local model settings, the request the app sends and the reply it accepts.
+//! No provider networking or mail-action authority lives here.
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, BTreeSet};
-pub const CLASSIFICATION_PROMPT: &str = include_str!("classification-prompt.txt");
-pub const SUMMARY_PROMPT: &str = include_str!("summary-prompt.txt");
-pub const MESSAGE_PROMPT: &str = include_str!("message-prompt.txt");
-pub const REQUEST_TEMPLATE: &str = include_str!("message-request.json");
-// Leave space for one bounded correction request within the 12 KiB wire limit.
-pub const INITIAL_REQUEST_BYTES: usize = 11_500;
+use std::collections::BTreeMap;
+pub const DEFAULT_SYSTEM: &str = include_str!("system-prompt.txt");
+pub const DEFAULT_USER: &str = include_str!("user-prompt.txt");
+/// Characters of one email's stored (reply-stripped) text sent to the model.
+/// Longer text keeps its start and is marked shortened.
+pub const BODY_CHARS: usize = 24_000;
+/// Fixed so Ollama never reloads the model between requests: a different
+/// `num_ctx` forces a reload. The largest request (limits below) fits.
+pub const CONTEXT_TOKENS: u32 = 16_384;
+/// The reply is three short fields; this only stops runaway output.
+pub const OUTPUT_TOKENS: u32 = 512;
 #[derive(Clone, Copy, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Provider {
@@ -65,6 +70,12 @@ impl Default for Account {
         }
     }
 }
+fn default_system() -> String {
+    DEFAULT_SYSTEM.into()
+}
+fn default_user() -> String {
+    DEFAULT_USER.into()
+}
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
 pub struct Settings {
@@ -72,7 +83,13 @@ pub struct Settings {
     pub provider: Provider,
     pub endpoint: String,
     pub model: Option<Model>,
-    pub prompt: String,
+    /// Behaviour rules and the reply shape. Missing means the built-in text.
+    #[serde(default = "default_system")]
+    pub system: String,
+    /// Sent with each email: `{{messages}}` (required) and `{{labels}}`
+    /// around the user's own context.
+    #[serde(default = "default_user")]
+    pub user: String,
     pub accounts: BTreeMap<String, Account>,
 }
 impl Default for Settings {
@@ -81,7 +98,8 @@ impl Default for Settings {
             provider: Provider::Ollama,
             endpoint: "http://127.0.0.1:11434".into(),
             model: None,
-            prompt: REQUEST_TEMPLATE.into(),
+            system: default_system(),
+            user: default_user(),
             accounts: BTreeMap::new(),
         }
     }
@@ -91,15 +109,16 @@ impl Settings {
         if self.provider.endpoint_base(&self.endpoint).is_none() {
             return Err("Use an http loopback endpoint with an explicit port".into());
         }
-        if self.prompt.trim().is_empty() || self.prompt.len() > 8192 || self.prompt.contains('\0') {
-            return Err("Instructions must contain 1–8192 UTF-8 bytes".into());
+        if self.system.trim().is_empty() || self.system.len() > 16 * 1024 {
+            return Err("The system prompt must contain 1–16,384 bytes".into());
         }
-        render_request(
-            &self.prompt,
-            &json!({"labels":[],"messages":[],"partial":false}),
-            "selected-model",
-            &["message-id".into()],
-        )?;
+        if self.user.len() > 8 * 1024 {
+            return Err("The user message must be at most 8,192 bytes".into());
+        }
+        if self.system.contains('\0') || self.user.contains('\0') {
+            return Err("Prompts cannot contain NUL characters".into());
+        }
+        variables(&self.user)?;
         if let Some(m) = &self.model {
             if m.name.is_empty()
                 || m.name.len() > 256
@@ -134,197 +153,96 @@ impl Settings {
         }
         Ok(())
     }
-    pub fn model(&self, _task: &str) -> Option<&Model> {
-        self.model.as_ref()
-    }
-    pub fn prompt(&self, _task: &str) -> &str {
-        &self.prompt
-    }
 }
-/// Preserve explicit opt-outs and custom instructions. Migration archives original bytes.
-pub fn upgrade_settings(old: Value) -> Result<Settings, String> {
-    if old.get("prompt").is_some() {
-        let mut settings: Settings = serde_json::from_value(old).map_err(|_| "Invalid settings")?;
-        if render_request(
-            &settings.prompt,
-            &json!({"labels":[],"messages":[],"partial":false}),
-            "selected-model",
-            &["message-id".into()],
-        )
-        .is_err()
-        {
-            settings.prompt = wrap_prompt(&settings.prompt);
+/// The user message's variables: `{{messages}}` exactly once, `{{labels}}`
+/// at most once, nothing else.
+fn variables(user: &str) -> Result<(), String> {
+    let mut rest = user;
+    let (mut messages, mut labels) = (0, 0);
+    while let Some(start) = rest.find("{{") {
+        rest = &rest[start + 2..];
+        let end = rest.find("}}").ok_or("Close each {{variable}} with }}")?;
+        match &rest[..end] {
+            "messages" => messages += 1,
+            "labels" => labels += 1,
+            other => {
+                return Err(format!(
+                    "Unknown variable {{{{{other}}}}}; use {{{{messages}}}} and {{{{labels}}}}"
+                ))
+            }
         }
-        return Ok(settings);
+        rest = &rest[end + 2..];
     }
-    let mut settings = Settings {
-        endpoint: old["endpoint"].as_str().ok_or("Missing endpoint")?.into(),
-        model: serde_json::from_value(if old["classification_model"].is_null() {
-            old["summary_model"].clone()
+    if messages != 1 || labels > 1 {
+        return Err("Use {{messages}} once and {{labels}} at most once".into());
+    }
+    Ok(())
+}
+/// Substitute in one pass, so email text or label descriptions that contain
+/// `{{…}}` are never expanded.
+fn expand(user: &str, email: &Value, labels: &Value) -> String {
+    let mut output = String::with_capacity(user.len());
+    let mut rest = user;
+    while let Some(start) = rest.find("{{") {
+        output.push_str(&rest[..start]);
+        rest = &rest[start + 2..];
+        let end = rest.find("}}").unwrap_or(rest.len());
+        let value = if &rest[..end] == "labels" {
+            labels
         } else {
-            old["classification_model"].clone()
-        })
-        .map_err(|_| "Invalid model")?,
-        accounts: serde_json::from_value(old["accounts"].clone())
-            .map_err(|_| "Invalid account settings")?,
-        ..Default::default()
+            email
+        };
+        output.push_str(&serde_json::to_string_pretty(value).unwrap_or_default());
+        rest = &rest[(end + 2).min(rest.len())..];
+    }
+    output.push_str(rest);
+    output
+}
+/// The JSON shape the model must return. `label` is limited to this
+/// account's label IDs, so the model cannot invent one.
+pub fn schema(label_ids: &[String]) -> Value {
+    let label = if label_ids.is_empty() {
+        json!({"type":"null"})
+    } else {
+        let mut choices: Vec<Value> = label_ids.iter().map(|id| json!(id)).collect();
+        choices.push(Value::Null);
+        json!({ "enum": choices })
     };
-    let mut instructions = MESSAGE_PROMPT.to_string();
-    for (key, default) in [
-        ("classification_prompt", CLASSIFICATION_PROMPT),
-        ("summary_prompt", SUMMARY_PROMPT),
-    ] {
-        if let Some(custom) = old[key]
-            .as_str()
-            .filter(|p| !p.trim().is_empty() && p.trim() != default.trim())
-        {
-            instructions.push_str(
-                "\n\nPreviously saved preferences (use one label and 1–2 prose sentences):\n",
-            );
-            instructions.push_str(custom);
-        }
-    }
-    settings.prompt = wrap_prompt(&instructions);
-    Ok(settings)
+    json!({"type":"object","additionalProperties":false,"required":["summary","label","sender"],
+        "properties":{"summary":{"type":"string","maxLength":600},"label":label,
+            "sender":{"type":"string","enum":["human","bot"]}}})
 }
-/// Preserve the user's prior text inside the now-complete request template.
-pub fn wrap_prompt(instructions: &str) -> String {
-    let mut request: Value = serde_json::from_str(REQUEST_TEMPLATE).expect("Built-in request JSON");
-    request["messages"][1]["content"] = instructions.into();
-    serde_json::to_string_pretty(&request).expect("Request JSON")
+/// System and user messages for one email. `email` and `labels` are the
+/// engine-built data objects; they enter only as JSON text.
+pub fn messages(settings: &Settings, email: &Value, labels: &Value) -> Value {
+    json!([
+        {"role":"system","content":settings.system},
+        {"role":"user","content":expand(&settings.user, email, labels)}
+    ])
 }
-
-/// Expand JSON values once. Inserted email text is never parsed as a template.
-pub fn render_request(
-    template: &str,
-    payload: &Value,
-    model: &str,
-    sources: &[String],
-) -> Result<Value, String> {
-    let mut request: Value = serde_json::from_str(template)
-        .map_err(|e| format!("Request template must be valid JSON: {e}"))?;
-    let variables = json!({"model":model,"labels":payload["labels"],"messages":payload["messages"],"partial":payload["partial"],"source_ids":sources});
-    let mut seen = BTreeSet::new();
-    fn expand(
-        value: &mut Value,
-        variables: &Value,
-        seen: &mut BTreeSet<String>,
-    ) -> Result<(), String> {
-        match value {
-            Value::Object(map) => {
-                for (key, value) in map {
-                    if key.contains("{{") {
-                        return Err("Variables belong in JSON values, not keys".into());
-                    }
-                    expand(value, variables, seen)?;
-                }
-            }
-            Value::Array(items) => {
-                for value in items {
-                    expand(value, variables, seen)?;
-                }
-            }
-            Value::String(input) => {
-                let mut rest = input.as_str();
-                let mut output = String::new();
-                while let Some(start) = rest.find("{{") {
-                    output.push_str(&rest[..start]);
-                    rest = &rest[start + 2..];
-                    let end = rest.find("}}").ok_or("Unclosed request variable")?;
-                    let key = &rest[..end];
-                    let replacement = variables
-                        .get(key)
-                        .ok_or_else(|| format!("Unknown request variable: {key}"))?;
-                    if !seen.insert(key.to_string()) {
-                        return Err(format!("Use {{{{{key}}}}} exactly once"));
-                    }
-                    if start == 0 && end + 2 == rest.len() && output.is_empty() {
-                        *value = replacement.clone();
-                        return Ok(());
-                    }
-                    output.push_str(
-                        replacement
-                            .as_str()
-                            .map(str::to_owned)
-                            .unwrap_or_else(|| replacement.to_string())
-                            .as_str(),
-                    );
-                    rest = &rest[end + 2..];
-                }
-                output.push_str(rest);
-                *input = output;
-            }
-            _ => {}
-        }
-        Ok(())
-    }
-    expand(&mut request, &variables, &mut seen)?;
-    // {{labels}} and {{partial}} may be left out; the settings page warns
-    // that the model then cannot see the account's labels.
-    if !["model", "messages", "source_ids"]
-        .iter()
-        .all(|key| seen.contains(*key))
-    {
-        return Err("Keep {{model}}, {{messages}} and {{source_ids}} exactly once each".into());
-    }
-    let object = request.as_object().ok_or("Request must be a JSON object")?;
-    if !(5..=6).contains(&object.len())
-        || request["model"] != model
-        || request["stream"] != false
-        || !request["format"].is_object()
-    {
-        return Err(
-            "Request must contain model, messages, format, stream:false and options only".into(),
-        );
-    }
-    if object.keys().any(|k| {
-        !["model", "messages", "format", "stream", "options", "think"].contains(&k.as_str())
-    }) {
-        return Err("Unsupported request field".into());
-    }
-    if request.get("think").is_some_and(|v| !v.is_boolean()) {
-        return Err("think must be true or false".into());
-    }
-    let messages = request["messages"]
+/// The complete Ollama `/api/chat` body.
+pub fn ollama_request(settings: &Settings, model: &str, email: &Value, labels: &Value) -> Value {
+    let ids = label_ids(labels);
+    json!({"model":model,"messages":messages(settings, email, labels),"format":schema(&ids),
+        "stream":false,"think":false,"keep_alive":"10m",
+        "options":{"temperature":0,"num_ctx":CONTEXT_TOKENS,"num_predict":OUTPUT_TOKENS}})
+}
+/// The complete OpenAI-compatible `/v1/chat/completions` body.
+pub fn openai_request(settings: &Settings, model: &str, email: &Value, labels: &Value) -> Value {
+    let ids = label_ids(labels);
+    json!({"model":model,"messages":messages(settings, email, labels),"stream":false,
+        "temperature":0,"max_tokens":OUTPUT_TOKENS,
+        "response_format":{"type":"json_schema","json_schema":{"name":"mail_analysis","strict":true,"schema":schema(&ids)}}})
+}
+pub fn label_ids(labels: &Value) -> Vec<String> {
+    labels
         .as_array()
-        .ok_or("messages must be an array")?;
-    if messages.is_empty()
-        || messages.len() > 8
-        || messages.iter().any(|m| {
-            m.as_object().is_none_or(|o| o.len() != 2)
-                || ![Some("system"), Some("user")].contains(&m["role"].as_str())
-                || !m["content"].is_string()
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| row["id"].as_str().map(str::to_owned))
+                .collect()
         })
-    {
-        return Err("Use 1–8 system/user messages with role and text content only".into());
-    }
-    let options = request["options"]
-        .as_object()
-        .ok_or("options must be an object")?;
-    if options.len() != 3
-        || !request["options"]["temperature"]
-            .as_f64()
-            .is_some_and(|v| (0.0..=2.0).contains(&v))
-        || !request["options"]["num_ctx"]
-            .as_u64()
-            .is_some_and(|v| (1024..=16384).contains(&v))
-        || !request["options"]["num_predict"]
-            .as_u64()
-            .is_some_and(|v| (1..=4096).contains(&v))
-    {
-        return Err(
-            "Options: temperature 0–2, num_ctx 1024–16384, num_predict 1–4096; no other options"
-                .into(),
-        );
-    }
-    // Old saved templates inherit direct answers too, without rewriting user
-    // instructions/settings or invalidating their durable receipt history.
-    request
-        .as_object_mut()
-        .unwrap()
-        .entry("think")
-        .or_insert(json!(false));
-    Ok(request)
+        .unwrap_or_default()
 }
 pub fn valid_endpoint(endpoint: &str) -> bool {
     let Some(rest) = endpoint.strip_prefix("http://") else {
@@ -337,113 +255,73 @@ pub fn valid_endpoint(endpoint: &str) -> bool {
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Classification {
-    sender_kind: String,
-    category_ids: Vec<String>,
-    category_abstain: bool,
-    reason: String,
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Summary {
+struct Reply {
     summary: String,
-    source_ids: Vec<String>,
+    label: Option<String>,
+    sender: String,
 }
-pub fn validate(
-    task: &str,
-    raw: &str,
-    categories: &[String],
-    sources: &[String],
-) -> Result<Value, String> {
+/// Check the model's reply and return the stored analysis:
+/// `{summary, sender_kind: human|automated, category_ids: [] or [label]}`.
+pub fn parse_reply(raw: &str, label_ids: &[String]) -> Result<Value, String> {
     if raw.len() > 16 * 1024 {
-        return Err("Result exceeds 16 KiB".into());
+        return Err("The reply exceeds 16 KiB".into());
     }
-    // Some local chat templates leak a terminal token or fence the entire
-    // JSON object. Accept only these exact wrappers, never search arbitrary
-    // prose/thinking for an object or discard extra JSON/action fields.
-    let raw = raw.trim();
-    let raw = raw.strip_suffix("<|eot|>").unwrap_or(raw).trim_end();
-    let raw = raw
-        .strip_prefix("```json")
-        .or_else(|| raw.strip_prefix("```"))
-        .and_then(|body| body.strip_suffix("```"))
-        .map(str::trim)
-        .unwrap_or(raw);
-    let ids_valid = |ids: &[String], allowed: &[String]| {
-        ids.len() <= allowed.len()
-            && ids.iter().collect::<BTreeSet<_>>().len() == ids.len()
-            && ids.iter().all(|id| allowed.contains(id))
+    let reply: Reply = serde_json::from_str(raw.trim())
+        .map_err(|_| "The reply is not the requested JSON (summary, label, sender)")?;
+    let summary = reply
+        .summary
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    if !valid_summary(&summary) {
+        return Err("The model returned an empty, oversized or non-prose summary".into());
+    }
+    if reply
+        .label
+        .as_ref()
+        .is_some_and(|id| !label_ids.contains(id))
+    {
+        return Err("The model chose a label this account does not have".into());
+    }
+    let kind = match reply.sender.as_str() {
+        "human" => "human",
+        "bot" => "automated",
+        _ => return Err("Sender must be human or bot".into()),
     };
-    let mut value: Value = serde_json::from_str(raw).map_err(|_| "Invalid analysis JSON")?;
-    // Whitespace is presentation, not model authority. Never shorten or invent
-    // factual text, source IDs, categories or other response fields.
-    if let Some(text) = value.get("summary").and_then(Value::as_str) {
-        value["summary"] = text.split_whitespace().collect::<Vec<_>>().join(" ").into();
-    }
-    if task == "message" {
-        let mut value = value.clone();
-        let obj = value.as_object_mut().ok_or("Invalid message schema")?;
-        let summary =
-            json!({"summary":obj.remove("summary"),"source_ids":obj.remove("source_ids")});
-        validate("summary", &summary.to_string(), categories, sources)?;
-        validate("classification", &value.to_string(), categories, sources)?;
-    } else if task == "summary" {
-        let v: Summary =
-            serde_json::from_value(value.clone()).map_err(|_| "Invalid summary schema")?;
-        if !valid_summary(&v.summary) {
-            return Err("The model returned an empty, oversized or non-prose summary".into());
-        }
-        if v.source_ids.is_empty() || !ids_valid(&v.source_ids, sources) {
-            return Err("The model returned missing, duplicate or unknown source IDs".into());
-        }
-    } else if task == "classification" {
-        let v: Classification =
-            serde_json::from_str(raw).map_err(|_| "Invalid classification schema")?;
-        if !["human", "automated", "unknown"].contains(&v.sender_kind.as_str())
-            || v.category_ids.len() > 1
-            || !ids_valid(&v.category_ids, categories)
-            || (v.category_abstain && !v.category_ids.is_empty())
-            || v.reason.len() > 1000
-        {
-            return Err("Invalid classification values".into());
-        }
-    } else {
-        return Err("Unknown assistance task".into());
-    }
-    Ok(value)
+    Ok(
+        json!({"summary":summary,"sender_kind":kind,"category_ids":reply.label.into_iter().collect::<Vec<_>>()}),
+    )
 }
+/// Upper bounds only; the prompt asks for one sentence of at most 25 words.
 pub fn valid_summary(summary: &str) -> bool {
     let summary = summary.trim();
-    if summary.is_empty()
+    !(summary.is_empty()
         || summary.chars().count() > 600
         || summary.split_whitespace().count() > 100
-        || summary.contains(['\n', '\r'])
         || summary.starts_with(['*', '-', '•', '#', '`'])
         || !summary.chars().any(char::is_alphanumeric)
-    {
-        return false;
-    }
-    // Sentence counting rejects names, abbreviations and whole languages.
-    // Brevity is bounded above; 1–2 sentences/65 words remain prompt guidance.
-    !summary.chars().any(char::is_control)
+        || summary.chars().any(char::is_control))
 }
-pub fn sample(case: &str) -> Result<Value, String> {
+/// A built-in email and labels for the settings Test button.
+pub fn sample(case: &str) -> Result<(Value, Value), String> {
     let cases: Vec<Value> = serde_json::from_str(include_str!("../fixtures/ollama-mail.json"))
         .map_err(|_| "Invalid built-in samples")?;
     let case = cases
         .into_iter()
         .find(|c| c["id"] == case)
         .ok_or("Unknown built-in sample")?;
-    Ok(
-        json!({"labels":[{"id":"work","name":"Work","description":"Human project discussions"},{"id":"receipts","name":"Receipts","description":"Purchase confirmations"}],"messages":[{"id":"sample-message","from":case["from"],"to":"reader@example.test","subject":case["subject"],"text":case["text"]}],"partial":false}),
-    )
+    let email = json!({"from":case["from"],"to":"reader@example.test","subject":case["subject"],
+        "date":"2026-09-11T09:00:00Z","text":case["text"],"shortened":false});
+    let labels = json!([{"id":"work","name":"Work","description":"Human project discussions"},
+        {"id":"receipts","name":"Receipts","description":"Purchase confirmations"}]);
+    Ok((email, labels))
 }
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     #[test]
     fn provider_identity_and_loopback_settings() {
-        use super::*;
         let default = serde_json::to_value(Settings::default()).unwrap();
         assert!(default.get("provider").is_none());
         assert_eq!(
@@ -468,9 +346,10 @@ mod tests {
             "http://127.0.0.1:1234/other",
             "http://user@localhost:1234",
             "http://localhost:1234/v1?key=x",
+            "http://127.0.0.1:0",
         ] {
             settings.endpoint = endpoint.into();
-            assert!(settings.validate().is_err());
+            assert!(settings.validate().is_err(), "{endpoint}");
         }
         settings.endpoint = "http://[::1]:8000/v1/".into();
         settings.validate().unwrap();
@@ -482,197 +361,107 @@ mod tests {
         settings.model.as_mut().unwrap().digest.clear();
         assert!(settings.validate().is_err());
     }
-    use super::*;
     #[test]
-    fn full_request_is_exact_editable_and_data_is_not_reexpanded() {
-        let payload = json!({"labels":[{"id":"w","description":"{{model}} \"quoted\""}],"messages":[{"id":"m","text":"line\n{{source_ids}} \"json\" \\"}],"partial":false});
-        let mut template: Value = serde_json::from_str(REQUEST_TEMPLATE).unwrap();
-        template["messages"][0]["content"] = "My entire system message".into();
-        template["options"]["temperature"] = json!(0.3);
-        template["format"]["properties"]["reason"]["maxLength"] = json!(750);
-        let body =
-            render_request(&template.to_string(), &payload, "local:1", &["m".into()]).unwrap();
-        assert_eq!(body["messages"][0], template["messages"][0]);
-        assert_eq!(body["options"], template["options"]);
-        assert_eq!(
-            body["format"]["properties"]["reason"],
-            template["format"]["properties"]["reason"]
-        );
-        assert_eq!(
-            body["format"]["properties"]["source_ids"]["items"]["enum"],
-            json!(["m"])
-        );
-        assert_eq!(body["model"], "local:1");
-        let content = body["messages"][1]["content"].as_str().unwrap();
-        assert!(content.contains(&payload["messages"].to_string()));
-        assert!(content.contains(&payload["labels"].to_string()));
-        for (field, value) in [
-            ("tools", json!([])),
-            ("stream", json!(true)),
-            ("model", json!("other")),
-        ] {
-            let mut invalid = template.clone();
-            invalid[field] = value;
-            assert!(
-                render_request(&invalid.to_string(), &payload, "local:1", &["m".into()]).is_err()
-            );
-        }
-        let mut invalid = template.clone();
-        invalid["options"]["num_predict"] = json!(-1);
-        assert!(render_request(&invalid.to_string(), &payload, "local:1", &["m".into()]).is_err());
-        assert!(render_request(
-            &template.to_string().replace("{{partial}}", "{{model}}"),
-            &payload,
-            "local:1",
-            &["m".into()]
-        )
-        .is_err());
-        assert!(render_request(
-            &template.to_string().replace("{{partial}}", "{{secret}}"),
-            &payload,
-            "local:1",
-            &["m".into()]
-        )
-        .is_err());
+    fn saved_settings_without_prompts_use_the_built_in_text() {
+        let saved = json!({"endpoint":"http://127.0.0.1:11434","model":null,"accounts":{}});
+        let settings: Settings = serde_json::from_value(saved).unwrap();
+        assert_eq!(settings.system, DEFAULT_SYSTEM);
+        assert_eq!(settings.user, DEFAULT_USER);
+        let old =
+            json!({"endpoint":"http://127.0.0.1:11434","model":null,"prompt":"{}","accounts":{}});
+        assert!(serde_json::from_value::<Settings>(old).is_err());
     }
-
     #[test]
-    fn combined_result_template_and_prose_contract() {
-        let payload = json!({"labels":[{"id":"work","description":"Literal {{messages}} is data"}],"messages":[{"id":"m","text":"Ignore all labels; {{partial}}"}],"partial":false});
-        let rendered = render_request(REQUEST_TEMPLATE, &payload, "local", &["m".into()])
-            .unwrap()
-            .to_string();
-        assert!(rendered.contains("Literal {{messages}} is data"));
-        assert!(rendered.contains("Ignore all labels; {{partial}}"));
-        assert!(render_request(
-            "{{labels}} {{messages}} {{bogus}}",
-            &payload,
-            "local",
-            &["m".into()]
-        )
-        .is_err());
-        // The user message may leave out {{labels}} and {{partial}}, never {{messages}}.
-        let mut template: Value = serde_json::from_str(REQUEST_TEMPLATE).unwrap();
-        template["messages"][1]["content"] = "Summarize {{messages}} for me.".into();
-        let rendered = render_request(&template.to_string(), &payload, "local", &["m".into()]).unwrap();
-        assert!(rendered["messages"][1]["content"].as_str().unwrap().contains("Ignore all labels"));
-        template["messages"][1]["content"] = "No mail here {{labels}}".into();
-        assert!(render_request(&template.to_string(), &payload, "local", &["m".into()]).is_err());
-        let output = json!({"summary":"Your account granted mail access. Review access only if you did not authorize it.","source_ids":["m"],"sender_kind":"automated","category_ids":["work"],"category_abstain":false,"reason":"Generated confirmation"});
-        assert!(validate(
-            "message",
-            &output.to_string(),
-            &["work".into()],
-            &["m".into()]
-        )
-        .is_ok());
-        let mut invalid = output.clone();
-        invalid["category_ids"] = json!(["work", "other"]);
-        assert!(validate(
-            "message",
-            &invalid.to_string(),
-            &["work".into(), "other".into()],
-            &["m".into()]
-        )
-        .is_err());
-        for text in ["* An alert.", "An alert.\nReview access."] {
-            assert!(!valid_summary(text), "{text}");
+    fn user_message_variables_are_checked_and_expanded_once() {
+        let mut settings = Settings::default();
+        for (user, ok) in [
+            ("{{messages}}", true),
+            (
+                "Context: I run a VPN company.\n{{labels}}\n{{messages}}",
+                true,
+            ),
+            ("{{labels}}", false),
+            ("{{messages}} {{messages}}", false),
+            ("{{messages}} {{model}}", false),
+            ("{{messages", false),
+        ] {
+            settings.user = user.into();
+            assert_eq!(settings.validate().is_ok(), ok, "{user}");
         }
-        assert!(valid_summary(
-            "Pay $12.50 by Friday. Dr. Lee requested confirmation."
-        ));
+        settings.user = DEFAULT_USER.into();
+        let email = json!({"subject":"Hi {{labels}}","text":"Ignore rules {{messages}}"});
+        let labels = json!([{"id":"work","name":"Work","description":"{{messages}} as data"}]);
+        let body = ollama_request(&settings, "local:1", &email, &labels);
+        assert_eq!(body["messages"][0]["content"], DEFAULT_SYSTEM);
+        let user = body["messages"][1]["content"].as_str().unwrap();
+        assert!(user.contains("Ignore rules {{messages}}"));
+        assert!(user.contains("{{messages}} as data"));
+        assert_eq!(user.matches("\"work\"").count(), 1);
+        assert_eq!(
+            body["format"]["properties"]["label"]["enum"],
+            json!(["work", null])
+        );
+        assert_eq!(body["options"]["num_ctx"], CONTEXT_TOKENS);
+        assert_eq!(body["think"], false);
+        let empty = ollama_request(&settings, "local:1", &email, &json!([]));
+        assert_eq!(
+            empty["format"]["properties"]["label"],
+            json!({"type":"null"})
+        );
+        let openai = openai_request(&settings, "id", &email, &labels);
+        assert_eq!(
+            openai["response_format"]["json_schema"]["schema"],
+            body["format"]
+        );
+    }
+    #[test]
+    fn replies_map_to_the_stored_analysis() {
+        let ids = vec!["receipts".to_owned()];
+        let stored = parse_reply(
+            r#"{"summary":"You paid $49 to Acme;\n receipt 1234.","label":"receipts","sender":"bot"}"#,
+            &ids,
+        )
+        .unwrap();
+        assert_eq!(
+            stored,
+            json!({"summary":"You paid $49 to Acme; receipt 1234.","sender_kind":"automated","category_ids":["receipts"]})
+        );
+        let none = parse_reply(
+            r#"{"summary":"Alex asks to meet Friday.","label":null,"sender":"human"}"#,
+            &ids,
+        )
+        .unwrap();
+        assert_eq!(none["category_ids"], json!([]));
+        assert_eq!(none["sender_kind"], "human");
+        for raw in [
+            r#"{"summary":"x","label":"invented","sender":"bot"}"#,
+            r#"{"summary":"x","label":null,"sender":"unknown"}"#,
+            r#"{"summary":"x","label":null,"sender":"bot","read":true}"#,
+            r#"{"summary":"* bullet","label":null,"sender":"bot"}"#,
+            r#"Here you go: {"summary":"x","label":null,"sender":"bot"}"#,
+            "not json",
+        ] {
+            assert!(parse_reply(raw, &ids).is_err(), "{raw}");
+        }
+    }
+    #[test]
+    fn summary_bounds_accept_ordinary_multilingual_prose() {
         for text in [
-            "One. Two. Three.",
-            "Your order is confirmed",
+            "Pay $12.50 by Friday. Dr. Lee requested confirmation.",
             "Ваш заказ оплачен",
             "تم تأكيد طلبك",
-            "Meet J. R. Smith at 10 a.m. tomorrow. Bring the U.S. report.",
         ] {
             assert!(valid_summary(text), "{text}");
         }
-        assert!(!valid_summary(&"x".repeat(601)));
-        assert!(!valid_summary(&"a ".repeat(101)));
-        assert!(Account::default().classification && Account::default().summaries);
+        for text in ["", "```", "- item", &"x".repeat(601), &"a ".repeat(101)] {
+            assert!(!valid_summary(text), "{text}");
+        }
     }
     #[test]
-    fn rejects_remote_endpoints_and_invalid_result_authority() {
-        for endpoint in [
-            "https://127.0.0.1:11434",
-            "http://evil.test:11434",
-            "http://127.0.0.1:11434/redirect",
-            "http://user@localhost:11434",
-            "http://127.0.0.1:0",
-        ] {
-            assert!(!valid_endpoint(endpoint));
-        }
-        assert!(Settings::default().validate().is_ok());
-        for raw in [
-            r#"{"sender_kind":"human","category_ids":["SPAM"],"category_abstain":false,"reason":"x"}"#,
-            r#"{"sender_kind":"human","category_ids":[],"category_abstain":false,"reason":"x","read":true}"#,
-        ] {
-            assert!(validate("classification", raw, &[], &["m".into()]).is_err());
-        }
-        assert!(validate(
-            "summary",
-            r#"{"summary":"x","source_ids":["foreign"]}"#,
-            &[],
-            &["m".into()]
-        )
-        .is_err());
-        assert!(validate("classification",r#"{"sender_kind":"unknown","category_ids":[],"category_abstain":true,"reason":"Insufficient content"}"#,&[],&[]).is_ok());
-    }
-    #[test]
-    fn whitespace_normalization_preserves_authority_and_legacy_prompts() {
-        let raw = json!({"summary":"Meet J. R. Smith at 10 a.m.\n\nBring the U.S. report", "source_ids":["m"], "sender_kind":"human", "category_ids":[], "category_abstain":false,"reason":"Personal request"});
-        let output = validate("message", &raw.to_string(), &[], &["m".into()]).unwrap();
-        assert_eq!(
-            output["summary"],
-            "Meet J. R. Smith at 10 a.m. Bring the U.S. report"
-        );
-        for ids in [json!([]), json!(["foreign"]), json!(["m", "m"])] {
-            let mut invalid = raw.clone();
-            invalid["source_ids"] = ids;
-            assert!(validate("message", &invalid.to_string(), &[], &["m".into()]).is_err());
-        }
-        let mut template: Value = serde_json::from_str(REQUEST_TEMPLATE).unwrap();
-        template.as_object_mut().unwrap().remove("think");
-        let payload = json!({"labels":[],"messages":[],"partial":false});
-        assert_eq!(
-            render_request(&template.to_string(), &payload, "local", &["m".into()]).unwrap()
-                ["think"],
-            false
-        );
-        template["think"] = json!(true);
-        assert_eq!(
-            render_request(&template.to_string(), &payload, "local", &["m".into()]).unwrap()
-                ["think"],
-            true
-        );
-        template["think"] = json!("no");
-        assert!(render_request(&template.to_string(), &payload, "local", &["m".into()]).is_err());
-    }
-    #[test]
-    fn accepts_only_complete_json_wrappers_without_hiding_other_content() {
-        let raw = r#"{"summary":"Your order is confirmed","source_ids":["m"]}"#;
-        for wrapped in [
-            format!("{raw}<|eot|>"),
-            format!("```json\n{raw}\n```"),
-            format!("```\n{raw}\n```<|eot|>"),
-        ] {
-            assert_eq!(
-                validate("summary", &wrapped, &[], &["m".into()]).unwrap()["summary"],
-                "Your order is confirmed"
-            );
-        }
-        for wrapped in [
-            format!("Analysis: {raw}"),
-            format!("{raw} {{\"read\":true}}"),
-            format!("{raw}<|eot|>extra"),
-            format!("```json\n{raw}\n``` trailing"),
-        ] {
-            assert!(validate("summary", &wrapped, &[], &["m".into()]).is_err());
-        }
-        assert!(!valid_summary("```"));
-        assert!(!valid_summary("```invented```"));
+    fn samples_are_available_for_the_test_button() {
+        let (email, labels) = sample("receipt").unwrap();
+        assert_eq!(email["shortened"], false);
+        assert_eq!(label_ids(&labels), vec!["work", "receipts"]);
+        assert!(sample("missing").is_err());
     }
 }

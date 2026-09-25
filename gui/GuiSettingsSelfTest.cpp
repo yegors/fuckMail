@@ -194,10 +194,10 @@ void GuiSettingsSelfTest::step() {
     case 7:
         if (!saved() || m_backend.currentAccount()["name"].toString() != m_name) return;
         if (!draftIntact() || !item("accountTab_windscribe")->property("text").toString().startsWith(m_name)) { finish("Account display-name save changed the existing draft or failed to update its tab."); return; }
-        if (!click("settingsPage_Mail")) return;
         ++m_stage; break;
     case 8:
-        if (!item("signature_windscribe")) { click("settingsSignaturesButton"); return; }
+        // Signatures are edited from the account's card.
+        if (!item("signature_windscribe")) { click("editSignature_windscribe"); return; }
         if (!type("signature_windscribe", m_oversizedSignature)) return;
         m_backend.setProperty("selfTestExpectedError", true);
         if (!click("saveSignature_windscribe")) return;
@@ -218,7 +218,7 @@ void GuiSettingsSelfTest::step() {
         if (!type("signature_windscribe", m_signature) || !click("saveSignature_windscribe")) return;
         ++m_stage; break;
     case 11:
-        if (!saved() || m_backend.currentAccount()["signature_text"].toString() != m_signature) return;
+        if (!saved() || m_backend.currentAccount()["signature_text"].toString() != m_signature || item("signature_windscribe")) return;
         if (!draftIntact()) { finish("Changing the default signature changed the existing authored draft."); return; }
         if (!click("settingsPage_Calendar")) return;
         ++m_stage; break;

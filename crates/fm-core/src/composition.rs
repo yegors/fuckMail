@@ -139,6 +139,45 @@ pub(crate) fn validate_routing(routing: &Value) -> Result<()> {
     Ok(())
 }
 
+/// The account signature is ordinary draft text the author can edit or delete.
+/// A new draft starts with two empty lines for the author, then the signature,
+/// then any forwarded text. Nothing is added to it when the message is sent.
+pub(crate) fn signed_body(body: &str, signature: &str) -> String {
+    if signature.trim().is_empty() {
+        body.to_owned()
+    } else if body.is_empty() {
+        format!("\n\n{signature}")
+    } else {
+        format!("\n\n{signature}\n\n{body}")
+    }
+}
+fn escape_html(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+/// Drafts saved before signatures became body text kept theirs apart. Show
+/// that signature at the end of the body; the next save stores it there.
+fn merge_kept_signature(row: &mut Value) {
+    let signature = row["signature_text"].as_str().unwrap_or("").to_owned();
+    if signature.trim().is_empty() || row["discarded"] == true {
+        return;
+    }
+    let body = row["body"].as_str().unwrap_or("");
+    row["body"] = json!(if body.trim().is_empty() {
+        format!("\n\n{signature}")
+    } else {
+        format!("{body}\n\n{signature}")
+    });
+    if let Some(html) = row["body_html"].as_str().filter(|h| !h.is_empty()) {
+        row["body_html"] = json!(format!(
+            "{html}<br><br>{}",
+            escape_html(&signature).replace('\n', "<br>")
+        ));
+    }
+    row["signature_text"] = json!("");
+}
 impl Store {
     #[cfg(test)]
     pub(crate) fn draft(&self, account: &str, cid: &str) -> Result<Value> {
@@ -160,15 +199,23 @@ impl Store {
 
     pub(crate) fn composition(&self, account: &str, p: &Value) -> Result<Value> {
         let (selected, legacy) = selector(p)?;
-        let row = if let Some(row) = self.stored_composition(account, p)? {
+        let row = if let Some(mut row) = self.stored_composition(account, p)? {
+            if row["discarded"] == true {
+                // A discarded draft reopens like a new one, with the current signature.
+                let (_, signature, _) = self.draft_identity(account)?;
+                row["body"] = json!(signed_body("", &signature));
+                row["body_html"] = Value::Null;
+            } else {
+                merge_kept_signature(&mut row);
+            }
             row
         } else if legacy {
             self.require_active_account(account)?;
             let (source, hash, routing, _) = self.legacy_routing(account, selected)?;
             let (name, signature, revision) = self.draft_identity(account)?;
             json!({"draft_id":selected,"conversation_id":selected,"mode":"reply","source_message_id":source,"source_hash":hash,
-                "routing_json":serde_json::to_string(&routing)?,"body":"","body_html":null,"attachments_json":"[]",
-                "revision":0,"discarded":false,"signature_text":signature,"from_name":name,"identity_revision":revision,
+                "routing_json":serde_json::to_string(&routing)?,"body":signed_body("",&signature),"body_html":null,"attachments_json":"[]",
+                "revision":0,"discarded":false,"signature_text":"","from_name":name,"identity_revision":revision,
                 "created_at":0,"updated_at":0,"legacy_reply":true,"origin":"local"})
         } else {
             return Err(err("not_found", "Draft is outside this account"));
@@ -484,8 +531,9 @@ impl Store {
         );
         let (name, signature, identity) = self.draft_identity(account)?;
         let timestamp = now()?;
-        self.db.execute("INSERT INTO drafts(account,draft_id,conversation_id,mode,source_message_id,source_hash,routing_json,body,revision,signature_text,from_name,identity_revision,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,1,?9,?10,?11,?12,?12)",
-            params![account,draft_id,cid,mode,mid,hash,serde_json::to_string(&routing)?,body,signature,name,identity,timestamp])?;
+        let body = signed_body(&body, &signature);
+        self.db.execute("INSERT INTO drafts(account,draft_id,conversation_id,mode,source_message_id,source_hash,routing_json,body,revision,signature_text,from_name,identity_revision,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,1,'',?9,?10,?11,?11)",
+            params![account,draft_id,cid,mode,mid,hash,serde_json::to_string(&routing)?,body,name,identity,timestamp])?;
         self.composition(account, &json!({"draft_id":draft_id}))
     }
 
@@ -577,11 +625,13 @@ impl Store {
             self.validate_draft_attachments(account, &attachments)?;
         }
         if draft["revision"] == 0 || was_discarded {
-            let (name, signature, revision) = self.draft_identity(account)?;
+            let (name, _, revision) = self.draft_identity(account)?;
             draft["from_name"] = json!(name);
-            draft["signature_text"] = json!(signature);
             draft["identity_revision"] = json!(revision);
         }
+        // The signature lives in the body the author saves; a kept separate one
+        // was shown merged into that body and is not added again.
+        draft["signature_text"] = json!("");
         if let Some(signature) = p.get("signature_text") {
             draft["signature_text"] = json!(signature
                 .as_str()

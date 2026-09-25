@@ -1,5 +1,29 @@
 # Current status
 
+**D116 / Spam read live, not synced (2026-09-24):** full sync lists with `-in:spam`, spam that reaches the store is removed, and existing profiles drop stored spam once on open, so "to review", All mail and Downloading stop counting it. The folder menu's Spam lists and opens Gmail's Spam live (headers and snippet, then text on open); CLI `google spam` / `spam-show`. Checks: core `spam_is_never_kept_and_leaving_spam_brings_the_message_back`, engine spam parsing, `gui-mail-selection` Spam listing/open. Not yet tried against the real mailbox.
+
+**D115 / signature is plain draft text (2026-09-24):** new and reopened drafts start with two blank lines and the account signature as ordinary body text; sending adds no "-- " delimiter or second copy, and the composer's signature box is gone. A body holding only the signature does not auto-open the reply box. Accounts meters show their status ("Complete") in full; the bar gives way instead (`gui-mail-selection` checks it). fm-core, fm-mail and the real-engine GUI self-tests (`gui-integration`, `gui-attachments`) are updated for signature-as-body.
+
+**Composer draft status (2026-09-24):** reply and new-message composers no longer show normal Google draft sync ("Saved to Google.") or a standing Check Google button; they show the status and its recovery actions only for a problem. Check: `gui-google-draft-controls` asserts both cases.
+
+**D114 / local model pipeline (2026-09-24):**
+- **Input:** the model reads one email at a time, without its reply chain, including replies written in other languages and in Outlook's format.
+- **Prompts:** the system prompt holds the rules and the user message just carries `{{labels}}`, `{{messages}}` and your notes. The reply is summary, label and sender (human or bot).
+- **Queue:** one queue. Emails you ask for go first, then new mail, then Catch up, newest first. Per-account pause. A downed model holds the queue; an email that fails twice waits for Try again. There is one request per email.
+- **Checks:** the end-to-end script, the affected crates and native tests pass, and a real-model check on gemma4 and qwen 27B. The remaining full-suite failures come from the signature work in progress.
+- **Not verified:** a real-mailbox queue run and other hosts.
+
+[Decision](decisions.md) · [Evidence](research/local-assistance-execution.md#d114--local-model-pipeline-2026-09-24).
+
+**D113 / signatures on the card, Image loading (2026-09-24):**
+- **Signatures:** edited from a Signature row on each account's card, in their own window.
+- **Image loading:** Settings → Mail's image section is now Image loading, with a proxy switch, proxy fields shown only when on, Test and Save, and the image cache.
+- **Review fixes:** stage rows follow the scopes Google granted; the ring stays honest while mail is counted; the Local LLM page adopts settings saved elsewhere; each card shows only its own policy error.
+- **Checks:** affected native tests pass.
+- **Not run:** the full suite and a release build, because the engine is mid-refactor in another session.
+
+[Decision](decisions.md).
+
 **D112 / seventh export (2026-09-24):**
 - **Accounts:** each card now shows the account's Download and Local model stages with meters, counts, estimates and one status line. The model row has Summarize and Label chips, Catch up and its own pause.
 - **Top bar:** tabs use the account colour, with a download or model ring, a red disconnected dot and a hover card. The sync button shows the time only.
@@ -7,7 +31,7 @@
 - **Labels and Settings:** labels moved to a modal on the card. Every Settings section shares one 880 px column with a one-line subtitle.
 - **Local LLM:** renamed from Local model. It has a Test run with timing, and separate System prompt and User message boxes with Restore, Cancel and Save.
 - **Engine:** `assist_progress`, the per-account model pause and sync hold, sample-test timing, account colours and calendar event counts, with CLI parity.
-- **Checks:** new Core, engine and native tests, offscreen and real-app captures compared with the export. See the research record for the full CTest result.
+- **Checks:** new Core, engine and native tests, offscreen and real-app captures compared with the export. Full CTest 35/36; the failure is the known intermittent `gui-html-view` hover check.
 - **Not verified:** a real account's first sync, and the tab ring captured while running.
 
 [Research record](research/prototype-september-23.md#d112--seventh-export-2026-09-24).

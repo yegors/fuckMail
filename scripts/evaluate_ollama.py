@@ -25,7 +25,7 @@ def main():
                        'crates/fm-assist/fixtures/ollama-mail.json').read_text(encoding='utf-8'))
     with tempfile.TemporaryDirectory(prefix='fm-local-evaluation-') as tmp, open(args.output, 'w', encoding='utf-8') as output:
         profile = pathlib.Path(tmp) / 'profile'
-        profile.mkdir()
+        profile.mkdir(mode=0o700)
         with open(pathlib.Path(tmp) / 'engine.log', 'w') as log:
             process = subprocess.Popen([str(engine), '--profile', str(profile), '--demo-profile'], stdout=log, stderr=log)
             client = None

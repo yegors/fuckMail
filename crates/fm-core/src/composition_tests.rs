@@ -229,7 +229,8 @@ fn composition_new_draft_capture_and_restart_never_manufacture_received_mail() {
         "draft_discard",
         json!({"draft_id":id,"expected_revision":3,"request_id":"discard-new"}),
     );
-    assert_eq!(discarded["body"], "");
+    // It reopens like a new draft: blank lines, then the current signature.
+    assert_eq!(discarded["body"], "\n\nChanged default");
     assert_eq!(discarded["discarded"], true);
     assert_eq!(
         call(&mut store, "drafts", json!({"query":"release"}))["total"],
@@ -252,7 +253,7 @@ fn composition_new_draft_capture_and_restart_never_manufacture_received_mail() {
             "draft_get",
             json!({"conversation_id":"windscribe-thread-003"})
         )["body"],
-        "I will review the rollout window and confirm the timing."
+        "I will review the rollout window and confirm the timing.\n\n—\nWindscribe"
     );
 }
 
