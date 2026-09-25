@@ -1,5 +1,9 @@
 # Core and storage
 
+## D117 — Inbox counts (Core65)
+
+`accounts` rows and `account_counts` add `inbox_review_count` (conversations with an Inbox member, unread) and `inbox_held_count` (the same, starred), matching the Inbox's review and held groups. Trash and archived mail are left out. The existing all-mail counts and `count_scope` are unchanged. Consumers: Mail UI84, CLI (printed as received).
+
 ## D116 — no stored spam (Core64)
 
 `account_retention::purge_messages` is the shared local removal of listed messages and their FTS rows, categories, attachments, provider state, intents, sender kinds, model results, mail receipts, coverage and empty conversations; blobs go through startup cleanup. Retention and spam both use it. `forget_spam` applies it to one remote message (live publication of a `Spam` item) or to every stored message whose provider labels include SPAM (`forget_stored_spam`, once per profile at open, meta `spam_forgotten`), skipping messages used by an active draft or pending mail change. Consumers: Gmail28, Mail UI83, Search, Local assistance.

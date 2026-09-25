@@ -291,7 +291,7 @@ impl Store {
                 |r| r.get(0),
             )?;
             let color = crate::preferences::account_color(&self.db, &account)?;
-            out.push(json!({"color":color,"calendar_events":calendar_events,"metadata_revision":metadata_revision,"unread_conversation_count":counts["unread_conversation_count"],"held_conversation_count":counts["held_conversation_count"],"done_conversation_count":counts["done_conversation_count"],"count_scope":"all_account_mail_including_archive","id":account,"name":name,"email":email,"provider":provider,"signature_text":signature_text,"unread_count":unread,"starred_count":starred,"conversation_count":count,"message_count":messages,"coverage":self.coverage(&account)?}));
+            out.push(json!({"color":color,"calendar_events":calendar_events,"metadata_revision":metadata_revision,"unread_conversation_count":counts["unread_conversation_count"],"held_conversation_count":counts["held_conversation_count"],"done_conversation_count":counts["done_conversation_count"],"inbox_review_count":counts["inbox_review_count"],"inbox_held_count":counts["inbox_held_count"],"count_scope":"all_account_mail_including_archive","id":account,"name":name,"email":email,"provider":provider,"signature_text":signature_text,"unread_count":unread,"starred_count":starred,"conversation_count":count,"message_count":messages,"coverage":self.coverage(&account)?}));
             out.last_mut().unwrap()["mail_retention"] = json!(mail_retention);
             out.last_mut().unwrap()["mail_since"] = json!(mail_since);
             let oldest: Option<String> = self.db.query_row(
@@ -505,6 +505,11 @@ impl Store {
         let unread = states.values().filter(|s| s.unread).count();
         let held = states.values().filter(|s| s.starred).count();
         let done = states.values().filter(|s| !s.unread && !s.starred).count();
+        // What the Inbox's To review and Delayed sections hold: Trash and
+        // archived mail are not waiting on the person.
+        let inbox = || states.values().filter(|s| s.folders & 2 != 0);
+        let inbox_review = inbox().filter(|s| s.unread).count();
+        let inbox_held = inbox().filter(|s| s.starred).count();
         let mut totals = [0usize; 5];
         for state in states.values() {
             for (index, count) in totals.iter_mut().enumerate() {
@@ -513,7 +518,7 @@ impl Store {
         }
         let folders = (totals[0], totals[1], totals[2], totals[3], totals[4]);
         Ok(
-            json!({"folder_conversation_counts":{"all":folders.0,"inbox":folders.1,"sent":folders.2,"trash":folders.3,"received":folders.4},"conversation_count":states.len(),"unread_conversation_count":unread,"held_conversation_count":held,"done_conversation_count":done,"scope":"all_account_mail_including_archive","held_includes_unread":true}),
+            json!({"folder_conversation_counts":{"all":folders.0,"inbox":folders.1,"sent":folders.2,"trash":folders.3,"received":folders.4},"conversation_count":states.len(),"unread_conversation_count":unread,"held_conversation_count":held,"done_conversation_count":done,"inbox_review_count":inbox_review,"inbox_held_count":inbox_held,"scope":"all_account_mail_including_archive","held_includes_unread":true}),
         )
     }
     fn coverage(&self, account: &str) -> Result<Value> {
@@ -1700,6 +1705,30 @@ pub(crate) fn search_matches_sql_with(search: bool, p: &Value, text: &TextPredic
 #[cfg(test)]
 mod projection_tests {
     use super::*;
+    #[test]
+    fn inbox_counts_leave_out_trash_and_archived_mail() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path()).unwrap();
+        store.db.execute("UPDATE messages SET unread=0,starred=0,inbox=1,sent=0,trashed=0 WHERE account='windscribe'", []).unwrap();
+        let ids: Vec<String> = {
+            let mut statement = store.db.prepare("SELECT DISTINCT conversation_id FROM messages WHERE account='windscribe' ORDER BY conversation_id LIMIT 4").unwrap();
+            let rows = statement.query_map([], |r| r.get(0)).unwrap().collect::<std::result::Result<_, _>>().unwrap();
+            rows
+        };
+        for (id, update) in ids.iter().zip([
+            "unread=1",
+            "unread=1,inbox=0",
+            "unread=1,trashed=1",
+            "starred=1,trashed=1",
+        ]) {
+            store.db.execute(&format!("UPDATE messages SET {update} WHERE account='windscribe' AND conversation_id=?1"), [id]).unwrap();
+        }
+        let counts = store.compute_account_counts("windscribe").unwrap();
+        assert_eq!(counts["inbox_review_count"], 1);
+        assert_eq!(counts["inbox_held_count"], 0);
+        assert_eq!(counts["unread_conversation_count"], 3);
+        assert_eq!(counts["held_conversation_count"], 1);
+    }
     #[test]
     fn received_scope_excludes_sent_only_and_trashed_members_but_keeps_full_threads() {
         let dir = tempfile::tempdir().unwrap();

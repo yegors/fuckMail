@@ -1,5 +1,10 @@
 # Mail UI, reader and human composer
 
+## D117 — one To review, one Delayed (Mail UI84)
+
+- "To review" and "delayed" in the Inbox header, the account tab badge and hover card, and the all-clear state count only Inbox conversations (`inbox_review_count`, `inbox_held_count`).
+- A conversation read or marked Done while open moves to its new section on the list refresh that follows the change. It stays pinned at its old place only when the view no longer returns it, such as under an unread filter. Sections therefore never repeat.
+
 ## D116 — Spam view (Mail UI83)
 
 - The folder menu lists All mail, Trash and Spam; the folder button reads "Spam" while it is open.

@@ -246,7 +246,7 @@ ApplicationWindow {
                                 id: accountTab
                                 objectName: "accountTab_" + modelData.id
                                 readonly property var pipeline: accountProgress.view(modelData.id)
-                                property int reviewCount: modelData.unread_conversation_count || 0
+                                property int reviewCount: (modelData.inbox_review_count ?? modelData.unread_conversation_count) || 0
                                 readonly property string badgeText: reviewCount > 0 ? String(reviewCount) : ""
                                 readonly property real naturalWidth: 20 + 22 + 7 + accountName.implicitWidth
                                     + (badgeText.length ? accountCount.implicitWidth + 7 : 0)

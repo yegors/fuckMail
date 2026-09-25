@@ -820,14 +820,14 @@ Item {
                             visible: !mail.spamMode
                             spacing: 6; Layout.alignment: Qt.AlignBottom; Layout.bottomMargin: 2
                             FmIcon { name: mail.draftsMode ? "edit" : backend.folder === "sent" ? "arrowRight" : "review"; size: 13; color: Theme.muted }
-                            Text { text: mail.draftsMode ? backend.conversations.length : backend.folder === "sent" ? mail.sentThisWeek : backend.currentAccount.unread_conversation_count||0; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium }
+                            Text { text: mail.draftsMode ? backend.conversations.length : backend.folder === "sent" ? mail.sentThisWeek : (backend.currentAccount.inbox_review_count ?? backend.currentAccount.unread_conversation_count)||0; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium }
                             Text { visible: leftPane.width>570 || backend.folder !== "inbox"; text: mail.draftsMode ? (backend.conversations.length === 1 ? "draft" : "drafts") : backend.folder === "sent" ? "sent this week" : "to review"; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5) }
                         }
                         RowLayout {
                             visible: backend.folder === "inbox"
                             spacing: 6; Layout.leftMargin: 2; Layout.alignment: Qt.AlignBottom; Layout.bottomMargin: 2
                             FmIcon { name: "clock"; size: 13; color: Theme.muted }
-                            Text { text: backend.currentAccount.held_conversation_count||0; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium }
+                            Text { text: (backend.currentAccount.inbox_held_count ?? backend.currentAccount.held_conversation_count)||0; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5); font.weight: Font.Medium }
                             Text { visible: leftPane.width>570; text: "delayed"; color: Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12.5) }
                         }
                     }
@@ -1540,7 +1540,7 @@ Item {
                     Column {
                         id: emptyReader
                         objectName: "emptyReader"
-                        readonly property bool clear: backend.folder === "inbox" && !mail.filtering && backend.accounts.length > 0 && (backend.currentAccount.unread_conversation_count || 0) === 0 && (backend.currentAccount.held_conversation_count || 0) === 0
+                        readonly property bool clear: backend.folder === "inbox" && !mail.filtering && backend.accounts.length > 0 && ((backend.currentAccount.inbox_review_count ?? backend.currentAccount.unread_conversation_count) || 0) === 0 && ((backend.currentAccount.inbox_held_count ?? backend.currentAccount.held_conversation_count) || 0) === 0
                         readonly property var nextEvent: (backend.todayEvents || []).find(function(e) { return !e.all_day && e.start_hour > backend.nowHour }) || null
                         visible: mail.members.length===0 && !mail.replyOpen && !mail.collapsedDraftVisible; x: readerPane.margin; y: 8 + Math.round((mail.ApplicationWindow.window ? mail.ApplicationWindow.window.height : readerPane.height) * 0.18); width: Math.min(640, parent.width-readerPane.margin*2); spacing: 0
                         FmIcon { visible: emptyReader.clear && !backend.loading; name: "checkCircle"; size: 28; color: Theme.accent }

@@ -1175,3 +1175,12 @@ The founder started a 90-day sync of a personal mailbox with about 2,000 unread 
 
 Gmail28, Core64, Mail UI83, CLI49; schema36, fixtures0/3, protocol1 (additive) and readiness0/9 unchanged.
 
+## D117 — To review counts the Inbox; a read conversation moves at once (2026-09-25T01:09:36Z)
+
+The founder: "trash is trash and 'to review' should only include inbox". A conversation opened from To review also stayed there, at its old place, until the view changed. New mail arriving meanwhile split the Inbox into repeated To review and Delayed sections. Visiting Sent and returning repaired it. There can be only one To review and one Delayed section, and conversations leave them as soon as they are read or marked Done.
+
+- **Counts.** Accounts rows and `account_counts` add `inbox_review_count` and `inbox_held_count`: conversations with an Inbox member that are unread or starred, the same test the Inbox sections use. The top-bar badge, account hover card, Inbox header ("to review", "delayed") and the all-clear message use them. The all-mail `unread_conversation_count`/`held_conversation_count` stay for the CLI and fixtures.
+- **Open conversation.** The row kept in place while open (D014's pin) now applies only when the refreshed view no longer returns that conversation, such as under an unread filter. When the view still returns it, it takes its new section and position right away.
+
+Core65, Mail UI84; schema36, fixtures0/3, protocol1 (additive) and readiness0/9 unchanged.
+

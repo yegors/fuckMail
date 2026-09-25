@@ -58,8 +58,8 @@ Rectangle {
                 Text { text: (card.row.email || "") + (card.pipeline.err ? " · disconnected" : ""); Layout.fillWidth: true; elide: Text.ElideRight; color: Theme.inkAlpha(.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) } }
             }
             Text {
-                readonly property int review: card.row.unread_conversation_count || 0
-                readonly property int held: card.row.held_conversation_count || 0
+                readonly property int review: (card.row.inbox_review_count ?? card.row.unread_conversation_count) || 0
+                readonly property int held: (card.row.inbox_held_count ?? card.row.held_conversation_count) || 0
                 Layout.alignment: Qt.AlignTop
                 text: (review ? review + " to review" : "All reviewed") + (held ? " · " + held + " delayed" : "")
                 color: Theme.inkAlpha(.5); font { family: Theme.fontFamily; pointSize: Theme.fontPoints(12) }

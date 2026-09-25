@@ -135,6 +135,23 @@ class MailSelectionTest {
         filing.rows.removeFirst(); filing.finish(archive);
         await([&]{return !filing.backend.m_mutatingConversation && !filing.backend.m_loading;},"filing refreshes Inbox");
         require(filing.backend.m_pinnedRow.isEmpty() && filing.backend.conversations().size()==2,"archived selected row cannot remain pinned in Inbox");
+        Harness reading;
+        // Opened and read: the refreshed Inbox returns it as Done, so it moves there
+        // at once instead of staying in To review at its old place.
+        reading.backend.m_folder="inbox"; reading.backend.m_selected="a";
+        reading.backend.m_pinnedRow=reading.rows[0].toMap(); reading.backend.m_pinnedIndex=0;
+        auto read=reading.rows[0].toMap(); read["group"]="done"; read["unread"]=false; reading.rows.removeFirst(); reading.rows.append(read);
+        reading.backend.loadConversations(false,true);
+        await([&]{return !reading.backend.m_loading && reading.backend.conversations().size()==3 && reading.backend.conversations().last().toMap()["id"]=="a";},"read conversation refreshes into Done");
+        {
+            QStringList sections; for (const auto &row:reading.backend.conversations()) sections.append(row.toMap()["section"].toString());
+            require(!reading.backend.conversations().last().toMap()["pinned"].toBool() && sections.count("review")==2 && sections.indexOf("review")==0 && sections.lastIndexOf("review")==1,
+                "a read conversation leaves To review at once and sections are not split");
+        }
+        // Still open but no longer in this view's results: it stays where it was.
+        reading.rows.removeLast(); reading.backend.loadConversations(false,true);
+        await([&]{return !reading.backend.m_loading && reading.backend.conversations().size()==3;},"filtered-out open conversation is kept");
+        require(reading.backend.conversations().first().toMap()["pinned"].toBool(),"an open conversation the view no longer returns stays in place");
     }
     static void undoActions() {
         Harness h;

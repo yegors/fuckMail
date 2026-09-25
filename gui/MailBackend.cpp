@@ -811,11 +811,13 @@ void MailBackend::loadConversationPage(const QString &account, int generation, Q
                 }
                 const auto previous = m_conversations;
                 const auto previousNext = m_nextOffset;
-                if (m_pinnedIndex >= 0 && !m_pinnedRow.isEmpty()) {
+                // A conversation read or filed while open moves to its new section
+                // at once. It is kept in place only when this view no longer
+                // returns it (such as an unread filter), so the open row stays.
+                const bool returned = std::any_of(collected.cbegin(), collected.cend(),
+                    [this](const QVariant &row) { return row.toMap().value("id").toString() == m_selected; });
+                if (m_pinnedIndex >= 0 && !m_pinnedRow.isEmpty() && !returned) {
                     auto pinned = m_pinnedRow;
-                    for (qsizetype i = collected.size(); i-- > 0;) {
-                        if (collected[i].toMap()["id"].toString() == m_selected) { pinned = collected[i].toMap(); collected.removeAt(i); }
-                    }
                     pinned["display_group"] = m_pinnedRow.value("display_group", m_pinnedRow["group"]); pinned["pinned"] = true;
                     collected.insert(qMin(m_pinnedIndex, int(collected.size())), pinned);
                 }
