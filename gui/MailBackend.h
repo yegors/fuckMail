@@ -1,6 +1,7 @@
 #pragma once
 #include "ConversationListModel.h"
 
+#include <QColor>
 #include <QObject>
 #include <QElapsedTimer>
 #include <QJsonObject>
@@ -178,6 +179,10 @@ public:
     // or without its end "Fri 25 Sep 15:30". Dates alone are all-day.
     Q_INVOKABLE QString inviteWhen(const QString &start, const QString &end, bool withEnd = true) const;
     Q_INVOKABLE QString calendarDayOf(const QString &start) const;
+    // Search 10 highlighting: [[start, end], ...] where the phrases appear in
+    // `text`, and a tint on a TextEdit's document where they appear.
+    Q_INVOKABLE QVariantList matchRanges(const QString &text, const QStringList &phrases) const;
+    Q_INVOKABLE void markDocument(QObject *textEdit, const QStringList &phrases, const QColor &color) const;
     QVariantMap currentAccount() const;
     QString account() const { return m_account; }
     QString query() const { return m_query; }

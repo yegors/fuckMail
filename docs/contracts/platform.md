@@ -1,6 +1,8 @@
 # Platform, lifecycle and release
 
-State: Draft · Revision: 19 · Updated: 2026-09-24 · Implementation: D105 remote-content runtime and vendored HTML renderer pass Windows checks; Mac and Linux builds, packages and a real proxy remain open. Revision 18's D040/P2-01C setup evidence is unchanged. Whole readiness remains 0/9; historical evidence retains its original source scope.
+State: Draft · Revision: 20 · Updated: 2026-09-25 · Implementation: D130 unsigned Windows installer passes on Windows; the macOS disk image awaits its first Mac run. D105 remote-content runtime and vendored HTML renderer pass Windows checks; Mac and Linux builds, packages and a real proxy remain open. Revision 18's D040/P2-01C setup evidence is unchanged. Whole readiness remains 0/9; historical evidence retains its original source scope.
+
+Revision 20 (D130) makes the package a single file for testers. Windows: a per-user Inno Setup installer (no admin, Start menu entry, uninstaller, upgrade replaces program files, app-local MSVC runtime). macOS: a disk image holding `fuckMail.app` and an Applications shortcut. Linux keeps its archive. Install, upgrade and uninstall never touch profiles. Both are unsigned until Developer ID/notarization and an optional Windows certificate are added. Consumers: developer tooling, CI and Quality; engine, GUI, schema, fixtures and protocol are unchanged.
 
 Revision 19 (D105) adds the engine's remote-content runtime. It is the only code that fetches anything a rendered message refers to; Google API and local-model traffic are outside it.
 - **Requests:** GET only, https origins on port 443. `http://` sources, and redirects to http, are never requested. At most 3 redirects, each rechecked against scheme, destination and blocklist before connecting.

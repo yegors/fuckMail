@@ -1002,6 +1002,14 @@ impl Store {
             .map(|(column, v)| (column, search_query::fold(v)))
             .filter(|(_, v)| search_query::phrase_needs_check(v))
             .collect();
+        // Previews start near the first phrase that can be in the text.
+        let snippet_phrases: Vec<String> = text
+            .phrases
+            .iter()
+            .chain(&text.body)
+            .filter(|v| search_query::tokens(v).next().is_some())
+            .map(|v| search_query::fold(v))
+            .collect();
         // One first page per account bounds this cache independently of the
         // corpus and query history. Mail/source hooks and transaction snapshots
         // invalidate it through the existing search generation; presentation,
@@ -1381,7 +1389,7 @@ impl Store {
             let attachment_count:i64=self.db.prepare_cached("SELECT COUNT(*) FROM messages m JOIN attachments a ON a.account=m.account AND a.message_id=m.id WHERE m.account=?1 AND m.conversation_id=?2")?.query_row(params![account,cid],|r|r.get(0))?;
             let summary = self.local_model_preview(account, cid, selected)?;
             let (others, other_names) = self.conversation_others(account, cid, &sender_email)?;
-            out.push(json!({"others":others,"other_names":other_names,"summary":summary,"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"recipient":recipient,"snippet":search_snippet(&body,&tokens),"latest_at":members.last().unwrap().1,"message_count":members.len(),"attachment_count":attachment_count,"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if source_filtered{matching}else{Vec::<String>::new()}}));
+            out.push(json!({"others":others,"other_names":other_names,"summary":summary,"kind":kind_name(state.kind),"group":group,"id":cid,"subject":subject,"sender_name":sender_name,"sender_email":sender_email,"recipient":recipient,"snippet":search_snippet(&body,&snippet_phrases),"latest_at":members.last().unwrap().1,"message_count":members.len(),"attachment_count":attachment_count,"unread":members.iter().any(|m|m.2),"starred":members.iter().any(|m|m.3),"revision":revision,"categories":categories,"message_ids":members.iter().map(|m|m.0.clone()).collect::<Vec<_>>(),"matching_message_ids":if source_filtered{matching}else{Vec::<String>::new()}}));
         }
         // Newest month first; conversations without a date sort last.
         let done_months = month_zone.map(|_| {
@@ -1586,16 +1594,14 @@ fn number(p: &Value, key: &str, default: i64, min: i64, max: i64) -> Result<i64>
 
 /// A row's preview: readable text (HTML source becomes its text) without web
 /// addresses, starting near the first search token.
-fn search_snippet(body: &str, tokens: &[&str]) -> String {
+fn search_snippet(body: &str, phrases: &[String]) -> String {
     let body = fm_mail::preview::preview_source(body);
-    let lower = body.to_lowercase();
-    let position = tokens
+    // The first place a phrase matches, as the search decided (Search 10).
+    let position = phrases
         .iter()
-        .filter_map(|token| lower.find(&token.to_lowercase()))
+        .filter_map(|phrase| search_query::find_phrase(&body, phrase))
         .min();
-    let start = position
-        .map(|p| lower[..p].chars().count().saturating_sub(60))
-        .unwrap_or(0);
+    let start = position.map(|p| p.saturating_sub(60)).unwrap_or(0);
     let window: String = body.chars().skip(start).take(2000).collect();
     let clean = fm_mail::preview::without_links(&window);
     let mut chars = clean.chars();

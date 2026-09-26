@@ -1,5 +1,7 @@
 #include "MailBackend.h"
 #include "CalendarLayout.h"
+#include "SearchMatch.h"
+#include <QTextDocument>
 #include <QDate>
 #include <QJsonArray>
 #include <QTimeZone>
@@ -229,6 +231,21 @@ QString MailBackend::inviteWhen(const QString &start, const QString &end, bool w
     if (zone.isValid()) { from = from.toTimeZone(zone); to = to.toTimeZone(zone); } else { from = from.toLocalTime(); to = to.toLocalTime(); }
     if (!withEnd || !to.isValid()) return from.toString("ddd d MMM HH:mm");
     return from.toString("ddd d MMM · HH:mm") + " – " + to.toString(from.date() == to.date() ? "HH:mm" : "ddd d MMM HH:mm");
+}
+QVariantList MailBackend::matchRanges(const QString &text, const QStringList &phrases) const {
+    QVariantList out;
+    for (const auto &range : SearchMatch::ranges(text, phrases)) out.append(QVariant(QVariantList{range.first, range.second}));
+    return out;
+}
+// The highlighter belongs to the text edit's own document and goes with it.
+void MailBackend::markDocument(QObject *textEdit, const QStringList &phrases, const QColor &color) const {
+    auto *document = textEdit ? textEdit->findChild<QTextDocument *>(QString(), Qt::FindDirectChildrenOnly) : nullptr;
+    if (!document) return;
+    SearchHighlighter *marker = nullptr;
+    for (auto *child : document->findChildren<QSyntaxHighlighter *>(QString(), Qt::FindDirectChildrenOnly))
+        if ((marker = dynamic_cast<SearchHighlighter *>(child))) break;
+    if (!marker) { if (phrases.isEmpty()) return; marker = new SearchHighlighter(document); }
+    marker->set(phrases, color);
 }
 // The display-zone day of a Core event row, for rows the Calendar layout has
 // not dated, such as an invitation email's linked event.

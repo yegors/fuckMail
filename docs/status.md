@@ -1,5 +1,24 @@
 # Current status
 
+**D130 / installers for testers (2026-09-25):**
+- **One file per platform:** `scripts/dev.ps1 package --preset release` now writes `dist/fuckMail-<version>-<commit>-windows-amd64-setup.exe`. On a Mac, `scripts/dev.sh package --preset release` writes a `.dmg` with `fuckMail.app` and an Applications shortcut. Linux keeps its `.tar.gz`. Packaging builds in `build/release-package`, so it works while the app from `build/release` is open.
+- **Windows installer:** per user, no admin prompt, Start menu entry, uninstaller in Settings > Apps. An upgrade replaces the old program files, and mail data is never touched. It is unsigned, so SmartScreen shows "More info > Run anyway". The macOS image is unsigned too: testers use Open Anyway in Privacy & Security.
+- **Checks (Windows):** clean `1bb28cc` plus the packaging change passes the full package check, including the GUI self-test (367 s). The 41.6 MB installer installs silently, has no missing DLLs across 110 binaries, runs the CLI on a bare PATH and the GUI smoke, reports Google sign-in available, removes stale files on upgrade and uninstalls cleanly, leaving the profile folder alone.
+- **Not verified:** the macOS disk image (needs a Mac or CI run); a Windows machine without the Visual C++ runtime installed; signing for either platform.
+
+[Decision](decisions.md) · [Platform 20](contracts/platform.md) · [Build guide](build-development.md#installers-for-testers-d130).
+
+**D130 / search highlights, labels A–Z (2026-09-25):**
+- **Search:** matched text is highlighted with a soft amber tint in the list's subject and preview, the reader's subject, and the message body (text and HTML). The preview now starts near the match.
+- **Labels:** the label rail and All labels menu are alphabetical.
+- **Checks (Windows Release, build/p9):** `cargo test --workspace` passes (808); clippy `-D warnings` clean. One engine sync test timed out once under the parallel run, then passed 3/3 alone and in a full rerun. All 31 GUI tests pass (`gui-startup-recovery` excluded, as before). New checks:
+  - the matcher itself;
+  - the list subject, the reader subject (a long, wrapped one keeps its line height), the text body and the HTML body;
+  - clearing the search removes every tint.
+- **Not verified:** the live mailbox; other hosts. The label order has no automated check; it is a small sort in MailView.
+
+[Decision](decisions.md) · [Search 11](contracts/search.md) · [Mail UI95](contracts/mail-ui.md) · [Record](research/prototype-september-23.md#d130--search-highlights-and-label-order-2026-09-25).
+
 **D129 / search matches as written (2026-09-25):**
 - **Search:** what you type is matched as written. `c-22` finds only mail containing "c-22" (any case), not "Sep 22" or other words starting with c. Several words must appear together, in that order. The last word can be incomplete, and accents and line breaks don't matter. `subject:` and `body:` work the same way, and so does Drafts search.
 - **Checks (Windows Release, build/p9):** `cargo test --workspace` passes (808 tests; new phrase tests in fm-core, and two older tests updated for the new rule); clippy `-D warnings` clean. All 31 GUI tests pass (`gui-startup-recovery` excluded, as before).

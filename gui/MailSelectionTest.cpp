@@ -16,6 +16,9 @@
 #include <QImage>
 #include <QCryptographicHash>
 #include <QBuffer>
+#include <QTextBlock>
+#include <QTextDocument>
+#include <QTextLayout>
 using namespace GoogleOperationFixture;
 
 class MailSelectionTest {
@@ -256,6 +259,45 @@ class MailSelectionTest {
         press(Qt::Key_Down);
         await([&]{return h.backend.selectedId()=="h1";},"Down after Delay continues from the conversation's old place");
         settle();
+        // Search matches are tinted where Core's phrase rules find them (Search 10).
+        require(h.backend.matchRanges("Bill\nC-22's, bill c-225 and xbill c-22",{"bill c-22"})==QVariantList{QVariant(QVariantList{0,9}),QVariant(QVariantList{13,22})},"highlights follow the phrase rules: case, line breaks and word starts");
+        require(h.backend.matchRanges(QString::fromUtf8("Caf\u00e9  \u00c9lan"),{"cafe elan"})==QVariantList{QVariant(QVariantList{0,10})},"highlights ignore accents and spacing");
+        require(h.backend.matchRanges("Sep 22",{"c-22"}).isEmpty(),"no highlight without the phrase");
+        h.backend.m_conversation["subject"]="Review h1"; emit h.backend.conversationChanged();
+        h.backend.m_searchTerms=QVariantMap{{"text","Review h1 body:retained"},{"phrases",QVariantList{QVariantMap{{"text","Review h1"},{"field","any"}},QVariantMap{{"text","retained"},{"field","body"}}}}};
+        emit h.backend.searchTermsChanged();
+        await([&]{auto *marks=find(window->contentItem(),"mailSubjectMatch_h1");return marks && marks->isVisible() && marks->property("ranges").toList().size()==1;},"the list subject tints its match");
+        {
+            auto *r1=find(window->contentItem(),"mailSubjectMatch_r1");
+            require(!r1 || !r1->isVisible(),"a subject without the phrase has no tint");
+            auto *subject=find(window->contentItem(),"readerSubject");
+            await([&]{return subject->property("textFormat").toInt()==Qt::RichText && subject->property("text").toString().contains("background-color");},"the reader subject tints its match");
+            QQuickItem *body=nullptr;
+            // The text body and the (hidden) HTML view share the name; take the one shown.
+            std::function<QQuickItem*(QQuickItem*)> visibleBody=[&](QQuickItem *item)->QQuickItem* {
+                if(item->objectName()=="messageBody_h1-original" && item->isVisible()) return item;
+                for(auto *child:item->childItems()) if(auto *found=visibleBody(child)) return found;
+                return nullptr;
+            };
+            await([&]{body=visibleBody(window->contentItem());return body;},"the message body shows");
+            if (body->property("highlightCount").isValid()) await([&]{return body->property("highlightCount").toInt()>0;},"the HTML body tints its match");
+            else {
+                auto *document=body->findChild<QTextDocument*>(QString(),Qt::FindDirectChildrenOnly); require(document,"the text body has a document");
+                await([&]{for (auto block=document->begin();block!=document->end();block=block.next()) if (block.layout() && !block.layout()->formats().isEmpty()) return true; return false;},"the text body tints its match");
+            }
+            // A long subject wraps at the same line height with its tint.
+            const auto longSubject=QString("Review h1 with a subject long enough to wrap onto a second line in the reader heading, Review h1 again");
+            h.backend.m_conversation["subject"]=longSubject; emit h.backend.conversationChanged();
+            await([&]{return subject->property("text").toString().contains("again");},"long subject shows");
+            settle();
+            const auto markedHeight=subject->height();
+            if (qEnvironmentVariableIsSet("FM_SELECTION_CAPTURE")) window->grabWindow().save(qEnvironmentVariable("FM_SELECTION_CAPTURE"));
+            h.backend.m_searchTerms.clear(); emit h.backend.searchTermsChanged();
+            await([&]{return subject->property("textFormat").toInt()==Qt::PlainText && !find(window->contentItem(),"mailSubjectMatch_h1")->isVisible();},"clearing the search removes the tints");
+            settle();
+            qInfo()<<"subject heights"<<markedHeight<<subject->height();
+            require(qAbs(markedHeight-subject->height())<1,"a tinted subject keeps the heading's line height");
+        }
     }
     static void undoActions() {
         Harness h;

@@ -1,4 +1,5 @@
 #include "FmHtmlView.h"
+#include "SearchMatch.h"
 #include <QClipboard>
 #include <QCoreApplication>
 #include <QElapsedTimer>
@@ -246,6 +247,26 @@ void FmHtmlView::setPaper(const QColor &paper) {
     ensureTiles();
 }
 
+void FmHtmlView::setHighlightPhrases(const QStringList &phrases) {
+    if (phrases == m_highlightPhrases) return;
+    m_highlightPhrases = phrases;
+    findHighlights();
+}
+
+void FmHtmlView::setHighlightColor(const QColor &color) {
+    if (color == m_highlightColor) return;
+    m_highlightColor = color;
+    m_selectionDirty = true; update();
+    emit highlightChanged();
+}
+
+// Matches index the snapshot's text; they are painted with the selection.
+void FmHtmlView::findHighlights() {
+    m_highlights = SearchMatch::ranges(m_snapshot.text, m_highlightPhrases);
+    m_selectionDirty = true; update();
+    emit highlightChanged();
+}
+
 HtmlImage FmHtmlView::imageFor(int id, const QVariantMap &value) const {
     HtmlImage image;
     image.state = imageState(value.value("state").toString());
@@ -293,6 +314,7 @@ void FmHtmlView::rebuild() {
     const bool hadText = !m_snapshot.text.isEmpty();
     m_snapshot = {}; m_documentSize = {}; m_selectionStart = m_selectionEnd = 0; m_anchor = -1;
     m_hoveredLink = 0; m_hoveredRect = {};
+    if (!m_highlights.isEmpty()) { m_highlights.clear(); emit highlightChanged(); }
     if (hadText) emit textChanged();
     emit selectionChanged(); emit hoveredLinkChanged();
     if (m_content.isEmpty()) { setImplicitHeight(0); setStatus({}); return; }
@@ -380,6 +402,7 @@ void FmHtmlView::applyLayout(bool ok, const QString &failure, const QSizeF &size
     m_selectionStart = std::min(m_selectionStart, int(m_snapshot.text.size()));
     m_selectionEnd = std::min(m_selectionEnd, int(m_snapshot.text.size()));
     m_selectionDirty = true;
+    if (textChangedNow || !m_highlightPhrases.isEmpty()) findHighlights();
     setImplicitHeight(std::ceil(size.height() * scale));
     rememberHeight(key, implicitHeight());
     setStatus("ready");
@@ -520,19 +543,21 @@ QSGNode *FmHtmlView::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
     if (m_selectionDirty) {
         m_selectionDirty = false;
         while (auto *child = m_selectionRoot->firstChild()) { m_selectionRoot->removeChildNode(child); delete child; }
-        if (hasSelection()) {
-            const QColor highlight(51, 144, 255, 90);
+        // Search matches first, the selection over them.
+        const auto paint = [this](int first, int last, const QColor &color) {
             for (const auto &run : std::as_const(m_snapshot.runs)) {
                 const int start = run.offset, end = run.offset + int(run.text.size());
-                if (end <= m_selectionStart || start >= m_selectionEnd) continue;
+                if (end <= first || start >= last) continue;
                 const QFontMetricsF metrics(run.font);
-                const int from = std::max(0, m_selectionStart - start), to = std::min(int(run.text.size()), m_selectionEnd - start);
+                const int from = std::max(0, first - start), to = std::min(int(run.text.size()), last - start);
                 const qreal left = run.rect.left() + metrics.horizontalAdvance(run.text.left(from));
                 const qreal right = run.rect.left() + metrics.horizontalAdvance(run.text.left(to));
                 const QRectF box(left * m_scale, run.rect.top() * m_scale, (right - left) * m_scale, run.rect.height() * m_scale);
-                if (box.width() > 0) m_selectionRoot->appendChildNode(new QSGSimpleRectNode(box, highlight));
+                if (box.width() > 0) m_selectionRoot->appendChildNode(new QSGSimpleRectNode(box, color));
             }
-        }
+        };
+        for (const auto &range : std::as_const(m_highlights)) paint(range.first, range.second, m_highlightColor);
+        if (hasSelection()) paint(m_selectionStart, m_selectionEnd, QColor(51, 144, 255, 90));
     }
     return root;
 }

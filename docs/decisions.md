@@ -1442,3 +1442,36 @@ Decided (Search 10):
 - **Remote search (Gmail) is unchanged.** It still sends the text as typed, which Gmail reads word by word.
 
 Search 10; Core, Mail UI and CLI interfaces unchanged; schema37 (no change), fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D130 — single-file installers for external testers (2026-09-25T22:05:00Z)
+
+The founder is preparing external testing by people other than themselves and asked for a build pipeline that produces one file to hand out, for Windows and macOS, with minimal dependencies and simple code. Linux stays a run script for now. After comparing Inno Setup, CPack NSIS/WiX, the existing zip and MSIX on Windows, and a disk image, a zipped app and a `.pkg` on macOS, the founder chose the recommended pair. They bought an Apple Developer membership, which takes about 48 hours to activate, so both installers stay unsigned for now. Signing will be added later, locally on a Mac and in GitHub Actions; a Windows certificate may follow but is not needed.
+
+Decided:
+- **Windows: an Inno Setup installer.** Per-user, no admin prompt, installs to `%LOCALAPPDATA%\Programs\fuckMail`, with a Start menu entry, an optional desktop icon and an uninstaller. An upgrade replaces the previous program files. The MSVC runtime DLLs ship beside the executables instead of Qt's `vc_redist`, which needs admin.
+- **macOS: a disk image** made with the built-in `hdiutil`, holding `fuckMail.app` and an Applications shortcut. The bundle is renamed from `fuckmail-gui.app` in the package only; the build tree is unchanged.
+- **Linux keeps its `.tar.gz`.**
+- **`package` builds in its own `build/<preset>-package` tree**, so it runs while an app from `build/release` is open.
+- **Inno Setup 7.1.0 is the only new tool.** It is downloaded, checked against a pinned SHA-256 and installed in portable mode inside `.tools`. Its license is permissive; commercial users are asked to buy a license.
+- **Install and uninstall never touch profiles.**
+- **Unsigned until later:** Windows testers see SmartScreen; macOS testers use Open Anyway, and Keychain access is asked again after each update. Notarization will first need `google-oauth-client.json` moved out of `Contents/MacOS`.
+
+Platform 20. Engine, GUI, schema37, fixtures0/3, protocol1 and readiness0/9 unchanged.
+
+## D130 — highlight search matches; labels in alphabetical order (2026-09-25T23:59:00Z)
+
+With D129 working, the founder asked for two things:
+- highlight the matched text in subjects and message bodies;
+- list labels alphabetically. The rail showed them by count, so the order looked random from one mailbox to the next.
+
+Decided:
+- **Highlights** tint every place a search phrase appears in:
+  - the list's subject and preview;
+  - the reader's subject;
+  - the message body, both text and HTML.
+
+  They follow the rules that decided the match: case, accents and line breaks ignored, punctuation kept, starting at a word. The tint is the theme's accent, soft on the dark themes and a little stronger on an HTML message's white paper. The prototype has no highlight style, so this one is provisional.
+- **Core reports the phrases** it matched in `search_terms`. The GUI highlights them, so it never parses the search text itself. The preview now starts near the first match of a phrase.
+- **Labels** read alphabetically, ignoring case, in the rail and the All labels menu. When there are more than seven, the rail keeps the seven most used and shows them in name order.
+
+Search 11, Mail UI95; schema37 (no change), fixtures0/3, protocol1 and readiness0/9 unchanged.

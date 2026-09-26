@@ -159,7 +159,31 @@ Item {
         const now = new Date(backend.clockNow).getTime()
         return backend.folder !== "sent" ? 0 : backend.conversations.filter(function(row) { const at = new Date(row.latest_at).getTime(); return at <= now && now - at < 7 * 86400000 }).length
     }
-    readonly property var popularCategories: backend.categories.slice().sort(function(a, b) { return b.conversation_count - a.conversation_count || a.name.localeCompare(b.name) }).slice(0, 7)
+    // The phrases the current search matched (Search 10), for highlighting:
+    // bare phrases in subjects and text, subject: and body: in their own.
+    readonly property var searchPhrases: backend.searchTerms.phrases || []
+    function phrasesFor(field) { return searchPhrases.filter(function(p) { return p.field === "any" || p.field === field }).map(function(p) { return p.text }) }
+    readonly property var subjectPhrases: phrasesFor("subject")
+    readonly property var bodyPhrases: phrasesFor("body")
+    // Rich text with the matches tinted, or "" when nothing matches.
+    function markedHtml(text, phrases) {
+        const ranges = phrases.length && text ? backend.matchRanges(text, phrases) : []
+        if (!ranges.length) return ""
+        const escape = function(s) { return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;") }
+        const tint = String(Qt.tint(Theme.canvas, Theme.matchTint))
+        let html = "", at = 0
+        for (const range of ranges) {
+            html += escape(text.slice(at, range[0])) + "<span style=\"background-color:" + tint + "\">" + escape(text.slice(range[0], range[1])) + "</span>"
+            at = range[1]
+        }
+        return "<span style=\"white-space:pre-wrap\">" + html + escape(text.slice(at)) + "</span>"
+    }
+    // Labels read alphabetically, ignoring case. The rail shows the seven most
+    // used; "All labels" lists every one.
+    function byName(a, b) { const x = a.name.toLowerCase(), y = b.name.toLowerCase(); return x < y ? -1 : x > y ? 1 : a.name < b.name ? -1 : a.name > b.name ? 1 : 0 }
+    readonly property var categoriesByName: backend.categories.slice().sort(byName)
+    readonly property var popularCategories: backend.categories.length <= 7 ? categoriesByName
+        : backend.categories.slice().sort(function(a, b) { return b.conversation_count - a.conversation_count || mail.byName(a, b) }).slice(0, 7).sort(byName)
     readonly property string expansionKey: backend.account + "/" + backend.selectedId + "/"
     readonly property string coverageText: backend.querySummary.coverage ? backend.querySummary.coverage.text || "" : ""
     readonly property string filterDescription: {
@@ -1258,6 +1282,7 @@ Item {
                                             text: groupedRow.modelData.subject; color: row.primaryTone
                                             font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(14); font.weight: row.outgoingScope ? Font.Medium : row.reviewTier ? Font.DemiBold : Font.Normal
                                             elide: Text.ElideRight; textFormat: Text.PlainText
+                                            MatchMarks { objectName: "mailSubjectMatch_" + groupedRow.modelData.id; phrases: mail.subjectPhrases }
                                         }
                                         // Thread and attachment counts share one style, told apart by icon.
                                         Row {
@@ -1289,7 +1314,9 @@ Item {
                                             color: Theme.inkAlpha(.72); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; textFormat: Text.PlainText
                                         }
                                         FmIcon { objectName:"summaryPreviewIcon_"+groupedRow.modelData.id; visible:!!groupedRow.modelData.summary; name:"summary"; size:10; color:Theme.ai }
-                                        Text { objectName:"mailPreview_"+groupedRow.modelData.id; text: (row.outgoingScope ? "· " : leftPane.width < 520 ? (groupedRow.modelData.sender_name || "") + " · " : "") + (groupedRow.modelData.summary || (groupedRow.modelData.snippet || "").replace(/\s+/g," ")); color: row.reviewTier ? Theme.inkAlpha(.68) : Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 0; textFormat: Text.PlainText }
+                                        Text { objectName:"mailPreview_"+groupedRow.modelData.id; text: (row.outgoingScope ? "· " : leftPane.width < 520 ? (groupedRow.modelData.sender_name || "") + " · " : "") + (groupedRow.modelData.summary || (groupedRow.modelData.snippet || "").replace(/\s+/g," ")); color: row.reviewTier ? Theme.inkAlpha(.68) : Theme.inkAlpha(.5); font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(12); elide: Text.ElideRight; Layout.fillWidth: true; Layout.minimumWidth: 0; textFormat: Text.PlainText
+                                            MatchMarks { objectName: "mailPreviewMatch_" + groupedRow.modelData.id; phrases: mail.bodyPhrases }
+                                        }
                                     }
                                 }
                                 FmButton {
@@ -1367,7 +1394,7 @@ Item {
                         Item {
                             objectName: "readerSubjectLine"
                             width: Math.min(readerSubject.implicitWidth, readerHeading.width); height: readerSubject.lineCount * readerHeading.titleLine
-                            Text { id: readerSubject; objectName: "readerSubject"; y: -Math.max(0, Math.round((Theme.fontSize(28) * Theme.naturalLeading - readerHeading.titleLine) / 2)); text: mail.thread.subject||""; width: parent.width; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(28); font.weight: Font.Medium; font.letterSpacing: -0.56; wrapMode: Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: readerHeading.titleLine; textFormat: Text.PlainText }
+                            Text { id: readerSubject; objectName: "readerSubject"; y: -Math.max(0, Math.round((Theme.fontSize(28) * Theme.naturalLeading - readerHeading.titleLine) / 2)); readonly property string marked: mail.markedHtml(mail.thread.subject || "", mail.subjectPhrases); text: marked || mail.thread.subject || ""; width: parent.width; color: Theme.text; font.family: Theme.fontFamily; font.pointSize: Theme.fontPoints(28); font.weight: Font.Medium; font.letterSpacing: -0.56; wrapMode: Text.Wrap; lineHeightMode: Text.FixedHeight; lineHeight: readerHeading.titleLine; textFormat: marked ? Text.RichText : Text.PlainText }
                         }
                     }
                     RowLayout {
@@ -1672,6 +1699,7 @@ Item {
                                         visible: messageBody.htmlShown; Layout.fillWidth: true
                                         sourceComponent: HtmlMessageBody {
                                             message: member.modelData; account: backend.account; conversation: backend.selectedId
+                                            matchPhrases: mail.bodyPhrases
                                             active: member.isExpanded && member.visible
                                             onLinkHovered: function(href, box) { const p = mapToItem(Overlay.overlay, box.x, box.y); linkCard.hover(href, Qt.rect(p.x, p.y, box.width, box.height), backend.selectedId) }
                                             onLinkExited: linkCard.scheduleHide()
@@ -1686,9 +1714,14 @@ Item {
                                     Repeater {
                                         model: messageBody.htmlShown ? [] : messageBody.rows
                                         TextArea {
+                                            id: bodyText
                                             required property var modelData
                                             required property int index
                                             objectName: index === 0 ? "messageBody_" + member.modelData.id : "messageBodyPart_" + member.modelData.id + "_" + index
+                                            // Search matches tinted in the document (Search 10).
+                                            readonly property var matchKey: [mail.bodyPhrases, Theme.matchTint]
+                                            onMatchKeyChanged: backend.markDocument(bodyText, mail.bodyPhrases, Theme.matchTint)
+                                            Component.onCompleted: backend.markDocument(bodyText, mail.bodyPhrases, Theme.matchTint)
                                             Layout.fillWidth: true; text: mail.presentLinks(modelData.html)
                                             readOnly: true; selectByMouse: true; wrapMode: TextEdit.Wrap; textFormat: TextEdit.RichText
                                             palette.link: Theme.text
@@ -1981,7 +2014,7 @@ Item {
             ColumnLayout {
                 id: categoryChoices; width: railCategories.availableWidth; spacing: 4
                 Text { text: "All categories"; font.pointSize: Theme.fontPoints(13); color: Theme.text }
-                Repeater { model: backend.categories
+                Repeater { model: mail.categoriesByName
                     FmButton { required property var modelData; Layout.fillWidth: true; textAlignment: Text.AlignLeft; text: modelData.name + "  " + modelData.conversation_count; selected: mail.categoryOn(modelData.id); onClicked: mail.toggleCategory(modelData.id) }
                 }
             }

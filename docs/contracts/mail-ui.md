@@ -2,6 +2,25 @@
 
 
 
+## D130 — search highlights, labels by name (Mail UI95)
+
+- **Search highlights.** MailView reads `searchTerms.phrases` (Search 11). `subjectPhrases` are the `any` and `subject` phrases; `bodyPhrases` are the `any` and `body` phrases.
+  - `MailBackend.matchRanges(text, phrases)` returns `[[start, end], …]` in UTF-16 units. It uses the header-only `SearchMatch`, with Core's rules:
+    - lower case;
+    - Latin accents removed (Unicode decomposition, plus ł đ ø ħ ŧ ı ŀ ſ);
+    - runs of whitespace treated as one space, and punctuation kept;
+    - a phrase starting with a letter or digit must start a word.
+    Overlapping ranges merge.
+  - Each list row's subject and preview hold a `MatchMarks`: rounded 2 px boxes behind the Text, placed with `FontMetrics.advanceWidth` and clipped to what the Text shows.
+  - The reader subject switches to rich text with a tinted span only while it has a match, keeping its fixed line height.
+  - The text body's TextArea gets a `SearchHighlighter` (a `QSyntaxHighlighter` on its document, set by `MailBackend.markDocument`). It tints matches within each paragraph without changing the text, links or selection.
+  - `FmHtmlView` gains `highlightPhrases`, `highlightColor` and `highlightCount`. It finds matches in its laid-out text and paints them under the selection. HtmlMessageBody passes them through as `matchPhrases`.
+  - The tint is `Theme.matchTint` (the accent at 32%, 34% on light themes), or `Theme.matchPaper` (45%) on an HTML message's paper.
+  - Clearing the search removes every tint. Summaries are not searched, but a match inside one shown in the preview is tinted too.
+- **Labels by name.** The label rail and the "All labels" menu sort by name, ignoring case. With more than seven labels, the rail still shows the seven most used, in name order.
+
+Consumers: Search 11 (reads `phrases`).
+
 ## D128 — To review transitions, invitation day (Mail UI94)
 
 - **Kept row placement.** `MailBackend::keptRowIndex` puts the open conversation back into a reloaded Inbox inside its shown section: after the rows of that section that were above it, before the rest. Sections rank To review, Delayed, then Done. Other folders keep its old index. A row moved there from another section carries `pinned_from` (Core's group), and `publishConversations` adds `counted_section` (`held`, or `done:YYYY-MM` in the mail month zone).

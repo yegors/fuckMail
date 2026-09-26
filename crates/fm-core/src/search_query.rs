@@ -49,6 +49,11 @@ impl SearchText {
     pub(crate) fn terms(&self, label: Option<&str>) -> Value {
         json!({
             "words": self.words.join(" "),
+            // What clients highlight: each phrase and where it must appear.
+            "phrases": self.phrases.iter().map(|text| json!({"text": text, "field": "any"}))
+                .chain(self.subject.iter().map(|text| json!({"text": text, "field": "subject"})))
+                .chain(self.body.iter().map(|text| json!({"text": text, "field": "body"})))
+                .collect::<Vec<_>>(),
             "subject": self.subject,
             "body": self.body,
             "from": self.from,
@@ -216,19 +221,40 @@ pub(crate) fn fts_phrase(columns: &str, text: &str) -> Option<String> {
 /// Text for phrase matching: lower case, Latin accents removed as the index
 /// does, and each run of whitespace (line breaks included) as one space.
 pub(crate) fn fold(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    fold_each(text, |c, _| out.push(c));
+    out
+}
+
+/// The character position in `text` where folded `phrase` first matches from
+/// the start of a word, as `contains_phrase` decides.
+pub(crate) fn find_phrase(text: &str, phrase: &str) -> Option<usize> {
+    let (mut folded, mut origins) = (String::with_capacity(text.len()), Vec::new());
+    fold_each(text, |c, origin| {
+        folded.push(c);
+        origins.push(origin);
+    });
+    let word_start = phrase.starts_with(char::is_alphanumeric);
+    folded
+        .match_indices(phrase)
+        .find(|(at, _)| !word_start || !folded[..*at].ends_with(char::is_alphanumeric))
+        .map(|(at, _)| origins[folded[..at].chars().count()])
+}
+
+/// Each folded character with the position of the character it came from.
+fn fold_each(text: &str, mut push: impl FnMut(char, usize)) {
     // Base letters for U+0100..U+017F; '.' keeps the character.
     const EXTENDED_A: &[u8; 128] = b"aaaaaaccccccccddddeeeeeeeeeegggggggghhhhiiiiiiiiii..jjkk.llllllllllnnnnnn...oooooo..rrrrrrssssssssttttttuuuuuuuuuuuuwwyyyzzzzzzs";
-    let mut out = String::with_capacity(text.len());
-    let mut space = false;
-    for c in text.chars() {
+    let (mut space, mut started) = (None, false);
+    for (index, c) in text.chars().enumerate() {
         if c.is_whitespace() {
-            space = true;
+            space.get_or_insert(index);
             continue;
         }
-        if space && !out.is_empty() {
-            out.push(' ');
+        if let Some(at) = space.take().filter(|_| started) {
+            push(' ', at);
         }
-        space = false;
+        started = true;
         for c in c.to_lowercase() {
             let base = match c {
                 '\u{300}'..='\u{36f}' => continue,
@@ -246,10 +272,9 @@ pub(crate) fn fold(text: &str) -> String {
                 },
                 _ => c,
             };
-            out.push(base);
+            push(base, index);
         }
     }
-    out
 }
 
 /// Whether folded `text` holds folded `phrase` starting at the beginning of a
@@ -414,6 +439,10 @@ mod tests {
             assert_eq!(contains_phrase(&text, &fold(phrase)), found, "{phrase}");
         }
         assert!(!contains_phrase(&fold("Sep 22 call"), &fold("c-22")));
+        assert_eq!(find_phrase("Cover  Élan, the Bill\nC-22 note", &fold("bill c-22")), Some(17));
+        assert_eq!(find_phrase("Cover note", &fold("c-22")), None);
+        let terms = read("Bill C-22 subject:weekly body:\"open letter\"").terms(None);
+        assert_eq!(terms["phrases"], json!([{"text":"Bill C-22","field":"any"},{"text":"weekly","field":"subject"},{"text":"open letter","field":"body"}]));
         assert!(!phrase_needs_check(&fold("Invoice")));
         assert!(phrase_needs_check(&fold("c-22")) && phrase_needs_check(&fold("open letter")));
     }

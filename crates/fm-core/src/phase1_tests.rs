@@ -469,8 +469,9 @@ fn search_phrases_match_as_written() {
         .collect::<std::result::Result<_, _>>()
         .unwrap();
     assert_eq!(picked.len(), 4);
+    let long = format!("Cover note. {}The C-22 draft is attached.", "Some words here. ".repeat(30));
     for ((rowid, _), (subject, body)) in picked.iter().zip([
-        ("Bill C-22 Option Illustrations", "Draft attached"),
+        ("Bill C-22 Option Illustrations", long.as_str()),
         ("Invitation: Standup @ Tue Sep 22, 2026", "Calendar call details"),
         ("Weekly", "Thanks for the Bill\r\nC-22 update, Café Élan"),
         ("Re: c22", "Nothing here"),
@@ -508,7 +509,8 @@ fn search_phrases_match_as_written() {
     assert_eq!(ids(&mut store, "c-22"), sorted(vec![a.clone(), c.clone()]));
     assert_eq!(ids(&mut store, "C-2"), sorted(vec![a.clone(), c.clone()]));
     assert_eq!(ids(&mut store, "subject:c-22"), vec![a.clone()]);
-    assert_eq!(ids(&mut store, "body:c-22"), vec![c.clone()]);
+    assert_eq!(ids(&mut store, "body:c-22"), sorted(vec![a.clone(), c.clone()]));
+    assert_eq!(ids(&mut store, "body:bill c-22"), vec![c.clone()]);
     // Case, accents and line breaks do not matter; order and punctuation do.
     assert_eq!(ids(&mut store, "bill c-22"), sorted(vec![a.clone(), c.clone()]));
     assert_eq!(ids(&mut store, "\"BILL C-22\""), sorted(vec![a.clone(), c.clone()]));
@@ -525,6 +527,12 @@ fn search_phrases_match_as_written() {
     assert_eq!(ids(&mut store, "c-22 from:sender@fixture.example"), sorted(vec![a.clone(), c.clone()]));
     assert_eq!(ids(&mut store, "c-22 subject:weekly"), vec![c.clone()]);
     assert!(ids(&mut store, "bill option subject:weekly").is_empty());
+    // The preview starts near the phrase, not at the first word starting with c.
+    let result = store.handle("conversations", Some(ACCOUNT), json!({"query":"c-22","folder":"inbox","limit":100})).unwrap();
+    let row = result["conversations"].as_array().unwrap().iter().find(|r| r["id"] == a.as_str()).unwrap();
+    let snippet = row["snippet"].as_str().unwrap();
+    assert!(snippet.starts_with("… ") && snippet.contains("The C-22 draft"), "{snippet}");
+    assert_eq!(result["search_terms"]["phrases"], json!([{"text":"c-22","field":"any"}]));
 }
 
 // Search 7: the search box grammar GUI and CLI share.

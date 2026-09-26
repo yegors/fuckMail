@@ -88,6 +88,10 @@ QtObject {
     readonly property color accent: current.accent
     readonly property color ai: themeId === "paper" ? "#4F6C86" : themeId === "terminal" ? "#7FA98A" : themeId === "harbour" ? "#A7BBD0" : "#9BB0C4"
     readonly property color amber: accent
+    // Search matches (Search 10): the accent as a tint behind text, stronger
+    // on an HTML message's white paper.
+    readonly property color matchTint: Qt.rgba(accent.r, accent.g, accent.b, light ? .34 : .32)
+    readonly property color matchPaper: Qt.rgba(accent.r, accent.g, accent.b, .45)
     // Account colours, 8×2 in the picker; the engine gives each new account the
     // first unused one. Accounts without a saved colour use palette order.
     readonly property var accountPalette: ["#C9A36B", "#E0B85A", "#CF8F6A", "#E07F7F", "#D58E9A", "#C98BC9", "#AE97D4", "#8C8FE0",

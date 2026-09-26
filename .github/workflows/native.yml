@@ -73,13 +73,14 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: ./scripts/dev.ps1 package --preset release
-      - name: Retain development package
+      - name: Retain installer or package
         uses: actions/upload-artifact@v4
         with:
           name: fuckmail-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
           path: |
+            dist/*-setup.exe
+            dist/*.dmg
             dist/*.tar.gz
-            dist/*.zip
           if-no-files-found: error
       - name: Retain native test and configure logs
         if: always()

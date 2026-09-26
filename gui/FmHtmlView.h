@@ -23,6 +23,10 @@ class FmHtmlView : public QQuickItem {
     Q_PROPERTY(QVariantList blockedLinks READ blockedLinks WRITE setBlockedLinks NOTIFY blockedLinksChanged)
     Q_PROPERTY(qreal fontPixels READ fontPixels WRITE setFontPixels NOTIFY fontPixelsChanged)
     Q_PROPERTY(QColor paper READ paper WRITE setPaper NOTIFY paperChanged)
+    // The search's phrases, tinted where they appear (Search 10).
+    Q_PROPERTY(QStringList highlightPhrases READ highlightPhrases WRITE setHighlightPhrases NOTIFY highlightChanged)
+    Q_PROPERTY(QColor highlightColor READ highlightColor WRITE setHighlightColor NOTIFY highlightChanged)
+    Q_PROPERTY(int highlightCount READ highlightCount NOTIFY highlightChanged)
     // "", loading, ready or failed. `failure` says why a message fell back to Text.
     Q_PROPERTY(QString status READ status NOTIFY statusChanged)
     Q_PROPERTY(QString failure READ failure NOTIFY statusChanged)
@@ -46,6 +50,11 @@ public:
     void setFontPixels(qreal pixels);
     QColor paper() const { return m_paper; }
     void setPaper(const QColor &paper);
+    QStringList highlightPhrases() const { return m_highlightPhrases; }
+    void setHighlightPhrases(const QStringList &phrases);
+    QColor highlightColor() const { return m_highlightColor; }
+    void setHighlightColor(const QColor &color);
+    int highlightCount() const { return int(m_highlights.size()); }
     QString status() const { return m_status; }
     QString failure() const { return m_failure; }
     QString text() const { return m_snapshot.text; }
@@ -68,6 +77,7 @@ signals:
     void blockedLinksChanged();
     void fontPixelsChanged();
     void paperChanged();
+    void highlightChanged();
     void statusChanged();
     void textChanged();
     void layoutChanged();
@@ -105,6 +115,7 @@ private:
     int linkAt(const QPointF &point, QRectF *box = nullptr) const;
     int offsetAt(const QPointF &point) const;
     void setSelection(int start, int end);
+    void findHighlights();
     void updateHover(const QPointF &point);
     QRectF visibleArea(qreal margin) const;
     HtmlImage imageFor(int id, const QVariantMap &value) const;
@@ -127,8 +138,11 @@ private:
     QHash<int, Tile> m_tiles;
     QSet<int> m_pendingTiles;
     QHash<int, Node> m_nodes;
-    QSGNode *m_selectionRoot = nullptr;
+    QSGNode *m_selectionRoot = nullptr, *m_highlightRoot = nullptr;
     bool m_selectionDirty = false;
+    QStringList m_highlightPhrases;
+    QColor m_highlightColor = QColor(255, 196, 0, 110);
+    QList<QPair<int, int>> m_highlights;
     int m_selectionStart = 0, m_selectionEnd = 0, m_anchor = -1, m_pressLink = 0;
     QPointF m_pressPoint;
     bool m_dragging = false;

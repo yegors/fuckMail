@@ -4,7 +4,7 @@ A fast, focused desktop mail and calendar client for Gmail and Google Workspace.
 
 It is built around one daily habit: read what's new, finish what needs doing, and end the day with nothing unread and nothing starred.
 
-> **Status:** early and under active development. There is no installer or release yet; you build it from source. See [current status](docs/status.md) for what works today.
+> **Status:** early and under active development. There is no public release yet; you build it from source, and `package` makes an unsigned test installer. See [current status](docs/status.md) for what works today.
 
 ## Features
 
@@ -62,7 +62,7 @@ To try the app with sample data instead of a real account, pass `--demo-profile`
 scripts/dev.sh run -- --demo-profile
 ```
 
-Other commands: `test` runs the test suite, `cli -- --help` shows the CLI, and `package --preset release` builds an optimized package. The [build guide](docs/build-development.md) covers these in detail.
+Other commands: `test` runs the test suite, `cli -- --help` shows the CLI, and `package --preset release` builds an unsigned installer in `dist/` (a setup `.exe` on Windows, a `.dmg` on macOS, a `.tar.gz` on Linux). The [build guide](docs/build-development.md) covers these in detail.
 
 ## Connecting a Google account
 

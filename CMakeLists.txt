@@ -93,9 +93,16 @@ if(APPLE)
     install(FILES "$<TARGET_FILE:Qt6::QOffscreenIntegrationPlugin>"
         DESTINATION "fuckmail-gui.app/Contents/PlugIns/platforms")
 endif()
+# The per-user Windows installer cannot run vc_redist (it needs admin), so the
+# MSVC runtime DLLs ship beside the executables instead of Qt's vc_redist copy.
+if(WIN32)
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION "${FM_INSTALL_BIN}")
+    include(InstallRequiredSystemLibraries)
+endif()
 qt_generate_deploy_qml_app_script(
     TARGET fuckmail-gui OUTPUT_SCRIPT FM_DEPLOY_SCRIPT
     INCLUDE_PLUGINS qoffscreen
+    NO_COMPILER_RUNTIME
     NO_UNSUPPORTED_PLATFORM_ERROR)
 install(SCRIPT "${FM_DEPLOY_SCRIPT}")
 

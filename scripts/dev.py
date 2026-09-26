@@ -23,6 +23,8 @@ SUFFIX = ".exe" if WINDOWS else ""
 VENV = TOOLS / "bootstrap"
 VENV_BIN = VENV / ("Scripts" if WINDOWS else "bin")
 PYTHON = VENV_BIN / ("python.exe" if WINDOWS else "python")
+# The installed bundle name is what testers see in Finder and Applications.
+MAC_APP = "fuckMail.app"
 
 
 def managed_tool(name):
@@ -130,7 +132,30 @@ def bootstrap():
         urllib.request.urlretrieve(url, installer)
         args = [installer] if WINDOWS else ["sh", installer]
         run(*args, "-y", "--no-modify-path", "--profile", "minimal", "--default-toolchain", selected, env=env)
+    if WINDOWS:
+        inno_compiler()
     doctor()
+
+
+def inno_compiler():
+    """Inno Setup's portable mode keeps the installer compiler inside .tools."""
+    pin = CONFIG["innosetup"]
+    home = TOOLS / ("innosetup-" + pin["version"])
+    compiler = home / "ISCC.exe"
+    if compiler.is_file():
+        return compiler
+    TOOLS.mkdir(exist_ok=True)
+    setup = TOOLS / pin["url"].rsplit("/", 1)[1]
+    print("Downloading Inno Setup", pin["version"], "to", setup, flush=True)
+    urllib.request.urlretrieve(pin["url"], setup)
+    if hashlib.sha256(setup.read_bytes()).hexdigest() != pin["sha256"]:
+        setup.unlink()
+        raise RuntimeError("Downloaded Inno Setup does not match its pinned SHA-256")
+    run(setup, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/CURRENTUSER", "/PORTABLE=1", "/DIR=" + str(home))
+    setup.unlink()
+    if not compiler.is_file():
+        raise RuntimeError("Inno Setup did not install its compiler into " + str(home))
+    return compiler
 
 
 def doctor():
@@ -167,12 +192,13 @@ def doctor():
         raise RuntimeError("Environment needs setup: " + ", ".join(failed) + ". Run bootstrap.")
 
 
-def configure_build(preset, targets=()):
+def configure_build(preset, targets=(), binary_dir=None):
     doctor()
     env = environment()
-    run(managed_tool("cmake"), "--preset", preset, env=env)
+    run(managed_tool("cmake"), "--preset", preset, *(("-B", binary_dir) if binary_dir else ()), env=env)
     target_args = ("--target", *targets) if targets else ()
-    run(managed_tool("cmake"), "--build", "--preset", preset, "--parallel", *target_args, env=env)
+    build = (binary_dir,) if binary_dir else ("--preset", preset)
+    run(managed_tool("cmake"), "--build", *build, "--parallel", *target_args, env=env)
 
 
 def gui_binary(preset, installed=None):
@@ -183,7 +209,7 @@ def gui_binary(preset, installed=None):
         return Path(metadata.read_text(encoding="utf-8").strip())
     base = Path(installed)
     if HOST == "Darwin":
-        return base / "fuckmail-gui.app" / "Contents" / "MacOS" / "fuckmail-gui"
+        return base / MAC_APP / "Contents" / "MacOS" / "fuckmail-gui"
     return base / "bin" / ("fuckmail-gui" + SUFFIX)
 
 
@@ -326,8 +352,75 @@ def verify_package(preset, stage):
         print("Relocated package passed: SDK-free GUI smoke/self-test, paired empty live profile, fresh-terminal CLI help/query, final engine shutdown", flush=True)
 
 
+INSTALL_NOTES = {
+    "Windows": (
+        "Install: run the setup file. It installs for your Windows user only (no admin) and adds fuckMail to the Start menu.\n"
+        "This build is unsigned, so SmartScreen may warn: choose More info, then Run anyway.\n"
+        "Uninstall from Settings > Apps. Your mail data in %LOCALAPPDATA%\\fuckMail is kept.\n"
+        "The fm CLI is in the bin folder of the install directory.\n"),
+    "Darwin": (
+        "Install: open the disk image and drag fuckMail to Applications.\n"
+        "This build is not notarized yet, so macOS blocks the first launch. Open System Settings > Privacy & Security and choose Open Anyway "
+        "(on macOS 14 and earlier, Control-click the app and choose Open).\n"
+        "After each update macOS may ask whether fm-engine can use your keychain: choose Always Allow.\n"
+        "Uninstall by deleting the app. Your mail data in ~/Library/Application Support/fuckMail is kept.\n"
+        "The fm CLI is in fuckMail.app/Contents/MacOS.\n"),
+    "Linux": (
+        "Launch bin/fuckmail-gui. Move the folder to install; delete it to uninstall.\n"
+        "Your mail data in ~/.local/share/fuckMail is kept. The fm CLI is in bin.\n"),
+}
+
+
+def project_version():
+    match = re.search(r"project\(fuckMail VERSION ([0-9.]+)", (ROOT / "CMakeLists.txt").read_text())
+    if not match:
+        raise RuntimeError("CMakeLists.txt must declare the project version")
+    return match.group(1)
+
+
+def windows_installer(stage, name, version, commit):
+    output = ROOT / "dist" / (name + "-setup.exe")
+    run(inno_compiler(), "--quiet-progress", "--define=StageDir=" + str(stage),
+        "--define=AppVersion=" + version + " (" + commit + ")", "--define=NumericVersion=" + version,
+        "--output-dir=" + str(output.parent), "--output-filename=" + output.stem,
+        ROOT / "scripts/windows-installer.iss")
+    return output
+
+
+def mac_disk_image(stage, name):
+    output = ROOT / "dist" / (name + ".dmg")
+    with tempfile.TemporaryDirectory(prefix="fuckmail-dmg-") as scratch:
+        content = Path(scratch) / "fuckMail"
+        # ditto keeps the bundle's symlinks and signature attributes intact.
+        run("ditto", stage, content)
+        (content / "Applications").symlink_to("/Applications")
+        # Hosted Mac runners sometimes report "Resource busy" while scanning new files.
+        for attempt in range(3):
+            try:
+                run("hdiutil", "create", "-volname", "fuckMail", "-srcfolder", content,
+                    "-fs", "HFS+", "-format", "UDZO", "-ov", output)
+                break
+            except subprocess.CalledProcessError:
+                if attempt == 2:
+                    raise
+                time.sleep(5)
+        # Read back what testers open: a broken signature shows up as "damaged".
+        mount = Path(scratch) / "mount"
+        mount.mkdir()
+        run("hdiutil", "attach", "-readonly", "-nobrowse", "-noautoopen", "-mountpoint", mount, output)
+        try:
+            run("codesign", "--verify", "--deep", "--strict", mount / MAC_APP)
+            if not (mount / "Applications").is_symlink():
+                raise RuntimeError("Disk image lacks its Applications shortcut")
+        finally:
+            run("hdiutil", "detach", "-force", mount)
+    return output
+
+
 def package(preset):
-    configure_build(preset, targets=("fm-client-runtime",))
+    # Its own build tree, so packaging works while a developer build is running.
+    build = ROOT / "build" / (preset + "-package")
+    configure_build(preset, targets=("fm-client-runtime",), binary_dir=build)
     env = environment()
     stage = ROOT.resolve() / "dist" / (HOST.lower() + "-" + platform.machine().lower())
     if stage.resolve() != stage or (WINDOWS and stage.name != "windows-amd64"):
@@ -335,11 +428,18 @@ def package(preset):
     # The stage contains only build output. Profiles never live beneath dist.
     if stage.exists():
         shutil.rmtree(stage)
-    run(managed_tool("cmake"), "--install", ROOT / "build" / preset, "--prefix", stage, env=env)
+    run(managed_tool("cmake"), "--install", build, "--prefix", stage, env=env)
+    if HOST == "Darwin":
+        (stage / "fuckmail-gui.app").rename(stage / MAC_APP)
+    if WINDOWS:
+        # Per-user installs cannot run vc_redist, so the MSVC runtime ships beside the executables.
+        missing = [dll for dll in ("vcruntime140.dll", "vcruntime140_1.dll", "msvcp140.dll") if not (stage / "bin" / dll).is_file()]
+        if missing:
+            raise RuntimeError("Package lacks the app-local MSVC runtime: " + ", ".join(missing))
     (stage / "README.txt").write_text(
         "fuckMail Phase 2 feedback build (unsigned)\n\n"
-        "Schema 32 starts with an empty local database. Close older copies and move the complete old fuckMail/default profile directory before launch; old schemas are refused.\n"
-        "Launch fuckmail-gui (inside the .app on macOS, bin elsewhere).\n"
+        + INSTALL_NOTES[HOST] + "\n"
+        "A first install starts with an empty profile. Profiles from before the current storage baseline are refused: close the app and move the whole old fuckMail/default folder away before launch.\n"
         "Open Settings > Accounts > Connect Google account, enter your email, and continue with Google in your browser.\n"
         "Google sign-in requires the app registration included by the build's developer. No per-account JSON file is needed.\n"
         "Sign in using the browser. Personal Gmail and Google Workspace use Google APIs.\n"
@@ -347,10 +447,8 @@ def package(preset):
         "Use an encrypted local disk before importing personal mail. Keep the profile out of cloud-sync folders.\n"
         "Remove archives an account locally and removes its credentials; it never deletes the Google account.\n"
         "Closing the GUI ends its sync and reminders; an explicitly running CLI has its own lifetime.\n"
-        "The same directory contains the headless fm CLI and fm-engine.\n"
         "Use fm --help for CLI commands. Ordinary startup uses fuckMail/default under your local app-data directory.\n"
         "Existing demo-v1 profiles are preserved; --demo-profile selects synthetic data explicitly.\n"
-        "Copy the folder/app to install; remove it to uninstall. User data is preserved.\n"
         "This is a development artifact, not a signed/notarized public release.\n",
         encoding="utf-8")
     guide = ROOT / "docs/build-development.md"
@@ -364,9 +462,17 @@ def package(preset):
                 "cargo": run("cargo", "--version", env=env, capture=True)}
     (stage / "build-manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     verify_package(preset, stage)
-    archive_base = ROOT / "dist" / ("fuckmail-" + HOST.lower() + "-" + platform.machine().lower())
-    archive = shutil.make_archive(str(archive_base), "zip" if WINDOWS else "gztar", root_dir=stage.parent, base_dir=stage.name)
-    print("Development package:", archive)
+    version = project_version()
+    commit = source[:7]
+    system = {"Windows": "windows", "Darwin": "macos", "Linux": "linux"}[HOST]
+    name = "fuckMail-" + version + "-" + commit + "-" + system + "-" + platform.machine().lower()
+    if WINDOWS:
+        artifact = windows_installer(stage, name, version, commit)
+    elif HOST == "Darwin":
+        artifact = mac_disk_image(stage, name)
+    else:
+        artifact = shutil.make_archive(str(ROOT / "dist" / name), "gztar", root_dir=stage.parent, base_dir=stage.name)
+    print("Package:", artifact)
 
 
 def main():

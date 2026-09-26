@@ -237,6 +237,11 @@ ApplicationWindow {
     };
 
     check(await(ready), "the message lays out on its paper card");
+    // Search matches are painted on the paper like a selection (Search 10).
+    body()->setProperty("matchPhrases", QStringList{"news"});
+    check(await([&] { return view()->property("highlightCount").toInt() == 1; }), "a search match in the HTML body is tinted");
+    body()->setProperty("matchPhrases", QStringList{});
+    check(await([&] { return view()->property("highlightCount").toInt() == 0; }), "clearing the search clears the tint");
     check(await([&] { return service.requests == QStringList{"m1:2"}; }), "only the inline image is requested without asking");
     auto images = body()->property("images").toMap();
     check(images["1"].toMap()["state"] == "hidden" && images["3"].toMap()["state"] == "blocked" && images["4"].toMap()["state"] == "insecure",

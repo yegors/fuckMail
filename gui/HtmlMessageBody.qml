@@ -15,6 +15,8 @@ ColumnLayout {
     property string account: ""
     property string conversation: ""
     property bool active: false
+    // The search's phrases, tinted where they appear (Search 10).
+    property var matchPhrases: []
     property var result: ({})
     property string ticket: ""
     property string error: ""
@@ -163,6 +165,8 @@ ColumnLayout {
             images: body.images
             blockedLinks: body.blockedLinks
             fontPixels: Theme.fontSize(16)
+            highlightPhrases: body.matchPhrases
+            highlightColor: Theme.matchPaper
             onLinkActivated: function(id) { body.activate(id) }
             onHoveredLinkChanged: {
                 const target = hoveredLink ? body.link(hoveredLink) : null

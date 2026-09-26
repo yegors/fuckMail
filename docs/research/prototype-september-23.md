@@ -499,3 +499,30 @@ Verification on Windows, Release build in `build/p9`:
 Not verified:
 - the live mailbox;
 - matching speed on a large real mailbox for common multi-word phrases, where the stored text of each candidate is checked.
+
+## D130 — search highlights and label order (2026-09-25)
+
+The founder asked for matched text to be highlighted in subjects and bodies, and for labels to be alphabetical; the rail sorted them by count. Export 6 has no search-highlight style; the tint uses the theme accent.
+
+Verification on Windows, Release build in `build/p9`:
+- **fm-core** `search_phrases_match_as_written` now also checks:
+  - `search_terms.phrases`;
+  - that the preview of a message whose body starts with "Cover note." (a word starting with "c") begins with "… " and contains "The C-22 draft". Before, it started at "Cover".
+
+  Parser tests check `find_phrase` positions and the phrases reported for chips.
+- **`gui-mail-selection`** (real MailView):
+  - `matchRanges` finds "Bill\nC-22" and "bill c-22" but not the one inside "xbill";
+  - it ignores accents and double spaces, and finds nothing in "Sep 22";
+  - a list subject shows exactly one mark, and another subject none;
+  - the reader subject turns to rich text with a tint, and a wrapped two-line subject keeps the same height as plain text;
+  - the text body's document carries highlight formats;
+  - clearing the search removes the marks and returns the subject to plain text.
+
+  A capture (`FM_SELECTION_CAPTURE`) showed the tints in the list, in both lines of the wrapped heading, and in the body.
+- **`gui-html-message-body`**: `matchPhrases: ["news"]` gives `highlightCount` 1 on the HTML paper; clearing gives 0.
+- `cargo test --workspace` (808) and clippy pass. One unrelated engine sync test timed out waiting for a worker under the parallel run; it passed three times alone and in the full rerun. All 31 GUI tests pass.
+
+Not verified:
+- the live mailbox;
+- the tint strength on the other themes (only Graphite was captured);
+- a phrase split across differently styled HTML runs (for example part bold), which is not highlighted.
