@@ -319,8 +319,13 @@ ApplicationWindow {
                     readonly property bool mailGranted: (accountRow.google || {}).capabilities?.mail_read === true
                     readonly property bool calendarGranted: (accountRow.google || {}).capabilities?.calendar_read === true
                     readonly property bool blocked: syncState.credential_access_required === true
+                    // Downloading older mail runs in the background and has its
+                    // own progress in Accounts; only new-mail checks, a requested
+                    // refresh and the first sync show as syncing here.
+                    readonly property bool mailSyncing: progress.mail === "starting"
+                        || (progress.mail === "running" && (progress.mail_backfill !== true || lastSync <= 0))
                     readonly property bool syncing: !blocked && (syncState.changing === true || syncState.refresh_requested === true
-                        || (syncState.active === true && ((mailGranted && (progress.mail === "starting" || progress.mail === "running"))
+                        || (syncState.active === true && ((mailGranted && mailSyncing)
                             || (calendarGranted && (progress.calendar === "starting" || progress.calendar === "running")))))
                     readonly property double lastSync: syncState.last_mail_sync_at || accountRow.last_mail_sync_at || 0
                     property int agoTick: 0
