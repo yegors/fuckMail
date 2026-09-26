@@ -109,7 +109,7 @@ jobs:
         shell: pwsh
         run: ./scripts/dev.ps1 package --preset release
       - name: Retain installer or package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fuckmail-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
           path: |
@@ -119,7 +119,7 @@ jobs:
           if-no-files-found: error
       - name: Retain native test and configure logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: native-logs-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
           path: |
