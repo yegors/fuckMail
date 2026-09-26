@@ -65,14 +65,14 @@ jobs:
         run: python scripts/check_repo_hygiene.py
       - name: Restore project SDKs and Rust downloads
         id: sdk_cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             .tools
           key: native-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/bootstrap-requirements.txt', 'scripts/toolchain.json', 'rust-toolchain.toml') }}
       - name: Restore incremental Rust build
         id: rust_cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: target
           key: rust-build-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}-${{ github.sha }}
@@ -133,14 +133,14 @@ jobs:
       # fails. Every restored build still executes the full native test suite.
       - name: Save acquired SDKs and Rust downloads
         if: always() && !cancelled() && steps.sdk_cache.outputs.cache-hit != 'true' && (steps.bootstrap_unix.outcome == 'success' || steps.bootstrap_windows.outcome == 'success')
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: |
             .tools
           key: ${{ steps.sdk_cache.outputs.cache-primary-key }}
       - name: Save compiled Rust work
         if: always() && !cancelled() && steps.rust_cache.outputs.cache-hit != 'true' && (steps.test_unix.outcome == 'success' || steps.test_unix.outcome == 'failure' || steps.test_windows.outcome == 'success' || steps.test_windows.outcome == 'failure')
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: target
           key: ${{ steps.rust_cache.outputs.cache-primary-key }}
